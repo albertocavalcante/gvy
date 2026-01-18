@@ -143,6 +143,7 @@ class NativeTypeContext(
      * @param notFoundMessage Function to generate error message when not found
      * @return SemanticType if found, null if receiver type doesn't support member lookup
      */
+    @Suppress("LongParameterList") // Strategy pattern requires multiple resolution functions
     private inline fun <T> resolveFromHierarchyNullable(
         receiverType: SemanticType,
         nativeFinder: (String) -> T?,
@@ -195,6 +196,7 @@ class NativeTypeContext(
      * @param errorFactory Function to create TypeInferenceError when not found
      * @return Either TypeInferenceError or SemanticType
      */
+    @Suppress("LongParameterList") // Strategy pattern requires multiple resolution functions
     private inline fun <T> resolveFromHierarchyResult(
         receiverType: SemanticType,
         nativeFinder: (String) -> T?,

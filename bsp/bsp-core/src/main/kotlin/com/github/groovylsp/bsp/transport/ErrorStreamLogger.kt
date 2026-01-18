@@ -1,10 +1,10 @@
 package com.github.groovylsp.bsp.transport
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 import java.io.BufferedReader
 import java.io.InputStream
 import java.io.InputStreamReader
@@ -38,7 +38,7 @@ class ErrorStreamLogger(
     private val serverName: String,
     private val scope: CoroutineScope,
 ) {
-    private val logger = LoggerFactory.getLogger("BSP.$serverName")
+    private val logger = KotlinLogging.logger("BSP.$serverName")
 
     /**
      * Starts asynchronously reading and logging stderr messages.
@@ -51,8 +51,9 @@ class ErrorStreamLogger(
      * @return Job representing the logging coroutine
      */
     fun startLogging(): Job = scope.launch(Dispatchers.IO) {
-        logger.debug("Started stderr logging for BSP server '$serverName'")
+        logger.debug { "Started stderr logging for BSP server '$serverName'" }
 
+        @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // BSP stream errors
         try {
             BufferedReader(InputStreamReader(errorStream)).use { reader ->
                 var lineNumber = 0
@@ -60,19 +61,19 @@ class ErrorStreamLogger(
                     lineNumber++
                     // NOTE: Using WARN level because stderr typically contains
                     // diagnostics, warnings, or errors from the server
-                    logger.warn("[stderr:$lineNumber] $line")
+                    logger.warn { "[stderr:$lineNumber] $line" }
                 }
             }
         } catch (e: Exception) {
             // NOTE: IOException is expected when stream closes normally
             // Only log unexpected exceptions
             if (e !is java.io.IOException) {
-                logger.error("Error while reading stderr: ${e.message}", e)
+                logger.error(e) { "Error while reading stderr: ${e.message}" }
             } else {
-                logger.debug("Stderr stream closed")
+                logger.debug { "Stderr stream closed" }
             }
         } finally {
-            logger.debug("Stopped stderr logging for BSP server '$serverName'")
+            logger.debug { "Stopped stderr logging for BSP server '$serverName'" }
         }
     }
 

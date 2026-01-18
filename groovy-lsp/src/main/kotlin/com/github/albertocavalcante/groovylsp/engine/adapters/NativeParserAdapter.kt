@@ -111,10 +111,40 @@ private fun ASTNode.toRange(): Range? {
 }
 
 /**
+ * Check if a method is a synthetic property accessor (getter/setter).
+ * Groovy automatically generates getter/setter methods for properties, but doesn't always
+ * mark them as synthetic. This function detects them by checking if:
+ * - The method name matches the pattern get[PropertyName]() or set[PropertyName](value)
+ * - A property with that name exists in the class
+ */
+private fun isSyntheticPropertyAccessor(method: MethodNode, propertyNames: Set<String>): Boolean {
+    val methodName = method.name
+
+    val propertyName = when {
+        methodName.startsWith("get") && methodName.length > 3 && method.parameters.isEmpty() ->
+            methodName.substring(3).replaceFirstChar { it.lowercaseChar() }
+
+        methodName.startsWith("set") && methodName.length > 3 && method.parameters.size == 1 ->
+            methodName.substring(3).replaceFirstChar { it.lowercaseChar() }
+
+        methodName.startsWith("is") && methodName.length > 2 && method.parameters.isEmpty() ->
+            methodName.substring(2).replaceFirstChar { it.lowercaseChar() }
+
+        else -> null
+    }
+
+    return propertyName != null && propertyName in propertyNames
+}
+
+/**
  * Extension to convert ClassNode to [UnifiedSymbol] with children.
  */
+@Suppress("CyclomaticComplexMethod") // Complexity 15 - symbol type mapping requires branching
 internal fun ClassNode.toUnifiedSymbol(): UnifiedSymbol {
     val children = mutableListOf<UnifiedSymbol>()
+
+    // Collect property names to filter out synthetic getters/setters
+    val propertyNames = properties.map { it.name }.toSet()
 
     // Add fields
     for (field in fields) {
@@ -134,7 +164,7 @@ internal fun ClassNode.toUnifiedSymbol(): UnifiedSymbol {
 
     // Add methods (ConstructorNode is NOT included in methods, only in declaredConstructors)
     for (method in methods) {
-        if (!method.isSynthetic) {
+        if (!method.isSynthetic && !isSyntheticPropertyAccessor(method, propertyNames)) {
             method.toRange()?.let { range ->
                 children.add(
                     UnifiedSymbol(

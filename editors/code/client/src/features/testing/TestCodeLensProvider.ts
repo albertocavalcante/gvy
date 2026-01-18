@@ -30,6 +30,12 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
       return codeLenses;
     }
 
+    // Check CodeLens source setting
+    const codeLensSource = config.get<string>("codelens.test.source", "lsp");
+    if (codeLensSource === "lsp") {
+      return codeLenses; // Let LSP provide CodeLens
+    }
+
     const text = document.getText();
 
     if (!text || text.trim() === "") {
@@ -47,50 +53,44 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
       ? `${classInfo.packageName}.${classInfo.name}`
       : classInfo.name;
 
-    // Add CodeLens for the test class (Run All | Debug All)
+    // Add CodeLens for the test class (Run All | Debug All | Coverage)
     const classPosition = new vscode.Position(classInfo.line, 0);
     const classRange = new vscode.Range(classPosition, classPosition);
 
-    codeLenses.push(
-      new vscode.CodeLens(classRange, {
-        title: "Run All Tests",
-        command: "groovy.test.run",
-        arguments: [{ uri: document.uri.toString(), suite: fqn, test: "*" }],
-      }),
-    );
-
-    codeLenses.push(
-      new vscode.CodeLens(classRange, {
-        title: "Debug All Tests",
-        command: "groovy.test.debug",
-        arguments: [{ uri: document.uri.toString(), suite: fqn, test: "*" }],
-      }),
-    );
+    const classCommands = [
+      { title: "$(play) Run All Tests", command: "groovy.test.run" },
+      { title: "$(debug) Debug All Tests", command: "groovy.test.debug" },
+      { title: "$(beaker) Coverage", command: "groovy.test.runWithCoverage" },
+    ];
+    for (const cmd of classCommands) {
+      codeLenses.push(
+        new vscode.CodeLens(classRange, {
+          ...cmd,
+          arguments: [{ uri: document.uri.toString(), suite: fqn, test: "*" }],
+        }),
+      );
+    }
 
     // Add CodeLens for each test method
+    const methodCommands = [
+      { title: "$(play) Run", command: "groovy.test.run" },
+      { title: "$(debug) Debug", command: "groovy.test.debug" },
+      { title: "$(beaker) Coverage", command: "groovy.test.runWithCoverage" },
+    ];
     for (const test of tests) {
       const testPosition = new vscode.Position(test.line, 0);
       const testRange = new vscode.Range(testPosition, testPosition);
 
-      codeLenses.push(
-        new vscode.CodeLens(testRange, {
-          title: "Run Test",
-          command: "groovy.test.run",
-          arguments: [
-            { uri: document.uri.toString(), suite: fqn, test: test.name },
-          ],
-        }),
-      );
-
-      codeLenses.push(
-        new vscode.CodeLens(testRange, {
-          title: "Debug Test",
-          command: "groovy.test.debug",
-          arguments: [
-            { uri: document.uri.toString(), suite: fqn, test: test.name },
-          ],
-        }),
-      );
+      for (const cmd of methodCommands) {
+        codeLenses.push(
+          new vscode.CodeLens(testRange, {
+            ...cmd,
+            arguments: [
+              { uri: document.uri.toString(), suite: fqn, test: test.name },
+            ],
+          }),
+        );
+      }
     }
 
     return codeLenses;
@@ -180,7 +180,7 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
       // Check for @Test annotation (not inside strings)
       // Simple heuristic: if the line contains @Test and doesn't have quotes before it
-      if (trimmed.match(/^\s*@Test(\s*\(.*?\))?\s*(void|def)?/)) {
+      if (trimmed.match(/^\s*@Test(\s*\([^)]*\))?\s*(void|def)?/)) {
         return true;
       }
     }
@@ -217,8 +217,10 @@ export class TestCodeLensProvider implements vscode.CodeLensProvider {
 
       // Check for @Test annotation (with or without parameters)
       // Pattern: @Test or @Test(timeout = 1000) or @Test void inlineTest()
+      // Note: The regex [^)]* prevents catastrophic backtracking but does not handle
+      // nested parentheses in annotations (e.g., @Test(expected = Exception.class, timeout = timeout()))
       const testAnnotationMatch = trimmed.match(
-        /^\s*@Test(\s*\(.*?\))?(\s+(void|def)\s+(\w+)\s*\()?/,
+        /^\s*@Test(\s*\([^)]*\))?(\s+(void|def)\s+(\w+)\s*\()?/,
       );
       if (testAnnotationMatch) {
         hasTestAnnotation = true;

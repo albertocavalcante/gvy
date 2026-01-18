@@ -21,10 +21,13 @@ dependencies {
     implementation(libs.arrow.core)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // ClassGraph for scanning plugin JARs
     implementation(libs.classgraph)
+
+    // ASM for bytecode analysis (extracting getFunctionName return values)
+    implementation(libs.asm)
 
     // HTML to Markdown conversion for vars documentation
     implementation(libs.flexmark.html2md)

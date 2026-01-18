@@ -4,7 +4,7 @@ package com.github.albertocavalcante.gvy.semantics
  * Logic for computing Least Upper Bound (LUB) of SemanticTypes.
  * Ported from LeastUpperBoundLogic.kt but adapted for SemanticType (no TypeSolver dependency).
  */
-import java.util.concurrent.ConcurrentHashMap
+import kotlin.concurrent.write
 
 object TypeLub {
 
@@ -196,18 +196,39 @@ object TypeLub {
         "java.lang.Number" to setOf("java.io.Serializable"),
     )
 
-    private val ANCESTOR_CACHE = ConcurrentHashMap<String, Set<String>>()
+    private const val MAX_ANCESTOR_CACHE_SIZE = 1000
+
+    private val ancestorCacheLock = java.util.concurrent.locks.ReentrantReadWriteLock()
+    private val ANCESTOR_CACHE = object : LinkedHashMap<String, Set<String>>(
+        16, // initial capacity
+        0.75f, // load factor
+        true, // accessOrder=true for LRU
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Set<String>>?): Boolean =
+            size > MAX_ANCESTOR_CACHE_SIZE
+    }
 
     private fun getAllAncestors(fqn: String): Set<String> {
-        return ANCESTOR_CACHE.computeIfAbsent(fqn) { key ->
-            val parents = HARDCODED_PARENTS[key] ?: return@computeIfAbsent emptySet()
-            val result = parents.toMutableSet()
-            for (parent in parents) {
-                result.addAll(getAllAncestors(parent))
-            }
-            // Always add Object
-            result.add("java.lang.Object")
-            result
+        // A 'get' on an access-ordered LinkedHashMap is a write operation, so we need a write lock.
+        // We check for the key and return if present, all within a brief write lock.
+        ancestorCacheLock.write {
+            ANCESTOR_CACHE[fqn]?.let { return it }
+        }
+
+        // If not in cache, compute the result outside of any lock to avoid holding
+        // the lock during potentially long recursive computations.
+        val parents = HARDCODED_PARENTS[fqn] ?: emptySet()
+        val result = parents.toMutableSet()
+        for (parent in parents) {
+            result.addAll(getAllAncestors(parent))
+        }
+        result.add("java.lang.Object")
+
+        // After computing, acquire the write lock again to put the result into the cache.
+        // Use getOrPut to handle the race condition where another thread might have
+        // computed and inserted the same key while we were working.
+        return ancestorCacheLock.write {
+            ANCESTOR_CACHE.getOrPut(fqn) { result }
         }
     }
 

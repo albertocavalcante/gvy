@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovylsp.buildtool.maven
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.repository.LocalRepository
 import org.eclipse.aether.repository.RemoteRepository
 import org.eclipse.aether.supplier.RepositorySystemSupplier
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,7 +23,7 @@ import java.nio.file.Paths
  */
 object AetherSessionFactory {
 
-    private val logger = LoggerFactory.getLogger(AetherSessionFactory::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Lazy initialization - thread-safe singleton
     val repositorySystem: RepositorySystem by lazy { createRepositorySystem() }
@@ -64,7 +64,7 @@ object AetherSessionFactory {
 
         // 3. Default location
         val defaultRepo = File(m2Dir, "repository")
-        logger.debug("Using default Maven repository: ${defaultRepo.absolutePath}")
+        logger.debug { "Using default Maven repository: ${defaultRepo.absolutePath}" }
         return defaultRepo.toPath()
     }
 
@@ -72,7 +72,7 @@ object AetherSessionFactory {
         val envValue = System.getenv(envVar) ?: return null
         val path = File(envValue)
         if (path.exists()) {
-            logger.debug("Using $envVar environment variable: $envValue")
+            logger.debug { "Using $envVar environment variable: $envValue" }
             return path.toPath()
         }
         return null
@@ -91,13 +91,13 @@ object AetherSessionFactory {
                 val repoPath = nodeList.item(0).textContent.trim()
                 val customPath = File(repoPath)
                 if (customPath.exists()) {
-                    logger.debug("Using localRepository from settings.xml: ${customPath.absolutePath}")
+                    logger.debug { "Using localRepository from settings.xml: ${customPath.absolutePath}" }
                     return customPath.toPath()
                 }
             }
             null
         } catch (e: Exception) {
-            logger.warn("Could not parse settings.xml: ${e.message}")
+            logger.warn { "Could not parse settings.xml: ${e.message}" }
             null
         }
     }

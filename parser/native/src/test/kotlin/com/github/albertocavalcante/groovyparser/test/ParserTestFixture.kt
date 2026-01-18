@@ -3,18 +3,21 @@ package com.github.albertocavalcante.groovyparser.test
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import org.codehaus.groovy.control.Phases
 import java.net.URI
 
 class ParserTestFixture {
 
     private val parser = GroovyParserFacade()
 
-    fun parse(code: String, uri: String = "file:///Test.groovy"): ParseResult = parser.parse(
-        ParseRequest(
-            uri = URI.create(uri),
-            content = code,
-        ),
-    )
+    fun parse(code: String, uri: String = "file:///Test.groovy", compilePhase: Int = Phases.CONVERSION): ParseResult =
+        parser.parse(
+            ParseRequest(
+                uri = URI.create(uri),
+                content = code,
+                compilePhase = compilePhase,
+            ),
+        )
 
     fun parseResource(path: String): ParseResult {
         val resource = javaClass.getResource(path)

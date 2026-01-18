@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.io.InputStreamReader
 
 /**
@@ -42,7 +42,7 @@ data class CompatibilityResult(val isFullyCompatible: Boolean, val isPartiallyCo
  */
 class GroovyCompatibilityService {
 
-    private val logger = LoggerFactory.getLogger(GroovyCompatibilityService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Sorted list of compatibility entries (loaded from JSON)
     private val compatibilityEntries: List<CompatibilityEntry> by lazy {
@@ -60,7 +60,7 @@ class GroovyCompatibilityService {
         matrix.compatibility
     }.getOrElse { throwable ->
         if (throwable is Error) throw throwable
-        logger.error("Failed to load Groovy compatibility matrix", throwable)
+        logger.error(throwable) { "Failed to load Groovy compatibility matrix" }
         emptyList()
     }
 

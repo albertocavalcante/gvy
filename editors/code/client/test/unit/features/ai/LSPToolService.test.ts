@@ -1,6 +1,5 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
-import type * as vscode from "vscode";
 import { LSPToolService } from "../../../../src/features/ai/LSPToolService";
 import { AISymbolInfo, AILocation } from "../../../../src/features/ai/types";
 
@@ -74,7 +73,31 @@ describe("LSPToolService", () => {
   });
 
   describe("findWorkspaceSymbol", () => {
-    it("should map symbols correctly", async () => {
+    it("should throw error when client is not available", async () => {
+      getClientStub.returns(undefined);
+
+      await assert.rejects(
+        async () => {
+          await service.findWorkspaceSymbol("MyClass");
+        },
+        {
+          name: "Error",
+          message: "Language Server client is not available",
+        },
+      );
+
+      // Ensure executeCommand was never called
+      assert.strictEqual(
+        executeCommandStub.called,
+        false,
+        "executeCommand should not be called when client is unavailable",
+      );
+    });
+
+    it("should map symbols correctly when client is available", async () => {
+      const mockClient = { state: 3 }; // Running state
+      getClientStub.returns(mockClient);
+
       const mockSymbol = {
         name: "MyClass",
         kind: 4, // Class
@@ -97,10 +120,46 @@ describe("LSPToolService", () => {
       assert.strictEqual(result[0].kind, "Class");
       assert.strictEqual(result[0].location.uri, mockUri.toString());
     });
+
+    it("should return empty array when no symbols found", async () => {
+      const mockClient = { state: 3 };
+      getClientStub.returns(mockClient);
+
+      executeCommandStub
+        .withArgs("vscode.executeWorkspaceSymbolProvider", "NonExistent")
+        .resolves(undefined);
+
+      const result = await service.findWorkspaceSymbol("NonExistent");
+      assert.strictEqual(result.length, 0);
+    });
   });
 
   describe("findReferences", () => {
-    it("should map locations correctly", async () => {
+    it("should throw error when client is not available", async () => {
+      getClientStub.returns(undefined);
+
+      await assert.rejects(
+        async () => {
+          await service.findReferences(mockUri.toString(), 5, 0);
+        },
+        {
+          name: "Error",
+          message: "Language Server client is not available",
+        },
+      );
+
+      // Ensure executeCommand was never called
+      assert.strictEqual(
+        executeCommandStub.called,
+        false,
+        "executeCommand should not be called when client is unavailable",
+      );
+    });
+
+    it("should map locations correctly when client is available", async () => {
+      const mockClient = { state: 3 };
+      getClientStub.returns(mockClient);
+
       const mockLocation = new MockLocation(
         mockUri,
         new MockRange({ line: 5, character: 0 }, { line: 5, character: 10 }),
@@ -118,10 +177,46 @@ describe("LSPToolService", () => {
       assert.strictEqual(result[0].uri, mockUri.toString());
       assert.strictEqual(result[0].range.start.line, 5);
     });
+
+    it("should return empty array when no references found", async () => {
+      const mockClient = { state: 3 };
+      getClientStub.returns(mockClient);
+
+      executeCommandStub
+        .withArgs("vscode.executeReferenceProvider", sinon.match.any)
+        .resolves(undefined);
+
+      const result = await service.findReferences(mockUri.toString(), 5, 0);
+      assert.strictEqual(result.length, 0);
+    });
   });
 
   describe("getDefinition", () => {
-    it("should handle single Location result", async () => {
+    it("should throw error when client is not available", async () => {
+      getClientStub.returns(undefined);
+
+      await assert.rejects(
+        async () => {
+          await service.getDefinition(mockUri.toString(), 10, 5);
+        },
+        {
+          name: "Error",
+          message: "Language Server client is not available",
+        },
+      );
+
+      // Ensure executeCommand was never called
+      assert.strictEqual(
+        executeCommandStub.called,
+        false,
+        "executeCommand should not be called when client is unavailable",
+      );
+    });
+
+    it("should handle single Location result when client is available", async () => {
+      const mockClient = { state: 3 };
+      getClientStub.returns(mockClient);
+
       const mockLocation = new MockLocation(
         mockUri,
         new MockRange({ line: 20, character: 0 }, { line: 20, character: 10 }),
@@ -135,7 +230,10 @@ describe("LSPToolService", () => {
       assert.strictEqual(result!.range.start.line, 20);
     });
 
-    it("should handle LocationLink[] result", async () => {
+    it("should handle LocationLink[] result when client is available", async () => {
+      const mockClient = { state: 3 };
+      getClientStub.returns(mockClient);
+
       const mockLink = {
         targetUri: mockUri,
         targetRange: new MockRange(
@@ -157,7 +255,20 @@ describe("LSPToolService", () => {
     });
 
     it("should return null if no definition found", async () => {
+      const mockClient = { state: 3 };
+      getClientStub.returns(mockClient);
+
       executeCommandStub.resolves([]); // Empty array
+
+      const result = await service.getDefinition(mockUri.toString(), 10, 5);
+      assert.strictEqual(result, null);
+    });
+
+    it("should return null when executeCommand returns undefined", async () => {
+      const mockClient = { state: 3 };
+      getClientStub.returns(mockClient);
+
+      executeCommandStub.resolves(undefined);
 
       const result = await service.getDefinition(mockUri.toString(), 10, 5);
       assert.strictEqual(result, null);

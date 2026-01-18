@@ -8,14 +8,15 @@ import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.db.SymbolOccurrence
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.deleteIfExists
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -35,11 +36,12 @@ import kotlin.io.path.writeText
  * @param cacheDir Directory to store cache files
  */
 class SemanticCache(private val cacheDir: Path) {
-    private val logger = LoggerFactory.getLogger(SemanticCache::class.java)
+    private val logger = KotlinLogging.logger {}
     private val json = Json {
         prettyPrint = false
         ignoreUnknownKeys = true
     }
+    private val uriHashCache = ConcurrentHashMap<String, String>()
 
     init {
         // Ensure cache directory exists
@@ -68,9 +70,9 @@ class SemanticCache(private val cacheDir: Path) {
             val jsonString = json.encodeToString(cached)
             cacheFile.writeText(jsonString)
 
-            logger.debug("Saved semantic cache for: {}", uri)
+            logger.debug { "Saved semantic cache for: $uri" }
         } catch (e: Exception) {
-            logger.warn("Failed to save semantic cache for {}: {}", uri, e.message)
+            logger.warn { "Failed to save semantic cache for $uri: ${e.message}" }
         }
     }
 
@@ -90,7 +92,7 @@ class SemanticCache(private val cacheDir: Path) {
         try {
             val cacheFile = getCacheFile(uri)
             if (!cacheFile.exists()) {
-                logger.trace("No cache file for: {}", uri)
+                logger.trace { "No cache file for: $uri" }
                 return@withContext null
             }
 
@@ -99,18 +101,18 @@ class SemanticCache(private val cacheDir: Path) {
 
             // Validate source hash
             if (cached.sourceHash != sourceHash) {
-                logger.debug("Cache invalid for {} (hash mismatch)", uri)
+                logger.debug { "Cache invalid for $uri (hash mismatch)" }
                 return@withContext null
             }
 
-            logger.debug("Loaded semantic cache for: {}", uri)
+            logger.debug { "Loaded semantic cache for: $uri" }
             SemanticDocument(
                 uri = URI.create(cached.uri),
                 symbols = cached.symbols.map { it.toSymbolInfo() },
                 occurrences = cached.occurrences.map { it.toSymbolOccurrence() },
             )
         } catch (e: Exception) {
-            logger.debug("Failed to load semantic cache for {}: {}", uri, e.message)
+            logger.debug { "Failed to load semantic cache for $uri: ${e.message}" }
             null
         }
     }
@@ -133,7 +135,7 @@ class SemanticCache(private val cacheDir: Path) {
             val cached = json.decodeFromString<CachedSemanticDocument>(jsonString)
             cached.sourceHash == sourceHash
         } catch (e: Exception) {
-            logger.debug("Cache validation failed for {}: {}", uri, e.message)
+            logger.debug { "Cache validation failed for $uri: ${e.message}" }
             false
         }
     }
@@ -147,10 +149,11 @@ class SemanticCache(private val cacheDir: Path) {
         try {
             val cacheFile = getCacheFile(uri)
             if (cacheFile.deleteIfExists()) {
-                logger.debug("Invalidated cache for: {}", uri)
+                uriHashCache.remove(uri.toString())
+                logger.debug { "Invalidated cache for: $uri" }
             }
         } catch (e: Exception) {
-            logger.warn("Failed to invalidate cache for {}: {}", uri, e.message)
+            logger.warn { "Failed to invalidate cache for $uri: ${e.message}" }
         }
     }
 
@@ -164,9 +167,9 @@ class SemanticCache(private val cacheDir: Path) {
                     file.delete()
                 }
             }
-            logger.info("Cleared all semantic cache")
+            logger.info { "Cleared all semantic cache" }
         } catch (e: Exception) {
-            logger.warn("Failed to clear cache: {}", e.message)
+            logger.warn { "Failed to clear cache: ${e.message}" }
         }
     }
 
@@ -174,8 +177,9 @@ class SemanticCache(private val cacheDir: Path) {
      * Get cache file path for a URI.
      */
     private fun getCacheFile(uri: URI): Path {
-        // Create a safe filename from URI
-        val hash = sha256(uri.toString())
+        // Create a safe filename from URI, using cached hash
+        val uriString = uri.toString()
+        val hash = uriHashCache.getOrPut(uriString) { sha256(uriString) }
         return cacheDir.resolve("$hash.json")
     }
 

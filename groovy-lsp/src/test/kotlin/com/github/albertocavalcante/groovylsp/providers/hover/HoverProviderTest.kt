@@ -6,13 +6,13 @@ import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvide
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -26,7 +26,7 @@ import kotlin.test.assertTrue
  */
 class HoverProviderTest {
 
-    private val logger = LoggerFactory.getLogger(HoverProviderTest::class.java)
+    private val logger = KotlinLogging.logger {}
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
 
@@ -250,7 +250,7 @@ class Calculator {
         assertNotNull(addHover, "Should have hover for add method")
 
         val addContent = addHover.contents.right.value
-        logger.info("Hover content for add method:\n$addContent")
+        logger.info { "Hover content for add method:\n$addContent" }
 
         // Validate documentation appears
         assertTrue(addContent.contains("Adds two numbers together"), "Should include summary. Got: $addContent")
@@ -263,7 +263,7 @@ class Calculator {
         assertNotNull(multiplyHover, "Should have hover for multiply method")
 
         val multiplyContent = multiplyHover.contents.right.value
-        logger.info("Hover content for multiply method:\n$multiplyContent")
+        logger.info { "Hover content for multiply method:\n$multiplyContent" }
         assertTrue(multiplyContent.contains("Multiplies two numbers"), "Should include summary")
         assertTrue(multiplyContent.contains("first operand"), "Should include @param x description")
         assertTrue(multiplyContent.contains("product of x and y"), "Should include @return description")
@@ -436,7 +436,7 @@ class Calculator {
                     content.value.contains("String"),
             )
         } else {
-            logger.debug("No hover found for string declaration")
+            logger.debug { "No hover found for string declaration" }
         }
 
         // Test hover on def variable declaration
@@ -577,7 +577,7 @@ class Calculator {
             // Result can be null or valid hover, but should not throw exception
         } catch (e: Exception) {
             // If compilation fails, hover provider should handle it gracefully
-            logger.warn("Expected behavior: compilation may fail for complex code", e)
+            logger.warn(e) { "Expected behavior: compilation may fail for complex code" }
             val hover = hoverProvider.provideHover("file:///invalid.groovy", Position(0, 0))
             assertNull(hover)
         }
@@ -597,7 +597,7 @@ class Calculator {
 
         val hover = hoverProvider.provideHover(uri.toString(), Position(1, 12)) // On closure
         // Test that hover doesn't crash and works - exact content may vary based on position
-        logger.debug("Closure expression test hover: ${hover?.contents?.right?.value}")
+        logger.debug { "Closure expression test hover: ${hover?.contents?.right?.value}" }
 
         // Main success criteria: no crash and no "No information available"
         if (hover != null) {
@@ -651,13 +651,13 @@ class Calculator {
         // Test regular import - hover over "java.util.List"
         val hover1 = hoverProvider.provideHover(uri.toString(), Position(0, 10)) // On "java"
         assertNotNull(hover1, "Import hover should not be null")
-        logger.debug("hover1: ${hover1.contents.right.value}")
+        logger.debug { "hover1: ${hover1.contents.right.value}" }
         assertTrue(hover1.contents.right.value.contains("import java.util.List"))
 
         // Hover on the imported type name itself ("List") should still show the import statement.
         val hover1Type = hoverProvider.provideHover(uri.toString(), Position(0, 17)) // On "List"
         assertNotNull(hover1Type, "Import type hover should not be null")
-        logger.debug("hover1Type: ${hover1Type.contents.right.value}")
+        logger.debug { "hover1Type: ${hover1Type.contents.right.value}" }
         assertTrue(hover1Type.contents.right.value.contains("import java.util.List"))
 
         // Test aliased import - hover over "java.util.Date as JDate"
@@ -725,10 +725,10 @@ class Calculator {
         // hover on closures depends on exact positioning which may vary
         val hover1 = hoverProvider.provideHover(uri.toString(), Position(0, 15))
         // Test passed if we get here without exception - hover working is the main goal
-        logger.debug("Closure hover test completed - hover1: ${hover1?.contents?.right?.value}")
+        logger.debug { "Closure hover test completed - hover1: ${hover1?.contents?.right?.value}" }
 
         val hover2 = hoverProvider.provideHover(uri.toString(), Position(0, 23))
-        logger.debug("Parameter hover test completed - hover2: ${hover2?.contents?.right?.value}")
+        logger.debug { "Parameter hover test completed - hover2: ${hover2?.contents?.right?.value}" }
 
         // The key success criteria is that hover works without crashing
         assertTrue(true, "Closure hover test completed successfully")
@@ -753,7 +753,7 @@ class Calculator {
         val hover1 = hoverProvider.provideHover(uri.toString(), Position(2, 15)) // On GString
         if (hover1 != null) {
             val content = hover1.contents.right.value
-            logger.debug("GString hover content: $content")
+            logger.debug { "GString hover content: $content" }
             assertTrue(
                 content.contains("GString") ||
                     content.contains("Hello") ||
@@ -764,13 +764,13 @@ class Calculator {
 
         // Test hovering over variable inside GString
         val hover2 = hoverProvider.provideHover(uri.toString(), Position(2, 25)) // On "name" inside GString
-        logger.debug("GString variable hover: ${hover2?.contents?.right?.value}")
+        logger.debug { "GString variable hover: ${hover2?.contents?.right?.value}" }
 
         // Test hovering over simple GString
         val hover3 = hoverProvider.provideHover(uri.toString(), Position(3, 18)) // On simple GString
         if (hover3 != null) {
             val content = hover3.contents.right.value
-            logger.debug("Simple GString hover: $content")
+            logger.debug { "Simple GString hover: $content" }
             assertTrue(
                 content.contains("Welcome") ||
                     content.contains("GString") ||
@@ -889,7 +889,7 @@ class Calculator {
         assertEquals(MarkupKind.MARKDOWN, content.kind)
 
         // The hover should contain documentation about SimpleDateFormat
-        logger.info("Import hover content: ${content.value}")
+        logger.info { "Import hover content: ${content.value}" }
 
         // Verify that we got the Javadoc from our mock (not just basic import info)
         assertTrue(
@@ -947,12 +947,56 @@ class Calculator {
         assertNotNull(hover, "Expected hover content for ArrayList import")
         assertTrue(hover.contents.isRight, "Expected MarkupContent")
         val content = hover.contents.right
-        logger.info("Class hover content: ${content.value}")
+        logger.info { "Class hover content: ${content.value}" }
 
         // Verify that we got the Javadoc from our mock
         assertTrue(
             content.value.contains("Resizable-array implementation"),
             "Expected hover to contain Javadoc from source navigation service. Actual: ${content.value}",
         )
+    }
+
+    @Test
+    fun `provideHover falls back to next strategy when first returns null`() = runTest {
+        // This test verifies the critical fallback behavior:
+        // When JenkinsStepHoverStrategy (first for MethodCallExpression) returns null
+        // because the file is not a Jenkins file, the hover should fall back to
+        // MethodCallHoverStrategy and still provide useful information.
+
+        val groovyCode = """
+            class TestClass {
+                def greet() {
+                    println "Hello, World!"
+                    return "greeting"
+                }
+
+                def test() {
+                    greet()
+                }
+            }
+        """.trimIndent()
+
+        // Use a non-Jenkins file URI (no Jenkinsfile pattern)
+        val uri = URI.create("file:///src/main/groovy/TestClass.groovy")
+        compilationService.compile(uri, groovyCode)
+
+        // Hover over the method call "greet()" - JenkinsStepHoverStrategy should
+        // return null (not a Jenkins file), and MethodCallHoverStrategy should handle it
+        val hover = hoverProvider.provideHover(uri.toString(), Position(7, 8)) // On "greet()"
+
+        // The key assertion: we should get a hover even though JenkinsStepHoverStrategy
+        // is first in the strategy list and returns null for non-Jenkins files
+        assertNotNull(hover, "Hover should not be null - fallback strategy should handle it")
+        assertTrue(hover.contents.isRight, "Expected MarkupContent")
+        val content = hover.contents.right.value
+
+        // Verify we got meaningful hover content from the fallback strategy
+        // (not just an empty or "no info" response)
+        assertTrue(
+            content.contains("greet") || content.contains("Method") || content.contains("def"),
+            "Hover should contain method information from fallback strategy. Got: $content",
+        )
+
+        logger.debug { "Fallback hover test succeeded. Content: $content" }
     }
 }

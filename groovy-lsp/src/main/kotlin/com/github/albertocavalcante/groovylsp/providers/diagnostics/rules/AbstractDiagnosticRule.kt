@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
@@ -16,6 +17,9 @@ import java.net.URI
  */
 abstract class AbstractDiagnosticRule : DiagnosticRule {
 
+    /** Logger for error handling. Uses subclass name for per-rule filtering. */
+    protected val logger by lazy { KotlinLogging.logger(javaClass.name) }
+
     override suspend fun analyze(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
         // Skip analysis if there are syntax errors (unless rule explicitly allows it)
         if (context.hasErrors() && !allowsErroredCode()) {
@@ -26,7 +30,7 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
             .onFailure { error ->
                 if (error is CancellationException) throw error
                 // Log error but don't propagate - rules should be isolated
-                org.slf4j.LoggerFactory.getLogger(javaClass).error("Rule $id failed", error)
+                logger.error(error) { "Rule $id failed" }
             }
             .getOrElse { emptyList() }
     }
@@ -133,25 +137,46 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
             while (true) {
                 val match = pattern.find(line, searchFrom) ?: break
 
-                var shouldExclude = false
+                val shouldInclude = shouldIncludeMatch(
+                    match = match,
+                    line = line,
+                    commentIndex = commentIndex,
+                    excludeComments = excludeComments,
+                    excludeStrings = excludeStrings,
+                )
 
-                // Check if match is in a single-line comment
-                if (excludeComments && commentIndex != -1 && match.range.first > commentIndex) {
-                    shouldExclude = true
-                }
-
-                // Check if match is in a string literal
-                if (!shouldExclude && excludeStrings && isInString(line, match.range.first)) {
-                    shouldExclude = true
-                }
-
-                if (!shouldExclude) {
+                if (shouldInclude) {
                     yield(LineMatch(lineIndex, match, line))
                 }
 
                 searchFrom = match.range.last + 1
             }
         }
+    }
+
+    /**
+     * Determine if a regex match should be included in results.
+     *
+     * This helper extracts the match filtering logic to reduce complexity.
+     */
+    private fun shouldIncludeMatch(
+        match: MatchResult,
+        line: String,
+        commentIndex: Int,
+        excludeComments: Boolean,
+        excludeStrings: Boolean,
+    ): Boolean {
+        // Check if match is in a single-line comment
+        if (excludeComments && commentIndex != -1 && match.range.first > commentIndex) {
+            return false
+        }
+
+        // Check if match is in a string literal
+        if (excludeStrings && isInString(line, match.range.first)) {
+            return false
+        }
+
+        return true
     }
 
     /**

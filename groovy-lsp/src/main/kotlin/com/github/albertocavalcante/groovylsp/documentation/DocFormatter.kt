@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
+import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 
 /**
@@ -20,89 +21,115 @@ object DocFormatter {
             return ""
         }
 
+        val hasContentAbove = hasContentAbove(doc)
+        val hasDocSections = hasDocSections(doc, includeParams, includeReturn)
+
         return markdown {
-            // Phase 3: Deprecation warning at top with visual prominence
-            if (doc.deprecated.isNotBlank()) {
-                markdown("> ⚠️ **Deprecated**: ${InlineTagRenderer.render(doc.deprecated)}")
-            }
-
-            // Add summary and description
-            if (doc.summary.isNotBlank()) {
-                text(InlineTagRenderer.render(doc.summary))
-            }
-
-            if (doc.description.isNotBlank() && doc.description != doc.summary) {
-                text(InlineTagRenderer.render(doc.description))
-            }
-
-            // Phase 3: Add visual separator before documentation sections if we have content above
-            val hasContentAbove =
-                doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
-            val hasDocSections = (includeParams && doc.params.isNotEmpty()) ||
-                (includeReturn && doc.returnDoc.isNotBlank()) ||
-                doc.throws.isNotEmpty() ||
-                doc.see.isNotEmpty()
-
-            if (hasContentAbove && hasDocSections) {
-                markdown("---")
-            }
-
-            // Phase 3: Parameters with section header and smart formatting
-            if (includeParams && doc.params.isNotEmpty()) {
-                markdown("#### Parameters")
-
-                // Use table format for multiple parameters, inline for single parameter
-                if (doc.params.size > 1) {
-                    // Table format for multiple parameters
-                    val rows = doc.params.entries.map { (name, desc) ->
-                        listOf("`$name`", "", InlineTagRenderer.render(desc))
-                    }
-                    table(listOf("Name", "Type", "Description"), rows)
-                } else {
-                    // Inline format for single parameter
-                    val (name, desc) = doc.params.entries.first()
-                    text("**$name** — ${InlineTagRenderer.render(desc)}")
-                }
-            }
-
-            // Phase 3: Return documentation with section header
-            if (includeReturn && doc.returnDoc.isNotBlank()) {
-                markdown("#### Returns")
-                text(InlineTagRenderer.render(doc.returnDoc))
-            }
-
-            // Phase 3: Throws/exceptions with section header
-            if (doc.throws.isNotEmpty()) {
-                markdown("#### Throws")
-                list(doc.throws.entries.map { (exception, desc) -> "`$exception` — ${InlineTagRenderer.render(desc)}" })
-            }
-
-            // Phase 3: See references with section header
-            if (doc.see.isNotEmpty()) {
-                markdown("#### See Also")
-                list(doc.see.map { InlineTagRenderer.render(it) })
-            }
-
-            // Phase 3: Metadata footer with visual separator
-            val hasMetadata = doc.since.isNotBlank() || doc.author.isNotBlank()
-            if (hasMetadata) {
-                // Only add separator if there's content above the metadata footer
-                val hasContentAboveFooter = hasContentAbove || hasDocSections
-                if (hasContentAboveFooter) {
-                    markdown("---")
-                }
-
-                val metadataParts = mutableListOf<String>()
-                if (doc.since.isNotBlank()) {
-                    metadataParts.add("*@since ${InlineTagRenderer.render(doc.since)}*")
-                }
-                if (doc.author.isNotBlank()) {
-                    metadataParts.add("*@author ${InlineTagRenderer.render(doc.author)}*")
-                }
-
-                text(metadataParts.joinToString(" · "))
-            }
+            addDeprecationSection(doc)
+            addSummarySection(doc)
+            addSeparatorIfNeeded(hasContentAbove, hasDocSections)
+            addParametersSection(doc, includeParams)
+            addReturnsSection(doc, includeReturn)
+            addThrowsSection(doc)
+            addSeeAlsoSection(doc)
+            addMetadataFooter(doc, hasContentAbove, hasDocSections)
         }
+    }
+
+    private fun hasContentAbove(doc: Documentation): Boolean =
+        doc.deprecated.isNotBlank() || doc.summary.isNotBlank() || doc.description.isNotBlank()
+
+    private fun hasDocSections(doc: Documentation, includeParams: Boolean, includeReturn: Boolean): Boolean =
+        (includeParams && doc.params.isNotEmpty()) ||
+            (includeReturn && doc.returnDoc.isNotBlank()) ||
+            doc.throws.isNotEmpty() ||
+            doc.see.isNotEmpty()
+
+    private fun MarkdownBuilder.addDeprecationSection(doc: Documentation) {
+        if (doc.deprecated.isNotBlank()) {
+            markdown("> ⚠️ **Deprecated**: ${InlineTagRenderer.render(doc.deprecated)}")
+        }
+    }
+
+    private fun MarkdownBuilder.addSummarySection(doc: Documentation) {
+        if (doc.summary.isNotBlank()) {
+            text(InlineTagRenderer.render(doc.summary))
+        }
+
+        if (doc.description.isNotBlank() && doc.description != doc.summary) {
+            text(InlineTagRenderer.render(doc.description))
+        }
+    }
+
+    private fun MarkdownBuilder.addSeparatorIfNeeded(hasContentAbove: Boolean, hasDocSections: Boolean) {
+        if (hasContentAbove && hasDocSections) {
+            markdown("---")
+        }
+    }
+
+    private fun MarkdownBuilder.addParametersSection(doc: Documentation, includeParams: Boolean) {
+        if (!includeParams || doc.params.isEmpty()) return
+
+        markdown("#### Parameters")
+
+        // Use table format for multiple parameters, inline for single parameter
+        if (doc.params.size > 1) {
+            // Table format for multiple parameters
+            val rows = doc.params.entries.map { (name, desc) ->
+                listOf("`$name`", "", InlineTagRenderer.render(desc))
+            }
+            table(listOf("Name", "Type", "Description"), rows)
+        } else {
+            // Inline format for single parameter
+            val (name, desc) = doc.params.entries.first()
+            text("**$name** — ${InlineTagRenderer.render(desc)}")
+        }
+    }
+
+    private fun MarkdownBuilder.addReturnsSection(doc: Documentation, includeReturn: Boolean) {
+        if (!includeReturn || doc.returnDoc.isBlank()) return
+
+        markdown("#### Returns")
+        text(InlineTagRenderer.render(doc.returnDoc))
+    }
+
+    private fun MarkdownBuilder.addThrowsSection(doc: Documentation) {
+        if (doc.throws.isEmpty()) return
+
+        markdown("#### Throws")
+        list(doc.throws.entries.map { (exception, desc) -> "`$exception` — ${InlineTagRenderer.render(desc)}" })
+    }
+
+    private fun MarkdownBuilder.addSeeAlsoSection(doc: Documentation) {
+        if (doc.see.isEmpty()) return
+
+        markdown("#### See Also")
+        list(doc.see.map { InlineTagRenderer.render(it) })
+    }
+
+    private fun MarkdownBuilder.addMetadataFooter(
+        doc: Documentation,
+        hasContentAbove: Boolean,
+        hasDocSections: Boolean,
+    ) {
+        val hasMetadata = doc.since.isNotBlank() || doc.author.isNotBlank()
+        if (!hasMetadata) return
+
+        // Only add separator if there's content above the metadata footer
+        val hasContentAboveFooter = hasContentAbove || hasDocSections
+        if (hasContentAboveFooter) {
+            markdown("---")
+        }
+
+        val metadataParts = mutableListOf<String>()
+        if (doc.since.isNotBlank()) {
+            metadataParts.add("*@since ${InlineTagRenderer.render(doc.since)}*")
+        }
+        if (doc.author.isNotBlank()) {
+            metadataParts.add("*@author ${InlineTagRenderer.render(doc.author)}*")
+        }
+
+        text(metadataParts.joinToString(" · "))
     }
 
     /**

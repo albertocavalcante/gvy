@@ -11,7 +11,7 @@ dependencies {
     implementation(libs.kotlin.serialization.json)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // Testing
     testImplementation(libs.kotlin.test)

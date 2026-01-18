@@ -21,7 +21,7 @@ dependencies {
     implementation(libs.kotlin.serialization.json)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // Testing
     testImplementation(libs.kotlin.test)
@@ -39,6 +39,9 @@ tasks.test {
 
 // Maven Central publishing configuration
 publishing {
+    val repoPath = "albertocavalcante/gvy"
+    val repoUrl = "https://github.com/$repoPath"
+
     publications {
         create<MavenPublication>("maven") {
             from(components["java"])
@@ -46,7 +49,7 @@ publishing {
             pom {
                 name.set("BSP Core")
                 description.set(project.description)
-                url.set("https://github.com/GroovyLanguageServer/groovy-language-server")
+                url.set(repoUrl)
 
                 licenses {
                     license {
@@ -57,15 +60,15 @@ publishing {
 
                 developers {
                     developer {
-                        id.set("groovylsp")
-                        name.set("Groovy Language Server Contributors")
+                        id.set("albertocavalcante")
+                        name.set("Alberto Cavalcante")
                     }
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/GroovyLanguageServer/groovy-language-server.git")
-                    developerConnection.set("scm:git:ssh://github.com/GroovyLanguageServer/groovy-language-server.git")
-                    url.set("https://github.com/GroovyLanguageServer/groovy-language-server")
+                    connection.set("scm:git:git://github.com/$repoPath.git")
+                    developerConnection.set("scm:git:ssh://github.com/$repoPath.git")
+                    url.set(repoUrl)
                 }
             }
         }

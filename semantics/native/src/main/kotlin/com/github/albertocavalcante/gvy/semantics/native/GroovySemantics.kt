@@ -8,12 +8,14 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegis
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
-import java.util.concurrent.ConcurrentHashMap
+import java.util.Collections.synchronizedMap
+import java.util.WeakHashMap
 
 /**
  * Main entry point for semantic analysis of Groovy code.
@@ -32,81 +34,79 @@ class GroovySemantics(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
 ) {
-    // Thread-safe cache of contexts per module
-    private val contextCache = ConcurrentHashMap<ModuleNode, NativeTypeContext>()
+    // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
+    private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
 
-    // Current module for single-parameter API compatibility
-    private var currentModule: ModuleNode? = null
+    // Thread-local current module for single-parameter API compatibility (avoids sharing this state across threads)
+    private val currentModule = ThreadLocal<ModuleNode?>()
 
     /**
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        currentModule = module
-        if (!contextCache.containsKey(module)) {
-            val scope = buildRootScope(module)
-            val context = NativeTypeContext(
-                typeSolver = typeSolver,
-                calculatorRegistry = calculatorRegistry,
-                scope = scope,
-                isStaticCompilation = hasCompileStatic(module),
-            )
+        // Manually perform atomic check-and-create under the synchronized map's lock
+        // Cannot use computeIfAbsent with Collections.synchronizedMap as it can cause deadlock
+        synchronized(contextCache) {
+            if (!contextCache.containsKey(module)) {
+                val scope = buildRootScope(module)
+                val context = NativeTypeContext(
+                    typeSolver = typeSolver,
+                    calculatorRegistry = calculatorRegistry,
+                    scope = scope,
+                    isStaticCompilation = hasCompileStatic(module),
+                )
 
-            // Populate script variables from top-level declarations
-            module.statementBlock?.statements?.forEach { stmt ->
-                if (stmt is ExpressionStatement &&
-                    stmt.expression is DeclarationExpression
-                ) {
-                    val decl = stmt.expression as DeclarationExpression
-                    val name = decl.variableExpression.name
-                    val type = calculatorRegistry.calculate(decl, context)
-                    scope.defineVariable(name, type)
-                }
+                populateScriptVariables(module, scope, context)
+                populateClassMethodVariables(module, scope, context)
+
+                contextCache[module] = context
             }
+        }
+    }
 
-            // Populate method parameters and local variables
-            for (classNode in module.classes) {
-                for (method in classNode.methods) {
-                    // Register method parameters
-                    for (param in method.parameters) {
-                        val paramType = NativeTypeContext.fromClassNode(param.type)
-                        scope.defineVariable(param.name, paramType)
-                    }
-
-                    // Traverse method body and register declarations
-                    val code = method.code
-                    if (code is BlockStatement) {
-                        populateScopeFromBlock(code, scope, context)
-                    }
-                }
+    private fun populateScriptVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
+        module.statementBlock?.statements?.forEach { stmt ->
+            if (stmt is ExpressionStatement && stmt.expression is DeclarationExpression) {
+                val decl = stmt.expression as DeclarationExpression
+                val name = decl.variableExpression.name
+                val type = calculatorRegistry.calculate(decl, context)
+                scope.defineVariable(name, type)
             }
+        }
+    }
 
-            contextCache[module] = context
+    private fun populateClassMethodVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
+        for (classNode in module.classes) {
+            for (method in classNode.methods) {
+                registerMethodParameters(method, scope)
+                registerMethodLocalVariables(method, scope, context)
+            }
+        }
+    }
+
+    private fun registerMethodParameters(method: MethodNode, scope: NativeScope) {
+        for (param in method.parameters) {
+            val paramType = NativeTypeContext.fromClassNode(param.type)
+            scope.defineVariable(param.name, paramType)
+        }
+    }
+
+    private fun registerMethodLocalVariables(method: MethodNode, scope: NativeScope, context: NativeTypeContext) {
+        val code = method.code
+        if (code is BlockStatement) {
+            populateScopeFromBlock(code, scope, context)
         }
     }
 
     /**
      * Populates scope with variables from a BlockStatement.
-     * Traverses DeclarationExpressions and registers their types.
+     * Uses shared DeclarationWalker to traverse DeclarationExpressions.
      */
     private fun populateScopeFromBlock(block: BlockStatement, scope: NativeScope, context: NativeTypeContext) {
-        for (stmt in block.statements) {
-            when (stmt) {
-                is ExpressionStatement -> {
-                    val expr = stmt.expression
-                    if (expr is DeclarationExpression) {
-                        val name = expr.variableExpression.name
-                        val type = calculatorRegistry.calculate(expr, context)
-                        scope.defineVariable(name, type)
-                    }
-                }
-
-                is BlockStatement -> {
-                    // Recurse into nested blocks
-                    populateScopeFromBlock(stmt, scope, context)
-                }
-            }
+        val result = DeclarationWalker.walk(block, context, captureMapKeys = false)
+        for (decl in result.variables) {
+            scope.defineVariable(decl.name, decl.inferredType)
         }
     }
 
@@ -115,10 +115,15 @@ class GroovySemantics(
      * This is the preferred API for multi-document workspaces.
      */
     fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
-        inject(module)
-        val context = contextCache[module]
-            ?: return SemanticType.Unknown("Module not injected")
-        return calculatorRegistry.calculate(node, context)
+        currentModule.set(module)
+        try {
+            inject(module)
+            val context = contextCache[module]
+                ?: return SemanticType.Unknown("Module not injected")
+            return calculatorRegistry.calculate(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
@@ -130,9 +135,13 @@ class GroovySemantics(
         ReplaceWith("resolveType(node, module)"),
     )
     fun resolveType(node: ASTNode): SemanticType {
-        val context = findContext(node)
-            ?: return SemanticType.Unknown("Node not in injected module")
-        return calculatorRegistry.calculate(node, context)
+        try {
+            val context = findContext(node)
+                ?: return SemanticType.Unknown("Node not in injected module")
+            return calculatorRegistry.calculate(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
@@ -143,6 +152,7 @@ class GroovySemantics(
         "Use resolveType(expression, module) for multi-document safety",
         ReplaceWith("resolveType(expression, module)"),
     )
+    @Suppress("DEPRECATION")
     fun resolveType(expression: Expression): SemanticType = resolveType(expression as ASTNode)
 
     /**
@@ -152,21 +162,30 @@ class GroovySemantics(
      * @return Either a TypeInferenceError or the resolved SemanticType
      */
     fun resolveTypeResult(node: ASTNode): TypeResult {
-        val module = currentModule
-            ?: return TypeInferenceError.InternalError("No module injected").left()
+        try {
+            val module = currentModule.get()
+                ?: return TypeInferenceError.InternalError("No module injected").left()
 
-        val context = contextCache[module]
-            ?: return TypeInferenceError.InternalError("Module not in context cache").left()
+            val context = contextCache[module]
+                ?: return TypeInferenceError.InternalError("Module not in context cache").left()
 
-        return calculatorRegistry.calculateResult(node, context)
+            return calculatorRegistry.calculateResult(node, context)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
      * Resolve the type of an AST node with explicit module, returning Either.
      */
     fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult {
-        inject(module)
-        return resolveTypeResult(node)
+        currentModule.set(module)
+        try {
+            inject(module)
+            return resolveTypeResult(node)
+        } finally {
+            currentModule.remove()
+        }
     }
 
     /**
@@ -221,5 +240,17 @@ class GroovySemantics(
         // TODO: Walk up using parent logic if we had it.
         // For now, we assume single module injection and return the first one.
         return contextCache.values.firstOrNull()
+    }
+
+    /**
+     * Get the type context for a module.
+     * Ensures the module is injected first.
+     *
+     * @param module The module to get context for
+     * @return The NativeTypeContext, or null if injection failed
+     */
+    fun getContext(module: ModuleNode): NativeTypeContext? {
+        inject(module)
+        return contextCache[module]
     }
 }

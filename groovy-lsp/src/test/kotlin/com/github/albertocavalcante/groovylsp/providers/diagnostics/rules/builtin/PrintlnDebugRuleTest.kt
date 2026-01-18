@@ -91,7 +91,7 @@ class PrintlnDebugRuleTest {
         val code = """
             class Example {
                 void test() {
-                    logger.info("Using proper logging")
+                    logger.info { "Using proper logging" }
                 }
             }
         """.trimIndent()

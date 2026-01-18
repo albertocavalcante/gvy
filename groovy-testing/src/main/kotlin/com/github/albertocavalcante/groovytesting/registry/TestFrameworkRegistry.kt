@@ -3,9 +3,9 @@ package com.github.albertocavalcante.groovytesting.registry
 import com.github.albertocavalcante.groovytesting.api.TestFramework
 import com.github.albertocavalcante.groovytesting.api.TestFrameworkDetector
 import com.github.albertocavalcante.groovytesting.api.TestItem
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.slf4j.LoggerFactory
 import java.util.concurrent.CopyOnWriteArrayList
 
 /**
@@ -33,7 +33,7 @@ import java.util.concurrent.CopyOnWriteArrayList
  * ```
  */
 class TestFrameworkRegistry {
-    private val logger = LoggerFactory.getLogger(TestFrameworkRegistry::class.java)
+    private val logger = KotlinLogging.logger {}
     private val detectors = CopyOnWriteArrayList<TestFrameworkDetector>()
 
     companion object {
@@ -53,7 +53,7 @@ class TestFrameworkRegistry {
      * @param detector The detector to register.
      */
     fun register(detector: TestFrameworkDetector) {
-        logger.info("Registering test framework detector: ${detector.framework}")
+        logger.info { "Registering test framework detector: ${detector.framework}" }
         detectors.add(detector)
     }
 
@@ -69,7 +69,7 @@ class TestFrameworkRegistry {
     @Synchronized
     fun registerIfAbsent(detector: TestFrameworkDetector): Boolean {
         if (detectors.any { it.framework == detector.framework }) {
-            logger.debug("Detector for ${detector.framework} already registered, skipping")
+            logger.debug { "Detector for ${detector.framework} already registered, skipping" }
             return false
         }
         register(detector)

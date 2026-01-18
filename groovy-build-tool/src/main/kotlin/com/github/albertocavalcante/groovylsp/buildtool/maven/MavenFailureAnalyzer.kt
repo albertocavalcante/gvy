@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovylsp.buildtool.maven
 import com.github.albertocavalcante.groovylsp.buildtool.AsmErrorAnalyzer
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
 import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 /**
  * Analyzes Maven build failures to classify exceptions and provide structured error information.
@@ -16,7 +16,7 @@ import org.slf4j.LoggerFactory
  * - Dependency resolution failures
  */
 class MavenFailureAnalyzer {
-    private val logger = LoggerFactory.getLogger(MavenFailureAnalyzer::class.java)
+    private val logger = KotlinLogging.logger {}
     private val asmErrorAnalyzer = AsmErrorAnalyzer()
 
     /**
@@ -105,7 +105,7 @@ class MavenFailureAnalyzer {
      * @return Structured ResolutionStatus.Failed with appropriate error code and details.
      */
     fun classifyException(t: Throwable, groovyVersion: String?): ResolutionStatus.Failed {
-        logger.debug("Classifying Maven exception: ${t.javaClass.simpleName}: ${t.message}")
+        logger.debug { "Classifying Maven exception: ${t.javaClass.simpleName}: ${t.message}" }
 
         return when {
             isAsmVersionError(t) -> {

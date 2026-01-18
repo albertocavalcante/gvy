@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
@@ -31,7 +32,12 @@ class NativeTypeContextTest {
     }
 
     private fun parse(code: String): ModuleNode {
-        val request = ParseRequest(URI.create("file:///Test.groovy"), code)
+        // Use CANONICALIZATION phase for proper type resolution (e.g., String -> java.lang.String)
+        val request = ParseRequest(
+            URI.create("file:///Test.groovy"),
+            code,
+            compilePhase = Phases.CANONICALIZATION,
+        )
         val result = parser.parse(request)
         if (!result.isSuccessful) {
             error("Parse failed: " + result.diagnostics)
@@ -801,7 +807,7 @@ class NativeTypeContextTest {
         @Suppress("UNCHECKED_CAST")
         val cache = contextCacheField.get(
             semantics,
-        ) as java.util.concurrent.ConcurrentHashMap<ModuleNode, NativeTypeContext>
+        ) as Map<ModuleNode, NativeTypeContext>
         cache[module] ?: throw IllegalStateException("Context not found for module after injection")
     } catch (e: NoSuchFieldException) {
         throw IllegalStateException("Could not access contextCache field", e)

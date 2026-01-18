@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.semantics.native.ImportSymbol
 import com.github.albertocavalcante.gvy.semantics.native.MethodSymbol
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ClassNode
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -222,7 +223,7 @@ class SymbolExtractionTest {
         val ast = result.ast
         val classSymbols = extractClassSymbols(ast)
         val testClass = classSymbols.first()
-        val classNode = testClass.astNode as org.codehaus.groovy.ast.ClassNode
+        val classNode = testClass.astNode as ClassNode
         val methodNode = classNode.methods.first()
         val module = classNode.module
 

@@ -39,8 +39,6 @@ class JenkinsStubGeneratorTest {
         assertTrue(cpsScript.toFile().exists(), "CpsScript.groovy should be generated")
         val content = cpsScript.readText()
 
-        println("Generated CpsScript content:\n$content")
-
         // Verify "simple" (map only)
         assertTrue(content.contains("def simple(Map args) {}"), "Missing simple(Map)")
 

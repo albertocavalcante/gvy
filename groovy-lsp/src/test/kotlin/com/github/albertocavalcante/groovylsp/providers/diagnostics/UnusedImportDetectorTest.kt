@@ -238,4 +238,27 @@ class UnusedImportDetectorTest {
 
         assertTrue(unusedImports.isEmpty(), "Should handle empty imports gracefully")
     }
+
+    @Test
+    fun `should not report import used as class literal in constructor argument`() {
+        val ast = compile(
+            """
+            import java.util.Date
+            import java.util.HashMap
+            def mock = new Object(Date.class)
+            """.trimIndent(),
+        )
+
+        val unusedImports = UnusedImportDetector.detectUnusedImports(ast)
+
+        assertEquals(1, unusedImports.size, "Should detect exactly one unused import")
+        assertTrue(
+            unusedImports.none { it.className?.contains("Date") == true },
+            "Date should NOT be unused (used as .class in constructor argument)",
+        )
+        assertTrue(
+            unusedImports.any { it.className?.contains("HashMap") == true },
+            "HashMap should be detected as unused",
+        )
+    }
 }

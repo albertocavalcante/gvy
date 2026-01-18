@@ -59,9 +59,10 @@ export function registerTestingFeatures(
     );
   }
 
-  // Create coverage service (legacy Gradle support)
-  // TODO: Move coverage logic to LSP or LSPTestExecutionService
-  const coverageService = new CoverageService(logger);
+  // Create coverage service (delegates to LSP for JaCoCo parsing)
+  const coverageService = testService
+    ? new CoverageService(testService, logger)
+    : undefined;
 
   new GroovyTestController(
     context,

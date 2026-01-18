@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.cache.SemanticCache
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -13,7 +14,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -62,7 +62,7 @@ class WorkspaceCompiler(
     @Suppress("unused") private val semanticCache: SemanticCache? = null,
     val dependencyGraph: DependencyGraph = DependencyGraph(),
 ) {
-    private val logger = LoggerFactory.getLogger(WorkspaceCompiler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Cached compilation results. Maps URI to compiled ModuleNode.
@@ -107,14 +107,14 @@ class WorkspaceCompiler(
      */
     suspend fun compileWorkspace(): WorkspaceCompilationResult = withContext(Dispatchers.IO) {
         val startTime = System.currentTimeMillis()
-        logger.info("Starting workspace compilation")
+        logger.info { "Starting workspace compilation" }
 
         // Get all workspace sources
         val workspaceSources = workspaceManager.getWorkspaceSources()
-        logger.info("Found ${workspaceSources.size} workspace sources to compile")
+        logger.info { "Found ${workspaceSources.size} workspace sources to compile" }
 
         if (workspaceSources.isEmpty()) {
-            logger.info("No workspace sources found, returning empty result")
+            logger.info { "No workspace sources found, returning empty result" }
             return@withContext WorkspaceCompilationResult(
                 modules = emptyMap(),
                 errors = emptyList(),
@@ -126,10 +126,10 @@ class WorkspaceCompiler(
         val result = compileFiles(workspaceSources)
 
         val elapsed = System.currentTimeMillis() - startTime
-        logger.info(
+        logger.info {
             "Workspace compilation completed in ${elapsed}ms: " +
-                "${result.modules.size} modules, ${result.errors.size} errors",
-        )
+                "${result.modules.size} modules, ${result.errors.size} errors"
+        }
 
         result
     }
@@ -144,7 +144,7 @@ class WorkspaceCompiler(
      * @return WorkspaceCompilationResult with updated compilation state
      */
     suspend fun incrementalCompile(changedUris: Set<URI>): WorkspaceCompilationResult {
-        logger.info("Incremental compile requested for ${changedUris.size} files")
+        logger.info { "Incremental compile requested for ${changedUris.size} files" }
 
         // On first incremental compile, do initial compilation to build dependency graph
         // Use mutex to ensure only one thread performs initial compilation while others wait
@@ -152,7 +152,7 @@ class WorkspaceCompiler(
             initialCompilationMutex.withLock {
                 // Double-check inside the lock to avoid redundant compilation
                 if (initialCompilationDone.compareAndSet(false, true)) {
-                    logger.info("First incremental compile - performing initial compilation")
+                    logger.info { "First incremental compile - performing initial compilation" }
                     val result = incrementalCompiler.initialCompile()
                     return result
                 }
@@ -263,7 +263,7 @@ class WorkspaceCompiler(
             // Extract module
             val module = parseResult.ast
             if (module != null) {
-                logger.debug("Successfully compiled: $uri")
+                logger.debug { "Successfully compiled: $uri" }
                 FileCompilationResult.Success(uri, module)
             } else {
                 val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
@@ -271,7 +271,7 @@ class WorkspaceCompiler(
                 } else {
                     "No AST produced"
                 }
-                logger.warn("Failed to compile $uri: $errorMessage")
+                logger.warn { "Failed to compile $uri: $errorMessage" }
                 FileCompilationResult.Failure(
                     listOf(
                         CompilationError(
@@ -283,7 +283,7 @@ class WorkspaceCompiler(
                 )
             }
         } catch (e: Exception) {
-            logger.error("Exception compiling $uri", e)
+            logger.error(e) { "Exception compiling $uri" }
             FileCompilationResult.Failure(
                 listOf(
                     CompilationError(

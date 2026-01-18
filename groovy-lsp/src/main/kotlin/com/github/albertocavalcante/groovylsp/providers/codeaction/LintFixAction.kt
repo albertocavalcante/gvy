@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.groovylsp.providers.codeaction
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
-import org.slf4j.LoggerFactory
 
 /**
  * Provides lint fix actions for deterministic CodeNarc issues.
@@ -15,7 +15,7 @@ import org.slf4j.LoggerFactory
  * This allows for easy extensibility and clear separation of concerns.
  */
 class LintFixAction {
-    private val logger = LoggerFactory.getLogger(LintFixAction::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Creates lint fix actions for deterministic CodeNarc diagnostics.
@@ -56,11 +56,11 @@ class LintFixAction {
 
         // Get rule name and handler
         val ruleName = extractRuleName(diagnostic) ?: run {
-            logger.debug("No rule name found in diagnostic code")
+            logger.debug { "No rule name found in diagnostic code" }
             return null
         }
         val handler = FixHandlerRegistry.getHandler(ruleName) ?: run {
-            logger.debug("No handler registered for rule: $ruleName")
+            logger.debug { "No handler registered for rule: $ruleName" }
             return null
         }
 
@@ -72,13 +72,13 @@ class LintFixAction {
         // Create context and invoke handler
         val context = FixContext(diagnostic, content, lines, uriString)
         val textEdit = handler(context) ?: run {
-            logger.debug("Handler returned null for rule: $ruleName")
+            logger.debug { "Handler returned null for rule: $ruleName" }
             return null
         }
 
         // Build and return CodeAction
         val title = FixHandlerRegistry.getTitle(ruleName)
-        logger.debug("Created lint fix action for rule: $ruleName")
+        logger.debug { "Created lint fix action for rule: $ruleName" }
         return createCodeAction(uriString, title, textEdit, diagnostic)
     }
 
@@ -96,7 +96,7 @@ class LintFixAction {
     @Suppress("ReturnCount") // Multiple early returns for clarity in validation chain
     private fun isValidRange(diagnostic: Diagnostic, lines: List<String>, ruleName: String): Boolean {
         val range = diagnostic.range ?: run {
-            logger.warn("Diagnostic for rule '$ruleName' has null range, skipping fix")
+            logger.warn { "Diagnostic for rule '$ruleName' has null range, skipping fix" }
             return false
         }
 
@@ -106,35 +106,35 @@ class LintFixAction {
 
         // Validate start and end line order
         if (startLine > endLine) {
-            logger.warn(
-                "Invalid range for rule '$ruleName': start line $startLine > end line $endLine, skipping fix",
-            )
+            logger.warn {
+                "Invalid range for rule '$ruleName': start line $startLine > end line $endLine, skipping fix"
+            }
             return false
         }
 
         // Validate line numbers are non-negative
         if (startLine < 0 || endLine < 0) {
-            logger.warn(
+            logger.warn {
                 "Invalid range for rule '$ruleName': negative line number " +
-                    "(startLine=$startLine, endLine=$endLine), skipping fix",
-            )
+                    "(startLine=$startLine, endLine=$endLine), skipping fix"
+            }
             return false
         }
 
         // Validate line numbers are within bounds
         if (startLine >= lineCount) {
-            logger.warn(
+            logger.warn {
                 "Invalid range for rule '$ruleName': start line $startLine exceeds " +
-                    "source line count $lineCount, skipping fix",
-            )
+                    "source line count $lineCount, skipping fix"
+            }
             return false
         }
 
         if (endLine >= lineCount) {
-            logger.warn(
+            logger.warn {
                 "Invalid range for rule '$ruleName': end line $endLine exceeds " +
-                    "source line count $lineCount, skipping fix",
-            )
+                    "source line count $lineCount, skipping fix"
+            }
             return false
         }
 
@@ -145,35 +145,35 @@ class LintFixAction {
         val endChar = range.end.character
 
         if (startChar < 0) {
-            logger.warn(
+            logger.warn {
                 "Invalid range for rule '$ruleName': negative start character " +
-                    "$startChar on line $startLine, skipping fix",
-            )
+                    "$startChar on line $startLine, skipping fix"
+            }
             return false
         }
 
         if (startChar > startLineLength) {
-            logger.warn(
+            logger.warn {
                 "Invalid range for rule '$ruleName': start character $startChar exceeds " +
-                    "line length $startLineLength on line $startLine, skipping fix",
-            )
+                    "line length $startLineLength on line $startLine, skipping fix"
+            }
             return false
         }
 
         if (endChar > endLineLength) {
-            logger.warn(
+            logger.warn {
                 "Invalid range for rule '$ruleName': end character $endChar exceeds " +
-                    "line length $endLineLength on line $endLine, skipping fix",
-            )
+                    "line length $endLineLength on line $endLine, skipping fix"
+            }
             return false
         }
 
         // For single-line ranges, validate start <= end character
         if (startLine == endLine && startChar > endChar) {
-            logger.warn(
+            logger.warn {
                 "Invalid range for rule '$ruleName': start character $startChar > " +
-                    "end character $endChar on line $startLine, skipping fix",
-            )
+                    "end character $endChar on line $startLine, skipping fix"
+            }
             return false
         }
 
@@ -186,7 +186,7 @@ class LintFixAction {
     private fun isCodeNarcDiagnostic(diagnostic: Diagnostic): Boolean {
         val source = diagnostic.source ?: return false
         if (!source.equals("CodeNarc", ignoreCase = true)) {
-            logger.debug("Skipping non-CodeNarc diagnostic: source=$source")
+            logger.debug { "Skipping non-CodeNarc diagnostic: source=$source" }
             return false
         }
         return true

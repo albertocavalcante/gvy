@@ -2,11 +2,11 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 
 import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
-import org.slf4j.LoggerFactory
 
 /**
  * Resolves Jenkins vars/ global variables with resilient navigation support.
@@ -25,7 +25,7 @@ import org.slf4j.LoggerFactory
  */
 class JenkinsVarsResolutionStrategy(private val jenkinsCapabilities: JenkinsCapabilities) : SymbolResolutionStrategy {
 
-    private val logger = LoggerFactory.getLogger(JenkinsVarsResolutionStrategy::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
         val varName = extractVariableName(context.targetNode)
@@ -38,7 +38,7 @@ class JenkinsVarsResolutionStrategy(private val jenkinsCapabilities: JenkinsCapa
                 STRATEGY_NAME,
             )
 
-        logger.debug("Found Jenkins global variable '{}' at {}", varName, matchingVar.path)
+        logger.debug { "Found Jenkins global variable '$varName' at ${matchingVar.path}" }
 
         // Create a synthetic ClassNode to represent the definition location.
         // Uses the callLineNumber parsed from the vars file to navigate directly to `def call(...)`.

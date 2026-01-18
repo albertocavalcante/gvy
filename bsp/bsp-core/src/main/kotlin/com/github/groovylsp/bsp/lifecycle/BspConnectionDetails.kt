@@ -3,10 +3,10 @@ package com.github.groovylsp.bsp.lifecycle
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -30,7 +30,7 @@ data class BspConnectionDetails(
     val argv: List<String>,
 ) {
     companion object {
-        private val logger = LoggerFactory.getLogger(BspConnectionDetails::class.java)
+        private val logger = KotlinLogging.logger {}
         private val jsonParser = Json { ignoreUnknownKeys = true }
 
         /**
@@ -43,19 +43,19 @@ data class BspConnectionDetails(
             if (!file.exists()) {
                 return ParseError.FileNotFound(file).left()
             }
-
+            @Suppress("TooGenericExceptionCaught") // File I/O failures: IOException, SecurityException, etc.
             val jsonContent = try {
                 file.readText()
             } catch (e: Exception) {
-                logger.warn("Failed to read BSP connection file ${file.name}: ${e.message}")
+                logger.warn { "Failed to read BSP connection file ${file.name}: ${e.message}" }
                 return ParseError.ReadError(file, e.message ?: "Unknown error").left()
             }
-
+            @Suppress("TooGenericExceptionCaught") // JSON parsing: SerializationException, etc.
             return try {
                 val conn = jsonParser.decodeFromString<BspConnectionFile>(jsonContent)
 
                 if (conn.argv.isEmpty()) {
-                    logger.warn("BSP connection file ${file.name} has empty argv")
+                    logger.warn { "BSP connection file ${file.name} has empty argv" }
                     return ParseError.InvalidFormat(file, "argv field is empty").left()
                 }
 
@@ -67,7 +67,7 @@ data class BspConnectionDetails(
                     argv = conn.argv,
                 ).right()
             } catch (e: Exception) {
-                logger.warn("Failed to parse BSP connection file ${file.name}: ${e.message}")
+                logger.warn { "Failed to parse BSP connection file ${file.name}: ${e.message}" }
                 ParseError.JsonParseError(file, e.message ?: "Unknown error").left()
             }
         }
@@ -83,11 +83,11 @@ data class BspConnectionDetails(
             return files.mapNotNull { file ->
                 parse(file).fold(
                     ifLeft = { error ->
-                        logger.debug("Skipping ${file.name}: $error")
+                        logger.debug { "Skipping ${file.name}: $error" }
                         null
                     },
                     ifRight = { details ->
-                        logger.info("Found BSP server '${details.name}' v${details.version} from ${file.name}")
+                        logger.info { "Found BSP server '${details.name}' v${details.version} from ${file.name}" }
                         details
                     },
                 )
@@ -106,7 +106,7 @@ data class BspConnectionDetails(
                 parse(file).fold(
                     ifLeft = { null },
                     ifRight = { details ->
-                        logger.info("Found BSP server '${details.name}' v${details.version} from ${file.name}")
+                        logger.info { "Found BSP server '${details.name}' v${details.version} from ${file.name}" }
                         details
                     },
                 )
@@ -122,7 +122,7 @@ data class BspConnectionDetails(
         private fun findConnectionFiles(workspace: Path): List<Path> {
             val bspDir = workspace.resolve(".bsp")
             if (!bspDir.exists()) {
-                logger.debug("No .bsp directory found in workspace: $workspace")
+                logger.debug { "No .bsp directory found in workspace: $workspace" }
                 return emptyList()
             }
 
@@ -132,7 +132,7 @@ data class BspConnectionDetails(
                         .toList()
                 }
             } catch (e: Exception) {
-                logger.warn("Failed to list .bsp directory: ${e.message}")
+                logger.warn { "Failed to list .bsp directory: ${e.message}" }
                 emptyList()
             }
         }

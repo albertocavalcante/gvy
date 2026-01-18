@@ -7,10 +7,10 @@ import com.github.albertocavalcante.groovytesting.api.TestFrameworkDetector
 import com.github.albertocavalcante.groovytesting.api.TestItem
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import groovy.lang.GroovyClassLoader
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.slf4j.LoggerFactory
 
 /**
  * Spock test framework detector.
@@ -21,7 +21,7 @@ import org.slf4j.LoggerFactory
  */
 class SpockTestDetector : TestFrameworkDetector {
 
-    private val logger = LoggerFactory.getLogger(SpockTestDetector::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override val framework: TestFramework = TestFramework.SPOCK
 
@@ -34,12 +34,9 @@ class SpockTestDetector : TestFrameworkDetector {
             null
         }
         val result = SpockDetector.isSpockSpec(classNode, module, specClassNode)
-        logger.info(
-            "SpockTestDetector.appliesTo({}) = {} (specClassNode={})",
-            classNode.name,
-            result,
-            if (specClassNode != null) "loaded" else "null",
-        )
+        logger.info {
+            "SpockTestDetector.appliesTo(${classNode.name}) = $result (specClassNode=${if (specClassNode != null) "loaded" else "null"})"
+        }
         return result
     }
 

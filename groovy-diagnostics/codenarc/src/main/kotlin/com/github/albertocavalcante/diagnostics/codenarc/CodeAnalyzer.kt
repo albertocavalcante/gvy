@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.diagnostics.codenarc
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codenarc.CodeNarcRunner
 import org.codenarc.analyzer.FilesSourceAnalyzer
 import org.codenarc.results.Results
-import org.slf4j.LoggerFactory
 import java.nio.charset.StandardCharsets
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.FileAlreadyExistsException
@@ -44,7 +44,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
     constructor() : this({ rulesetFileCache.getOrCreate(it) })
 
     companion object {
-        private val logger = LoggerFactory.getLogger(DefaultCodeAnalyzer::class.java)
+        private val logger = KotlinLogging.logger {}
 
         // Base temp directory
         private val baseTempDir: Path = Files.createTempDirectory("codenarc-lsp-")
@@ -64,7 +64,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
         rulesetContent: String,
         propertiesFile: String?,
     ): Results {
-        logger.debug("Starting CodeNarc analysis for file: $fileName")
+        logger.debug { "Starting CodeNarc analysis for file: $fileName" }
 
         // Create a unique temp directory for this analysis to avoid collisions
         // and allow using the real filename.
@@ -100,7 +100,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 // Set properties file if provided
                 propertiesFile?.let { propFile ->
                     propertiesFilename = propFile
-                    logger.debug("Using CodeNarc properties file: $propFile")
+                    logger.debug { "Using CodeNarc properties file: $propFile" }
                 }
             }
 
@@ -110,22 +110,22 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
                 results = runner.execute()
             }
 
-            logger.debug(
+            logger.debug {
                 "CodeNarc analysis completed for $fileName: ${results.getTotalNumberOfFiles(true)} files, " +
                     "${results.getNumberOfViolationsWithPriority(1, true)} p1 violations, " +
-                    "execute=${executionTimeMs}ms",
-            )
+                    "execute=${executionTimeMs}ms"
+            }
 
             results
         } catch (e: Exception) {
-            logger.error("Failed to execute CodeNarc analysis for $fileName", e)
+            logger.error(e) { "Failed to execute CodeNarc analysis for $fileName" }
             throw CodeAnalysisException("CodeNarc analysis failed for $fileName", e)
         } finally {
             // Synchronous cleanup to prevent resource leaks
             try {
                 analysisDir.toFile().deleteRecursively()
             } catch (e: Exception) {
-                logger.debug("Temp file cleanup failed for $fileName: ${e.message}")
+                logger.debug { "Temp file cleanup failed for $fileName: ${e.message}" }
             }
         }
     }
@@ -143,7 +143,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
         //       In this fallback path we create a temporary per-analysis ruleset file inside analysisDir,
         //       which is deleted along with analysisDir in the finally block after analysis completes.
         // TODO: Remove file-based ruleset loading entirely by configuring CodeNarc in-memory (if supported).
-        logger.warn("Failed to cache CodeNarc ruleset file; falling back to per-analysis ruleset", e)
+        logger.warn(e) { "Failed to cache CodeNarc ruleset file; falling back to per-analysis ruleset" }
         analysisDir.resolve("ruleset.groovy").also { tmpRuleset ->
             Files.write(tmpRuleset, rulesetContent.toByteArray(StandardCharsets.UTF_8))
         }

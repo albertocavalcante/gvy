@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.sources
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -21,7 +21,7 @@ class JdkSourceResolver(
     private val jdkSourceDir: Path = getDefaultJdkSourceDir(),
     private val javaSourceInspector: JavaSourceInspector = JavaSourceInspector(),
 ) {
-    private val logger = LoggerFactory.getLogger(JdkSourceResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Thread-safe cache: className -> extracted source path
     private val extractedSourceCache = ConcurrentHashMap<String, Path>()
@@ -42,12 +42,12 @@ class JdkSourceResolver(
      */
     @Suppress("ReturnCount") // Multiple validation checks require early returns
     suspend fun resolveJdkSource(jrtUri: URI, className: String): SourceNavigator.SourceResult {
-        logger.debug("Resolving JDK source for: {} from {}", className, jrtUri)
+        logger.debug { "Resolving JDK source for: $className from $jrtUri" }
 
         // Check cache first (thread-safe via ConcurrentHashMap)
         extractedSourceCache[className]?.let { cachedPath ->
             if (Files.exists(cachedPath)) {
-                logger.debug("Found cached JDK source for: {}", className)
+                logger.debug { "Found cached JDK source for: $className" }
                 val inspection = javaSourceInspector.inspectClass(cachedPath, className)
                 return SourceNavigator.SourceResult.SourceLocation(
                     uri = cachedPath.toUri(),
@@ -58,7 +58,7 @@ class JdkSourceResolver(
             } else {
                 // Remove stale cache entry if file was deleted
                 extractedSourceCache.remove(className)
-                logger.debug("Removed stale cache entry for: {}", className)
+                logger.debug { "Removed stale cache entry for: $className" }
             }
         }
 
@@ -86,7 +86,7 @@ class JdkSourceResolver(
 
         // Cache and return
         extractedSourceCache[className] = extractedPath
-        logger.info("Extracted JDK source: {} -> {}", className, extractedPath)
+        logger.info { "Extracted JDK source: $className -> $extractedPath" }
 
         // Inspect the source to get line number and documentation
         val inspection = javaSourceInspector.inspectClass(extractedPath, className)
@@ -114,13 +114,13 @@ class JdkSourceResolver(
         if (javaHome != null) {
             val srcZipModern = Path.of(javaHome, "lib", "src.zip")
             if (Files.exists(srcZipModern)) {
-                logger.debug("Found src.zip at: {}", srcZipModern)
+                logger.debug { "Found src.zip at: $srcZipModern" }
                 return srcZipModern
             }
 
             val srcZipLegacy = Path.of(javaHome, "src.zip")
             if (Files.exists(srcZipLegacy)) {
-                logger.debug("Found src.zip at: {}", srcZipLegacy)
+                logger.debug { "Found src.zip at: $srcZipLegacy" }
                 return srcZipLegacy
             }
         }
@@ -133,7 +133,7 @@ class JdkSourceResolver(
             if (jdkHome != null) {
                 val srcZip = jdkHome.resolve("lib").resolve("src.zip")
                 if (Files.exists(srcZip)) {
-                    logger.debug("Found src.zip at: {}", srcZip)
+                    logger.debug { "Found src.zip at: $srcZip" }
                     return srcZip
                 }
             }
@@ -141,12 +141,12 @@ class JdkSourceResolver(
             // Modern JDKs: java.home points directly to JDK
             val srcZipDirect = Path.of(javaHomeProp, "lib", "src.zip")
             if (Files.exists(srcZipDirect)) {
-                logger.debug("Found src.zip at: {}", srcZipDirect)
+                logger.debug { "Found src.zip at: $srcZipDirect" }
                 return srcZipDirect
             }
         }
 
-        logger.warn("Could not find JDK src.zip. JAVA_HOME={}", javaHome)
+        logger.warn { "Could not find JDK src.zip. JAVA_HOME=$javaHome" }
         return null
     }
 
@@ -208,13 +208,13 @@ class JdkSourceResolver(
                             Files.copy(input, outputPath, StandardCopyOption.REPLACE_EXISTING)
                         }
 
-                        logger.debug("Extracted {} from src.zip entry: {}", className, entryPath)
+                        logger.debug { "Extracted $className from src.zip entry: $entryPath" }
                         return outputPath
                     }
                 }
             }
         } catch (e: Exception) {
-            logger.error("Failed to extract source from src.zip for {}: {}", className, e.message)
+            logger.error { "Failed to extract source from src.zip for $className: ${e.message}" }
         }
 
         return null
@@ -239,10 +239,10 @@ class JdkSourceResolver(
                     .sorted(Comparator.reverseOrder())
                     .forEach { Files.deleteIfExists(it) }
             } catch (e: Exception) {
-                logger.warn("Failed to delete JDK source cache: {}", e.message)
+                logger.warn { "Failed to delete JDK source cache: ${e.message}" }
             }
         }
         extractedSourceCache.clear()
-        logger.info("Cleared JDK source cache")
+        logger.info { "Cleared JDK source cache" }
     }
 }

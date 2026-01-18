@@ -9,7 +9,7 @@ dependencies {
     implementation(libs.kotlin.stdlib)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // Coroutines
     implementation(libs.kotlin.coroutines.core)

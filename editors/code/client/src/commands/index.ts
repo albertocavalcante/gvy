@@ -230,7 +230,7 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
   );
   disposables.push(retryDependencyResolutionCommand);
 
-  // Register Java-related commands (detectAndSetJavaHome, addFoojayResolver)
+  // Register Java-related commands (configureJava, addFoojayResolver)
   registerJavaCommands(context);
 
   // Add all disposables to context subscriptions

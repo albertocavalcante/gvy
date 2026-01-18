@@ -8,11 +8,14 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
 
 private const val IMPORT_KEYWORD = "import"
 private const val STATIC_KEYWORD = "static"
@@ -139,7 +142,13 @@ internal object CompletionContextDetector {
             val importColumn = lineText.indexOf(IMPORT_KEYWORD)
             val isImportLine = isImportLine(beforeCursor, importColumn, safeChar)
             val offset = offsetAt(content, lines, line, character)
-            val isInCommentOrString = tokenIndex?.isInCommentOrString(offset) == true
+
+            // Use token index if available, otherwise fallback to text-based heuristic
+            val isInCommentOrString = if (tokenIndex != null) {
+                tokenIndex.isInCommentOrString(offset)
+            } else {
+                isInCommentOrStringHeuristic(content, offset)
+            }
 
             if (!isImportLine || isInCommentOrString) {
                 null
@@ -152,6 +161,68 @@ internal object CompletionContextDetector {
                 )
             }
         }
+    }
+
+    /**
+     * Text-based heuristic to detect if offset is inside a comment or string literal.
+     * Used when tokenIndex is unavailable (before compilation).
+     */
+    private fun isInCommentOrStringHeuristic(content: String, offset: Int): Boolean {
+        if (content.isEmpty()) return false
+
+        val safeOffset = offset.coerceIn(0, content.length)
+        val beforeOffset = content.substring(0, safeOffset)
+
+        // Block comment detection: check if the last /* is after the last */
+        val lastOpenComment = beforeOffset.lastIndexOf("/*")
+        val lastCloseComment = beforeOffset.lastIndexOf("*/")
+        val inBlockComment = lastOpenComment != -1 && lastOpenComment > lastCloseComment
+
+        // Line comment detection: look for // on the current line before the offset
+        val lineStart = content.lastIndexOf('\n', (safeOffset - 1).coerceAtLeast(0)).let {
+            if (it == -1) 0 else it + 1
+        }
+        val lineBeforeOffset = content.substring(lineStart, safeOffset)
+
+        val lastLineComment = lineBeforeOffset.lastIndexOf("//")
+        // Treat as line comment only if the // itself is not inside a string literal
+        val inLineComment =
+            lastLineComment != -1 && !isInStringLiteral(lineBeforeOffset, lastLineComment)
+
+        // String literal detection: check if we're currently inside a quoted string on this line
+        val inString = isInStringLiteral(lineBeforeOffset, lineBeforeOffset.length)
+
+        return inBlockComment || inLineComment || inString
+    }
+
+    /**
+     * Heuristic to determine if a given position in the text is inside a string literal.
+     * Scans from the start of the text up to position, toggling state on unescaped quotes.
+     */
+    private fun isInStringLiteral(text: String, position: Int): Boolean {
+        if (text.isEmpty() || position <= 0) return false
+
+        var inSingle = false
+        var inDouble = false
+        var i = 0
+        val end = position.coerceIn(0, text.length)
+
+        while (i < end) {
+            val c = text[i]
+            val prevIsEscape = i > 0 && text[i - 1] == '\\'
+            when (c) {
+                '\'' -> if (!inDouble && !prevIsEscape) {
+                    inSingle = !inSingle
+                }
+
+                '"' -> if (!inSingle && !prevIsEscape) {
+                    inDouble = !inDouble
+                }
+            }
+            i++
+        }
+
+        return inSingle || inDouble
     }
 
     fun isCommandExpression(content: String, line: Int, character: Int, methodName: String): Boolean {
@@ -408,4 +479,98 @@ private fun offsetAt(content: String, lines: List<String>, line: Int, character:
     val lineText = lines[safeLine]
     offset += safeChar.coerceIn(0, lineText.length)
     return offset.coerceIn(0, content.length)
+}
+
+/**
+ * Represents the cursor position context for completion filtering.
+ */
+sealed class CursorPositionContext {
+    /** Cursor is at block level (not inside any method call arguments) */
+    object BlockLevel : CursorPositionContext()
+
+    /** Cursor is inside a method call's argument list */
+    data class InsideMethodCall(val methodName: String) : CursorPositionContext()
+}
+
+/**
+ * Detect if the cursor is at block level or inside a method call's argument list.
+ * This is used to filter completions appropriately.
+ *
+ * Block level means: cursor is inside a closure body or at the top level.
+ * Inside method call means: cursor is in the argument list (map arguments, positional arguments),
+ * but NOT inside a closure that's passed as an argument.
+ *
+ * Strategy: Walk up the AST. The FIRST context we encounter determines the result:
+ * - If we hit a closure's code block first: Block Level
+ * - If we hit method call arguments first (before any closure): Inside Method Call
+ */
+@Suppress("ReturnCount", "NestedBlockDepth") // AST traversal requires nested checks for different node types
+fun detectCursorPositionContext(nodeAtCursor: ASTNode?, astModel: GroovyAstModel): CursorPositionContext {
+    var current: ASTNode? = nodeAtCursor
+
+    while (current != null) {
+        val parent = astModel.getParent(current)
+
+        // Check if current node is a BlockStatement inside a ClosureExpression
+        if (current is BlockStatement) {
+            val blockParent = parent
+            if (blockParent is ClosureExpression) {
+                // We're inside the code block of a closure - this is block level
+                return CursorPositionContext.BlockLevel
+            }
+        }
+
+        // Check if we're inside a closure expression at all
+        if (current is ClosureExpression) {
+            // We're at or inside a closure - block level
+            return CursorPositionContext.BlockLevel
+        }
+
+        // Check if parent is a MethodCallExpression and current is in its arguments
+        if (parent is MethodCallExpression) {
+            val arguments = parent.arguments
+
+            // Check various ways we might be in the arguments
+            if (arguments === current) {
+                // Don't treat closure arguments as "inside method call"
+                if (current is ClosureExpression) {
+                    return CursorPositionContext.BlockLevel
+                }
+                return CursorPositionContext.InsideMethodCall(parent.methodAsString ?: "")
+            }
+
+            // Check if we're inside a tuple/map/named argument list
+            if (arguments is TupleExpression) {
+                val isInNonClosureArg = arguments.expressions.any { expr ->
+                    if (expr is ClosureExpression) {
+                        false // Skip closures
+                    } else {
+                        isNodeOrDescendant(current, expr, astModel)
+                    }
+                }
+                if (isInNonClosureArg) {
+                    return CursorPositionContext.InsideMethodCall(parent.methodAsString ?: "")
+                }
+            }
+        }
+
+        current = parent
+    }
+
+    return CursorPositionContext.BlockLevel
+}
+
+/**
+ * Check if targetNode is the same as or a descendant of potentialAncestor.
+ */
+private fun isNodeOrDescendant(targetNode: ASTNode?, potentialAncestor: ASTNode?, astModel: GroovyAstModel): Boolean {
+    if (targetNode == null || potentialAncestor == null) return false
+    if (targetNode === potentialAncestor) return true
+
+    var current: ASTNode? = targetNode
+    while (current != null) {
+        if (current === potentialAncestor) return true
+        current = astModel.getParent(current)
+    }
+    return false
 }

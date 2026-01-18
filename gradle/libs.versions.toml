@@ -5,11 +5,11 @@ spotless = "8.1.0"
 kover = "0.9.4"
 sonarqube = "7.2.2.6593"
 shadow = "9.3.1"
-gitHooks = "2.1.6"
+gitHooks = "2.1.7"
 jmh = "0.7.3"
 gradleVersions = "0.53.0"
-wire = "5.4.0"
-compose = "1.9.3"
+wire = "5.5.0"
+compose = "1.10.0"
 
 groovy = "4.0.29"
 ivy = "2.5.3"
@@ -23,6 +23,7 @@ collectionsImmutable = "0.4.0"
 serialization = "1.9.0"
 slf4j = "2.0.17"
 logback = "1.5.24"
+kotlinLogging = "7.0.14"
 rewriteGroovy = "8.70.4"
 
 junit = "6.0.2"
@@ -36,13 +37,14 @@ jackson = "2.20.1"
 jqwik = "1.9.3"
 jsonPath = "2.10.0"
 classgraph = "4.8.184"
+asm = "9.9.1"
 dependencyAnalysis = "3.5.1"
 proguardGradle = "7.8.2"
 jna = "5.18.1"
 openrewriteJgit = "1.3.0"
 mavenEmbedder = "3.9.12"
 mavenResolver = "1.9.25"
-javaparser = "3.27.1"
+javaparser = "3.28.0"
 arrow = "2.2.1"
 flexmark = "0.64.8"
 bsp4j = "2.1.1"
@@ -105,6 +107,7 @@ arrow-core = { module = "io.arrow-kt:arrow-core", version.ref = "arrow" }
 # Logging
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+kotlin-logging = { module = "io.github.oshai:kotlin-logging-jvm", version.ref = "kotlinLogging" }
 
 # Testing
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
@@ -126,6 +129,9 @@ jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-
 
 # Classpath Scanning
 classgraph = { module = "io.github.classgraph:classgraph", version.ref = "classgraph" }
+
+# Bytecode Analysis
+asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 proguard-gradle = { module = "com.guardsquare:proguard-gradle", version.ref = "proguardGradle" }
 jna = { module = "net.java.dev.jna:jna", version.ref = "jna" }
 jna-platform = { module = "net.java.dev.jna:jna-platform", version.ref = "jna" }

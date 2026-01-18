@@ -201,6 +201,32 @@ data class ProjectJdkIncompatibleError(
 }
 
 /**
+ * Warning: LSP is running a newer JDK than the project target.
+ *
+ * This is non-fatal but may cause "Unsupported class file major version" errors
+ * when dependencies are compiled with the LSP's JDK version but the project
+ * expects an older bytecode version.
+ *
+ * Unlike [ProjectJdkIncompatibleError] (which is fatal when LSP is OLDER),
+ * this is a warning when LSP is NEWER - we continue but alert the user.
+ *
+ * @property runningJdkVersion The JDK version running the LSP (e.g., 25).
+ * @property targetJdkVersion The JDK version the project targets (e.g., 8).
+ * @property configurationSource Where the target was found (e.g., "build.gradle sourceCompatibility").
+ */
+data class ProjectJdkNewerWarning(
+    val runningJdkVersion: Int,
+    val targetJdkVersion: Int,
+    val configurationSource: String,
+    override val suggestions: List<String> = listOf(
+        "Configure groovy.java.home to use JDK $targetJdkVersion",
+        "Or update the project's target compatibility to match the LSP JDK",
+    ),
+) : ErrorDetails {
+    override val type: String = "PROJECT_JDK_NEWER_WARNING"
+}
+
+/**
  * Generic error details for unclassified errors.
  *
  * Use this when a more specific error type doesn't exist yet.

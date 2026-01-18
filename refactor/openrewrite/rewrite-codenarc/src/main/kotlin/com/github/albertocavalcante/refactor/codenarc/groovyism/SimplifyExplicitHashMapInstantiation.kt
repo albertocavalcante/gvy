@@ -20,7 +20,8 @@ import java.util.Collections
  * e.g. new HashMap() -> [:]
  *      new LinkedHashMap() -> [:]
  *
- * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicithashmapinstantiation">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicithashmapinstantiation">
+ *     CodeNarc Rule</a>
  */
 class SimplifyExplicitHashMapInstantiation : Recipe() {
 

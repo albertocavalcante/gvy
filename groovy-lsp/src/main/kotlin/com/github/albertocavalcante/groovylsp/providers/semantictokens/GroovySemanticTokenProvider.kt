@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.semantictokens
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
@@ -9,6 +11,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
@@ -16,7 +19,6 @@ import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
-import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 import java.net.URI
 
@@ -36,7 +38,7 @@ import java.net.URI
 @Suppress("TooManyFunctions")
 object GroovySemanticTokenProvider {
 
-    private val logger = LoggerFactory.getLogger(GroovySemanticTokenProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Type alias for semantic tokens.
@@ -152,28 +154,25 @@ object GroovySemanticTokenProvider {
                 when (node) {
                     is VariableExpression -> visitVariableExpression(node, tokens)
                     is PropertyExpression -> visitPropertyExpression(node, tokens)
+                    is ClassExpression -> visitClassExpression(node, tokens)
                     is ClosureExpression -> visitClosureExpression(node, tokens)
                     is MethodCallExpression -> visitMethodCallExpression(node, tokens)
                     is StaticMethodCallExpression -> visitStaticMethodCallExpression(node, tokens)
                 }
             }
 
-            logger.debug("Generated {} Groovy semantic tokens for {}", tokens.size, uri)
+            logger.debug { "Generated ${tokens.size} Groovy semantic tokens for $uri" }
         } catch (e: NullPointerException) {
-            logger.error("Null pointer encountered while generating semantic tokens for {}: {}", uri, e.message, e)
+            logger.error(e) { "Null pointer encountered while generating semantic tokens for $uri: ${e.message}" }
         } catch (e: IndexOutOfBoundsException) {
-            logger.error("Index out of bounds while generating semantic tokens for {}: {}", uri, e.message, e)
+            logger.error(e) { "Index out of bounds while generating semantic tokens for $uri: ${e.message}" }
         } catch (e: IllegalStateException) {
-            logger.error("Illegal state while generating semantic tokens for {}: {}", uri, e.message, e)
+            logger.error(e) { "Illegal state while generating semantic tokens for $uri: ${e.message}" }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             // Catch remaining exceptions to prevent LSP crashes
-            logger.error(
-                "Unexpected error generating semantic tokens for {}: {} - {}",
-                uri,
-                e.javaClass.simpleName,
-                e.message,
-                e,
-            )
+            logger.error(e) {
+                "Unexpected error generating semantic tokens for $uri: ${e.javaClass.simpleName} - ${e.message}"
+            }
         }
 
         return tokens
@@ -220,7 +219,8 @@ object GroovySemanticTokenProvider {
             importNode.alias ?: importNode.type?.nameWithoutPackage ?: return
         }
 
-        var modifiers = 0
+        // Mark imports with DECLARATION modifier for distinct styling
+        var modifiers = TokenModifiers.DECLARATION
         if (importNode in unusedImports) {
             modifiers = modifiers or TokenModifiers.UNNECESSARY
         }
@@ -281,6 +281,9 @@ object GroovySemanticTokenProvider {
 
         // Add token for class/interface/enum declaration
         addClassDeclarationToken(classNode, tokens)
+
+        // Tokenize class annotations (e.g., @Entity, @Service)
+        tokenizeAnnotations(classNode.annotations, tokens)
 
         // Visit members
         visitClassMembers(classNode, tokens)
@@ -390,6 +393,9 @@ object GroovySemanticTokenProvider {
         // Calculate offset from declaration start to method name
         val nameOffset = calculateMethodNameOffset(method)
         addMethodToken(declLine, declCol, nameOffset, method.name.length, modifiers, tokens)
+
+        // Tokenize annotations (e.g., @Override, @Test)
+        tokenizeAnnotations(method.annotations, tokens)
 
         // Visit parameters
         method.parameters.forEach { param ->
@@ -528,16 +534,116 @@ object GroovySemanticTokenProvider {
 
     /**
      * Visit a property expression (e.g., obj.property).
+     * Tokenizes both the receiver (obj) and the property.
      */
     private fun visitPropertyExpression(propExpr: PropertyExpression, tokens: MutableList<SemanticToken>) {
-        if (propExpr.property.lineNumber < 0) {
+        val propertyName = propExpr.propertyAsString
+
+        // Special case: Handle '.class' expressions like 'String.class', 'Map.class'
+        // In Groovy AST, 'String.class' is represented as:
+        //   PropertyExpression(objectExpression=VariableExpression("String"), property="class")
+        // The VariableExpression's name is the class name (e.g., "String", "Map", "List")
+        if (propertyName == "class") {
+            handleClassLiteralExpression(propExpr, tokens)
             return
         }
 
-        // The property part (after the dot)
-        val propertyName = propExpr.propertyAsString ?: return
+        // Regular property expression handling:
+        // The receiver (objectExpression) is visited and tokenized via the main AST traversal
+        // (e.g., visitVariableExpression), so we only need to tokenize the property here.
 
-        addTokenForNode(propExpr.property, propertyName.length, TokenTypes.PROPERTY, 0, tokens)
+        // Tokenize property
+        if (propExpr.property.lineNumber < 0) {
+            return
+        }
+        val propertyLength = propertyName?.length ?: return
+        addTokenForNode(propExpr.property, propertyLength, TokenTypes.PROPERTY, 0, tokens)
+    }
+
+    /**
+     * Handle class literal expressions like 'String.class', 'Map.class'.
+     *
+     * This helper extracts the complex logic for tokenizing class literals with different receiver types.
+     */
+    private fun handleClassLiteralExpression(propExpr: PropertyExpression, tokens: MutableList<SemanticToken>) {
+        val receiver = propExpr.objectExpression
+
+        if (receiver is VariableExpression && receiver.lineNumber > 0) {
+            // Check if the variable name starts with uppercase (indicates a class reference)
+            val varName = receiver.name
+            if (varName.firstOrNull()?.isUpperCase() == true) {
+                // This is a class literal - tokenize the class name
+                // Try to get type information if available
+                val tokenType = if (receiver.type != null) {
+                    getTokenTypeForClassNode(receiver.type)
+                } else {
+                    TokenTypes.CLASS // Default to CLASS type
+                }
+                addTokenForNode(receiver, varName.length, tokenType, 0, tokens)
+            }
+        } else if (receiver is ClassExpression) {
+            // Handle explicit ClassExpression (less common)
+            val classType = receiver.type
+            if (classType != null) {
+                val className = classType.nameWithoutPackage
+                if (className.isNotEmpty() && receiver.lineNumber > 0 && receiver.columnNumber > 0) {
+                    tokens.add(
+                        SemanticToken(
+                            line = receiver.lineNumber - 1,
+                            startChar = receiver.columnNumber - 1,
+                            length = className.length,
+                            tokenType = getTokenTypeForClassNode(classType),
+                            tokenModifiers = 0,
+                        ),
+                    )
+                }
+            }
+        }
+
+        // Tokenize 'class' keyword
+        if (propExpr.property.lineNumber >= 0) {
+            addTokenForNode(propExpr.property, "class".length, TokenTypes.KEYWORD, 0, tokens)
+        }
+    }
+
+    /**
+     * Visit a class expression (e.g., String.class).
+     * This handles class literals where the ClassExpression is directly in the AST.
+     */
+    private fun visitClassExpression(classExpr: ClassExpression, tokens: MutableList<SemanticToken>) {
+        // ClassExpression is used in .class literals like String.class, Map.class
+        if (classExpr.lineNumber > 0 && classExpr.columnNumber > 0) {
+            val classType = classExpr.type
+            if (classType != null) {
+                val className = classType.nameWithoutPackage
+                if (className.isNotEmpty()) {
+                    // For .class literals, always use CLASS token type regardless of whether
+                    // the type is actually a class, interface, or enum. This matches IDE conventions.
+                    tokens.add(
+                        SemanticToken(
+                            line = classExpr.lineNumber - 1,
+                            startChar = classExpr.columnNumber - 1,
+                            length = className.length,
+                            tokenType = TokenTypes.CLASS,
+                            tokenModifiers = 0,
+                        ),
+                    )
+
+                    // Also add a token for the '.class' keyword suffix
+                    // The 'class' keyword starts at: classNameStart + classNameLength + 1 (for the '.')
+                    val classKeywordLength = "class".length
+                    tokens.add(
+                        SemanticToken(
+                            line = classExpr.lineNumber - 1,
+                            startChar = classExpr.columnNumber - 1 + className.length + 1,
+                            length = classKeywordLength,
+                            tokenType = TokenTypes.KEYWORD,
+                            tokenModifiers = 0,
+                        ),
+                    )
+                }
+            }
+        }
     }
 
     /**
@@ -552,8 +658,10 @@ object GroovySemanticTokenProvider {
 
     /**
      * Visit a method call expression (e.g., obj.method() or method()).
+     * Tokenizes the method name.
      */
     private fun visitMethodCallExpression(methodCall: MethodCallExpression, tokens: MutableList<SemanticToken>) {
+        // Tokenize method name
         val method = methodCall.method
         if (method.lineNumber < 0) {
             return
@@ -719,6 +827,38 @@ object GroovySemanticTokenProvider {
                     tokenModifiers = modifiers,
                 ),
             )
+        }
+    }
+
+    /**
+     * Tokenize annotations with robust length calculation.
+     * Uses lastColumnNumber when available, falls back to name length + 1 for @ symbol.
+     */
+    private fun tokenizeAnnotations(annotations: List<AnnotationNode>?, tokens: MutableList<SemanticToken>) {
+        annotations?.forEach { annotation ->
+            if (annotation.lineNumber > 0 && annotation.columnNumber > 0) {
+                val length = if (annotation.lastLineNumber == annotation.lineNumber &&
+                    annotation.lastColumnNumber > annotation.columnNumber
+                ) {
+                    annotation.lastColumnNumber - annotation.columnNumber
+                } else {
+                    // Fallback for multi-line or when end position is not available
+                    val annotationName = annotation.classNode?.nameWithoutPackage
+                    if (annotationName != null) annotationName.length + 1 else 0
+                }
+
+                if (length > 0) {
+                    tokens.add(
+                        SemanticToken(
+                            line = annotation.lineNumber - 1,
+                            startChar = annotation.columnNumber - 1,
+                            length = length,
+                            tokenType = TokenTypes.DECORATOR,
+                            tokenModifiers = 0,
+                        ),
+                    )
+                }
+            }
         }
     }
 }

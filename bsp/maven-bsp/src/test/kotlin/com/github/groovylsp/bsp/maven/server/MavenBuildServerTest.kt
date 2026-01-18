@@ -1,27 +1,27 @@
 package com.github.groovylsp.bsp.maven.server
 
-import ch.epfl.scala.bsp4j.BuildClientCapabilities
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import ch.epfl.scala.bsp4j.CompileParams
 import ch.epfl.scala.bsp4j.DependencyModulesParams
-import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.InverseSourcesParams
 import ch.epfl.scala.bsp4j.OutputPathsParams
 import ch.epfl.scala.bsp4j.ResourcesParams
 import ch.epfl.scala.bsp4j.SourcesParams
 import ch.epfl.scala.bsp4j.StatusCode
 import ch.epfl.scala.bsp4j.TextDocumentIdentifier
+import com.github.groovylsp.bsp.maven.server.TestFixtures.createInitParams
+import com.github.groovylsp.bsp.maven.server.TestFixtures.createSimpleMavenProject
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
+import org.eclipse.aether.resolution.DependencyRequest
 import org.eclipse.aether.resolution.DependencyResult
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import java.net.URI
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -47,7 +47,7 @@ class MavenBuildServerTest {
         val emptyResult = mockk<DependencyResult>()
         every { emptyResult.artifactResults } returns emptyList()
         every {
-            repositorySystem.resolveDependencies(any(), any<org.eclipse.aether.resolution.DependencyRequest>())
+            repositorySystem.resolveDependencies(any(), any<DependencyRequest>())
         } returns
             emptyResult
 
@@ -60,14 +60,8 @@ class MavenBuildServerTest {
         @Test
         fun `should return server capabilities on initialize`() {
             // Given
-            createSimpleMavenProject()
-            val params = InitializeBuildParams(
-                "Test Client",
-                "1.0.0",
-                "2.1.0",
-                tempDir.toUri().toString(),
-                BuildClientCapabilities(listOf("java")),
-            )
+            createSimpleMavenProject(tempDir)
+            val params = createInitParams(tempDir)
 
             // When
             val result = server.buildInitialize(params).get()
@@ -83,14 +77,8 @@ class MavenBuildServerTest {
         @Test
         fun `should scan workspace during initialization`() {
             // Given
-            createSimpleMavenProject()
-            val params = InitializeBuildParams(
-                "Test Client",
-                "1.0.0",
-                "2.1.0",
-                tempDir.toUri().toString(),
-                BuildClientCapabilities(listOf("java")),
-            )
+            createSimpleMavenProject(tempDir)
+            val params = createInitParams(tempDir)
 
             // When
             server.buildInitialize(params).get()
@@ -107,7 +95,7 @@ class MavenBuildServerTest {
         @Test
         fun `should return all build targets on workspaceBuildTargets`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             initializeServer()
 
             // When
@@ -141,7 +129,7 @@ class MavenBuildServerTest {
         @Test
         fun `should return sources on buildTargetSources`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             tempDir.resolve("src/main/java").createDirectories()
             initializeServer()
 
@@ -163,7 +151,7 @@ class MavenBuildServerTest {
         @Test
         fun `should return dependencies on buildTargetDependencyModules`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             initializeServer()
 
             val params = DependencyModulesParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
@@ -182,7 +170,7 @@ class MavenBuildServerTest {
         @Test
         fun `should handle compile request`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             initializeServer()
 
             val params = CompileParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
@@ -201,7 +189,7 @@ class MavenBuildServerTest {
         @Test
         fun `should return resources for target`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             tempDir.resolve("src/main/resources").createDirectories()
             initializeServer()
 
@@ -222,7 +210,7 @@ class MavenBuildServerTest {
         @Test
         fun `should return output paths for target`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             initializeServer()
 
             val params = OutputPathsParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
@@ -239,7 +227,7 @@ class MavenBuildServerTest {
         @Test
         fun `should return test-classes for test target`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             initializeServer()
 
             val params = OutputPathsParams(listOf(BuildTargetIdentifier("maven:com.example:my-app:test")))
@@ -258,7 +246,7 @@ class MavenBuildServerTest {
         @Test
         fun `should find target containing source file`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             val javaFile = tempDir.resolve("src/main/java/App.java")
             javaFile.parent.createDirectories()
             javaFile.writeText("class App {}")
@@ -281,7 +269,7 @@ class MavenBuildServerTest {
         @Test
         fun `should reload workspace on workspaceReload`() {
             // Given
-            createSimpleMavenProject()
+            createSimpleMavenProject(tempDir)
             initializeServer()
 
             // When
@@ -291,19 +279,6 @@ class MavenBuildServerTest {
             val result = server.workspaceBuildTargets().get()
             assertThat(result.targets).isNotEmpty
         }
-    }
-
-    private fun createSimpleMavenProject() {
-        val pomContent = """
-            <?xml version="1.0" encoding="UTF-8"?>
-            <project xmlns="http://maven.apache.org/POM/4.0.0">
-                <modelVersion>4.0.0</modelVersion>
-                <groupId>com.example</groupId>
-                <artifactId>my-app</artifactId>
-                <version>1.0.0</version>
-            </project>
-        """.trimIndent()
-        tempDir.resolve("pom.xml").writeText(pomContent)
     }
 
     private fun createMultiModuleMavenProject() {
@@ -355,13 +330,7 @@ class MavenBuildServerTest {
     }
 
     private fun initializeServer() {
-        val params = InitializeBuildParams(
-            "Test Client",
-            "1.0.0",
-            "2.1.0",
-            tempDir.toUri().toString(),
-            BuildClientCapabilities(listOf("java")),
-        )
+        val params = createInitParams(tempDir)
         server.buildInitialize(params).get()
         server.onBuildInitialized()
     }

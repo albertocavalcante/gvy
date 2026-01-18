@@ -16,9 +16,9 @@ import com.github.albertocavalcante.groovyjenkins.metadata.StableStepDefinitions
 import com.github.albertocavalcante.groovyjenkins.updatecenter.JenkinsUpdateCenterClient
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -41,7 +41,7 @@ class JenkinsPluginManager(
     private val cacheDir: Path = MavenSourceArtifactResolver.getDefaultCacheDir().parent.resolve("jenkins-plugins"),
 ) {
 
-    private val logger = LoggerFactory.getLogger(JenkinsPluginManager::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Thread-safe lazy loading
     private val bundledMetadataLoader = BundledJenkinsMetadataLoader()
@@ -49,16 +49,45 @@ class JenkinsPluginManager(
     private var bundledMetadataCache: BundledJenkinsMetadata? = null
 
     // Cache for extracted metadata from JARs (Jar Path -> Map<StepName, Step>)
-    private val extractedMetadataCache = mutableMapOf<String, Map<String, JenkinsStepMetadata>>()
+    // Using LRU cache to prevent unbounded growth
+    private val extractedMetadataCache = object : LinkedHashMap<String, Map<String, JenkinsStepMetadata>>(
+        16,
+        0.75f,
+        true,
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<String, Map<String, JenkinsStepMetadata>>?,
+        ): Boolean = size > MAX_CACHE_SIZE
+    }
     private val cacheMutex = Mutex()
 
     // Cache for user-configured plugins (by workspace)
-    private val userConfigCache = mutableMapOf<Path, List<JenkinsPluginConfiguration.PluginEntry>>()
+    // Using LRU cache to prevent unbounded growth
+    private val userConfigCache = object : LinkedHashMap<Path, List<JenkinsPluginConfiguration.PluginEntry>>(
+        16,
+        0.75f,
+        true,
+    ) {
+        override fun removeEldestEntry(
+            eldest: MutableMap.MutableEntry<Path, List<JenkinsPluginConfiguration.PluginEntry>>?,
+        ): Boolean = size > MAX_CACHE_SIZE
+    }
     private val userConfigMutex = Mutex()
 
     // Cache for downloaded plugin JARs
-    private val downloadedPluginCache = mutableMapOf<String, Path>()
+    // Using LRU cache to prevent unbounded growth
+    private val downloadedPluginCache = object : LinkedHashMap<String, Path>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Path>?): Boolean = size > MAX_CACHE_SIZE
+    }
     private val downloadedPluginMutex = Mutex()
+
+    companion object {
+        /**
+         * Maximum size for LRU caches to prevent unbounded growth.
+         * Applied to metadata, user config, and downloaded plugin caches.
+         */
+        private const val MAX_CACHE_SIZE = 100
+    }
 
     // Cache for registered static metadata
     private var staticMetadataCache: BundledJenkinsMetadata? = null
@@ -71,7 +100,7 @@ class JenkinsPluginManager(
         downloadedPluginMutex.withLock {
             downloadedPluginCache[pluginId] = jarPath
         }
-        logger.debug("Registered plugin JAR for {}: {}", pluginId, jarPath)
+        logger.debug { "Registered plugin JAR for $pluginId: $jarPath" }
     }
 
     /**
@@ -90,7 +119,7 @@ class JenkinsPluginManager(
             // Or we could implement deep merging logic here if needed via MetadataMerger.
             staticMetadataCache = metadata
         }
-        logger.debug("Registered static Jenkins metadata with {} steps", metadata.steps.size)
+        logger.debug { "Registered static Jenkins metadata with ${metadata.steps.size} steps" }
     }
 
     /**
@@ -195,7 +224,7 @@ class JenkinsPluginManager(
             }
             jarPath
         } catch (e: Exception) {
-            logger.debug("Failed to resolve plugin JAR: {}", key, e)
+            logger.debug(e) { "Failed to resolve plugin JAR: $key" }
             null
         }
     }
@@ -264,7 +293,7 @@ class JenkinsPluginManager(
             bundledMetadataCache = try {
                 bundledMetadataLoader.load()
             } catch (e: Exception) {
-                logger.error("Failed to load bundled Jenkins metadata", e)
+                logger.error(e) { "Failed to load bundled Jenkins metadata" }
                 // Return empty metadata on failure
                 BundledJenkinsMetadata(steps = emptyMap(), globalVariables = emptyMap())
             }
@@ -292,6 +321,6 @@ class JenkinsPluginManager(
         staticMetadataMutex.withLock {
             staticMetadataCache = null
         }
-        logger.info("Invalidated Jenkins plugin manager cache")
+        logger.info { "Invalidated Jenkins plugin manager cache" }
     }
 }

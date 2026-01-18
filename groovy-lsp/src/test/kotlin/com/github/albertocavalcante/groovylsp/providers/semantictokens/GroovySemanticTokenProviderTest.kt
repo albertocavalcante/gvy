@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
@@ -825,15 +826,19 @@ class GroovySemanticTokenProviderTest {
 
         // Verify static method call position points to method name, not class name
         // Line 3: "Utility.helper()" - "helper" starts at column 8
-        val staticCallToken = helperTokens.find { it.line == 3 }
-        assertTrue(staticCallToken != null, "Should have METHOD token on line 3 for static call")
-        assertEquals(8, staticCallToken!!.startChar, "Static method call token should start at column 8 (method name)")
+        val staticCallToken = assertNotNull(
+            helperTokens.find { it.line == 3 },
+            "Should have METHOD token on line 3 for static call",
+        )
+        assertEquals(8, staticCallToken.startChar, "Static method call token should start at column 8 (method name)")
 
         // Verify method declaration position points to method name
         // Line 1: "    static def helper() { }" - "helper" starts at column 15
-        val declToken = helperTokens.find { it.line == 1 }
-        assertTrue(declToken != null, "Should have METHOD token on line 1 for declaration")
-        assertEquals(15, declToken!!.startChar, "Method declaration token should start at column 15 (method name)")
+        val declToken = assertNotNull(
+            helperTokens.find { it.line == 1 },
+            "Should have METHOD token on line 1 for declaration",
+        )
+        assertEquals(15, declToken.startChar, "Method declaration token should start at column 15 (method name)")
     }
 
     @Test
@@ -901,13 +906,15 @@ class GroovySemanticTokenProviderTest {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
-        val getItemsToken = methodTokens.find { it.length == "getItems".length }
-        assertTrue(getItemsToken != null, "Should have METHOD token for getItems")
+        val getItemsToken = assertNotNull(
+            methodTokens.find { it.length == "getItems".length },
+            "Should have METHOD token for getItems",
+        )
 
         // Line 1: "    List<String> getItems() { [] }"
         // "getItems" starts at column 17 (after "    List<String> ")
         // 4 spaces + "List<String>" (12) + 1 space = 17
-        assertEquals(1, getItemsToken!!.line, "getItems should be on line 1")
+        assertEquals(1, getItemsToken.line, "getItems should be on line 1")
         assertEquals(17, getItemsToken.startChar, "getItems should start at column 17")
     }
 
@@ -932,12 +939,141 @@ class GroovySemanticTokenProviderTest {
             it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
         }
 
-        val myMethodToken = methodTokens.find { it.length == "myMethod".length }
-        assertTrue(myMethodToken != null, "Should have METHOD token for myMethod")
+        val myMethodToken = assertNotNull(
+            methodTokens.find { it.length == "myMethod".length },
+            "Should have METHOD token for myMethod",
+        )
 
         // Line 2: "    def myMethod() { }" - "myMethod" starts at column 8
         // 4 spaces + "def" (3) + 1 space = 8
-        assertEquals(2, myMethodToken!!.line, "myMethod should be on line 2")
+        assertEquals(2, myMethodToken.line, "myMethod should be on line 2")
         assertEquals(8, myMethodToken.startChar, "myMethod should start at column 8 (after 'def ')")
+    }
+
+    @Test
+    fun `should tokenize receiver in method call expression`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                def test() {
+                    def binding = [:]
+                    binding.setVariable('key', 'value')
+                }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("ReceiverTest.groovy").toUri()
+        compilationService.compile(uri, code)
+        val astModel = compilationService.getAstModel(uri)!!
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have VARIABLE token for 'binding' on line 3 (the method call line)
+        val variableTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.VARIABLE }
+        val bindingTokenOnCallLine = variableTokens.filter { it.line == 3 && it.length == "binding".length }
+        assertTrue(
+            bindingTokenOnCallLine.isNotEmpty(),
+            "Should have VARIABLE token for receiver 'binding' on call line",
+        )
+
+        // Should have METHOD token for 'setVariable'
+        val methodTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD }
+        val setVariableToken = methodTokens.find { it.length == "setVariable".length }
+        assertTrue(setVariableToken != null, "Should have METHOD token for 'setVariable'")
+    }
+
+    @Test
+    fun `should tokenize class literal expression`(): Unit = runBlocking {
+        val code = """
+            def cls = String.class
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("ClassLiteralTest.groovy").toUri()
+        compilationService.compile(uri, code)
+        val astModel = compilationService.getAstModel(uri)!!
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have CLASS token for 'String'
+        val classTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS }
+        val stringToken = classTokens.find { it.length == "String".length && it.line == 0 }
+        assertTrue(stringToken != null, "Should have CLASS token for 'String' in String.class")
+
+        // Should have KEYWORD token for 'class' (not PROPERTY)
+        val keywordTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.KEYWORD }
+        val classKeywordToken = keywordTokens.find { it.length == "class".length && it.line == 0 }
+        assertTrue(classKeywordToken != null, "Should have KEYWORD token for '.class' suffix")
+    }
+
+    @Test
+    fun `should tokenize receiver in property expression`(): Unit = runBlocking {
+        val code = """
+            class Person { String name }
+            class MyClass {
+                def test() {
+                    def person = new Person()
+                    println person.name
+                }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("PropertyReceiverTest.groovy").toUri()
+        compilationService.compile(uri, code)
+        val astModel = compilationService.getAstModel(uri)!!
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have VARIABLE token for 'person' on line 4 (the property access line)
+        val variableTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.VARIABLE }
+        val personTokenOnAccessLine = variableTokens.filter { it.line == 4 && it.length == "person".length }
+        assertTrue(personTokenOnAccessLine.isNotEmpty(), "Should have VARIABLE token for receiver 'person'")
+
+        // Should have PROPERTY token for 'name'
+        val propertyTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.PROPERTY }
+        val nameToken = propertyTokens.find { it.length == "name".length && it.line == 4 }
+        assertTrue(nameToken != null, "Should have PROPERTY token for 'name'")
+    }
+
+    @Test
+    fun `should tokenize multiple class literals correctly`(): Unit = runBlocking {
+        val code = """
+            def types = [String.class, Map.class, List.class]
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MultiClassLiteralTest.groovy").toUri()
+        compilationService.compile(uri, code)
+        val astModel = compilationService.getAstModel(uri)!!
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have CLASS tokens for String, Map, List
+        val classTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.CLASS }
+        assertTrue(classTokens.any { it.length == "String".length }, "Should have CLASS token for String")
+        assertTrue(classTokens.any { it.length == "Map".length }, "Should have CLASS token for Map")
+        assertTrue(classTokens.any { it.length == "List".length }, "Should have CLASS token for List")
+
+        // Should have KEYWORD tokens for 'class' (3 occurrences)
+        val classKeywords = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.KEYWORD && it.length == "class".length
+        }
+        assertEquals(3, classKeywords.size, "Should have 3 KEYWORD tokens for '.class'")
+    }
+
+    @Test
+    fun `should tokenize method annotations as DECORATOR`(): Unit = runBlocking {
+        val code = """
+            class MyClass {
+                @Override
+                String toString() { "test" }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("AnnotationTest.groovy").toUri()
+        compilationService.compile(uri, code)
+        val astModel = compilationService.getAstModel(uri)!!
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri)
+
+        // Should have DECORATOR token for @Override
+        val decoratorTokens = tokens.filter { it.tokenType == GroovySemanticTokenProvider.TokenTypes.DECORATOR }
+        assertTrue(decoratorTokens.isNotEmpty(), "Should have DECORATOR token for @Override annotation")
+
+        // The decorator should be on line 1 (0-indexed) where @Override is
+        val overrideDecorator = decoratorTokens.find { it.line == 1 }
+        assertTrue(overrideDecorator != null, "Should have DECORATOR token on line 1")
     }
 }

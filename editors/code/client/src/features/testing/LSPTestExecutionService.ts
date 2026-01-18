@@ -4,8 +4,27 @@ import * as path from "path";
 import * as fs from "fs";
 import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
-import { TestService, TestCommand } from "./TestService";
+import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
+import { CoverageService } from "./CoverageService";
+
+interface TestRunOptions {
+  withCoverage?: boolean;
+  coverageService?: CoverageService;
+}
+
+// Note: kept at module scope for potential reuse by other test-related utilities
+// in this module. If it remains used only by LSPTestExecutionService long-term,
+// it could be moved into the class as a private static helper.
+function normalizeTestId(id: string): string {
+  return (
+    id
+      // Replace one or more invalid characters with a single underscore
+      .replace(/[^\w.]+/g, "_")
+      // Remove leading or trailing underscores
+      .replace(/^_+|_+$/g, "")
+  );
+}
 
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
@@ -26,6 +45,27 @@ export class LSPTestExecutionService implements ITestExecutionService {
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
     testController: vscode.TestController,
+  ): Promise<void> {
+    return this.runTestsInternal(request, token, testController, {});
+  }
+
+  async runTestsWithCoverage(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken,
+    testController: vscode.TestController,
+    coverageService: CoverageService,
+  ): Promise<void> {
+    return this.runTestsInternal(request, token, testController, {
+      withCoverage: true,
+      coverageService,
+    });
+  }
+
+  private async runTestsInternal(
+    request: vscode.TestRunRequest,
+    token: vscode.CancellationToken,
+    testController: vscode.TestController,
+    options: TestRunOptions = {},
   ): Promise<void> {
     const run = testController.createTestRun(request);
     const consumer = new TestEventConsumer(run, this.logger, testController);
@@ -56,12 +96,16 @@ export class LSPTestExecutionService implements ITestExecutionService {
       // or try to batch them.
       // For now, let's implement the loop:
 
+      // Get workspace URI for LSP requests
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+      const workspaceUri = workspaceFolder?.uri.toString() || "";
+
+      let isMavenExecution = false;
+
       for (const item of testsToRun) {
         if (token.isCancellationRequested) break;
 
         // Parse suite/test from Item ID
-        // ID format: "fully.qualified.ClassName" (Suite) or "fully.qualified.ClassName.methodName" (Test)
-        // We need to pass URI, SuiteName, TestName (optional) to LSP.
         const uri = item.uri?.toString();
         if (!uri) {
           this.logger.appendLine(
@@ -70,25 +114,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
           continue;
         }
 
-        // Metadata is stored in map in Controller, but we don't have access to it here easily.
-        // We'll infer from ID and children.
-        // Suite: ID has no parent, or check children count
-        // Actually, GroovyTestController uses `item.id` as the Suite/Test name.
-
         let suiteName: string;
         let testName: string | undefined;
 
-        // Heuristic: If item has children, it's a suite. If not, it's a test method (leaves).
-        // Or check ID structure.
-        // Controller logic: Suite ID = FQN. Test ID = FQN.methodName
-        // But Test ID is created as `${suiteName}.${test.test}`
-
-        // We can just rely on the test service to figure it out if we pass the right names.
-        // Let's assume the ID *is* the name we want to run, mostly.
-        // But we need to split it.
-
-        // If it's a leaf (test method)
-        const isSuite = item.children.size > 0;
+        // Heuristic: If the item ID contains a dot, it's a test method (ClassName.methodName). Otherwise, it's a suite.
+        const isSuite = !item.id.includes(".");
 
         if (isSuite) {
           suiteName = item.id;
@@ -112,25 +142,254 @@ export class LSPTestExecutionService implements ITestExecutionService {
 
         if (!command) {
           this.logger.appendLine(
-            `[Testing] LSP returned no command for ${item.id}. Build tool may not support test execution.`,
+            `[Testing] LSP returned no test execution command for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
+          );
+          run.errored(
+            item,
+            new vscode.TestMessage(
+              `No test execution command was returned for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
+            ),
           );
           continue;
         }
 
+        // Execute the test command with optional coverage
+        const executableName = path.basename(command.executable);
+        const isGradle = executableName.startsWith("gradle");
+        const isMaven =
+          executableName === "mvn" ||
+          executableName === "mvnw" ||
+          executableName.startsWith("mvn.");
+
+        // Track if any Maven execution occurred
+        if (isMaven) {
+          isMavenExecution = true;
+        }
+
+        // Clone command.args to avoid mutation
+        const coverageArgs = [...command.args];
+        if (options.withCoverage) {
+          // Append JaCoCo report generation
+          if (isGradle) {
+            coverageArgs.push("jacocoTestReport");
+          } else if (isMaven) {
+            // For Maven, add jacoco:report goal after test
+            // Requires jacoco-maven-plugin in pom.xml
+            coverageArgs.push("jacoco:report");
+          }
+        }
+
         await this.executeCommand(
-          command,
+          { ...command, args: coverageArgs },
           consumer,
           token,
-          isSuite ? "gradle" : undefined,
         );
-        // Note: 'isSuite' check for gradle is just a placeholder,
-        // determining build tool type from command is better.
+      }
+
+      // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
+      if (isMavenExecution && !token.isCancellationRequested) {
+        await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
+      }
+
+      // After all tests complete, fetch and add coverage if requested
+      if (
+        options.withCoverage &&
+        options.coverageService &&
+        !token.isCancellationRequested
+      ) {
+        await options.coverageService.addCoverageToRun(run, workspaceUri);
       }
     } catch (error) {
       this.logger.appendLine(`Test execution error: ${error}`);
     } finally {
+      consumer.clear();
       run.end();
     }
+  }
+
+  /**
+   * Collect all test items recursively from a list of items.
+   * Includes cycle detection to prevent stack overflow from circular references.
+   */
+  private collectAllTestItems(
+    items: readonly vscode.TestItem[],
+  ): vscode.TestItem[] {
+    const result: vscode.TestItem[] = [];
+    const visited = new Set<vscode.TestItem>();
+
+    const collect = (item: vscode.TestItem) => {
+      if (visited.has(item)) {
+        // Protect against potential cycles in the test item graph
+        return;
+      }
+      visited.add(item);
+      result.push(item);
+      item.children.forEach((child) => collect(child));
+    };
+    items.forEach(collect);
+    return result;
+  }
+
+  /**
+   * Fetch test results from LSP (Surefire XML parsing) and apply to TestRun.
+   */
+  private async applyTestResults(
+    workspaceUri: string,
+    run: vscode.TestRun,
+    testsToRun: readonly vscode.TestItem[],
+    _consumer: TestEventConsumer,
+  ): Promise<void> {
+    try {
+      const results = await this.testService.getTestResults(workspaceUri);
+      if (results.results.length === 0) {
+        this.logger.appendLine(
+          "[LSP] No test results found in Surefire reports",
+        );
+        return;
+      }
+
+      this.logger.appendLine(
+        `[LSP] Retrieved ${results.results.length} test results from Surefire XML`,
+      );
+
+      // Collect all test items (including children) for matching
+      const allTestItems = this.collectAllTestItems(testsToRun);
+
+      // Build a map with multiple lookup keys for robust matching
+      const resultMap = new Map<string, TestResultItem>();
+      for (const result of results.results) {
+        // Add exact testId
+        if (resultMap.has(result.testId)) {
+          this.logger.appendLine(
+            `[WARN] Collision detected for testId "${result.testId}". Later result will overwrite earlier one.`,
+          );
+        }
+        resultMap.set(result.testId, result);
+
+        // Add className.name combination
+        if (result.className) {
+          const classNameKey = `${result.className}.${result.name}`;
+          if (resultMap.has(classNameKey)) {
+            this.logger.appendLine(
+              `[WARN] Collision detected for className.name "${classNameKey}". Later result will overwrite earlier one.`,
+            );
+          }
+          resultMap.set(classNameKey, result);
+        }
+
+        // Add normalized testId (spaces replaced with underscores)
+        const normalized = normalizeTestId(result.testId);
+        if (resultMap.has(normalized)) {
+          this.logger.appendLine(
+            `[WARN] Collision detected for normalized ID "${normalized}". Later result will overwrite earlier one.`,
+          );
+        }
+        resultMap.set(normalized, result);
+
+        // Add just the test name for loose matching
+        if (resultMap.has(result.name)) {
+          this.logger.appendLine(
+            `[WARN] Collision detected for test name "${result.name}". Later result will overwrite earlier one. Consider using more specific matching keys.`,
+          );
+        }
+        resultMap.set(result.name, result);
+      }
+
+      // Apply results to test items using smart matching
+      for (const item of allTestItems) {
+        // Try multiple matching strategies
+        let result = resultMap.get(item.id);
+
+        // If not found, try normalized ID
+        if (!result) {
+          result = resultMap.get(normalizeTestId(item.id));
+        }
+
+        // If not found, try matching by label/name
+        if (!result) {
+          result = resultMap.get(item.label);
+        }
+
+        // If not found, try extracting just the method name from ID
+        if (!result && item.id.includes(".")) {
+          const methodName = item.id.substring(item.id.lastIndexOf(".") + 1);
+          result = resultMap.get(methodName);
+        }
+
+        if (result) {
+          this.applyResultToItem(run, item, result);
+        }
+      }
+    } catch (error) {
+      this.logger.appendLine(`[LSP] Error fetching test results: ${error}`);
+    }
+  }
+
+  /**
+   * Apply a single test result to a test item.
+   */
+  private applyResultToItem(
+    run: vscode.TestRun,
+    item: vscode.TestItem,
+    result: TestResultItem,
+  ): void {
+    // Append output if available (CRLF required for VS Code Test Results panel)
+    if (result.output) {
+      const formattedOutput = result.output.replace(/\r?\n/g, "\r\n");
+      run.appendOutput(`--- Output for ${result.name} ---\r\n`);
+      run.appendOutput(formattedOutput + "\r\n", undefined, item);
+    }
+
+    // Report status
+    switch (result.status) {
+      case "SUCCESS":
+        run.passed(item, result.durationMs);
+        break;
+      case "FAILURE":
+        {
+          const message = new vscode.TestMessage(
+            result.failureMessage || "Test failed",
+          );
+          if (result.stackTrace) {
+            message.message = `${result.failureMessage || "Test failed"}\n\n${result.stackTrace}`;
+          }
+          run.failed(item, message, result.durationMs);
+        }
+        break;
+      case "SKIPPED":
+        run.skipped(item);
+        break;
+      case "ERROR":
+        {
+          const errorMessage = new vscode.TestMessage(
+            result.failureMessage || "Test error",
+          );
+          if (result.stackTrace) {
+            errorMessage.message = `${result.failureMessage || "Test error"}\n\n${result.stackTrace}`;
+          }
+          run.errored(item, errorMessage, result.durationMs);
+        }
+        break;
+    }
+  }
+
+  /**
+   * Recursively apply results to children of a test item.
+   */
+  private applyResultsToChildren(
+    run: vscode.TestRun,
+    item: vscode.TestItem,
+    resultMap: Map<string, TestResultItem>,
+  ): void {
+    item.children.forEach((child) => {
+      const result = resultMap.get(child.id);
+      if (result) {
+        this.applyResultToItem(run, child, result);
+      } else {
+        // Recurse into children
+        this.applyResultsToChildren(run, child, resultMap);
+      }
+    });
   }
 
   async debugTests(
@@ -144,21 +403,106 @@ export class LSPTestExecutionService implements ITestExecutionService {
     );
   }
 
+  private getProjectJavaHome(): string | undefined {
+    const config = vscode.workspace.getConfiguration("groovy");
+    return config.get<string>("project.javaHome");
+  }
+
+  private isValidJavaHome(javaHome: string): boolean {
+    try {
+      // Must be absolute path
+      if (!path.isAbsolute(javaHome)) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: path must be absolute (${javaHome})`,
+        );
+        return false;
+      }
+
+      // Normalize and resolve symlinks in JAVA_HOME
+      const normalizedJavaHome = path.normalize(javaHome);
+      const realJavaHome = fs.realpathSync(normalizedJavaHome);
+      const javaHomeStat = fs.statSync(realJavaHome);
+      if (!javaHomeStat.isDirectory()) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: not a directory (${realJavaHome})`,
+        );
+        return false;
+      }
+
+      // Must exist and contain bin/java (or bin/java.exe on Windows)
+      const javaExecutable = process.platform === "win32" ? "java.exe" : "java";
+      const javaPath = path.join(realJavaHome, "bin", javaExecutable);
+
+      // Resolve symlinks for the java executable
+      const realJavaPath = fs.realpathSync(javaPath);
+
+      // Ensure the resolved java executable is within the resolved JAVA_HOME directory
+      const relativeToHome = path.relative(realJavaHome, realJavaPath);
+      if (relativeToHome.startsWith("..") || path.isAbsolute(relativeToHome)) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: java executable resolves outside JAVA_HOME (${realJavaPath})`,
+        );
+        return false;
+      }
+
+      const javaPathStat = fs.statSync(realJavaPath);
+      if (!javaPathStat.isFile()) {
+        this.logger.appendLine(
+          `[Security] Invalid JAVA_HOME: java executable is not a file (${realJavaPath})`,
+        );
+        return false;
+      }
+
+      return true;
+    } catch (err) {
+      this.logger.appendLine(
+        `[Security] Invalid JAVA_HOME: error while validating (${javaHome}): ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+      return false;
+    }
+  }
+
   private async executeCommand(
     cmd: TestCommand,
     consumer: TestEventConsumer,
     token: vscode.CancellationToken,
-    _hint?: string,
   ): Promise<void> {
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
     );
 
+    // Get project build JDK from settings
+    const projectJavaHome = this.getProjectJavaHome();
+
+    // Build environment with explicit JAVA_HOME if configured
+    let resolvedEnv = { ...process.env, ...env };
+    if (projectJavaHome) {
+      // Validate JAVA_HOME for security
+      if (this.isValidJavaHome(projectJavaHome)) {
+        resolvedEnv = {
+          ...resolvedEnv,
+          JAVA_HOME: projectJavaHome,
+          PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH || ""}`,
+        };
+        this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
+      } else {
+        this.logger.appendLine(
+          `[Test] Ignoring invalid JAVA_HOME configuration: ${projectJavaHome}`,
+        );
+      }
+    }
+
     // Detect Build Tool by executable name
-    const isGradle = executable.includes("gradle");
-    const isMaven = executable.includes("mvn");
-    const isMavenWrapper = isMaven && executable.includes("mvnw");
+    const executableName = path.basename(executable);
+    const isGradle = executableName.startsWith("gradle");
+    const isMaven =
+      executableName === "mvn" ||
+      executableName === "mvnw" ||
+      executableName.startsWith("mvn.");
+    const isMavenWrapper = isMaven && executableName === "mvnw";
 
     let finalArgs = [...args];
 
@@ -186,7 +530,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     return new Promise((resolve) => {
       const proc = cp.spawn(executable, finalArgs, {
         cwd,
-        env: { ...process.env, ...env },
+        env: resolvedEnv,
         // Shell usage:
         // - Maven Wrapper (mvnw): shell: false (executable script)
         // - Global Maven (mvn): shell: true (needed for Windows batch/cmd shims)

@@ -12,12 +12,13 @@ import com.github.albertocavalcante.groovycommon.text.extractSymbolName
 import com.github.albertocavalcante.groovycommon.text.simpleClassName
 import com.github.albertocavalcante.groovycommon.text.toPropertyName
 import com.github.albertocavalcante.groovycommon.text.toStepName
+import com.github.albertocavalcante.groovyjenkins.extraction.FunctionNameExtractor
 import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.StepParameter
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import java.util.jar.JarFile
 
@@ -31,7 +32,8 @@ import java.util.jar.JarFile
  */
 class JenkinsPluginMetadataExtractor {
 
-    private val logger = LoggerFactory.getLogger(JenkinsPluginMetadataExtractor::class.java)
+    private val logger = KotlinLogging.logger {}
+    private val functionNameExtractor = FunctionNameExtractor()
 
     /**
      * Extract all step definitions from a plugin JAR.
@@ -41,10 +43,10 @@ class JenkinsPluginMetadataExtractor {
      * @return List of extracted step metadata
      */
     fun extractFromJar(jarPath: Path, pluginId: String): List<JenkinsStepMetadata> {
-        logger.debug("Extracting step metadata from: {}", jarPath)
+        logger.debug { "Extracting step metadata from: $jarPath" }
 
         if (!jarPath.toFile().exists()) {
-            logger.warn("JAR file does not exist: {}", jarPath)
+            logger.warn { "JAR file does not exist: $jarPath" }
             return emptyList()
         }
 
@@ -62,21 +64,21 @@ class JenkinsPluginMetadataExtractor {
                     val symbolClasses = scanResult.getClassesWithAnnotation(SYMBOL_ANNOTATION)
 
                     symbolClasses.forEach { classInfo ->
-                        extractStepFromSymbolClass(classInfo, pluginId)?.let { steps.add(it) }
+                        extractStepFromSymbolClass(classInfo, jarPath, pluginId)?.let { steps.add(it) }
                     }
 
                     // Find StepDescriptor implementations (fallback for older plugins)
                     val descriptors = scanResult.getSubclasses(STEP_DESCRIPTOR)
                     descriptors.forEach { classInfo ->
                         if (!classInfo.isAbstract) {
-                            extractStepFromDescriptor(classInfo, pluginId)?.let { steps.add(it) }
+                            extractStepFromDescriptor(classInfo, jarPath, pluginId)?.let { steps.add(it) }
                         }
                     }
                 }
 
-            logger.info("Extracted {} steps from {}", steps.size, jarPath.fileName)
+            logger.info { "Extracted ${steps.size} steps from ${jarPath.fileName}" }
         } catch (e: Exception) {
-            logger.error("Failed to extract metadata from JAR: {}", jarPath, e)
+            logger.error(e) { "Failed to extract metadata from JAR: $jarPath" }
         }
 
         return steps
@@ -85,37 +87,47 @@ class JenkinsPluginMetadataExtractor {
     /**
      * Extract step metadata from a class annotated with @Symbol.
      *
+     * Resolution priority (fixes #834):
+     * 1. **Bytecode extraction**: Extract `getFunctionName()` return value from StepDescriptor bytecode
+     * 2. **@Symbol annotation**: Fall back to @Symbol annotation value
+     * 3. **Class name derivation**: Last resort - derive from class name
+     *
      * Handles several cases:
      * 1. Direct @Symbol on Step class: @Symbol("sh") class ShellStep
      * 2. @Symbol on DescriptorImpl: class MyStep { @Symbol("myStep") class DescriptorImpl }
      * 3. Array values: @Symbol({"step1", "step2"})
      */
-    private fun extractStepFromSymbolClass(classInfo: ClassInfo, pluginId: String): JenkinsStepMetadata? {
+    private fun extractStepFromSymbolClass(
+        classInfo: ClassInfo,
+        jarPath: Path,
+        pluginId: String,
+    ): JenkinsStepMetadata? {
         var result: JenkinsStepMetadata? = null
 
         val symbolAnnotation = classInfo.getAnnotationInfo(SYMBOL_ANNOTATION)
         if (symbolAnnotation != null) {
-            // Parse @Symbol value - can be String, String[], or wrapped types
-            val symbolValues = symbolAnnotation.parameterValues
-                .find { it.name == "value" }
-                ?.value
+            // Strategy 1: Try bytecode extraction first (MOST RELIABLE - fixes #834)
+            var stepName = extractFunctionNameFromBytecode(classInfo, jarPath)
 
-            var stepName = extractSymbolName(symbolValues)
+            // Strategy 2: Parse @Symbol value - can be String, String[], or wrapped types
+            if (stepName == null) {
+                val symbolValues = symbolAnnotation.parameterValues
+                    .find { it.name == "value" }
+                    ?.value
+                stepName = extractSymbolName(symbolValues)
+            }
 
-            // FIXME: Some plugins put @Symbol on DescriptorImpl but the value is still
-            // "descriptorImpl" because ClassGraph returns the simple class name as fallback.
-            // This happens when the annotation value is not a literal string but a reference.
+            // Strategy 3: Derive from class name if @Symbol value is problematic
             if (shouldSkipSymbol(stepName)) {
-                // Try to derive step name from enclosing class name
                 stepName = deriveStepNameFromDescriptor(classInfo)
                 if (stepName == null) {
-                    logger.debug("Skipping DescriptorImpl with no derivable step name: {}", classInfo.name)
+                    logger.debug { "Skipping DescriptorImpl with no derivable step name: ${classInfo.name}" }
                 }
             }
 
             val validStepName = stepName?.takeUnless { shouldSkipSymbol(it) }
             if (validStepName != null) {
-                logger.debug("Found @Symbol step: {} in class {}", validStepName, classInfo.name)
+                logger.debug { "Found step: $validStepName in class ${classInfo.name}" }
 
                 val parameters = extractParameters(classInfo)
 
@@ -129,6 +141,23 @@ class JenkinsPluginMetadataExtractor {
         }
 
         return result
+    }
+
+    /**
+     * Extract function name by analyzing the bytecode of the descriptor's getFunctionName() method.
+     * This is the most reliable method as it reads the exact same value Jenkins uses at runtime.
+     */
+    private fun extractFunctionNameFromBytecode(classInfo: ClassInfo, jarPath: Path): String? {
+        fun isDescriptor(info: ClassInfo) =
+            info.simpleName.endsWith("DescriptorImpl") || info.simpleName.endsWith("Descriptor")
+
+        if (isDescriptor(classInfo)) {
+            return functionNameExtractor.extractFromJar(jarPath, classInfo.name)
+        }
+
+        return classInfo.innerClasses
+            .firstOrNull(::isDescriptor)
+            ?.let { functionNameExtractor.extractFromJar(jarPath, it.name) }
     }
 
     // Symbol name extraction is now handled by com.github.albertocavalcante.groovycommon.text.extractSymbolName
@@ -163,7 +192,7 @@ class JenkinsPluginMetadataExtractor {
 
         // Validate it's a reasonable step name
         return if (stepName.isNotBlank() && stepName.length > 1) {
-            logger.debug("Derived step name '{}' from DescriptorImpl: {}", stepName, className)
+            logger.debug { "Derived step name '$stepName' from DescriptorImpl: $className" }
             stepName
         } else {
             null
@@ -190,18 +219,30 @@ class JenkinsPluginMetadataExtractor {
 
     /**
      * Extract step metadata from a StepDescriptor implementation.
+     *
+     * Resolution priority:
+     * 1. **Bytecode extraction**: Extract `getFunctionName()` return value from bytecode
+     * 2. **Class name derivation**: Derive from class name (e.g., EchoStep$DescriptorImpl → echo)
      */
-    private fun extractStepFromDescriptor(classInfo: ClassInfo, pluginId: String): JenkinsStepMetadata? {
-        // Try to find the function name from the descriptor
-        // This is a heuristic - the actual name is defined by getFunctionName()
-        val className = classInfo.simpleName
-        val stepName = className
-            .removeSuffix("Descriptor")
-            .toStepName()
+    private fun extractStepFromDescriptor(
+        classInfo: ClassInfo,
+        jarPath: Path,
+        pluginId: String,
+    ): JenkinsStepMetadata? {
+        // Strategy 1: Extract function name from bytecode (MOST RELIABLE)
+        var stepName = functionNameExtractor.extractFromJar(jarPath, classInfo.name)
 
-        if (stepName.isBlank()) return null
+        // Strategy 2: Derive from class name as fallback
+        if (stepName == null) {
+            val className = classInfo.simpleName
+            stepName = className
+                .removeSuffix("Descriptor")
+                .toStepName()
+        }
 
-        logger.debug("Found StepDescriptor: {} -> {}", classInfo.name, stepName)
+        if (stepName.isNullOrBlank()) return null
+
+        logger.debug { "Found StepDescriptor: ${classInfo.name} -> $stepName" }
 
         return JenkinsStepMetadata(
             name = stepName,
@@ -276,7 +317,7 @@ class JenkinsPluginMetadataExtractor {
     fun extractDocumentationFromSources(sourcesJarPath: Path, className: String): String? {
         // TODO: Implement source parsing for Javadoc extraction
         // This would parse .java files in the sources JAR
-        logger.debug("Source documentation extraction not yet implemented for: {}", className)
+        logger.debug { "Source documentation extraction not yet implemented for: $className" }
         return null
     }
 
@@ -292,7 +333,7 @@ class JenkinsPluginMetadataExtractor {
      * @return List of extracted global variable metadata
      */
     fun extractGlobalVariables(jarPath: Path, pluginId: String): List<GlobalVariableMetadata> {
-        logger.debug("Extracting global variables from: {}", jarPath)
+        logger.debug { "Extracting global variables from: $jarPath" }
 
         if (!jarPath.toFile().exists()) {
             return emptyList()
@@ -310,7 +351,7 @@ class JenkinsPluginMetadataExtractor {
                             .map { it.trim() }
                             .filter { it.isNotEmpty() && !it.startsWith("#") }
                             .forEach { className ->
-                                logger.debug("Found GlobalVariable in services: {}", className)
+                                logger.debug { "Found GlobalVariable in services: $className" }
                                 // Variable name is typically the simple class name in lowerCamelCase
                                 val varName = className.simpleClassName()
                                     .removeSuffix("Global")
@@ -347,7 +388,7 @@ class JenkinsPluginMetadataExtractor {
                             val varName = extractSymbolName(symbolValue)
 
                             if (varName != null && variables.none { it.name == varName }) {
-                                logger.debug("Found @Symbol GlobalVariable: {} -> {}", varName, classInfo.name)
+                                logger.debug { "Found @Symbol GlobalVariable: $varName -> ${classInfo.name}" }
                                 variables.add(
                                     GlobalVariableMetadata(
                                         name = varName,
@@ -360,9 +401,9 @@ class JenkinsPluginMetadataExtractor {
                     }
                 }
 
-            logger.info("Extracted {} global variables from {}", variables.size, jarPath.fileName)
+            logger.info { "Extracted ${variables.size} global variables from ${jarPath.fileName}" }
         } catch (e: Exception) {
-            logger.error("Failed to extract global variables from JAR: {}", jarPath, e)
+            logger.error(e) { "Failed to extract global variables from JAR: $jarPath" }
         }
 
         return variables

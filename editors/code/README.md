@@ -65,8 +65,14 @@ That's it! The extension will find Java automatically from your PATH or `JAVA_HO
 
 ```json
 {
-  // Java configuration (required)
-  "groovy.java.home": "/path/to/your/java17",
+  // Java configuration for Language Server (requires Java 17+)
+  "groovy.languageServer.javaHome": "/path/to/your/java17",
+
+  // Java configuration for Project Build (Maven/Gradle)
+  "groovy.project.javaHome": "/path/to/your/project/java",
+
+  // DEPRECATED: Use groovy.languageServer.javaHome instead
+  // "groovy.java.home": "/path/to/your/java17",
 
   // Enable/disable code formatting
   "groovy.format.enable": true,
@@ -75,6 +81,18 @@ That's it! The extension will find Java automatically from your PATH or `JAVA_HO
   "groovy.trace.server": "off"
 }
 ```
+
+#### Java Settings Explained
+
+- **`groovy.languageServer.javaHome`**: Java installation for running the Groovy Language Server. Requires Java 17 or
+  higher. If not set, the extension will auto-detect Java from your system.
+
+- **`groovy.project.javaHome`**: Java installation for project build and test execution (Maven/Gradle). This can be
+  different from the Language Server Java. If not set, uses your system's `JAVA_HOME`.
+
+- **`groovy.java.home`**: **DEPRECATED**. This setting is replaced by `groovy.languageServer.javaHome` and will be
+  removed in a future version. For backward compatibility, it still works but you should migrate to the new setting
+  names.
 
 ### CodeNarc Static Analysis
 
@@ -149,6 +167,35 @@ For Jenkins shared libraries:
   "groovy.repl.sessionTimeoutMinutes": 60
 }
 ```
+
+### Semantic Token Customization
+
+You can customize the colors of different code elements, including import statements:
+
+```json
+{
+  // Customize semantic token colors for Groovy
+  "editor.semanticTokenColorCustomizations": {
+    "[Default Dark+]": {
+      "rules": {
+        // Make import class names more visible (yellow-ish)
+        "class.declaration:groovy": "#DCDCAA",
+
+        // Or customize all classes
+        "class:groovy": "#4EC9B0",
+
+        // Customize other tokens
+        "method:groovy": "#C586C0",
+        "property:groovy": "#9CDCFE"
+      }
+    }
+  }
+}
+```
+
+**Note**: Import class names use the `class.declaration` token type, which allows them to be styled distinctly from
+other class references. The extension provides multiple TextMate scope fallbacks to ensure good visibility across
+different themes.
 
 ### Update Checking
 

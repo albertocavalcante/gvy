@@ -3,10 +3,10 @@ package com.github.albertocavalcante.groovygdsl
 import com.github.albertocavalcante.groovygdsl.model.GdslParseResult
 import groovy.lang.GroovyRuntimeException
 import groovy.lang.GroovyShell
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.runtime.InvokerInvocationException
-import org.slf4j.LoggerFactory
 
 /**
  * Executes GDSL scripts and captures their contributions.
@@ -26,7 +26,7 @@ import org.slf4j.LoggerFactory
  * ```
  */
 class GdslExecutor {
-    private val logger = LoggerFactory.getLogger(GdslExecutor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Executes a GDSL script without capturing results.
@@ -40,16 +40,16 @@ class GdslExecutor {
         val failure = runCatching { shell.evaluate(scriptContent, scriptName) }.exceptionOrNull()
         if (failure != null) {
             when (failure) {
-                is CompilationFailedException -> logger.error("Failed to compile GDSL script: $scriptName", failure)
-                is InvokerInvocationException -> logger.error("GDSL script threw an exception: $scriptName", failure)
-                is GroovyRuntimeException -> logger.error("Failed to execute GDSL script: $scriptName", failure)
-                else -> logger.error("Failed to execute GDSL script: $scriptName", failure)
+                is CompilationFailedException -> logger.error(failure) { "Failed to compile GDSL script: $scriptName" }
+                is InvokerInvocationException -> logger.error(failure) { "GDSL script threw an exception: $scriptName" }
+                is GroovyRuntimeException -> logger.error(failure) { "Failed to execute GDSL script: $scriptName" }
+                else -> logger.error(failure) { "Failed to execute GDSL script: $scriptName" }
             }
 
             throw failure
         }
 
-        logger.info("Successfully executed GDSL script: $scriptName")
+        logger.info { "Successfully executed GDSL script: $scriptName" }
     }
 
     /**
@@ -77,7 +77,7 @@ class GdslExecutor {
             // runtime failure contract for GDSL scripts (and can enumerate the exceptions we expect).
             val runFailure = runCatching { script.run() }.exceptionOrNull()
             if (runFailure != null) {
-                logger.error("GDSL script threw an exception: $scriptName", runFailure)
+                logger.error { "GDSL script threw an exception: $scriptName" }
                 return GdslParseResult.error(runFailure.message ?: "Script execution failed")
             }
 
@@ -85,10 +85,10 @@ class GdslExecutor {
             val methods = script.allMethods
             val properties = script.allProperties
 
-            logger.info(
+            logger.info {
                 "Successfully parsed GDSL script: $scriptName " +
-                    "(${methods.size} methods, ${properties.size} properties)",
-            )
+                    "(${methods.size} methods, ${properties.size} properties)"
+            }
 
             GdslParseResult(
                 methods = methods,
@@ -96,13 +96,13 @@ class GdslExecutor {
                 success = true,
             )
         } catch (e: CompilationFailedException) {
-            logger.error("Failed to compile GDSL script: $scriptName", e)
+            logger.error(e) { "Failed to compile GDSL script: $scriptName" }
             GdslParseResult.error(e.message ?: "Compilation failed")
         } catch (e: InvokerInvocationException) {
-            logger.error("GDSL script threw an exception: $scriptName", e)
+            logger.error(e) { "GDSL script threw an exception: $scriptName" }
             GdslParseResult.error(e.message ?: "Script execution failed")
         } catch (e: GroovyRuntimeException) {
-            logger.error("Failed to execute GDSL script: $scriptName", e)
+            logger.error(e) { "Failed to execute GDSL script: $scriptName" }
             GdslParseResult.error(e.message ?: "Execution failed")
         }
     }

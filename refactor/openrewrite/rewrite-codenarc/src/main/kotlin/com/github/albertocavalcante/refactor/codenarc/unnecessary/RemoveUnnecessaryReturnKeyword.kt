@@ -49,6 +49,7 @@ class RemoveUnnecessaryReturnKeyword : Recipe() {
             return l
         }
 
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         private fun processBlock(block: J.Block): J.Block {
             val statements = block.statements
             if (statements.isEmpty()) {

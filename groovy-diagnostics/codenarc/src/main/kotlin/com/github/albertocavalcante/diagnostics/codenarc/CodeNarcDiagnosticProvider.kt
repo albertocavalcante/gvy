@@ -4,6 +4,7 @@ import com.github.albertocavalcante.diagnostics.api.CompilationAccessor
 import com.github.albertocavalcante.diagnostics.api.DiagnosticProvider
 import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
 import com.github.albertocavalcante.groovyparser.ast.CoordinateSystem
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codenarc.results.Results
 import org.codenarc.rule.Violation
 import org.eclipse.lsp4j.Diagnostic
@@ -11,7 +12,6 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Paths
 
@@ -31,7 +31,7 @@ class CodeNarcDiagnosticProvider(
 ) : DiagnosticProvider {
 
     companion object {
-        private val logger = LoggerFactory.getLogger(CodeNarcDiagnosticProvider::class.java)
+        private val logger = KotlinLogging.logger {}
         private const val CODENARC_HIGH_PRIORITY = 1
         private const val CODENARC_MEDIUM_PRIORITY = 2
         private const val CODENARC_LOW_PRIORITY = 3
@@ -53,7 +53,7 @@ class CodeNarcDiagnosticProvider(
         val path = Paths.get(uri)
         path.fileName?.toString() ?: uri.toString()
     } catch (e: Exception) {
-        logger.debug("Failed to extract file name from URI: $uri", e)
+        logger.debug(e) { "Failed to extract file name from URI: $uri" }
         uri.toString()
     }
 
@@ -66,11 +66,11 @@ class CodeNarcDiagnosticProvider(
      * @return List of LSP diagnostics representing violations found
      */
     fun analyzeAndGetDiagnostics(sourceCode: String, fileName: String, uri: URI? = null): List<Diagnostic> = try {
-        logger.debug("Starting CodeNarc analysis for: $fileName")
+        logger.debug { "Starting CodeNarc analysis for: $fileName" }
 
         // Resolve the appropriate ruleset configuration
         val rulesetConfig = rulesetResolver.resolve(workspaceContext)
-        logger.debug("Using ruleset from: ${rulesetConfig.source}")
+        logger.debug { "Using ruleset from: ${rulesetConfig.source}" }
 
         // Execute CodeNarc analysis directly with ruleset content
         val results = codeAnalyzer.analyze(
@@ -83,20 +83,20 @@ class CodeNarcDiagnosticProvider(
         // Convert results to LSP diagnostics with triplication fix
         val diagnostics = convertResultsToDiagnosticsFixed(results, sourceCode, uri)
 
-        logger.info("CodeNarc analysis completed for $fileName: ${diagnostics.size} diagnostics")
+        logger.info { "CodeNarc analysis completed for $fileName: ${diagnostics.size} diagnostics" }
         diagnostics
     } catch (e: IllegalStateException) {
         // Gracefully handle missing rulesets (e.g., when running as fat JAR without resources)
         if (e.message?.contains("Failed to load any ruleset") == true) {
-            logger.info("CodeNarc rulesets not available for {} - skipping analysis", fileName)
+            logger.info { "CodeNarc rulesets not available for $fileName - skipping analysis" }
             emptyList()
         } else {
             // Re-throw other IllegalStateExceptions
-            logger.error("Failed to analyze file: $fileName", e)
+            logger.error(e) { "Failed to analyze file: $fileName" }
             emptyList()
         }
     } catch (e: Exception) {
-        logger.error("Failed to analyze file: $fileName", e)
+        logger.error(e) { "Failed to analyze file: $fileName" }
         // Return empty list on failure - LSP should continue functioning
         emptyList()
     }
@@ -119,7 +119,7 @@ class CodeNarcDiagnosticProvider(
         // Collect violations only from leaf nodes to prevent triplication
         collectViolationsFromLeafNodes(results, diagnostics, sourceLines, rangeCalculator)
 
-        logger.debug("Total unique diagnostics generated: ${diagnostics.size}")
+        logger.debug { "Total unique diagnostics generated: ${diagnostics.size}" }
         return diagnostics
     }
 
@@ -136,18 +136,18 @@ class CodeNarcDiagnosticProvider(
         sourceLines: List<String>,
         rangeCalculator: HybridRangeCalculator,
     ) {
-        logger.debug(
+        logger.debug {
             "Processing ${results.javaClass.simpleName}: " +
                 "${results.violations.size} violations, " +
-                "${results.children.size} children",
-        )
+                "${results.children.size} children"
+        }
 
         if (results.children.isEmpty()) {
             processLeafViolations(results.violations, diagnostics, sourceLines, rangeCalculator)
             return
         }
 
-        logger.debug("Recursing into ${results.children.size} child results")
+        logger.debug { "Recursing into ${results.children.size} child results" }
         results.children
             .filterIsInstance<Results>()
             .forEach { childResult ->
@@ -161,12 +161,12 @@ class CodeNarcDiagnosticProvider(
         sourceLines: List<String>,
         rangeCalculator: HybridRangeCalculator,
     ) {
-        logger.debug("Processing leaf node with ${violations.size} violations")
+        logger.debug { "Processing leaf node with ${violations.size} violations" }
         violations.forEach { violation ->
             val diagnostic = convertViolationToDiagnostic(violation, sourceLines, rangeCalculator)
             if (diagnostic != null) {
                 diagnostics.add(diagnostic)
-                logger.debug("Added diagnostic for violation: ${violation.rule.name}")
+                logger.debug { "Added diagnostic for violation: ${violation.rule.name}" }
             }
         }
     }
@@ -190,7 +190,7 @@ class CodeNarcDiagnosticProvider(
 
             // Validate line number bounds
             if (lspPosition.line < 0 || lspPosition.line >= sourceLines.size) {
-                logger.warn("Invalid line number $groovyLineNumber for violation: ${violation.message}")
+                logger.warn { "Invalid line number $groovyLineNumber for violation: ${violation.message}" }
                 return null
             }
 
@@ -210,7 +210,7 @@ class CodeNarcDiagnosticProvider(
                 code = Either.forLeft(violation.rule.name)
             }
         } catch (e: Exception) {
-            logger.warn("Failed to convert violation to diagnostic: ${violation.message}", e)
+            logger.warn(e) { "Failed to convert violation to diagnostic: ${violation.message}" }
             null
         }
     }

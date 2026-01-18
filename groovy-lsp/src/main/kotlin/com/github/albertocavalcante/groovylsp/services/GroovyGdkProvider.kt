@@ -1,16 +1,25 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import org.slf4j.LoggerFactory
+import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver
+import com.github.albertocavalcante.groovylsp.sources.GroovySourceResolver.Companion.GDK_CLASSES
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.runBlocking
 import java.lang.reflect.Modifier
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Provides Groovy GDK methods (extension methods like .each, .collect) for types.
- * Scans DefaultGroovyMethods and StringGroovyMethods.
+ * Scans all GDK classes defined in [GroovySourceResolver.GDK_CLASSES].
+ *
+ * Now uses GroovySourceResolver to extract real parameter names from Groovy source JARs
+ * instead of relying on reflection which provides synthetic names like "arg0", "arg1".
  */
-class GroovyGdkProvider(private val classpathService: ClasspathService) {
-    private val logger = LoggerFactory.getLogger(GroovyGdkProvider::class.java)
+class GroovyGdkProvider(
+    private val classpathService: ClasspathService,
+    private val groovySourceResolver: GroovySourceResolver? = null,
+) {
+    private val logger = KotlinLogging.logger {}
 
     // Map of <TargetType, List<ExtensionMethod>>
     // e.g. "java.util.List" -> [each, collect, ...]
@@ -21,21 +30,30 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
      * Initializes the GDK index. Call this on startup.
      */
     fun initialize() {
-        if (isInitialized.get()) return
+        if (!isInitialized.compareAndSet(false, true)) return
 
-        // Common GDK classes in Groovy
-        val gdkClasses = listOf(
-            "org.codehaus.groovy.runtime.DefaultGroovyMethods",
-            "org.codehaus.groovy.runtime.StringGroovyMethods",
-            "org.codehaus.groovy.vmplugin.v8.PluginDefaultGroovyMethods",
-        )
+        // Initialize source resolver if available
+        // Note: runBlocking is intentional here - GDK initialization is a one-time
+        // startup cost that must complete before the provider is usable.
+        // Moving to async would require significant refactoring of callers.
+        groovySourceResolver?.let { resolver ->
+            runBlocking {
+                val success = resolver.initialize()
+                if (success) {
+                    logger.info { "Successfully initialized Groovy source resolver for parameter names" }
+                } else {
+                    logger.warn { "Failed to initialize Groovy source resolver, will use reflection-based names" }
+                }
+            }
+        }
 
-        gdkClasses.forEach { className ->
+        // Use the same GDK classes as GroovySourceResolver for consistency
+        // This ensures parameter names from sources match the methods we index
+        GDK_CLASSES.forEach { className ->
             indexGdkClass(className)
         }
 
-        isInitialized.set(true)
-        logger.info("Initialized GDK Provider with ${cache.size} target types")
+        logger.info { "Initialized GDK Provider with ${cache.size} target types" }
     }
 
     private fun indexGdkClass(className: String) {
@@ -50,11 +68,21 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
             // The first parameter is the "self" type (the type being extended)
             val selfType = method.parameterTypes[0].name // Full qualified name
 
+            // Parameters excluding the first one (self)
+            val parameterTypes = method.parameterTypes.drop(1).map { it.simpleName }
+
+            // Try to get real parameter names from source resolver first
+            val parameterNames = groovySourceResolver?.getParameterNames(
+                clazz.simpleName,
+                method.name,
+                parameterTypes,
+            ) ?: method.parameters.drop(1).map { it.name } // Fallback to reflection
+
             val methodInfo = GdkExtensionMethod(
                 name = method.name,
                 returnType = method.returnType.simpleName,
-                // Parameters excluding the first one (self)
-                parameters = method.parameterTypes.drop(1).map { it.simpleName },
+                parameterTypes = parameterTypes,
+                parameterNames = parameterNames,
                 originClass = clazz.simpleName,
                 doc = "Groovy GDK method from ${clazz.simpleName}",
             )
@@ -133,7 +161,7 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
         }
     }
 
-    private fun GdkExtensionMethod.signatureKey(): String = name + parameters.joinToString(",")
+    private fun GdkExtensionMethod.signatureKey(): String = name + parameterTypes.joinToString(",")
 
     private companion object {
         private const val JAVA_LANG_OBJECT = "java.lang.Object"
@@ -150,7 +178,15 @@ class GroovyGdkProvider(private val classpathService: ClasspathService) {
 data class GdkExtensionMethod(
     val name: String,
     val returnType: String,
-    val parameters: List<String>,
+    val parameterTypes: List<String>,
+    val parameterNames: List<String>,
     val originClass: String,
     val doc: String,
-)
+) {
+    // Backward compatibility
+    @Deprecated(
+        message = "Use parameterTypes instead for clarity",
+        replaceWith = ReplaceWith("parameterTypes"),
+    )
+    val parameters: List<String> get() = parameterTypes
+}

@@ -5,7 +5,12 @@ plugins {
 dependencies {
     implementation(project(":groovy-common"))
     implementation(project(":parser:native"))
-    implementation(libs.slf4j.api)
+
+    // Logging
+    // kotlin-logging provides the API; SLF4J implementation needed at runtime.
+    // Tests initialize classes with loggers, requiring logback on test classpath.
+    implementation(libs.kotlin.logging)
+    testRuntimeOnly(libs.logback.classic)
 
     // Testing
     testImplementation(libs.kotlin.test)

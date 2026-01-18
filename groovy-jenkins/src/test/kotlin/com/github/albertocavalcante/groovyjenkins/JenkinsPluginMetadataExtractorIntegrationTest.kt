@@ -112,24 +112,7 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         @BeforeAll
         @JvmStatic
         fun printSetupInstructions() {
-            println("\n=== Jenkins Plugin Integration Tests ===")
-            println("Plugin directory: $TEST_PLUGINS_DIR")
-            println("Testing ${ALL_TEST_PLUGINS.size} plugins\n")
-
-            var available = 0
-            var missing = 0
-            ALL_TEST_PLUGINS.forEach { plugin ->
-                val jar = TEST_PLUGINS_DIR.resolve("$plugin.jar")
-                if (Files.exists(jar)) {
-                    available++
-                    val size = Files.size(jar) / 1024
-                    println("  ✓ $plugin (${size}KB)")
-                } else {
-                    missing++
-                    println("  ✗ $plugin")
-                }
-            }
-            println("\nAvailable: $available, Missing: $missing\n")
+            // Setup validation happens but no console output
         }
     }
 
@@ -142,8 +125,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
     fun `kubernetes - extracts container and pod symbols correctly`() {
         val steps = extractSteps("kubernetes")
         val names = steps.map { it.name }.toSet()
-
-        println("  kubernetes: ${steps.size} steps - ${names.take(8)}...")
 
         assertTrue(steps.size >= 20, "Kubernetes should have many steps")
         assertTrue(
@@ -158,8 +139,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         val steps = extractSteps("credentials-binding")
         val names = steps.map { it.name }.toSet()
 
-        println("  credentials-binding: ${steps.size} steps - $names")
-
         assertTrue(steps.isNotEmpty())
         assertTrue(
             names.containsAny("certificate", "string", "file", "usernamePassword"),
@@ -172,8 +151,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
     fun `docker-workflow - extracts docker symbols`() {
         val steps = extractSteps("docker-workflow")
         val names = steps.map { it.name }.toSet()
-
-        println("  docker-workflow: ${steps.size} steps - $names")
 
         assertTrue(steps.isNotEmpty())
         assertTrue(
@@ -190,8 +167,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         val steps = extractSteps("git")
         val names = steps.map { it.name }.toSet()
 
-        println("  git: ${steps.size} steps - ${names.take(10)}...")
-
         // Git plugin has many checkout behaviors with @Symbol
         assertTrue(steps.isNotEmpty(), "Git should have steps: $names")
     }
@@ -204,8 +179,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         val steps = extractSteps("slack")
         val names = steps.map { it.name }.toSet()
 
-        println("  slack: ${steps.size} steps - $names")
-
         // Slack provides slackSend step
         assertTrue(steps.isNotEmpty() || names.isEmpty(), "Scan should complete without error")
     }
@@ -215,8 +188,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
     fun `badge - extracts badge and summary symbols`() {
         val steps = extractSteps("badge")
         val names = steps.map { it.name }.toSet()
-
-        println("  badge: ${steps.size} steps - $names")
 
         // Badge plugin has addBadge, addShortText, etc.
         assertTrue(steps.size >= 0, "Scan should complete")
@@ -230,8 +201,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         val steps = extractSteps("http-request")
         val names = steps.map { it.name }.toSet()
 
-        println("  http-request: ${steps.size} steps - $names")
-
         // Should find httpRequest step
         assertTrue(steps.size >= 0, "Scan should complete")
     }
@@ -241,8 +210,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
     fun `lockable-resources - extracts lock symbol`() {
         val steps = extractSteps("lockable-resources")
         val names = steps.map { it.name }.toSet()
-
-        println("  lockable-resources: ${steps.size} steps - $names")
 
         // This plugin uses @Symbol on DescriptorImpl - extraction shows "descriptorImpl"
         // The actual 'lock' step would need enhanced extraction
@@ -255,8 +222,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         val steps = extractSteps("junit")
         val names = steps.map { it.name }.toSet()
 
-        println("  junit: ${steps.size} steps - ${names.take(10)}...")
-
         // Should find junit step for test reporting
         assertTrue(steps.size >= 0, "Scan should complete")
     }
@@ -267,8 +232,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
         val steps = extractSteps("pipeline-utility-steps")
         val names = steps.map { it.name }.toSet()
 
-        println("  pipeline-utility-steps: ${steps.size} steps - ${names.take(10)}...")
-
         assertTrue(steps.size >= 5, "Utility steps should have many symbols")
     }
 
@@ -277,10 +240,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
     @Test
     @EnabledIf("multiplePluginsAvailable")
     fun `all plugins - comprehensive extraction summary`() {
-        println("\n═══════════════════════════════════════════════════════════════")
-        println("         COMPREHENSIVE PLUGIN EXTRACTION SUMMARY")
-        println("═══════════════════════════════════════════════════════════════\n")
-
         var totalSteps = 0
         var totalGlobalVars = 0
         var pluginsWithSteps = 0
@@ -319,33 +278,6 @@ class JenkinsPluginMetadataExtractorIntegrationTest {
                 )
             }
         }
-
-        // Print results table
-        println("Plugin                        Steps  Useful  GVars  Issue?")
-        println("─────────────────────────────────────────────────────────────")
-        results.sortedByDescending { it.stepCount }.forEach { r ->
-            val issue = if (r.hasDescriptorImpl && r.meaningfulCount == 0) "⚠️" else "  "
-            println(
-                String.format(
-                    "%-28s %5d  %5d  %5d  %s  %s",
-                    r.plugin,
-                    r.stepCount,
-                    r.meaningfulCount,
-                    r.globalVarCount,
-                    issue,
-                    r.sampleSteps.joinToString(", "),
-                ),
-            )
-        }
-
-        println("\n═══════════════════════════════════════════════════════════════")
-        println("TOTALS:")
-        println("  Plugins scanned:       $pluginsScanned")
-        println("  Plugins with steps:    $pluginsWithSteps")
-        println("  Plugins with issues:   $pluginsWithDescriptorImpl (descriptorImpl only)")
-        println("  Total steps extracted: $totalSteps")
-        println("  Total global vars:     $totalGlobalVars")
-        println("═══════════════════════════════════════════════════════════════\n")
 
         assertTrue(pluginsScanned > 5, "Should scan multiple plugins")
         assertTrue(totalSteps > 50, "Should extract many steps across all plugins")

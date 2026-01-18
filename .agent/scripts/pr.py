@@ -12,7 +12,6 @@ Agent only needs: thread_id, file, line, message.
 import json
 import os
 import re
-import shlex
 import subprocess
 import sys
 import tempfile
@@ -84,6 +83,35 @@ class Reviewer(str, Enum):
     COPILOT = "copilot"
     CURSOR = "cursor"
     HUMAN = "human"
+
+
+class AIProvider(str, Enum):
+    """AI providers for commit message generation."""
+
+    GEMINI = "gemini"
+    CLAUDE = "claude"
+
+
+# =============================================================================
+# AI PROVIDER CONFIGURATION
+# =============================================================================
+
+# Default models per provider (None = use provider's default)
+AI_PROVIDER_DEFAULTS = {
+    AIProvider.GEMINI: {
+        "cmd": "gemini",
+        "model_flag": "-m",
+        "default_model": None,  # Use gemini's default
+        "emoji": "💎",
+    },
+    AIProvider.CLAUDE: {
+        "cmd": "claude",
+        "model_flag": "--model",
+        "default_model": "sonnet",  # Fast and capable
+        "emoji": "🤖",
+        "extra_args": ["-p"],  # Print mode for non-interactive
+    },
+}
 
 
 # =============================================================================
@@ -1068,12 +1096,14 @@ COMMIT_TYPES = [
 def validate_semantic_title(title: str, pr_number: int) -> tuple[bool, str]:
     """Validate title follows: type(scope): description (#PR)"""
     # Pattern: type(optional-scope): description (#number)
-    pattern = rf"^({'|'.join(COMMIT_TYPES)})(\([a-z0-9-]+\))?: .+ \(#{pr_number}\)$"
+    # Scope allows: lowercase letters, digits, hyphens, underscores, and forward slashes
+    # Examples: feat(api), fix(semantics/native), refactor(core_utils)
+    pattern = rf"^({'|'.join(COMMIT_TYPES)})(\([a-z0-9/_-]+\))?: .+ \(#{pr_number}\)$"
     if not re.match(pattern, title, re.IGNORECASE):
         return False, (
             f"Title must match: type(scope): description (#{pr_number})\n"
             f"Types: {', '.join(COMMIT_TYPES)}\n"
-            f"Example: feat(semantics): implement type inference (#{pr_number})"
+            f"Example: feat(api/auth): implement type inference (#{pr_number})"
         )
     return True, ""
 
@@ -1209,23 +1239,371 @@ def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
     return "\n".join(body_lines), unique_related
 
 
-def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
-    """Generate commit message using Gemini CLI."""
-    typer.echo("🤖 Generating semantic commit message with Gemini...")
+# Diff size thresholds (in lines)
+DIFF_FULL_THRESHOLD = 3000  # Use full diff if under this
+DIFF_MAX_LINES = 8000  # Absolute max lines to send
+DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 
-    # Create diff file in multiplatform temp dir
-    tmp_base = Path(tempfile.gettempdir())
-    diff_file = tmp_base / f"gvy-pr-{pr_number}.diff"
+# Files to exclude from diff content (show stats only)
+# These files are auto-generated, have huge diffs, and add no semantic value
+EXCLUDED_DIFF_PATTERNS = [
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+    "Cargo.lock",
+    "poetry.lock",
+    "Gemfile.lock",
+    "composer.lock",
+    "go.sum",
+    "MODULE.bazel.lock",
+    "bun.lockb",
+    "shrinkwrap.yaml",
+    "npm-shrinkwrap.json",
+    # Minified assets
+    ".min.js",
+    ".min.css",
+    ".bundle.js",
+    # Generated files
+    ".generated.",
+    ".g.dart",
+    ".freezed.dart",
+]
+
+# File priority for large diffs (higher = more important, show more content)
+# NOTE: Order matters! More specific patterns must come BEFORE general extensions
+# so that "MyTest.kt" matches "Test.kt" (priority 25) before ".kt" (priority 100)
+FILE_PRIORITY = {
+    # Tests - lowest priority (must be checked FIRST due to specificity)
+    "Test.kt": 25,
+    "Test.java": 25,
+    "_test.py": 25,
+    ".test.ts": 25,
+    ".spec.ts": 25,
+    # Source files - highest priority
+    ".kt": 100,
+    ".java": 100,
+    ".py": 100,
+    ".ts": 90,
+    ".tsx": 90,
+    ".js": 85,
+    ".jsx": 85,
+    ".go": 100,
+    ".rs": 100,
+    ".scala": 100,
+    # Config/build files - medium priority
+    ".gradle": 70,
+    ".gradle.kts": 70,
+    ".toml": 60,
+    ".yaml": 60,
+    ".yml": 60,
+    ".json": 50,
+    ".xml": 40,
+    # Docs - lower priority
+    ".md": 30,
+    ".txt": 20,
+}
+
+
+def get_file_priority(filepath: str) -> int:
+    """Get priority score for a file (higher = more important).
+
+    Relies on FILE_PRIORITY dict ordering: specific patterns (Test.kt)
+    must come before general extensions (.kt) for correct matching.
+    """
+    for pattern, priority in FILE_PRIORITY.items():
+        if filepath.endswith(pattern):
+            return priority
+    return 50  # Default priority
+
+
+def is_excluded_from_diff(filepath: str) -> bool:
+    """Check if a file should have its diff content excluded (stats only).
+
+    Returns True for lock files, minified assets, and other auto-generated files
+    that add noise without semantic value.
+    """
+    return any(pattern in filepath for pattern in EXCLUDED_DIFF_PATTERNS)
+
+
+def get_file_diff_stats(file_diff: str) -> tuple[int, int]:
+    """Extract additions and deletions count from a file diff."""
+    adds, dels = 0, 0
+    for line in file_diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            adds += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            dels += 1
+    return adds, dels
+
+
+def format_excluded_files_summary(
+    excluded_files: list[tuple[str, int, int]],
+) -> list[str]:
+    """Format excluded files as stats-only summary lines.
+
+    Args:
+        excluded_files: List of (filepath, additions, deletions) tuples
+
+    Returns:
+        List of formatted lines including header, or empty list if no excluded files
+    """
+    if not excluded_files:
+        return []
+    lines = ["=== EXCLUDED FILES (stats only, auto-generated) ==="]
+    for filepath, adds, dels in excluded_files:
+        lines.append(f"  {filepath} | +{adds} -{dels}")
+    lines.append("")
+    return lines
+
+
+def parse_diff_into_files(diff_content: str) -> list[tuple[str, str]]:
+    """Parse unified diff into list of (filepath, file_diff) tuples."""
+    files = []
+    current_file = None
+    current_lines = []
+
+    for line in diff_content.split("\n"):
+        if line.startswith("diff --git"):
+            # Save previous file
+            if current_file:
+                files.append((current_file, "\n".join(current_lines)))
+            # Extract filepath from "diff --git a/path b/path"
+            parts = line.split(" b/")
+            current_file = parts[-1] if len(parts) > 1 else "unknown"
+            current_lines = [line]
+        else:
+            current_lines.append(line)
+
+    # Don't forget the last file
+    if current_file:
+        files.append((current_file, "\n".join(current_lines)))
+
+    return files
+
+
+def truncate_file_diff(file_diff: str, max_lines: int) -> tuple[str, bool]:
+    """Truncate a file's diff to max_lines, return (content, was_truncated)."""
+    lines = file_diff.split("\n")
+    if len(lines) <= max_lines:
+        return file_diff, False
+
+    # Keep header (first 10 lines usually contain diff metadata)
+    header_lines = min(10, max_lines // 4)
+    # Split remaining between head and tail of actual changes
+    remaining = max_lines - header_lines
+    head_count = remaining * 2 // 3
+    tail_count = remaining - head_count
+
+    header = lines[:header_lines]
+    middle_start = header_lines
+    middle_end = len(lines) - tail_count
+
+    truncated_count = max(0, middle_end - middle_start - head_count)
+    head_section = lines[middle_start : middle_start + head_count]
+    tail_section = lines[middle_end:]
+
+    result = (
+        header
+        + head_section
+        + [f"\n... [{truncated_count} lines truncated] ...\n"]
+        + tail_section
+    )
+    return "\n".join(result), True
+
+
+def generate_diff_stats(files: list[tuple[str, str]]) -> str:
+    """Generate git-style stats from parsed diff files."""
+    stats_lines = []
+    total_adds = 0
+    total_dels = 0
+
+    for filepath, file_diff in files:
+        adds = file_diff.count("\n+") - file_diff.count("\n+++")
+        dels = file_diff.count("\n-") - file_diff.count("\n---")
+        total_adds += adds
+        total_dels += dels
+        stats_lines.append(f" {filepath} | +{adds} -{dels}")
+
+    stats_lines.append(
+        f" {len(files)} files changed, {total_adds} insertions(+), {total_dels} deletions(-)"
+    )
+    return "\n".join(stats_lines)
+
+
+def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
+    """
+    Prepare diff content for AI, handling large diffs gracefully.
+
+    Returns (diff_content, mode) where mode is 'full', 'truncated', or 'error'.
+
+    Lock files (pnpm-lock.yaml, package-lock.json, etc.) are always excluded
+    from diff content and shown as stats-only, regardless of diff size.
+    """
+    # Get full diff
     try:
-        with open(diff_file, "w") as f:
-            subprocess.run(["gh", "pr", "diff", str(pr_number)], stdout=f, check=True)
-    except subprocess.CalledProcessError:
+        diff_result = subprocess.run(
+            ["gh", "pr", "diff", str(pr_number)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        full_diff = diff_result.stdout
+    except subprocess.CalledProcessError as e:
+        typer.echo(f"⚠️ Failed to get PR diff (exit {e.returncode}):", err=True)
+        typer.echo(f"   {(e.stderr or e.stdout or 'No output')[:300]}", err=True)
+        return "", "error"
+    except FileNotFoundError:
+        typer.echo("⚠️ 'gh' CLI not found. Is GitHub CLI installed?", err=True)
+        return "", "error"
+
+    # Parse into files to check for excluded patterns
+    files = parse_diff_into_files(full_diff)
+
+    # Separate excluded files (lock files, etc.) from regular files
+    excluded_files = []
+    regular_files = []
+    for filepath, file_diff in files:
+        if is_excluded_from_diff(filepath):
+            adds, dels = get_file_diff_stats(file_diff)
+            excluded_files.append((filepath, adds, dels))
+        else:
+            regular_files.append((filepath, file_diff))
+
+    # Calculate lines after excluding lock files
+    total_lines = sum(len(diff.split("\n")) for _, diff in regular_files)
+
+    # Case 1: Small diff (after exclusions) - use filtered diff
+    if total_lines <= DIFF_FULL_THRESHOLD:
+        output_parts = format_excluded_files_summary(excluded_files)
+
+        # Add regular file diffs
+        for filepath, file_diff in regular_files:
+            output_parts.append(file_diff)
+
+        return "\n".join(output_parts), "full"
+
+    typer.echo(
+        f"📊 Large diff detected ({total_lines} lines after exclusions), using smart truncation..."
+    )
+
+    # Case 2: Large diff - smart truncation
+    # Generate stats from all files (including excluded)
+    diff_stats = generate_diff_stats(files)
+
+    # Sort regular files by priority (highest first)
+    files_with_priority = [(get_file_priority(f), f, diff) for f, diff in regular_files]
+    files_with_priority.sort(key=lambda x: -x[0])
+
+    # Build truncated diff with stats header
+    output_parts = [
+        "=== DIFF STATS (complete) ===",
+        diff_stats,
+        "",
+    ]
+
+    # Add excluded files summary
+    output_parts.extend(format_excluded_files_summary(excluded_files))
+
+    output_parts.extend(
+        [
+            f"=== DIFF CONTENT (truncated from {total_lines} lines) ===",
+            f"=== Showing {len(regular_files)} files, prioritized by importance ===",
+            "",
+        ]
+    )
+
+    lines_used = len("\n".join(output_parts).split("\n"))
+    lines_budget = DIFF_MAX_LINES - lines_used
+
+    # Allocate lines per file based on priority and remaining budget
+    included_files = []
+    for priority, filepath, file_diff in files_with_priority:
+        if lines_budget <= 0:
+            break
+
+        file_lines = len(file_diff.split("\n"))
+
+        # Calculate max lines for this file based on priority
+        # Higher priority files get more lines
+        priority_factor = priority / 100.0
+        file_max = min(
+            int(DIFF_PER_FILE_MAX * priority_factor * 1.5),
+            lines_budget,
+            file_lines,
+        )
+        file_max = max(file_max, 30)  # At least 30 lines per file
+
+        truncated_diff, was_truncated = truncate_file_diff(file_diff, file_max)
+        truncated_lines = len(truncated_diff.split("\n"))
+
+        included_files.append(
+            (filepath, truncated_diff, was_truncated, file_lines, truncated_lines)
+        )
+        lines_budget -= truncated_lines
+
+    # Build final output
+    for filepath, diff, truncated, orig_lines, kept_lines in included_files:
+        marker = f" [TRUNCATED {orig_lines}→{kept_lines}]" if truncated else ""
+        output_parts.append(f"--- FILE: {filepath}{marker} ---")
+        output_parts.append(diff)
+        output_parts.append("")
+
+    # Add note about any excluded files (low priority, not lock files)
+    included_count = len(included_files)
+    total_count = len(regular_files)
+    if included_count < total_count:
+        skipped = [f for _, f, _ in files_with_priority[included_count:]]
+        output_parts.append(
+            f"=== {total_count - included_count} files skipped (low priority): ==="
+        )
+        for f in skipped[:10]:
+            output_parts.append(f"  - {f}")
+        if len(skipped) > 10:
+            output_parts.append(f"  ... and {len(skipped) - 10} more")
+
+    return "\n".join(output_parts), "truncated"
+
+
+def generate_ai_message(
+    pr: dict,
+    pr_number: int,
+    provider: AIProvider = AIProvider.GEMINI,
+    model: Optional[str] = None,
+) -> tuple[str, str]:
+    """Generate commit message using AI CLI (gemini or claude).
+
+    Args:
+        pr: PR details dict
+        pr_number: PR number
+        provider: AI provider to use (default: gemini)
+        model: Optional model override (uses provider default if not specified)
+    """
+    config = AI_PROVIDER_DEFAULTS[provider]
+    emoji = config["emoji"]
+    cmd = config["cmd"]
+    model_to_use = model or config["default_model"]
+
+    # Build display string for logging
+    model_display = f" ({model_to_use})" if model_to_use else ""
+    typer.echo(
+        f"{emoji} Generating semantic commit message with {provider.value}{model_display}..."
+    )
+
+    # Get diff content with smart truncation for large diffs
+    diff_content, diff_mode = prepare_diff_for_ai(pr_number)
+
+    if diff_mode == "error":
+        typer.echo("⚠️ Failed to retrieve PR diff; skipping AI generation.", err=True)
         return "", ""
 
-    # Construct XML Prompt parts
-    # Part 1: Header (Instructions, Context, Patch start)
-    header = f"""
-<root>
+    # Add context about truncation to the prompt if needed
+    truncation_note = ""
+    if diff_mode == "truncated":
+        truncation_note = """
+    <instruction>IMPORTANT: This diff has been TRUNCATED due to size. The DIFF STATS section shows complete file-level changes. Use both stats and available code context to understand the full scope of changes.</instruction>"""
+
+    # Build complete prompt
+    prompt = f"""<root>
   <instructions>
     <instruction>OUTPUT ONLY the commit message. No conversational text.</instruction>
     <instruction>SOURCE OF TRUTH: The content within the &lt;patch&gt; tag is the DEFINITIVE source of truth. PR titles and descriptions may be outdated or incomplete. Base your summary primarily on the code changes.</instruction>
@@ -1239,12 +1617,14 @@ def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
     <instruction>
       Rules:
       - Use strict Conventional Commits types: feat, fix, docs, style, refactor, test, chore, perf, ci.
-      - Description must be lower case, imperative mood.
+      - Scope MUST contain only: lowercase letters, digits, hyphens, underscores, forward slashes.
+      - Scope examples: api, semantics/native, core_utils, lsp/kotlin-ext
+      - Description must be lowercase, imperative mood, no trailing period.
       - Body should be a CONCISE summary of functional changes. Focus on "What" and "Why".
       - FEATURES &amp; DOCS: When documenting new features, signatures, or important code changes, MUST use code blocks (e.g. ```kotlin) to make them standout.
       - ISSUE GUIDANCE: If referenced issues exist, pro-actively include guidance in the body (e.g. "See #N for full design specs").
       - Do NOT include footer links like "Fixes #N" (added automatically).
-    </instruction>
+    </instruction>{truncation_note}
   </instructions>
   <context>
     <pr_number>{pr_number}</pr_number>
@@ -1252,49 +1632,53 @@ def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
     <description>{pr.get("body")}</description>
   </context>
   <patch>
-    <location>{diff_file}</location>
     <content>
-"""
-
-    # Part 3: Footer (Patch end, Root end)
-    footer = """
+{diff_content}
     </content>
   </patch>
 </root>
 """
 
     try:
-        # Write parts to temp files
-        header_file = tmp_base / f"gvy-pr-{pr_number}-header.xml"
-        footer_file = tmp_base / f"gvy-pr-{pr_number}-footer.xml"
+        # Security: validate cmd is an expected value (allowlist check)
+        allowed_cmds = {"gemini", "claude"}
+        if cmd not in allowed_cmds:
+            typer.echo(f"⚠️ Invalid AI command: {cmd}", err=True)
+            return "", ""
 
-        header_file.write_text(header)
-        footer_file.write_text(footer)
+        # Build command with provider-specific args
+        cmd_args = [cmd]
 
-        # Stream: cat header diff footer | gemini
-        # Note: shell=True is used here to construct the pipe.
-        # All file paths are generated from tempfile.gettempdir() and are safe.
-        cmd = f"cat {shlex.quote(str(header_file))} {shlex.quote(str(diff_file))} {shlex.quote(str(footer_file))} | gemini"
+        # Add extra args (e.g., -p for claude print mode)
+        if "extra_args" in config:
+            cmd_args.extend(config["extra_args"])
 
+        # Add model flag if model is specified
+        if model_to_use:
+            cmd_args.extend([config["model_flag"], model_to_use])
+
+        # Pipe prompt directly via stdin
         ps = subprocess.Popen(
-            cmd,
-            shell=True,
+            cmd_args,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        stdout, stderr = ps.communicate()
-
-        # Cleanup
-        for f in [diff_file, header_file, footer_file]:
-            if f.exists():
-                f.unlink()
+        stdout, stderr = ps.communicate(input=prompt)
 
         if ps.returncode != 0:
-            typer.echo(f"⚠️ Gemini failed: {stderr}", err=True)
+            error_detail = stderr.strip() or stdout.strip() or "No error output"
+            typer.echo(f"⚠️ {provider.value} failed (exit {ps.returncode}):", err=True)
+            # Show first 500 chars of error to avoid flooding terminal
+            typer.echo(f"   {error_detail[:500]}", err=True)
             return "", ""
 
         output = stdout.strip()
+
+        if not output:
+            typer.echo(f"⚠️ {provider.value} returned empty output", err=True)
+            return "", ""
 
         # Parse output
         title_match = re.search(r"TITLE:\s*(.+)", output)
@@ -1303,16 +1687,24 @@ def generate_ai_message(pr: dict, pr_number: int) -> tuple[str, str]:
         ai_title = title_match.group(1).strip() if title_match else ""
         ai_body = body_match.group(1).strip() if body_match else ""
 
-        # Fallback if parsing fails
+        # Fallback if parsing fails - try first non-empty line as title
         if not ai_title:
-            lines = output.split("\n")
-            ai_title = lines[0]
-            ai_body = "\n".join(lines[1:])
+            lines = [line for line in output.split("\n") if line.strip()]
+            if lines:
+                ai_title = lines[0].strip()
+                ai_body = "\n".join(lines[1:]).strip()
+            else:
+                typer.echo(f"⚠️ {provider.value} output could not be parsed", err=True)
+                typer.echo(f"   Raw output: {output[:200]}...", err=True)
+                return "", ""
 
         return ai_title, ai_body
 
+    except FileNotFoundError:
+        typer.echo(f"⚠️ {provider.value} CLI not found. Is it installed?", err=True)
+        return "", ""
     except Exception as e:
-        typer.echo(f"⚠️ AI Generation failed: {e}", err=True)
+        typer.echo(f"⚠️ AI generation failed: {type(e).__name__}: {e}", err=True)
         return "", ""
 
 
@@ -1331,7 +1723,19 @@ def merge(
         None, "--relates-to", "-R", help="Issue numbers this PR relates to (e.g. '622')"
     ),
     ai: bool = typer.Option(
-        False, "--ai", "-a", help="Generate commit message using AI (gemini)"
+        False, "--ai", "-a", help="Generate commit message using AI"
+    ),
+    provider: str = typer.Option(
+        "gemini",
+        "--provider",
+        "-P",
+        help="AI provider (case-insensitive): gemini (default), claude",
+    ),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        "-M",
+        help="AI model override (e.g. 'gemini-2.0-flash', 'opus', 'sonnet')",
     ),
     edit: bool = typer.Option(
         False, "--edit", "-e", help="Edit the commit message before finalization"
@@ -1365,10 +1769,19 @@ def merge(
         rprint(f"[bold red]Error fetching PR: {e.stderr}[/bold red]")
         raise typer.Exit(1)
 
+    # Validate and convert provider string to enum
+    try:
+        ai_provider = AIProvider(provider.lower())
+    except ValueError:
+        rprint(
+            f"[bold red]Error: Invalid provider '{provider}'. Use (case-insensitive): gemini, claude[/bold red]"
+        )
+        raise typer.Exit(1)
+
     # Initial Title/Body logic
     merge_title = ""
     merge_body = ""
-    source = "ai" if ai else "manual"
+    source = f"ai-{ai_provider.value}" if ai else "manual"
 
     # 1. Load from history if requested
     if version:
@@ -1383,13 +1796,13 @@ def merge(
         source = f"v{version}"
     # 2. AI Generation
     elif ai:
-        ai_title, ai_body = generate_ai_message(pr, pr_number)
+        ai_title, ai_body = generate_ai_message(pr, pr_number, ai_provider, model)
         if ai_title:
             merge_title = ai_title
             merge_body = ai_body
         else:
             rprint(
-                "[bold red]AI generation failed. Falling back to default.[/bold red]"
+                f"[bold red]{ai_provider.value} generation failed. Falling back to default.[/bold red]"
             )
 
     # 3. Manual Fallback / Base

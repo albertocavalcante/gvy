@@ -1,16 +1,7 @@
 import * as vscode from "vscode";
 import { ServerState } from "./statusUtils";
 import { JavaResolution } from "../java/finder";
-
-/**
- * Document selector for Groovy-related files.
- * Note: .gradle files are registered as 'groovy' language in package.json.
- * We do NOT include .gradle.kts - those are Kotlin files, not supported.
- */
-const GROOVY_DOCUMENT_SELECTOR: vscode.DocumentSelector = [
-  { language: "groovy" },
-  { language: "jenkinsfile" },
-];
+import { GROOVY_DOCUMENT_SELECTOR } from "../constants";
 
 /**
  * Manages Language Status Items for rich per-file context display.
@@ -182,7 +173,7 @@ export class LanguageStatusManager implements vscode.Disposable {
     this.javaRuntimeItem.command = {
       title: "Configure Java",
       command: "workbench.action.openSettings",
-      arguments: ["groovy.java.home"],
+      arguments: ["groovy.languageServer.javaHome"],
     };
   }
 
@@ -192,7 +183,7 @@ export class LanguageStatusManager implements vscode.Disposable {
   private getJavaSourceDetail(resolution: JavaResolution): string {
     switch (resolution.source) {
       case "setting":
-        return `From groovy.java.home: ${resolution.path}`;
+        return `From groovy.languageServer.javaHome: ${resolution.path}`;
       case "java_home":
         return `From JAVA_HOME: ${resolution.path}`;
       case "jdk_manager":

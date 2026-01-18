@@ -64,6 +64,30 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `parse retries at conversion when compilation fails without diagnostics`() {
+        val code = """
+            import com.lesfurets.jenkins.unit.declarative.DeclarativePipelineTest
+
+            class BaseTest extends DeclarativePipelineTest {
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///BaseTest.groovy"),
+                content = code,
+            ),
+        )
+
+        assertNotNull(result.ast)
+        assertTrue(
+            result.diagnostics.none { it.message.startsWith("Compilation failed:") },
+            "Expected retry to avoid generic compilation failure diagnostics",
+        )
+        assertTrue(result.ast.classes.any { it.nameWithoutPackage == "BaseTest" })
+    }
+
+    @Test
     fun `workspace sources are added to compilation unit`() {
         val extraSource = tempDir.resolve("Extra.groovy").toFile()
         extraSource.writeText(
@@ -154,7 +178,7 @@ class GroovyParserFacadeTest {
         assertNotNull(result.ast, "AST should be populated even in MINIMAL mode")
 
         // Verify only Consumer class is in the AST (Dependency was not added)
-        val userClasses = result.ast!!.classes.filter { !it.name.contains("$") }
+        val userClasses = result.ast.classes.filter { !it.name.contains("$") }
         assertTrue(
             userClasses.all { it.nameWithoutPackage == "Consumer" },
             "Only Consumer class should be in AST when workspace sources are skipped",
@@ -418,6 +442,33 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `parse succeeds with unresolved superclass`() {
+        val code = """
+            import com.unknown.UnresolvedClass
+
+            class MyTest extends UnresolvedClass {
+                void testMethod() {
+                    println "hello"
+                }
+            }
+        """.trimIndent()
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///Test.groovy"),
+                content = code,
+            ),
+        )
+
+        assertTrue(result.isSuccessful, "Parsing should succeed even with unresolved imports")
+        assertNotNull(result.ast, "AST should be present")
+
+        val classNode = result.ast.classes.find { it.nameWithoutPackage == "MyTest" }
+        assertNotNull(classNode, "MyTest class should be in AST")
+        assertEquals("UnresolvedClass", classNode.superClass?.nameWithoutPackage)
+    }
+
+    @Test
     fun `parse maintains AST structure when transforms are filtered`() {
         // Verify that filtering AST transformations doesn't break the AST structure
         val classpathDir = tempDir.resolve("struct-test-classpath")
@@ -457,7 +508,7 @@ class GroovyParserFacadeTest {
         assertNotNull(result.ast)
 
         // Verify AST structure
-        val classes = result.ast!!.classes
+        val classes = result.ast.classes
         assertTrue(classes.any { it.nameWithoutPackage == "Person" }, "Should find Person class")
 
         val personClass = classes.first { it.nameWithoutPackage == "Person" }

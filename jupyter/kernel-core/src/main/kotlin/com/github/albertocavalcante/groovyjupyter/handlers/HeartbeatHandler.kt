@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyjupyter.handlers
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.zeromq.ZMQ
 
 /**
@@ -14,7 +14,7 @@ import org.zeromq.ZMQ
  * This is the simplest handler - it just echoes bytes unchanged.
  */
 class HeartbeatHandler(private val socket: ZMQ.Socket) {
-    private val logger = LoggerFactory.getLogger(HeartbeatHandler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Handle one heartbeat message if available.
@@ -26,9 +26,9 @@ class HeartbeatHandler(private val socket: ZMQ.Socket) {
     fun handleOnce(): Boolean {
         val message = socket.recv(ZMQ.DONTWAIT) ?: return false
 
-        logger.trace("Heartbeat received: {} bytes", message.size)
+        logger.trace { "Heartbeat received: ${message.size} bytes" }
         socket.send(message)
-        logger.trace("Heartbeat echoed")
+        logger.trace { "Heartbeat echoed" }
 
         return true
     }
@@ -41,6 +41,6 @@ class HeartbeatHandler(private val socket: ZMQ.Socket) {
     fun handleBlocking() {
         val message = socket.recv(0) // Blocking receive
         socket.send(message)
-        logger.trace("Heartbeat handled (blocking)")
+        logger.trace { "Heartbeat handled (blocking)" }
     }
 }

@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.resolution.typesolvers.ReflectionTypeSolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import groovy.lang.GroovyClassLoader
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.test.runTest
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
@@ -17,7 +18,6 @@ import org.codehaus.groovy.control.io.StringReaderSource
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -29,7 +29,7 @@ import kotlin.test.assertTrue
  */
 class TypeDefinitionIntegrationTest {
 
-    private val logger = LoggerFactory.getLogger(TypeDefinitionIntegrationTest::class.java)
+    private val logger = KotlinLogging.logger {}
     private lateinit var typeResolver: SemanticTypeResolver
 
     @BeforeEach
@@ -57,7 +57,7 @@ class TypeDefinitionIntegrationTest {
 
         typeResolver.semantics.inject(context.moduleNode)
         val type = typeResolver.resolveType(node, context.moduleNode)
-        logger.debug("Resolved type: {}", type)
+        logger.debug { "Resolved type: $type" }
 
         // For property access like "person.name", we expect to resolve to String type
         assertNotNull(type, "Should resolve to a type")
@@ -81,7 +81,7 @@ class TypeDefinitionIntegrationTest {
 
         typeResolver.semantics.inject(context.moduleNode)
         val type = typeResolver.resolveType(node, context.moduleNode)
-        logger.debug("Resolved type: {}", type)
+        logger.debug { "Resolved type: $type" }
 
         assertTrue(type is SemanticType.Primitive || (type is SemanticType.Known && type.fqn == "java.lang.Integer"))
     }
@@ -103,7 +103,7 @@ class TypeDefinitionIntegrationTest {
         assertNotNull(node, "Should find AST node at position $position")
 
         val type = typeResolver.resolveType(node, context.moduleNode)
-        logger.debug("Resolved type: {}", type)
+        logger.debug { "Resolved type: $type" }
 
         assertTrue(type is SemanticType.Known)
         assertEquals("java.lang.String", type.fqn)
@@ -307,7 +307,7 @@ class TypeDefinitionIntegrationTest {
             )
         } catch (e: Exception) {
             // Log the compilation error but continue with partial AST
-            logger.warn("Compilation error, proceeding with partial AST: {}", e.message, e)
+            logger.warn(e) { "Compilation error, proceeding with partial AST: ${e.message}" }
             // Even with compilation errors, we might have partial AST
             val module = sourceUnit.ast ?: ModuleNode(sourceUnit)
             astModel.visitModule(module, uri)

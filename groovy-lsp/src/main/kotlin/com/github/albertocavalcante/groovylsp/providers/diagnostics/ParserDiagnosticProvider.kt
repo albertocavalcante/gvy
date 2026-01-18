@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -22,7 +22,7 @@ class ParserDiagnosticProvider(private val compilationService: GroovyCompilation
     StreamingDiagnosticProvider {
 
     companion object {
-        private val logger = LoggerFactory.getLogger(ParserDiagnosticProvider::class.java)
+        private val logger = KotlinLogging.logger {}
     }
 
     override val id: String = "parser"
@@ -30,7 +30,7 @@ class ParserDiagnosticProvider(private val compilationService: GroovyCompilation
     override val enabledByDefault: Boolean = true
 
     override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
-        logger.debug("Providing parser diagnostics for: $uri")
+        logger.debug { "Providing parser diagnostics for: $uri" }
 
         val diagnostics =
             runCatching {
@@ -42,13 +42,13 @@ class ParserDiagnosticProvider(private val compilationService: GroovyCompilation
                     when (throwable) {
                         is CancellationException -> throw throwable
                         is Error -> throw throwable
-                        else -> logger.error("Failed to provide parser diagnostics for $uri", throwable)
+                        else -> logger.error(throwable) { "Failed to provide parser diagnostics for $uri" }
                     }
                 }
                 // Don't re-throw - allow other providers to continue
                 .getOrDefault(emptyList())
 
-        logger.debug("Found ${diagnostics.size} parser diagnostics for $uri")
+        logger.debug { "Found ${diagnostics.size} parser diagnostics for $uri" }
 
         // Emit each diagnostic
         diagnostics.forEach { diagnostic ->

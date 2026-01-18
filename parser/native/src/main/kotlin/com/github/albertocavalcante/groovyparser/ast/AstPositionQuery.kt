@@ -1,21 +1,23 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.GStringExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.Statement
-import org.slf4j.LoggerFactory
 import java.net.URI
 
 /**
@@ -30,7 +32,7 @@ import java.net.URI
  */
 class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
     // TODO: Consider removing this logger once stabilization is complete
-    private val logger = LoggerFactory.getLogger(AstPositionQuery::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Find the AST node at a specific LSP position.
@@ -48,26 +50,27 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         val groovyLine = lspLine + 1
         val groovyCharacter = lspCharacter + 1
 
-        if (logger.isDebugEnabled) {
+        if (logger.isDebugEnabled()) {
             // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
             val classNodes = nodes.filterIsInstance<ClassNode>()
-            logger.debug("[getNodeAt] LSP($lspLine, $lspCharacter) -> Groovy($groovyLine, $groovyCharacter)")
-            logger.debug("[getNodeAt] Total nodes tracked: ${nodes.size}")
-            logger.debug("[getNodeAt] ClassNodes tracked:")
+            logger.debug { "[getNodeAt] LSP($lspLine, $lspCharacter) -> Groovy($groovyLine, $groovyCharacter)" }
+            logger.debug { "[getNodeAt] Total nodes tracked: ${nodes.size}" }
+            logger.debug { "[getNodeAt] ClassNodes tracked:" }
             classNodes.forEach { cls ->
-                logger.debug("  - ${cls.name} @ ${cls.lineNumber}:${cls.columnNumber}")
+                logger.debug { "  - ${cls.name} @ ${cls.lineNumber}:${cls.columnNumber}" }
             }
         }
 
-        if (logger.isDebugEnabled) {
-            logger.debug("Searching for node at $groovyLine:$groovyCharacter in ${nodes.size} nodes")
+        if (logger.isDebugEnabled()) {
+            logger.debug { "Searching for node at $groovyLine:$groovyCharacter in ${nodes.size} nodes" }
             val constructorCalls = nodes.filterIsInstance<ConstructorCallExpression>()
             if (constructorCalls.isNotEmpty()) {
-                logger.debug("ConstructorCallExpressions tracked:")
+                logger.debug { "ConstructorCallExpressions tracked:" }
                 constructorCalls.forEach { call ->
-                    logger.debug(
-                        "  - ${call.type.name} @ ${call.lineNumber}:${call.columnNumber} (last: ${call.lastLineNumber}:${call.lastColumnNumber})",
-                    )
+                    logger.debug {
+                        "- ${call.type.name} @ ${call.lineNumber}:${call.columnNumber} " +
+                            "(last: ${call.lastLineNumber}:${call.lastColumnNumber})"
+                    }
                 }
             }
         }
@@ -79,10 +82,10 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
             }
         }
 
-        if (logger.isDebugEnabled && matchingNodes.isNotEmpty()) {
-            logger.debug("Matching nodes:")
+        if (logger.isDebugEnabled() && matchingNodes.isNotEmpty()) {
+            logger.debug { "Matching nodes:" }
             matchingNodes.forEach { node ->
-                logger.debug("  - ${node.javaClass.simpleName} @ ${node.lineNumber}:${node.columnNumber}")
+                logger.debug { "  - ${node.javaClass.simpleName} @ ${node.lineNumber}:${node.columnNumber}" }
             }
         }
 
@@ -108,33 +111,63 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
         // type references (not class declarations). Class declarations typically appear at line 1 or have
         // specific structural markers, while embedded type references can shadow the actual expression.
         val hasConstructorCall = candidatesWithoutStatements.any { it is ConstructorCallExpression }
-        val candidates = if (hasConstructorCall) {
+        val candidatesAfterConstructorFilter = if (hasConstructorCall) {
             val filtered = candidatesWithoutStatements.filterNot { node ->
                 if (node is ClassNode) {
                     val isDecl = isClassDeclaration(node, matchingNodes)
-                    if (logger.isDebugEnabled) {
-                        logger.debug(
-                            "ClassNode ${node.name} @ ${node.lineNumber}:${node.columnNumber} isDeclaration=$isDecl",
-                        )
+                    if (logger.isDebugEnabled()) {
+                        logger.debug {
+                            "ClassNode ${node.name} @ ${node.lineNumber}:${node.columnNumber} isDeclaration=$isDecl"
+                        }
                     }
                     !isDecl
                 } else {
                     false
                 }
             }
-            if (logger.isDebugEnabled && filtered.size != candidatesWithoutStatements.size) {
-                logger.debug(
-                    "Filtered out ${candidatesWithoutStatements.size - filtered.size} ClassNode type references",
-                )
+            if (logger.isDebugEnabled() && filtered.size != candidatesWithoutStatements.size) {
+                logger.debug {
+                    "Filtered out ${candidatesWithoutStatements.size - filtered.size} ClassNode type references"
+                }
             }
             filtered.ifEmpty { candidatesWithoutStatements }
         } else {
             candidatesWithoutStatements
         }
 
+        // NOTE: Heuristic / tradeoff:
+        // When a MethodCallExpression or PropertyExpression exists at a position, filter out
+        // ConstantExpression nodes that represent their method/property name. These literals
+        // are not meaningful on their own - we want the parent call/access expression.
+        // However, VariableExpression arguments should NOT be filtered (they're meaningful symbols).
+        val methodCalls = candidatesAfterConstructorFilter.filterIsInstance<MethodCallExpression>()
+        val propExprs = candidatesAfterConstructorFilter.filterIsInstance<PropertyExpression>()
+        val candidates = if (methodCalls.isNotEmpty() || propExprs.isNotEmpty()) {
+            val filtered = candidatesAfterConstructorFilter.filterNot { node ->
+                if (node is ConstantExpression) {
+                    // Check if this ConstantExpression is the method name of a tracked MethodCallExpression
+                    val isMethodName = methodCalls.any { call -> call.method === node }
+                    // Check if this ConstantExpression is the property of a tracked PropertyExpression
+                    val isPropName = propExprs.any { prop -> prop.property === node }
+                    if (logger.isDebugEnabled() && (isMethodName || isPropName)) {
+                        logger.debug {
+                            "Filtering ConstantExpression '${node.text}' " +
+                                "(isMethodName=$isMethodName, isPropName=$isPropName)"
+                        }
+                    }
+                    isMethodName || isPropName
+                } else {
+                    false
+                }
+            }
+            filtered.ifEmpty { candidatesAfterConstructorFilter }
+        } else {
+            candidatesAfterConstructorFilter
+        }
+
         val result = candidates.minWithOrNull(
             compareBy<ASTNode> { node ->
-                // 1. Sort by size (smallest first)
+                // 1. Sort by size FIRST (prefer smaller/more specific nodes)
                 val effectiveLastLine = if (node.lastLineNumber > 0) node.lastLineNumber else node.lineNumber
                 val effectiveLastCol = if (node.lastColumnNumber > 0) {
                     node.lastColumnNumber
@@ -155,30 +188,41 @@ class AstPositionQuery(private val tracker: NodeRelationshipTracker) {
                 }
                 lineSpan.toLong() * PositionConstants.LINE_WEIGHT + charSpan.toLong()
             }.thenBy { node ->
-                // 2. Tie-breaker: Prefer specific atomic expressions over containers
-                // Lower numbers = higher priority (prefer more specific nodes)
+                // 2. Tie-breaker: For nodes with same size, prefer actionable over literals
+                //
+                // This handles the case where ConstantExpression (method name) and
+                // MethodCallExpression have similar sizes - we want the call expression
+                // because it's actionable (can navigate to method definition).
+                //
+                // For VariableExpression (args), the smaller size wins in step 1.
                 when (node) {
-                    is VariableExpression -> 0
-                    is ConstantExpression -> 0
-                    is GStringExpression -> 0
-                    // Prefer constructor calls over embedded ClassNode type references
+                    // Actionable call/access expressions - highest priority
+                    is MethodCallExpression -> 0
+                    is PropertyExpression -> 0
                     is ConstructorCallExpression -> 0
-                    is MethodCallExpression -> 0 // Prefer method calls over other expression wrappers
+                    // Standalone identifiers (variable references, imports, parameters)
+                    is VariableExpression -> 1
+                    is Parameter -> 1 // Method/closure parameters
+                    is GStringExpression -> 1
+                    // Literals that are likely children of calls (method names, string args)
+                    is ConstantExpression -> 2
                     // Generic expressions (ArgumentList, etc.)
-                    is Expression -> 1
-                    is Statement -> 2
-                    is FieldNode -> 3 // Fields are more specific than methods/classes
-                    is MethodNode -> 4 // Methods are more specific than classes
-                    is ClassNode -> 5 // Classes are broad containers (including type references in expressions)
-                    else -> 6
+                    is Expression -> 3
+                    is Statement -> 4
+                    is FieldNode -> 5 // Fields are more specific than methods/classes
+                    is MethodNode -> 6 // Methods are more specific than classes
+                    is ClassNode -> 7 // Classes are broad containers
+                    else -> 8
                 }
             },
         )
 
-        if (logger.isDebugEnabled && result != null) {
-            logger.debug("Selected node: ${result.javaClass.simpleName} at ${result.lineNumber}:${result.columnNumber}")
+        if (logger.isDebugEnabled() && result != null) {
+            logger.debug {
+                "Selected node: ${result.javaClass.simpleName} at ${result.lineNumber}:${result.columnNumber}"
+            }
             if (result is ConstructorCallExpression) {
-                logger.debug("  ConstructorCall type: ${result.type.name}")
+                logger.debug { "  ConstructorCall type: ${result.type.name}" }
             }
         }
 

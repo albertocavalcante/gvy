@@ -17,7 +17,7 @@ import com.github.albertocavalcante.groovyjenkins.metadata.StepParameter
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
 import io.github.classgraph.ScanResult
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 
 /**
@@ -27,7 +27,7 @@ import java.nio.file.Path
  * present in the project's resolved classpath.
  */
 class JenkinsClasspathScanner {
-    private val logger = LoggerFactory.getLogger(JenkinsClasspathScanner::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         // Core Jenkins types to look for
@@ -42,7 +42,7 @@ class JenkinsClasspathScanner {
      * Scan the provided classpath for Jenkins definitions.
      */
     fun scan(classpath: List<Path>): BundledJenkinsMetadata {
-        logger.info("Scanning {} classpath entries for Jenkins definitions", classpath.size)
+        logger.info { "Scanning ${classpath.size} classpath entries for Jenkins definitions" }
 
         // If classpath is empty, return empty metadata
         if (classpath.isEmpty()) {
@@ -67,10 +67,10 @@ class JenkinsClasspathScanner {
                 scanGlobalVariables(scanResult, globalVariableMetadata)
             }
         } catch (e: Exception) {
-            logger.error("Failed to scan classpath for Jenkins definitions", e)
+            logger.error(e) { "Failed to scan classpath for Jenkins definitions" }
         }
 
-        logger.info("Scanned ${stepMetadata.size} steps and ${globalVariableMetadata.size} global variables")
+        logger.info { "Scanned ${stepMetadata.size} steps and ${globalVariableMetadata.size} global variables" }
         return BundledJenkinsMetadata(
             steps = stepMetadata,
             globalVariables = globalVariableMetadata,
@@ -116,7 +116,7 @@ class JenkinsClasspathScanner {
                     documentation = doc,
                 )
             } catch (e: Exception) {
-                logger.debug("Error processing step descriptor ${descriptorInfo.name}", e)
+                logger.debug(e) { "Error processing step descriptor ${descriptorInfo.name}" }
             }
         }
     }
@@ -147,7 +147,7 @@ class JenkinsClasspathScanner {
                     documentation = doc,
                 )
             } catch (e: Exception) {
-                logger.debug("Error processing global variable ${globalInfo.name}", e)
+                logger.debug(e) { "Error processing global variable ${globalInfo.name}" }
             }
         }
     }

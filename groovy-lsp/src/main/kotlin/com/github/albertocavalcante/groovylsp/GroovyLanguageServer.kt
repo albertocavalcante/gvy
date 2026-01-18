@@ -16,15 +16,19 @@ import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.groovylsp.providers.ast.AstParams
 import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
 import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
+import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
+import com.github.albertocavalcante.groovylsp.providers.dependencies.DependenciesResult
+import com.github.albertocavalcante.groovylsp.providers.dependencies.DependencyRequestHandler
+import com.github.albertocavalcante.groovylsp.providers.dependencies.GetDependenciesParams
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.providers.testing.BuildToolInfo
 import com.github.albertocavalcante.groovylsp.providers.testing.DiscoverTestsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.GetBuildToolInfoParams
+import com.github.albertocavalcante.groovylsp.providers.testing.GetTestResultsParams
 import com.github.albertocavalcante.groovylsp.providers.testing.RunTestParams
 import com.github.albertocavalcante.groovylsp.providers.testing.TestRequestDelegate
 import com.github.albertocavalcante.groovylsp.providers.testing.TestSuite
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
-import com.github.albertocavalcante.groovylsp.services.ErrorDetails
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentServiceOptions
@@ -38,8 +42,11 @@ import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
+import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
+import com.github.albertocavalcante.reports.results.model.TestResultsResponse
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -59,7 +66,6 @@ import org.eclipse.lsp4j.services.LanguageClientAware
 import org.eclipse.lsp4j.services.LanguageServer
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
-import org.slf4j.LoggerFactory
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -72,7 +78,7 @@ class GroovyLanguageServer(
 ) : LanguageServer,
     LanguageClientAware {
 
-    private val logger = LoggerFactory.getLogger(GroovyLanguageServer::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Base client for standard LSP notifications (showMessage, publishDiagnostics, etc.)
     private var baseClient: LanguageClient? = null
@@ -134,6 +140,12 @@ class GroovyLanguageServer(
             compilationService,
             buildToolManagerProvider = { startupManager.buildToolManager },
         )
+    private val dependencyRequestHandler =
+        DependencyRequestHandler(
+            coroutineScope,
+            buildToolManagerProvider = { startupManager.buildToolManager },
+            workspaceRootProvider = { savedInitParams?.let { startupManager.getWorkspaceRoot(it) } },
+        )
     private val indexExportService = IndexExportService { startupManager.buildToolManager }
     private val astRequestHandler = AstRequestHandler(
         compilationService,
@@ -154,7 +166,7 @@ class GroovyLanguageServer(
     }
 
     override fun connect(client: LanguageClient) {
-        logger.info("Connected to language client")
+        logger.info { "Connected to language client" }
         // Always store base client for standard LSP operations
         this.baseClient = client
 
@@ -162,7 +174,7 @@ class GroovyLanguageServer(
         // LSP4J creates a proxy that implements all interfaces registered on the Launcher.
         this.groovyClient = client as? GroovyLanguageClient
         if (this.groovyClient == null) {
-            logger.info("Client does not support GroovyLanguageClient interface - status notifications disabled")
+            logger.info { "Client does not support GroovyLanguageClient interface - status notifications disabled" }
         }
     }
 
@@ -172,53 +184,35 @@ class GroovyLanguageServer(
      * Provides explicit server status updates for clients to track server state.
      * Based on rust-analyzer's `experimental/serverStatus` notification pattern.
      *
-     * @param health Server functional state (ok, warning, error)
-     * @param quiescent Whether there is any pending background work (false = busy, true = idle)
-     * @param message Optional human-readable message
-     * @param filesIndexed Current number of files indexed (for progress display)
-     * @param filesTotal Total number of files to index (for progress display)
-     * @param errorCode Machine-readable error code for structured error handling
-     * @param errorDetails Structured error information for actionable error display
+     * @param notification The status notification to send to the client.
      */
-    internal fun sendStatus(
-        health: Health = Health.Ok,
-        quiescent: Boolean = true,
-        message: String? = null,
-        filesIndexed: Int? = null,
-        filesTotal: Int? = null,
-        errorCode: String? = null,
-        errorDetails: ErrorDetails? = null,
-    ) {
-        val notification = StatusNotification(
-            health = health,
-            quiescent = quiescent,
-            message = message,
-            filesIndexed = filesIndexed,
-            filesTotal = filesTotal,
-            errorCode = errorCode,
-            errorDetails = errorDetails,
-        )
+    internal fun sendStatus(notification: StatusNotification = StatusNotification()) {
         try {
             groovyClient?.groovyStatus(notification)
-            logger.debug("Sent status notification: health={}, quiescent={}, message={}", health, quiescent, message)
+            logger.debug {
+                "Sent status notification: health=${notification.health}, quiescent=${notification.quiescent}, message=${notification.message}"
+            }
         } catch (e: Exception) {
-            logger.debug("Could not send status notification: {}", e.message)
+            logger.debug { "Could not send status notification: ${e.message}" }
         }
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
-        logger.info("Initializing Groovy Language Server...")
-        logger.info("Client: ${params.clientInfo?.name ?: "Unknown"}")
-        logger.info("Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}")
+        logger.info { "Initializing Groovy Language Server..." }
+        logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
+        logger.info { "Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}" }
 
         savedInitParams = params
         clientCapabilities = params.capabilities
+
+        val linkSupport = params.capabilities?.textDocument?.definition?.linkSupport == true
+        textDocumentService.updateDefinitionLinkSupport(linkSupport)
 
         savedInitOptionsMap = parseInitOptions(params.initializationOptions)
 
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult()
 
-        logger.info("LSP initialized - ready for requests")
+        logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)
     }
 
@@ -235,18 +229,18 @@ class GroovyLanguageServer(
                 @Suppress("UNCHECKED_CAST")
                 Gson().fromJson(options, Map::class.java) as Map<String, Any>
             }.onFailure {
-                logger.warn("Failed to parse JsonObject initialization options", it)
+                logger.warn(it) { "Failed to parse JsonObject initialization options" }
             }.getOrDefault(emptyMap())
         }
-        logger.warn("Unknown initialization options type: {}", options.javaClass.name)
+        logger.warn { "Unknown initialization options type: ${options.javaClass.name}" }
         return emptyMap()
     }
 
     override fun initialized(params: InitializedParams) {
-        logger.info("Server initialized - starting async dependency resolution")
+        logger.info { "Server initialized - starting async dependency resolution" }
 
         // Send starting status before async work begins
-        sendStatus(health = Health.Ok, quiescent = false, message = "Initializing workspace...")
+        sendStatus(StatusNotification(health = Health.Ok, quiescent = false, message = "Initializing workspace..."))
 
         startupManager.registerFileWatchers(baseClient, clientCapabilities)
 
@@ -263,13 +257,15 @@ class GroovyLanguageServer(
             initOptionsMap = savedInitOptionsMap,
             textDocumentServiceRefresh = { textDocumentService.refreshOpenDocuments() },
             onStatusUpdate = { health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails ->
-                sendStatus(health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails)
+                sendStatus(
+                    StatusNotification(health, quiescent, message, filesIndexed, filesTotal, errorCode, errorDetails),
+                )
             },
         )
     }
 
     override fun shutdown(): CompletableFuture<Any> = CompletableFuture.supplyAsync {
-        logger.info("Shutting down Groovy Language Server...")
+        logger.info { "Shutting down Groovy Language Server..." }
         try {
             startupManager.shutdown()
 
@@ -277,24 +273,23 @@ class GroovyLanguageServer(
             try {
                 poolShutdown.get(GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             } catch (e: TimeoutException) {
-                logger.warn(
-                    "Gradle connection pool shutdown exceeded {} seconds; continuing shutdown",
-                    GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS,
-                )
+                logger.warn {
+                    "Gradle connection pool shutdown exceeded $GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS seconds; continuing shutdown"
+                }
                 poolShutdown.cancel(true)
             }
 
             coroutineScope.cancel()
         } catch (e: CancellationException) {
-            logger.debug("Coroutine scope cancelled during shutdown", e)
+            logger.debug(e) { "Coroutine scope cancelled during shutdown" }
         } catch (e: Exception) {
-            logger.warn("Error during shutdown", e)
+            logger.warn(e) { "Error during shutdown" }
         }
         Any()
     }
 
     override fun exit() {
-        logger.info("Exiting Groovy Language Server")
+        logger.info { "Exiting Groovy Language Server" }
     }
 
     override fun getTextDocumentService(): TextDocumentService = textDocumentService
@@ -325,6 +320,18 @@ class GroovyLanguageServer(
 
     @JsonRequest("groovy/ast")
     fun getAst(params: AstParams): CompletableFuture<AstResult> = astRequestHandler.getAst(params)
+
+    @JsonRequest("groovy/getTestResults")
+    fun getTestResults(params: GetTestResultsParams): CompletableFuture<TestResultsResponse> =
+        testRequestDelegate.getTestResults(params)
+
+    @JsonRequest("groovy/getCoverage")
+    fun getCoverage(params: GetCoverageParams): CompletableFuture<CoverageResponse> =
+        testRequestDelegate.getCoverage(params)
+
+    @JsonRequest("groovy/workspace/dependencies")
+    fun getDependencies(params: GetDependenciesParams): CompletableFuture<DependenciesResult> =
+        dependencyRequestHandler.getDependencies(params)
 
     // Exposed for testing/CLI
     fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = startupManager.waitForDependencies(timeoutSeconds)

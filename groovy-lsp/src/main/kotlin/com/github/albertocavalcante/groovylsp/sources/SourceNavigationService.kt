@@ -2,10 +2,12 @@ package com.github.albertocavalcante.groovylsp.sources
 
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
-import org.slf4j.LoggerFactory
+import com.github.albertocavalcante.groovylsp.documentation.Documentation
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.io.path.extension
 
 /**
  * Service for navigating to source code from binary class references.
@@ -29,9 +31,13 @@ class SourceNavigationService(
 
     private companion object {
         private const val MIN_MAVEN_COORDINATE_PARTS = 3
+
+        // URI scheme and prefix constants
+        private const val SCHEME_JRT = "jrt"
+        private const val JAR_FILE_PREFIX = "jar:file:"
     }
 
-    private val logger = LoggerFactory.getLogger(SourceNavigationService::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Navigate to source code for a class found in the classpath.
@@ -46,18 +52,18 @@ class SourceNavigationService(
      */
     @Suppress("ReturnCount") // Multiple resolution strategies require early returns
     override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult {
-        logger.debug("Navigating to source for: {} from {}", className, classpathUri)
+        logger.debug { "Navigating to source for: $className from $classpathUri" }
 
         // Handle JDK classes (jrt: scheme)
-        if (classpathUri.scheme == "jrt") {
+        if (classpathUri.scheme == SCHEME_JRT) {
             return jdkSourceResolver.resolveJdkSource(classpathUri, className)
         }
 
         // Step 1: Check if we already have extracted sources
         val existingSource = sourceExtractor.findSourceForClass(className)
         if (existingSource != null) {
-            logger.debug("Found cached source for: {}", className)
-            val inspection = javaSourceInspector.inspectClass(existingSource, className)
+            logger.debug { "Found cached source for: $className" }
+            val inspection = inspectClassDefinition(existingSource, className)
             return SourceNavigator.SourceResult.SourceLocation(
                 uri = existingSource.toUri(),
                 className = className,
@@ -86,7 +92,7 @@ class SourceNavigationService(
         // Step 5: Find the specific source file
         val sourcePath = sourceExtractor.findSourceForClass(className)
         return if (sourcePath != null) {
-            val inspection = javaSourceInspector.inspectClass(sourcePath, className)
+            val inspection = inspectClassDefinition(sourcePath, className)
             SourceNavigator.SourceResult.SourceLocation(
                 uri = sourcePath.toUri(),
                 className = className,
@@ -103,6 +109,59 @@ class SourceNavigationService(
     }
 
     /**
+     * Navigate to source code for a specific method within a class.
+     *
+     * This method first navigates to the class source using [navigateToSource],
+     * then uses [JavaSourceInspector.inspectMethod] to find the specific method
+     * declaration within the class.
+     *
+     * @param classpathUri URI of the class (jrt: or jar:file:...)
+     * @param className Fully qualified class name
+     * @param methodName Simple method name (e.g., "add")
+     * @return SourceResult indicating where to navigate. Returns BinaryOnly if the class source
+     *         cannot be found, or SourceLocation (either method-level with lineNumber, or
+     *         class-level fallback if method cannot be located within the source)
+     */
+    @Suppress("ReturnCount") // Multiple resolution strategies require early returns
+    override suspend fun navigateToMethodSource(
+        classpathUri: URI,
+        className: String,
+        methodName: String,
+    ): SourceNavigator.SourceResult {
+        logger.debug { "Navigating to method source for: $className.$methodName from $classpathUri" }
+
+        // First, navigate to the class source
+        val sourceLocation = when (val classResult = navigateToSource(classpathUri, className)) {
+            is SourceNavigator.SourceResult.BinaryOnly -> return classResult
+            is SourceNavigator.SourceResult.SourceLocation -> classResult
+        }
+
+        // Now find the specific method within the source file
+        val sourcePath = try {
+            Path.of(sourceLocation.uri)
+        } catch (e: Exception) {
+            logger.debug(e) { "Cannot convert URI to Path: ${sourceLocation.uri}" }
+            return sourceLocation // Fall back to class-level
+        }
+        val methodInspection = inspectMethodDefinition(sourcePath, className, methodName)
+
+        return if (methodInspection != null) {
+            SourceNavigator.SourceResult.SourceLocation(
+                uri = sourceLocation.uri,
+                className = className,
+                lineNumber = methodInspection.lineNumber,
+                documentation = methodInspection.documentation,
+            )
+        } else {
+            // Method not found - fall back to class-level navigation
+            logger.debug {
+                "Method $methodName not found in class $className, falling back to class-level navigation"
+            }
+            sourceLocation
+        }
+    }
+
+    /**
      * Extract the JAR file path from a jar: URI.
      *
      * Input: jar:file:///path/to/library.jar!/com/example/Foo.class
@@ -111,19 +170,19 @@ class SourceNavigationService(
     private fun extractJarPath(classpathUri: URI): Path? {
         val uriString = classpathUri.toString()
 
-        if (!uriString.startsWith("jar:file:")) {
+        if (!uriString.startsWith(JAR_FILE_PREFIX)) {
             return null
         }
 
         // Extract path between "jar:file:" and "!"
         val jarPath = uriString
-            .removePrefix("jar:file:")
+            .removePrefix(JAR_FILE_PREFIX)
             .substringBefore("!")
 
         return try {
             Path.of(jarPath)
         } catch (e: Exception) {
-            logger.debug("Failed to parse JAR path: {}", jarPath)
+            logger.debug { "Failed to parse JAR path: $jarPath" }
             null
         }
     }
@@ -145,23 +204,170 @@ class SourceNavigationService(
             try {
                 val sourceJar = sourceResolver.resolveSourceJar(coords.groupId, coords.artifactId, coords.version)
                 if (sourceJar != null) {
-                    logger.debug("Resolved source JAR via Maven: {}", sourceJar)
+                    logger.debug { "Resolved source JAR via Maven: $sourceJar" }
                     return sourceJar
                 }
             } catch (e: Exception) {
-                logger.debug("Failed to resolve source JAR from Maven: {}", e.message)
+                logger.debug { "Failed to resolve source JAR from Maven: ${e.message}" }
             }
+        } else {
+            logger.debug { "Could not derive Maven coordinates from $binaryJarPath; skipping remote source lookup" }
         }
 
         // Step 2: Look for adjacent -sources.jar in the same directory
         val adjacentSource = findAdjacentSourceJar(binaryJarPath)
         if (adjacentSource != null) {
-            logger.debug("Found adjacent source JAR: {}", adjacentSource)
+            logger.debug { "Found adjacent source JAR: $adjacentSource" }
             return adjacentSource
         }
 
-        logger.debug("No source JAR found for: {}", binaryJarPath)
+        logger.debug { "No source JAR found for: $binaryJarPath" }
         return null
+    }
+
+    private fun inspectClassDefinition(sourcePath: Path, className: String): JavaSourceInspector.InspectionResult? =
+        when {
+            sourcePath.extension.equals("java", ignoreCase = true) ->
+                javaSourceInspector.inspectClass(sourcePath, className)
+            sourcePath.extension.equals("groovy", ignoreCase = true) ->
+                inspectGroovyClassDefinition(sourcePath, className)
+            else -> {
+                logger.debug { "Skipping Java inspection for non-Java source: $sourcePath" }
+                null
+            }
+        }
+
+    private fun inspectMethodDefinition(
+        sourcePath: Path,
+        className: String,
+        methodName: String,
+    ): JavaSourceInspector.InspectionResult? = when {
+        sourcePath.extension.equals("java", ignoreCase = true) ->
+            javaSourceInspector.inspectMethod(sourcePath, className, methodName)
+        sourcePath.extension.equals("groovy", ignoreCase = true) ->
+            inspectGroovyMethodDefinition(sourcePath, className, methodName)
+        else -> {
+            logger.debug { "Skipping Java method inspection for non-Java source: $sourcePath" }
+            null
+        }
+    }
+
+    private fun inspectGroovyClassDefinition(
+        sourcePath: Path,
+        className: String,
+    ): JavaSourceInspector.InspectionResult? {
+        val lineNumber = findGroovyClassLineNumber(sourcePath, className) ?: run {
+            logger.debug { "Groovy class $className not found in $sourcePath" }
+            return null
+        }
+
+        logger.info { "Resolved Groovy class $className at $sourcePath:$lineNumber" }
+        return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
+    }
+
+    private fun inspectGroovyMethodDefinition(
+        sourcePath: Path,
+        className: String,
+        methodName: String,
+    ): JavaSourceInspector.InspectionResult? {
+        val lineNumber = findGroovyMethodLineNumber(sourcePath, methodName) ?: return null
+        logger.info { "Resolved Groovy method $className.$methodName at $sourcePath:$lineNumber" }
+        return JavaSourceInspector.InspectionResult(lineNumber, Documentation.EMPTY)
+    }
+
+    // TODO(#867): Replace regex-based Groovy parsing with AST-based approach for accuracy
+    //   Current implementation uses regex which can have false positives in strings/comments.
+    //   Consider using GroovyParser AST for precise class/method location detection.
+    //   See: https://github.com/albertocavalcante/gvy/issues/867
+    private fun findGroovyClassLineNumber(sourcePath: Path, className: String): Int? {
+        val simpleName = className.substringAfterLast('.').substringAfterLast('$')
+        val escapedName = Regex.escape(simpleName)
+        val pattern = Regex("""\b(class|@?interface|trait|enum)\s+$escapedName\b""")
+        return findPatternInGroovySource(sourcePath, pattern)
+    }
+
+    // Note: This regex won't match Groovy's quoted method names (e.g., def "test method"()).
+    // This limitation is tracked in issue #867 along with the broader AST migration.
+    private fun findGroovyMethodLineNumber(sourcePath: Path, methodName: String): Int? {
+        val escapedMethodName = Regex.escape(methodName)
+        val pattern = Regex(
+            """\b(?:def|public|protected|private|static|final|synchronized|abstract|native|strictfp|void|\w+)\s+""" +
+                """$escapedMethodName\s*\(""",
+        )
+        return findPatternInGroovySource(sourcePath, pattern)
+    }
+
+    /**
+     * Find the first occurrence of a pattern in Groovy source, skipping comments.
+     *
+     * Handles both line comments (//) and block comments (slash-star ... star-slash).
+     * This shared logic ensures consistent comment handling across class and method detection.
+     *
+     * @param sourcePath Path to the Groovy source file
+     * @param pattern Regex pattern to search for
+     * @return 1-based line number where pattern is found, or null if not found
+     */
+    private fun findPatternInGroovySource(sourcePath: Path, pattern: Regex): Int? {
+        val lines = runCatching { Files.readAllLines(sourcePath) }.getOrNull() ?: return null
+        var inBlockComment = false
+
+        for ((index, line) in lines.withIndex()) {
+            var text = line
+
+            // Handle continuation of multi-line block comment
+            if (inBlockComment) {
+                val end = text.indexOf("*/")
+                if (end == -1) {
+                    continue
+                }
+                text = text.substring(end + 2)
+                inBlockComment = false
+            }
+
+            // Handle all block comments within the line (there may be multiple)
+            text = stripBlockComments(text) { inBlockComment = it }
+
+            // Skip line comments
+            if (text.trimStart().startsWith("//")) {
+                continue
+            }
+
+            // Check if pattern matches after removing comments
+            if (pattern.containsMatchIn(text)) {
+                return index + 1
+            }
+        }
+
+        return null
+    }
+
+    /**
+     * Strip all block comments from a line of text.
+     *
+     * Handles multiple block comments on the same line (e.g., `def x /* c1 */ = foo /* c2 */ bar`).
+     * If an unclosed block comment is found, sets the callback to true to indicate continuation.
+     *
+     * @param text The line of text to process
+     * @param setBlockCommentState Callback to set whether we're in an unclosed block comment
+     * @return The text with all block comments removed
+     */
+    private inline fun stripBlockComments(text: String, setBlockCommentState: (Boolean) -> Unit): String {
+        var result = text
+        while (true) {
+            val start = result.indexOf("/*")
+            if (start < 0) break
+
+            val end = result.indexOf("*/", start + 2)
+            result = if (end >= 0) {
+                // Complete block comment found - remove it and continue looking for more
+                result.removeRange(start, end + 2)
+            } else {
+                // Unclosed block comment - rest of line is comment
+                setBlockCommentState(true)
+                result.substring(0, start)
+            }
+        }
+        return result
     }
 
     /**
@@ -208,24 +414,35 @@ class SourceNavigationService(
      * Extract coordinates from Maven repository path structure.
      */
     private fun extractFromMavenPath(jarPath: Path, fileName: String): MavenCoordinates? {
-        val parts = jarPath.toString().split("/")
-        val repoIndex = parts.indexOfFirst { it == "repository" || it == "caches" }
+        val parts = jarPath.normalize().map { it.toString() }
+        val repoIndex = parts.indexOfLast { it == "repository" || it == "caches" }
 
         if (repoIndex == -1 || repoIndex + MIN_MAVEN_COORDINATE_PARTS >= parts.size) {
             return extractFromFilename(fileName)
         }
 
-        // Maven layout: .../repository/group/parts/.../artifact/version/artifact-version.jar
-        // Find version directory (parent of JAR file)
-        val versionIndex = parts.size - 2
-        val version = parts[versionIndex]
+        val filenameCoords = extractFromFilename(fileName) ?: return null
+        val version = filenameCoords.version
+        val versionIndex = parts.indexOfLast { part -> part == version }
+        if (versionIndex == -1) {
+            return extractFromFilename(fileName)
+        }
 
-        // Find artifact directory (parent of version)
         val artifactIndex = versionIndex - 1
-        val artifactId = parts[artifactIndex]
+        val artifactId = parts.getOrNull(artifactIndex) ?: filenameCoords.artifactId
 
-        // Group is everything between repo and artifact
-        val groupParts = parts.subList(repoIndex + 1, artifactIndex)
+        var groupStartIndex = repoIndex + 1
+        if (parts.getOrNull(groupStartIndex) == "modules-2" &&
+            parts.getOrNull(groupStartIndex + 1)?.startsWith("files-") == true
+        ) {
+            groupStartIndex += 2
+        }
+
+        if (groupStartIndex >= artifactIndex) {
+            return filenameCoords
+        }
+
+        val groupParts = parts.subList(groupStartIndex, artifactIndex)
         val groupId = groupParts.joinToString(".")
 
         // Validate the extracted coordinates

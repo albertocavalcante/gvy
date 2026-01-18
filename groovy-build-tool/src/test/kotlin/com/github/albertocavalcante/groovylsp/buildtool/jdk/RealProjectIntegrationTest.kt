@@ -33,12 +33,6 @@ class RealProjectIntegrationTest {
             found.requirement.source,
             "Expected source from properties, not plugin",
         )
-
-        println("✅ Pipeline-library JDK extraction:")
-        println("   sourceVersion: ${found.requirement.sourceVersion}")
-        println("   targetVersion: ${found.requirement.targetVersion}")
-        println("   effectiveVersion: ${found.requirement.effectiveVersion}")
-        println("   source: ${found.requirement.source}")
     }
 
     @Test
@@ -56,13 +50,6 @@ class RealProjectIntegrationTest {
         val warning = result as ProjectJdkValidator.ValidationResult.PotentiallyIncompatibleNewer
         assertEquals(21, warning.runningJdk)
         assertEquals(8, warning.targetJdk)
-
-        println("✅ Pipeline-library JDK validation (running JDK 21):")
-        println("   runningJdk: ${warning.runningJdk}")
-        println("   targetJdk: ${warning.targetJdk}")
-        println("   source: ${warning.source}")
-        println("   suggestions:")
-        warning.suggestions.forEach { println("     - $it") }
     }
 
     @Test
@@ -81,11 +68,6 @@ class RealProjectIntegrationTest {
         val compatible = result as ProjectJdkValidator.ValidationResult.Compatible
         assertEquals(8, compatible.runningJdk)
         assertEquals(8, compatible.requiredJdk)
-
-        println("✅ Pipeline-library JDK validation (running JDK 8):")
-        println("   runningJdk: ${compatible.runningJdk}")
-        println("   requiredJdk: ${compatible.requiredJdk}")
-        println("   Result: COMPATIBLE")
     }
 
     @Test
@@ -104,12 +86,5 @@ class RealProjectIntegrationTest {
         val incompatible = result as ProjectJdkValidator.ValidationResult.IncompatibleOlder
         assertEquals(6, incompatible.runningJdk)
         assertEquals(8, incompatible.requiredJdk)
-
-        println("✅ Pipeline-library JDK validation (running JDK 6):")
-        println("   runningJdk: ${incompatible.runningJdk}")
-        println("   requiredJdk: ${incompatible.requiredJdk}")
-        println("   Result: INCOMPATIBLE_OLDER")
-        println("   suggestions:")
-        incompatible.suggestions.forEach { println("     - $it") }
     }
 }

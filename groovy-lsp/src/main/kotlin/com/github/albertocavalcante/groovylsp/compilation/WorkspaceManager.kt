@@ -2,8 +2,8 @@ package com.github.albertocavalcante.groovylsp.compilation
 
 import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
 import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -24,7 +24,7 @@ import kotlin.io.path.isDirectory
  */
 @Suppress("TooManyFunctions")
 class WorkspaceManager {
-    private val logger = LoggerFactory.getLogger(WorkspaceManager::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Dependency classpath management
     private val dependencyClasspath = mutableListOf<Path>()
@@ -41,7 +41,7 @@ class WorkspaceManager {
      */
     fun setStrategyRegistry(registry: ProjectStrategyRegistry) {
         this.strategyRegistry = registry
-        logger.info("Strategy registry set with {} strategies", registry.activeStrategies.size)
+        logger.info { "Strategy registry set with ${registry.activeStrategies.size} strategies" }
     }
 
     /**
@@ -58,7 +58,7 @@ class WorkspaceManager {
     fun getJenkinsCapabilities(): JenkinsCapabilities? = strategyRegistry?.findCapability<JenkinsCapabilities>()
 
     fun initializeWorkspace(workspaceRoot: Path) {
-        logger.info("Initializing workspace (non-blocking): $workspaceRoot")
+        logger.info { "Initializing workspace (non-blocking): $workspaceRoot" }
         this.workspaceRoot = workspaceRoot
         refreshSourceRoots(workspaceRoot)
         refreshWorkspaceSources()
@@ -66,15 +66,17 @@ class WorkspaceManager {
 
     fun updateDependencies(newDependencies: List<Path>): Boolean {
         var changed = false
-        if (newDependencies.size != dependencyClasspath.size ||
-            newDependencies.toSet() != dependencyClasspath.toSet()
-        ) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(newDependencies)
-            changed = true
-            logger.info("Updated dependency classpath with ${dependencyClasspath.size} dependencies")
-        } else {
-            logger.debug("Dependencies unchanged")
+        synchronized(dependencyClasspath) {
+            if (newDependencies.size != dependencyClasspath.size ||
+                newDependencies.toSet() != dependencyClasspath.toSet()
+            ) {
+                dependencyClasspath.clear()
+                dependencyClasspath.addAll(newDependencies)
+                changed = true
+                logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
+            } else {
+                logger.debug { "Dependencies unchanged" }
+            }
         }
         return changed
     }
@@ -82,18 +84,22 @@ class WorkspaceManager {
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>): Boolean {
         this.workspaceRoot = workspaceRoot
 
-        val depsChanged = dependencies.toSet() != dependencyClasspath.toSet()
-        val sourcesChanged = sourceDirectories.toSet() != sourceRoots
-        if (depsChanged) {
-            dependencyClasspath.clear()
-            dependencyClasspath.addAll(dependencies)
-            logger.info("Updated dependency classpath with ${dependencyClasspath.size} dependencies")
+        val depsChanged = synchronized(dependencyClasspath) {
+            val changed =
+                dependencies.size != dependencyClasspath.size || dependencies.toSet() != dependencyClasspath.toSet()
+            if (changed) {
+                dependencyClasspath.clear()
+                dependencyClasspath.addAll(dependencies)
+                logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
+            }
+            changed
         }
 
+        val sourcesChanged = sourceDirectories.toSet() != sourceRoots
         if (sourceDirectories.isNotEmpty()) {
             sourceRoots.clear()
             sourceDirectories.forEach(sourceRoots::add)
-            logger.info("Received ${sourceRoots.size} source roots from build model")
+            logger.info { "Received ${sourceRoots.size} source roots from build model" }
         } else if (sourceRoots.isEmpty()) {
             refreshSourceRoots(workspaceRoot)
         }
@@ -118,7 +124,16 @@ class WorkspaceManager {
 
         if (existingStandardDirs.isNotEmpty()) {
             existingStandardDirs.forEach(sourceRoots::add)
-        } else {
+        }
+
+        // Jenkins shared libraries and other layouts often use test/groovy directly.
+        val extraSourceDirs = listOf(
+            rootPath.resolve("test/groovy"),
+        ).filter { Files.exists(it) && Files.isDirectory(it) }
+
+        extraSourceDirs.forEach(sourceRoots::add)
+
+        if (existingStandardDirs.isEmpty()) {
             // Jenkins Shared Library structure: bare src/ directory
             // TODO(#701): Improve heuristics for detecting source roots in Light Mode
             //   See: https://github.com/albertocavalcante/gvy/issues/701
@@ -133,12 +148,12 @@ class WorkspaceManager {
             strategy.getSourceRoots().forEach { sourceRoot ->
                 if (Files.exists(sourceRoot) && Files.isDirectory(sourceRoot)) {
                     sourceRoots.add(sourceRoot)
-                    logger.debug("Added source root from strategy '{}': {}", strategy.id, sourceRoot)
+                    logger.debug { "Added source root from strategy '${strategy.id}': $sourceRoot" }
                 }
             }
         }
 
-        logger.info("Indexed ${sourceRoots.size} source roots: ${sourceRoots.joinToString { it.toString() }}")
+        logger.info { "Indexed ${sourceRoots.size} source roots: ${sourceRoots.joinToString { it.toString() }}" }
     }
 
     private fun refreshWorkspaceSources() {
@@ -146,12 +161,13 @@ class WorkspaceManager {
             if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
             Files.walk(sourceRoot).use { stream ->
                 stream.filter { Files.isRegularFile(it) && it.extension.equals("groovy", ignoreCase = true) }
+                    .sorted()
                     .toList()
             }
         }
 
-        logger.info("Indexed ${workspaceSources.size} Groovy sources from workspace roots")
-        workspaceSources.forEach { logger.info("Indexed source: $it") }
+        logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }
+        workspaceSources.forEach { logger.info { "Indexed source: $it" } }
     }
 
     fun getDependencyClasspath(): List<Path> = dependencyClasspath.toList()
@@ -185,7 +201,7 @@ class WorkspaceManager {
             runCatching { Path.of(uri) }
                 .getOrElse { throwable ->
                     rethrowIfCancellationOrError(throwable)
-                    logger.debug("Failed to convert bounded URI to Path: {}", uri, throwable)
+                    logger.debug(throwable) { "Failed to convert bounded URI to Path: $uri" }
                     null
                 }
         }.toSet()
@@ -201,7 +217,7 @@ class WorkspaceManager {
         runCatching { path.toUri() }
             .getOrElse { throwable ->
                 rethrowIfCancellationOrError(throwable)
-                logger.warn("Failed to convert path to URI: $path", throwable)
+                logger.warn(throwable) { "Failed to convert path to URI: $path" }
                 null
             }
     }

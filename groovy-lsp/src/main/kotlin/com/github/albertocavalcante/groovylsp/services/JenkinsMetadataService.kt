@@ -6,8 +6,8 @@ import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
 import com.github.albertocavalcante.groovyjenkins.metadata.JsonMetadataLoader
 import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.Path
@@ -27,7 +27,7 @@ class JenkinsMetadataService(
         MavenSourceArtifactResolver.getDefaultCacheDir().parent.resolve("jenkins-plugins"),
     ),
 ) {
-    private val logger = LoggerFactory.getLogger(javaClass)
+    private val logger = KotlinLogging.logger {}
 
     private fun rethrowIfCancellationOrError(throwable: Throwable) {
         when (throwable) {
@@ -39,41 +39,41 @@ class JenkinsMetadataService(
     suspend fun initialize() {
         val pluginsFileStr = configuration.pluginsFile
         if (pluginsFileStr.isNullOrBlank()) {
-            logger.debug("No plugins file configured")
+            logger.debug { "No plugins file configured" }
             return
         }
 
         val pluginsFile = Path(pluginsFileStr)
         if (!Files.exists(pluginsFile)) {
-            logger.warn("Configured plugins file does not exist: {}", pluginsFile)
+            logger.warn { "Configured plugins file does not exist: $pluginsFile" }
             return
         }
 
-        logger.info("Loading Jenkins plugins from: {}", pluginsFile)
+        logger.info { "Loading Jenkins plugins from: $pluginsFile" }
 
         val plugins =
             runCatching { PluginsParser.parse(pluginsFile) }
                 .onFailure { throwable ->
                     rethrowIfCancellationOrError(throwable)
-                    logger.error("Failed to parse plugins file: {}", pluginsFile, throwable)
+                    logger.error(throwable) { "Failed to parse plugins file: $pluginsFile" }
                 }
                 .getOrNull()
 
         if (plugins != null) {
             plugins.forEach { plugin ->
                 runCatching {
-                    logger.debug("Downloading plugin: {}", plugin.id)
+                    logger.debug { "Downloading plugin: ${plugin.id}" }
                     // download is now a suspend function, which is fine since initialize is suspend
                     val jarPath = pluginDownloader.download(plugin.id, plugin.version)
                     pluginManager.registerPluginJar(plugin.id, jarPath)
                 }
                     .onFailure { throwable ->
                         rethrowIfCancellationOrError(throwable)
-                        logger.error("Failed to load plugin: ${plugin.id}", throwable)
+                        logger.error(throwable) { "Failed to load plugin: ${plugin.id}" }
                     }
             }
 
-            logger.info("Loaded {} plugins from {}", plugins.size, pluginsFile)
+            logger.info { "Loaded ${plugins.size} plugins from $pluginsFile" }
         }
 
         initializeStaticMetadata()
@@ -85,19 +85,19 @@ class JenkinsMetadataService(
 
         val metadataFile = Path(metadataFileStr)
         if (!Files.exists(metadataFile)) {
-            logger.warn("Configured metadata file does not exist: {}", metadataFile)
+            logger.warn { "Configured metadata file does not exist: $metadataFile" }
             return
         }
 
         runCatching {
-            logger.info("Loading static Jenkins metadata from: {}", metadataFile)
+            logger.info { "Loading static Jenkins metadata from: $metadataFile" }
             val metadata = JsonMetadataLoader().load(metadataFile)
             pluginManager.registerStaticMetadata(metadata)
-            logger.info("Successfully registered static Jenkins metadata")
+            logger.info { "Successfully registered static Jenkins metadata" }
         }
             .onFailure { throwable ->
                 rethrowIfCancellationOrError(throwable)
-                logger.error("Failed to load static metadata from: {}", metadataFile, throwable)
+                logger.error(throwable) { "Failed to load static metadata from: $metadataFile" }
             }
     }
 }

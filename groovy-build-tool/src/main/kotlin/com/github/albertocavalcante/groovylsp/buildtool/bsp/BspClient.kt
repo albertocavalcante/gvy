@@ -17,8 +17,8 @@ import ch.epfl.scala.bsp4j.TaskFinishParams
 import ch.epfl.scala.bsp4j.TaskProgressParams
 import ch.epfl.scala.bsp4j.TaskStartParams
 import ch.epfl.scala.bsp4j.WorkspaceBuildTargetsResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
-import org.slf4j.LoggerFactory
 import java.io.Closeable
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -36,7 +36,7 @@ private const val SHUTDOWN_TIMEOUT_SEC = 10L
  */
 class BspClient(private val connection: BspConnectionDetails, private val workspaceRoot: Path) : Closeable {
 
-    private val logger = LoggerFactory.getLogger(BspClient::class.java)
+    private val logger = KotlinLogging.logger {}
     private var process: Process? = null
     private var server: BuildServer? = null
     private var initialized = false
@@ -48,7 +48,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
             initialize(onProgress)
             true
         }.onFailure { e ->
-            logger.error("Failed to connect to BSP server: ${e.message}", e)
+            logger.error(e) { "Failed to connect to BSP server: ${e.message}" }
             close()
         }.getOrDefault(false)
     }
@@ -57,7 +57,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
         requireInitialized()
         server?.workspaceBuildTargets()?.get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS)
     }.onFailure {
-        logger.error("Failed to get build targets: ${it.message}", it)
+        logger.error(it) { "Failed to get build targets: ${it.message}" }
     }.getOrNull()
 
     fun buildTargetSources(targetIds: List<BuildTargetIdentifier>): SourcesResult? {
@@ -66,7 +66,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
             requireInitialized()
             server?.buildTargetSources(SourcesParams(targetIds))?.get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS)
         }.onFailure {
-            logger.error("Failed to get sources: ${it.message}", it)
+            logger.error(it) { "Failed to get sources: ${it.message}" }
         }.getOrNull()
     }
 
@@ -77,7 +77,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
             server?.buildTargetDependencyModules(DependencyModulesParams(targetIds))
                 ?.get(REQUEST_TIMEOUT_SEC, TimeUnit.SECONDS)
         }.onFailure {
-            logger.error("Failed to get dependencies: ${it.message}", it)
+            logger.error(it) { "Failed to get dependencies: ${it.message}" }
         }.getOrNull()
     }
 
@@ -87,7 +87,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
                 server?.buildShutdown()?.get(SHUTDOWN_TIMEOUT_SEC, TimeUnit.SECONDS)
                 server?.onBuildExit()
             }
-        }.onFailure { logger.warn("Error during BSP shutdown: ${it.message}") }
+        }.onFailure { logger.warn { "Error during BSP shutdown: ${it.message}" } }
         process?.destroyForcibly()
         process = null
         server = null
@@ -95,7 +95,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
     }
 
     private fun startProcess() {
-        logger.info("Starting BSP server: ${connection.argv.joinToString(" ")}")
+        logger.info { "Starting BSP server: ${connection.argv.joinToString(" ")}" }
 
         val newProcess = ProcessBuilder(connection.argv)
             .directory(workspaceRoot.toFile())
@@ -105,7 +105,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
         // Asynchronously log stderr from the BSP server for better diagnostics
         CompletableFuture.runAsync {
             newProcess.errorStream.bufferedReader().useLines { lines ->
-                lines.forEach { logger.warn("[BSP stderr] {}", it) }
+                lines.forEach { logger.warn { "[BSP stderr] $it" } }
             }
         }
 
@@ -118,7 +118,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
 
         server = launcher.remoteProxy
         CompletableFuture.runAsync { launcher.startListening() }
-        logger.info("BSP server process started")
+        logger.info { "BSP server process started" }
     }
 
     private fun initialize(onProgress: ((String) -> Unit)?) {
@@ -135,7 +135,7 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
         val result = server?.buildInitialize(params)?.get(INIT_TIMEOUT_SEC, TimeUnit.SECONDS)
             ?: error("BSP server returned null for initialize")
 
-        logger.info("BSP initialized: ${result.displayName ?: connection.name} v${result.version ?: "?"}")
+        logger.info { "BSP initialized: ${result.displayName ?: connection.name} v${result.version ?: "?"}" }
         server?.onBuildInitialized()
         initialized = true
         onProgress?.invoke("${connection.name} ready")
@@ -147,29 +147,29 @@ class BspClient(private val connection: BspConnectionDetails, private val worksp
 
     private inner class ClientHandler : BuildClient {
         override fun onBuildShowMessage(params: ShowMessageParams) {
-            logger.info("[BSP] ${params.message}")
+            logger.info { "[BSP] ${params.message}" }
         }
 
         override fun onBuildLogMessage(params: LogMessageParams) {
-            logger.debug("[BSP] ${params.message}")
+            logger.debug { "[BSP] ${params.message}" }
         }
 
         override fun onBuildPublishDiagnostics(params: PublishDiagnosticsParams) = Unit
 
         override fun onBuildTargetDidChange(params: DidChangeBuildTarget) {
-            logger.info("[BSP] Build targets changed")
+            logger.info { "[BSP] Build targets changed" }
         }
 
         override fun onBuildTaskStart(params: TaskStartParams) {
-            logger.debug("[BSP] Task started: ${params.message ?: params.taskId.id}")
+            logger.debug { "[BSP] Task started: ${params.message ?: params.taskId.id}" }
         }
 
         override fun onBuildTaskProgress(params: TaskProgressParams) {
-            logger.debug("[BSP] Progress: ${params.message ?: ""}")
+            logger.debug { "[BSP] Progress: ${params.message ?: ""}" }
         }
 
         override fun onBuildTaskFinish(params: TaskFinishParams) {
-            logger.debug("[BSP] Task finished: ${params.message ?: params.taskId.id}")
+            logger.debug { "[BSP] Task finished: ${params.message ?: params.taskId.id}" }
         }
     }
 }

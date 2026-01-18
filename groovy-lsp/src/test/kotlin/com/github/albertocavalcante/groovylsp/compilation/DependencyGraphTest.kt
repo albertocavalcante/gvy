@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.SourceUnit
 import java.net.URI
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -175,7 +177,7 @@ class DependencyGraphTest {
         val workspaceIndex = mapOf("FileB" to fileB)
 
         // Create a module with an import
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
         val classNode = ClassNode("FileB", 0, null, null, null)
         moduleNode.addImport("FileB", classNode)
 
@@ -193,7 +195,7 @@ class DependencyGraphTest {
 
         val workspaceIndex = mapOf("Base" to base)
 
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
         val classNode = ClassNode("Derived", 0, null, null, null)
         classNode.superClass = ClassNode("Base", 0, null, null, null)
         moduleNode.classes.add(classNode)
@@ -212,7 +214,7 @@ class DependencyGraphTest {
 
         val workspaceIndex = mapOf("Interface" to iface)
 
-        val moduleNode = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode = ModuleNode(null as SourceUnit?)
         val classNode = ClassNode("Implementation", 0, null, null, null)
         classNode.interfaces = arrayOf(ClassNode("Interface", 0, null, null, null))
         moduleNode.classes.add(classNode)
@@ -236,13 +238,13 @@ class DependencyGraphTest {
         )
 
         // First update: A depends on B
-        val moduleNode1 = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode1 = ModuleNode(null as SourceUnit?)
         val classNode1 = ClassNode("FileB", 0, null, null, null)
         moduleNode1.addImport("FileB", classNode1)
         graph.updateFromModule(fileA, moduleNode1, workspaceIndex)
 
         // Second update: A depends on C (not B)
-        val moduleNode2 = ModuleNode(null as org.codehaus.groovy.control.SourceUnit?)
+        val moduleNode2 = ModuleNode(null as SourceUnit?)
         val classNode2 = ClassNode("FileC", 0, null, null, null)
         moduleNode2.addImport("FileC", classNode2)
         graph.updateFromModule(fileA, moduleNode2, workspaceIndex)
@@ -398,5 +400,206 @@ class DependencyGraphTest {
         val fileA = URI.create("file:///FileA.groovy")
 
         assertFalse(graph.hasInfo(fileA), "Unknown file should have no info")
+    }
+
+    // Determinism regression tests (PR #930)
+
+    @Test
+    fun `processStarImport produces deterministic output for multiple classes`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///src/FileA.groovy")
+
+        // Create workspace index with multiple classes in the same package
+        // Using names that would have different iteration order in HashMap vs sorted
+        val workspaceIndex = mapOf(
+            "com.example.Zebra" to URI.create("file:///src/com/example/Zebra.groovy"),
+            "com.example.Alpha" to URI.create("file:///src/com/example/Alpha.groovy"),
+            "com.example.Middle" to URI.create("file:///src/com/example/Middle.groovy"),
+            "com.example.Beta" to URI.create("file:///src/com/example/Beta.groovy"),
+        )
+
+        // Create a module with a star import
+        val moduleNode = ModuleNode(null as SourceUnit?)
+        // Note: We need to manually create the ImportNode because addStarImport(String)
+        // doesn't set type/className which the current DependencyGraph code expects
+        val packageClassNode = ClassNode("com.example", 0, null, null, null)
+        val starImport = ImportNode(packageClassNode, null)
+        moduleNode.starImports.add(starImport)
+
+        // Update and verify dependencies are extracted
+        graph.updateFromModule(fileA, moduleNode, workspaceIndex)
+        val dependencies = graph.getDependencies(fileA)
+
+        // Verify the expected classes are included
+        assertEquals(4, dependencies.size, "Should have dependencies on all 4 classes in package")
+
+        // Execute multiple times and collect the results to verify determinism
+        val results = mutableListOf<List<URI>>()
+        repeat(10) {
+            val testGraph = DependencyGraph()
+            testGraph.updateFromModule(fileA, moduleNode, workspaceIndex)
+            results.add(testGraph.getDependencies(fileA).sorted())
+        }
+
+        // All results should be identical (deterministic)
+        val firstResult = results.first()
+        results.forEach { result ->
+            assertEquals(firstResult, result, "Star import processing should produce deterministic results")
+        }
+
+        // Verify the dependencies are in sorted order
+        val actualDeps = dependencies.sorted()
+        val expectedUris = listOf(
+            URI.create("file:///src/com/example/Alpha.groovy"),
+            URI.create("file:///src/com/example/Beta.groovy"),
+            URI.create("file:///src/com/example/Middle.groovy"),
+            URI.create("file:///src/com/example/Zebra.groovy"),
+        )
+
+        assertEquals(expectedUris, actualDeps, "Dependencies should be extracted in deterministic sorted order")
+    }
+
+    @Test
+    fun `static import processing is deterministic with multiple imports`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///src/FileA.groovy")
+
+        // Create workspace index with classes that would have different HashMap iteration order
+        val workspaceIndex = mapOf(
+            "Zebra" to URI.create("file:///src/Zebra.groovy"),
+            "Alpha" to URI.create("file:///src/Alpha.groovy"),
+            "Middle" to URI.create("file:///src/Middle.groovy"),
+            "Beta" to URI.create("file:///src/Beta.groovy"),
+        )
+
+        // Create a module with multiple static imports
+        val moduleNode = ModuleNode(null as SourceUnit?)
+
+        // Add static imports in non-alphabetical order
+        moduleNode.addStaticImport(ClassNode("Zebra", 0, null, null, null), "zebraMethod", "zebraMethod")
+        moduleNode.addStaticImport(ClassNode("Alpha", 0, null, null, null), "alphaMethod", "alphaMethod")
+        moduleNode.addStaticImport(ClassNode("Middle", 0, null, null, null), "middleMethod", "middleMethod")
+        moduleNode.addStaticImport(ClassNode("Beta", 0, null, null, null), "betaMethod", "betaMethod")
+
+        // Execute multiple times and collect the results
+        val results = mutableListOf<List<URI>>()
+        repeat(10) {
+            val testGraph = DependencyGraph()
+            testGraph.updateFromModule(fileA, moduleNode, workspaceIndex)
+            results.add(testGraph.getDependencies(fileA).sorted())
+        }
+
+        // All results should be identical (deterministic)
+        val firstResult = results.first()
+        results.forEach { result ->
+            assertEquals(firstResult, result, "Static import processing should produce deterministic results")
+        }
+
+        // Verify all classes are included
+        graph.updateFromModule(fileA, moduleNode, workspaceIndex)
+        val dependencies = graph.getDependencies(fileA)
+        assertEquals(4, dependencies.size, "Should have dependencies on all 4 statically imported classes")
+        assertTrue(dependencies.contains(URI.create("file:///src/Alpha.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/Beta.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/Middle.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/Zebra.groovy")))
+    }
+
+    @Test
+    fun `static star import processing is deterministic with multiple imports`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///src/FileA.groovy")
+
+        // Create workspace index with classes that would have different HashMap iteration order
+        val workspaceIndex = mapOf(
+            "Zebra" to URI.create("file:///src/Zebra.groovy"),
+            "Alpha" to URI.create("file:///src/Alpha.groovy"),
+            "Middle" to URI.create("file:///src/Middle.groovy"),
+            "Beta" to URI.create("file:///src/Beta.groovy"),
+        )
+
+        // Create a module with multiple static star imports
+        val moduleNode = ModuleNode(null as SourceUnit?)
+
+        // Add static star imports in non-alphabetical order
+        moduleNode.addStaticStarImport("Zebra", ClassNode("Zebra", 0, null, null, null))
+        moduleNode.addStaticStarImport("Alpha", ClassNode("Alpha", 0, null, null, null))
+        moduleNode.addStaticStarImport("Middle", ClassNode("Middle", 0, null, null, null))
+        moduleNode.addStaticStarImport("Beta", ClassNode("Beta", 0, null, null, null))
+
+        // Execute multiple times and collect the results
+        val results = mutableListOf<List<URI>>()
+        repeat(10) {
+            val testGraph = DependencyGraph()
+            testGraph.updateFromModule(fileA, moduleNode, workspaceIndex)
+            results.add(testGraph.getDependencies(fileA).sorted())
+        }
+
+        // All results should be identical (deterministic)
+        val firstResult = results.first()
+        results.forEach { result ->
+            assertEquals(firstResult, result, "Static star import processing should produce deterministic results")
+        }
+
+        // Verify all classes are included
+        graph.updateFromModule(fileA, moduleNode, workspaceIndex)
+        val dependencies = graph.getDependencies(fileA)
+        assertEquals(4, dependencies.size, "Should have dependencies on all 4 static star imported classes")
+        assertTrue(dependencies.contains(URI.create("file:///src/Alpha.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/Beta.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/Middle.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/Zebra.groovy")))
+    }
+
+    @Test
+    fun `combined import processing maintains determinism across all import types`() {
+        val graph = DependencyGraph()
+        val fileA = URI.create("file:///src/FileA.groovy")
+
+        val workspaceIndex = mapOf(
+            // Regular imports
+            "RegularZ" to URI.create("file:///src/RegularZ.groovy"),
+            "RegularA" to URI.create("file:///src/RegularA.groovy"),
+            // Star import package
+            "pkg.ClassZ" to URI.create("file:///src/pkg/ClassZ.groovy"),
+            "pkg.ClassA" to URI.create("file:///src/pkg/ClassA.groovy"),
+            // Static imports
+            "StaticZ" to URI.create("file:///src/StaticZ.groovy"),
+            "StaticA" to URI.create("file:///src/StaticA.groovy"),
+        )
+
+        val moduleNode = ModuleNode(null as SourceUnit?)
+
+        // Mix all types of imports - testing both regular and static imports
+        // (star imports are tested in a separate test)
+        moduleNode.addImport("RegularZ", ClassNode("RegularZ", 0, null, null, null))
+        moduleNode.addImport("RegularA", ClassNode("RegularA", 0, null, null, null))
+        moduleNode.addStaticImport(ClassNode("StaticZ", 0, null, null, null), "method", "methodZ")
+        moduleNode.addStaticImport(ClassNode("StaticA", 0, null, null, null), "method", "methodA")
+
+        // Execute multiple times and verify determinism
+        val results = mutableListOf<List<URI>>()
+        repeat(10) {
+            val testGraph = DependencyGraph()
+            testGraph.updateFromModule(fileA, moduleNode, workspaceIndex)
+            results.add(testGraph.getDependencies(fileA).sorted())
+        }
+
+        val firstResult = results.first()
+        results.forEach { result ->
+            assertEquals(firstResult, result, "Combined import processing should be deterministic")
+        }
+
+        // Verify all expected dependencies are present
+        graph.updateFromModule(fileA, moduleNode, workspaceIndex)
+        val dependencies = graph.getDependencies(fileA)
+        // 2 regular imports + 2 static imports = 4
+        assertEquals(4, dependencies.size, "Should have all 4 dependencies")
+
+        // Verify each expected file is included
+        assertTrue(dependencies.contains(URI.create("file:///src/RegularA.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/RegularZ.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/StaticA.groovy")))
+        assertTrue(dependencies.contains(URI.create("file:///src/StaticZ.groovy")))
     }
 }

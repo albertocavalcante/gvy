@@ -14,6 +14,7 @@ import com.github.albertocavalcante.groovyparser.ast.safePosition
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import groovy.lang.Script
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -34,11 +35,13 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.SignatureHelp
 import org.eclipse.lsp4j.SignatureInformation
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.lang.reflect.Method
 import java.lang.reflect.Modifier
 import java.net.URI
 import com.github.albertocavalcante.groovyparser.ast.types.Position as GroovyPosition
+
+/** Regex pattern to match synthetic parameter names like arg0, arg1, etc. */
+private val SYNTHETIC_PARAM_PATTERN = Regex("arg\\d+")
 
 class SignatureHelpProvider(
     private val compilationService: GroovyCompilationService,
@@ -46,7 +49,7 @@ class SignatureHelpProvider(
     private val semanticResolver: SemanticTypeResolver,
 ) {
 
-    private val logger = LoggerFactory.getLogger(SignatureHelpProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     suspend fun provideSignatureHelp(uri: String, position: Position): SignatureHelp {
         val documentUri = URI.create(uri)
@@ -78,7 +81,7 @@ class SignatureHelpProvider(
 
         val signatures = collectSignatures(documentUri, inputs).distinctBy { it.label }
         if (signatures.isEmpty()) {
-            logger.debug("No signatures found for ${inputs.methodName}")
+            logger.debug { "No signatures found for ${inputs.methodName}" }
             return null
         }
 
@@ -88,17 +91,17 @@ class SignatureHelpProvider(
     private suspend fun resolveSignatureInputs(documentUri: URI, position: Position): ResolvedSignatureInputs? {
         val astVisitor = compilationService.getAstModel(documentUri)
         if (astVisitor == null) {
-            logger.debug("No AST visitor available for {}", documentUri)
+            logger.debug { "No AST visitor available for $documentUri" }
         }
         val symbolTable = compilationService.getSymbolTable(documentUri)
         if (symbolTable == null) {
-            logger.debug("No symbol table available for {}", documentUri)
+            logger.debug { "No symbol table available for $documentUri" }
         }
 
         val groovyPos = position.toGroovyPosition()
         val nodeAtPosition = astVisitor?.getNodeAt(documentUri, groovyPos)
         if (astVisitor != null && nodeAtPosition == null) {
-            logger.debug("No AST node found at $position for $documentUri")
+            logger.debug { "No AST node found at $position for $documentUri" }
         }
 
         val canFindMethodCall = astVisitor != null && nodeAtPosition != null
@@ -111,7 +114,7 @@ class SignatureHelpProvider(
 
         val methodName = methodCall?.extractMethodName()
         if (methodCall != null && methodName == null) {
-            logger.debug("Could not resolve method name for call at $position in $documentUri")
+            logger.debug { "Could not resolve method name for call at $position in $documentUri" }
         }
 
         val hasCompilationContext = astVisitor != null && symbolTable != null
@@ -225,7 +228,7 @@ class SignatureHelpProvider(
         // Refine type from initializer for def/Object variables
         val canRefine = (type == "java.lang.Object" || type == "java.lang.Class") && objExpr is VariableExpression
         if (canRefine) {
-            val initExpr = findInitializerExpression(objExpr as VariableExpression, astVisitor, symbolTable)
+            val initExpr = findInitializerExpression(objExpr, astVisitor, symbolTable)
             if (initExpr != null) {
                 // Handle ConstructorCallExpression specially - use .type directly
                 // (no semantic calculator exists for constructor calls)
@@ -284,7 +287,7 @@ class SignatureHelpProvider(
         while (current != null && current !is ClassNode) {
             current = astVisitor.getParent(current)
         }
-        return (current as? ClassNode)?.name ?: "groovy.lang.Script"
+        return current?.name ?: "groovy.lang.Script"
     }
 
     private fun buildSignatureHelp(context: SignatureContext, position: Position): SignatureHelp {
@@ -338,7 +341,7 @@ class SignatureHelpProvider(
         val content = documentProvider.get(uri) ?: return
         runCatching { compilationService.compile(uri, content) }
             .onFailure { error ->
-                logger.debug("Unable to compile $uri before providing signature help", error)
+                logger.debug(error) { "Unable to compile $uri before providing signature help" }
             }
     }
 
@@ -350,7 +353,7 @@ class SignatureHelpProvider(
                 .filter { p -> Modifier.isPublic(p.modifiers) }
                 .groupBy { it.name }
         } catch (e: SecurityException) {
-            logger.warn("Failed to pre-resolve Script methods: {}", e.message)
+            logger.warn { "Failed to pre-resolve Script methods: ${e.message}" }
             emptyMap<String, List<Method>>()
         }
     }
@@ -411,17 +414,30 @@ private fun MethodNode.toSignatureInformation(): SignatureInformation {
 }
 
 private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
-    val paramsInfo = parameters.map { param ->
-        // GDK params are just type names usually (from simpleName)
-        // We can improve this if GDK provider gives more info.
-        // For now, assume "Type arg" pattern or just "Type"
-        ParameterInformation().apply { label = Either.forLeft(param) }
+    val paramsInfo = parameterTypes.mapIndexed { i, type ->
+        val paramName = parameterNames.getOrNull(i) ?: "arg$i"
+        val paramLabel = if (paramName.matches(SYNTHETIC_PARAM_PATTERN)) {
+            type
+        } else {
+            "$type $paramName"
+        }
+        ParameterInformation().apply { label = Either.forLeft(paramLabel) }
     }
 
     val label = buildString {
         append(returnType).append(" ")
         append(name).append("(")
-        append(parameters.joinToString(", "))
+        // Use mapIndexed to avoid truncation when parameterNames.size < parameterTypes.size
+        append(
+            parameterTypes.mapIndexed { i, type ->
+                val paramName = parameterNames.getOrNull(i) ?: "arg$i"
+                if (paramName.matches(SYNTHETIC_PARAM_PATTERN)) {
+                    type
+                } else {
+                    "$type $paramName"
+                }
+            }.joinToString(", "),
+        )
         append(")")
     }
 

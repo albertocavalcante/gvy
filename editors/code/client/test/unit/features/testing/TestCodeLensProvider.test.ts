@@ -40,10 +40,14 @@ describe("TestCodeLensProvider", () => {
         })),
       },
       workspace: {
-        getConfiguration: sandbox.stub().callsFake((section: string) => ({
-          get: sandbox
-            .stub()
-            .callsFake((key: string, defaultValue: any) => defaultValue),
+        getConfiguration: sandbox.stub().callsFake((_section: string) => ({
+          get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+            // Override codelens.test.source to "extension" so tests work with the new logic
+            if (key === "codelens.test.source") {
+              return "extension";
+            }
+            return defaultValue;
+          }),
         })),
       },
     };
@@ -119,17 +123,17 @@ describe("TestCodeLensProvider", () => {
       provider = new TestCodeLensProvider(testServiceMock);
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
-      // Should have CodeLens for class (Run All | Debug All) and test method (Run Test | Debug Test)
+      // Should have CodeLens for class (Run All | Debug All | Coverage) and test method (Run | Debug | Coverage)
       assert.ok(
-        codeLenses.length >= 2,
-        `Expected at least 2 CodeLenses, got ${codeLenses.length}`,
+        codeLenses.length >= 3,
+        `Expected at least 3 CodeLenses, got ${codeLenses.length}`,
       );
 
-      // Check class-level CodeLens
+      // Check class-level CodeLens (with codicons)
       const classLens = codeLenses.find(
         (lens: any) =>
-          lens.command?.title === "Run All Tests" ||
-          lens.command?.title === "Debug All Tests",
+          lens.command?.title === "$(play) Run All Tests" ||
+          lens.command?.title === "$(debug) Debug All Tests",
       );
       assert.ok(classLens, "Should have class-level CodeLens");
     });
@@ -152,19 +156,19 @@ describe("TestCodeLensProvider", () => {
       provider = new TestCodeLensProvider(testServiceMock);
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
-      // Should have at least 4 CodeLenses: 2 for class (Run All, Debug All) + 2*2 for methods (Run, Debug each)
+      // Should have at least 6 CodeLenses: 3 for class (Run All, Debug All, Coverage) + 3*2 for methods (Run, Debug, Coverage each)
       assert.ok(
-        codeLenses.length >= 4,
-        `Expected at least 4 CodeLenses, got ${codeLenses.length}`,
+        codeLenses.length >= 6,
+        `Expected at least 6 CodeLenses, got ${codeLenses.length}`,
       );
 
-      // Check for "Run Test" CodeLenses
+      // Check for "Run" CodeLenses (with codicon)
       const runTestLenses = codeLenses.filter(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(
         runTestLenses.length >= 2,
-        `Expected at least 2 "Run Test" CodeLenses, got ${runTestLenses.length}`,
+        `Expected at least 2 "$(play) Run" CodeLenses, got ${runTestLenses.length}`,
       );
     });
 
@@ -191,9 +195,12 @@ describe("TestCodeLensProvider", () => {
       );
 
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
-      assert.ok(runTestLens, 'Should have "Run Test" CodeLens for JUnit test');
+      assert.ok(
+        runTestLens,
+        'Should have "$(play) Run" CodeLens for JUnit test',
+      );
     });
 
     it("should have correct command IDs for test methods", async () => {
@@ -210,14 +217,14 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       const debugLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Debug Test",
+        (lens: any) => lens.command?.title === "$(debug) Debug",
       );
 
-      assert.ok(runLens, "Should have Run Test CodeLens");
-      assert.ok(debugLens, "Should have Debug Test CodeLens");
+      assert.ok(runLens, "Should have $(play) Run CodeLens");
+      assert.ok(debugLens, "Should have $(debug) Debug CodeLens");
 
       assert.strictEqual(runLens.command.command, "groovy.test.run");
       assert.strictEqual(debugLens.command.command, "groovy.test.debug");
@@ -238,10 +245,10 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
 
-      assert.ok(runLens, "Should have Run Test CodeLens");
+      assert.ok(runLens, "Should have $(play) Run CodeLens");
       assert.ok(runLens.command.arguments, "Command should have arguments");
       assert.strictEqual(
         runLens.command.arguments.length,
@@ -280,7 +287,7 @@ describe("TestCodeLensProvider", () => {
       const codeLenses = await provider.provideCodeLenses(documentMock);
 
       const runLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runLens, "Should have CodeLens for single-quoted test name");
 
@@ -331,8 +338,8 @@ describe("TestCodeLensProvider", () => {
       // Check that CodeLens is on MyTest class line (line 4), not UtilityClass (line 0)
       const classLens = codeLenses.find(
         (lens: any) =>
-          lens.command?.title === "Run All Tests" ||
-          lens.command?.title === "Debug All Tests",
+          lens.command?.title === "$(play) Run All Tests" ||
+          lens.command?.title === "$(debug) Debug All Tests",
       );
       assert.ok(classLens, "Should have class-level CodeLens");
       assert.strictEqual(
@@ -361,7 +368,7 @@ describe("TestCodeLensProvider", () => {
         "Should have CodeLenses for test with parameters",
       );
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runTestLens, "Should detect @Test with parameters");
     });
@@ -383,7 +390,7 @@ describe("TestCodeLensProvider", () => {
         "Should have CodeLenses for inline test",
       );
       const runTestLens = codeLenses.find(
-        (lens: any) => lens.command?.title === "Run Test",
+        (lens: any) => lens.command?.title === "$(play) Run",
       );
       assert.ok(runTestLens, "Should detect @Test on same line as method");
     });
@@ -469,10 +476,15 @@ describe("TestCodeLensProvider", () => {
     it("should show CodeLens when codelens.test.enabled config setting is enabled", async () => {
       // Mock workspace configuration
       const configMock = {
-        get: sandbox
-          .stub()
-          .withArgs("codelens.test.enabled", true)
-          .returns(true),
+        get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+          if (key === "codelens.test.enabled") {
+            return true;
+          }
+          if (key === "codelens.test.source") {
+            return "extension";
+          }
+          return defaultValue;
+        }),
       };
       vscodeMock.workspace = {
         getConfiguration: sandbox.stub().withArgs("groovy").returns(configMock),
@@ -502,6 +514,171 @@ describe("TestCodeLensProvider", () => {
       assert.ok(
         codeLenses.length > 0,
         "Should return CodeLenses when setting is enabled",
+      );
+    });
+
+    it("should return empty array when codelens.test.source is set to 'lsp'", async () => {
+      // Mock workspace configuration
+      const configMock = {
+        get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+          if (key === "codelens.test.enabled") {
+            return true;
+          }
+          if (key === "codelens.test.source") {
+            return "lsp";
+          }
+          return defaultValue;
+        }),
+      };
+      vscodeMock.workspace = {
+        getConfiguration: sandbox.stub().withArgs("groovy").returns(configMock),
+      };
+
+      // Re-create provider with updated vscode mock
+      const module = (proxyquire as any).noCallThru()(
+        "../../../../src/features/testing/TestCodeLensProvider",
+        {
+          vscode: vscodeMock,
+        },
+      );
+      TestCodeLensProvider = module.TestCodeLensProvider;
+
+      documentMock.getText.returns(
+        "import spock.lang.Specification\n" +
+          "class MySpec extends Specification {\n" +
+          '  def "test method"() {\n' +
+          "    expect: true\n" +
+          "  }\n" +
+          "}",
+      );
+
+      provider = new TestCodeLensProvider(testServiceMock);
+      const codeLenses = await provider.provideCodeLenses(documentMock);
+
+      assert.strictEqual(
+        codeLenses.length,
+        0,
+        "Should return empty array when source is set to 'lsp'",
+      );
+    });
+
+    // Adversarial tests
+    it("should handle empty file gracefully", async () => {
+      documentMock.getText.returns("");
+
+      provider = new TestCodeLensProvider(testServiceMock);
+      const codeLenses = await provider.provideCodeLenses(documentMock);
+
+      assert.strictEqual(
+        codeLenses.length,
+        0,
+        "Should return empty array for empty file",
+      );
+    });
+
+    it("should handle whitespace-only file", async () => {
+      documentMock.getText.returns("   \n\n  \t\n   ");
+
+      provider = new TestCodeLensProvider(testServiceMock);
+      const codeLenses = await provider.provideCodeLenses(documentMock);
+
+      assert.strictEqual(
+        codeLenses.length,
+        0,
+        "Should return empty array for whitespace-only file",
+      );
+    });
+
+    it("should handle Unicode test names", async () => {
+      documentMock.getText.returns(
+        "import spock.lang.Specification\n" +
+          "class MySpec extends Specification {\n" +
+          '  def "测试 Unicode 字符"() {\n' +
+          "    expect: true\n" +
+          "  }\n" +
+          '  def "тест кириллица"() {\n' +
+          "    expect: true\n" +
+          "  }\n" +
+          '  def "テスト 日本語"() {\n' +
+          "    expect: true\n" +
+          "  }\n" +
+          "}",
+      );
+
+      provider = new TestCodeLensProvider(testServiceMock);
+      const codeLenses = await provider.provideCodeLenses(documentMock);
+
+      assert.ok(codeLenses.length >= 3, "Should handle Unicode test names");
+
+      const runLenses = codeLenses.filter(
+        (lens: any) => lens.command?.title === "$(play) Run",
+      );
+      assert.ok(
+        runLenses.length >= 3,
+        "Should create CodeLens for all Unicode test names",
+      );
+    });
+
+    it("should handle malformed input with unclosed braces", async () => {
+      documentMock.getText.returns(
+        "class MyTest {\n" +
+          "    @Test\n" +
+          "    void testSomething() {\n" +
+          "        // unclosed brace\n",
+      );
+
+      provider = new TestCodeLensProvider(testServiceMock);
+      const codeLenses = await provider.provideCodeLenses(documentMock);
+
+      // Should still detect the test even with malformed input
+      assert.ok(
+        codeLenses.length >= 2,
+        "Should handle malformed input gracefully",
+      );
+    });
+
+    it("should handle codelens.test.source set to invalid value", async () => {
+      // Mock workspace configuration with invalid value
+      const configMock = {
+        get: sandbox.stub().callsFake((key: string, defaultValue: any) => {
+          if (key === "codelens.test.enabled") {
+            return true;
+          }
+          if (key === "codelens.test.source") {
+            return "invalid-value";
+          }
+          return defaultValue;
+        }),
+      };
+      vscodeMock.workspace = {
+        getConfiguration: sandbox.stub().withArgs("groovy").returns(configMock),
+      };
+
+      // Re-create provider with updated vscode mock
+      const module = (proxyquire as any).noCallThru()(
+        "../../../../src/features/testing/TestCodeLensProvider",
+        {
+          vscode: vscodeMock,
+        },
+      );
+      TestCodeLensProvider = module.TestCodeLensProvider;
+
+      documentMock.getText.returns(
+        "import spock.lang.Specification\n" +
+          "class MySpec extends Specification {\n" +
+          '  def "test method"() {\n' +
+          "    expect: true\n" +
+          "  }\n" +
+          "}",
+      );
+
+      provider = new TestCodeLensProvider(testServiceMock);
+      const codeLenses = await provider.provideCodeLenses(documentMock);
+
+      // Should still show CodeLens when invalid value is provided (defaults to extension)
+      assert.ok(
+        codeLenses.length > 0,
+        "Should show CodeLens even with invalid source setting",
       );
     });
   });

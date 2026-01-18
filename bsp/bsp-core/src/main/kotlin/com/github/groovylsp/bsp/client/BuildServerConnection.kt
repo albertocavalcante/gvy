@@ -25,9 +25,9 @@ import ch.epfl.scala.bsp4j.SourcesResult
 import ch.epfl.scala.bsp4j.TestParams
 import ch.epfl.scala.bsp4j.TestResult
 import ch.epfl.scala.bsp4j.WorkspaceBuildTargetsResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.withTimeout
-import org.slf4j.LoggerFactory
 import java.io.Closeable
 
 private const val COMPILE_TIMEOUT_MS = 300_000L // 5 minutes
@@ -49,13 +49,14 @@ private const val TEST_TIMEOUT_MS = 300_000L // 5 minutes
  * @param capabilities Parsed server capabilities from initialization
  * @param config Connection configuration (timeouts, etc.)
  */
+@Suppress("TooManyFunctions") // BSP protocol wrapper - one method per BSP endpoint (18 standard requests)
 class BuildServerConnection(
     private val server: BuildServer,
     private val capabilities: BspCapabilities,
     private val config: ConnectionConfig = ConnectionConfig(),
 ) : Closeable {
 
-    private val logger = LoggerFactory.getLogger(BuildServerConnection::class.java)
+    private val logger = KotlinLogging.logger {}
     private var closed = false
 
     /**
@@ -77,7 +78,7 @@ class BuildServerConnection(
         if (supported()) {
             action()
         } else {
-            logger.debug("Capability not supported, using fallback")
+            logger.debug { "Capability not supported, using fallback" }
             fallback()
         }
 
@@ -270,7 +271,7 @@ class BuildServerConnection(
     override fun close() {
         if (!closed) {
             closed = true
-            logger.debug("BuildServerConnection closed")
+            logger.debug { "BuildServerConnection closed" }
         }
     }
 
@@ -281,16 +282,16 @@ class BuildServerConnection(
     private suspend fun <T> withErrorHandling(operation: String, block: suspend () -> T): Either<BspError, T> {
         checkNotClosed()
         return try {
-            logger.trace("Executing BSP operation: {}", operation)
+            logger.trace { "Executing BSP operation: $operation" }
             block().right()
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            logger.error("BSP operation timed out: {}", operation, e)
+            logger.error(e) { "BSP operation timed out: $operation" }
             BspError.Timeout(operation, e).left()
         } catch (e: UnsupportedOperationException) {
-            logger.warn("BSP capability not supported: {}", operation)
+            logger.warn { "BSP capability not supported: $operation" }
             BspError.UnsupportedCapability(operation, e.message).left()
         } catch (e: Exception) {
-            logger.error("BSP operation failed: {}", operation, e)
+            logger.error(e) { "BSP operation failed: $operation" }
             BspError.RequestFailed(operation, e).left()
         }
     }

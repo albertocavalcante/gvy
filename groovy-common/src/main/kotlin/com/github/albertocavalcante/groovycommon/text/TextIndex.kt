@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.groovycommon.text
 
+import kotlin.concurrent.withLock
+
 /**
  * Text analysis utilities for cursor position calculations.
  *
@@ -7,6 +9,47 @@ package com.github.albertocavalcante.groovycommon.text
  * to work with line/character positions in source code.
  */
 object TextIndex {
+
+    private const val MAX_LINE_BREAK_CACHE_SIZE = 1000
+
+    private val lineBreakCacheLock = java.util.concurrent.locks.ReentrantLock()
+    private val lineBreakCache = object : LinkedHashMap<String, IntArray>(
+        16, // initial capacity
+        0.75f, // load factor
+        true, // accessOrder=true for LRU
+    ) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, IntArray>?): Boolean =
+            size > MAX_LINE_BREAK_CACHE_SIZE
+    }
+
+    /**
+     * Build an array of line break positions (indices of '\n' characters).
+     * Uses caching for better performance on repeated queries.
+     */
+    private fun getLineBreaks(content: String): IntArray {
+        // A 'get' on an access-ordered LinkedHashMap is a write operation, so we need a write lock.
+        // We check for the key and return if present, all within a brief write lock.
+        lineBreakCacheLock.withLock {
+            lineBreakCache[content]?.let { return it }
+        }
+
+        // If not in cache, compute the result outside of any lock to avoid holding
+        // the lock during potentially long computations.
+        val breaks = mutableListOf<Int>()
+        for (i in content.indices) {
+            if (content[i] == '\n') {
+                breaks.add(i)
+            }
+        }
+        val result = breaks.toIntArray()
+
+        // After computing, acquire the write lock again to put the result into the cache.
+        // Use getOrPut to handle the race condition where another thread might have
+        // computed and inserted the same key while we were working.
+        return lineBreakCacheLock.withLock {
+            lineBreakCache.getOrPut(content) { result }
+        }
+    }
 
     /**
      * Convert (line, character) position to absolute byte offset.
@@ -44,14 +87,27 @@ object TextIndex {
      */
     fun positionAt(content: String, offset: Int): Pair<Int, Int> {
         val safeOffset = offset.coerceIn(0, content.length)
-        var line = 0
-        var lineStart = 0
+        val lineBreaks = getLineBreaks(content)
 
-        for (i in 0 until safeOffset) {
-            if (content[i] == '\n') {
-                line++
-                lineStart = i + 1
-            }
+        if (lineBreaks.isEmpty()) {
+            return 0 to safeOffset
+        }
+
+        // Binary search to find which line the offset is on
+        val idx = lineBreaks.binarySearch(safeOffset)
+
+        val line: Int
+        val lineStart: Int
+
+        if (idx >= 0) {
+            // Offset is exactly at a line break
+            line = idx + 1
+            lineStart = lineBreaks[idx] + 1
+        } else {
+            // Not at a line break - idx is -(insertion point) - 1
+            val insertionPoint = -idx - 1
+            line = insertionPoint
+            lineStart = if (insertionPoint > 0) lineBreaks[insertionPoint - 1] + 1 else 0
         }
 
         return line to (safeOffset - lineStart)

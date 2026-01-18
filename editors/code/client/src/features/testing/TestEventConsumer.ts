@@ -43,6 +43,54 @@ export class TestEventConsumer {
   }
 
   /**
+   * Clear all registered test items to prevent memory leaks.
+   * Should be called when the consumer is done processing test events.
+   */
+  public clear(): void {
+    this.testItems.clear();
+  }
+
+  /**
+   * Find a test item by name when exact ID match fails.
+   * @param name The name/label of the test to find.
+   * @param parentId The ID of the parent suite, if available, to narrow the search.
+   */
+  private findItemByName(
+    name: string,
+    parentId?: string,
+  ): vscode.TestItem | undefined {
+    // Prioritize matches within the same suite if parentId is known
+    if (parentId) {
+      for (const [id, item] of this.testItems) {
+        if (
+          id.startsWith(parentId) &&
+          (item.label === name || id.endsWith(`.${name}`))
+        ) {
+          return item;
+        }
+      }
+    }
+
+    // First, prefer exact matches to avoid false positives
+    for (const [id, item] of this.testItems) {
+      if (item.label === name || id === name) {
+        return item;
+      }
+    }
+
+    // Fallback: try a narrower suffix match using only the ID
+    for (const [id, item] of this.testItems) {
+      if (id.endsWith(name)) {
+        this.logger.appendLine(
+          `[WARN] Ambiguous fallback match for test "${name}". Applying to ${item.id}.`,
+        );
+        return item;
+      }
+    }
+    return undefined;
+  }
+
+  /**
    * Process a single line of output from Gradle.
    * Returns true if the line was a valid JSON event, false otherwise.
    */
@@ -67,6 +115,11 @@ export class TestEventConsumer {
 
   private handleEvent(event: TestEvent): void {
     let item = this.testItems.get(event.id);
+
+    // Fallback: try to find by name if exact ID match fails
+    if (!item && event.name) {
+      item = this.findItemByName(event.name, event.parent);
+    }
 
     // For Spock @Unroll: dynamically create subtest if not found
     if (!item && event.parent && this.testController) {

@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.buildtool.bsp
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -24,7 +24,7 @@ data class BspConnectionDetails(
     val argv: List<String>,
 ) {
     companion object {
-        private val logger = LoggerFactory.getLogger(BspConnectionDetails::class.java)
+        private val logger = KotlinLogging.logger {}
         private val jsonParser = Json { ignoreUnknownKeys = true }
 
         fun findConnectionFiles(workspaceRoot: Path): List<Path> {
@@ -36,14 +36,14 @@ data class BspConnectionDetails(
                     stream.filter { it.isRegularFile() && it.extension == "json" }.toList()
                 }
             }.onFailure {
-                logger.warn("Failed to list .bsp directory: ${it.message}")
+                logger.warn { "Failed to list .bsp directory: ${it.message}" }
             }.getOrDefault(emptyList())
         }
 
         fun findFirst(workspaceRoot: Path): BspConnectionDetails? =
             findConnectionFiles(workspaceRoot).firstNotNullOfOrNull { file ->
                 parse(file)?.also {
-                    logger.info("Found BSP server '${it.name}' v${it.version} from ${file.name}")
+                    logger.info { "Found BSP server '${it.name}' v${it.version} from ${file.name}" }
                 }
             }
 
@@ -52,7 +52,7 @@ data class BspConnectionDetails(
             return runCatching {
                 parseJson(file.readText())
             }.onFailure {
-                logger.warn("Failed to parse BSP connection file ${file.name}: ${it.message}")
+                logger.warn { "Failed to parse BSP connection file ${file.name}: ${it.message}" }
             }.getOrNull()
         }
 
@@ -62,7 +62,7 @@ data class BspConnectionDetails(
             }.getOrElse { return null }
 
             if (conn.argv.isEmpty()) {
-                logger.warn("BSP connection file has empty argv")
+                logger.warn { "BSP connection file has empty argv" }
                 return null
             }
 

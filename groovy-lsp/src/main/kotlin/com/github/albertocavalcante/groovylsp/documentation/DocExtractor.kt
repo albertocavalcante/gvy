@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
 import com.github.albertocavalcante.groovyparser.ast.groovydoc.Groovydoc
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.ClassNode
@@ -11,7 +12,6 @@ import org.codehaus.groovy.groovydoc.GroovyClassDoc
 import org.codehaus.groovy.groovydoc.GroovyProgramElementDoc
 import org.codehaus.groovy.tools.groovydoc.LinkArgument
 import org.codehaus.groovy.tools.groovydoc.antlr4.GroovyDocParser
-import org.slf4j.LoggerFactory
 import java.util.Properties
 
 /**
@@ -26,8 +26,9 @@ import java.util.Properties
  * - When a node does not have usable position metadata (rare in production; common in tests), we fall back
  *   to best-effort GroovyDocParser lookup.
  */
+@Suppress("TooManyFunctions") // Cohesive documentation extraction
 object DocExtractor {
-    private val logger = LoggerFactory.getLogger(DocExtractor::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Extract documentation for a specific AST node from the source text.
@@ -44,7 +45,7 @@ object DocExtractor {
                     ?: return Documentation.EMPTY
             parseDocComment(rawComment)
         }.onFailure { e ->
-            logger.debug("Failed to extract documentation", e)
+            logger.debug(e) { "Failed to extract documentation" }
         }.getOrElse { Documentation.EMPTY }
     }
 
@@ -72,7 +73,7 @@ object DocExtractor {
         val classDocs = parser.getClassDocsFromSingleSource(".", "Script.groovy", sourceText)
         findDocForNode(classDocs, node)?.rawCommentText
     }.onFailure { e ->
-        logger.debug("GroovyDocParser failed; falling back to comment scan", e)
+        logger.debug(e) { "GroovyDocParser failed; falling back to comment scan" }
     }.getOrNull()
         ?.takeUnless { it.isBlank() }
 
@@ -130,7 +131,7 @@ object DocExtractor {
             val groovydoc = Groovydoc.parse(cleanedForParser)
             GroovyDocAdapter.toDocumentation(groovydoc)
         }.onFailure { e ->
-            logger.debug("GroovyDoc parser failed; falling back to regex parsing", e)
+            logger.debug(e) { "GroovyDoc parser failed; falling back to regex parsing" }
         }.getOrNull()?.takeIf { it.isNotEmpty() }
             ?: parseDocCommentWithRegex(docComment)
     }

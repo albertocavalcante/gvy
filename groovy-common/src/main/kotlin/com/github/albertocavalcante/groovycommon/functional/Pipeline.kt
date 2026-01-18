@@ -3,8 +3,8 @@ package com.github.albertocavalcante.groovycommon.functional
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
-import org.slf4j.LoggerFactory
 
 /**
  * Composable pipeline interface for strategy-based processing.
@@ -34,7 +34,7 @@ fun interface Pipeline<C, R> {
     suspend fun execute(context: C): Either<DomainError, R>
 
     companion object {
-        private val logger = LoggerFactory.getLogger(Pipeline::class.java)
+        private val logger = KotlinLogging.logger {}
 
         /**
          * Compose multiple pipelines into one that short-circuits on first success.
@@ -50,7 +50,7 @@ fun interface Pipeline<C, R> {
          *     FallbackStrategy(),
          * )
          * combined.execute(context).fold(
-         *     ifLeft = { logger.warn("All strategies failed: ${it.reason}") },
+         *     ifLeft = { logger.warn { "All strategies failed: ${it.reason}" } },
          *     ifRight = { result -> process(result) }
          * )
          * ```
@@ -76,10 +76,7 @@ fun interface Pipeline<C, R> {
                 } catch (e: Exception) {
                     // NOTE: Broad catch to keep pipeline resilient.
                     // TODO: Consider typed error handling for known failure modes.
-                    logger.debug(
-                        "Pipeline stage threw unexpectedly",
-                        e,
-                    )
+                    logger.debug(e) { "Pipeline stage threw unexpectedly" }
                     lastError = DomainError(
                         reason = "Stage threw: ${e.message}",
                         source = pipeline::class.simpleName ?: "unknown",

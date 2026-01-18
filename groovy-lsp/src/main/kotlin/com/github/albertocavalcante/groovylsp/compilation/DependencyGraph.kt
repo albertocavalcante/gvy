@@ -1,8 +1,9 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
@@ -19,7 +20,26 @@ import java.util.concurrent.ConcurrentHashMap
  * Thread-safety is provided by ConcurrentHashMap for concurrent LSP operations.
  */
 class DependencyGraph {
-    private val logger = LoggerFactory.getLogger(DependencyGraph::class.java)
+    private val logger = KotlinLogging.logger {}
+
+    companion object {
+        private val EXCLUDED_PREFIXES = listOf("java.", "groovy.")
+
+        /**
+         * Removes a value from a set in a map, cleaning up the entry if the set becomes empty.
+         *
+         * This helper maintains map hygiene by removing empty sets, which is important
+         * for both memory efficiency and correct behavior of methods like hasInfo().
+         *
+         * Uses computeIfPresent for atomic updates on ConcurrentHashMap.
+         */
+        private fun <K, V> removeFromSetMap(map: MutableMap<K, MutableSet<V>>, key: K, value: V) {
+            map.computeIfPresent(key) { _, set ->
+                set.remove(value)
+                set.ifEmpty { null }
+            }
+        }
+    }
 
     /**
      * Maps a file URI to the set of file URIs it depends on (direct dependencies only).
@@ -48,7 +68,7 @@ class DependencyGraph {
         // Add to reverse dependent map
         dependents.computeIfAbsent(toUri) { ConcurrentHashMap.newKeySet() }.add(fromUri)
 
-        logger.debug("Added dependency: {} -> {}", fromUri, toUri)
+        logger.debug { "Added dependency: $fromUri -> $toUri" }
     }
 
     /**
@@ -61,23 +81,15 @@ class DependencyGraph {
     fun removeFile(uri: URI) {
         // Remove all dependencies this file has
         dependencies.remove(uri)?.forEach { dependencyUri ->
-            // Remove this file from the dependent's list
-            dependents[dependencyUri]?.remove(uri)
-            if (dependents[dependencyUri]?.isEmpty() == true) {
-                dependents.remove(dependencyUri)
-            }
+            removeFromSetMap(dependents, dependencyUri, uri)
         }
 
         // Remove all dependents of this file
         dependents.remove(uri)?.forEach { dependentUri ->
-            // Remove this file from the dependent's dependency list
-            dependencies[dependentUri]?.remove(uri)
-            if (dependencies[dependentUri]?.isEmpty() == true) {
-                dependencies.remove(dependentUri)
-            }
+            removeFromSetMap(dependencies, dependentUri, uri)
         }
 
-        logger.debug("Removed file from dependency graph: {}", uri)
+        logger.debug { "Removed file from dependency graph: $uri" }
     }
 
     /**
@@ -144,13 +156,9 @@ class DependencyGraph {
 
         val result = directDependencies + directDependents
 
-        logger.debug(
-            "Bounded compilation sources for {}: {} dependencies + {} dependents = {} total",
-            uri,
-            directDependencies.size,
-            directDependents.size,
-            result.size,
-        )
+        logger.debug {
+            "Bounded compilation sources for $uri: ${directDependencies.size} dependencies + ${directDependents.size} dependents = ${result.size} total"
+        }
 
         return result
     }
@@ -185,11 +193,7 @@ class DependencyGraph {
             affected.addAll(getDependents(changedUri))
         }
 
-        logger.debug(
-            "Affected files for changes to {}: {} total affected",
-            changedUris.size,
-            affected.size,
-        )
+        logger.debug { "Affected files for changes to ${changedUris.size}: ${affected.size} total affected" }
 
         return affected
     }
@@ -212,58 +216,28 @@ class DependencyGraph {
     fun updateFromModule(uri: URI, moduleNode: ModuleNode, workspaceIndex: Map<String, URI>) {
         val newDependencies = mutableSetOf<URI>()
 
+        // Helper lambda for consistent import sorting (matches processing order)
+        val importSortKey: (ImportNode) -> String = {
+            it.type?.name ?: it.className ?: ""
+        }
+
         // Extract dependencies from imports
         moduleNode.imports.forEach { importNode ->
-            val importedClassName = importNode.className ?: importNode.type?.name
-            if (importedClassName != null) {
-                logger.trace(
-                    "Processing import: className={}, available keys={}",
-                    importedClassName,
-                    workspaceIndex.keys,
-                )
-                // Try both fully qualified name and simple name
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                    logger.trace("Found dependency for {}: {}", importedClassName, dependencyUri)
-                }
-                // Also try extracting simple name from FQN
-                val simpleName = importedClassName.substringAfterLast('.')
-                if (simpleName != importedClassName) {
-                    workspaceIndex[simpleName]?.let { dependencyUri ->
-                        newDependencies.add(dependencyUri)
-                        logger.trace("Found dependency for simple name {}: {}", simpleName, dependencyUri)
-                    }
-                }
-            }
+            processImportNode(importNode.className ?: importNode.type?.name, workspaceIndex, newDependencies)
         }
 
         // Extract dependencies from star imports
         moduleNode.starImports.forEach { importNode ->
-            val importedClassName = importNode.type?.name ?: importNode.className
-            if (importedClassName != null) {
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                }
-            }
+            processStarImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
         // Extract dependencies from static imports
-        moduleNode.staticImports.values.forEach { importNode ->
-            val importedClassName = importNode.type?.name ?: importNode.className
-            if (importedClassName != null) {
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                }
-            }
+        moduleNode.staticImports.values.sortedBy(importSortKey).forEach { importNode ->
+            processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
-        moduleNode.staticStarImports.values.forEach { importNode ->
-            val importedClassName = importNode.type?.name ?: importNode.className
-            if (importedClassName != null) {
-                workspaceIndex[importedClassName]?.let { dependencyUri ->
-                    newDependencies.add(dependencyUri)
-                }
-            }
+        moduleNode.staticStarImports.values.sortedBy(importSortKey).forEach { importNode ->
+            processSimpleImport(importNode.type?.name ?: importNode.className, workspaceIndex, newDependencies)
         }
 
         // Extract dependencies from classes in the module
@@ -274,11 +248,74 @@ class DependencyGraph {
         // Update the graph with new dependencies
         setDependencies(uri, newDependencies)
 
-        logger.debug(
-            "Updated dependencies for {}: {} dependencies",
-            uri,
-            newDependencies.size,
-        )
+        logger.debug { "Updated dependencies for $uri: ${newDependencies.size} dependencies" }
+    }
+
+    /**
+     * Process an import node and extract dependencies.
+     *
+     * Tries both fully qualified name and simple name to find dependencies.
+     */
+    private fun processImportNode(
+        importedClassName: String?,
+        workspaceIndex: Map<String, URI>,
+        dependencies: MutableSet<URI>,
+    ) {
+        if (importedClassName == null) return
+
+        logger.trace {
+            "Processing import: className=$importedClassName, available keys=${workspaceIndex.keys}"
+        }
+
+        // Try both fully qualified name and simple name
+        workspaceIndex[importedClassName]?.let { dependencyUri ->
+            dependencies.add(dependencyUri)
+            logger.trace { "Found dependency for $importedClassName: $dependencyUri" }
+        }
+
+        // Also try extracting simple name from FQN
+        val simpleName = importedClassName.substringAfterLast('.')
+        if (simpleName != importedClassName) {
+            workspaceIndex[simpleName]?.let { dependencyUri ->
+                dependencies.add(dependencyUri)
+                logger.trace { "Found dependency for simple name $simpleName: $dependencyUri" }
+            }
+        }
+    }
+
+    /**
+     * Process a star import and extract dependencies on all classes in the package.
+     */
+    private fun processStarImport(
+        packageName: String?,
+        workspaceIndex: Map<String, URI>,
+        dependencies: MutableSet<URI>,
+    ) {
+        if (packageName == null) return
+
+        workspaceIndex.entries.sortedBy { it.key }.forEach { (className, uri) ->
+            // Check if the class is directly in the package (not a subpackage)
+            if (className.startsWith("$packageName.") && !className.substringAfter("$packageName.").contains('.')) {
+                dependencies.add(uri)
+            }
+        }
+    }
+
+    /**
+     * Process a static or static-star import and extract dependencies.
+     *
+     * Only tries the exact class name without FQN resolution.
+     */
+    private fun processSimpleImport(
+        importedClassName: String?,
+        workspaceIndex: Map<String, URI>,
+        dependencies: MutableSet<URI>,
+    ) {
+        if (importedClassName == null) return
+
+        workspaceIndex[importedClassName]?.let { dependencyUri ->
+            dependencies.add(dependencyUri)
+        }
     }
 
     /**
@@ -314,7 +351,7 @@ class DependencyGraph {
         val className = classNode.name
 
         // Skip primitive types and JDK types
-        if (className.startsWith("java.") || className.startsWith("groovy.")) {
+        if (EXCLUDED_PREFIXES.any { className.startsWith(it) }) {
             return
         }
 
@@ -335,10 +372,7 @@ class DependencyGraph {
 
         // Clear this file from old dependencies' dependent lists
         oldDependencies.forEach { oldDependency ->
-            dependents[oldDependency]?.remove(uri)
-            if (dependents[oldDependency]?.isEmpty() == true) {
-                dependents.remove(oldDependency)
-            }
+            removeFromSetMap(dependents, oldDependency, uri)
         }
 
         // Add new dependencies

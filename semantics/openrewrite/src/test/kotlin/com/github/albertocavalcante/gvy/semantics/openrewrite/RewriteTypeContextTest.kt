@@ -7,12 +7,11 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.openrewrite.groovy.GroovyParser
+import org.openrewrite.groovy.GroovyVisitor
 import org.openrewrite.groovy.tree.G
 import org.openrewrite.java.tree.J
-import org.openrewrite.java.tree.JavaType
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -333,7 +332,7 @@ class RewriteTypeContextTest {
 
     private fun findFirstLiteral(cu: G.CompilationUnit): J.Literal {
         var result: J.Literal? = null
-        object : org.openrewrite.groovy.GroovyVisitor<Unit>() {
+        object : GroovyVisitor<Unit>() {
             override fun visitLiteral(literal: J.Literal, p: Unit): J {
                 if (result == null) {
                     result = literal
@@ -346,7 +345,7 @@ class RewriteTypeContextTest {
 
     private fun findFirstVariableDeclaration(cu: G.CompilationUnit): J.VariableDeclarations {
         var result: J.VariableDeclarations? = null
-        object : org.openrewrite.groovy.GroovyVisitor<Unit>() {
+        object : GroovyVisitor<Unit>() {
             override fun visitVariableDeclarations(multiVariable: J.VariableDeclarations, p: Unit): J {
                 if (result == null) {
                     result = multiVariable
@@ -359,7 +358,7 @@ class RewriteTypeContextTest {
 
     private fun findFirstMethodInvocation(cu: G.CompilationUnit): J.MethodInvocation {
         var result: J.MethodInvocation? = null
-        object : org.openrewrite.groovy.GroovyVisitor<Unit>() {
+        object : GroovyVisitor<Unit>() {
             override fun visitMethodInvocation(method: J.MethodInvocation, p: Unit): J {
                 if (result == null) {
                     result = method

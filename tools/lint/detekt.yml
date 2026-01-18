@@ -149,6 +149,15 @@ potential-bugs:
     active: true
 style:
   active: true
+  ForbiddenMethodCall:
+    active: true
+    # Forbid println/print in main source code - use logging instead
+    # Note: This doesn't affect string literals containing "println" (e.g., Groovy code in tests)
+    methods:
+      - 'kotlin.io.println'
+      - 'kotlin.io.print'
+    excludes:
+      - '**/test/**'  # Allow in tests for now (will clean up separately)
   ForbiddenComment:
     active: true
     comments:

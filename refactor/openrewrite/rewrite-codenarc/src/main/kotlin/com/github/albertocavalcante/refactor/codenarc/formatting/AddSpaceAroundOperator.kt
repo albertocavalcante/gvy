@@ -27,7 +27,8 @@ class AddSpaceAroundOperator : Recipe() {
             var a = super.visitAssignment(assignment, ctx)
 
             // Ensure space before the assignment operator '='
-            // The padding 'before' on the assignment property corresponds to the space specifically before the '=' token.
+            // The padding 'before' on the assignment property corresponds to the space
+            // specifically before the '=' token.
             val rightPadded = a.padding.assignment
             if (rightPadded.before.whitespace.isEmpty()) {
                 a = a.padding.withAssignment(

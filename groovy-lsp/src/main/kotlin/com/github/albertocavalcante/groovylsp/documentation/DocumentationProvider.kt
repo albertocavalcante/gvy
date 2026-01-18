@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.documentation
 
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Thread-safe for concurrent access from coroutines.
  */
 class DocumentationProvider(private val documentProvider: DocumentProvider) {
-    private val logger = LoggerFactory.getLogger(DocumentationProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Thread-safe cache to avoid recomputing documentation
     private val cache = ConcurrentHashMap<String, Documentation>()
@@ -46,7 +46,7 @@ class DocumentationProvider(private val documentProvider: DocumentProvider) {
         val sourceText = try {
             documentProvider.get(documentUri) ?: return Documentation.EMPTY
         } catch (e: Exception) {
-            logger.warn("Failed to get document content for $documentUri", e)
+            logger.warn(e) { "Failed to get document content for $documentUri" }
             return Documentation.EMPTY
         }
 

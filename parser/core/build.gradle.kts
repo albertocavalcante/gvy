@@ -17,7 +17,7 @@ dependencies {
     api(libs.groovy.core)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
 
     // Detekt formatting
     detektPlugins(libs.detekt.formatting)
@@ -27,6 +27,8 @@ dependencies {
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
     testRuntimeOnly(libs.junit.platform.launcher)
+    // kotlin-logging needs SLF4J impl at test runtime
+    testRuntimeOnly(libs.logback.classic)
 }
 
 tasks.test {
@@ -52,6 +54,9 @@ java {
 
 // Publishing configuration for GitHub Packages
 publishing {
+    val repoPath = "albertocavalcante/gvy"
+    val repoUrl = "https://github.com/$repoPath"
+
     publications {
         create<MavenPublication>("maven") {
             artifactId = "groovyparser-core"
@@ -64,7 +69,7 @@ publishing {
                         "Provides a type-safe AST representation of Groovy code with visitor pattern, " +
                         "position tracking, and Jenkins CPS analysis support.",
                 )
-                url.set("https://github.com/albertocavalcante/gvy")
+                url.set(repoUrl)
 
                 licenses {
                     license {
@@ -81,9 +86,9 @@ publishing {
                 }
 
                 scm {
-                    connection.set("scm:git:git://github.com/albertocavalcante/gvy.git")
-                    developerConnection.set("scm:git:ssh://github.com/albertocavalcante/gvy.git")
-                    url.set("https://github.com/albertocavalcante/gvy")
+                    connection.set("scm:git:git://github.com/$repoPath.git")
+                    developerConnection.set("scm:git:ssh://github.com/$repoPath.git")
+                    url.set(repoUrl)
                 }
             }
         }
@@ -92,7 +97,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/albertocavalcante/gvy")
+            url = uri("https://maven.pkg.github.com/$repoPath")
             credentials {
                 username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String?
                 password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String?

@@ -3,14 +3,14 @@ package com.github.albertocavalcante.groovyparser.internal
 import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserRange
 import com.github.albertocavalcante.nativeapi.ParserSeverity
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.control.ErrorCollector
 import org.codehaus.groovy.control.messages.Message
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
 import org.codehaus.groovy.syntax.SyntaxException
-import org.slf4j.LoggerFactory
 
 internal object ParserDiagnosticConverter {
-    private val logger = LoggerFactory.getLogger(ParserDiagnosticConverter::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun convert(errorCollector: ErrorCollector, allowedLocators: Set<String>): List<ParserDiagnostic> {
         val diagnostics = mutableListOf<ParserDiagnostic>()
@@ -50,14 +50,11 @@ internal object ParserDiagnosticConverter {
         val line = maxOf(0, syntaxException.line - 1)
         val start = maxOf(0, syntaxException.startColumn - 1)
         val end = maxOf(start, syntaxException.endColumn - 1)
-        logger.debug(
-            "Syntax diagnostic from '{}': {} at line {}, columns {}-{}",
-            syntaxException.sourceLocator,
-            syntaxException.originalMessage,
-            syntaxException.line,
-            syntaxException.startColumn,
-            syntaxException.endColumn,
-        )
+        logger.debug {
+            "Syntax diagnostic from '${syntaxException.sourceLocator}': " +
+                "${syntaxException.originalMessage} at line ${syntaxException.line}, " +
+                "columns ${syntaxException.startColumn}-${syntaxException.endColumn}"
+        }
         return ParserDiagnostic(
             range = ParserRange.singleLine(line, start, end),
             severity = ParserSeverity.ERROR,

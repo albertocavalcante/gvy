@@ -1,9 +1,9 @@
 package com.github.groovylsp.bsp.transport
 
 import com.github.groovylsp.bsp.lifecycle.BspConnectionDetails
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.nio.file.Path
 
@@ -19,7 +19,7 @@ import java.nio.file.Path
  * for custom process management scenarios.
  */
 object ProcessLauncher {
-    private val logger = LoggerFactory.getLogger(ProcessLauncher::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Launches a process with the given command and configuration.
@@ -34,11 +34,11 @@ object ProcessLauncher {
     fun launch(argv: List<String>, workingDir: Path, environment: Map<String, String> = emptyMap()): Process {
         require(argv.isNotEmpty()) { "argv must not be empty" }
 
-        logger.debug("Launching process: ${argv.joinToString(" ")}")
-        logger.debug("Working directory: $workingDir")
+        logger.debug { "Launching process: ${argv.joinToString(" ")}" }
+        logger.debug { "Working directory: $workingDir" }
 
         if (environment.isNotEmpty()) {
-            logger.debug("Environment overrides: ${environment.keys}")
+            logger.debug { "Environment overrides: ${environment.keys}" }
         }
 
         val processBuilder = ProcessBuilder(argv).apply {
@@ -56,10 +56,10 @@ object ProcessLauncher {
 
         return try {
             processBuilder.start().also {
-                logger.info("Process launched successfully (pid: ${it.pid()})")
+                logger.info { "Process launched successfully (pid: ${it.pid()})" }
             }
         } catch (e: IOException) {
-            logger.error("Failed to launch process: ${e.message}", e)
+            logger.error(e) { "Failed to launch process: ${e.message}" }
             throw IOException("Failed to launch BSP server: ${e.message}", e)
         }
     }
@@ -83,8 +83,8 @@ object ProcessLauncher {
         workingDir: Path,
         environment: Map<String, String> = emptyMap(),
     ): BspTransport = withContext(Dispatchers.IO) {
-        logger.info("Launching BSP server '${details.name}' v${details.version}")
-        logger.debug("BSP version: ${details.bspVersion}, languages: ${details.languages}")
+        logger.info { "Launching BSP server '${details.name}' v${details.version}" }
+        logger.debug { "BSP version: ${details.bspVersion}, languages: ${details.languages}" }
 
         StdioTransport.launch(
             argv = details.argv,

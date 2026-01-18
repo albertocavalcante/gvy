@@ -5,7 +5,7 @@ import com.github.javaparser.JavaParser
 import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import com.github.javaparser.ast.comments.JavadocComment
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -23,7 +23,7 @@ class JavaSourceInspector {
         private const val DOC_FALLBACK_LENGTH = 200
     }
 
-    private val logger = LoggerFactory.getLogger(JavaSourceInspector::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Configure JavaParser to be lenient and handle modern Java syntax
     private val parserConfig = ParserConfiguration().apply {
@@ -47,7 +47,7 @@ class JavaSourceInspector {
      */
     fun inspectClass(sourcePath: Path, className: String): InspectionResult? {
         if (!Files.exists(sourcePath)) {
-            logger.debug("Source file does not exist: {}", sourcePath)
+            logger.debug { "Source file does not exist: $sourcePath" }
             return null
         }
 
@@ -55,7 +55,35 @@ class JavaSourceInspector {
             val content = Files.readString(sourcePath)
             inspectClassFromContent(content, className, sourcePath.toString())
         } catch (e: Exception) {
-            logger.warn("Failed to inspect Java source: $sourcePath", e)
+            logger.warn(e) { "Failed to inspect Java source: $sourcePath" }
+            null
+        }
+    }
+
+    /**
+     * Inspect a Java source file to find the definition of a specific method within a class.
+     *
+     * @param sourcePath Path to the .java file
+     * @param className Fully qualified class name (e.g., "java.util.Date")
+     * @param methodName Simple method name (e.g., "getTime")
+     * @return InspectionResult containing line number and documentation, or null if not found
+     */
+    // TODO(#830): Add parameter count/types to method inspection API for overload resolution.
+    //   Current limitation: inspectMethod only matches by name, not signature, causing incorrect
+    //   navigation when multiple method overloads exist. Requires adding parameterTypes parameter
+    //   and updating method matching logic to compare signatures for precise overload resolution.
+    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/830
+    fun inspectMethod(sourcePath: Path, className: String, methodName: String): InspectionResult? {
+        if (!Files.exists(sourcePath)) {
+            logger.debug { "Source file does not exist: $sourcePath" }
+            return null
+        }
+
+        return try {
+            val content = Files.readString(sourcePath)
+            inspectMethodFromContent(content, className, methodName, sourcePath.toString())
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to inspect method in Java source: $sourcePath" }
             null
         }
     }
@@ -73,41 +101,119 @@ class JavaSourceInspector {
             val parseResult = parser.parse(content)
 
             if (!parseResult.isSuccessful) {
-                logger.debug(
-                    "Failed to parse Java source {}: {}",
-                    sourceName,
-                    parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message },
-                )
+                logger.debug {
+                    "Failed to parse Java source $sourceName: " +
+                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
+                }
                 return null
             }
 
             val compilationUnit = parseResult.result.orElse(null) ?: return null
 
             // Extract simple class name for matching
-            val simpleClassName = className.substringAfterLast('.')
+            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
 
             // Find the class declaration
             val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
                 .firstOrNull { it.nameAsString == simpleClassName }
 
             if (classDecl == null) {
-                logger.debug("Could not find class {} in {}", className, sourceName)
+                logger.debug { "Could not find class $className in $sourceName" }
                 return null
             }
 
             val lineNumber = classDecl.begin.map { it.line }.orElse(0)
             if (lineNumber <= 0) {
-                logger.debug("Class {} found but has invalid line number in {}", className, sourceName)
+                logger.debug { "Class $className found but has invalid line number in $sourceName" }
                 return null
             }
 
             // Extract Javadoc
             val documentation = extractJavadoc(classDecl)
 
-            logger.debug("Found class {} at line {} in {}", className, lineNumber, sourceName)
+            logger.debug { "Found class $className at line $lineNumber in $sourceName" }
             InspectionResult(lineNumber, documentation)
         } catch (e: Exception) {
-            logger.warn("Failed to inspect Java source content for $className", e)
+            logger.warn(e) { "Failed to inspect Java source content for $className" }
+            null
+        }
+    }
+
+    /**
+     * Inspect Java source content to find a specific method within a class.
+     */
+    @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
+    fun inspectMethodFromContent(
+        content: String,
+        className: String,
+        methodName: String,
+        sourceName: String = "<unknown>",
+    ): InspectionResult? {
+        return try {
+            val parseResult = parser.parse(content)
+
+            if (!parseResult.isSuccessful) {
+                logger.debug {
+                    "Failed to parse Java source $sourceName: " +
+                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
+                }
+                return null
+            }
+
+            val compilationUnit = parseResult.result.orElse(null) ?: return null
+
+            // Extract simple class name for matching
+            // Handle inner classes with $ in binary names (e.g., "Map$Entry" -> "Entry")
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
+
+            // Find the class declaration
+            val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
+                .firstOrNull { it.nameAsString == simpleClassName }
+
+            if (classDecl == null) {
+                logger.debug { "Could not find class $className in $sourceName" }
+                return null
+            }
+
+            // Find the method declaration within the class
+            // Handle method overloading: filter all candidates and warn if ambiguous
+            val methodCandidates = classDecl.methods.filter { it.nameAsString == methodName }
+            val methodDecl = when (methodCandidates.size) {
+                0 -> null
+                1 -> methodCandidates[0]
+                else -> {
+                    logger.debug {
+                        "Ambiguous method $className.$methodName (${methodCandidates.size} overloads) in $sourceName"
+                    }
+                    null
+                }
+            }
+
+            if (methodDecl == null) {
+                logger.debug { "Could not find method $methodName in class $className in $sourceName" }
+                return null
+            }
+
+            val lineNumber = methodDecl.begin.map { it.line }.orElse(0)
+            if (lineNumber <= 0) {
+                logger.debug {
+                    "Method $methodName in class $className found but has invalid line number in $sourceName"
+                }
+                return null
+            }
+
+            // Extract Javadoc from method
+            val documentation = extractMethodJavadoc(methodDecl)
+
+            logger.debug { "Found method $className.$methodName at line $lineNumber in $sourceName" }
+            InspectionResult(lineNumber, documentation)
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to inspect method $methodName in $className" }
             null
         }
     }
@@ -120,6 +226,16 @@ class JavaSourceInspector {
      */
     private fun extractJavadoc(classDecl: ClassOrInterfaceDeclaration): Documentation {
         val javadocComment = classDecl.javadocComment.orElse(null)
+            ?: return Documentation()
+
+        return parseJavadoc(javadocComment)
+    }
+
+    /**
+     * Extract Javadoc documentation from a method declaration.
+     */
+    private fun extractMethodJavadoc(methodDecl: com.github.javaparser.ast.body.MethodDeclaration): Documentation {
+        val javadocComment = methodDecl.javadocComment.orElse(null)
             ?: return Documentation()
 
         return parseJavadoc(javadocComment)
@@ -198,13 +314,105 @@ class JavaSourceInspector {
             see = seeAlso,
         )
     } catch (e: Exception) {
-        logger.debug("Failed to parse Javadoc: ${e.message}")
+        logger.debug { "Failed to parse Javadoc: ${e.message}" }
         // Fallback: use raw comment text
         val rawText = javadocComment.content.trim()
         Documentation(
             summary = extractFirstSentence(rawText),
             description = rawText,
         )
+    }
+
+    /**
+     * Extract all method parameters from a Java source file for a specific class.
+     *
+     * This is useful for indexing all GDK methods at once instead of inspecting them one by one.
+     *
+     * @param sourcePath Path to the .java file
+     * @param className Fully qualified class name (e.g., "org.codehaus.groovy.runtime.DefaultGroovyMethods")
+     * @return Map of method signature to parameter names, or empty map if parsing fails
+     *         Key format: "methodName(ParamType1,ParamType2,...)"
+     *         Example: "each(Closure)" -> ["closure"]
+     */
+    fun extractAllMethodParameters(sourcePath: Path, className: String): Map<String, List<String>> {
+        if (!Files.exists(sourcePath)) {
+            logger.debug { "Source file does not exist: $sourcePath" }
+            return emptyMap()
+        }
+
+        return try {
+            val content = Files.readString(sourcePath)
+            extractAllMethodParametersFromContent(content, className, sourcePath.toString())
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to extract method parameters from Java source: $sourcePath" }
+            emptyMap()
+        }
+    }
+
+    /**
+     * Extract all method parameters from Java source content directly (useful for testing).
+     */
+    @Suppress("ReturnCount") // Multiple parsing validation checks require early returns
+    fun extractAllMethodParametersFromContent(
+        content: String,
+        className: String,
+        sourceName: String = "<unknown>",
+    ): Map<String, List<String>> {
+        return try {
+            val parseResult = parser.parse(content)
+
+            if (!parseResult.isSuccessful) {
+                logger.debug {
+                    "Failed to parse Java source $sourceName: " +
+                        parseResult.problems.take(PROBLEM_PREVIEW_LIMIT).joinToString("; ") { it.message }
+                }
+                return emptyMap()
+            }
+
+            val compilationUnit = parseResult.result.orElse(null) ?: return emptyMap()
+
+            // Extract simple class name for matching
+            val simpleClassName = className
+                .substringAfterLast('.')
+                .substringAfterLast('$')
+
+            // Find the class declaration
+            val classDecl = compilationUnit.findAll(ClassOrInterfaceDeclaration::class.java)
+                .firstOrNull { it.nameAsString == simpleClassName }
+
+            if (classDecl == null) {
+                logger.debug { "Could not find class $className in $sourceName" }
+                return emptyMap()
+            }
+
+            // Extract all methods with their parameter names
+            val result = mutableMapOf<String, List<String>>()
+
+            classDecl.methods.forEach { method ->
+                val methodName = method.nameAsString
+                val paramTypes = method.parameters.map { param ->
+                    // Get simple type name (e.g., "Closure" instead of "groovy.lang.Closure")
+                    // Strip generic type parameters (e.g., "List<String>" becomes "List")
+                    val baseType = param.typeAsString
+                        .substringBefore('<') // Strip generic type parameters
+                        .substringAfterLast('.')
+                    // Normalize varargs to array notation to match reflection (Object... -> Object[])
+                    if (param.isVarArgs) "$baseType[]" else baseType
+                }
+                val paramNames = method.parameters.map { it.nameAsString }
+
+                if (paramNames.isNotEmpty()) {
+                    val signature = "$methodName(${paramTypes.joinToString(",")})"
+                    result[signature] = paramNames
+                }
+            }
+
+            logger.debug { "Extracted ${result.size} methods from class $className in $sourceName" }
+            result
+        } catch (e: Exception) {
+            logger.warn(e) { "Failed to extract method parameters from $className" }
+            emptyMap()
+        }
     }
 
     /**

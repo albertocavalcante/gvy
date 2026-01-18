@@ -6,11 +6,11 @@ import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenera
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
-import org.slf4j.LoggerFactory
 import java.net.URI
 import kotlin.test.assertTrue
 
@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
  */
 class ConstructorCallHoverStrategyTest {
 
-    private val logger = LoggerFactory.getLogger(ConstructorCallHoverStrategyTest::class.java)
+    private val logger = KotlinLogging.logger {}
     private val compilationService = GroovyCompilationService()
     private val documentProvider = DocumentProvider()
 
@@ -56,7 +56,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Constructor call hover: ${content.value}")
+            logger.info { "Constructor call hover: ${content.value}" }
 
             assertTrue(content.kind == MarkupKind.MARKDOWN)
             assertTrue(
@@ -92,7 +92,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Parameterized constructor hover: ${content.value}")
+            logger.info { "Parameterized constructor hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Book") || content.value.contains("Constructor"),
@@ -121,7 +121,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Named arguments constructor hover: ${content.value}")
+            logger.info { "Named arguments constructor hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Config") || content.value.contains("Constructor"),
@@ -145,7 +145,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (listHover != null) {
             val content = listHover.contents.right
-            logger.info("ArrayList constructor hover: ${content.value}")
+            logger.info { "ArrayList constructor hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("ArrayList") || content.value.contains("List"),
@@ -158,7 +158,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (mapHover != null) {
             val content = mapHover.contents.right
-            logger.info("HashMap constructor hover: ${content.value}")
+            logger.info { "HashMap constructor hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("HashMap") || content.value.contains("Map"),
@@ -190,7 +190,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Generic constructor hover: ${content.value}")
+            logger.info { "Generic constructor hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Container") || content.value.contains("Constructor"),
@@ -220,7 +220,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (outerHover != null) {
             val content = outerHover.contents.right
-            logger.info("Outer class constructor hover: ${content.value}")
+            logger.info { "Outer class constructor hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Outer") || content.value.contains("Constructor"),
@@ -254,7 +254,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover1 != null) {
             val content = hover1.contents.right
-            logger.info("Constructor with all params hover: ${content.value}")
+            logger.info { "Constructor with all params hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Person") || content.value.contains("Constructor"),
@@ -267,7 +267,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover2 != null) {
             val content = hover2.contents.right
-            logger.info("Constructor with default params hover: ${content.value}")
+            logger.info { "Constructor with default params hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Person") || content.value.contains("Constructor"),
@@ -295,7 +295,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Constructor in expression hover: ${content.value}")
+            logger.info { "Constructor in expression hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Point") || content.value.contains("Constructor"),
@@ -326,7 +326,7 @@ class ConstructorCallHoverStrategyTest {
 
         if (hover != null) {
             val content = hover.contents.right
-            logger.info("Anonymous inner class constructor hover: ${content.value}")
+            logger.info { "Anonymous inner class constructor hover: ${content.value}" }
 
             assertTrue(
                 content.value.contains("Base") || content.value.contains("Constructor") ||

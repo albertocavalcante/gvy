@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovytesting.api.TestFramework
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -17,7 +18,7 @@ class JUnit4TestDetectorTest {
     private val detector = JUnit4TestDetector()
     private val parser = GroovyParserFacade()
 
-    private fun parse(source: String, className: String): Pair<org.codehaus.groovy.ast.ClassNode, ModuleNode> {
+    private fun parse(source: String, className: String): Pair<ClassNode, ModuleNode> {
         val result = parser.parse(
             ParseRequest(
                 uri = URI.create("file:///Test.groovy"),

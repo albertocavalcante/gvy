@@ -1,10 +1,10 @@
 package com.github.groovylsp.bsp.maven.workspace
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -19,7 +19,7 @@ import kotlin.io.path.isDirectory
  * - Handles property interpolation
  */
 class MavenWorkspaceScanner {
-    private val logger = LoggerFactory.getLogger(MavenWorkspaceScanner::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Scans a workspace root directory for Maven modules.
@@ -30,7 +30,7 @@ class MavenWorkspaceScanner {
     fun scan(workspaceRoot: Path): List<MavenModuleInfo> {
         val rootPom = workspaceRoot.resolve("pom.xml")
         if (!rootPom.exists()) {
-            logger.debug("No pom.xml found at workspace root: $workspaceRoot")
+            logger.debug { "No pom.xml found at workspace root: $workspaceRoot" }
             return emptyList()
         }
 
@@ -47,7 +47,7 @@ class MavenWorkspaceScanner {
      */
     fun parseModule(pomPath: Path): MavenModuleInfo? {
         if (!pomPath.exists()) {
-            logger.debug("POM file does not exist: $pomPath")
+            logger.debug { "POM file does not exist: $pomPath" }
             return null
         }
 
@@ -67,7 +67,7 @@ class MavenWorkspaceScanner {
             if (childDir.exists() && childDir.isDirectory() && childPom.exists()) {
                 scanRecursive(childPom, modules)
             } else {
-                logger.debug("Skipping non-Maven module: $childModuleName at $childDir")
+                logger.debug { "Skipping non-Maven module: $childModuleName at $childDir" }
             }
         }
     }
@@ -87,10 +87,11 @@ class MavenWorkspaceScanner {
         val result = builder.build(request)
         result.effectiveModel
     } catch (e: org.apache.maven.model.building.ModelBuildingException) {
-        logger.debug("Failed to parse POM at $pomPath: ${e.message}")
+        logger.debug { "Failed to parse POM at $pomPath: ${e.message}" }
         null
     }
 
+    @Suppress("CyclomaticComplexMethod") // Maven POM parsing has inherent complexity, extracting multiple fields
     private fun modelToModuleInfo(model: Model, pomPath: Path): MavenModuleInfo {
         // Extract dependencies
         val dependencies = model.dependencies.map { dep ->

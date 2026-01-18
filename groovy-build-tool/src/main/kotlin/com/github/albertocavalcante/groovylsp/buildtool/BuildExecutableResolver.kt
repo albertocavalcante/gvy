@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
@@ -12,7 +12,7 @@ import kotlin.io.path.exists
  */
 object BuildExecutableResolver {
 
-    private val logger = LoggerFactory.getLogger(BuildExecutableResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /** True if running on Windows, false otherwise. */
     val isWindows: Boolean by lazy {
@@ -89,15 +89,11 @@ object BuildExecutableResolver {
 
         // On Unix, verify executable permission
         if (!useWindows && !Files.isExecutable(wrapperPath)) {
-            logger.warn(
-                "Build wrapper exists but is not executable: {}. " +
-                    "Fix with 'chmod +x {}' or 'git update-index --chmod=+x {}'. " +
-                    "Falling back to system {}.",
-                wrapperPath,
-                wrapperName,
-                wrapperName,
-                systemCommand,
-            )
+            logger.warn {
+                "Build wrapper exists but is not executable: $wrapperPath. " +
+                    "Fix with 'chmod +x $wrapperName' or 'git update-index --chmod=+x $wrapperName'. " +
+                    "Falling back to system $systemCommand."
+            }
             return systemCommand
         }
 

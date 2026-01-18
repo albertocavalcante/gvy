@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovyjenkins.extraction
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import kotlin.io.path.writeText
 
@@ -17,7 +17,7 @@ import kotlin.io.path.writeText
  */
 object MetadataOutputGenerator {
 
-    private val logger = LoggerFactory.getLogger(MetadataOutputGenerator::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val json = Json {
         prettyPrint = true
@@ -33,11 +33,9 @@ object MetadataOutputGenerator {
             sortedSteps.forEach { step ->
                 val key = step.functionName ?: step.simpleName.replaceFirstChar { it.lowercase() }
                 if (containsKey(key)) {
-                    logger.warn(
-                        "Duplicate key '{}' for class {}. Previous entry will be overwritten.",
-                        key,
-                        step.className,
-                    )
+                    logger.warn {
+                        "Duplicate key '$key' for class ${step.className}. Previous entry will be overwritten."
+                    }
                 }
                 put(
                     key,

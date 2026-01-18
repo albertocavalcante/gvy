@@ -1,6 +1,6 @@
 package com.github.groovylsp.bsp.resolver
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -34,7 +34,7 @@ import kotlin.concurrent.write
  */
 class CachedResolver(private val delegate: ClassPathResolver) : ClassPathResolver {
 
-    private val logger = LoggerFactory.getLogger(CachedResolver::class.java)
+    private val logger = KotlinLogging.logger {}
     private val lock = ReentrantReadWriteLock()
 
     private var cachedClasspath: Set<ClassPathEntry>? = null
@@ -99,21 +99,16 @@ class CachedResolver(private val delegate: ClassPathResolver) : ClassPathResolve
             // Double-check after acquiring write lock (another thread may have refreshed)
             if (shouldInvalidateCache()) {
                 val delegateVersion = delegate.currentBuildFileVersion
-                logger.debug(
-                    "Invalidating cache: version changed from {} to {}",
-                    cachedVersion,
-                    delegateVersion,
-                )
+                logger.debug { "Invalidating cache: version changed from $cachedVersion to $delegateVersion" }
 
                 cachedClasspath = delegate.classpath
                 cachedBuildScriptClasspath = delegate.buildScriptClasspath
                 cachedVersion = delegateVersion
 
-                logger.debug(
-                    "Cache refreshed: {} classpath entries, {} build script entries",
-                    cachedClasspath!!.size,
-                    cachedBuildScriptClasspath!!.size,
-                )
+                logger.debug {
+                    "Cache refreshed: ${cachedClasspath!!.size} classpath entries, " +
+                        "${cachedBuildScriptClasspath!!.size} build script entries"
+                }
             }
         }
     }
@@ -126,7 +121,7 @@ class CachedResolver(private val delegate: ClassPathResolver) : ClassPathResolve
      */
     fun clearCache() {
         lock.write {
-            logger.debug("Manually clearing cache")
+            logger.debug { "Manually clearing cache" }
             cachedClasspath = null
             cachedBuildScriptClasspath = null
             cachedVersion = -1L

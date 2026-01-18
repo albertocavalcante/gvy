@@ -3,11 +3,11 @@ package com.github.albertocavalcante.groovylsp.e2e
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.spi.json.JsonSmartJsonProvider
 import com.jayway.jsonpath.spi.mapper.JsonSmartMappingProvider
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
-import org.slf4j.LoggerFactory
 import kotlin.reflect.KClass
 
-private val logger = LoggerFactory.getLogger(ScenarioExecutor::class.java)
+private val logger = KotlinLogging.logger {}
 
 class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory) {
     private val json = Json {
@@ -61,12 +61,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
             context.registerBuiltInVariables()
 
             scenario.steps.forEachIndexed { index, step ->
-                logger.info(
-                    "Running step {} ({}) for scenario '{}'",
-                    index + 1,
-                    step::class.simpleName,
-                    scenario.name,
-                )
+                logger.info { "Running step ${index + 1} (${step::class.simpleName}) for scenario '${scenario.name}'" }
                 context.currentStepIndex = index
                 context.totalSteps = scenario.steps.size
                 val nextStep = scenario.steps.getOrNull(index + 1)
@@ -88,12 +83,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
         executor.execute(step, context, nextStep)
         val duration = System.currentTimeMillis() - start
 
-        logger.info(
-            "Step {} ({}) completed in {} ms",
-            context.currentStepIndex + 1,
-            step::class.simpleName,
-            duration,
-        )
+        logger.info { "Step ${context.currentStepIndex + 1} (${step::class.simpleName}) completed in $duration ms" }
     }
 
     private fun prepareWorkspace(definition: ScenarioDefinition): ScenarioWorkspace = ScenarioWorkspace(

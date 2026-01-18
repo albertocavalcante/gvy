@@ -12,6 +12,7 @@ import org.codehaus.groovy.ast.stmt.ForStatement
 import org.codehaus.groovy.ast.stmt.SwitchStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -48,7 +49,11 @@ class RecursiveVisitorTraversalTest {
             }
         """.trimIndent()
 
-        val result = fixture.parse(code, uri.toString())
+        val result = fixture.parse(
+            code,
+            uri.toString(),
+            compilePhase = Phases.CANONICALIZATION,
+        )
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
         assertNotNull(result.ast, "AST should be available")
 
@@ -145,7 +150,11 @@ class RecursiveVisitorTraversalTest {
             }
         """.trimIndent()
 
-        val result = fixture.parse(code, uri.toString())
+        val result = fixture.parse(
+            code,
+            uri.toString(),
+            compilePhase = Phases.CANONICALIZATION,
+        )
         assertTrue(result.isSuccessful, "Diagnostics: ${result.diagnostics}")
         assertNotNull(result.ast, "AST should be available")
 

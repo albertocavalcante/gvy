@@ -6,11 +6,11 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -48,7 +48,7 @@ class SymbolIndexingService(
         private const val INDEXING_BATCH_SIZE = 10
     }
 
-    private val logger = LoggerFactory.getLogger(SymbolIndexingService::class.java)
+    private val logger = KotlinLogging.logger {}
     private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = maxCacheSize)
     private val workspaceSymbolIndex = ConcurrentHashMap<URI, SymbolIndex>()
 
@@ -80,23 +80,27 @@ class SymbolIndexingService(
     /**
      * Gets all symbol indices from both caches.
      * Workspace index entries take precedence over LRU cache in case of conflicts.
+     * Returns map in deterministic order (sorted by URI).
      *
      * @return Map of URI to SymbolIndex for all indexed files
      */
     fun getAllSymbolIndices(): Map<URI, SymbolIndex> {
         val cacheSnapshot = symbolStorageCache.snapshot()
         val workspaceSnapshot = workspaceSymbolIndex.entries.associate { (uri, index) -> uri to index }
-        val allStorages = cacheSnapshot.toMutableMap()
+        val allStorages = LinkedHashMap<URI, SymbolIndex>()
 
-        workspaceSnapshot.forEach { (uri, index) ->
-            val existing = allStorages[uri]
-            if (existing != null && existing !== index) {
-                logger.warn(
-                    "Duplicate SymbolIndex for {} found in cache and workspace index. Using workspace index value.",
-                    uri,
-                )
+        // Add entries in sorted order for deterministic iteration
+        (cacheSnapshot.keys + workspaceSnapshot.keys).sorted().forEach { uri ->
+            val workspaceIndex = workspaceSnapshot[uri]
+            val cacheIndex = cacheSnapshot[uri]
+
+            if (workspaceIndex != null && cacheIndex != null && workspaceIndex !== cacheIndex) {
+                logger.warn {
+                    "Duplicate SymbolIndex for $uri found in cache and workspace index. Using workspace index value."
+                }
             }
-            allStorages[uri] = index
+
+            allStorages[uri] = workspaceIndex ?: (cacheIndex ?: error("URI $uri not found in either cache"))
         }
 
         return allStorages
@@ -112,7 +116,7 @@ class SymbolIndexingService(
     suspend fun indexFile(uri: URI): SymbolIndex? {
         // Check if already indexed first
         symbolStorageCache.get(uri)?.let {
-            logger.debug("File already indexed: $uri")
+            logger.debug { "File already indexed: $uri" }
             return it
         }
 
@@ -120,7 +124,7 @@ class SymbolIndexingService(
 
         return when {
             !Files.exists(path) || !Files.isRegularFile(path) -> {
-                logger.debug("File does not exist or is not a regular file: $uri")
+                logger.debug { "File does not exist or is not a regular file: $uri" }
                 null
             }
 
@@ -137,11 +141,11 @@ class SymbolIndexingService(
      */
     suspend fun indexAllWorkspaceSources(uris: List<URI>, onProgress: (Int, Int) -> Unit = { _, _ -> }) {
         if (uris.isEmpty()) {
-            logger.debug("No workspace sources to index")
+            logger.debug { "No workspace sources to index" }
             return
         }
 
-        logger.info("Starting workspace indexing: ${uris.size} files")
+        logger.info { "Starting workspace indexing: ${uris.size} files" }
         val total = uris.size
         val indexed = AtomicInteger(0)
 
@@ -159,7 +163,7 @@ class SymbolIndexingService(
             }
         }
 
-        logger.info("Workspace indexing complete: ${indexed.get()}/$total files indexed")
+        logger.info { "Workspace indexing complete: ${indexed.get()}/$total files indexed" }
     }
 
     /**
@@ -212,10 +216,10 @@ class SymbolIndexingService(
         val index = SymbolIndex().buildFromVisitor(astModel)
         symbolStorageCache.put(uri, index)
         workspaceSymbolIndex[uri] = index
-        logger.debug("Indexed workspace file: $uri")
+        logger.debug { "Indexed workspace file: $uri" }
         index
     } catch (e: Exception) {
-        logger.warn("Failed to index workspace file: $uri", e)
+        logger.warn(e) { "Failed to index workspace file: $uri" }
         null
     }
 
@@ -235,7 +239,7 @@ class SymbolIndexingService(
             throw e // Re-throw cancellation
         } catch (e: Exception) {
             // Catch all to prevent batch failure from stopping entire indexing
-            logger.warn("Failed to index file: $uri", e)
+            logger.warn(e) { "Failed to index file: $uri" }
         } finally {
             val currentCount = indexed.incrementAndGet()
             onProgress(currentCount, total)

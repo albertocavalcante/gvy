@@ -21,6 +21,22 @@ class CompletionProviderTest {
     private lateinit var semanticResolver: SemanticTypeResolver
     private lateinit var moduleNode: ModuleNode
 
+    /**
+     * Shared stub TypeSolver for map completion tests.
+     * Returns unsolved for all type resolution requests, allowing
+     * the semantic analysis to use AST-based type inference.
+     */
+    private val stubTypeSolver = object : TypeSolver {
+        override var parent: TypeSolver? = null
+        override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
+    }
+
+    /**
+     * Creates a SemanticTypeResolver using the shared stubTypeSolver.
+     * Use this for tests that need real semantic analysis without mocking.
+     */
+    private fun createRealSemanticResolver() = SemanticTypeResolver(stubTypeSolver)
+
     @BeforeEach
     fun setUp() {
         compilationService = GroovyCompilationService()
@@ -90,6 +106,102 @@ class CompletionProviderTest {
 
         // Assert - Should return completions now because we compile transiently
         assertTrue(completions.isNotEmpty(), "Should return completions even without prior compilation")
+    }
+
+    // ========================================================================
+    // Fallback Completion Tests (#854, #859)
+    // ========================================================================
+
+    @Test
+    fun `should provide fallback completions when file has syntax error`() = runTest {
+        // Arrange: File with broken syntax (missing closing brace)
+        val brokenContent = """
+            def x = {
+            // Missing closing brace - file cannot be parsed
+        """.trimIndent()
+        val uri = "file:///broken.groovy"
+
+        // Act
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1, // Empty line
+            0,
+            compilationService,
+            semanticResolver,
+            brokenContent,
+        )
+
+        // Assert - Should return fallback completions (plain keywords from addKeywords() +
+        // keyword-like snippets from GroovyCompletions.basic(), e.g. "def" and "class")
+        assertTrue(completions.isNotEmpty(), "Should return fallback completions for broken files")
+        assertTrue(
+            completions.any { it.label == "def" },
+            "Fallback should include 'def' completion. Found: ${completions.map { it.label }}",
+        )
+        assertTrue(
+            completions.any { it.label == "class" },
+            "Fallback should include 'class' completion. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should provide import completions even when file has syntax error elsewhere`() = runTest {
+        // Arrange: File with import line and syntax error elsewhere
+        val content = """
+            import java.util.L
+            
+            def x = {
+            // Missing closing brace
+        """.trimIndent()
+        val uri = "file:///import-in-broken.groovy"
+
+        // Act - Get completions at the import line
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            0, // import line
+            18, // After "import java.util.L"
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Assert - Import completions should work even with syntax errors (#854)
+        assertTrue(
+            completions.any {
+                it.label?.startsWith("List") == true || it.label?.contains("List") == true
+            },
+            "Should suggest 'List' even with syntax errors. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should not have duplicate keyword completions`() = runTest {
+        // Arrange: Simple file that will trigger general completions
+        val content = """
+            // Empty line for completions
+            
+        """.trimIndent()
+        val uri = "file:///test-keywords.groovy"
+
+        // Act
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1, // Empty line
+            0,
+            compilationService,
+            semanticResolver,
+            content,
+        )
+
+        // Assert - Keywords with snippets should not have duplicate plain versions (#857)
+        val defCount = completions.count { it.label == "def" }
+        assertTrue(defCount <= 1, "Should have at most 1 'def' (found $defCount)")
+
+        val classCount = completions.count { it.label == "class" }
+        assertTrue(classCount <= 1, "Should have at most 1 'class' (found $classCount)")
+
+        val ifCount = completions.count { it.label == "if" }
+        assertTrue(ifCount <= 1, "Should have at most 1 'if' (found $ifCount)")
     }
 
     @Test
@@ -179,42 +291,229 @@ class CompletionProviderTest {
         )
     }
 
+    // ========================================================================
+    // Map Literal Key Completion Tests
+    // ========================================================================
+
     @Test
-    fun `should suggest map methods for map literal variable - unmocked`() = runTest {
-        // Arrange - use real SemanticTypeResolver with a stub TypeSolver
-        val stubTypeSolver = object : TypeSolver {
-            override var parent: TypeSolver? = null
-            override fun tryToSolveType(name: String) = SymbolReference.unsolved<ResolvedTypeDeclaration>()
-        }
-        val realSemanticResolver = SemanticTypeResolver(stubTypeSolver)
+    fun `should suggest map literal keys for script-level declaration`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
         val content = """
-            def p = [key1: 'value1', key2: 'value2']
-            p.
+            def config = [host: "localhost", port: 8080]
+            config.
         """.trimIndent()
         val uri = "file:///test.groovy"
 
-        // Act
         val completions = CompletionProvider.getContextualCompletions(
             uri,
             1, // Line 1 (0-indexed)
-            2, // After 'p.'
+            7, // After 'config.'
             compilationService,
             realSemanticResolver,
             content,
         )
 
-        // Assert - Should have map methods (from LinkedHashMap via classpath)
-        // Note: actual method availability depends on classpath configuration
-        // The primary assertion is that keywords should NOT appear
-
-        // Assert - Should NOT have keywords (proves context detection works)
+        // Should suggest map literal keys
         assertTrue(
-            completions.none { it.label == "abstract" },
-            "Should NOT suggest 'abstract' keyword for map member access",
+            completions.any { it.label == "host" },
+            "Should suggest 'host' map key. Found: ${completions.map { it.label }}",
         )
         assertTrue(
-            completions.none { it.label == "class" },
-            "Should NOT suggest 'class' keyword for map member access",
+            completions.any { it.label == "port" },
+            "Should suggest 'port' map key. Found: ${completions.map { it.label }}",
+        )
+
+        // Should NOT have keywords
+        assertTrue(
+            completions.none { it.label == "abstract" },
+            "Should NOT suggest 'abstract' keyword when completing map literal keys",
+        )
+    }
+
+    @Test
+    fun `should suggest map literal keys inside class method`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
+        val content = """
+            class MyService {
+                void configure() {
+                    def settings = [debug: true, timeout: 5000]
+                    settings.
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            3, // Line with 'settings.'
+            17, // After 'settings.'
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        assertTrue(
+            completions.any { it.label == "debug" },
+            "Should suggest 'debug' map key inside class method. Found: ${completions.map { it.label }}",
+        )
+        assertTrue(
+            completions.any { it.label == "timeout" },
+            "Should suggest 'timeout' map key inside class method. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should suggest map literal keys inside if block`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
+        val content = """
+            class MyService {
+                void process() {
+                    if (true) {
+                        def opts = [retry: 3, verbose: false]
+                        opts.
+                    }
+                }
+            }
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            4, // Line with 'opts.'
+            17, // After 'opts.'
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        assertTrue(
+            completions.any { it.label == "retry" },
+            "Should suggest 'retry' map key inside if block. Found: ${completions.map { it.label }}",
+        )
+        assertTrue(
+            completions.any { it.label == "verbose" },
+            "Should suggest 'verbose' map key inside if block. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should still suggest map methods alongside literal keys`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
+        val content = """
+            def m = [x: 1]
+            m.
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1,
+            2,
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        // Should have map literal key
+        assertTrue(
+            completions.any { it.label == "x" },
+            "Should suggest 'x' map key. Found: ${completions.map { it.label }}",
+        )
+
+        // Should also have standard map methods
+        assertTrue(
+            completions.any { it.label == "get" || it.label == "size" || it.label == "put" },
+            "Should also suggest standard map methods. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should handle empty map gracefully`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
+        val content = """
+            def emptyMap = [:]
+            emptyMap.
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            1,
+            9,
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        // Should NOT crash, and should still have map methods
+        assertTrue(
+            completions.any { it.label == "get" || it.label == "size" || it.label == "isEmpty" },
+            "Empty map should still suggest standard map methods. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    fun `should suggest map keys from inner scoped variable`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
+        val content = """
+class MyService {
+    void process() {
+        def outerConfig = [outer: "value"]
+        if (true) {
+            def innerConfig = [inner: "shadowed"]
+            innerConfig.
+        }
+    }
+}
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            5,
+            24,
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        assertTrue(
+            completions.any { it.label == "inner" },
+            "Should suggest 'inner' from inner map variable. Found: ${completions.map { it.label }}",
+        )
+    }
+
+    @Test
+    @org.junit.jupiter.api.Disabled("Multi-class map completion needs investigation - PR #839")
+    fun `should suggest map keys in second class of multi-class file`() = runTest {
+        val realSemanticResolver = createRealSemanticResolver()
+        val content = """class FirstClass {
+    void first() {
+        def firstMap = [a: 1]
+        firstMap.
+    }
+}
+class SecondClass {
+    void second() {
+        def secondMap = [b: 2]
+        secondMap.
+    }
+}
+        """.trimIndent()
+        val uri = "file:///test.groovy"
+
+        val completions = CompletionProvider.getContextualCompletions(
+            uri,
+            9,
+            18,
+            compilationService,
+            realSemanticResolver,
+            content,
+        )
+
+        assertTrue(
+            completions.any { it.label == "b" },
+            "Should suggest 'b' from map in second class. Found: ${completions.map { it.label }}",
         )
     }
 

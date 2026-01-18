@@ -101,6 +101,19 @@ export interface GroovyJdkIncompatibleError extends ErrorDetails {
 }
 
 /**
+ * Project JDK newer than target warning.
+ *
+ * Non-fatal warning when LSP is running a newer JDK than the project targets.
+ * May cause "Unsupported class file major version" errors.
+ */
+export interface ProjectJdkNewerWarning extends ErrorDetails {
+  type: "PROJECT_JDK_NEWER_WARNING";
+  runningJdkVersion: number;
+  targetJdkVersion: number;
+  configurationSource: string;
+}
+
+/**
  * Generic error with custom details.
  *
  * Used for errors that don't fit into specific error types.

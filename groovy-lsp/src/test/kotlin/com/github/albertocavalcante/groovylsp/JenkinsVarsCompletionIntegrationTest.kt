@@ -1,9 +1,14 @@
 package com.github.albertocavalcante.groovylsp
 
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionParams
+import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.InitializeParams
+import org.eclipse.lsp4j.InitializedParams
+import org.eclipse.lsp4j.InsertTextFormat
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
@@ -43,7 +48,14 @@ class JenkinsVarsCompletionIntegrationTest {
             workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "test"))
         }
         serverHandle!!.server.initialize(initParams).get()
-        serverHandle!!.server.initialized(org.eclipse.lsp4j.InitializedParams())
+        serverHandle!!.server.initialized(InitializedParams())
+
+        // Wait for workspace initialization to complete.
+        // The initialized() call triggers startAsyncDependencyResolution() which runs
+        // initializeWorkspaces() synchronously to set up project strategies (including
+        // Jenkins strategy). The server sends groovy/status notifications with quiescent=true
+        // when all background initialization (including strategy setup) is complete.
+        serverHandle!!.client.awaitQuiescentStatus()
     }
 
     @AfterEach
@@ -153,7 +165,7 @@ class JenkinsVarsCompletionIntegrationTest {
 
         // Verify it's a snippet that inserts with parentheses
         assertEquals(
-            org.eclipse.lsp4j.InsertTextFormat.Snippet,
+            InsertTextFormat.Snippet,
             buildPlugin.insertTextFormat,
             "Vars completion should be Snippet format for method call",
         )
@@ -165,7 +177,7 @@ class JenkinsVarsCompletionIntegrationTest {
 
     private suspend fun openDocument(uri: String, content: String) {
         serverHandle!!.server.textDocumentService.didOpen(
-            org.eclipse.lsp4j.DidOpenTextDocumentParams().apply {
+            DidOpenTextDocumentParams().apply {
                 textDocument = TextDocumentItem().apply {
                     this.uri = uri
                     languageId = "groovy"
@@ -176,7 +188,7 @@ class JenkinsVarsCompletionIntegrationTest {
         )
     }
 
-    private suspend fun requestCompletionsAt(uri: String, pos: Position): List<org.eclipse.lsp4j.CompletionItem> {
+    private suspend fun requestCompletionsAt(uri: String, pos: Position): List<CompletionItem> {
         val params = CompletionParams().apply {
             textDocument = TextDocumentIdentifier(uri)
             position = pos
@@ -184,7 +196,7 @@ class JenkinsVarsCompletionIntegrationTest {
         return serverHandle!!.server.textDocumentService.completion(params).get().left
     }
 
-    private suspend fun requestHoverAt(uri: String, pos: Position): org.eclipse.lsp4j.Hover? {
+    private suspend fun requestHoverAt(uri: String, pos: Position): Hover? {
         val params = HoverParams().apply {
             textDocument = TextDocumentIdentifier(uri)
             position = pos

@@ -11,6 +11,12 @@ data class Range(val begin: Position, val end: Position) {
      */
     fun contains(position: Position): Boolean = position >= begin && position <= end
 
+    /**
+     * Checks if this range contains the given range.
+     * A range is contained if both its begin and end positions are within this range.
+     */
+    fun contains(range: Range): Boolean = contains(range.begin) && contains(range.end)
+
     override fun toString(): String = "Range[$begin - $end]"
 
     companion object {

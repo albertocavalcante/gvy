@@ -7,12 +7,12 @@ import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
 import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenFailureAnalyzer
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicReference
 
@@ -35,7 +35,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
         FAILED, // Resolution failed (will retry later)
     }
 
-    private val logger = LoggerFactory.getLogger(DependencyManager::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val state = AtomicReference(State.NOT_STARTED)
     private val dependencies = AtomicReference<List<Path>>(emptyList())
@@ -64,6 +64,8 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
         onError: ((Exception) -> Unit)? = null,
         enableFileWatching: Boolean = true,
     ) {
+        // TODO(#833): Allow retries after FAILED state instead of blocking indefinitely.
+        //   See: https://github.com/albertocavalcante/gvy/issues/833
         // Only start if not already running or if workspace changed
         if (state.compareAndSet(State.NOT_STARTED, State.IN_PROGRESS) ||
             (currentWorkspaceRoot != workspaceRoot && state.get() != State.IN_PROGRESS)
@@ -73,7 +75,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
             // Cancel any existing job
             resolutionJob?.cancel()
 
-            logger.info("Starting async dependency resolution for: $workspaceRoot")
+            logger.info { "Starting async dependency resolution for: $workspaceRoot" }
             onProgress?.invoke(0, "Starting dependency resolution...")
 
             resolutionJob = scope.launch(Dispatchers.IO) {
@@ -82,7 +84,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                     detectedBuildTool = buildToolManager.detectBuildTool(workspaceRoot)
 
                     if (detectedBuildTool == null) {
-                        logger.info("No supported build tool detected for: $workspaceRoot")
+                        logger.info { "No supported build tool detected for: $workspaceRoot" }
                         onProgress?.invoke(PROGRESS_COMPLETE, "No build tool detected")
 
                         val emptyResolution = WorkspaceResolution(emptyList(), listOf(workspaceRoot))
@@ -98,7 +100,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                     }
 
                     currentBuildToolName = detectedBuildTool.name
-                    logger.info("Detected build tool: ${detectedBuildTool.name}")
+                    logger.info { "Detected build tool: ${detectedBuildTool.name}" }
 
                     onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${detectedBuildTool.name}...")
 
@@ -130,12 +132,12 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                         tryStartBuildFileWatching(detectedBuildTool, workspaceRoot, onProgress, onComplete, onError)
                     }
 
-                    logger.info(
+                    logger.info {
                         "Async dependency resolution completed: ${resolution.dependencies.size} dependencies, " +
-                            "${resolution.sourceDirectories.size} source directories",
-                    )
+                            "${resolution.sourceDirectories.size} source directories"
+                    }
                 } catch (e: Exception) {
-                    logger.error("Async dependency resolution failed for $workspaceRoot", e)
+                    logger.error(e) { "Async dependency resolution failed for $workspaceRoot" }
                     state.set(State.FAILED)
 
                     withContext(Dispatchers.Default) {
@@ -168,14 +170,14 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                             // For truly unexpected errors (e.g., NPE during build tool detection),
                             // call onError if provided, otherwise log warning
                             onError?.invoke(e) ?: run {
-                                logger.warn("No error handler provided for dependency resolution failure")
+                                logger.warn { "No error handler provided for dependency resolution failure" }
                             }
                         }
                     }
                 }
             }
         } else {
-            logger.debug("Dependency resolution already in progress or completed for: $workspaceRoot")
+            logger.debug { "Dependency resolution already in progress or completed for: $workspaceRoot" }
         }
     }
 
@@ -215,7 +217,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
         if (state.get() == State.IN_PROGRESS) {
             state.set(State.NOT_STARTED)
         }
-        logger.debug("Dependency resolution cancelled")
+        logger.debug { "Dependency resolution cancelled" }
     }
 
     /**
@@ -230,7 +232,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
         currentWorkspaceRoot = null
         currentBuildToolName = null
         buildFileWatcher = null
-        logger.debug("Dependency manager reset")
+        logger.debug { "Dependency manager reset" }
     }
 
     /**
@@ -258,7 +260,7 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
             buildFileWatcher = buildTool.createWatcher(
                 coroutineScope = scope,
                 onChange = { changedProjectDir ->
-                    logger.info("Build file changed, refreshing dependencies for: $changedProjectDir")
+                    logger.info { "Build file changed, refreshing dependencies for: $changedProjectDir" }
                     onProgress?.invoke(0, "Build file changed, refreshing dependencies...")
 
                     // Reset state to trigger fresh resolution
@@ -277,12 +279,12 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
 
             buildFileWatcher?.startWatching(workspaceRoot)
             if (buildFileWatcher != null) {
-                logger.info("Started build file watching for: $workspaceRoot using ${buildTool.name}")
+                logger.info { "Started build file watching for: $workspaceRoot using ${buildTool.name}" }
             } else {
-                logger.info("Build file watching not supported by ${buildTool.name}")
+                logger.info { "Build file watching not supported by ${buildTool.name}" }
             }
         } catch (e: Exception) {
-            logger.error("Failed to start build file watching", e)
+            logger.error(e) { "Failed to start build file watching" }
             onError?.invoke(e)
         }
     }

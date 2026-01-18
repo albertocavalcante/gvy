@@ -201,7 +201,6 @@ class GdslParserTest {
 
         // Skip if resource not found
         if (gdsl == null) {
-            println("Skipping test - sample-gdsl.groovy not found")
             return
         }
 

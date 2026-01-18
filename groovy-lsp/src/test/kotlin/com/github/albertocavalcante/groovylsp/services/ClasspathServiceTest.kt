@@ -266,6 +266,105 @@ class ClasspathServiceTest {
         assertThat(loaded).isEqualTo(String::class.java)
         assertThat(reflection.loadCalls).containsExactly("java.lang.String")
     }
+
+    @Test
+    fun `findClassesByPrefix returns classes in deterministic order across multiple calls`() {
+        val fakeIndex = FakeClasspathIndex(
+            listOf(
+                IndexedClass("List", "java.util.List"),
+                IndexedClass("List", "java.awt.List"),
+                IndexedClass("List", "org.example.List"),
+                IndexedClass("String", "java.lang.String"),
+                IndexedClass("String", "com.example.String"),
+            ),
+        )
+        val service = ClasspathService(fakeIndex)
+
+        // Call findClassesByPrefix multiple times and verify order is always the same
+        val firstCall = service.findClassesByPrefix("List")
+        val secondCall = service.findClassesByPrefix("List")
+        val thirdCall = service.findClassesByPrefix("List")
+
+        // Verify all calls return the same order
+        assertThat(firstCall).isEqualTo(secondCall)
+        assertThat(secondCall).isEqualTo(thirdCall)
+
+        // Verify the order is alphabetically sorted by fully qualified name
+        val fullNames = firstCall.map { it.fullName }
+        assertThat(fullNames).containsExactly(
+            "java.awt.List",
+            "java.util.List",
+            "org.example.List",
+        )
+    }
+
+    @Test
+    fun `findClassesByPrefix returns classes alphabetically sorted by fully qualified name`() {
+        val fakeIndex = FakeClasspathIndex(
+            listOf(
+                IndexedClass("Map", "java.util.Map"),
+                IndexedClass("Map", "java.awt.image.renderable.RenderableImageProducer.Map"),
+                IndexedClass("Map", "com.example.Map"),
+                IndexedClass("String", "java.lang.String"),
+                IndexedClass("String", "org.example.String"),
+                IndexedClass("String", "com.acme.String"),
+            ),
+        )
+        val service = ClasspathService(fakeIndex)
+
+        val mapResults = service.findClassesByPrefix("Map")
+        val stringResults = service.findClassesByPrefix("String")
+
+        // Verify Map classes are sorted alphabetically by fully qualified name
+        assertThat(mapResults.map { it.fullName }).containsExactly(
+            "com.example.Map",
+            "java.awt.image.renderable.RenderableImageProducer.Map",
+            "java.util.Map",
+        )
+
+        // Verify String classes are sorted alphabetically by fully qualified name
+        assertThat(stringResults.map { it.fullName }).containsExactly(
+            "com.acme.String",
+            "java.lang.String",
+            "org.example.String",
+        )
+    }
+
+    @Test
+    fun `ClassIndex snapshot returns sorted class variants for deterministic iteration`() {
+        val index = ClasspathService.ClassIndex()
+
+        // Add classes in random order
+        index.add("List", "java.util.List")
+        index.add("List", "org.example.List")
+        index.add("List", "java.awt.List")
+        index.add("List", "com.acme.List")
+        index.add("Map", "java.util.Map")
+        index.add("Map", "com.example.Map")
+
+        // Take multiple snapshots
+        val snapshot1 = index.snapshot()
+        val snapshot2 = index.snapshot()
+        val snapshot3 = index.snapshot()
+
+        // Verify all snapshots are identical
+        assertThat(snapshot1).isEqualTo(snapshot2)
+        assertThat(snapshot2).isEqualTo(snapshot3)
+
+        // Verify List variants are sorted alphabetically
+        assertThat(snapshot1["List"]).containsExactly(
+            "com.acme.List",
+            "java.awt.List",
+            "java.util.List",
+            "org.example.List",
+        )
+
+        // Verify Map variants are sorted alphabetically
+        assertThat(snapshot1["Map"]).containsExactly(
+            "com.example.Map",
+            "java.util.Map",
+        )
+    }
 }
 
 private fun defaultIndex(): ClasspathIndex = FakeClasspathIndex(
@@ -301,6 +400,8 @@ private class RecordingClasspathReflection : ClasspathReflection {
         methodCalls.add(className)
         return emptyList()
     }
+
+    override fun getFields(className: String): List<ReflectedField> = emptyList()
 
     override fun loadClass(className: String): Class<*>? {
         loadCalls.add(className)

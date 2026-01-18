@@ -5,18 +5,22 @@ import {
   GroovyJdkIncompatibleError,
   ToolchainProvisioningError,
   GenericError,
+  ProjectJdkNewerWarning,
 } from "./statusUtils";
 
 /**
  * Handles showing VS Code notifications for error details with actionable suggestions.
  *
- * This module displays user-friendly error messages with up to 2 action buttons
- * derived from the suggestions provided by the LSP server.
+ * This module displays user-friendly error messages with up to 3 action buttons.
+ * For toolchain provisioning errors, smart action buttons are provided (not derived
+ * from LSP suggestions). For other errors, buttons are derived from LSP suggestions.
  */
 
-// Smart action button labels for toolchain provisioning errors
-const DETECT_AND_SET_JAVA = "Detect & Set Java";
-const ADD_FOOJAY_PLUGIN = "Add Auto-Download Plugin";
+// Smart action button labels
+const CONFIGURE_JAVA = "Configure Java";
+const ADD_FOOJAY_PLUGIN = "Add Foojay Plugin";
+const DISMISS = "Dismiss";
+const DONT_SHOW_AGAIN = "Don't Show Again";
 
 // TODO(tech-debt): The extension is taking on responsibilities that ideally belong
 // to the build tool layer (foojay plugin management, JDK detection for toolchain resolution).
@@ -26,8 +30,9 @@ const ADD_FOOJAY_PLUGIN = "Add Auto-Download Plugin";
 
 /**
  * Shows a VS Code notification for the given error details.
- * Displays up to 2 suggestions as action buttons, plus optional
- * "Show Details" and "Retry Resolution" buttons.
+ * Displays up to 3 action buttons total (VS Code UX guideline).
+ * For toolchain errors, shows smart actions. For other errors, shows suggestions
+ * plus optional "Show Details" and "Retry Resolution" buttons.
  *
  * @param errorCode The error code (e.g., "GRADLE_JDK_INCOMPATIBLE")
  * @param errorDetails The detailed error information with suggestions
@@ -42,6 +47,15 @@ export async function showErrorNotification(
 ): Promise<void> {
   // Lazy import vscode to avoid breaking unit tests
   const vscode = await import("vscode");
+
+  // Handle JDK newer warning specially - it has unique action buttons
+  if (errorDetails.type === "PROJECT_JDK_NEWER_WARNING") {
+    await showJdkNewerWarning(
+      errorDetails as ProjectJdkNewerWarning,
+      outputChannel,
+    );
+    return;
+  }
 
   if (!errorDetails.suggestions || errorDetails.suggestions.length === 0) {
     // No suggestions - show basic error message with optional retry/details
@@ -142,13 +156,24 @@ function buildActionsForError(
 
   // For toolchain provisioning errors, use smart action buttons
   if (errorDetails.type === "TOOLCHAIN_PROVISIONING_FAILED") {
-    // Primary action: Detect & Set Java
-    actions.push(DETECT_AND_SET_JAVA);
+    // Primary action: Configure Java
+    actions.push(CONFIGURE_JAVA);
 
-    // Secondary action: Add foojay plugin for auto-download
+    // Secondary action: Add foojay plugin for Gradle toolchain auto-download
     if (actions.length < 3) {
       actions.push(ADD_FOOJAY_PLUGIN);
     }
+
+    // Show Details if room available
+    if (actions.length < 3 && outputChannel) {
+      actions.push("Show Details");
+    }
+  } else if (
+    errorDetails.type === "GRADLE_JDK_INCOMPATIBLE" ||
+    errorDetails.type === "GROOVY_JDK_INCOMPATIBLE"
+  ) {
+    // For JDK incompatibility errors, offer Configure Java as primary action
+    actions.push(CONFIGURE_JAVA);
 
     // Show Details if room available
     if (actions.length < 3 && outputChannel) {
@@ -209,13 +234,13 @@ function buildErrorMessage(
   switch (errorDetails.type) {
     case "GRADLE_JDK_INCOMPATIBLE": {
       const err = errorDetails as GradleJdkIncompatibleError;
-      return `Gradle ${err.gradleVersion} is not compatible with JDK ${err.jdkVersion}. ${errorDetails.suggestions[0] || "Please check your configuration."}`;
+      return `Gradle ${err.gradleVersion} is not compatible with JDK ${err.jdkVersion}. Use 'Configure Java' to select a compatible JDK.`;
     }
 
     case "GROOVY_JDK_INCOMPATIBLE": {
       const err = errorDetails as GroovyJdkIncompatibleError;
       const groovyVer = err.groovyVersion || "current";
-      return `Groovy ${groovyVer} is not compatible with JDK ${err.jdkVersion}. ${errorDetails.suggestions[0] || "Please update Groovy or JDK version."}`;
+      return `Groovy ${groovyVer} is not compatible with JDK ${err.jdkVersion}. Use 'Configure Java' to select a compatible JDK.`;
     }
 
     case "TOOLCHAIN_PROVISIONING_FAILED": {
@@ -224,7 +249,7 @@ function buildErrorMessage(
         ? `Java ${err.requiredVersion}`
         : "required Java";
       const platform = err.platform || "your platform";
-      return `Cannot find ${version} for ${platform}. ${errorDetails.suggestions[0] || "Please install the required JDK."}`;
+      return `Cannot find ${version} for ${platform}. Use 'Configure Java' to select an installed JDK, or add the Foojay plugin for Gradle toolchain auto-downloads.`;
     }
 
     case "GENERIC": {
@@ -248,17 +273,19 @@ async function handleActionClick(
   // Lazy import vscode to avoid breaking unit tests
   const vscode = await import("vscode");
 
-  // Handle smart actions for toolchain provisioning errors
-  if (action === DETECT_AND_SET_JAVA) {
+  // Handle Configure Java action
+  if (action === CONFIGURE_JAVA) {
     // Extract required version from error details if available
-    const requiredVersion =
-      errorDetails?.type === "TOOLCHAIN_PROVISIONING_FAILED"
-        ? (errorDetails as ToolchainProvisioningError).requiredVersion
-        : undefined;
+    let requiredVersion: number | undefined;
+    if (errorDetails?.type === "TOOLCHAIN_PROVISIONING_FAILED") {
+      const version = (errorDetails as ToolchainProvisioningError)
+        .requiredVersion;
+      requiredVersion = version !== null ? version : undefined;
+    }
 
-    // Execute the detectAndSetJavaHome command with the required version
+    // Execute the configureJava command with the required version
     await vscode.commands.executeCommand(
-      "groovy.detectAndSetJavaHome",
+      "groovy.configureJava",
       requiredVersion,
     );
     return;
@@ -285,33 +312,16 @@ async function handleActionClick(
     return;
   }
 
-  // Check for install/download actions
+  // For install/download suggestions, redirect to Configure Java
   if (lowerAction.includes("install") || lowerAction.includes("download")) {
-    // Check if the action contains a URL
-    const urlMatch = action.match(/(https?:\/\/[^\s]+)/);
-    if (urlMatch) {
-      const url = urlMatch[1];
-      vscode.window
-        .showInformationMessage(`Open ${url} in browser?`, "Open")
-        .then((choice) => {
-          if (choice === "Open") {
-            vscode.env.openExternal(vscode.Uri.parse(url));
-          }
-        });
-      return;
-    }
-    // Show info message with instructions
     vscode.window
       .showInformationMessage(
-        `To install the required JDK: ${action}`,
-        "Open Settings",
+        "Use 'Configure Java' to select an installed JDK, or add the Foojay plugin for Gradle toolchain auto-downloads.",
+        "Configure Java",
       )
       .then((selected) => {
-        if (selected === "Open Settings") {
-          vscode.commands.executeCommand(
-            "workbench.action.openSettings",
-            "groovy.gradle.javaHome",
-          );
+        if (selected === "Configure Java") {
+          vscode.commands.executeCommand("groovy.configureJava");
         }
       });
     return;
@@ -343,20 +353,86 @@ async function handleActionClick(
     return;
   }
 
-  // Check for URLs in the action and offer to open in browser
+  // Check for URLs in the action - show the suggestion but don't offer to open external URLs
+  // (download functionality removed - users should use Configure Java or Foojay plugin)
   const urlMatch = action.match(/(https?:\/\/[^\s]+)/);
   if (urlMatch) {
-    const url = urlMatch[1];
-    vscode.window
-      .showInformationMessage(action, "Open in Browser")
-      .then((selected) => {
-        if (selected === "Open in Browser") {
-          vscode.env.openExternal(vscode.Uri.parse(url));
-        }
-      });
+    vscode.window.showInformationMessage(
+      `${action}\n\nUse 'Configure Java' command to select an installed JDK.`,
+    );
     return;
   }
 
   // Default: just show the suggestion text
   vscode.window.showInformationMessage(action);
+}
+
+/**
+ * Shows a warning notification for JDK version mismatch (LSP newer than project target).
+ *
+ * This warning allows users to:
+ * - Configure Java to use a compatible JDK version
+ * - Dismiss the warning for this session
+ * - Permanently suppress the warning via settings
+ *
+ * @param warning The structured warning details
+ * @param outputChannel Optional output channel for showing logs
+ */
+async function showJdkNewerWarning(
+  warning: ProjectJdkNewerWarning,
+  _outputChannel?: OutputChannel,
+): Promise<void> {
+  const vscode = await import("vscode");
+
+  // Check if warning is suppressed
+  const config = vscode.workspace.getConfiguration("groovy");
+  const suppressWarning = config.get<boolean>(
+    "jdk.suppressMismatchWarning",
+    false,
+  );
+
+  if (suppressWarning) {
+    // Warning is suppressed, just log it
+    console.log(
+      `JDK mismatch warning suppressed: LSP JDK ${warning.runningJdkVersion} > project target ${warning.targetJdkVersion}`,
+    );
+    return;
+  }
+
+  const message =
+    `LSP JDK ${warning.runningJdkVersion} is newer than project target ${warning.targetJdkVersion} ` +
+    `(from ${warning.configurationSource}). You may see 'Unsupported class file major version' errors.`;
+
+  void (async () => {
+    try {
+      const selected = await vscode.window.showWarningMessage(
+        message,
+        CONFIGURE_JAVA,
+        DISMISS,
+        DONT_SHOW_AGAIN,
+      );
+
+      if (selected === CONFIGURE_JAVA) {
+        // Open JDK picker with target version as preferred
+        await vscode.commands.executeCommand(
+          "groovy.configureJava",
+          warning.targetJdkVersion,
+        );
+      } else if (selected === DONT_SHOW_AGAIN) {
+        // Set workspace setting to suppress future warnings
+        await config.update(
+          "jdk.suppressMismatchWarning",
+          true,
+          vscode.ConfigurationTarget.Workspace,
+        );
+        vscode.window.showInformationMessage(
+          "JDK version mismatch warnings will be suppressed for this workspace. " +
+            "You can re-enable them in settings: groovy.jdk.suppressMismatchWarning",
+        );
+      }
+      // DISMISS does nothing - just closes the notification
+    } catch (err: unknown) {
+      console.error("Error showing JDK warning notification:", err);
+    }
+  })();
 }

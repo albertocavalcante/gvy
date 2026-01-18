@@ -63,6 +63,13 @@ class UnusedImportSemanticTokenTest {
                 GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY
             ) != 0
         assertTrue(hasUnnecessary, "Unused import should have UNNECESSARY modifier")
+
+        // Verify DECLARATION modifier is also present (all imports have it)
+        val hasDeclaration = (
+            hashMapToken.tokenModifiers and
+                GroovySemanticTokenProvider.TokenModifiers.DECLARATION
+            ) != 0
+        assertTrue(hasDeclaration, "Import should have DECLARATION modifier")
     }
 
     @Test
@@ -99,10 +106,17 @@ class UnusedImportSemanticTokenTest {
                 GroovySemanticTokenProvider.TokenModifiers.UNNECESSARY
             ) != 0
         assertFalse(hasUnnecessary, "Used import should NOT have UNNECESSARY modifier")
+
+        // Verify DECLARATION modifier is present (all imports have it)
+        val hasDeclaration = (
+            arrayListToken.tokenModifiers and
+                GroovySemanticTokenProvider.TokenModifiers.DECLARATION
+            ) != 0
+        assertTrue(hasDeclaration, "Import should have DECLARATION modifier")
     }
 
     @Test
-    fun `should generate import tokens with CLASS type`() = runBlocking {
+    fun `should generate import tokens with CLASS type and DECLARATION modifier`() = runBlocking {
         val code = """
             import java.util.ArrayList
 
@@ -122,7 +136,7 @@ class UnusedImportSemanticTokenTest {
             moduleNode = ast,
         )
 
-        // Import type name should be tokenized as CLASS
+        // Import type name should be tokenized as CLASS with DECLARATION modifier
         val importToken = tokens.find { it.line == 0 }
         assertNotNull(importToken, "Should have token for import on line 0")
         assertEquals(
@@ -130,6 +144,13 @@ class UnusedImportSemanticTokenTest {
             importToken.tokenType,
             "Import token should be CLASS type",
         )
+
+        // Verify DECLARATION modifier is present on imports
+        val hasDeclaration = (
+            importToken.tokenModifiers and
+                GroovySemanticTokenProvider.TokenModifiers.DECLARATION
+            ) != 0
+        assertTrue(hasDeclaration, "Import should have DECLARATION modifier for distinct styling")
     }
 
     @Test

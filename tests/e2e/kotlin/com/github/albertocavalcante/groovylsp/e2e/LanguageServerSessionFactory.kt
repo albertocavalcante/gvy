@@ -4,10 +4,10 @@ import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import com.github.albertocavalcante.groovylsp.services.GroovyLanguageClient
 import com.github.albertocavalcante.groovylsp.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.groovylsp.testing.client.HarnessLanguageClient
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
 import org.eclipse.lsp4j.services.LanguageServer
-import org.slf4j.LoggerFactory
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PipedInputStream
@@ -21,7 +21,7 @@ import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
 class LanguageServerSessionFactory {
-    private val logger = LoggerFactory.getLogger(LanguageServerSessionFactory::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Cached server executor for in-process mode to allow cleanly shutting down the thread
     private val inProcessExecutor = Executors.newCachedThreadPool { r ->
@@ -56,18 +56,16 @@ class LanguageServerSessionFactory {
         }
 
         val command = buildCommand(launchMode)
-        logger.info(
-            "Starting language server for scenario '{}' using command: {}",
-            scenarioName,
-            command.joinToString(" "),
-        )
+        logger.info {
+            "Starting language server for scenario '$scenarioName' using command: ${command.joinToString(" ")}"
+        }
 
         val processBuilder = ProcessBuilder(command)
             .redirectErrorStream(false)
 
         gradleUserHome?.let {
             processBuilder.environment()["GRADLE_USER_HOME"] = it.toAbsolutePath().toString()
-            logger.info("Using isolated Gradle user home for scenario '{}': {}", scenarioName, it)
+            logger.info { "Using isolated Gradle user home for scenario '$scenarioName': $it" }
         }
 
         val process = processBuilder.start()
@@ -136,7 +134,7 @@ class LanguageServerSessionFactory {
             Files.createDirectories(target)
             target
         }.onFailure {
-            logger.warn("Failed to prepare isolated Gradle user home at {}: {}", target, it.message)
+            logger.warn { "Failed to prepare isolated Gradle user home at $target: ${it.message}" }
         }.getOrNull()
     }
 
@@ -160,7 +158,7 @@ class LanguageServerSessionFactory {
             try {
                 serverLauncher.startListening().get()
             } catch (e: Exception) {
-                logger.error("In-process server error for scenario '{}'", scenarioName, e)
+                logger.error(e) { "In-process server error for scenario '$scenarioName'" }
             }
         }
 
@@ -196,10 +194,10 @@ class LanguageServerSessionFactory {
         try {
             serverLauncher.remoteProxy // Force proxy creation
         } catch (e: Exception) {
-            logger.warn("Could not access server's remote proxy: {}", e.message)
+            logger.warn { "Could not access server's remote proxy: ${e.message}" }
         }
 
-        logger.info("Started in-process language server for scenario '{}'", scenarioName)
+        logger.info { "Started in-process language server for scenario '$scenarioName'" }
 
         return LanguageServerSession(
             process = null,
@@ -226,7 +224,7 @@ class LanguageServerSessionFactory {
                 BufferedReader(InputStreamReader(process.errorStream)).use { reader ->
                     var line = reader.readLine()
                     while (line != null) {
-                        logger.info("[server:{}] {}", scenarioName, line)
+                        logger.info { "[server:$scenarioName] $line" }
                         line = reader.readLine()
                     }
                 }
@@ -264,7 +262,7 @@ class LanguageServerSession(
     private val serverFuture: Future<*>? = null,
     private val typedServerProxy: GroovyLanguageServerProtocol? = null,
 ) : AutoCloseable {
-    private val logger = LoggerFactory.getLogger(LanguageServerSession::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Typed server proxy for invoking custom @JsonRequest methods.
@@ -284,15 +282,15 @@ class LanguageServerSession(
     override fun close() {
         try {
             if (process != null && process.isAlive) {
-                logger.debug("Waiting for language server process to finish")
+                logger.debug { "Waiting for language server process to finish" }
                 process.waitFor(SHUTDOWN_TIMEOUT.seconds, TimeUnit.SECONDS)
             }
         } catch (ex: InterruptedException) {
             Thread.currentThread().interrupt()
-            logger.warn("Interrupted while waiting for language server process shutdown", ex)
+            logger.warn(ex) { "Interrupted while waiting for language server process shutdown" }
         } finally {
             if (process != null && process.isAlive) {
-                logger.warn("Language server process still alive after timeout; terminating forcibly")
+                logger.warn { "Language server process still alive after timeout; terminating forcibly" }
                 process.destroyForcibly()
             }
         }
@@ -305,7 +303,7 @@ class LanguageServerSession(
                 stderrPump.join(STDERR_PUMP_JOIN_TIMEOUT.toMillis())
             } catch (ex: InterruptedException) {
                 Thread.currentThread().interrupt()
-                logger.debug("Interrupted while waiting for stderr pump thread", ex)
+                logger.debug(ex) { "Interrupted while waiting for stderr pump thread" }
             }
         }
     }

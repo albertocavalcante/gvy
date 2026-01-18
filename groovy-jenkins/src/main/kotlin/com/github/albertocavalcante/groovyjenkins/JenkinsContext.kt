@@ -19,9 +19,9 @@ import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
 import com.github.albertocavalcante.groovyjenkins.plugins.PluginDiscoveryService
 import com.github.albertocavalcante.groovyjenkins.scanning.JenkinsClasspathScanner
 import com.github.albertocavalcante.groovyjenkins.stubs.JenkinsStubGenerator
+import io.github.oshai.kotlinlogging.KLogger
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
-import org.slf4j.Logger
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -37,7 +37,7 @@ class JenkinsContext(
     private val workspaceRoot: Path,
     private val pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
 ) {
-    private val logger = LoggerFactory.getLogger(JenkinsContext::class.java)
+    private val logger = KotlinLogging.logger {}
     private val libraryResolver = SharedLibraryResolver(configuration)
     private val gdslLoader = GdslLoader()
     private val gdslExecutor = GdslExecutor()
@@ -86,51 +86,53 @@ class JenkinsContext(
         try {
             val mavenRepo = resolveMavenRepository()
             if (mavenRepo == null) {
-                logger.warn("Could not determine Maven repository location")
+                logger.warn { "Could not determine Maven repository location" }
                 return null
             }
 
             val jenkinsCorePath = mavenRepo.resolve("org/jenkins-ci/main/jenkins-core")
-            logger.info("Looking for jenkins-core in: $jenkinsCorePath")
+            logger.info { "Looking for jenkins-core in: $jenkinsCorePath" }
 
             if (!Files.exists(jenkinsCorePath)) {
-                logger.debug("jenkins-core directory not found at $jenkinsCorePath")
+                logger.debug { "jenkins-core directory not found at $jenkinsCorePath" }
                 return null
             }
 
             // Find the latest version directory (prefer semantic versioning)
-            val versionDir = Files.list(jenkinsCorePath)
-                .filter { Files.isDirectory(it) }
-                .max { p1, p2 -> compareVersions(p1.fileName.toString(), p2.fileName.toString()) }
-                .orElse(null)
+            val versionDir = Files.list(jenkinsCorePath).use { stream ->
+                stream.filter { Files.isDirectory(it) }
+                    .max { p1, p2 -> compareVersions(p1.fileName.toString(), p2.fileName.toString()) }
+                    .orElse(null)
+            }
 
             if (versionDir == null) {
-                logger.warn("No version directories found in $jenkinsCorePath")
+                logger.warn { "No version directories found in $jenkinsCorePath" }
                 return null
             }
-            logger.info("Selected jenkins-core version: ${versionDir.fileName}")
+            logger.info { "Selected jenkins-core version: ${versionDir.fileName}" }
 
             // Find the main jar (not sources/javadoc)
-            val jar = Files.list(versionDir)
-                .filter { path ->
+            val jar = Files.list(versionDir).use { stream ->
+                stream.filter { path ->
                     val name = path.fileName.toString()
                     name.endsWith(".jar") &&
                         !name.endsWith("-sources.jar") &&
                         !name.endsWith("-javadoc.jar") &&
                         !name.endsWith("-tests.jar")
                 }
-                .findFirst()
-                .orElse(null)
+                    .findFirst()
+                    .orElse(null)
+            }
 
             if (jar == null) {
-                logger.warn("No JAR found in $versionDir")
+                logger.warn { "No JAR found in $versionDir" }
                 return null
             }
 
-            logger.info("Found jenkins-core JAR: $jar")
+            logger.info { "Found jenkins-core JAR: $jar" }
             return jar
         } catch (e: Exception) {
-            logger.warn("Failed to lookup local jenkins-core", e)
+            logger.warn(e) { "Failed to lookup local jenkins-core" }
             return null
         }
     }
@@ -147,7 +149,7 @@ class JenkinsContext(
         if (!m2RepoEnv.isNullOrBlank()) {
             val envPath = Paths.get(m2RepoEnv)
             if (Files.exists(envPath)) {
-                logger.debug("Using M2_REPO environment variable: $envPath")
+                logger.debug { "Using M2_REPO environment variable: $envPath" }
                 return envPath
             }
         }
@@ -168,19 +170,19 @@ class JenkinsContext(
                     val repoPath = nodeList.item(0).textContent.trim()
                     val customPath = Paths.get(repoPath)
                     if (Files.exists(customPath)) {
-                        logger.debug("Using localRepository from settings.xml: $customPath")
+                        logger.debug { "Using localRepository from settings.xml: $customPath" }
                         return customPath
                     }
                 }
             } catch (e: Exception) {
-                logger.debug("Could not parse settings.xml: ${e.message}")
+                logger.debug { "Could not parse settings.xml: ${e.message}" }
             }
         }
 
         // 3. Default location
         val defaultRepo = m2Dir.resolve("repository")
         if (Files.exists(defaultRepo)) {
-            logger.debug("Using default Maven repository: $defaultRepo")
+            logger.debug { "Using default Maven repository: $defaultRepo" }
             return defaultRepo
         }
 
@@ -209,16 +211,15 @@ class JenkinsContext(
         val results = gdslLoader.loadAllGdslFiles(configuration.gdslPaths)
 
         results.failed.forEach { result ->
-            logger.warn("Failed to load Jenkins GDSL: ${result.path} - ${result.error}")
+            logger.warn { "Failed to load Jenkins GDSL: ${result.path} - ${result.error}" }
         }
 
         if (!configuration.gdslExecutionEnabled) {
             if (results.successful.isNotEmpty()) {
-                logger.warn(
-                    "GDSL execution disabled; loaded {} files but skipping execution. " +
-                        "Enable with jenkins.gdslExecution.enabled=true to allow script execution.",
-                    results.successful.size,
-                )
+                logger.warn {
+                    "GDSL execution disabled; loaded ${results.successful.size} files but skipping execution. " +
+                        "Enable with jenkins.gdslExecution.enabled=true to allow script execution."
+                }
             }
 
             return results
@@ -226,12 +227,12 @@ class JenkinsContext(
 
         // Log results and execute successful loads
         results.successful.forEach { result ->
-            logger.info("Loaded Jenkins GDSL: ${result.path}")
+            logger.info { "Loaded Jenkins GDSL: ${result.path}" }
             result.content?.let { content ->
                 try {
                     gdslExecutor.execute(content, result.path)
                 } catch (e: Exception) {
-                    logger.error("Failed to execute GDSL: ${result.path}", e)
+                    logger.error(e) { "Failed to execute GDSL: ${result.path}" }
                 }
             }
         }
@@ -284,7 +285,7 @@ class JenkinsContext(
 
         // Filter metadata to only installed plugins (including defaults if enabled)
         val installedPlugins = pluginDiscovery.getInstalledPluginNames()
-        logger.debug("Filtering metadata to {} installed plugins", installedPlugins.size)
+        logger.debug { "Filtering metadata to ${installedPlugins.size} installed plugins" }
         return finalMetadata.copy(
             steps = finalMetadata.steps.filterValues { step ->
                 step.plugin?.let { it in installedPlugins } ?: false
@@ -333,17 +334,17 @@ class JenkinsContext(
     fun scanClasspath(classpath: List<Path>) {
         val newHash = classpath.hashCode()
         if (newHash == currentClasspathHash && dynamicMetadataCache.containsKey(newHash)) {
-            logger.debug("Classpath hash unchanged ($newHash), skipping scan")
+            logger.debug { "Classpath hash unchanged ($newHash), skipping scan" }
             return
         }
 
         try {
-            logger.info("Scanning {} classpath entries for Jenkins metadata (hash: {})", classpath.size, newHash)
+            logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata (hash: $newHash)" }
             val metadata = scanner.scan(classpath)
             dynamicMetadataCache[newHash] = metadata
             currentClasspathHash = newHash
         } catch (e: Exception) {
-            logger.error("Failed to scan classpath", e)
+            logger.error(e) { "Failed to scan classpath" }
         }
     }
 
@@ -353,88 +354,88 @@ class JenkinsContext(
     fun parseLibraries(source: String): List<LibraryReference> = libraryParser.parseLibraries(source)
 }
 
-private fun MutableList<Path>.addProjectDependencies(logger: Logger, projectDependencies: List<Path>) {
+private fun MutableList<Path>.addProjectDependencies(logger: KLogger, projectDependencies: List<Path>) {
     if (projectDependencies.isEmpty()) return
 
     addAll(projectDependencies)
-    logger.debug("Added ${projectDependencies.size} project dependencies to Jenkins classpath")
+    logger.debug { "Added ${projectDependencies.size} project dependencies to Jenkins classpath" }
 }
 
-private fun MutableList<Path>.ensureJenkinsCorePresent(logger: Logger, findLocalJenkinsCore: () -> Path?) {
+private fun MutableList<Path>.ensureJenkinsCorePresent(logger: KLogger, findLocalJenkinsCore: () -> Path?) {
     val jenkinsCorePattern = Regex("""^jenkins-core-\d+(\.\d+)*\.jar$""")
     val existingCore = find { jenkinsCorePattern.matches(it.fileName.toString()) }
 
     if (existingCore != null) {
-        logger.info("Found existing jenkins-core candidate: $existingCore")
+        logger.info { "Found existing jenkins-core candidate: $existingCore" }
         return
     }
 
-    logger.info("No jenkins-core found in project dependencies")
+    logger.info { "No jenkins-core found in project dependencies" }
     findLocalJenkinsCore()?.let {
         add(it)
-        logger.info("Auto-injected jenkins-core from local repository: $it")
+        logger.info { "Auto-injected jenkins-core from local repository: $it" }
     }
 }
 
 private fun resolveLibrariesToInclude(
     configuration: JenkinsConfiguration,
     libraryResolver: SharedLibraryResolver,
-    logger: Logger,
+    logger: KLogger,
     libraryReferences: List<LibraryReference>,
 ): List<SharedLibrary> = if (libraryReferences.isEmpty()) {
     configuration.sharedLibraries
 } else {
     val result = libraryResolver.resolveAllWithWarnings(libraryReferences)
     result.missing.forEach { ref ->
-        logger.warn("Jenkins library '${ref.name}' referenced but not configured")
+        logger.warn { "Jenkins library '${ref.name}' referenced but not configured" }
     }
     result.resolved
 }
 
-private fun MutableList<Path>.addLibrariesToClasspath(logger: Logger, librariesToInclude: List<SharedLibrary>) {
+private fun MutableList<Path>.addLibrariesToClasspath(logger: KLogger, librariesToInclude: List<SharedLibrary>) {
     librariesToInclude.forEach { library ->
         val jarPath = Paths.get(library.jar)
         if (Files.exists(jarPath)) {
             add(jarPath)
-            logger.debug("Added Jenkins library jar to classpath: ${library.jar}")
+            logger.debug { "Added Jenkins library jar to classpath: ${library.jar}" }
         } else {
-            logger.warn("Jenkins library jar not found: ${library.jar}")
+            logger.warn { "Jenkins library jar not found: ${library.jar}" }
         }
 
         library.sourcesJar?.let { sourcesJar ->
             val sourcesPath = Paths.get(sourcesJar)
             if (Files.exists(sourcesPath)) {
                 add(sourcesPath)
-                logger.debug("Added Jenkins library sources to classpath: $sourcesJar")
+                logger.debug { "Added Jenkins library sources to classpath: $sourcesJar" }
             } else {
-                logger.debug("Jenkins library sources jar not found: $sourcesJar")
+                logger.debug { "Jenkins library sources jar not found: $sourcesJar" }
             }
         }
     }
 }
 
-private fun MutableList<Path>.addSharedLibrarySrcDir(logger: Logger, workspaceRoot: Path) {
+private fun MutableList<Path>.addSharedLibrarySrcDir(logger: KLogger, workspaceRoot: Path) {
     val srcDir = workspaceRoot.resolve("src")
     if (Files.exists(srcDir) && Files.isDirectory(srcDir)) {
         add(srcDir)
-        logger.debug("Added Jenkins Shared Library 'src' directory to classpath: $srcDir")
+        logger.debug { "Added Jenkins Shared Library 'src' directory to classpath: $srcDir" }
     }
 }
 
-private fun MutableList<Path>.addRegisteredPluginJars(logger: Logger, pluginManager: JenkinsPluginManager) {
+private fun MutableList<Path>.addRegisteredPluginJars(logger: KLogger, pluginManager: JenkinsPluginManager) {
     runBlocking {
         val pluginJars = pluginManager.getRegisteredPluginJars()
         pluginJars.forEach { jar ->
             if (Files.exists(jar) && !contains(jar)) {
                 add(jar)
-                logger.debug("Added registered plugin JAR to classpath: $jar")
+                logger.debug { "Added registered plugin JAR to classpath: $jar" }
             }
         }
     }
 }
 
 private fun MutableList<Path>.tryGenerateStubs(
-    logger: Logger,
+    logger: KLogger,
     workspaceRoot: Path,
     shouldGenerateStubs: (List<Path>) -> Boolean,
     getAllMetadata: () -> MergedJenkinsMetadata,
@@ -443,13 +444,13 @@ private fun MutableList<Path>.tryGenerateStubs(
         val stubsDir = workspaceRoot.resolve(".jenkins-stubs")
         if (!shouldGenerateStubs(this)) return@runCatching
 
-        logger.info("Generating Jenkins plugin stubs in $stubsDir")
+        logger.info { "Generating Jenkins plugin stubs in $stubsDir" }
         val stubGenerator = JenkinsStubGenerator()
         val metadata = getAllMetadata()
         stubGenerator.generateStubs(metadata, stubsDir)
         add(stubsDir)
     }.onFailure { throwable ->
         if (throwable is Error) throw throwable
-        logger.warn("Failed to generate Jenkins stubs", throwable)
+        logger.warn(throwable) { "Failed to generate Jenkins stubs" }
     }
 }

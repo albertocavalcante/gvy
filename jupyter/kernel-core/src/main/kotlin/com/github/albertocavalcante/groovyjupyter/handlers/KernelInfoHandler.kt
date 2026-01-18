@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovyjupyter.handlers
 import com.github.albertocavalcante.groovyjupyter.protocol.JupyterMessage
 import com.github.albertocavalcante.groovyjupyter.protocol.MessageType
 import com.github.albertocavalcante.groovyjupyter.zmq.JupyterConnection
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 class KernelInfoHandler(
     private val languageName: String = "groovy",
@@ -13,12 +13,12 @@ class KernelInfoHandler(
         StatusPublisher(conn.iopubSocket, conn.signer)
     },
 ) : MessageHandler {
-    private val logger = LoggerFactory.getLogger(KernelInfoHandler::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override fun canHandle(msgType: MessageType): Boolean = msgType == MessageType.KERNEL_INFO_REQUEST
 
     override fun handle(request: JupyterMessage, connection: JupyterConnection) {
-        logger.info("Handling kernel_info_request")
+        logger.info { "Handling kernel_info_request" }
 
         val statusPublisher = statusPublisherFactory(connection)
 
@@ -33,7 +33,7 @@ class KernelInfoHandler(
         // 3. Publish idle status
         statusPublisher.publishIdle(request)
 
-        logger.info("Completed kernel_info_request")
+        logger.info { "Completed kernel_info_request" }
     }
 
     /**

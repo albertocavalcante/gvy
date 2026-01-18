@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import com.github.albertocavalcante.groovyformatter.OpenRewriteFormatter
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.eclipse.lsp4j.DocumentFormattingParams
@@ -9,7 +10,6 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.services.LanguageClient
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.max
@@ -49,12 +49,12 @@ class GroovyFormattingService(
     private val documentProvider: DocumentProvider,
     private val client: () -> LanguageClient?,
 ) {
-    private val logger = LoggerFactory.getLogger(GroovyFormattingService::class.java)
+    private val logger = KotlinLogging.logger {}
     private val optionsWarningLogged = AtomicBoolean(false)
 
     suspend fun format(params: DocumentFormattingParams): List<TextEdit> {
         val uriString = params.textDocument.uri
-        logger.debug("Formatting requested for {}", uriString)
+        logger.debug { "Formatting requested for $uriString" }
         val startNanos = System.nanoTime()
         val uri = URI.create(uriString)
 
@@ -75,9 +75,9 @@ class GroovyFormattingService(
 
         val formattedContent = formattedResult.getOrElse { throwable ->
             val failureMessage = throwable.message ?: throwable.javaClass.simpleName
-            logger.warn("Formatter failed for {}: {}", uriString, failureMessage)
-            if (logger.isDebugEnabled) {
-                logger.debug("Formatter failure details for {}", uriString, throwable)
+            logger.warn { "Formatter failed for $uriString: $failureMessage" }
+            if (logger.isDebugEnabled()) {
+                logger.debug(throwable) { "Formatter failure details for $uriString" }
             }
             publishTelemetry(
                 uriString,
@@ -108,7 +108,7 @@ class GroovyFormattingService(
 
     private fun maybeLogIgnoredOptions(ignoredOptions: Boolean) {
         if (ignoredOptions && optionsWarningLogged.compareAndSet(false, true)) {
-            logger.info("DocumentFormattingOptions are not yet supported; using OpenRewrite defaults.")
+            logger.info { "DocumentFormattingOptions are not yet supported; using OpenRewrite defaults." }
         }
     }
 

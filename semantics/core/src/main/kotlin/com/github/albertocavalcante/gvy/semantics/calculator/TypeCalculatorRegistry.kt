@@ -65,9 +65,6 @@ class TypeCalculatorRegistry private constructor(private val calculators: Map<KC
 
     private fun findApplicableCalculators(nodeClass: KClass<*>): List<TypeCalculator<*>> =
         calculatorCache.getOrPut(nodeClass) {
-            // Check exact match first
-            calculators[nodeClass]?.let { return@getOrPut it }
-
             // Check superclasses and interfaces
             calculators.entries
                 .filter { (key, _) -> key.java.isAssignableFrom(nodeClass.java) }
@@ -96,6 +93,7 @@ class TypeCalculatorRegistry private constructor(private val calculators: Map<KC
             val grouped = calculators
                 .groupBy { it.nodeType }
                 .mapValues { (_, calcs) -> calcs.sortedByDescending { it.priority } }
+
             return TypeCalculatorRegistry(grouped)
         }
     }

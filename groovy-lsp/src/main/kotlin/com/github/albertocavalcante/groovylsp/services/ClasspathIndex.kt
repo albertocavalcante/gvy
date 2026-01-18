@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.services
 
 import io.github.classgraph.ClassGraph
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 
 data class IndexedClass(val simpleName: String, val fullName: String)
 
@@ -10,7 +10,7 @@ interface ClasspathIndex {
 }
 
 class JvmClasspathIndex : ClasspathIndex {
-    private val logger = LoggerFactory.getLogger(JvmClasspathIndex::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override fun index(classpathEntries: List<String>): List<IndexedClass> {
         val results = mutableListOf<IndexedClass>()
@@ -38,7 +38,7 @@ class JvmClasspathIndex : ClasspathIndex {
             }
         }
 
-        logger.debug("JvmClasspathIndex produced {} classes", results.size)
+        logger.debug { "JvmClasspathIndex produced ${results.size} classes" }
         return results
     }
 }

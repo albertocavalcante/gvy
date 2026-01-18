@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.hover
 
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.groovylsp.config.GroovyMode
+import com.github.albertocavalcante.groovylsp.config.ModeResolver
 import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.documentation.DocFormatter
 import com.github.albertocavalcante.groovylsp.documentation.Documentation
@@ -10,9 +12,6 @@ import com.github.albertocavalcante.groovylsp.errors.InvalidPositionException
 import com.github.albertocavalcante.groovylsp.errors.NodeNotFoundAtPositionException
 import com.github.albertocavalcante.groovylsp.errors.SymbolResolutionException
 import com.github.albertocavalcante.groovylsp.errors.invalidPosition
-import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
-import com.github.albertocavalcante.groovylsp.project.JenkinsCapabilities
-import com.github.albertocavalcante.groovylsp.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ClassDeclarationHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ClosureHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ConstructorCallHoverStrategy
@@ -20,6 +19,7 @@ import com.github.albertocavalcante.groovylsp.providers.hover.strategies.Declara
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.FieldDeclarationHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.GenericHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.ImportHoverStrategy
+import com.github.albertocavalcante.groovylsp.providers.hover.strategies.JenkinsStepHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.LiteralHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodCallHoverStrategy
 import com.github.albertocavalcante.groovylsp.providers.hover.strategies.MethodDeclarationHoverStrategy
@@ -31,6 +31,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.isHoverable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
@@ -38,15 +39,14 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import java.io.IOException
 import java.net.URI
 
@@ -63,27 +63,42 @@ class HoverProvider(
     private val contentGenerator: HoverContentGenerator,
     private val sourceNavigator: SourceNavigator? = null,
 ) {
-    private val logger = LoggerFactory.getLogger(HoverProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Documentation provider for extracting groovydoc - use shared instance for cache consistency
     private val documentationProvider = DocumentationProvider
         .getInstance(documentProvider)
 
+    // Create mode resolver lazily
+    // Note: Uses AUTO mode since we don't have direct access to ServerConfiguration from compilation service
+    // AUTO mode will auto-detect based on JenkinsCapabilities, which is the desired behavior
+    private val modeResolver: ModeResolver by lazy {
+        ModeResolver(
+            configuredMode = GroovyMode.AUTO,
+            jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities(),
+        )
+    }
+
     // Strategies for handling different node types (order matters - more specific first)
-    private val strategies: List<HoverStrategy> = listOf(
-        MethodDeclarationHoverStrategy(),
-        ClassDeclarationHoverStrategy(),
-        FieldDeclarationHoverStrategy(),
-        ImportHoverStrategy(),
-        DeclarationExpressionHoverStrategy(),
-        VariableExpressionHoverStrategy(),
-        MethodCallHoverStrategy(),
-        ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
-        PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
-        ClosureHoverStrategy(), // Phase 4: Closure expressions
-        LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
-        GenericHoverStrategy(), // Fallback - must be last
-    )
+    private val strategies: List<HoverStrategy> by lazy {
+        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+        listOfNotNull(
+            // Jenkins step hover has high priority for method calls in Jenkins files
+            jenkinsCapabilities?.let { JenkinsStepHoverStrategy(it, modeResolver) },
+            MethodDeclarationHoverStrategy(),
+            ClassDeclarationHoverStrategy(),
+            FieldDeclarationHoverStrategy(),
+            ImportHoverStrategy(),
+            DeclarationExpressionHoverStrategy(),
+            VariableExpressionHoverStrategy(),
+            MethodCallHoverStrategy(),
+            ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
+            PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
+            ClosureHoverStrategy(), // Phase 4: Closure expressions
+            LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
+            GenericHoverStrategy(), // Fallback - must be last
+        )
+    }
 
     /**
      * Provide hover information for the symbol at the given position.
@@ -92,7 +107,7 @@ class HoverProvider(
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
     suspend fun provideHover(uri: String, position: Position): Hover? = withContext(Dispatchers.Default) {
         try {
-            logger.debug("Providing hover for $uri at ${position.line}:${position.character}")
+            logger.debug { "Providing hover for $uri at ${position.line}:${position.character}" }
 
             val documentUri = URI.create(uri)
             ensureAstPrepared(documentUri)
@@ -108,16 +123,16 @@ class HoverProvider(
             // Create hover using DSL with documentation
             createHoverContent(hoverNode, documentUri)
         } catch (e: NodeNotFoundAtPositionException) {
-            logger.debug("No node found at position for hover: $e")
+            logger.debug { "No node found at position for hover: $e" }
             null
         } catch (e: InvalidPositionException) {
-            logger.warn("Invalid position for hover: $e")
+            logger.warn { "Invalid position for hover: $e" }
             null
         } catch (e: SymbolResolutionException) {
-            logger.debug("Symbol resolution failed for hover: $e")
+            logger.debug { "Symbol resolution failed for hover: $e" }
             null
         } catch (e: IllegalStateException) {
-            logger.error("Error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "Error providing hover for $uri at ${position.line}:${position.character}" }
             null
         } catch (e: IllegalArgumentException) {
             val documentUri = URI.create(uri)
@@ -126,16 +141,16 @@ class HoverProvider(
                 position.character,
                 e.message ?: "Invalid arguments",
             )
-            logger.error("Invalid arguments for hover: $specificException", e)
+            logger.error(e) { "Invalid arguments for hover: $specificException" }
             null
         } catch (e: GroovyLspException) {
-            logger.error("LSP error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "LSP error providing hover for $uri at ${position.line}:${position.character}" }
             null
         } catch (e: IOException) {
-            logger.error("I/O error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "I/O error providing hover for $uri at ${position.line}:${position.character}" }
             null
         } catch (e: Exception) {
-            logger.error("Unexpected error providing hover for $uri at ${position.line}:${position.character}", e)
+            logger.error(e) { "Unexpected error providing hover for $uri at ${position.line}:${position.character}" }
             null
         }
     }
@@ -153,7 +168,7 @@ class HoverProvider(
         runCatching {
             compilationService.compile(documentUri, content)
         }.onFailure { error ->
-            logger.debug("HoverProvider: failed to compile $documentUri before hover", error)
+            logger.debug(error) { "HoverProvider: failed to compile $documentUri before hover" }
         }
     }
 
@@ -184,7 +199,7 @@ class HoverProvider(
             else -> nodeAtPosition
         }
 
-        logger.debug("Found node at position: ${importAwareNode.javaClass.simpleName}")
+        logger.debug { "Found node at position: ${importAwareNode.javaClass.simpleName}" }
 
         // 2. If we have visitor/symbol table, try enhanced resolution
         if (astVisitor != null && symbolTable != null) {
@@ -238,7 +253,7 @@ class HoverProvider(
     ): ASTNode {
         // If it's a declaration, return the DeclarationExpression for richer hover info
         val parent = visitor.getParent(node)
-        if (parent is org.codehaus.groovy.ast.expr.DeclarationExpression && parent.leftExpression == node) {
+        if (parent is DeclarationExpression && parent.leftExpression == node) {
             return parent // Return parent so SemanticTypeResolver can resolve the type
         }
 
@@ -286,9 +301,6 @@ class HoverProvider(
      * Create hover content using the strategy pattern with documentation enhancement.
      */
     private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
-        // Check if this is a Jenkins step and we have metadata for it
-        tryCreateJenkinsStepHover(node, documentUri)?.let { return it }
-
         val module = compilationService.getAst(documentUri) as? ModuleNode
         val context = HoverContext(
             moduleNode = module,
@@ -297,18 +309,23 @@ class HoverProvider(
         )
 
         // Use strategy pattern to generate base hover
+        // Iterate through all matching strategies until one returns a non-null hover
+        // This allows fallback when a strategy returns null (e.g., JenkinsStepHoverStrategy
+        // returns null for non-Jenkins files, falling back to MethodCallHoverStrategy)
         val baseHover = strategies
-            .firstOrNull { it.canHandle(node) }
-            ?.generateHover(node, context)
+            .asSequence()
+            .filter { it.canHandle(node) }
+            .mapNotNull { it.generateHover(node, context) }
+            .firstOrNull()
             ?: return null
 
-        logger.debug("Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}")
+        logger.debug { "Generated base hover for ${node.javaClass.simpleName}:\n${baseHover.contents.right?.value}" }
 
         // Try to get documentation for the node
         var doc = try {
             documentationProvider.getDocumentation(node, documentUri)
         } catch (e: Exception) {
-            logger.debug("Failed to get documentation for node", e)
+            logger.debug(e) { "Failed to get documentation for node" }
             Documentation.EMPTY
         }
 
@@ -325,7 +342,7 @@ class HoverProvider(
                             doc = result.documentation
                         }
                     } catch (e: Exception) {
-                        logger.debug("Failed to get source documentation for $className", e)
+                        logger.debug(e) { "Failed to get source documentation for $className" }
                     }
                 }
             }
@@ -337,120 +354,6 @@ class HoverProvider(
 
         // Enhance hover with documentation
         return enhanceHoverWithDocumentation(baseHover, doc)
-    }
-
-    /**
-     * Try to create a hover for a Jenkins step from bundled metadata.
-     * Also checks for vars/ global variables with .txt documentation.
-     */
-    private fun tryCreateJenkinsStepHover(node: ASTNode, documentUri: URI): Hover? {
-        // Only check for Jenkins files
-        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
-        if (jenkinsCapabilities?.isJenkinsFile(documentUri) != true) {
-            return null
-        }
-
-        // Only for method calls
-        if (node !is MethodCallExpression) {
-            return null
-        }
-
-        val stepName = node.methodAsString ?: return null
-
-        // First, check if this is a vars/ global variable call
-        val varsHover = tryCreateVarsGlobalVariableHover(stepName, node, jenkinsCapabilities)
-        if (varsHover != null) {
-            return varsHover
-        }
-        val metadata = jenkinsCapabilities.getAllMetadata() ?: return null
-        val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
-
-        // Build rich hover content for Jenkins step
-        val markdownContent = markdown {
-            h2("Jenkins Step: `$stepName`")
-
-            stepMetadata.documentation?.let { doc ->
-                text(doc)
-            }
-
-            stepMetadata.plugin?.let { plugin ->
-                text("**Plugin:** $plugin")
-            }
-
-            // Use namedParams instead of parameters for MergedStepMetadata
-            if (stepMetadata.namedParams.isNotEmpty()) {
-                h3("Parameters")
-                list(
-                    stepMetadata.namedParams.map { (name, param) ->
-                        val required = if (param.required) " *(required)*" else ""
-                        val defaultVal = param.defaultValue?.let { " (default: `$it`)" } ?: ""
-                        val base = "**`$name`**: `${param.type}`$required$defaultVal"
-                        param.description?.let { desc -> "$base\n  - $desc" } ?: base
-                    },
-                )
-            }
-        }
-
-        val markupContent = MarkupContent().apply {
-            kind = MarkupKind.MARKDOWN
-            value = markdownContent
-        }
-
-        // Build hover range from the method call expression
-        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
-        val hoverRange = Range(
-            Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber),
-        )
-
-        return Hover().apply {
-            contents = Either.forRight(markupContent)
-            range = hoverRange
-        }
-    }
-
-    /**
-     * Try to create a hover for a vars/ global variable call.
-     * Shows the documentation from the companion .txt file if available.
-     */
-    private fun tryCreateVarsGlobalVariableHover(
-        varName: String,
-        node: MethodCallExpression,
-        jenkinsCapabilities: JenkinsCapabilities,
-    ): Hover? {
-        val globalVariables = jenkinsCapabilities.getGlobalVariables()
-        val globalVar = globalVariables.find { it.name == varName } ?: return null
-
-        // Build hover content
-        val markdownContent = markdown {
-            h2("Jenkins Shared Library: `$varName`")
-
-            if (globalVar.documentation.isNotEmpty()) {
-                text(globalVar.documentation)
-            } else {
-                text(italic("No documentation available. Add a `vars/$varName.txt` file to provide documentation."))
-            }
-
-            text("**Source:** `${globalVar.path.fileName}`")
-        }
-
-        val markupContent = MarkupContent().apply {
-            kind = MarkupKind.MARKDOWN
-            value = markdownContent
-        }
-
-        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
-        val hoverRange = Range(
-            Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber),
-        )
-
-        return Hover().apply {
-            contents = Either.forRight(markupContent)
-            range = hoverRange
-        }
     }
 
     /**
@@ -477,7 +380,7 @@ class HoverProvider(
         }
 
         return Hover().apply {
-            contents = org.eclipse.lsp4j.jsonrpc.messages.Either.forRight(markupContent)
+            contents = Either.forRight(markupContent)
         }
     }
 }

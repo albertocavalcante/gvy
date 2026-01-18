@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.project
 
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 
 /**
@@ -21,7 +21,7 @@ import java.nio.file.Path
  * @param strategies Initial list of strategies to register
  */
 class ProjectStrategyRegistry(strategies: List<ProjectStrategy> = emptyList()) {
-    private val logger = LoggerFactory.getLogger(ProjectStrategyRegistry::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private val strategies: MutableList<ProjectStrategy> =
         strategies.sortedByDescending { it.priority }.toMutableList()
@@ -39,7 +39,7 @@ class ProjectStrategyRegistry(strategies: List<ProjectStrategy> = emptyList()) {
     fun register(strategy: ProjectStrategy) {
         strategies.add(strategy)
         strategies.sortByDescending { it.priority }
-        logger.debug("Registered project strategy: {} (priority={})", strategy.id, strategy.priority)
+        logger.debug { "Registered project strategy: ${strategy.id} (priority=${strategy.priority})" }
     }
 
     /**
@@ -57,24 +57,19 @@ class ProjectStrategyRegistry(strategies: List<ProjectStrategy> = emptyList()) {
         activeStrategies = strategies.filter { strategy ->
             val canHandle = strategy.canHandle(workspaceRoot, config)
             if (canHandle) {
-                logger.info(
-                    "Project strategy '{}' ({}) active for workspace: {}",
-                    strategy.id,
-                    strategy.displayName,
-                    workspaceRoot,
-                )
+                logger.info {
+                    "Project strategy '${strategy.id}' (${strategy.displayName}) active for workspace: $workspaceRoot"
+                }
             }
             canHandle
         }
 
         if (activeStrategies.isEmpty()) {
-            logger.warn("No project strategies matched workspace: {}", workspaceRoot)
+            logger.warn { "No project strategies matched workspace: $workspaceRoot" }
         } else {
-            logger.info(
-                "Selected {} project strategies: {}",
-                activeStrategies.size,
-                activeStrategies.map { it.id },
-            )
+            logger.info {
+                "Selected ${activeStrategies.size} project strategies: ${activeStrategies.map { it.id }}"
+            }
         }
 
         return activeStrategies
@@ -105,10 +100,10 @@ class ProjectStrategyRegistry(strategies: List<ProjectStrategy> = emptyList()) {
      * Calls [ProjectStrategy.shutdown] on each active strategy.
      */
     fun shutdown() {
-        logger.info("Shutting down {} project strategies", activeStrategies.size)
+        logger.info { "Shutting down ${activeStrategies.size} project strategies" }
         activeStrategies.forEach { strategy ->
             runCatching { strategy.shutdown() }
-                .onFailure { e -> logger.warn("Error shutting down strategy '{}': {}", strategy.id, e.message) }
+                .onFailure { e -> logger.warn { "Error shutting down strategy '${strategy.id}': ${e.message}" } }
         }
         activeStrategies = emptyList()
     }

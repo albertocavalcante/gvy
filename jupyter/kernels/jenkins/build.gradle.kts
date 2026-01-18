@@ -14,7 +14,7 @@ dependencies {
     // implementation("org.codehaus.groovy:groovy-all:2.4.21")
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
     runtimeOnly(libs.logback.classic)
 
     // Detekt formatting

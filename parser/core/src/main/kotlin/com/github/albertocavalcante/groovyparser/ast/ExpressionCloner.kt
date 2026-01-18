@@ -42,7 +42,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 @Suppress("TooManyFunctions")
 internal object ExpressionCloner {
 
-    @Suppress("CyclomaticComplexMethod")
+    @Suppress("CyclomaticComplexMethod", "UNCHECKED_CAST")
     fun <T : Expression> clone(node: T): T = when (node) {
         is MethodCallExpr -> cloneMethodCallExpr(node) as T
         is VariableExpr -> cloneVariableExpr(node) as T

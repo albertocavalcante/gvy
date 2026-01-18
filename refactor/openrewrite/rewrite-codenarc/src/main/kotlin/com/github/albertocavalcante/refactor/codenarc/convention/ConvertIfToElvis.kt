@@ -72,6 +72,7 @@ class ConvertIfToElvis : Recipe() {
             )
         }
 
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         private fun getConditionVariable(expr: J): String? {
             // Pattern 1: !x
             if (expr is J.Unary && expr.operator == J.Unary.Type.Not) {

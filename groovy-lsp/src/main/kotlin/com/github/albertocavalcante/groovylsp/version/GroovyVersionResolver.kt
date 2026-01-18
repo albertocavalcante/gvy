@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.version
 
 import groovy.lang.GroovySystem
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 
 enum class GroovyVersionSource {
@@ -13,7 +13,7 @@ enum class GroovyVersionSource {
 data class GroovyVersionInfo(val version: GroovyVersion, val source: GroovyVersionSource)
 
 class GroovyVersionResolver(private val runtimeVersionProvider: () -> String = { GroovySystem.getVersion() }) {
-    private val logger = LoggerFactory.getLogger(GroovyVersionResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     fun resolve(dependencies: List<Path>, overrideVersion: String?): GroovyVersionInfo {
         parseOverride(overrideVersion)?.let { version ->
@@ -35,7 +35,7 @@ class GroovyVersionResolver(private val runtimeVersionProvider: () -> String = {
         if (overrideVersion.isNullOrBlank()) return null
         val parsed = GroovyVersion.parse(overrideVersion)
         if (parsed == null) {
-            logger.warn("Invalid groovy.language.version override '{}', ignoring", overrideVersion)
+            logger.warn { "Invalid groovy.language.version override '$overrideVersion', ignoring" }
         }
         return parsed
     }

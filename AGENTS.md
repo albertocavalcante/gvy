@@ -2,6 +2,17 @@
 
 **Groovy Language Server** — Kotlin/JVM LSP implementation.
 
+## Environment Setup
+
+Before running any build commands in a worktree, initialize the environment:
+
+```bash
+direnv allow   # Load Java/Gradle environment
+java -version  # Verify Java is available
+```
+
+> [!NOTE] Each new worktree requires `direnv allow` to be run once.
+
 ## Commands
 
 ```bash

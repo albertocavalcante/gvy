@@ -26,6 +26,10 @@ import { registerFormatting } from "./features/formatting/formatter";
 import { replService } from "./features/repl";
 import { registerGradleFeatures } from "./features/gradle";
 import { registerTestingFeatures } from "./features/testing";
+import {
+  DependencyService,
+  DependencyTreeProvider,
+} from "./features/dependencies";
 import { LSPToolService } from "./features/ai/LSPToolService";
 import { ToolRegistry } from "./features/ai/ToolRegistry";
 import { LMToolProvider } from "./features/ai/LMToolProvider";
@@ -100,11 +104,48 @@ export async function activate(context: vscode.ExtensionContext) {
     registerGradleFeatures(context);
     registerTestingFeatures(context, testOutputChannel);
 
+    // Register Dependency Tree View
+    const client = getClient();
+    if (client) {
+      const dependencyService = new DependencyService(client);
+      const dependencyTreeProvider = new DependencyTreeProvider(
+        dependencyService,
+      );
+
+      context.subscriptions.push(
+        vscode.window.registerTreeDataProvider(
+          "groovyDependencies",
+          dependencyTreeProvider,
+        ),
+        vscode.commands.registerCommand("groovy.dependencies.refresh", () => {
+          dependencyTreeProvider.refresh();
+        }),
+        vscode.commands.registerCommand(
+          "groovy.dependencies.copyCoordinate",
+          async (item) => {
+            if (item?.coordinate) {
+              try {
+                await vscode.env.clipboard.writeText(item.coordinate);
+                vscode.window.showInformationMessage(
+                  `Copied: ${item.coordinate}`,
+                );
+              } catch {
+                vscode.window.showErrorMessage(
+                  "Failed to copy dependency coordinate to clipboard.",
+                );
+              }
+            }
+          },
+        ),
+      );
+
+      // Set context for view visibility
+      vscode.commands.executeCommand("setContext", "groovy.hasProject", true);
+    }
+
     // AI Tools Integration
     const lspToolService = new LSPToolService(vscode, getClient);
-    const toolRegistry = new ToolRegistry(
-      vscode.workspace.getConfiguration("groovy"),
-    );
+    const toolRegistry = new ToolRegistry();
 
     // Register Adapters
     const lmToolProvider = new LMToolProvider(lspToolService, toolRegistry);
@@ -128,8 +169,11 @@ export async function activate(context: vscode.ExtensionContext) {
   } catch (error) {
     const message = `Error activating Groovy Language Extension: ${error instanceof Error ? error.message : "Unknown error"}`;
     console.error(message);
-    // Don't show error message to user during activation, as it might be transient
-    // The individual components will show their own error messages as needed
+    // Show error to user and rethrow to let VSCode know activation failed
+    vscode.window.showErrorMessage(
+      `Failed to activate Groovy extension: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+    throw error;
   }
 }
 

@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.buildtool.gradle
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.gradle.tooling.GradleConnectionException
 import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ProjectConnection
-import org.slf4j.LoggerFactory
 import java.io.File
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
  * cold start times when resolving dependencies.
  */
 object GradleConnectionPool : GradleConnectionFactory {
-    private val logger = LoggerFactory.getLogger(GradleConnectionPool::class.java)
+    private val logger = KotlinLogging.logger {}
 
     private data class ConnectionKey(val projectDir: Path, val gradleUserHomeDir: Path?)
 
@@ -35,10 +35,10 @@ object GradleConnectionPool : GradleConnectionFactory {
         val key = ConnectionKey(projectDir = normalizedProjectDir, gradleUserHomeDir = normalizedUserHome)
 
         return connections.computeIfAbsent(key) { createdKey ->
-            logger.debug(
+            logger.debug {
                 "Creating new Gradle connection for: ${createdKey.projectDir} " +
-                    "(userHome=${createdKey.gradleUserHomeDir?.fileName ?: "default"})",
-            )
+                    "(userHome=${createdKey.gradleUserHomeDir?.fileName ?: "default"})"
+            }
             createConnection(createdKey.projectDir, createdKey.gradleUserHomeDir)
         }
     }
@@ -51,7 +51,7 @@ object GradleConnectionPool : GradleConnectionFactory {
     // Generic exception handling removed
     fun closeConnection(projectDir: Path) {
         val normalizedProjectDir = projectDir.toAbsolutePath().normalize()
-        val keys = connections.keys.filter { it.projectDir == normalizedProjectDir }
+        val keys = connections.keys.asSequence().filter { it.projectDir == normalizedProjectDir }.toList()
         keys.forEach { key ->
             closeConnection(key)
         }
@@ -61,11 +61,11 @@ object GradleConnectionPool : GradleConnectionFactory {
         connections.remove(key)?.let { connection ->
             try {
                 connection.close()
-                logger.debug("Closed Gradle connection for: ${key.projectDir}")
+                logger.debug { "Closed Gradle connection for: ${key.projectDir}" }
             } catch (e: GradleConnectionException) {
-                logger.warn("Gradle connection error while closing for ${key.projectDir}: ${e.message}")
+                logger.warn { "Gradle connection error while closing for ${key.projectDir}: ${e.message}" }
             } catch (e: IllegalStateException) {
-                logger.warn("Illegal state while closing connection for ${key.projectDir}: ${e.message}")
+                logger.warn { "Illegal state while closing connection for ${key.projectDir}: ${e.message}" }
             }
         }
     }
@@ -75,14 +75,14 @@ object GradleConnectionPool : GradleConnectionFactory {
      * Should be called during shutdown.
      */
     fun shutdown() {
-        logger.info("Shutting down Gradle connection pool (${connections.size} connections)")
+        logger.info { "Shutting down Gradle connection pool (${connections.size} connections)" }
 
         connections.keys.toList().forEach { key ->
             closeConnection(key)
         }
 
         connections.clear()
-        logger.info("Gradle connection pool shutdown complete")
+        logger.info { "Gradle connection pool shutdown complete" }
     }
 
     /**

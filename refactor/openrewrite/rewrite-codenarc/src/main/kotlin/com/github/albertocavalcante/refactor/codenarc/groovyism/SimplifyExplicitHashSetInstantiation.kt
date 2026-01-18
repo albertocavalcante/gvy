@@ -22,7 +22,8 @@ import java.util.Collections
  *
  * e.g. new HashSet() -> [] as Set
  *
- * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicithashsetinstantiation">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicithashsetinstantiation">
+ *     CodeNarc Rule</a>
  */
 class SimplifyExplicitHashSetInstantiation : Recipe() {
 

@@ -70,7 +70,7 @@ dependencies {
     implementation(libs.kotlin.serialization.json)
 
     // Logging
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
     implementation(libs.logback.classic)
 
     // CLI
@@ -123,6 +123,8 @@ dependencies {
     implementation(project(":parser:rewrite"))
     implementation(project(":semantics:core"))
     implementation(project(":semantics-native"))
+    implementation(project(":reports:coverage"))
+    implementation(project(":reports:results"))
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;

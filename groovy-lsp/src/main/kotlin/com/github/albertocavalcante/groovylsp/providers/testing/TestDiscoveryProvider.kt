@@ -5,7 +5,7 @@ import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationServi
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.nativeapi.ParseResult
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
@@ -22,7 +22,7 @@ class TestDiscoveryProvider(
     private val compilationService: GroovyCompilationService,
     private val registry: TestFrameworkRegistry = TestFrameworkRegistry.default,
 ) {
-    private val logger = LoggerFactory.getLogger(TestDiscoveryProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Discover all test suites in the workspace.
@@ -32,29 +32,29 @@ class TestDiscoveryProvider(
      */
     @Suppress("LoopWithTooManyJumpStatements")
     suspend fun discoverTests(workspaceUri: String): List<TestSuite> {
-        logger.info("Discovering tests in workspace: $workspaceUri")
+        logger.info { "Discovering tests in workspace: $workspaceUri" }
 
         val testSuites = mutableListOf<TestSuite>()
 
         // Validate workspace URI for potential future filtering
         if (parseWorkspaceUri(workspaceUri) == null) {
-            logger.warn("Invalid workspace URI: $workspaceUri")
+            logger.warn { "Invalid workspace URI: $workspaceUri" }
             return emptyList()
         }
 
         // Get all workspace source URIs
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         val groovyFiles = sourceUris.filter { it.path.endsWith(".groovy", ignoreCase = true) }
-        logger.info("Found {} source URIs, {} are Groovy files", sourceUris.size, groovyFiles.size)
+        logger.info { "Found ${sourceUris.size} source URIs, ${groovyFiles.size} are Groovy files" }
 
         for (uri in groovyFiles) {
             testSuites.addAll(discoverTestsForFile(uri))
         }
-        logger.info(
-            "Test discovery complete: found {} test suites with {} total tests",
-            testSuites.size,
-            testSuites.sumOf { it.tests.size },
-        )
+        logger.info {
+            "Test discovery complete: found ${testSuites.size} test suites with ${testSuites.sumOf {
+                it.tests.size
+            }} total tests"
+        }
         return testSuites
     }
 
@@ -63,25 +63,29 @@ class TestDiscoveryProvider(
         val parseResult = getOrCompileParseResult(uri) ?: return emptyList()
         val ast = parseResult.ast
         if (ast == null) {
-            logger.info("No AST for: {} - compilation may have failed", uri)
+            logger.info { "No AST for: $uri - compilation may have failed" }
             return emptyList()
         }
 
         val classLoader = parseResult.compilationUnit.classLoader
-        logger.info("Processing {} - found {} classes in AST", uri.path.substringAfterLast('/'), ast.classes.size)
+        logger.info { "Processing ${uri.path.substringAfterLast('/')} - found ${ast.classes.size} classes in AST" }
 
         // Check each class individually to handle mixed files correctly
-        logger.debug(
+        logger.debug {
             "Classes in AST for $uri: ${
                 ast.classes.map {
                     "${it.name} (super=${it.superClass.name}) methods=[${it.methods.joinToString { m -> m.name }}]"
                 }
-            }",
-        )
+            }"
+        }
 
         return ast.classes.mapNotNull { classNode ->
             val testItems = registry.extractTests(classNode, ast, classLoader)
             if (testItems.isEmpty()) return@mapNotNull null
+
+            // Extract class line from the CLASS test item
+            val classItem = testItems.find { it.kind == TestItemKind.CLASS }
+            val classLine = classItem?.line ?: classNode.lineNumber.coerceAtLeast(1)
 
             val tests = testItems
                 .filter { it.kind == TestItemKind.METHOD }
@@ -89,16 +93,14 @@ class TestDiscoveryProvider(
             if (tests.isEmpty()) return@mapNotNull null
 
             val framework = testItems.firstOrNull()?.framework
-            logger.debug(
-                "Found {} test suite: {} with {} tests",
-                framework,
-                classNode.name,
-                tests.size,
-            )
+            logger.debug {
+                "Found $framework test suite: ${classNode.name} at line $classLine with ${tests.size} tests"
+            }
 
             TestSuite(
                 uri = uri.toString(),
                 suite = classNode.name,
+                line = classLine,
                 tests = tests,
             )
         }
@@ -110,7 +112,7 @@ class TestDiscoveryProvider(
 
         // File not in cache - compile it on demand.
         // This can happen when workspace is indexed but files aren't opened in editor yet.
-        logger.info("File not cached, compiling on demand: {}", uri)
+        logger.info { "File not cached, compiling on demand: $uri" }
         val content = readFileContent(uri) ?: return null
         compilationService.compile(uri, content)
         return compilationService.getValidParseResult(uri)
@@ -123,7 +125,7 @@ class TestDiscoveryProvider(
         }.onFailure { e ->
             when (e) {
                 is IOException, is SecurityException ->
-                    logger.warn("Failed to read file for test discovery: {}", uri, e)
+                    logger.warn(e) { "Failed to read file for test discovery: $uri" }
                 else -> throw e
             }
         }.getOrNull()

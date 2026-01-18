@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.buildtool.jdk
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.nio.file.Path
 import kotlin.io.path.exists
 
@@ -14,7 +14,7 @@ class ProjectJdkValidator(
     private val mavenExtractor: MavenJdkRequirementExtractor = MavenJdkRequirementExtractor(),
     private val gradleExtractor: GradleJdkRequirementExtractor = GradleJdkRequirementExtractor(),
 ) {
-    private val logger = LoggerFactory.getLogger(ProjectJdkValidator::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         /**
@@ -39,28 +39,25 @@ class ProjectJdkValidator(
      */
     fun validate(workspaceRoot: Path, runningJdk: Int? = null): ValidationResult {
         val currentJdk = runningJdk ?: getCurrentJdkVersion()
-        logger.debug("Validating JDK compatibility. Running JDK: {}", currentJdk)
+        logger.debug { "Validating JDK compatibility. Running JDK: $currentJdk" }
 
         // Extract requirement from project
         val requirement = extractRequirement(workspaceRoot)
         val effectiveVersion = requirement?.effectiveVersion
         if (requirement == null || effectiveVersion == null) {
-            logger.debug("No JDK requirement configured, skipping validation")
+            logger.debug { "No JDK requirement configured, skipping validation" }
             return ValidationResult.NoRequirement
         }
 
         val required = effectiveVersion
-        logger.info(
-            "Project JDK requirement: {} (from {}), Running JDK: {}",
-            required,
-            requirement.source.displayName,
-            currentJdk,
-        )
+        logger.info {
+            "Project JDK requirement: $required (from ${requirement.source.displayName}), Running JDK: $currentJdk"
+        }
 
         return when {
             currentJdk < required -> {
                 // Running JDK is OLDER than required - this will cause compilation failures
-                logger.warn("Running JDK {} is older than project requirement {}", currentJdk, required)
+                logger.warn { "Running JDK $currentJdk is older than project requirement $required" }
                 ValidationResult.IncompatibleOlder(
                     runningJdk = currentJdk,
                     requiredJdk = required,
@@ -72,7 +69,7 @@ class ProjectJdkValidator(
             currentJdk > required + NEWER_JDK_WARNING_THRESHOLD -> {
                 // Running JDK is significantly NEWER - potential bytecode issues
                 // This is the "major version 69" scenario
-                logger.warn("Running JDK {} is significantly newer than project target {}", currentJdk, required)
+                logger.warn { "Running JDK $currentJdk is significantly newer than project target $required" }
                 ValidationResult.PotentiallyIncompatibleNewer(
                     runningJdk = currentJdk,
                     targetJdk = required,
@@ -82,7 +79,7 @@ class ProjectJdkValidator(
             }
 
             else -> {
-                logger.debug("JDK validation passed: running JDK {}, required {}", currentJdk, required)
+                logger.debug { "JDK validation passed: running JDK $currentJdk, required $required" }
                 ValidationResult.Compatible(runningJdk = currentJdk, requiredJdk = required)
             }
         }
@@ -130,7 +127,7 @@ class ProjectJdkValidator(
                 }
             }.onFailure { e ->
                 if (e is Error) throw e
-                logger.debug("Failed to parse .java-version", e)
+                logger.debug(e) { "Failed to parse .java-version" }
             }
         }
 
@@ -153,7 +150,7 @@ class ProjectJdkValidator(
                 }
             }.onFailure { e ->
                 if (e is Error) throw e
-                logger.debug("Failed to parse .sdkmanrc", e)
+                logger.debug(e) { "Failed to parse .sdkmanrc" }
             }
         }
 

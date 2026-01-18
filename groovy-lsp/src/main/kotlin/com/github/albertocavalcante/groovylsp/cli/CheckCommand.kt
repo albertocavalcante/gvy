@@ -20,6 +20,7 @@ import com.github.albertocavalcante.diagnostics.sarif.SarifRuleRegistry
 import com.github.albertocavalcante.diagnostics.sarif.SarifWriter
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ClientCapabilities
 import org.eclipse.lsp4j.Diagnostic
@@ -27,10 +28,9 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.WorkspaceFolder
-import org.slf4j.LoggerFactory
 import java.io.File
 
-private val logger = LoggerFactory.getLogger(CheckCommand::class.java)
+private val logger = KotlinLogging.logger {}
 
 /**
  * Runs diagnostics on Groovy source files.
@@ -101,7 +101,7 @@ class CheckCommand : CliktCommand(name = "check") {
     private fun checkFiles(server: GroovyLanguageServer) {
         val service = server.getTextDocumentService() as? GroovyTextDocumentService
         if (service == null) {
-            logger.error("Failed to retrieve GroovyTextDocumentService")
+            logger.error { "Failed to retrieve GroovyTextDocumentService" }
             throw ProgramResult(1)
         }
 
@@ -144,7 +144,7 @@ class CheckCommand : CliktCommand(name = "check") {
             .onFailure { e ->
                 @Suppress("TooGenericExceptionCaught")
                 if (e is Exception) {
-                    logger.error("Error checking file ${file.path}", e)
+                    logger.error(e) { "Error checking file ${file.path}" }
                 } else {
                     throw e
                 }
@@ -168,7 +168,6 @@ class CheckCommand : CliktCommand(name = "check") {
         val writer = SarifWriter(
             toolName = "groovy-lsp",
             toolVersion = getVersion(),
-            toolUri = "https://github.com/GroovyLanguageServer/groovy-language-server",
         )
 
         // Register known rules
@@ -191,7 +190,7 @@ class CheckCommand : CliktCommand(name = "check") {
             outputFile.writeText(json)
             if (format == OutputFormat.SARIF) {
                 // Don't pollute SARIF output with extra messages
-                logger.info("SARIF output written to ${outputFile.absolutePath}")
+                logger.info { "SARIF output written to ${outputFile.absolutePath}" }
             }
         } else {
             println(json)

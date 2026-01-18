@@ -11,6 +11,7 @@ import com.github.albertocavalcante.groovylsp.providers.definition.resolution.Cl
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.GlobalClassResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.JenkinsVarsResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.LocalSymbolResolutionStrategy
+import com.github.albertocavalcante.groovylsp.providers.definition.resolution.MethodResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.ResolutionContext
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.SemanticDBResolutionStrategy
 import com.github.albertocavalcante.groovylsp.providers.definition.resolution.SymbolResolutionStrategy
@@ -20,8 +21,10 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -32,7 +35,7 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.Statement
-import org.slf4j.LoggerFactory
+import org.eclipse.lsp4j.Range
 import java.net.URI
 
 class DefinitionResolver(
@@ -43,7 +46,7 @@ class DefinitionResolver(
     private val workspaceSymbolIndex: WorkspaceSymbolIndex? = null,
 ) {
 
-    private val logger = LoggerFactory.getLogger(DefinitionResolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Resolution pipeline using Railway-Oriented Programming with Arrow Either.
@@ -52,8 +55,9 @@ class DefinitionResolver(
      * 1. JenkinsVars - Jenkins vars/ directory lookup (highest priority)
      * 2. LocalSymbol - Same-file definitions via AST/symbol table
      * 3. SemanticDB - Cross-file resolution for all symbol types (methods, fields, properties, etc.)
-     * 4. GlobalClass - Cross-file class lookup via symbol index (fallback for class-only)
-     * 5. Classpath - JAR/JRT external dependencies (lowest priority)
+     * 4. Method - Method-level navigation for classpath methods
+     * 5. GlobalClass - Cross-file class lookup via symbol index (fallback for class-only)
+     * 6. Classpath - JAR/JRT external dependencies (lowest priority)
      *
      * The pipeline short-circuits on first success (Either.Right).
      */
@@ -68,6 +72,7 @@ class DefinitionResolver(
                     add(SemanticDBResolutionStrategy(index))
                 }
                 compilationService?.let {
+                    add(MethodResolutionStrategy(it, sourceNavigator))
                     add(GlobalClassResolutionStrategy(it))
                     add(ClasspathResolutionStrategy(it, sourceNavigator))
                 }
@@ -85,8 +90,7 @@ class DefinitionResolver(
      */
     sealed class DefinitionResult {
         data class Source(val node: ASTNode, val uri: URI) : DefinitionResult()
-        data class Binary(val uri: URI, val name: String, val range: org.eclipse.lsp4j.Range? = null) :
-            DefinitionResult()
+        data class Binary(val uri: URI, val name: String, val range: Range? = null) : DefinitionResult()
     }
 
     /**
@@ -98,7 +102,7 @@ class DefinitionResolver(
         uri: URI,
         position: Position,
     ): DefinitionResult? {
-        logger.debug("Finding definition at $uri:${position.line}:${position.character}")
+        logger.debug { "Finding definition at $uri:${position.line}:${position.character}" }
 
         return try {
             val targetNode = validateAndFindNode(uri, position)
@@ -110,10 +114,10 @@ class DefinitionResolver(
             result
         } catch (e: GroovyLspException) {
             // Re-throw our specific exceptions
-            logger.debug("Specific error finding definition: $e")
+            logger.debug { "Specific error finding definition: $e" }
             throw e
         } catch (e: Exception) {
-            logger.error("Unexpected error finding definition at $uri:${position.line}:${position.character}", e)
+            logger.error(e) { "Unexpected error finding definition at $uri:${position.line}:${position.character}" }
             throw createSymbolNotFoundException("unknown", uri, position)
         }
     }
@@ -181,10 +185,10 @@ class DefinitionResolver(
             throw uri.nodeNotFoundAtPosition(position.line, position.character)
         }
 
-        logger.info("=== Effective target node ===")
-        logger.info("Node type: ${effectiveTarget.javaClass.simpleName}")
-        logger.info("Node position: ${effectiveTarget.lineNumber}:${effectiveTarget.columnNumber}")
-        logger.info("Node text: ${effectiveTarget.text}")
+        logger.info { "=== Effective target node ===" }
+        logger.info { "Node type: ${effectiveTarget.javaClass.simpleName}" }
+        logger.info { "Node position: ${effectiveTarget.lineNumber}:${effectiveTarget.columnNumber}" }
+        logger.info { "Node text: ${effectiveTarget.text}" }
         return effectiveTarget
     }
 
@@ -241,7 +245,7 @@ class DefinitionResolver(
         val result = resolutionPipeline.resolve(context)
 
         return result.getOrElse { error ->
-            logger.debug("Resolution failed [{}]: {}", error.source, error.reason)
+            logger.debug { "Resolution failed [${error.source}]: ${error.reason}" }
             null
         }
     }
@@ -252,14 +256,14 @@ class DefinitionResolver(
     private fun validateDefinition(definition: ASTNode, uri: URI): ASTNode {
         // Make sure the definition has valid position information
         if (!definition.hasValidPosition()) {
-            logger.debug("Definition node has invalid position information")
+            logger.debug { "Definition node has invalid position information" }
             handleValidationError("invalidDefinitionPosition", uri, ValidationContext.NodeContext(definition))
         }
 
-        logger.debug(
+        logger.debug {
             "Resolved to definition: ${definition.javaClass.simpleName} " +
-                "at ${definition.lineNumber}:${definition.columnNumber}",
-        )
+                "at ${definition.lineNumber}:${definition.columnNumber}"
+        }
         return definition
     }
 
@@ -315,10 +319,18 @@ class DefinitionResolver(
      * Based on kotlin-lsp's getTargetsAtPosition pattern.
      */
     fun findTargetsAt(uri: URI, position: Position, targetKinds: Set<TargetKind>): List<ASTNode> {
-        logger.debug("Finding targets at $uri:${position.line}:${position.character} for kinds: $targetKinds")
+        logger.debug { "Finding targets at $uri:${position.line}:${position.character} for kinds: $targetKinds" }
 
         val targetNode = astVisitor.getNodeAt(uri, position)
             ?: return emptyList()
+
+        // Special case for ImportNode: prioritize DECLARATION over REFERENCE
+        // When clicking on an import, users want to navigate to the imported class,
+        // not see references to the import statement
+        if (targetNode is ImportNode && TargetKind.DECLARATION in targetKinds) {
+            logger.debug { "ImportNode detected, deferring to resolution pipeline for navigation" }
+            return emptyList() // Let the main definition flow handle it
+        }
 
         val results = mutableListOf<ASTNode>()
 
@@ -337,7 +349,7 @@ class DefinitionResolver(
             }
         }
 
-        logger.debug("Found ${results.size} targets")
+        logger.debug { "Found ${results.size} targets" }
         return results
     }
 

@@ -3,17 +3,18 @@ package com.github.albertocavalcante.groovylsp.engine.impl.native.features
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.engine.api.HoverProvider
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverContentGenerator
+import com.github.albertocavalcante.groovylsp.providers.hover.MethodCallMetadataResolver
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.nativeapi.ParseResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.jsonrpc.messages.Either
-import org.slf4j.LoggerFactory
 import com.github.albertocavalcante.groovylsp.providers.hover.HoverProvider as DelegateHoverProvider
 
 /**
@@ -30,14 +31,20 @@ class NativeHoverProvider(
     sourceNavigator: SourceNavigator? = null,
 ) : HoverProvider {
 
-    private val logger = LoggerFactory.getLogger(NativeHoverProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     // Initialize semantic bridge and generator
     private val semanticResolver = SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),
     )
+    private val methodCallMetadataResolver =
+        MethodCallMetadataResolver(
+            compilationService.classpathService,
+            compilationService.gdkProvider,
+            semanticResolver,
+        )
     private val contentGenerator =
-        HoverContentGenerator(semanticResolver)
+        HoverContentGenerator(semanticResolver, methodCallMetadataResolver)
 
     // Delegate to existing HoverProvider which has all the domain logic
     private val delegate = DelegateHoverProvider(
@@ -54,7 +61,7 @@ class NativeHoverProvider(
             when (throwable) {
                 is CancellationException -> throw throwable
                 is Error -> throw throwable
-                else -> logger.error("Error providing hover", throwable)
+                else -> logger.error(throwable) { "Error providing hover" }
             }
         }
         .getOrDefault(emptyHover())

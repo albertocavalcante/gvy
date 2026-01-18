@@ -3,11 +3,12 @@ package com.github.albertocavalcante.groovylsp.providers.diagnostics.rules
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.DiagnosticRuleConfig
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.StreamingDiagnosticProvider
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic
-import org.slf4j.LoggerFactory
+import org.eclipse.lsp4j.DiagnosticSeverity
 import java.net.URI
 
 /**
@@ -26,7 +27,7 @@ class CustomRulesProvider(
 ) : StreamingDiagnosticProvider {
 
     companion object {
-        private val logger = LoggerFactory.getLogger(CustomRulesProvider::class.java)
+        private val logger = KotlinLogging.logger {}
     }
 
     override val id: String = "custom-rules"
@@ -34,7 +35,7 @@ class CustomRulesProvider(
     override val enabledByDefault: Boolean = true
 
     override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
-        logger.debug("Running ${rules.size} custom rules for: $uri")
+        logger.debug { "Running ${rules.size} custom rules for: $uri" }
 
         // Create context for rules
         val context = createContext(uri)
@@ -42,24 +43,24 @@ class CustomRulesProvider(
         // Execute each enabled rule
         for (rule in rules) {
             if (!ruleConfig.isRuleEnabled(rule)) {
-                logger.debug("Skipping disabled rule: ${rule.id}")
+                logger.debug { "Skipping disabled rule: ${rule.id}" }
                 continue
             }
 
-            logger.debug("Executing rule: ${rule.id}")
+            logger.debug { "Executing rule: ${rule.id}" }
             val diagnostics =
                 runCatching { rule.analyze(uri, content, context) }
                     .onFailure { throwable ->
                         when (throwable) {
                             is CancellationException -> throw throwable
                             is Error -> throw throwable
-                            else -> logger.error("Rule ${rule.id} failed for $uri", throwable)
+                            else -> logger.error(throwable) { "Rule ${rule.id} failed for $uri" }
                         }
                     }
                     // Continue with other rules
                     .getOrDefault(emptyList())
 
-            logger.debug("Rule ${rule.id} found ${diagnostics.size} violations")
+            logger.debug { "Rule ${rule.id} found ${diagnostics.size} violations" }
 
             // Emit each diagnostic
             diagnostics.forEach { diagnostic ->
@@ -76,7 +77,7 @@ class CustomRulesProvider(
                     when (throwable) {
                         is CancellationException -> throw throwable
                         is Error -> throw throwable
-                        else -> logger.debug("Failed to get AST for rule context", throwable)
+                        else -> logger.debug(throwable) { "Failed to get AST for rule context" }
                     }
                 }
                 .getOrNull()
@@ -86,14 +87,14 @@ class CustomRulesProvider(
 
         override fun hasErrors(): Boolean = runCatching {
             compilationService.getDiagnostics(uri).any {
-                it.severity == org.eclipse.lsp4j.DiagnosticSeverity.Error
+                it.severity == DiagnosticSeverity.Error
             }
         }
             .onFailure { throwable ->
                 when (throwable) {
                     is CancellationException -> throw throwable
                     is Error -> throw throwable
-                    else -> logger.debug("Failed to check for errors", throwable)
+                    else -> logger.debug(throwable) { "Failed to check for errors" }
                 }
             }
             // Assume errors if we can't check

@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.groovylsp.buildtool.maven
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.maven.model.Model
 import org.apache.maven.model.building.DefaultModelBuilderFactory
 import org.apache.maven.model.building.DefaultModelBuildingRequest
 import org.apache.maven.model.building.ModelBuildingRequest
 import org.eclipse.aether.repository.RemoteRepository
-import org.slf4j.LoggerFactory
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -36,17 +36,17 @@ interface RepositoryProvider {
  */
 class MavenRepositoryProvider(private val pomPath: Path) : RepositoryProvider {
 
-    private val logger = LoggerFactory.getLogger(MavenRepositoryProvider::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override fun getRepositories(): List<RemoteRepository> {
         if (!Files.exists(pomPath)) {
-            logger.debug("POM not found at {}, using defaults", pomPath)
+            logger.debug { "POM not found at $pomPath, using defaults" }
             return AetherSessionFactory.getDefaultRemoteRepositories()
         }
 
         val model = parsePom(pomPath)
         if (model == null) {
-            logger.warn("Failed to parse POM at {}, using defaults", pomPath)
+            logger.warn { "Failed to parse POM at $pomPath, using defaults" }
             return AetherSessionFactory.getDefaultRemoteRepositories()
         }
 
@@ -63,7 +63,7 @@ class MavenRepositoryProvider(private val pomPath: Path) : RepositoryProvider {
 
         // Add repositories from POM
         model.repositories.forEach { repo ->
-            logger.debug("Found repository in pom.xml: {} -> {}", repo.id, repo.url)
+            logger.debug { "Found repository in pom.xml: ${repo.id} -> ${repo.url}" }
             repos.add(
                 RemoteRepository.Builder(repo.id, "default", repo.url).build(),
             )
@@ -73,7 +73,7 @@ class MavenRepositoryProvider(private val pomPath: Path) : RepositoryProvider {
         model.pluginRepositories.forEach { repo ->
             // Avoid duplicates
             if (repos.none { it.id == repo.id }) {
-                logger.debug("Found plugin repository in pom.xml: {} -> {}", repo.id, repo.url)
+                logger.debug { "Found plugin repository in pom.xml: ${repo.id} -> ${repo.url}" }
                 repos.add(
                     RemoteRepository.Builder(repo.id, "default", repo.url).build(),
                 )
@@ -87,7 +87,7 @@ class MavenRepositoryProvider(private val pomPath: Path) : RepositoryProvider {
             )
         }
 
-        logger.debug("Built repository list with {} entries", repos.size)
+        logger.debug { "Built repository list with ${repos.size} entries" }
         return repos
     }
 
@@ -106,7 +106,7 @@ class MavenRepositoryProvider(private val pomPath: Path) : RepositoryProvider {
         val result = builder.build(request)
         result.effectiveModel
     } catch (e: Exception) {
-        logger.error("Failed to parse POM at {}: {}", path, e.message)
+        logger.error { "Failed to parse POM at $path: ${e.message}" }
         null
     }
 }

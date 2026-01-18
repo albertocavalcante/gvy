@@ -21,7 +21,7 @@ dependencies {
     implementation(compose.materialIconsExtended)
 
     implementation(libs.kotlin.serialization.json)
-    implementation(libs.slf4j.api)
+    implementation(libs.kotlin.logging)
     runtimeOnly(libs.logback.classic)
 
     testImplementation(libs.kotlin.test)

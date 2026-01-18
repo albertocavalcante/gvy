@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CompletionContextDetectorTest {
@@ -99,5 +100,66 @@ class CompletionContextDetectorTest {
         assertTrue(ctx.canSuggestStatic)
         assertEquals(lineText.length, ctx.replaceStartCharacter)
         assertEquals(lineText.length, ctx.replaceEndCharacter)
+    }
+
+    @Test
+    fun `detectImportCompletionContext returns null inside block comment`() {
+        val content = "/* import java.util. */"
+        val ctx = CompletionContextDetector.detectImportCompletionContext(
+            content = content,
+            line = 0,
+            character = 10,
+            tokenIndex = null,
+        )
+        assertNull(ctx)
+    }
+
+    @Test
+    fun `detectImportCompletionContext returns null inside line comment`() {
+        val content = "// import java.util."
+        val ctx = CompletionContextDetector.detectImportCompletionContext(
+            content = content,
+            line = 0,
+            character = 10,
+            tokenIndex = null,
+        )
+        assertNull(ctx)
+    }
+
+    @Test
+    fun `detectImportCompletionContext returns null inside string literal`() {
+        val content = "val s = 'import java.util.'"
+        val ctx = CompletionContextDetector.detectImportCompletionContext(
+            content = content,
+            line = 0,
+            character = 15,
+            tokenIndex = null,
+        )
+        assertNull(ctx)
+    }
+
+    @Test
+    fun `detectImportCompletionContext returns null inside double quoted string literal`() {
+        val content = "val s = \"import java.util.\""
+        val ctx = CompletionContextDetector.detectImportCompletionContext(
+            content = content,
+            line = 0,
+            character = 15,
+            tokenIndex = null,
+        )
+        assertNull(ctx)
+    }
+
+    @Test
+    fun `detectImportCompletionContext handles escaped quotes in strings`() {
+        val content = "val s = 'don\\'t import java.util.'"
+        // Position inside "import"
+        val ctx = CompletionContextDetector.detectImportCompletionContext(
+            content = content,
+            line = 0,
+            character = 18,
+            tokenIndex = null,
+        )
+        assertNull(ctx)
     }
 }

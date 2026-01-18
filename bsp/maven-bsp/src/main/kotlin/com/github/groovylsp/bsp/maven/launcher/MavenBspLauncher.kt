@@ -2,6 +2,7 @@ package com.github.groovylsp.bsp.maven.launcher
 
 import ch.epfl.scala.bsp4j.BuildClient
 import com.github.groovylsp.bsp.maven.server.MavenBuildServer
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
@@ -13,7 +14,6 @@ import org.eclipse.aether.spi.connector.transport.TransporterFactory
 import org.eclipse.aether.transport.file.FileTransporterFactory
 import org.eclipse.aether.transport.http.HttpTransporterFactory
 import org.eclipse.lsp4j.jsonrpc.Launcher
-import org.slf4j.LoggerFactory
 import java.nio.file.Path
 import java.nio.file.Paths
 
@@ -24,7 +24,7 @@ import java.nio.file.Paths
  */
 object MavenBspLauncher {
 
-    private val logger = LoggerFactory.getLogger(MavenBspLauncher::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Main entry point.
@@ -34,7 +34,7 @@ object MavenBspLauncher {
     @JvmStatic
     fun main(args: Array<String>) {
         val config = parseArgs(args)
-        logger.info("Starting Maven BSP server for workspace: ${config.workspaceRoot}")
+        logger.info { "Starting Maven BSP server for workspace: ${config.workspaceRoot}" }
 
         val server = createServer(config.workspaceRoot, config.localRepository)
         startServer(server)
@@ -59,6 +59,7 @@ object MavenBspLauncher {
     /**
      * Creates the Aether RepositorySystem for dependency resolution.
      */
+    @Suppress("DEPRECATION")
     fun createRepositorySystem(): RepositorySystem {
         val locator = MavenRepositorySystemUtils.newServiceLocator()
 
@@ -68,7 +69,7 @@ object MavenBspLauncher {
 
         locator.setErrorHandler(object : DefaultServiceLocator.ErrorHandler() {
             override fun serviceCreationFailed(type: Class<*>?, impl: Class<*>?, exception: Throwable?) {
-                logger.error("Service creation failed: $type -> $impl", exception)
+                logger.error(exception) { "Service creation failed: $type -> $impl" }
             }
         })
 
@@ -105,12 +106,9 @@ object MavenBspLauncher {
         while (i < args.size) {
             when (args[i]) {
                 "--local-repo" -> {
-                    if (i + 1 < args.size) {
-                        localRepository = Paths.get(args[i + 1])
-                        i += 2
-                    } else {
-                        throw IllegalArgumentException("--local-repo requires a path argument")
-                    }
+                    require(i + 1 < args.size) { "--local-repo requires a path argument" }
+                    localRepository = Paths.get(args[i + 1])
+                    i += 2
                 }
                 else -> {
                     workspaceRoot = Paths.get(args[i])
@@ -136,7 +134,7 @@ object MavenBspLauncher {
         val client = launcher.remoteProxy
         server.connect(client)
 
-        logger.info("Maven BSP server started, listening on stdin/stdout")
+        logger.info { "Maven BSP server started, listening on stdin/stdout" }
         launcher.startListening().get()
     }
 

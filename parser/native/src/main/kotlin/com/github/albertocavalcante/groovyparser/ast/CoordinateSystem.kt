@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovyparser.ast
 
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
-import org.slf4j.LoggerFactory
 
 /**
  * THE SINGLE SOURCE OF TRUTH for all coordinate system operations in the Groovy LSP.
@@ -38,7 +38,7 @@ import org.slf4j.LoggerFactory
  */
 object CoordinateSystem {
 
-    private val logger = LoggerFactory.getLogger(CoordinateSystem::class.java)
+    private val logger = KotlinLogging.logger {}
 
     /**
      * Type-safe wrapper for LSP coordinates (0-based).
@@ -223,22 +223,22 @@ object CoordinateSystem {
     private fun nodeContainsGroovyPosition(node: ASTNode, groovyPos: GroovyPosition): Boolean {
         // Check if the node has valid position information
         if (!isValidNodePosition(node)) {
-            logger.debug("Node ${node.javaClass.simpleName} has invalid position information")
+            logger.debug { "Node ${node.javaClass.simpleName} has invalid position information" }
             return false
         }
 
         val nodeStart = GroovyPosition(node.lineNumber, node.columnNumber)
         val nodeEnd = GroovyPosition(node.lastLineNumber, node.lastColumnNumber)
 
-        logger.debug("Checking if Groovy position $groovyPos is within node range $nodeStart to $nodeEnd")
+        logger.debug { "Checking if Groovy position $groovyPos is within node range $nodeStart to $nodeEnd" }
 
         // Position containment logic using Groovy 1-based coordinates
         val result = containsGroovyPositionInRange(groovyPos, nodeStart, nodeEnd)
 
         if (result) {
-            logger.debug("✓ Position $groovyPos is within node ${node.javaClass.simpleName}")
+            logger.debug { "✓ Position $groovyPos is within node ${node.javaClass.simpleName}" }
         } else {
-            logger.debug("✗ Position $groovyPos is outside node ${node.javaClass.simpleName}")
+            logger.debug { "✗ Position $groovyPos is outside node ${node.javaClass.simpleName}" }
         }
 
         return result

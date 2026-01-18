@@ -12,7 +12,7 @@ dependencies {
     api(libs.kotlin.serialization.json)
 
     // Logging
-    api(libs.slf4j.api)
+    api(libs.kotlin.logging)
 
     // Groovy REPL execution
     api(project(":groovy-repl"))

@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
 import java.net.URI
 import java.nio.file.Files
@@ -17,7 +17,7 @@ import kotlin.streams.asSequence
  * on file system scanning operations.
  */
 class WorkspaceScanner {
-    private val logger = LoggerFactory.getLogger(WorkspaceScanner::class.java)
+    private val logger = KotlinLogging.logger {}
 
     companion object {
         private const val GROOVY_EXTENSION = "groovy"
@@ -59,11 +59,11 @@ class WorkspaceScanner {
             } catch (e: IOException) {
                 // Continue with next root if one fails
                 // Errors are expected for inaccessible directories
-                logger.debug("Failed to scan workspace root: $root", e)
+                logger.debug(e) { "Failed to scan workspace root: $root" }
             } catch (e: SecurityException) {
                 // Continue with next root if one fails
                 // Errors are expected for inaccessible directories
-                logger.debug("Failed to scan workspace root: $root", e)
+                logger.debug(e) { "Failed to scan workspace root: $root" }
             }
         }
     }

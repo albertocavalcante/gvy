@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovylsp.converters.toGroovyPosition
 import com.github.albertocavalcante.groovylsp.converters.toLspLocation
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.toList
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -25,7 +26,6 @@ import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
-import org.slf4j.LoggerFactory
 import java.net.URI
 import java.nio.file.Paths
 
@@ -34,7 +34,7 @@ import java.nio.file.Paths
  * Supports renaming variables, methods, properties, and classes across the workspace.
  */
 class RenameProvider(private val compilationService: GroovyCompilationService) {
-    private val logger = LoggerFactory.getLogger(RenameProvider::class.java)
+    private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
 
     // Groovy keywords that cannot be used as identifiers
@@ -59,7 +59,7 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
      */
     @Suppress("ThrowsCount", "TooGenericExceptionCaught")
     suspend fun provideRename(uri: String, position: Position, newName: String): WorkspaceEdit {
-        logger.debug("Rename requested for $uri at ${position.line}:${position.character} to '$newName'")
+        logger.debug { "Rename requested for $uri at ${position.line}:${position.character} to '$newName'" }
 
         // Validate the new name
         validateNewName(newName)
@@ -118,7 +118,7 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
         val dependencyLocations = locations.filter { !isInWorkspace(it.uri) }
 
         if (dependencyLocations.isNotEmpty()) {
-            logger.warn("Found ${dependencyLocations.size} references in dependencies - these will not be renamed")
+            logger.warn { "Found ${dependencyLocations.size} references in dependencies - these will not be renamed" }
         }
 
         // Build workspace edit
@@ -164,7 +164,7 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
             val path = Paths.get(uri)
             path.startsWith(workspaceRoot)
         } catch (e: Exception) {
-            logger.warn("Could not parse URI: $uriString", e)
+            logger.warn(e) { "Could not parse URI: $uriString" }
             false
         }
     }
@@ -228,7 +228,7 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
         // A class is top-level if it's not an inner class
         val isInner = classNode.outerClass != null
         if (isInner) {
-            logger.debug("Class ${classNode.name} is an inner class, not a top-level class")
+            logger.debug { "Class ${classNode.name} is an inner class, not a top-level class" }
             return false
         }
 
@@ -241,14 +241,14 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
 
             val matches = fileName.equals(expectedFileName, ignoreCase = true)
             if (!matches) {
-                logger.debug(
+                logger.debug {
                     "File name '$fileName' does not match class name '${classNode.nameWithoutPackage}', " +
-                        "not treating as top-level",
-                )
+                        "not treating as top-level"
+                }
             }
             matches
         } catch (e: Exception) {
-            logger.warn("Could not check file name for class", e)
+            logger.warn(e) { "Could not check file name for class" }
             false
         }
     }
@@ -264,10 +264,10 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
         val newPath = parent.resolve("$newName.groovy")
         val newUri = newPath.toUri().toString()
 
-        logger.debug("Creating file rename operation: $oldUri -> $newUri")
+        logger.debug { "Creating file rename operation: $oldUri -> $newUri" }
         RenameFile(oldUri, newUri)
     } catch (e: Exception) {
-        logger.error("Could not create file rename operation", e)
+        logger.error(e) { "Could not create file rename operation" }
         null
     }
 

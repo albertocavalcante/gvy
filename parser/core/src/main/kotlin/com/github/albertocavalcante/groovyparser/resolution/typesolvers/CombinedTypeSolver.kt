@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovyparser.resolution.typesolvers
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.groovyparser.resolution.declarations.ResolvedTypeDeclaration
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
-import org.slf4j.LoggerFactory
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -16,7 +16,7 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class CombinedTypeSolver(vararg solvers: TypeSolver) : TypeSolver {
 
-    private val logger = LoggerFactory.getLogger(CombinedTypeSolver::class.java)
+    private val logger = KotlinLogging.logger {}
 
     override var parent: TypeSolver? = null
 
@@ -57,11 +57,11 @@ class CombinedTypeSolver(vararg solvers: TypeSolver) : TypeSolver {
                     return ref
                 }
             } catch (e: UnsupportedOperationException) {
-                logger.debug("Solver {} does not support type {}: {}", solver, name, e.message)
+                logger.debug { "Solver $solver does not support type $name: ${e.message}" }
             } catch (e: IllegalArgumentException) {
-                logger.debug("Invalid argument for type {} in solver {}: {}", name, solver, e.message)
+                logger.debug { "Invalid argument for type $name in solver $solver: ${e.message}" }
             } catch (e: RuntimeException) {
-                logger.warn("Unexpected error resolving type {} in solver {}: {}", name, solver, e.message)
+                logger.warn { "Unexpected error resolving type $name in solver $solver: ${e.message}" }
             }
         }
 

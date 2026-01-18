@@ -100,6 +100,7 @@ object SignatureFormatter {
      * @param options Formatting options
      * @return Formatted class signature
      */
+    @Suppress("CyclomaticComplexMethod") // Complexity 15 - class signature formatting requires conditionals
     fun formatClass(classNode: ClassNode, options: Options = Options()): String = buildString {
         // Annotations
         appendAnnotations(classNode.annotations, options, "\n")
