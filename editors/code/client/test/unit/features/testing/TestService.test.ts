@@ -6,10 +6,14 @@ import {
 } from "../../../../src/features/testing/TestService";
 import { RequestType } from "vscode-languageserver-protocol";
 
+interface MockLanguageClient {
+  sendRequest: sinon.SinonStub;
+}
+
 describe("TestService", () => {
   let sandbox: sinon.SinonSandbox;
   let testService: TestService;
-  let mockLanguageClient: unknown;
+  let mockLanguageClient: MockLanguageClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();

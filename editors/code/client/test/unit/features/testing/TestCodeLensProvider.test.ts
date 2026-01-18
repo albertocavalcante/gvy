@@ -3,8 +3,8 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 interface CodeLensType {
-  range: unknown;
-  command?: { title: string; command: string };
+  range: { start: { line: number }; end: { line: number } };
+  command?: { title: string; command: string; arguments?: unknown[] };
 }
 
 interface TestCodeLensProviderType {
@@ -465,7 +465,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as unknown).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,
@@ -510,7 +510,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as unknown).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,
@@ -554,7 +554,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as unknown).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,
@@ -674,7 +674,7 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as unknown).noCallThru()(
+      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
         "../../../../src/features/testing/TestCodeLensProvider",
         {
           vscode: vscodeMock,

@@ -6,10 +6,14 @@ import {
 } from "../../../../src/features/gradle/GradleService";
 import { RequestType } from "vscode-languageserver-protocol";
 
+interface MockLanguageClient {
+  sendRequest: sinon.SinonStub;
+}
+
 describe("GradleService", () => {
   let sandbox: sinon.SinonSandbox;
   let gradleService: GradleService;
-  let mockLanguageClient: unknown;
+  let mockLanguageClient: MockLanguageClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();

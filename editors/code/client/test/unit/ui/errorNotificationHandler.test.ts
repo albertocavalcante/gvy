@@ -9,6 +9,32 @@ import {
   ProjectJdkNewerWarning,
 } from "../../../src/ui/statusUtils";
 
+interface MockVscode {
+  window: {
+    showErrorMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+    showInformationMessage: sinon.SinonStub;
+  };
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+  };
+  commands: {
+    executeCommand: sinon.SinonStub;
+  };
+  env: {
+    openExternal: sinon.SinonStub;
+    clipboard: {
+      writeText: sinon.SinonStub;
+    };
+  };
+  Uri: {
+    parse: sinon.SinonStub;
+  };
+  ConfigurationTarget: {
+    Workspace: number;
+  };
+}
+
 describe("Error Notification Handler", () => {
   let showErrorMessageStub: sinon.SinonStub;
   let showWarningMessageStub: sinon.SinonStub;
@@ -17,7 +43,7 @@ describe("Error Notification Handler", () => {
   let getConfigurationStub: sinon.SinonStub;
   let configUpdateStub: sinon.SinonStub;
   let showErrorNotification: typeof import("../../../src/ui/errorNotificationHandler").showErrorNotification;
-  let mockVscode: unknown;
+  let mockVscode: MockVscode;
 
   beforeEach(() => {
     showErrorMessageStub = sinon.stub();

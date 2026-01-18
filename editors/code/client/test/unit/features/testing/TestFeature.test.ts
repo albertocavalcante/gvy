@@ -2,11 +2,49 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import * as proxyquire from "proxyquire";
 
+interface MockVscode {
+  FileSystemError: typeof Error;
+  workspace: {
+    fs: {
+      stat: sinon.SinonStub;
+      createDirectory: sinon.SinonStub;
+      writeFile: sinon.SinonStub;
+    };
+    openTextDocument: sinon.SinonStub;
+  };
+  window: {
+    showErrorMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+    showTextDocument: sinon.SinonStub;
+    activeTextEditor: unknown;
+  };
+  commands: {
+    registerCommand: sinon.SinonStub;
+    executeCommand: sinon.SinonStub;
+  };
+  Uri: {
+    file: (path: string) => { fsPath: string; toString: () => string };
+  };
+  SymbolKind: {
+    Class: number;
+    Method: number;
+  };
+  TextEncoder: { encode: (text: string) => Buffer };
+}
+
+interface MockSpockGenerator {
+  SpockGenerator: sinon.SinonStub;
+}
+
+interface TestFeatureModule {
+  registerTestFeature: (context: { subscriptions: unknown[] }) => void;
+}
+
 describe("TestFeature", () => {
   let sandbox: sinon.SinonSandbox;
-  let mockVscode: unknown;
-  let mockSpockGenerator: unknown;
-  let TestFeatureModule: unknown;
+  let mockVscode: MockVscode;
+  let mockSpockGenerator: MockSpockGenerator;
+  let TestFeatureModule: TestFeatureModule;
   let fsStatStub: sinon.SinonStub;
   let fsCreateDirectoryStub: sinon.SinonStub;
   let fsWriteFileStub: sinon.SinonStub;
@@ -94,7 +132,7 @@ describe("TestFeature", () => {
         vscode: mockVscode,
         "./SpockGenerator": mockSpockGenerator,
       },
-    );
+    ) as TestFeatureModule;
   });
 
   afterEach(() => {

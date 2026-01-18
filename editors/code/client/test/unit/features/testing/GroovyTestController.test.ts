@@ -6,13 +6,57 @@ interface GroovyTestControllerType {
   new (context: unknown, executionService: unknown, testService: unknown): { dispose: () => void };
 }
 
+interface ExecutionServiceMock {
+  runTests: sinon.SinonStub;
+}
+
+interface TestServiceMock {
+  discoverTestsInWorkspace: sinon.SinonStub;
+}
+
+interface VscodeMock {
+  tests: {
+    createTestController: sinon.SinonStub;
+  };
+  TestTag: new (id: string) => { id: string };
+  commands: {
+    registerCommand: sinon.SinonStub;
+  };
+  window: {
+    showErrorMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+    visibleTextEditors: unknown[];
+  };
+  workspace: {
+    workspaceFolders: { uri: { toString: () => string }; name: string; index: number }[];
+    getWorkspaceFolder: sinon.SinonStub;
+  };
+  Range: new (start: unknown, end: unknown) => { start: unknown; end: unknown };
+  Position: new (line: number, character: number) => { line: number; character: number };
+  Uri: { parse: (str: string) => { toString: () => string } };
+  TestRunProfileKind: { Run: number; Debug: number };
+}
+
+interface TestControllerMock {
+  createTestItem: sinon.SinonStub;
+  items: {
+    add: sinon.SinonStub;
+    get: sinon.SinonStub;
+    delete: sinon.SinonStub;
+    replace: sinon.SinonStub;
+  };
+  createRunProfile: sinon.SinonStub;
+  resolveHandler: unknown;
+  refreshHandler: unknown;
+}
+
 describe("GroovyTestController", () => {
   let GroovyTestController: GroovyTestControllerType;
   let contextMock: { subscriptions: { push: sinon.SinonStub } };
-  let executionServiceMock: unknown;
-  let testServiceMock: unknown;
-  let vscodeMock: unknown;
-  let testControllerMock: unknown;
+  let executionServiceMock: ExecutionServiceMock;
+  let testServiceMock: TestServiceMock;
+  let vscodeMock: VscodeMock;
+  let testControllerMock: TestControllerMock;
   let sandbox: sinon.SinonSandbox;
 
   beforeEach(() => {
@@ -165,7 +209,7 @@ describe("GroovyTestController", () => {
     };
 
     // Load GroovyTestController with mocks
-    const module = (proxyquire as unknown).noCallThru()(
+    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { GroovyTestController: GroovyTestControllerType } }).noCallThru()(
       "../../../../src/features/testing/GroovyTestController",
       {
         vscode: vscodeMock,
@@ -179,7 +223,7 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with external files", () => {
-    let _controller: unknown;
+    let _controller: { dispose: () => void };
 
     it("should show warning for external file and not run test", async () => {
       // Arrange
@@ -425,7 +469,7 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with wildcard", () => {
-    let _controller: unknown;
+    let _controller: { dispose: () => void };
 
     it('should run entire suite when test is "*" (wildcard)', async () => {
       // Arrange: Set up a suite with tests discovered
@@ -533,7 +577,7 @@ describe("GroovyTestController", () => {
   });
 
   describe("suite range positioning (gutter icon location)", () => {
-    let _controller: unknown;
+    let _controller: { dispose: () => void };
 
     it("should position suite gutter icon at actual class line, not estimated from test methods", async () => {
       // Regression test for gutter icon positioning bug

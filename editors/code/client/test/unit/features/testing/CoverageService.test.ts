@@ -2,13 +2,48 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface VscodeMock {
+  Uri: {
+    file: (path: string) => { fsPath: string; toString: () => string };
+    parse: (path: string) => { fsPath: string; toString: () => string };
+  };
+  Position: new (line: number, character: number) => { line: number; character: number };
+  BranchCoverage: new (executed: number | boolean, location: unknown, label?: string) => unknown;
+  StatementCoverage: new (executed: number | boolean, location: unknown, branches?: unknown[]) => unknown;
+  FileCoverage: {
+    fromDetails: (uri: unknown, details: unknown[]) => { uri: unknown; details: unknown[] };
+  };
+  OutputChannel: new () => unknown;
+}
+
+interface FsMock {
+  existsSync: sinon.SinonStub;
+  promises: {
+    readFile: sinon.SinonStub;
+  };
+}
+
+interface LoggerMock {
+  appendLine: sinon.SinonStub;
+}
+
+interface TestServiceMock {
+  getCoverage: sinon.SinonStub;
+}
+
+interface CoverageServiceClass {
+  new (testService: TestServiceMock, logger: LoggerMock): {
+    loadCoverage: (coverageFilePath: string) => Promise<unknown>;
+  };
+}
+
 describe("CoverageService", () => {
-  let CoverageService: unknown;
-  let coverageService: unknown;
-  let loggerMock: unknown;
-  let testServiceMock: unknown;
-  let fsMock: unknown;
-  let vscodeMock: unknown;
+  let CoverageService: CoverageServiceClass;
+  let coverageService: { loadCoverage: (coverageFilePath: string) => Promise<unknown> };
+  let loggerMock: LoggerMock;
+  let testServiceMock: TestServiceMock;
+  let fsMock: FsMock;
+  let vscodeMock: VscodeMock;
 
   beforeEach(() => {
     // Mock VS Code API
@@ -68,7 +103,7 @@ describe("CoverageService", () => {
     };
 
     // Load CoverageService with mocks
-    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { CoverageService: unknown } }).noCallThru()(
+    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { CoverageService: CoverageServiceClass } }).noCallThru()(
       "../../../../src/features/testing/CoverageService",
       {
         vscode: vscodeMock,

@@ -2,14 +2,50 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
+interface LoggerMock {
+  appendLine: sinon.SinonStub;
+}
+
+interface VscodeMock {
+  workspace: {
+    workspaceFolders: { uri: { fsPath: string } }[];
+  };
+  window: {
+    showErrorMessage: sinon.SinonStub;
+    showWarningMessage: sinon.SinonStub;
+  };
+  TestRunRequest: new (include: unknown[]) => { include: unknown[] };
+  CancellationTokenSource: new () => { token: unknown; dispose: sinon.SinonStub };
+  TestMessage: new (message: string) => { message: string };
+  Location: new (uri: unknown, range: unknown) => { uri: unknown; range: unknown };
+  Uri: {
+    parse: (s: string) => { toString: () => string };
+  };
+  Position: new (line: number, character: number) => { line: number; character: number };
+  Range: new (start: unknown, end: unknown) => { start: unknown; end: unknown };
+  TestRunProfileKind: { Run: number };
+}
+
+interface ReadlineMock {
+  createInterface: sinon.SinonStub;
+}
+
+interface MavenExecutionServiceClass {
+  new (logger: LoggerMock): {
+    buildTestFilter: (request: unknown) => string[];
+    cpMock?: unknown;
+    fsMock?: unknown;
+  };
+}
+
 describe("MavenExecutionService", () => {
-  let MavenExecutionService: unknown;
-  let service: unknown;
-  let loggerMock: unknown;
+  let MavenExecutionService: MavenExecutionServiceClass;
+  let service: { buildTestFilter: (request: unknown) => string[]; cpMock?: unknown; fsMock?: unknown };
+  let loggerMock: LoggerMock;
   let sandbox: sinon.SinonSandbox;
 
-  let vscodeMock: unknown;
-  let readlineMock: unknown;
+  let vscodeMock: VscodeMock;
+  let readlineMock: ReadlineMock;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
@@ -82,14 +118,14 @@ describe("MavenExecutionService", () => {
       }),
     };
 
-    const module = (proxyquire as unknown).noCallThru()(
+    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { MavenExecutionService: MavenExecutionServiceClass } }).noCallThru()(
       "../../../../src/features/testing/MavenExecutionService",
       {
         vscode: vscodeMock,
         child_process: cpMock,
         fs: fsMock,
         readline: readlineMock,
-        "./TestEventConsumer": (proxyquire as unknown).noCallThru()(
+        "./TestEventConsumer": (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => unknown }).noCallThru()(
           "../../../../src/features/testing/TestEventConsumer",
           { vscode: vscodeMock },
         ),
@@ -199,7 +235,7 @@ describe("MavenExecutionService", () => {
       };
 
       // Setup readline mock to capture listener
-      let lineListener: unknown;
+      let lineListener: ((line: string) => void) | undefined;
       readlineMock.createInterface.returns({
         on: (event: string, listener: unknown) => {
           if (event === "line") lineListener = listener;

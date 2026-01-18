@@ -2,10 +2,14 @@ import { expect } from "chai";
 import * as sinon from "sinon";
 import { GroovyReplClient } from "../../../../src/features/repl/GroovyReplClient";
 
+interface MockLanguageClient {
+  sendRequest: sinon.SinonStub;
+}
+
 describe("GroovyReplClient", () => {
   let sandbox: sinon.SinonSandbox;
   let replClient: GroovyReplClient;
-  let mockLanguageClient: unknown;
+  let mockLanguageClient: MockLanguageClient;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();

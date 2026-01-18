@@ -2,12 +2,73 @@ import * as sinon from "sinon";
 import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 
+interface StatusBarItem {
+  text: string;
+  tooltip: { isTrusted: boolean; supportThemeIcons: boolean; value: string };
+  backgroundColor: { id: string } | undefined;
+  color: unknown;
+  command: unknown;
+  name: string;
+  show: sinon.SinonStub;
+  hide: sinon.SinonStub;
+  dispose: sinon.SinonStub;
+}
+
+interface MockVscode {
+  window: {
+    createStatusBarItem: sinon.SinonStub;
+    onDidChangeActiveTextEditor: sinon.SinonStub;
+    showQuickPick: sinon.SinonStub;
+    activeTextEditor: unknown;
+  };
+  workspace: {
+    getConfiguration: sinon.SinonStub;
+    onDidChangeConfiguration: sinon.SinonStub;
+  };
+  languages: {
+    match: sinon.SinonStub;
+  };
+  commands: {
+    executeCommand: sinon.SinonStub;
+  };
+  StatusBarAlignment: {
+    Left: number;
+    Right: number;
+  };
+  QuickPickItemKind: {
+    Separator: number;
+  };
+  ThemeColor: sinon.SinonStub;
+  MarkdownString: sinon.SinonStub;
+}
+
+interface MockLanguageClient {
+  State: {
+    Stopped: number;
+    Starting: number;
+    Running: number;
+  };
+  ProgressType: sinon.SinonStub;
+}
+
+interface ClientStub {
+  state: number;
+  onDidChangeState: sinon.SinonStub;
+  onProgress: sinon.SinonStub;
+  onNotification: sinon.SinonStub;
+}
+
+interface StatusBarModule {
+  registerStatusBarItem: (client?: unknown, version?: string) => { dispose: () => void };
+  setClient: (client: unknown) => void;
+}
+
 describe("StatusBar", () => {
-  let mockVscode: unknown;
-  let mockLanguageClient: unknown;
-  let statusBarModule: unknown;
-  let statusBarItemStub: unknown;
-  let clientStub: unknown;
+  let mockVscode: MockVscode;
+  let mockLanguageClient: MockLanguageClient;
+  let statusBarModule: StatusBarModule;
+  let statusBarItemStub: StatusBarItem;
+  let clientStub: ClientStub;
 
   beforeEach(() => {
     // Create fresh mocks for each test
@@ -114,7 +175,7 @@ describe("StatusBar", () => {
         WorkDoneProgressEnd: {},
       },
       "./languageStatus": mockLanguageStatus,
-    });
+    }) as StatusBarModule;
   });
 
   afterEach(() => {
@@ -220,7 +281,7 @@ describe("StatusBar", () => {
   });
 
   describe("progress notification handling", () => {
-    let progressHandler: unknown;
+    let progressHandler: (notification: { kind: string; title?: string; message?: string }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -296,7 +357,7 @@ describe("StatusBar", () => {
   });
 
   describe("state inference from messages", () => {
-    let progressHandler: unknown;
+    let progressHandler: (notification: { kind: string; message?: string }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -379,7 +440,7 @@ describe("StatusBar", () => {
   });
 
   describe("client state transitions", () => {
-    let stateChangeHandler: unknown;
+    let stateChangeHandler: (event: { newState: number }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -429,7 +490,7 @@ describe("StatusBar", () => {
   });
 
   describe("background colors", () => {
-    let progressHandler: unknown;
+    let progressHandler: (notification: { kind: string; message?: string }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -557,7 +618,7 @@ describe("StatusBar", () => {
   });
 
   describe("tooltip content", () => {
-    let stateChangeHandler: unknown;
+    let stateChangeHandler: (event: { newState: number }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem(undefined, "0.4.8");
@@ -604,7 +665,7 @@ describe("StatusBar", () => {
   });
 
   describe("groovy/status notification handling", () => {
-    let statusHandler: unknown;
+    let statusHandler: (notification: { health: string; quiescent: boolean; message?: string; filesIndexed?: number; filesTotal?: number }) => void;
 
     beforeEach(() => {
       // Add onNotification mock to client
@@ -612,7 +673,7 @@ describe("StatusBar", () => {
         .stub()
         .callsFake((method: string, handler: unknown) => {
           if (method === "groovy/status") {
-            statusHandler = handler;
+            statusHandler = handler as (notification: { health: string; quiescent: boolean; message?: string; filesIndexed?: number; filesTotal?: number }) => void;
           }
           return { dispose: sinon.stub() };
         });
