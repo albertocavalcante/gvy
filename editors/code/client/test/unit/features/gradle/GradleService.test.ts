@@ -5,6 +5,7 @@ import {
   GradleTask,
 } from "../../../../src/features/gradle/GradleService";
 import { RequestType } from "vscode-languageserver-protocol";
+import type { LanguageClient } from "vscode-languageclient/node";
 
 interface MockLanguageClient {
   sendRequest: sinon.SinonStub;
@@ -20,7 +21,9 @@ describe("GradleService", () => {
     mockLanguageClient = {
       sendRequest: sandbox.stub(),
     };
-    gradleService = new GradleService(mockLanguageClient);
+    gradleService = new GradleService(
+      mockLanguageClient as unknown as LanguageClient,
+    );
   });
 
   afterEach(() => {
@@ -60,8 +63,8 @@ describe("GradleService", () => {
     try {
       await gradleService.getTasks(workspaceUri);
       expect.fail("Should have thrown an error");
-    } catch (e: unknown) {
-      expect(e.message).to.equal("LSP Gradle Error");
+    } catch (e) {
+      expect((e as Error).message).to.equal("LSP Gradle Error");
     }
   });
 

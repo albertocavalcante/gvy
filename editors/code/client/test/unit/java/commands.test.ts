@@ -266,9 +266,9 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const browseItem = items.find((item: unknown) => item.action === "browse");
+        const browseItem = items.find((item: unknown) => (item as { action?: string }).action === "browse");
         assert.isDefined(browseItem);
-        assert.include(browseItem.label, "Browse");
+        assert.include((browseItem as { label: string }).label, "Browse");
       });
 
       it("should set appropriate placeholder when requiredVersion provided", async () => {
@@ -318,10 +318,10 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
         const lspCompatible = separators.find((s: unknown) =>
-          s.label.includes("LSP Compatible"),
+          (s as { label: string }).label.includes("LSP Compatible"),
         );
         assert.isDefined(lspCompatible);
       });
@@ -348,10 +348,10 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
         const cannotRunLsp = separators.find((s: unknown) =>
-          s.label.includes("Cannot Run LSP"),
+          (s as { label: string }).label.includes("Cannot Run LSP"),
         );
         assert.isDefined(cannotRunLsp);
       });
@@ -378,13 +378,13 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
         const bestMatch = separators.find((s: unknown) =>
-          s.label.includes("Best Match"),
+          (s as { label: string }).label.includes("Best Match"),
         );
         assert.isDefined(bestMatch);
-        assert.include(bestMatch.label, "Java 21");
+        assert.include((bestMatch as { label: string }).label, "Java 21");
       });
 
       it("should show Project Target Only section when requiredVersion matches but cannot run LSP", async () => {
@@ -409,10 +409,10 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => item.kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
         );
         const projectOnly = separators.find((s: unknown) =>
-          s.label.includes("Project Target Only"),
+          (s as { label: string }).label.includes("Project Target Only"),
         );
         assert.isDefined(projectOnly);
       });
@@ -432,9 +432,9 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(21, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const jdkItems = items.filter((item: unknown) => item.jdk !== undefined);
+        const jdkItems = items.filter((item: unknown) => (item as { jdk?: unknown }).jdk !== undefined);
         const recommendedItem = jdkItems.find((item: unknown) =>
-          item.label.includes("$(star-full)"),
+          (item as { label: string }).label.includes("$(star-full)"),
         );
         assert.isDefined(recommendedItem);
       });
@@ -454,8 +454,8 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const jdkItems = items.filter((item: unknown) => item.jdk !== undefined);
-        const incompatibleItem = jdkItems[0];
+        const jdkItems = items.filter((item: unknown) => (item as { jdk?: unknown }).jdk !== undefined);
+        const incompatibleItem = jdkItems[0] as { detail: string };
         assert.include(incompatibleItem.detail, "$(error)");
         assert.include(incompatibleItem.detail, "Cannot run LSP");
       });
@@ -988,7 +988,7 @@ describe("Java Commands", () => {
 
         // Should have two information messages: one for creation confirmation
         const calls = mockVscode.window.showInformationMessage.getCalls();
-        const successMessage = calls.find((call: unknown) =>
+        const successMessage = calls.find((call: sinon.SinonSpyCall) =>
           call.args[0].includes("Created settings.gradle"),
         );
         assert.isDefined(successMessage);
@@ -1050,7 +1050,7 @@ describe("Java Commands", () => {
       // Get the registered handler
       const registerCall = mockVscode.commands.registerCommand
         .getCalls()
-        .find((call: unknown) => call.args[0] === "groovy.configureJava");
+        .find((call: sinon.SinonSpyCall) => call.args[0] === "groovy.configureJava");
 
       assert.isDefined(
         registerCall,

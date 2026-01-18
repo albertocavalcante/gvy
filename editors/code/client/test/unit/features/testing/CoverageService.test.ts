@@ -171,11 +171,11 @@ describe("CoverageService", () => {
     );
 
     // Verify Covered Branches (cb=2)
-    const coveredBranches = line.branches.filter((b: unknown) => b.executed === 1);
+    const coveredBranches = line.branches.filter((b: unknown) => (b as { executed: number }).executed === 1);
     assert.equal(coveredBranches.length, 2, "Should have 2 covered branches");
 
     // Verify Missed Branches (mb=1)
-    const missedBranches = line.branches.filter((b: unknown) => b.executed === 0);
+    const missedBranches = line.branches.filter((b: unknown) => (b as { executed: number }).executed === 0);
     assert.equal(missedBranches.length, 1, "Should have 1 missed branch");
   });
 

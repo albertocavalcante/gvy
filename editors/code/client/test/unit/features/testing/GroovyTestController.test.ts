@@ -247,7 +247,7 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: unknown) => call.args[0] === "groovy.test.run",
+        (call: sinon.SinonSpyCall) => call.args[0] === "groovy.test.run",
       );
       assert.ok(runTestCall, "groovy.test.run command should be registered");
       const runTestHandler = runTestCall.args[1];
@@ -346,7 +346,7 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: unknown) => call.args[0] === "groovy.test.run",
+        (call: sinon.SinonSpyCall) => call.args[0] === "groovy.test.run",
       );
       const runTestHandler = runTestCall.args[1];
 
@@ -428,7 +428,7 @@ describe("GroovyTestController", () => {
       const registerCommandCalls =
         vscodeMock.commands.registerCommand.getCalls();
       const runTestCall = registerCommandCalls.find(
-        (call: unknown) => call.args[0] === "groovy.test.run",
+        (call: sinon.SinonSpyCall) => call.args[0] === "groovy.test.run",
       );
       const runTestHandler = runTestCall.args[1];
 
@@ -501,7 +501,7 @@ describe("GroovyTestController", () => {
 
       // Act: Run with wildcard (simulating CodeLens "Run All Tests" click)
       const runCommand = vscodeMock.commands.registerCommand.args.find(
-        (args: unknown[]) => args[0] === "groovy.test.run",
+        (args: [string, unknown]) => args[0] === "groovy.test.run",
       );
       assert.ok(runCommand, "groovy.test.run command should be registered");
 
@@ -558,7 +558,7 @@ describe("GroovyTestController", () => {
 
       // Act: Run specific test
       const runCommand = vscodeMock.commands.registerCommand.args.find(
-        (args: unknown[]) => args[0] === "groovy.test.run",
+        (args: [string, unknown]) => args[0] === "groovy.test.run",
       );
       if (runCommand && runCommand[1]) {
         await runCommand[1]({

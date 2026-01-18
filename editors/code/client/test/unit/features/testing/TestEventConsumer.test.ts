@@ -587,7 +587,7 @@ describe("TestEventConsumer", () => {
 
       // Verify prototype was not polluted
       assert.strictEqual(
-        (Object.prototype as unknown).polluted,
+        (Object.prototype as Record<string, unknown>).polluted,
         undefined,
         "Prototype should not be polluted",
       );

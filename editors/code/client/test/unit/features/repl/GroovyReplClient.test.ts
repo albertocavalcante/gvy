@@ -45,8 +45,8 @@ describe("GroovyReplClient", () => {
     try {
       await replClient.evaluate("invalid code");
       expect.fail("Should have thrown an error");
-    } catch (e: unknown) {
-      expect(e.message).to.equal("Compilation Error");
+    } catch (e) {
+      expect((e as Error).message).to.equal("Compilation Error");
     }
   });
 });
