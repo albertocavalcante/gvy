@@ -40,12 +40,24 @@ const MockSymbolKind = {
   4: "Class", // Reverse mapping manually since it's an object not a real enum in the mock
 };
 
+// Type for the VS Code mock used in tests
+interface MockVscodeType {
+  Uri: typeof MockUri;
+  Position: typeof MockPosition;
+  Range: typeof MockRange;
+  Location: typeof MockLocation;
+  SymbolKind: typeof MockSymbolKind;
+  commands: {
+    executeCommand: sinon.SinonStub;
+  };
+}
+
 describe("LSPToolService", () => {
   let sandbox: sinon.SinonSandbox;
   let executeCommandStub: sinon.SinonStub;
   let getClientStub: sinon.SinonStub;
   let service: LSPToolService;
-  let mockVscode: unknown;
+  let mockVscode: MockVscodeType;
 
   const mockUri = MockUri.parse("file:///test/project/MyClass.groovy");
 
@@ -65,7 +77,10 @@ describe("LSPToolService", () => {
       },
     };
 
-    service = new LSPToolService(mockVscode as any, getClientStub);
+    service = new LSPToolService(
+      mockVscode as unknown as typeof import("vscode"),
+      getClientStub,
+    );
   });
 
   afterEach(() => {
