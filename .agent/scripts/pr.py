@@ -1255,6 +1255,7 @@ EXCLUDED_DIFF_PATTERNS = [
     "Gemfile.lock",
     "composer.lock",
     "go.sum",
+    "MODULE.bazel.lock",
     "bun.lockb",
     "shrinkwrap.yaml",
     "npm-shrinkwrap.json",
