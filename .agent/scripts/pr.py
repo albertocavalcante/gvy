@@ -1322,17 +1322,38 @@ def is_excluded_from_diff(filepath: str) -> bool:
     Returns True for lock files, minified assets, and other auto-generated files
     that add noise without semantic value.
     """
-    for pattern in EXCLUDED_DIFF_PATTERNS:
-        if pattern in filepath or filepath.endswith(pattern):
-            return True
-    return False
+    return any(pattern in filepath for pattern in EXCLUDED_DIFF_PATTERNS)
 
 
 def get_file_diff_stats(file_diff: str) -> tuple[int, int]:
     """Extract additions and deletions count from a file diff."""
-    adds = file_diff.count("\n+") - file_diff.count("\n+++")
-    dels = file_diff.count("\n-") - file_diff.count("\n---")
-    return max(0, adds), max(0, dels)
+    adds, dels = 0, 0
+    for line in file_diff.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            adds += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            dels += 1
+    return adds, dels
+
+
+def format_excluded_files_summary(
+    excluded_files: list[tuple[str, int, int]],
+) -> list[str]:
+    """Format excluded files as stats-only summary lines.
+
+    Args:
+        excluded_files: List of (filepath, additions, deletions) tuples
+
+    Returns:
+        List of formatted lines including header, or empty list if no excluded files
+    """
+    if not excluded_files:
+        return []
+    lines = ["=== EXCLUDED FILES (stats only, auto-generated) ==="]
+    for filepath, adds, dels in excluded_files:
+        lines.append(f"  {filepath} | +{adds} -{dels}")
+    lines.append("")
+    return lines
 
 
 def parse_diff_into_files(diff_content: str) -> list[tuple[str, str]]:
@@ -1453,14 +1474,7 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
 
     # Case 1: Small diff (after exclusions) - use filtered diff
     if total_lines <= DIFF_FULL_THRESHOLD:
-        output_parts = []
-
-        # Add excluded files summary at the top if any
-        if excluded_files:
-            output_parts.append("=== EXCLUDED FILES (stats only, auto-generated) ===")
-            for filepath, adds, dels in excluded_files:
-                output_parts.append(f"  {filepath} | +{adds} -{dels}")
-            output_parts.append("")
+        output_parts = format_excluded_files_summary(excluded_files)
 
         # Add regular file diffs
         for filepath, file_diff in regular_files:
@@ -1488,11 +1502,7 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
     ]
 
     # Add excluded files summary
-    if excluded_files:
-        output_parts.append("=== EXCLUDED FILES (stats only, auto-generated) ===")
-        for filepath, adds, dels in excluded_files:
-            output_parts.append(f"  {filepath} | +{adds} -{dels}")
-        output_parts.append("")
+    output_parts.extend(format_excluded_files_summary(excluded_files))
 
     output_parts.extend(
         [
