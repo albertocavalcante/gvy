@@ -42,7 +42,7 @@ interface MockSpockGenerator {
 
 interface TestFeatureModule {
   registerTestFeature: (context: { subscriptions: unknown[] }) => void;
-  TestFeature: new () => unknown;
+  TestFeature: new () => { dispose: () => void };
 }
 
 describe("TestFeature", () => {
