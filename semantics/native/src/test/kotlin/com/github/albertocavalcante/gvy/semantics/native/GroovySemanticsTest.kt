@@ -349,6 +349,29 @@ class GroovySemanticsTest {
     // WeakHashMap cache regression tests
 
     @Test
+    fun `cache implementation uses WeakHashMap for memory leak prevention`() {
+        val semantics = GroovySemantics(stubSolver)
+
+        // Use reflection to verify the cache is implemented with WeakHashMap
+        val contextCacheField = GroovySemantics::class.java.getDeclaredField("contextCache")
+        contextCacheField.isAccessible = true
+        val cache = contextCacheField.get(semantics)
+
+        // Verify it's a synchronized wrapper around WeakHashMap
+        assertTrue(cache is java.util.Collections.SynchronizedMap<*, *>, "Cache should be a SynchronizedMap")
+
+        // Access the underlying map via reflection
+        val mapField = cache.javaClass.getDeclaredField("m")
+        mapField.isAccessible = true
+        val underlyingMap = mapField.get(cache)
+
+        assertTrue(
+            underlyingMap is java.util.WeakHashMap<*, *>,
+            "Underlying map should be WeakHashMap for GC-based cache eviction",
+        )
+    }
+
+    @Test
     fun `cache entry is removed when ModuleNode is garbage collected`() {
         val code = """
             def x = "hello"
