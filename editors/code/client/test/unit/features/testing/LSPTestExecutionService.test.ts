@@ -805,7 +805,6 @@ describe("LSPTestExecutionService", () => {
           children: new Map(),
         };
         current.children.set(child.id, child);
-        const parent = current;
         current.children.forEach = function (callback: any) {
           callback(child);
         };
@@ -827,12 +826,6 @@ describe("LSPTestExecutionService", () => {
     it("should collapse multiple consecutive underscores", () => {
       // Test via applyTestResults behavior since normalizeTestId is internal
       // We'll verify through the result map behavior
-      const testItem = {
-        id: "test___multiple___underscores",
-        label: "test",
-        uri: { toString: () => "file:///test.groovy" },
-        children: { forEach: () => {} },
-      };
 
       testServiceMock.getTestResults.resolves({
         results: [
@@ -850,13 +843,6 @@ describe("LSPTestExecutionService", () => {
     });
 
     it("should trim leading and trailing underscores", () => {
-      const testItem = {
-        id: "___test_method___",
-        label: "test_method",
-        uri: { toString: () => "file:///test.groovy" },
-        children: { forEach: () => {} },
-      };
-
       testServiceMock.getTestResults.resolves({
         results: [
           {
@@ -873,12 +859,6 @@ describe("LSPTestExecutionService", () => {
 
     it("should handle empty string", () => {
       // Empty string should return empty string after normalization
-      const testItem = {
-        id: "",
-        label: "empty",
-        uri: { toString: () => "file:///test.groovy" },
-        children: { forEach: () => {} },
-      };
 
       // Should not throw
       assert.doesNotThrow(() => {
@@ -889,13 +869,6 @@ describe("LSPTestExecutionService", () => {
     });
 
     it("should handle only special characters", () => {
-      const testItem = {
-        id: "@#$%^&*()",
-        label: "special",
-        uri: { toString: () => "file:///test.groovy" },
-        children: { forEach: () => {} },
-      };
-
       // All special chars should be converted to underscores and then trimmed
       testServiceMock.getTestResults.resolves({
         results: [
@@ -910,13 +883,6 @@ describe("LSPTestExecutionService", () => {
     });
 
     it("should handle Unicode characters", () => {
-      const testItem = {
-        id: "test_méthodé_日本語",
-        label: "test",
-        uri: { toString: () => "file:///test.groovy" },
-        children: { forEach: () => {} },
-      };
-
       // Unicode word characters should be preserved
       testServiceMock.getTestResults.resolves({
         results: [
@@ -932,12 +898,6 @@ describe("LSPTestExecutionService", () => {
 
     it("should handle very long strings (10000+ chars)", () => {
       const longId = "a".repeat(10000);
-      const testItem = {
-        id: longId,
-        label: "long",
-        uri: { toString: () => "file:///test.groovy" },
-        children: { forEach: () => {} },
-      };
 
       // Should not cause performance issues or crash
       assert.doesNotThrow(() => {

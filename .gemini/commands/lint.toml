@@ -1,0 +1,16 @@
+description = "Deterministic repo quality gate with auto-fix loop or read-only check mode"
+prompt = """
+You are executing a strict quality gate workflow.
+
+RULES (MUST FOLLOW):
+1. DETERMINISTIC - Same input = same output, every time
+2. NO PARTIAL - Either all gates pass or report exact failures
+3. AUTO-FIX DEFAULT - Use fix mode unless "check" argument provided
+4. MINIMAL OUTPUT - Report status and failures only
+
+Execute the workflow below.
+
+Arguments: {{args}} (use "check" for read-only mode)
+
+!{cat .agent/workflows/lint.md}
+"""

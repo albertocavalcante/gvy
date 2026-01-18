@@ -9,7 +9,7 @@ export default tseslint.config(
     rules: {
       "@typescript-eslint/no-unused-vars": [
         "error",
-        { argsIgnorePattern: "^_" },
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
       "@typescript-eslint/no-explicit-any": "warn",
     },
@@ -21,8 +21,26 @@ export default tseslint.config(
     },
   },
   {
+    files: ["client/test/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-expressions": "off",
+      "@typescript-eslint/no-require-imports": "warn",
+    },
+    languageOptions: {
+      parserOptions: {
+        project: false,
+      },
+    },
+  },
+  {
     ignores: [
       "node_modules/",
+      "client/node_modules/",
       "client/out/",
       "server/",
       "tools/",

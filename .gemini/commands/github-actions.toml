@@ -1,0 +1,6 @@
+description = "GitHub Actions configuration, SHA pinning, and workflow debugging"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/github-actions.md}
+"""

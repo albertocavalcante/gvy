@@ -29,6 +29,7 @@ describe("TestService", () => {
       {
         uri: "file:///path/to/workspace/MySpec.groovy",
         suite: "MySpec",
+        line: 3,
         tests: [{ test: "should do something", line: 5 }],
       },
     ];

@@ -1,0 +1,6 @@
+description = "Merge PRs with beautiful semantic commit messages"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/merge.md}
+"""

@@ -10,9 +10,10 @@ data class DiscoverTestsParams(val workspaceUri: String)
  *
  * @property uri File URI (e.g., "file:///path/to/MySpec.groovy")
  * @property suite Fully qualified class name (e.g., "com.example.MySpec")
+ * @property line 1-indexed line number where the test class is declared
  * @property tests List of test methods in this suite
  */
-data class TestSuite(val uri: String, val suite: String, val tests: List<Test>)
+data class TestSuite(val uri: String, val suite: String, val line: Int, val tests: List<Test>)
 
 /**
  * Represents a single test method.

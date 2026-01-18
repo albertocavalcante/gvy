@@ -1,0 +1,6 @@
+description = "Bulk reconciliation workflow for addressing review feedback across multiple PRs"
+prompt = """
+Execute the following workflow:
+
+!{cat .agent/workflows/bulk-review.md}
+"""

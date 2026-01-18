@@ -1,16 +1,7 @@
 import * as vscode from "vscode";
 import { ServerState } from "./statusUtils";
 import { JavaResolution } from "../java/finder";
-
-/**
- * Document selector for Groovy-related files.
- * Note: .gradle files are registered as 'groovy' language in package.json.
- * We do NOT include .gradle.kts - those are Kotlin files, not supported.
- */
-const GROOVY_DOCUMENT_SELECTOR: vscode.DocumentSelector = [
-  { language: "groovy" },
-  { language: "jenkinsfile" },
-];
+import { GROOVY_DOCUMENT_SELECTOR } from "../constants";
 
 /**
  * Manages Language Status Items for rich per-file context display.

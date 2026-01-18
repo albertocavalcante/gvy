@@ -4,7 +4,6 @@ import proxyquire from "proxyquire";
 
 describe("GroovyTestController", () => {
   let GroovyTestController: any;
-  let controller: any;
   let contextMock: any;
   let executionServiceMock: any;
   let testServiceMock: any;
@@ -68,7 +67,7 @@ describe("GroovyTestController", () => {
       commands: {
         registerCommand: sandbox
           .stub()
-          .callsFake((command: string, handler: any) => {
+          .callsFake((_command: string, _handler: any) => {
             // Store the handler for testing
             return { dispose: sandbox.stub() };
           }),
@@ -176,9 +175,11 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with external files", () => {
+    let _controller: any;
+
     it("should show warning for external file and not run test", async () => {
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -222,7 +223,7 @@ describe("GroovyTestController", () => {
 
     it("should use existing test item if found in workspace", async () => {
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -238,6 +239,7 @@ describe("GroovyTestController", () => {
         {
           uri: workspaceUri,
           suite: suiteName,
+          line: 5,
           tests: [{ test: testName, line: 10 }],
         },
       ]);
@@ -278,7 +280,7 @@ describe("GroovyTestController", () => {
 
     it("should handle missing suite name gracefully", async () => {
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -317,7 +319,7 @@ describe("GroovyTestController", () => {
     it("should preserve test suites when external file triggers warning", async () => {
       // Ensure external file warning doesn't affect existing workspace test suites
       // Arrange
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -335,11 +337,13 @@ describe("GroovyTestController", () => {
         {
           uri: workspaceUri,
           suite: suiteAName,
+          line: 5,
           tests: [{ test: workspaceTestName, line: 10 }],
         },
         {
           uri: "file:///workspace/TestB.groovy",
           suite: suiteBName,
+          line: 8,
           tests: [{ test: "other test", line: 20 }],
         },
       ]);
@@ -417,6 +421,8 @@ describe("GroovyTestController", () => {
   });
 
   describe("runTestCommand with wildcard", () => {
+    let _controller: any;
+
     it('should run entire suite when test is "*" (wildcard)', async () => {
       // Arrange: Set up a suite with tests discovered
       const suiteUri = "file:///workspace/MySpec.groovy";
@@ -425,6 +431,7 @@ describe("GroovyTestController", () => {
         {
           uri: suiteUri,
           suite: suiteName,
+          line: 3,
           tests: [
             { test: "test one", line: 10 },
             { test: "test two", line: 20 },
@@ -432,7 +439,7 @@ describe("GroovyTestController", () => {
         },
       ]);
 
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -487,11 +494,12 @@ describe("GroovyTestController", () => {
         {
           uri: suiteUri,
           suite: suiteName,
+          line: 3,
           tests: [{ test: testName, line: 10 }],
         },
       ]);
 
-      controller = new GroovyTestController(
+      _controller = new GroovyTestController(
         contextMock,
         executionServiceMock,
         testServiceMock,
@@ -516,6 +524,93 @@ describe("GroovyTestController", () => {
       assert.ok(
         !vscodeMock.window.showErrorMessage.called,
         "Should not show error for valid test name",
+      );
+    });
+  });
+
+  describe("suite range positioning (gutter icon location)", () => {
+    let _controller: any;
+
+    it("should position suite gutter icon at actual class line, not estimated from test methods", async () => {
+      // Regression test for gutter icon positioning bug
+      // The class is at line 8, but the first test method is at line 19
+      // The suite gutter icon should be at line 8 (0-indexed: 7), not line 14 (19 - 5)
+      const suiteUri = "file:///workspace/PublishReportsStepTests.groovy";
+      const suiteName = "PublishReportsStepTests";
+      const classLine = 8; // Class declared at line 8
+      const firstTestLine = 19; // First test method at line 19
+
+      testServiceMock.discoverTestsInWorkspace.resolves([
+        {
+          uri: suiteUri,
+          suite: suiteName,
+          line: classLine, // LSP now provides actual class line
+          tests: [
+            { test: "test_without_trusted_infra", line: firstTestLine },
+            { test: "test_with_trusted_infra", line: 35 },
+          ],
+        },
+      ]);
+
+      _controller = new GroovyTestController(
+        contextMock,
+        executionServiceMock,
+        testServiceMock,
+      );
+
+      // Trigger discovery
+      await testControllerMock.resolveHandler(undefined);
+
+      // Get the suite item
+      const suiteItem = testControllerMock.items.get(suiteName);
+      assert.ok(suiteItem, "Suite item should be created");
+
+      // Verify the suite range uses the actual class line (1-indexed to 0-indexed)
+      // Line 8 (1-indexed) should become Position(7, 0) (0-indexed)
+      const expectedLine = classLine - 1; // Convert 1-indexed to 0-indexed
+      assert.strictEqual(
+        suiteItem.range.start.line,
+        expectedLine,
+        `Suite range should start at line ${expectedLine} (0-indexed from class line ${classLine}), ` +
+          `not ${suiteItem.range.start.line}`,
+      );
+    });
+
+    it("should position test method gutter icon at correct line", async () => {
+      const suiteUri = "file:///workspace/MySpec.groovy";
+      const suiteName = "com.example.MySpec";
+      const testMethodLine = 15;
+
+      testServiceMock.discoverTestsInWorkspace.resolves([
+        {
+          uri: suiteUri,
+          suite: suiteName,
+          line: 3,
+          tests: [{ test: "should work", line: testMethodLine }],
+        },
+      ]);
+
+      _controller = new GroovyTestController(
+        contextMock,
+        executionServiceMock,
+        testServiceMock,
+      );
+
+      // Trigger discovery
+      await testControllerMock.resolveHandler(undefined);
+
+      // Get the test item
+      const suiteItem = testControllerMock.items.get(suiteName);
+      const testItem = suiteItem.children.get(`${suiteName}.should work`);
+
+      assert.ok(testItem, "Test item should be created");
+
+      // Test line should be converted from 1-indexed to 0-indexed
+      const expectedLine = testMethodLine - 1;
+      assert.strictEqual(
+        testItem.range.start.line,
+        expectedLine,
+        `Test range should start at line ${expectedLine} (0-indexed from test line ${testMethodLine})`,
       );
     });
   });
