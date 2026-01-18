@@ -20,6 +20,7 @@ class UninvertIfElse : Recipe() {
     override fun getDescription() = "Inverts if control flow when the condition is negated."
 
     override fun getVisitor(): TreeVisitor<*, ExecutionContext> = object : GroovyVisitor<ExecutionContext>() {
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         override fun visitIf(iff: J.If, ctx: ExecutionContext): J {
             val i = super.visitIf(iff, ctx) as J.If
             if (i.elsePart == null) return i

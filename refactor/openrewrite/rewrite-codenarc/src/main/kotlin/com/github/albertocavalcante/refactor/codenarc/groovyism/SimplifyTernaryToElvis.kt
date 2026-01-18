@@ -14,7 +14,8 @@ import org.openrewrite.java.tree.J
  *
  * e.g. x ? x : y -> x ?: y
  *
- * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#simplifyternarytoelvis">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#simplifyternarytoelvis">
+ *     CodeNarc Rule</a>
  */
 class SimplifyTernaryToElvis : Recipe() {
 
@@ -50,6 +51,7 @@ class SimplifyTernaryToElvis : Recipe() {
          * Checks if two expressions are structurally equivalent.
          * This is heuristic and conservative; we only simplify if we are sure they are the same.
          */
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         private fun areEquivalent(e1: Expression, e2: Expression): Boolean {
             if (e1 === e2) return true
 
@@ -71,7 +73,8 @@ class SimplifyTernaryToElvis : Recipe() {
 
                 is J.Literal -> {
                     u2 as J.Literal
-                    // Compare valueSource to ensure exact same source representation (e.g. hex vs decimal, string quotes)
+                    // Compare valueSource to ensure exact same source representation
+                    // (e.g. hex vs decimal, string quotes)
                     u1.valueSource == u2.valueSource
                 }
 

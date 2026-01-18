@@ -16,7 +16,8 @@ import org.openrewrite.java.tree.J
  *
  * e.g. `x != null && x instanceof String` → `x instanceof String`
  *
- * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarynullcheckbeforeinstanceof">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.org/codenarc-rules-unnecessary.html#unnecessarynullcheckbeforeinstanceof">
+ *     CodeNarc Rule</a>
  */
 class RemoveUnnecessaryNullCheckBeforeInstanceOf : Recipe() {
 
@@ -27,6 +28,7 @@ class RemoveUnnecessaryNullCheckBeforeInstanceOf : Recipe() {
 
     override fun getVisitor(): TreeVisitor<*, ExecutionContext> = object : GroovyVisitor<ExecutionContext>() {
 
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         override fun visitBinary(binary: J.Binary, ctx: ExecutionContext): J {
             val b = super.visitBinary(binary, ctx) as J.Binary
 

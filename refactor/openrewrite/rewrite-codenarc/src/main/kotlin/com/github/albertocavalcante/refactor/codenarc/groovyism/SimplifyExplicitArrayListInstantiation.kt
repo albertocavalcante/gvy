@@ -19,7 +19,8 @@ import java.util.Collections
  *
  * e.g. new ArrayList() -> []
  *
- * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicitarraylistinstantiation">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#explicitarraylistinstantiation">
+ *     CodeNarc Rule</a>
  */
 class SimplifyExplicitArrayListInstantiation : Recipe() {
 

@@ -32,6 +32,11 @@ class RemoveUnnecessaryGetter : Recipe() {
 
         private val spockMethods = setOf("Mock", "Spy", "Stub")
 
+        // Getter prefix lengths for property name extraction
+        private val getPrefixLength = 3 // Length of "get"
+        private val isPrefixLength = 2 // Length of "is"
+
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         override fun visitMethodInvocation(method: J.MethodInvocation, ctx: ExecutionContext): J {
             val m = super.visitMethodInvocation(method, ctx) as J.MethodInvocation
 
@@ -77,8 +82,8 @@ class RemoveUnnecessaryGetter : Recipe() {
          * Returns null if not a valid getter pattern.
          */
         private fun extractPropertyName(name: String): String? = when {
-            name.startsWith("get") && name.length > 3 && name[3].isUpperCase() -> {
-                val suffix = name.substring(3)
+            name.startsWith("get") && name.length > getPrefixLength && name[getPrefixLength].isUpperCase() -> {
+                val suffix = name.substring(getPrefixLength)
                 // Skip getURL, getXML patterns (consecutive uppercase)
                 if (suffix.length > 1 && suffix[1].isUpperCase()) {
                     null
@@ -87,8 +92,8 @@ class RemoveUnnecessaryGetter : Recipe() {
                 }
             }
 
-            name.startsWith("is") && name.length > 2 && name[2].isUpperCase() -> {
-                val suffix = name.substring(2)
+            name.startsWith("is") && name.length > isPrefixLength && name[isPrefixLength].isUpperCase() -> {
+                val suffix = name.substring(isPrefixLength)
                 if (suffix.length > 1 && suffix[1].isUpperCase()) {
                     null
                 } else {

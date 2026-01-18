@@ -15,7 +15,8 @@ import org.openrewrite.java.tree.J
  *
  * e.g. list.each({ println it }) -> list.each { println it }
  *
- * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#closureaslastmethodparameter">CodeNarc Rule</a>
+ * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#closureaslastmethodparameter">
+ *     CodeNarc Rule</a>
  */
 class MoveClosureAsLastMethodParameter : Recipe() {
 
@@ -24,6 +25,7 @@ class MoveClosureAsLastMethodParameter : Recipe() {
     override fun getDescription(): String = "Moves the last closure argument of a method call outside the parentheses."
 
     override fun getVisitor(): TreeVisitor<*, ExecutionContext> = object : GroovyIsoVisitor<ExecutionContext>() {
+        @Suppress("ReturnCount") // Guard clauses for early exit validation
         override fun visitMethodInvocation(method: J.MethodInvocation, ctx: ExecutionContext): J.MethodInvocation {
             var m = super.visitMethodInvocation(method, ctx)
             val args = m.arguments
