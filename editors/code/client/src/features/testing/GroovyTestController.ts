@@ -322,30 +322,20 @@ export class GroovyTestController {
     // Store metadata
     dataCache.set(suiteItem, { kind: "suite", suiteName: suite.suite });
 
-    // Add child test items first to determine suite range
-    let minLine = Number.MAX_SAFE_INTEGER;
+    // Add child test items
     for (const test of suite.tests) {
       const testItem = this.createTestItem(test, suite.suite, uri);
       suiteItem.children.add(testItem);
-      if (test.line < minLine) {
-        minLine = test.line;
-      }
     }
 
-    // Set suite range: estimate class declaration is a few lines before first test
-    // Use line 0 as minimum to avoid negative values
-    const ESTIMATED_LINES_ABOVE_FIRST_TEST = 5;
+    // Set suite range using the actual class line from the LSP
+    // suite.line is 1-indexed, VS Code positions are 0-indexed
+    const classLine = suite.line >= 1 ? suite.line - 1 : 0;
     const APPROXIMATE_LINE_LENGTH = 100;
-    if (minLine !== Number.MAX_SAFE_INTEGER && minLine >= 0) {
-      const estimatedClassLine = Math.max(
-        0,
-        minLine - ESTIMATED_LINES_ABOVE_FIRST_TEST,
-      );
-      suiteItem.range = new vscode.Range(
-        new vscode.Position(estimatedClassLine, 0),
-        new vscode.Position(estimatedClassLine, APPROXIMATE_LINE_LENGTH),
-      );
-    }
+    suiteItem.range = new vscode.Range(
+      new vscode.Position(classLine, 0),
+      new vscode.Position(classLine, APPROXIMATE_LINE_LENGTH),
+    );
 
     return suiteItem;
   }
