@@ -82,7 +82,7 @@ gh pr view <PR_NUMBER> --json files --jq '{
 │      └─ 10+ files   → LARGE PR (Phase 2 local checkout)    │
 │                                                             │
 │  Q2: How far behind is the PR?                              │
-│      ├─ 0-50 commits  → RECENT (likely rebasable)          │
+│      ├─ 0-50 commits  → RECENT (likely rebasa­ble)          │
 │      ├─ 51-200 commits → STALE (needs investigation)       │
 │      └─ 200+ commits   → VERY STALE (likely close)         │
 │                                                             │
@@ -201,7 +201,7 @@ done
 cd /path/to/main/worktree
 
 # Search for specific patterns/classes/functions
-rg "ClassName|functionName|FEATURE_FLAG" --type kt
+rg "ClassName\|functionName\|FEATURE_FLAG" --type kt
 
 # Check if the fix/feature exists differently
 rg -A5 "the specific fix pattern" src/
@@ -366,41 +366,8 @@ Thank you for the work on this PR! [Specific acknowledgment of what was valuable
 ### 5.2 Close the PR
 
 ```bash
-# First, create the comment file from the template above
-cat > /tmp/pr-comment.md << 'EOF'
-## Closing as Stale
-
-This PR is **[N] commits behind main** and the codebase has evolved significantly since [date].
-
-### Code Changes - Status
-
-| Component   | PR Status           | Main Status                      |
-| ----------- | ------------------- | -------------------------------- |
-| [Feature A] | [PR implementation] | [Already in `path/to/file.kt`]   |
-| [Feature B] | [PR approach]       | [Replaced by different approach] |
-
-### Why This PR is Stale
-
-[Detailed explanation of architecture changes, refactoring, etc.]
-
-### Valuable Concepts Extracted
-
-The following issues capture valuable ideas from this PR:
-
-- #NNN - [Description]
-- #NNN - [Description]
-
----
-
-Thank you for the work on this PR! [Specific acknowledgment of what was valuable]
-EOF
-
-# Post the comment and close the PR
 gh pr comment <PR_NUMBER> --body-file /tmp/pr-comment.md
 gh pr close <PR_NUMBER>
-
-# Clean up temp file
-rm /tmp/pr-comment.md
 ```
 
 ### 5.3 Cleanup
