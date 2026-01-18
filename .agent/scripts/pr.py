@@ -1244,6 +1244,30 @@ DIFF_FULL_THRESHOLD = 3000  # Use full diff if under this
 DIFF_MAX_LINES = 8000  # Absolute max lines to send
 DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 
+# Files to exclude from diff content (show stats only)
+# These files are auto-generated, have huge diffs, and add no semantic value
+EXCLUDED_DIFF_PATTERNS = [
+    "pnpm-lock.yaml",
+    "package-lock.json",
+    "yarn.lock",
+    "Cargo.lock",
+    "poetry.lock",
+    "Gemfile.lock",
+    "composer.lock",
+    "go.sum",
+    "bun.lockb",
+    "shrinkwrap.yaml",
+    "npm-shrinkwrap.json",
+    # Minified assets
+    ".min.js",
+    ".min.css",
+    ".bundle.js",
+    # Generated files
+    ".generated.",
+    ".g.dart",
+    ".freezed.dart",
+]
+
 # File priority for large diffs (higher = more important, show more content)
 # NOTE: Order matters! More specific patterns must come BEFORE general extensions
 # so that "MyTest.kt" matches "Test.kt" (priority 25) before ".kt" (priority 100)
@@ -1289,6 +1313,25 @@ def get_file_priority(filepath: str) -> int:
         if filepath.endswith(pattern):
             return priority
     return 50  # Default priority
+
+
+def is_excluded_from_diff(filepath: str) -> bool:
+    """Check if a file should have its diff content excluded (stats only).
+
+    Returns True for lock files, minified assets, and other auto-generated files
+    that add noise without semantic value.
+    """
+    for pattern in EXCLUDED_DIFF_PATTERNS:
+        if pattern in filepath or filepath.endswith(pattern):
+            return True
+    return False
+
+
+def get_file_diff_stats(file_diff: str) -> tuple[int, int]:
+    """Extract additions and deletions count from a file diff."""
+    adds = file_diff.count("\n+") - file_diff.count("\n+++")
+    dels = file_diff.count("\n-") - file_diff.count("\n---")
+    return max(0, adds), max(0, dels)
 
 
 def parse_diff_into_files(diff_content: str) -> list[tuple[str, str]]:
@@ -1370,6 +1413,9 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
     Prepare diff content for AI, handling large diffs gracefully.
 
     Returns (diff_content, mode) where mode is 'full', 'truncated', or 'error'.
+
+    Lock files (pnpm-lock.yaml, package-lock.json, etc.) are always excluded
+    from diff content and shown as stats-only, regardless of diff size.
     """
     # Get full diff
     try:
@@ -1388,24 +1434,49 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
         typer.echo("⚠️ 'gh' CLI not found. Is GitHub CLI installed?", err=True)
         return "", "error"
 
-    total_lines = len(full_diff.split("\n"))
+    # Parse into files to check for excluded patterns
+    files = parse_diff_into_files(full_diff)
 
-    # Case 1: Small diff - use as-is
+    # Separate excluded files (lock files, etc.) from regular files
+    excluded_files = []
+    regular_files = []
+    for filepath, file_diff in files:
+        if is_excluded_from_diff(filepath):
+            adds, dels = get_file_diff_stats(file_diff)
+            excluded_files.append((filepath, adds, dels))
+        else:
+            regular_files.append((filepath, file_diff))
+
+    # Calculate lines after excluding lock files
+    total_lines = sum(len(diff.split("\n")) for _, diff in regular_files)
+
+    # Case 1: Small diff (after exclusions) - use filtered diff
     if total_lines <= DIFF_FULL_THRESHOLD:
-        return full_diff, "full"
+        output_parts = []
+
+        # Add excluded files summary at the top if any
+        if excluded_files:
+            output_parts.append("=== EXCLUDED FILES (stats only, auto-generated) ===")
+            for filepath, adds, dels in excluded_files:
+                output_parts.append(f"  {filepath} | +{adds} -{dels}")
+            output_parts.append("")
+
+        # Add regular file diffs
+        for filepath, file_diff in regular_files:
+            output_parts.append(file_diff)
+
+        return "\n".join(output_parts), "full"
 
     typer.echo(
-        f"📊 Large diff detected ({total_lines} lines), using smart truncation..."
+        f"📊 Large diff detected ({total_lines} lines after exclusions), using smart truncation..."
     )
 
     # Case 2: Large diff - smart truncation
-    files = parse_diff_into_files(full_diff)
-
-    # Generate stats from parsed files (since gh pr diff --stat doesn't exist)
+    # Generate stats from all files (including excluded)
     diff_stats = generate_diff_stats(files)
 
-    # Sort by priority (highest first)
-    files_with_priority = [(get_file_priority(f), f, diff) for f, diff in files]
+    # Sort regular files by priority (highest first)
+    files_with_priority = [(get_file_priority(f), f, diff) for f, diff in regular_files]
     files_with_priority.sort(key=lambda x: -x[0])
 
     # Build truncated diff with stats header
@@ -1413,10 +1484,22 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
         "=== DIFF STATS (complete) ===",
         diff_stats,
         "",
-        f"=== DIFF CONTENT (truncated from {total_lines} lines) ===",
-        f"=== Showing {len(files)} files, prioritized by importance ===",
-        "",
     ]
+
+    # Add excluded files summary
+    if excluded_files:
+        output_parts.append("=== EXCLUDED FILES (stats only, auto-generated) ===")
+        for filepath, adds, dels in excluded_files:
+            output_parts.append(f"  {filepath} | +{adds} -{dels}")
+        output_parts.append("")
+
+    output_parts.extend(
+        [
+            f"=== DIFF CONTENT (truncated from {total_lines} lines) ===",
+            f"=== Showing {len(regular_files)} files, prioritized by importance ===",
+            "",
+        ]
+    )
 
     lines_used = len("\n".join(output_parts).split("\n"))
     lines_budget = DIFF_MAX_LINES - lines_used
@@ -1454,18 +1537,18 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
         output_parts.append(diff)
         output_parts.append("")
 
-    # Add note about any excluded files
+    # Add note about any excluded files (low priority, not lock files)
     included_count = len(included_files)
-    total_count = len(files)
+    total_count = len(regular_files)
     if included_count < total_count:
-        excluded = [f for _, f, _ in files_with_priority[included_count:]]
+        skipped = [f for _, f, _ in files_with_priority[included_count:]]
         output_parts.append(
-            f"=== {total_count - included_count} files excluded (low priority): ==="
+            f"=== {total_count - included_count} files skipped (low priority): ==="
         )
-        for f in excluded[:10]:
+        for f in skipped[:10]:
             output_parts.append(f"  - {f}")
-        if len(excluded) > 10:
-            output_parts.append(f"  ... and {len(excluded) - 10} more")
+        if len(skipped) > 10:
+            output_parts.append(f"  ... and {len(skipped) - 10} more")
 
     return "\n".join(output_parts), "truncated"
 
