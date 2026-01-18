@@ -53,6 +53,7 @@ class ErrorStreamLogger(
     fun startLogging(): Job = scope.launch(Dispatchers.IO) {
         logger.debug { "Started stderr logging for BSP server '$serverName'" }
 
+        @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // BSP stream errors
         try {
             BufferedReader(InputStreamReader(errorStream)).use { reader ->
                 var lineNumber = 0

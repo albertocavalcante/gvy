@@ -43,14 +43,14 @@ data class BspConnectionDetails(
             if (!file.exists()) {
                 return ParseError.FileNotFound(file).left()
             }
-
+            @Suppress("TooGenericExceptionCaught") // File I/O failures: IOException, SecurityException, etc.
             val jsonContent = try {
                 file.readText()
             } catch (e: Exception) {
                 logger.warn { "Failed to read BSP connection file ${file.name}: ${e.message}" }
                 return ParseError.ReadError(file, e.message ?: "Unknown error").left()
             }
-
+            @Suppress("TooGenericExceptionCaught") // JSON parsing: SerializationException, etc.
             return try {
                 val conn = jsonParser.decodeFromString<BspConnectionFile>(jsonContent)
 

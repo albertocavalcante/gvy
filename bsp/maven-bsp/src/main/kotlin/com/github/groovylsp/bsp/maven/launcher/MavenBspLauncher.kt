@@ -106,12 +106,9 @@ object MavenBspLauncher {
         while (i < args.size) {
             when (args[i]) {
                 "--local-repo" -> {
-                    if (i + 1 < args.size) {
-                        localRepository = Paths.get(args[i + 1])
-                        i += 2
-                    } else {
-                        throw IllegalArgumentException("--local-repo requires a path argument")
-                    }
+                    require(i + 1 < args.size) { "--local-repo requires a path argument" }
+                    localRepository = Paths.get(args[i + 1])
+                    i += 2
                 }
                 else -> {
                     workspaceRoot = Paths.get(args[i])

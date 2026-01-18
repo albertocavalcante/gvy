@@ -125,6 +125,7 @@ class BspSession(
                     .map { sourcesResult ->
                         sourcesResult.items?.forEach { item ->
                             val sources = item.sources?.mapNotNull { sourceItem ->
+                                @Suppress("TooGenericExceptionCaught") // URI parsing failures
                                 try {
                                     java.nio.file.Paths.get(java.net.URI.create(sourceItem.uri))
                                 } catch (e: Exception) {
@@ -187,7 +188,7 @@ class BspSession(
 
         logger.info { "Closing BSP session" }
         closed = true
-
+        @Suppress("TooGenericExceptionCaught") // Cleanup resilience
         try {
             client.clearListeners()
             connection.close()

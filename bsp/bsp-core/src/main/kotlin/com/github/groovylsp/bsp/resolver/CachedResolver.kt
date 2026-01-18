@@ -106,7 +106,8 @@ class CachedResolver(private val delegate: ClassPathResolver) : ClassPathResolve
                 cachedVersion = delegateVersion
 
                 logger.debug {
-                    "Cache refreshed: ${cachedClasspath!!.size} classpath entries, ${cachedBuildScriptClasspath!!.size} build script entries"
+                    "Cache refreshed: ${cachedClasspath!!.size} classpath entries, " +
+                        "${cachedBuildScriptClasspath!!.size} build script entries"
                 }
             }
         }

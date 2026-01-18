@@ -87,6 +87,7 @@ object CompileGatekeeper {
         }
 
         // We created the compilation, so we run it
+        @Suppress("TooGenericExceptionCaught") // Compilation failures
         return try {
             // Broadcast wrapper that notifies all observers
             val result = compile()
@@ -116,6 +117,7 @@ object CompileGatekeeper {
         val running = runningCompilations[inputs] ?: return
         // NOTE: CopyOnWriteArrayList allows safe concurrent iteration
         running.observers.forEach { observer ->
+            @Suppress("TooGenericExceptionCaught") // Observers can fail in unpredictable ways, must not crash broadcast
             try {
                 observer(event)
             } catch (e: Exception) {

@@ -76,6 +76,7 @@ class DiagnosticReporter {
         // NOTE: CopyOnWriteArrayList allows safe iteration even if
         //   observers list is modified during notification
         observers.forEach { observer ->
+            @Suppress("TooGenericExceptionCaught") // Observers can fail in unpredictable ways, must not crash reporting
             try {
                 observer(params)
             } catch (e: Exception) {
@@ -119,6 +120,7 @@ class DiagnosticReporter {
             val emptyParams =
                 PublishDiagnosticsParams(textDoc, ch.epfl.scala.bsp4j.BuildTargetIdentifier(uri), emptyList(), true)
             observers.forEach { observer ->
+                @Suppress("TooGenericExceptionCaught") // Observers can fail in unpredictable ways, must not crash clear
                 try {
                     observer(emptyParams)
                 } catch (e: Exception) {

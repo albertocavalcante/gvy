@@ -49,6 +49,7 @@ private const val TEST_TIMEOUT_MS = 300_000L // 5 minutes
  * @param capabilities Parsed server capabilities from initialization
  * @param config Connection configuration (timeouts, etc.)
  */
+@Suppress("TooManyFunctions") // BSP protocol wrapper - one method per BSP endpoint (18 standard requests)
 class BuildServerConnection(
     private val server: BuildServer,
     private val capabilities: BspCapabilities,

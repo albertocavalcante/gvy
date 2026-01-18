@@ -32,7 +32,11 @@ sealed class CompilationEvent {
          * Progress as a percentage (0-100).
          */
         val percentage: Int
-            get() = if (total > 0) ((progress * 100) / total).toInt() else 0
+            get() = if (total > 0) ((progress * PERCENTAGE_MULTIPLIER) / total).toInt() else 0
+
+        companion object {
+            private const val PERCENTAGE_MULTIPLIER = 100
+        }
     }
 
     /**

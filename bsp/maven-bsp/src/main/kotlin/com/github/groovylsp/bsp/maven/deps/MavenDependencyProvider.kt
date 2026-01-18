@@ -116,6 +116,7 @@ class MavenDependencyProvider(
         val deps = module.dependencies.filter { it.scope in applicableScopes }
         if (deps.isEmpty()) return emptyList()
 
+        @Suppress("TooGenericExceptionCaught") // Maven resolution can fail in various ways
         return try {
             val session = sessionSupplier()
             val collectRequest = CollectRequest().apply {
