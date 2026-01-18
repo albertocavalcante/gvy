@@ -1,6 +1,8 @@
-package com.github.albertocavalcante.groovylsp.providers.testing.parsers
+package com.github.albertocavalcante.reports.results.parsers
 
-import com.github.albertocavalcante.groovylsp.providers.testing.TestResultStatus
+import com.github.albertocavalcante.reports.results.model.TestResultStatus
+import com.github.albertocavalcante.reports.results.model.TestResultSummary
+import com.github.albertocavalcante.reports.results.model.TestResultsResponse
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -10,7 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.nio.file.Path
 
-class SurefireXmlParserTest {
+class SurefireParserTest {
 
     @Test
     fun `should parse valid Surefire XML report`() {
@@ -19,7 +21,7 @@ class SurefireXmlParserTest {
                 ?: error("Test resource not found"),
         )
 
-        val results = SurefireXmlParser.parseReportFile(xmlFile)
+        val results = SurefireParser.parseReportFile(xmlFile)
 
         assertEquals(4, results.size)
 
@@ -61,7 +63,7 @@ class SurefireXmlParserTest {
 
     @Test
     fun `should handle empty Surefire reports directory`(@TempDir tempDir: Path) {
-        val response = SurefireXmlParser.parseWorkspace(tempDir.toFile())
+        val response = SurefireParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(0, response.results.size)
         assertEquals(0, response.summary.total)
@@ -78,10 +80,10 @@ class SurefireXmlParserTest {
                 ?: error("Test resource not found"),
         )
 
-        val results = SurefireXmlParser.parseReportFile(xmlFile)
-        val response = com.github.albertocavalcante.groovylsp.providers.testing.TestResultsResponse(
+        val results = SurefireParser.parseReportFile(xmlFile)
+        val response = TestResultsResponse(
             results = results,
-            summary = com.github.albertocavalcante.groovylsp.providers.testing.TestResultSummary(
+            summary = TestResultSummary(
                 total = results.size,
                 passed = results.count { it.status == TestResultStatus.SUCCESS },
                 failed = results.count { it.status == TestResultStatus.FAILURE },
@@ -114,7 +116,7 @@ class SurefireXmlParserTest {
         File(surefireDir, "TEST-com.example.MySpec.xml").writeText(testXmlContent)
         File(failsafeDir, "TEST-com.example.IntegrationTest.xml").writeText(testXmlContent)
 
-        val response = SurefireXmlParser.parseWorkspace(tempDir.toFile())
+        val response = SurefireParser.parseWorkspace(tempDir.toFile())
 
         // Should find reports from both directories
         assertEquals(8, response.results.size) // 4 tests * 2 files
@@ -144,7 +146,7 @@ class SurefireXmlParserTest {
             ?.readText() ?: error("Test resource not found")
         File(surefireDir, "TEST-com.example.MySpec.xml").writeText(testXmlContent)
 
-        val response = SurefireXmlParser.parseWorkspace(tempDir.toFile())
+        val response = SurefireParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(4, response.results.size)
     }
@@ -158,7 +160,7 @@ class SurefireXmlParserTest {
         File(surefireDir, "TEST-Malformed.xml").writeText("<invalid>xml")
 
         // Should not throw, just log warning and continue
-        val response = SurefireXmlParser.parseWorkspace(tempDir.toFile())
+        val response = SurefireParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(0, response.results.size)
     }
@@ -170,7 +172,7 @@ class SurefireXmlParserTest {
                 ?: error("Test resource not found"),
         )
 
-        val results = SurefireXmlParser.parseReportFile(xmlFile)
+        val results = SurefireParser.parseReportFile(xmlFile)
 
         // Time in XML is in seconds (0.123), should be converted to milliseconds (123)
         val successTest = results.find { it.name == "testSuccess" }
@@ -191,7 +193,7 @@ class SurefireXmlParserTest {
 
         File(surefireDir, "TEST-NoClass.xml").writeText(xmlContent)
 
-        val response = SurefireXmlParser.parseWorkspace(tempDir.toFile())
+        val response = SurefireParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(1, response.results.size)
         val test = response.results[0]
@@ -214,7 +216,7 @@ class SurefireXmlParserTest {
         File(surefireDir, "TEST-Invalid.txt").writeText("not xml")
         File(surefireDir, "README.md").writeText("# Readme")
 
-        val response = SurefireXmlParser.parseWorkspace(tempDir.toFile())
+        val response = SurefireParser.parseWorkspace(tempDir.toFile())
 
         // Should only parse TEST-*.xml files
         assertEquals(4, response.results.size)

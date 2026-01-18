@@ -1,10 +1,10 @@
-package com.github.albertocavalcante.groovylsp.providers.testing.parsers
+package com.github.albertocavalcante.reports.results.parsers
 
-import com.github.albertocavalcante.groovylsp.providers.testing.TestResultItem
-import com.github.albertocavalcante.groovylsp.providers.testing.TestResultStatus
-import com.github.albertocavalcante.groovylsp.providers.testing.TestResultSummary
-import com.github.albertocavalcante.groovylsp.providers.testing.TestResultsResponse
 import com.github.albertocavalcante.reports.discovery.ProjectDiscovery
+import com.github.albertocavalcante.reports.results.model.TestResultItem
+import com.github.albertocavalcante.reports.results.model.TestResultStatus
+import com.github.albertocavalcante.reports.results.model.TestResultSummary
+import com.github.albertocavalcante.reports.results.model.TestResultsResponse
 import com.github.albertocavalcante.reports.xml.XmlUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.w3c.dom.Element
@@ -25,7 +25,7 @@ import kotlin.math.roundToLong
  * </testsuite>
  * ```
  */
-object SurefireXmlParser {
+object SurefireParser : TestResultParser {
     private val logger = KotlinLogging.logger {}
 
     /**
@@ -34,7 +34,7 @@ object SurefireXmlParser {
      * @param workspaceRoot Root directory of the workspace
      * @return Aggregated test results from all modules
      */
-    fun parseWorkspace(workspaceRoot: File): TestResultsResponse {
+    override fun parseWorkspace(workspaceRoot: File): TestResultsResponse {
         val reportDirs = discoverSurefireReportDirs(workspaceRoot)
         logger.info { "Found ${reportDirs.size} surefire-reports directories" }
 
@@ -100,7 +100,7 @@ object SurefireXmlParser {
     /**
      * Parse a single Surefire XML report file.
      */
-    fun parseReportFile(file: File): List<TestResultItem> {
+    override fun parseReportFile(file: File): List<TestResultItem> {
         val dBuilder = XmlUtils.createSecureDocumentBuilder()
         val doc = dBuilder.parse(file)
         doc.documentElement.normalize()
