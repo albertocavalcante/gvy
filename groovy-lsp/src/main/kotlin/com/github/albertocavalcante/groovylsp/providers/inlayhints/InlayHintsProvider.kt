@@ -87,6 +87,20 @@ private sealed class ResolutionResult {
 private data class CallableSignature(val parameterNames: List<String>, val parameterTypes: List<String>)
 
 /**
+ * Context for processing AST nodes during inlay hint generation.
+ */
+private data class NodeProcessingContext(
+    val range: org.eclipse.lsp4j.Range,
+    val astModel: GroovyAstModel,
+    val moduleNode: ModuleNode?,
+    val symbolTable: SymbolTable?,
+    val workspaceSymbols: List<Symbol>,
+    val hints: MutableList<InlayHint>,
+    val semanticResolver: SemanticTypeResolver,
+    val logger: KLogger,
+)
+
+/**
  * Provides LSP Inlay Hints for Groovy source files.
  * Supports type hints for `def` variables and parameter hints for method/constructor calls.
  *
@@ -100,15 +114,6 @@ class InlayHintsProvider(
     private val config: InlayHintsConfiguration = InlayHintsConfiguration(),
 ) {
     private val logger = KotlinLogging.logger {}
-
-    private data class NodeProcessingContext(
-        val range: org.eclipse.lsp4j.Range,
-        val astModel: GroovyAstModel,
-        val moduleNode: ModuleNode?,
-        val symbolTable: SymbolTable?,
-        val workspaceSymbols: List<Symbol>,
-        val hints: MutableList<InlayHint>,
-    )
 
     /**
      * Provides a list of inlay hints for the given document and range.
@@ -142,6 +147,8 @@ class InlayHintsProvider(
             symbolTable = symbolTable,
             workspaceSymbols = workspaceSymbols,
             hints = hints,
+            semanticResolver = semanticResolver,
+            logger = logger,
         )
 
         // Traverse all nodes and collect hints within the requested range
@@ -163,7 +170,7 @@ class InlayHintsProvider(
         when (node) {
             is DeclarationExpression -> {
                 if (config.typeHints) {
-                    collectTypeHint(node, context.moduleNode)?.let { context.hints.add(it) }
+                    collectTypeHint(node, context)?.let { context.hints.add(it) }
                 }
             }
 
@@ -175,13 +182,7 @@ class InlayHintsProvider(
 
             is ConstructorCallExpression -> {
                 if (config.parameterHints) {
-                    collectConstructorParameterHints(
-                        node,
-                        context.astModel,
-                        context.moduleNode,
-                        context.workspaceSymbols,
-                        context.hints,
-                    )
+                    collectConstructorParameterHints(node, context)
                 }
             }
         }
@@ -192,7 +193,7 @@ class InlayHintsProvider(
      *
      * Only shows hints for `def` declarations where the type is inferred.
      */
-    private fun collectTypeHint(decl: DeclarationExpression, moduleNode: ModuleNode?): InlayHint? {
+    private fun collectTypeHint(decl: DeclarationExpression, context: NodeProcessingContext): InlayHint? {
         val varExpr = decl.leftExpression as? VariableExpression ?: return null
 
         // Only show type hints for dynamic/def declarations
@@ -201,12 +202,12 @@ class InlayHintsProvider(
         }
 
         val rightExpr = decl.rightExpression
-        val semanticType = runCatching { semanticResolver.resolveType(rightExpr, moduleNode) }
+        val semanticType = runCatching { context.semanticResolver.resolveType(rightExpr, context.moduleNode) }
             .getOrElse {
-                logger.debug(it) { "Failed to resolve type for ${varExpr.name}" }
+                context.logger.debug(it) { "Failed to resolve type for ${varExpr.name}" }
                 return null
             }
-        val inferredType = semanticResolver.formatSemanticType(semanticType)
+        val inferredType = context.semanticResolver.formatSemanticType(semanticType)
 
         if (InlayHintsTypes.isDynamicType(inferredType)) {
             // Don't show hints for Object/def (no useful information)
@@ -242,13 +243,7 @@ class InlayHintsProvider(
 
         // Try to resolve the method to get parameter names
         val parameterNames =
-            resolveMethodParameterNames(
-                call,
-                context.astModel,
-                context.moduleNode,
-                context.symbolTable,
-                context.workspaceSymbols,
-            )
+            resolveMethodParameterNames(call, context)
         if (parameterNames.isEmpty()) {
             return
         }
@@ -281,13 +276,7 @@ class InlayHintsProvider(
     /**
      * Collect parameter hints for a constructor call expression.
      */
-    private fun collectConstructorParameterHints(
-        call: ConstructorCallExpression,
-        astModel: GroovyAstModel,
-        moduleNode: ModuleNode?,
-        workspaceSymbols: List<Symbol>,
-        hints: MutableList<InlayHint>,
-    ) {
+    private fun collectConstructorParameterHints(call: ConstructorCallExpression, context: NodeProcessingContext) {
         val arguments = call.arguments as? ArgumentListExpression ?: return
 
         if (arguments.expressions.isEmpty()) {
@@ -295,7 +284,7 @@ class InlayHintsProvider(
         }
 
         // Try to resolve constructor parameter names
-        val parameterNames = resolveConstructorParameterNames(call, astModel, moduleNode, workspaceSymbols)
+        val parameterNames = resolveConstructorParameterNames(call, context)
         if (parameterNames.isEmpty()) {
             return
         }
@@ -314,7 +303,7 @@ class InlayHintsProvider(
                 arg.columnNumber - 1,
             )
 
-            hints.add(
+            context.hints.add(
                 InlayHint(position, Either.forLeft("$paramName:")).apply {
                     kind = InlayHintKind.Parameter
                     paddingRight = true
@@ -331,21 +320,18 @@ class InlayHintsProvider(
      *  2) workspace symbols (requires receiver type)
      *  3) classpath reflection (requires receiver type)
      */
-    private fun resolveMethodParameterNames(
-        call: MethodCallExpression,
-        astModel: GroovyAstModel,
-        moduleNode: ModuleNode?,
-        symbolTable: SymbolTable?,
-        workspaceSymbols: List<Symbol>,
-    ): List<String> {
+    private fun resolveMethodParameterNames(call: MethodCallExpression, context: NodeProcessingContext): List<String> {
         val methodName = call.methodAsString ?: return emptyList()
         val arguments = call.arguments as? ArgumentListExpression ?: return emptyList()
         val argCount = arguments.expressions.size
         val argumentTypes =
-            InlayHintsCandidates.resolveArgumentTypes(arguments.expressions, semanticResolver, moduleNode)
-        val resolutionContext = ReceiverResolutionContext(astModel, moduleNode, symbolTable, semanticResolver, logger)
+            InlayHintsCandidates.resolveArgumentTypes(
+                arguments.expressions,
+                context.semanticResolver,
+                context.moduleNode,
+            )
         val receiverType =
-            InlayHintsCandidates.resolveReceiverType(call, resolutionContext)
+            InlayHintsCandidates.resolveReceiverType(call, context)
         val isStaticCall = call.objectExpression is ClassExpression
 
         // Resolution order:
@@ -358,7 +344,7 @@ class InlayHintsProvider(
             compilationService,
             {
                 InlayHintsCandidates.findMethodCandidatesInAst(
-                    astModel,
+                    context.astModel,
                     methodName,
                     argCount,
                     receiverType,
@@ -371,7 +357,7 @@ class InlayHintsProvider(
                     argCount,
                     receiverType,
                     isStaticCall,
-                    workspaceSymbols,
+                    context.workspaceSymbols,
                 )
             },
             {
@@ -400,37 +386,28 @@ class InlayHintsProvider(
      */
     private fun resolveConstructorParameterNames(
         call: ConstructorCallExpression,
-        astModel: GroovyAstModel,
-        moduleNode: ModuleNode?,
-        workspaceSymbols: List<Symbol>,
+        context: NodeProcessingContext,
     ): List<String> {
         val arguments = call.arguments as? ArgumentListExpression ?: return emptyList()
         val argCount = arguments.expressions.size
         val argumentTypes =
-            InlayHintsCandidates.resolveArgumentTypes(arguments.expressions, semanticResolver, moduleNode)
+            InlayHintsCandidates.resolveArgumentTypes(
+                arguments.expressions,
+                context.semanticResolver,
+                context.moduleNode,
+            )
         val typeName = call.type.name
 
         val result = InlayHintsCandidates.resolveFromCandidates(
             argumentTypes,
             compilationService,
-            { InlayHintsCandidates.findConstructorCandidatesInAst(astModel, typeName, argCount) },
-            { InlayHintsCandidates.findWorkspaceConstructorCandidates(typeName, argCount, workspaceSymbols) },
+            { InlayHintsCandidates.findConstructorCandidatesInAst(context.astModel, typeName, argCount) },
+            { InlayHintsCandidates.findWorkspaceConstructorCandidates(typeName, argCount, context.workspaceSymbols) },
             { InlayHintsCandidates.findClasspathConstructorCandidates(typeName, argCount, compilationService) },
         )
         return (result as? ResolutionResult.Match)?.parameterNames.orEmpty()
     }
 }
-
-/**
- * Context for receiver type resolution operations.
- */
-private data class ReceiverResolutionContext(
-    val astModel: GroovyAstModel,
-    val moduleNode: ModuleNode?,
-    val symbolTable: SymbolTable?,
-    val semanticResolver: SemanticTypeResolver,
-    val logger: KLogger,
-)
 
 // TODO(#651): Consolidate InlayHintsCandidates and InlayHintsTypes into single helper.
 //   See: https://github.com/albertocavalcante/gvy/issues/651
@@ -453,7 +430,7 @@ private object InlayHintsCandidates {
         return ResolutionResult.NotFound
     }
 
-    fun resolveReceiverType(call: MethodCallExpression, context: ReceiverResolutionContext): String? {
+    fun resolveReceiverType(call: MethodCallExpression, context: NodeProcessingContext): String? {
         if (call.isImplicitThis) {
             return resolveImplicitThisReceiverType(call, context.astModel)
         }
@@ -464,10 +441,8 @@ private object InlayHintsCandidates {
             directType
                 ?: resolveExpressionTypeSafely(
                     objectExpr,
-                    context.moduleNode,
-                    context.semanticResolver,
+                    context,
                     "receiver",
-                    context.logger,
                 )
 
         return refineReceiverTypeWithSymbolTable(
@@ -505,7 +480,7 @@ private object InlayHintsCandidates {
     fun refineReceiverTypeWithSymbolTable(
         inferredType: String?,
         objectExpr: Expression,
-        context: ReceiverResolutionContext,
+        context: NodeProcessingContext,
     ): String? {
         if (inferredType != "java.lang.Object" && inferredType != "java.lang.Class") {
             return inferredType
@@ -526,10 +501,8 @@ private object InlayHintsCandidates {
         val refined =
             resolveExpressionTypeSafely(
                 initExpr,
-                context.moduleNode,
-                context.semanticResolver,
+                context,
                 "receiver initializer",
-                context.logger,
             )
                 ?: return inferredType
         return refined.takeUnless { it == "java.lang.Object" } ?: inferredType
@@ -548,15 +521,13 @@ private object InlayHintsCandidates {
 
     fun resolveExpressionTypeSafely(
         expression: Expression,
-        moduleNode: ModuleNode?,
-        semanticResolver: SemanticTypeResolver,
-        context: String,
-        logger: KLogger,
+        context: NodeProcessingContext,
+        contextDescription: String,
     ): String? = runCatching {
-        val type = semanticResolver.resolveType(expression, moduleNode)
-        semanticResolver.formatSemanticType(type)
+        val type = context.semanticResolver.resolveType(expression, context.moduleNode)
+        context.semanticResolver.formatSemanticType(type)
     }
-        .onFailure { logger.debug(it) { "Type resolution failed for $context" } }
+        .onFailure { context.logger.debug(it) { "Type resolution failed for $contextDescription" } }
         .getOrNull()
 
     fun findMethodCandidatesInAst(
