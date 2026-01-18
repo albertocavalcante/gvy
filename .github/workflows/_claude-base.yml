@@ -1,0 +1,120 @@
+# Reusable workflow for Claude Code actions
+# Called by: claude-mentions.yml, claude-code-review.yml, claude-auto-fix.yml
+#
+# This consolidates shared steps:
+# - Repository checkout
+# - Claude Code action execution
+# - Execution log upload
+# - Failure summary output
+
+name: Claude Base
+
+on:
+  workflow_call:
+    inputs:
+      workflow_name:
+        description: 'Name for logging (e.g., "Claude Code Review")'
+        required: true
+        type: string
+      artifact_prefix:
+        description: 'Prefix for artifact name (e.g., "claude-review-log")'
+        required: true
+        type: string
+      artifact_suffix:
+        description: 'Suffix for artifact name (e.g., PR number, issue number)'
+        required: true
+        type: string
+      timeout_minutes:
+        description: 'Job timeout in minutes'
+        required: false
+        type: number
+        default: 30
+      fetch_depth:
+        description: 'Git fetch depth (0 for full history)'
+        required: false
+        type: number
+        default: 1
+      prompt:
+        description: 'Custom prompt for Claude (optional)'
+        required: false
+        type: string
+        default: ''
+      claude_args:
+        description: 'Arguments for Claude CLI (allowed-tools, max-turns, etc.)'
+        required: false
+        type: string
+        default: ''
+      additional_permissions:
+        description: 'Additional permissions for Claude'
+        required: false
+        type: string
+        default: ''
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: true
+      GITHUB_TOKEN:
+        required: false
+
+jobs:
+  claude:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
+        with:
+          fetch-depth: ${{ inputs.fetch_depth }}
+          persist-credentials: false
+
+      - name: Run Claude Code
+        id: claude
+        uses: anthropics/claude-code-action@a017b830c03e23789b11fb69ed571ea61c12e45c # v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          prompt: ${{ inputs.prompt }}
+          claude_args: ${{ inputs.claude_args }}
+          additional_permissions: ${{ inputs.additional_permissions }}
+
+      # Log path is hardcoded because claude-code-action doesn't expose an output variable.
+      # This is the standard path used by the action on GitHub-hosted runners.
+      # See: https://github.com/anthropics/claude-code-action
+      - name: Upload Claude execution log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ inputs.artifact_suffix }}-${{ github.run_id }}
+          path: /home/runner/work/_temp/claude-execution-output.json
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Output failure summary
+        if: failure()
+        run: |
+          LOG_FILE="/home/runner/work/_temp/claude-execution-output.json"
+          {
+            echo "## ${{ inputs.workflow_name }} Failed"
+            echo ""
+            if [ -f "$LOG_FILE" ]; then
+              echo "### Execution Details"
+              echo '```json'
+              if jq -e . "$LOG_FILE" >/dev/null 2>&1; then
+                jq 'if .type == "result" then {type, subtype, is_error, duration_ms, num_turns, total_cost_usd, permission_denials} else {type, subtype, message} end' "$LOG_FILE" | head -200
+              else
+                echo "# Warning: Log is not valid JSON, showing raw content:"
+                head -200 "$LOG_FILE"
+              fi
+              echo '```'
+              echo ""
+              echo "Full log available in artifacts: **${{ inputs.artifact_prefix }}-${{ inputs.artifact_suffix }}-${{ github.run_id }}**"
+            else
+              echo "No execution log found."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
