@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovycommon.text
 
-import kotlin.concurrent.write
+import kotlin.concurrent.withLock
 
 /**
  * Text analysis utilities for cursor position calculations.
@@ -12,7 +12,7 @@ object TextIndex {
 
     private const val MAX_LINE_BREAK_CACHE_SIZE = 1000
 
-    private val lineBreakCacheLock = java.util.concurrent.locks.ReentrantReadWriteLock()
+    private val lineBreakCacheLock = java.util.concurrent.locks.ReentrantLock()
     private val lineBreakCache = object : LinkedHashMap<String, IntArray>(
         16, // initial capacity
         0.75f, // load factor
@@ -29,7 +29,7 @@ object TextIndex {
     private fun getLineBreaks(content: String): IntArray {
         // A 'get' on an access-ordered LinkedHashMap is a write operation, so we need a write lock.
         // We check for the key and return if present, all within a brief write lock.
-        lineBreakCacheLock.write {
+        lineBreakCacheLock.withLock {
             lineBreakCache[content]?.let { return it }
         }
 
@@ -46,7 +46,7 @@ object TextIndex {
         // After computing, acquire the write lock again to put the result into the cache.
         // Use getOrPut to handle the race condition where another thread might have
         // computed and inserted the same key while we were working.
-        return lineBreakCacheLock.write {
+        return lineBreakCacheLock.withLock {
             lineBreakCache.getOrPut(content) { result }
         }
     }
