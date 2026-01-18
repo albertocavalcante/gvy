@@ -78,8 +78,9 @@ describe("LSPToolService", () => {
       },
     };
 
-    // Cast through unknown to bypass type checking for the incomplete mock
-    service = new LSPToolService(mockVscode as never, getClientStub);
+    // Cast through unknown to the constructor parameter type for the incomplete mock
+    const vscodeLike = mockVscode as unknown as ConstructorParameters<typeof LSPToolService>[0];
+    service = new LSPToolService(vscodeLike, getClientStub);
   });
 
   afterEach(() => {
