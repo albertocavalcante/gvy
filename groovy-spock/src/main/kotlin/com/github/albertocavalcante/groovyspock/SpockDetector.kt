@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyspock
 
+import com.github.albertocavalcante.groovycommon.text.GroovyCodeCleaner
 import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ClassHelper
@@ -14,6 +15,8 @@ object SpockDetector {
     private val spockImportRegex = Regex("(?m)^\\s*import\\s+spock\\.")
     private val spockExtendsRegex =
         Regex("(?m)^\\s*(?:abstract\\s+)?class\\s+\\w+.*\\bextends\\s+spock\\.lang\\.Specification\\b")
+    private val spockBlockLabelRegex =
+        Regex("(?m)^\\s*(given|when|then|expect|cleanup|where)\\s*:")
 
     /**
      * Checks if a file contains any Spock specifications.
@@ -130,22 +133,26 @@ object SpockDetector {
         val path = uri.path ?: return false
         if (!path.endsWith(".groovy", ignoreCase = true)) return false
 
-        if (path.endsWith("Spec.groovy", ignoreCase = true)) {
-            return true
-        }
-
         // NOTE: Heuristic / tradeoff:
         // Spock is typically identified by extending `spock.lang.Specification`, but that requires either AST or
         // classpath-aware type resolution. We use light string markers to enable quick, dependency-free detection.
+        // We do NOT rely on filename alone (e.g., *Spec.groovy) as that produces false positives.
         val normalized = content
             .replace("\r\n", "\n")
             .replace('\r', '\n')
 
+        // Remove comments and string literals to avoid false positives
+        val cleaned = GroovyCodeCleaner.removeCommentsAndStrings(normalized)
+
         // NOTE: Heuristic / tradeoff:
-        // We intentionally key off common source-level patterns (`import spock.*`, `extends spock.lang.Specification`)
-        // rather than deeper semantic checks. This keeps detection cheap and dependency-free, but can miss unusual code
-        // layouts (e.g., split class declarations) or produce false negatives.
-        return spockImportRegex.containsMatchIn(normalized) ||
-            spockExtendsRegex.containsMatchIn(normalized)
+        // We intentionally key off common source-level patterns:
+        // 1. `import spock.*` - direct Spock imports
+        // 2. `extends spock.lang.Specification` - explicit Spock superclass
+        // 3. Spock block labels (given:, when:, then:, etc.) - unique to Spock test structure
+        // This keeps detection cheap and dependency-free, but can miss unusual code layouts or produce false negatives.
+        // Block label detection helps catch specs that extend custom base classes (e.g., BaseSpec, BaseTest).
+        return spockImportRegex.containsMatchIn(cleaned) ||
+            spockExtendsRegex.containsMatchIn(cleaned) ||
+            spockBlockLabelRegex.containsMatchIn(cleaned)
     }
 }

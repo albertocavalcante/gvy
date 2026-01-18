@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.completion
 
 import com.github.albertocavalcante.groovyjenkins.completion.JenkinsContextDetector
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
@@ -14,31 +13,24 @@ import com.github.albertocavalcante.groovylsp.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.groovylsp.providers.completion.strategy.CompletionStrategy
 import com.github.albertocavalcante.groovylsp.providers.completion.strategy.CompletionStrategyContext
 import com.github.albertocavalcante.groovylsp.providers.completion.strategy.GroovyCompletionStrategy
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.ImportCompletionStrategy
 import com.github.albertocavalcante.groovylsp.providers.completion.strategy.JenkinsBlockContext
 import com.github.albertocavalcante.groovylsp.providers.completion.strategy.JenkinsCompletionStrategy
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.MemberAccessCompletionStrategy
+import com.github.albertocavalcante.groovylsp.providers.completion.strategy.SpockCompletionStrategy
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
-import com.github.albertocavalcante.groovyspock.SpockDetector
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
-import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
-import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
-import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
-import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
-import org.eclipse.lsp4j.TextEdit
-import org.eclipse.lsp4j.jsonrpc.messages.Either
-import java.lang.reflect.Modifier
 import java.net.URI
 
 /**
@@ -69,7 +61,6 @@ object CompletionProvider {
     // See: https://github.com/Kotlin/kotlin-lsp/blob/main/features-impl/kotlin/src/com/jetbrains/ls/api/features/impl/common/kotlin/completion/rekot/completionUtils.kt
     internal const val DUMMY_IDENTIFIER = "BrazilWorldCup2026"
     private const val MAX_TYPE_COMPLETION_RESULTS = 20
-    private const val MAX_IMPORT_COMPLETION_RESULTS = 50
 
     /**
      * Get basic Groovy language completion items using DSL.
@@ -111,7 +102,6 @@ object CompletionProvider {
 
                 // Use 'def' strategy if it produced a better result and has a valid AST
                 if (defStrategyBetter && ast2 != null) {
-                    val isSpockSpec = SpockDetector.isSpockSpec(uriObj, result2)
                     return buildCompletionsList(
                         CompletionContext(
                             uri = uriObj,
@@ -126,7 +116,6 @@ object CompletionProvider {
                             moduleNode = ast2,
                             workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
                         ),
-                        isSpockSpec = isSpockSpec,
                     )
                 }
             }
@@ -141,7 +130,6 @@ object CompletionProvider {
                     compilationService = compilationService,
                 )
             } else {
-                val isSpockSpec = SpockDetector.isSpockSpec(uriObj, result1)
                 buildCompletionsList(
                     CompletionContext(
                         uri = uriObj,
@@ -156,7 +144,6 @@ object CompletionProvider {
                         moduleNode = ast1,
                         workspaceSymbolIndex = compilationService.getWorkspaceSymbolIndex(),
                     ),
-                    isSpockSpec = isSpockSpec,
                 )
             }
         } catch (e: CompilationFailedException) {
@@ -199,26 +186,7 @@ object CompletionProvider {
         }
     }
 
-    private fun resolveDataTypes(className: String, service: GroovyCompilationService): List<String> {
-        // Try exact name first
-        if (service.classpathService.loadClass(className) != null) return listOf(className)
-
-        // If simple name, try default imports
-        if (!className.contains('.')) {
-            val candidates = listOf(
-                "java.lang.$className",
-                "java.util.$className",
-                "java.io.$className",
-                "java.net.$className",
-                "groovy.lang.$className",
-                "groovy.util.$className",
-            )
-            return candidates.filter { service.classpathService.loadClass(it) != null }
-        }
-        return emptyList()
-    }
-
-    private suspend fun buildCompletionsList(ctx: CompletionContext, isSpockSpec: Boolean): List<CompletionItem> {
+    private suspend fun buildCompletionsList(ctx: CompletionContext): List<CompletionItem> {
         ctx.moduleNode?.let { ctx.semanticResolver.semantics.inject(it) }
 
         // Extract symbol context
@@ -282,23 +250,14 @@ object CompletionProvider {
         )
 
         // Use strategies for general completions (call suspend function outside of completions builder)
-        val strategies = buildStrategies(mode)
+        val strategies = buildStrategies(mode, ctx.compilationService, ctx.workspaceSymbolIndex)
         val strategyItems = CompletionStrategy.aggregate(strategies).complete(strategyContext).fold(
             ifLeft = { emptyList() },
             ifRight = { it },
         )
 
         return completions {
-            // Spock block labels (keep existing logic)
-            addSpockBlockLabelsIfApplicable(ctx, completionContext, isSpockSpec)
-
-            // Handle member access context (special case - keep existing)
-            if (completionContext is ContextType.MemberAccess) {
-                handleMemberAccessContext(completionContext, ctx, jenkinsMetadata)
-                return@completions
-            }
-
-            // Add strategy items
+            // Add strategy items (includes member access, Spock, Jenkins, and Groovy completions)
             strategyItems.forEach(::add)
 
             // Handle contextual completions (TypeParameter - keep existing)
@@ -308,10 +267,31 @@ object CompletionProvider {
         }
     }
 
-    private fun buildStrategies(mode: GroovyMode): List<CompletionStrategy> = when (mode) {
-        GroovyMode.GROOVY -> listOf(GroovyCompletionStrategy())
-        GroovyMode.JENKINS -> listOf(JenkinsCompletionStrategy(), GroovyCompletionStrategy())
-        GroovyMode.AUTO -> listOf(JenkinsCompletionStrategy(), GroovyCompletionStrategy())
+    private fun buildStrategies(
+        mode: GroovyMode,
+        compilationService: GroovyCompilationService,
+        workspaceSymbolIndex: WorkspaceSymbolIndex?,
+    ): List<CompletionStrategy> {
+        val memberAccessStrategy = MemberAccessCompletionStrategy(compilationService, workspaceSymbolIndex)
+        return when (mode) {
+            GroovyMode.GROOVY -> listOf(
+                memberAccessStrategy,
+                SpockCompletionStrategy(),
+                GroovyCompletionStrategy(),
+            )
+            GroovyMode.JENKINS -> listOf(
+                memberAccessStrategy,
+                JenkinsCompletionStrategy(),
+                SpockCompletionStrategy(),
+                GroovyCompletionStrategy(),
+            )
+            GroovyMode.AUTO -> listOf(
+                memberAccessStrategy,
+                JenkinsCompletionStrategy(),
+                SpockCompletionStrategy(),
+                GroovyCompletionStrategy(),
+            )
+        }
     }
 
     private fun buildJenkinsBlockContext(ctx: CompletionContext, isJenkinsFile: Boolean): JenkinsBlockContext? {
@@ -353,40 +333,6 @@ object CompletionProvider {
         }
 
         null -> false
-    }
-
-    /**
-     * Adds workspace members (fields, methods, properties) to completions.
-     *
-     * @param members List of member information from WorkspaceSymbolIndex
-     */
-    private fun CompletionsBuilder.addWorkspaceMembers(members: List<MemberInfo>) {
-        members.forEach { member ->
-            when (member.kind) {
-                SymbolKind.FIELD,
-                SymbolKind.PROPERTY,
-                -> {
-                    field(
-                        name = member.name,
-                        type = member.type?.let { formatType(it) } ?: "def",
-                        doc = "Field: ${member.name}",
-                    )
-                }
-
-                SymbolKind.METHOD -> {
-                    method(
-                        name = member.name,
-                        returnType = member.type?.let { formatType(it) } ?: "def",
-                        parameters = parseSignatureToParams(member.signature),
-                        doc = "Method: ${member.name}${member.signature ?: "()"}",
-                    )
-                }
-
-                else -> {
-                    /* Skip constructors and other kinds */
-                }
-            }
-        }
     }
 
     /**
@@ -485,254 +431,6 @@ object CompletionProvider {
         return result
     }
 
-    private fun CompletionsBuilder.handleMemberAccessContext(
-        completionContext: ContextType.MemberAccess,
-        ctx: CompletionContext,
-        metadata: MergedJenkinsMetadata?,
-    ): Boolean {
-        val rawType = completionContext.qualifierType.substringBefore('<')
-        val qualifierName = completionContext.qualifierName
-
-        // Strategy 0: Map literal keys (check first - most specific)
-        // Strategy 0: Map literal keys (check first - most specific)
-        if (rawType.endsWith("Map") && qualifierName != null) {
-            addMapLiteralKeyCompletions(qualifierName, ctx)
-            // Don't return early - also add standard map methods below
-        }
-
-        // Strategy 1: Jenkins global variables
-        val globalVar = metadata
-            ?.let { JenkinsCompletionProvider.findJenkinsGlobalVariable(qualifierName, rawType, it) }
-
-        if (globalVar != null && globalVar.properties.isNotEmpty()) {
-            logger.debug { "Adding Jenkins properties for ${qualifierName ?: rawType}" }
-            addJenkinsGlobalVariablePropertyCompletions(globalVar)
-            return true
-        }
-
-        // Strategy 2: Workspace members (cross-file classes)
-        ctx.workspaceSymbolIndex?.let { index ->
-            val resolvedFqns = resolveWorkspaceClassFqns(rawType, ctx)
-            val members = resolvedFqns
-                .flatMap { fqn -> index.getAllMembers(fqn.replace('.', '/'), includeInherited = true) }
-                .distinctBy { it.symbolId }
-            if (members.isNotEmpty()) {
-                logger.debug { "Adding workspace members for $rawType (found ${members.size} members)" }
-                addWorkspaceMembers(members)
-            }
-        }
-
-        // Strategy 3: GDK methods
-        logger.debug { "Adding GDK methods for $rawType" }
-        addGdkMethods(rawType, ctx.compilationService)
-
-        // Strategy 4: Classpath methods
-        logger.debug { "Adding Classpath methods for $rawType" }
-        addClasspathMethods(rawType, ctx.compilationService)
-
-        return false
-    }
-
-    /**
-     * Resolves workspace class candidates for a simple name using package/import
-     * context first, then falls back to a workspace-wide symbol scan.
-     *
-     * Order of candidates: same-package, explicit imports, star imports, workspace scan.
-     * Candidates from imports are not validated for existence; consumers must disambiguate.
-     */
-    private fun resolveWorkspaceClassFqns(rawType: String, ctx: CompletionContext): List<String> {
-        if (rawType.contains('.')) return listOf(rawType)
-
-        val candidates = linkedSetOf<String>()
-        val simpleName = rawType
-        val importInfo = ctx.moduleNode?.let { moduleNode ->
-            TextImportInfo(
-                packageName = moduleNode.packageName,
-                explicitImports = moduleNode.imports.mapNotNull { it.className }.toSet(),
-                starImports = moduleNode.starImports.mapNotNull { it.packageName }.toSet(),
-            )
-        } ?: parseTextImportInfo(ctx.content)
-
-        importInfo.packageName?.takeIf { it.isNotBlank() }?.let { candidates.add("$it.$simpleName") }
-        importInfo.explicitImports
-            .filter { it.substringAfterLast('.') == simpleName }
-            .forEach { candidates.add(it) }
-        importInfo.starImports.forEach { candidates.add("$it.$simpleName") }
-
-        findWorkspaceClassFqnsBySimpleName(simpleName, ctx.compilationService)
-            .forEach { candidates.add(it) }
-
-        return candidates.toList()
-    }
-
-    /**
-     * Scans workspace symbols for class matches by simple name.
-     * This is a fallback for completion and may be costly without caching.
-     */
-    private fun findWorkspaceClassFqnsBySimpleName(
-        simpleName: String,
-        compilationService: GroovyCompilationService,
-    ): List<String> {
-        // TODO(#861): Cache workspace symbol lookups for completion.
-        //   See: https://github.com/albertocavalcante/gvy/issues/861
-        val matches = linkedSetOf<String>()
-        compilationService.getAllSymbolStorages().forEach { (uri, index) ->
-            index.getSymbols(uri)
-                .filterIsInstance<Symbol.Class>()
-                .filter { it.name == simpleName }
-                .forEach { matches.add(it.fullyQualifiedName) }
-        }
-        return matches.toList()
-    }
-
-    /**
-     * Finds workspace class symbols by fully qualified name or simple name.
-     */
-    private fun findWorkspaceClassSymbols(
-        className: String,
-        compilationService: GroovyCompilationService,
-    ): List<Symbol.Class> {
-        val matches = mutableListOf<Symbol.Class>()
-        val isFqn = className.contains('.')
-        compilationService.getAllSymbolStorages().forEach { (uri, index) ->
-            index.getSymbols(uri)
-                .filterIsInstance<Symbol.Class>()
-                .filter { symbol ->
-                    if (isFqn) symbol.fullyQualifiedName == className else symbol.name == className
-                }
-                .forEach { matches.add(it) }
-        }
-        return matches
-    }
-
-    /**
-     * Best-effort, line-based import parsing for fallback scenarios.
-     * Supports simple multi-line imports but does not handle full Groovy syntax.
-     */
-    private fun parseTextImportInfo(content: String): TextImportInfo = TextImportParser.parse(content)
-
-    /**
-     * Finds the enclosing block for the cursor position.
-     * Returns the method body block if inside a method, or the script's statement block.
-     */
-    private fun findEnclosingBlock(ctx: CompletionContext): BlockStatement? {
-        val moduleNode = ctx.moduleNode ?: return null
-
-        // Check if cursor is inside any class method
-        for (classNode in moduleNode.classes) {
-            // Use findLast to prefer the innermost scope if a method has invalid end line (effectively infinite range)
-            val method = classNode.methods.findLast { method ->
-                method.lineNumber > 0 &&
-                    method.lineNumber <= ctx.line + 1 &&
-                    (method.lastLineNumber >= ctx.line + 1 || method.lastLineNumber <= 0)
-            }
-            if (method?.code is BlockStatement) {
-                return method.code as BlockStatement
-            }
-        }
-
-        // Fallback to script-level statement block
-        return moduleNode.statementBlock
-    }
-
-    /**
-     * Adds map literal key completions for a variable with map literal initializer.
-     */
-    private fun CompletionsBuilder.addMapLiteralKeyCompletions(
-        qualifierName: String,
-        ctx: CompletionContext,
-    ): Boolean {
-        val moduleNode = ctx.moduleNode ?: return false
-        val nativeContext = ctx.semanticResolver.semantics.getContext(moduleNode)
-            ?: return false
-
-        val block = findEnclosingBlock(ctx) ?: return false
-        val result = DeclarationWalker.walk(block, nativeContext, captureMapKeys = true)
-
-        // Use findLast to get the innermost scope declaration (handles variable shadowing)
-        val mapDecl = result.variables.findLast { it.name == qualifierName }
-        val mapKeys = mapDecl?.mapKeys
-
-        if (mapKeys.isNullOrEmpty()) return false
-
-        logger.debug { "Adding map literal keys for '$qualifierName': ${mapKeys.map { it.key }}" }
-
-        mapKeys.forEach { keyInfo ->
-            property(
-                name = keyInfo.key,
-                type = formatType(keyInfo.valueType),
-                doc = "Map key '${keyInfo.key}'",
-            )
-        }
-        return true
-    }
-
-    private fun CompletionsBuilder.addJenkinsGlobalVariablePropertyCompletions(globalVar: MergedGlobalVariable) {
-        with(JenkinsCompletionProvider) {
-            addJenkinsPropertyCompletions(globalVar)
-        }
-    }
-
-    private fun CompletionsBuilder.addSpockBlockLabelsIfApplicable(
-        ctx: CompletionContext,
-        completionContext: ContextType?,
-        isSpockSpec: Boolean,
-    ) {
-        if (!isSpockSpec) return
-        if (completionContext != null) return
-        if (!isLineIndentOnlyBeforeCursor(ctx.content, ctx.line, ctx.character)) return
-
-        // Deterministic token-based suppression (replaces heuristic isCursorInLikelyCommentOrString)
-        val offset = offsetAt(ctx.content, ctx.content.split('\n'), ctx.line, ctx.character)
-        if (ctx.tokenIndex?.isInCommentOrString(offset) == true) return
-
-        val labels = listOf(
-            "given:" to "Spock setup block",
-            "setup:" to "Spock setup block (alias of given)",
-            "when:" to "Spock action block",
-            "then:" to "Spock assertion block",
-            "expect:" to "Spock combined when/then block",
-            "where:" to "Spock data-driven block",
-            "cleanup:" to "Spock cleanup block",
-            "and:" to "Spock block continuation",
-        )
-
-        labels.forEach { (label, doc) ->
-            completion {
-                label(label)
-                kind(CompletionItemKind.Keyword)
-                detail("Spock block label")
-                documentation(doc)
-                insertText(label)
-                // Sort ahead of general keywords
-                sortText("0-$label")
-            }
-        }
-    }
-
-    private fun offsetAt(content: String, lines: List<String>, line: Int, character: Int): Int {
-        var offset = 0
-        for (i in 0 until line) {
-            offset += lines[i].length + 1 // + '\n'
-        }
-        return (offset + character).coerceIn(0, content.length)
-    }
-
-    private fun isLineIndentOnlyBeforeCursor(content: String, line: Int, character: Int): Boolean {
-        val lines = content.lines()
-        if (line !in lines.indices) return false
-
-        val target = lines[line]
-        val safeChar = character.coerceIn(0, target.length)
-        val prefix = target.substring(0, safeChar)
-
-        // NOTE: Heuristic / tradeoff:
-        // We treat "all whitespace before cursor" as a signal that the user is likely starting a Spock block label.
-        // This avoids spamming completions mid-expression, but can still misfire in multiline strings/comments.
-        // TODO: Use AST to detect LabeledStatement contexts and suppress inside strings/comments when feasible.
-        return prefix.all { it == ' ' || it == '\t' }
-    }
-
     internal data class ImportCompletionContext(
         val prefix: String,
         val isStatic: Boolean,
@@ -800,369 +498,20 @@ object CompletionProvider {
         ctx: ImportCompletionContext,
         compilationService: GroovyCompilationService,
     ) {
-        if (ctx.canSuggestStatic) {
-            keyword(
-                keyword = "static",
-                doc = "Static import",
-            )
-        }
-
-        val prefix = ctx.prefix.trim()
-        if (prefix.isBlank()) {
-            // TODO(#575): Provide curated suggestions for empty import prefixes.
-            //   See: https://github.com/albertocavalcante/gvy/issues/575
-            return
-        }
-
-        val classpathService = compilationService.classpathService
-
-        // Handle static member completion (e.g., "import static java.lang.Math.PI")
-        if (tryAddStaticMemberCompletions(ctx, compilationService)) {
-            return
-        }
-        // If className is not found, fall through to normal class completion
-        // (it's likely a package path, e.g., "import static org.junit.")
-
-        val candidates = if (prefix.contains('.')) {
-            classpathService.findClassesByQualifiedPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
-        } else {
-            classpathService.findClassesByPrefix(prefix, maxResults = MAX_IMPORT_COMPLETION_RESULTS)
-        }
-
-        val range = Range(
-            Position(ctx.line, ctx.replaceStartCharacter),
-            Position(ctx.line, ctx.replaceEndCharacter),
+        val strategy = ImportCompletionStrategy(compilationService)
+        strategy.addImportCompletions(
+            ImportCompletionStrategy.ImportContext(
+                prefix = ctx.prefix,
+                isStatic = ctx.isStatic,
+                canSuggestStatic = ctx.canSuggestStatic,
+                line = ctx.line,
+                replaceRange = Range(
+                    Position(ctx.line, ctx.replaceStartCharacter),
+                    Position(ctx.line, ctx.replaceEndCharacter),
+                ),
+            ),
+            this,
         )
-        candidates
-            .map { it.fullName }
-            .distinct()
-            .forEach { fullName ->
-                add(
-                    CompletionItem().apply {
-                        label = fullName
-                        kind = CompletionItemKind.Class
-                        detail = fullName
-                        insertText = fullName
-                        textEdit = Either.forLeft(TextEdit(range, fullName))
-                    },
-                )
-            }
-    }
-
-    /**
-     * Try to add static member completions for import statements.
-     *
-     * This helper extracts the logic for handling static imports like "import static java.lang.Math.PI".
-     *
-     * @return true if static member completions were added (indicating no need for further processing)
-     */
-    private fun CompletionsBuilder.tryAddStaticMemberCompletions(
-        ctx: ImportCompletionContext,
-        compilationService: GroovyCompilationService,
-    ): Boolean {
-        // Only if we can actually find the class on the classpath
-        val staticClassName = when {
-            ctx.isStaticMemberCompletion -> ctx.staticClassName
-            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringBeforeLast('.')
-            else -> null
-        }
-        val staticMemberPrefix = when {
-            ctx.isStaticMemberCompletion -> ""
-            ctx.isStatic && ctx.prefix.contains('.') -> ctx.prefix.substringAfterLast('.')
-            else -> null
-        }
-
-        if (staticClassName == null) {
-            return false
-        }
-
-        val workspaceFound = addWorkspaceStaticMemberCompletions(
-            className = staticClassName,
-            compilationService = compilationService,
-            ctx = ctx,
-            memberPrefix = staticMemberPrefix,
-        )
-
-        val classpathService = compilationService.classpathService
-        val classpathFound = classpathService.loadClass(staticClassName) != null
-        if (classpathFound) {
-            addStaticMethodCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
-            addStaticFieldCompletions(staticClassName, compilationService, ctx, staticMemberPrefix)
-        }
-
-        return workspaceFound || classpathFound
-    }
-
-    /**
-     * Adds static member completions for workspace-defined classes.
-     *
-     * @return true if any members were added.
-     */
-    private fun CompletionsBuilder.addWorkspaceStaticMemberCompletions(
-        className: String,
-        compilationService: GroovyCompilationService,
-        ctx: ImportCompletionContext,
-        memberPrefix: String?,
-    ): Boolean {
-        val classSymbols = findWorkspaceClassSymbols(className, compilationService)
-            .distinctBy { it.fullyQualifiedName.ifBlank { it.name } }
-        if (classSymbols.isEmpty()) return false
-
-        val range = Range(
-            Position(ctx.line, ctx.replaceStartCharacter),
-            Position(ctx.line, ctx.replaceEndCharacter),
-        )
-
-        var added = false
-        val staticFieldNames = mutableSetOf<String>()
-        classSymbols.forEach { classSymbol ->
-            val qualifier = classSymbol.fullyQualifiedName.ifBlank { className }
-
-            if (addStaticMethodCompletions(classSymbol, qualifier, memberPrefix, range)) {
-                added = true
-            }
-
-            if (addStaticFieldCompletions(classSymbol, qualifier, memberPrefix, range, staticFieldNames)) {
-                added = true
-            }
-
-            if (addStaticPropertyCompletions(classSymbol, qualifier, memberPrefix, range, staticFieldNames)) {
-                added = true
-            }
-        }
-        return added
-    }
-
-    /**
-     * Add static method completions for a workspace class symbol.
-     *
-     * @return true if any completions were added
-     */
-    private fun CompletionsBuilder.addStaticMethodCompletions(
-        classSymbol: Symbol.Class,
-        qualifier: String,
-        memberPrefix: String?,
-        range: Range,
-    ): Boolean {
-        var added = false
-        classSymbol.methods
-            .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
-            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
-            .forEach { method ->
-                val returnType = method.returnType?.nameWithoutPackage ?: "def"
-                val params = method.parameters.joinToString(", ") { it.type.nameWithoutPackage }
-                add(
-                    CompletionItem().apply {
-                        label = method.name
-                        kind = CompletionItemKind.Method
-                        detail = "$returnType ${method.name}($params)"
-                        insertText = method.name
-                        textEdit = Either.forLeft(TextEdit(range, "$qualifier.${method.name}"))
-                    },
-                )
-                added = true
-            }
-        return added
-    }
-
-    /**
-     * Add static field completions for a workspace class symbol.
-     *
-     * @return true if any completions were added
-     */
-    private fun CompletionsBuilder.addStaticFieldCompletions(
-        classSymbol: Symbol.Class,
-        qualifier: String,
-        memberPrefix: String?,
-        range: Range,
-        staticFieldNames: MutableSet<String>,
-    ): Boolean {
-        var added = false
-        classSymbol.fields
-            .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
-            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
-            .forEach { field ->
-                val type = field.type?.nameWithoutPackage ?: "def"
-                add(
-                    CompletionItem().apply {
-                        label = field.name
-                        kind = if (Modifier.isFinal(field.modifiers)) {
-                            CompletionItemKind.Constant
-                        } else {
-                            CompletionItemKind.Field
-                        }
-                        detail = "$type ${field.name}"
-                        insertText = field.name
-                        textEdit = Either.forLeft(TextEdit(range, "$qualifier.${field.name}"))
-                    },
-                )
-                staticFieldNames.add(field.name)
-                added = true
-            }
-        return added
-    }
-
-    /**
-     * Add static property completions for a workspace class symbol.
-     *
-     * @return true if any completions were added
-     */
-    private fun CompletionsBuilder.addStaticPropertyCompletions(
-        classSymbol: Symbol.Class,
-        qualifier: String,
-        memberPrefix: String?,
-        range: Range,
-        staticFieldNames: Set<String>,
-    ): Boolean {
-        var added = false
-        classSymbol.properties
-            .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
-            .filter { property -> property.name !in staticFieldNames }
-            .filter { property -> memberPrefix.isNullOrEmpty() || property.name.startsWith(memberPrefix) }
-            .forEach { property ->
-                val type = property.type?.nameWithoutPackage ?: "def"
-                add(
-                    CompletionItem().apply {
-                        label = property.name
-                        kind = CompletionItemKind.Property
-                        detail = "$type ${property.name}"
-                        insertText = property.name
-                        textEdit = Either.forLeft(TextEdit(range, "$qualifier.${property.name}"))
-                    },
-                )
-                added = true
-            }
-        return added
-    }
-
-    /**
-     * Adds completions for static methods when completing static imports (classpath version).
-     */
-    private fun CompletionsBuilder.addStaticMethodCompletions(
-        className: String,
-        compilationService: GroovyCompilationService,
-        ctx: ImportCompletionContext,
-        memberPrefix: String? = null,
-    ) {
-        val methods = compilationService.classpathService.getMethods(className)
-            .filter { it.isStatic && it.isPublic }
-            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
-
-        val range = Range(
-            Position(ctx.line, ctx.replaceStartCharacter),
-            Position(ctx.line, ctx.replaceEndCharacter),
-        )
-
-        methods.forEach { method ->
-            add(
-                CompletionItem().apply {
-                    label = method.name
-                    kind = CompletionItemKind.Method
-                    detail = "${method.returnType} ${method.name}(${method.parameters.joinToString(", ")})"
-                    insertText = method.name
-                    textEdit = Either.forLeft(TextEdit(range, "$className.${method.name}"))
-                },
-            )
-        }
-    }
-
-    /**
-     * Adds completions for static fields and constants when completing static imports.
-     */
-    private fun CompletionsBuilder.addStaticFieldCompletions(
-        className: String,
-        compilationService: GroovyCompilationService,
-        ctx: ImportCompletionContext,
-        memberPrefix: String? = null,
-    ) {
-        val fields = compilationService.classpathService.getFields(className)
-            .filter { it.isStatic && it.isPublic }
-            .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
-
-        val range = Range(
-            Position(ctx.line, ctx.replaceStartCharacter),
-            Position(ctx.line, ctx.replaceEndCharacter),
-        )
-
-        fields.forEach { field ->
-            add(
-                CompletionItem().apply {
-                    label = field.name
-                    kind = if (field.isFinal) CompletionItemKind.Constant else CompletionItemKind.Field
-                    detail = "${field.type} ${field.name}"
-                    textEdit = Either.forLeft(TextEdit(range, "$className.${field.name}"))
-                },
-            )
-        }
-    }
-
-    /**
-     * Add GDK (GroovyDevelopment Kit) method completions for a given type.
-     */
-    private fun CompletionsBuilder.addGdkMethods(className: String, compilationService: GroovyCompilationService) {
-        val resolvedTypes = resolveDataTypes(className, compilationService)
-        if (resolvedTypes.isEmpty()) {
-            // Try original name as fallback
-            addGdkMethodsForSingleType(className, compilationService, this)
-        } else {
-            resolvedTypes.forEach { type ->
-                addGdkMethodsForSingleType(type, compilationService, this)
-            }
-        }
-    }
-
-    private fun addGdkMethodsForSingleType(
-        className: String,
-        compilationService: GroovyCompilationService,
-        builder: CompletionsBuilder,
-    ) {
-        val gdkMethods = compilationService.gdkProvider.getMethodsForType(className)
-
-        gdkMethods.forEach { gdkMethod ->
-            builder.method(
-                name = gdkMethod.name,
-                returnType = gdkMethod.returnType,
-                parameters = gdkMethod.parameterTypes,
-                doc = gdkMethod.doc,
-            )
-        }
-    }
-
-    /**
-     * Add JDK/classpath method completions for a given type.
-     */
-    private fun CompletionsBuilder.addClasspathMethods(
-        className: String,
-        compilationService: GroovyCompilationService,
-    ) {
-        val resolvedTypes = resolveDataTypes(className, compilationService)
-        if (resolvedTypes.isEmpty()) {
-            addClasspathMethodsForSingleType(className, compilationService, this)
-        } else {
-            resolvedTypes.forEach { type ->
-                addClasspathMethodsForSingleType(type, compilationService, this)
-            }
-        }
-    }
-
-    private fun addClasspathMethodsForSingleType(
-        className: String,
-        compilationService: GroovyCompilationService,
-        builder: CompletionsBuilder,
-    ) {
-        val classpathMethods = compilationService.classpathService.getMethods(className)
-
-        classpathMethods.forEach { method ->
-            // Only add public instance methods
-            if (method.isPublic && !method.isStatic) {
-                builder.method(
-                    name = method.name,
-                    returnType = method.returnType,
-                    parameters = method.parameters,
-                    doc = method.doc,
-                )
-            }
-        }
     }
 
     /**

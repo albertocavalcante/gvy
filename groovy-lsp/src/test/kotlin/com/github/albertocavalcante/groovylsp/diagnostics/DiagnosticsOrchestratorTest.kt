@@ -76,12 +76,12 @@ class DiagnosticsOrchestratorTest {
         orchestrator.trigger(testUri, "first content")
 
         orchestrator.trigger(testUri, "second content")
-        val secondJobActive = orchestrator.getDiagnosticJob(testUri)?.isActive ?: false
 
         // Give jobs time to start
         delay(50)
 
         // Then: Second trigger should have cancelled the first job
+        val secondJobActive = orchestrator.getDiagnosticJob(testUri)?.isActive ?: false
         assertTrue(secondJobActive, "Second job should be active")
 
         // Cleanup
