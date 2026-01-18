@@ -845,11 +845,14 @@ object GroovySemanticTokenProvider {
 
         // Find the method name followed by '(' to avoid false matches
         // Regex.escape handles any special characters in the method name
+        // Start searching from declaration column to avoid matching earlier occurrences
+        // (e.g., method name appearing in a comment before the actual declaration)
         val namePattern = Regex("""\b${Regex.escape(methodName)}\s*\(""")
-        val match = namePattern.find(sourceLine) ?: return null
+        val declStartIndex = declCol - 1 // Convert 1-based to 0-based
+        val match = namePattern.find(sourceLine, declStartIndex) ?: return null
 
-        // Calculate offset: declCol is 1-based, match.range.first is 0-based
-        return match.range.first - (declCol - 1)
+        // Calculate offset: declStartIndex is 0-based, match.range.first is 0-based
+        return match.range.first - declStartIndex
     }
 
     /**

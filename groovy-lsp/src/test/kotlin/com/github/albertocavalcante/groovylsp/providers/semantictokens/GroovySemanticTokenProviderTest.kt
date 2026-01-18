@@ -1140,4 +1140,43 @@ class GroovySemanticTokenProviderTest {
         assertEquals(1, getMapToken.line, "getMap should be on line 1")
         assertEquals(25, getMapToken.startChar, "getMap should start at column 25")
     }
+
+    @Test
+    fun `should handle method name appearing in comment before declaration on same line`(): Unit = runBlocking {
+        // Regression test: If method name appears in a comment before the actual declaration,
+        // the regex should not match the comment occurrence.
+        // See: https://github.com/albertocavalcante/groovy-lsp/pull/.../files#r... (Copilot review)
+        val code = """
+            class MyClass {
+                /* getMap() doc */ Map<String, Integer> getMap() { [:] }
+            }
+        """.trimIndent()
+
+        val uri = tempWorkspace.resolve("MyClass.groovy").toUri()
+        compilationService.compile(uri, code)
+
+        val astModel = compilationService.getAstModel(uri)!!
+
+        val tokens = GroovySemanticTokenProvider.getSemanticTokens(astModel, uri, sourceText = code)
+
+        // Should have METHOD token for getMap
+        val methodTokens = tokens.filter {
+            it.tokenType == GroovySemanticTokenProvider.TokenTypes.METHOD
+        }
+
+        val getMapToken = assertNotNull(
+            methodTokens.find { it.length == "getMap".length },
+            "Should have METHOD token for getMap",
+        )
+
+        // Line 1: "    /* getMap() doc */ Map<String, Integer> getMap() { [:] }"
+        // The method declaration starts at "Map<String, Integer>" position
+        // 4 spaces + "/* getMap() doc */ " (19) + "Map<String, Integer> " (21) = 44
+        // "getMap" should be at column 44, NOT at column 7 (inside the comment)
+        assertEquals(1, getMapToken.line, "getMap should be on line 1")
+        assertTrue(
+            getMapToken.startChar >= 40,
+            "getMap should start at actual declaration column (>=40), not in comment. Got ${getMapToken.startChar}",
+        )
+    }
 }
