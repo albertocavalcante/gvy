@@ -1,0 +1,21 @@
+plugins {
+    kotlin("jvm")
+}
+
+dependencies {
+    // Logging
+    implementation(libs.kotlin.logging)
+    implementation(libs.slf4j.api)
+
+    // Testing
+    testImplementation(libs.junit.jupiter)
+    testImplementation(libs.assertj.core)
+    testImplementation(libs.mockk)
+    testRuntimeOnly(libs.junit.platform.launcher)
+
+    detektPlugins(libs.detekt.formatting)
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
