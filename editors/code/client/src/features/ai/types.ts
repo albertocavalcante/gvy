@@ -58,6 +58,19 @@ export interface ILSPToolService {
 }
 
 /**
+ * Parameter interfaces for AI tools
+ */
+export interface FindSymbolParams {
+  query: string;
+}
+
+export interface LocationParams {
+  uri: string;
+  line: number;
+  character: number;
+}
+
+/**
  * Definition of an AI Tool to be shared between LM and Command providers.
  */
 export interface ToolDefinition {
@@ -70,6 +83,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "groovy_find_symbol",
     command: "groovy.ai.find_symbol",
+    // Expected params: FindSymbolParams
     handler: async (service, params) => {
       const p = params as { query?: unknown };
       if (typeof p.query !== "string") {
@@ -83,6 +97,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "groovy_get_references",
     command: "groovy.ai.get_references",
+    // Expected params: LocationParams
     handler: async (service, params) => {
       const p = params as { uri?: unknown; line?: unknown; character?: unknown };
       if (
@@ -100,6 +115,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "groovy_get_definition",
     command: "groovy.ai.get_definition",
+    // Expected params: LocationParams
     handler: async (service, params) => {
       const p = params as { uri?: unknown; line?: unknown; character?: unknown };
       if (
