@@ -65,6 +65,9 @@ project(":bsp:bsp-core").projectDir = file("bsp/bsp-core")
 include("bsp:maven-bsp")
 project(":bsp:maven-bsp").projectDir = file("bsp/maven-bsp")
 
+// Schemas module - Wire protobuf definitions for type sharing
+include("schemas")
+
 // Reports modules - shared utilities for report parsing
 include("reports:api")
 project(":reports:api").projectDir = file("reports/api")

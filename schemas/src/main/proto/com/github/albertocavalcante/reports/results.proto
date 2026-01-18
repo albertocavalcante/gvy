@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package com.github.albertocavalcante.reports.results;
+
+option java_multiple_files = true;
+option java_package = "com.github.albertocavalcante.schemas.results";
+
+enum TestResultStatus {
+  TEST_RESULT_STATUS_UNSPECIFIED = 0;
+  SUCCESS = 1;
+  FAILURE = 2;
+  SKIPPED = 3;
+  ERROR = 4;
+}
+
+message TestResultItem {
+  string test_id = 1;
+  string name = 2;
+  TestResultStatus status = 3;
+  int64 duration_ms = 4;
+  optional string output = 5;
+  optional string failure_message = 6;
+  optional string stack_trace = 7;
+  optional string class_name = 8;
+}
+
+message TestResultSummary {
+  int32 total = 1;
+  int32 passed = 2;
+  int32 failed = 3;
+  int32 skipped = 4;
+  int32 errors = 5;
+  int64 duration_ms = 6;
+}
+
+message TestResultsResponse {
+  repeated TestResultItem results = 1;
+  TestResultSummary summary = 2;
+}

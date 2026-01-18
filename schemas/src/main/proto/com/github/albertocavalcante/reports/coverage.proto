@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package com.github.albertocavalcante.reports.coverage;
+
+option java_multiple_files = true;
+option java_package = "com.github.albertocavalcante.schemas.coverage";
+
+message BranchInfo {
+  int32 covered = 1;
+  int32 total = 2;
+}
+
+message LineCoverage {
+  int32 line = 1;
+  bool covered = 2;
+  optional int32 hit_count = 3;
+  optional BranchInfo branch_info = 4;
+}
+
+message FileCoverageSummary {
+  int32 lines_covered = 1;
+  int32 lines_total = 2;
+  int32 branches_covered = 3;
+  int32 branches_total = 4;
+}
+
+message FileCoverageData {
+  string uri = 1;
+  repeated LineCoverage lines = 2;
+  FileCoverageSummary summary = 3;
+}
+
+message CoverageSummary {
+  double line_coverage_percent = 1;
+  double branch_coverage_percent = 2;
+  int32 lines_covered = 3;
+  int32 lines_total = 4;
+  int32 branches_covered = 5;
+  int32 branches_total = 6;
+}
+
+message CoverageResponse {
+  repeated FileCoverageData files = 1;
+  CoverageSummary summary = 2;
+}
