@@ -11,6 +11,10 @@ interface TestCodeLensProviderType {
   new (testService: unknown): { provideCodeLenses: (document: unknown) => Promise<CodeLensType[]> };
 }
 
+type ProxyquireNoCallThru = {
+  noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType };
+};
+
 describe("TestCodeLensProvider", () => {
   let TestCodeLensProvider: TestCodeLensProviderType;
   let provider: { provideCodeLenses: (document: unknown) => Promise<CodeLensType[]> };
@@ -87,7 +91,7 @@ describe("TestCodeLensProvider", () => {
     };
 
     // Use proxyquire to inject mocks
-    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
+    const module = (proxyquire as ProxyquireNoCallThru).noCallThru()(
       "../../../../src/features/testing/TestCodeLensProvider",
       {
         vscode: vscodeMock,
@@ -245,10 +249,20 @@ describe("TestCodeLensProvider", () => {
       assert.ok(runLens, "Should have $(play) Run CodeLens");
       assert.ok(debugLens, "Should have $(debug) Debug CodeLens");
 
-      assert.ok(runLens.command, "Run lens should have command");
-      assert.ok(debugLens.command, "Debug lens should have command");
-      assert.strictEqual(runLens.command.command, "groovy.test.run");
-      assert.strictEqual(debugLens.command.command, "groovy.test.debug");
+      assert.ok(
+        runLens && runLens.command,
+        "Should have $(play) Run CodeLens with command",
+      );
+      assert.ok(
+        debugLens && debugLens.command,
+        "Should have $(debug) Debug CodeLens with command",
+      );
+
+      const runCommand = runLens.command!;
+      const debugCommand = debugLens.command!;
+
+      assert.strictEqual(runCommand.command, "groovy.test.run");
+      assert.strictEqual(debugCommand.command, "groovy.test.debug");
     });
 
     it("should pass correct arguments to test commands", async () => {
@@ -272,13 +286,15 @@ describe("TestCodeLensProvider", () => {
       assert.ok(runLens, "Should have $(play) Run CodeLens");
       assert.ok(runLens.command, "Run lens should have command");
       assert.ok(runLens.command.arguments, "Command should have arguments");
+
+      const runCommand = runLens.command!;
       assert.strictEqual(
-        runLens.command.arguments.length,
+        runCommand.arguments!.length,
         1,
         "Should have one argument object",
       );
 
-      const args = runLens.command.arguments[0] as { uri?: string; suite?: string; test?: string };
+      const args = runCommand.arguments![0] as { uri?: string; suite?: string; test?: string };
       assert.ok(args.uri, "Arguments should include uri");
       assert.ok(args.suite, "Arguments should include suite (class name)");
       assert.ok(args.test, "Arguments should include test (method name)");
@@ -315,7 +331,8 @@ describe("TestCodeLensProvider", () => {
       assert.ok(runLens.command, "Run lens should have command");
       assert.ok(runLens.command.arguments, "Command should have arguments");
 
-      const args = runLens.command.arguments[0] as { test?: string };
+      const runCommand = runLens.command!;
+      const args = runCommand.arguments![0] as { test?: string };
       assert.strictEqual(args.test, "test with single quotes");
     });
 
