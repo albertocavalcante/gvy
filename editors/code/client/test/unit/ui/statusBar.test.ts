@@ -645,6 +645,7 @@ describe("StatusBar", () => {
       });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       assert.include(tooltip.value, "Downloading dependencies");
     });
 
@@ -652,6 +653,7 @@ describe("StatusBar", () => {
       stateChangeHandler({ newState: mockLanguageClient.State.Running });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       assert.include(tooltip.value, "groovy.restartServer");
     });
 
@@ -659,6 +661,7 @@ describe("StatusBar", () => {
       stateChangeHandler({ newState: mockLanguageClient.State.Running });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       // New tooltip has Reload instead of check for updates inline
       assert.include(tooltip.value, "groovy.gradle.refresh");
     });
@@ -805,6 +808,7 @@ describe("StatusBar", () => {
       });
 
       const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
       assert.include(tooltip.value, "Indexing workspace files");
     });
 
