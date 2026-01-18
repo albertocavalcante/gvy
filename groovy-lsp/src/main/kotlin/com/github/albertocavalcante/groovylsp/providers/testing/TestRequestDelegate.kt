@@ -4,10 +4,10 @@ import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
-import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse
 import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
-import com.github.albertocavalcante.groovylsp.providers.coverage.parsers.JacocoXmlParser
 import com.github.albertocavalcante.groovylsp.providers.testing.parsers.SurefireXmlParser
+import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
+import com.github.albertocavalcante.reports.coverage.parsers.JacocoParser
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -175,7 +175,7 @@ class TestRequestDelegate(
         return coroutineScope.future {
             withContext(ioDispatcher) {
                 val workspaceRoot = resolveWorkspaceRoot(params.workspaceUri)
-                JacocoXmlParser.parseWorkspace(workspaceRoot)
+                JacocoParser.parseWorkspace(workspaceRoot)
             }
         }
     }

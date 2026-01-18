@@ -68,3 +68,5 @@ project(":bsp:maven-bsp").projectDir = file("bsp/maven-bsp")
 // Reports modules - shared utilities for report parsing
 include("reports:api")
 project(":reports:api").projectDir = file("reports/api")
+include("reports:coverage")
+project(":reports:coverage").projectDir = file("reports/coverage")

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<report name="test-project">
+  <sessioninfo id="session1" start="1234567890" dump="1234567999"/>
+  <package name="com/example">
+    <sourcefile name="MyClass.groovy">
+      <line nr="10" mi="0" ci="3" mb="0" cb="0"/>
+      <line nr="11" mi="5" ci="0" mb="0" cb="0"/>
+      <line nr="12" mi="0" ci="2" mb="2" cb="1"/>
+      <line nr="13" mi="0" ci="1" mb="0" cb="2"/>
+    </sourcefile>
+    <sourcefile name="AnotherClass.groovy">
+      <line nr="5" mi="0" ci="10" mb="0" cb="0"/>
+      <line nr="6" mi="0" ci="5" mb="0" cb="0"/>
+    </sourcefile>
+  </package>
+  <package name="com/example/sub">
+    <sourcefile name="SubClass.groovy">
+      <line nr="1" mi="0" ci="1" mb="0" cb="0"/>
+    </sourcefile>
+  </package>
+</report>

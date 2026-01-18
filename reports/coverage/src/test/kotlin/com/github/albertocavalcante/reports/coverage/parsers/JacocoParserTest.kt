@@ -1,5 +1,7 @@
-package com.github.albertocavalcante.groovylsp.providers.coverage.parsers
+package com.github.albertocavalcante.reports.coverage.parsers
 
+import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
+import com.github.albertocavalcante.reports.coverage.model.CoverageSummary
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -9,7 +11,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.nio.file.Path
 
-class JacocoXmlParserTest {
+class JacocoParserTest {
 
     @Test
     fun `should parse valid JaCoCo XML report`() {
@@ -19,7 +21,7 @@ class JacocoXmlParserTest {
         )
         val workspaceRoot = xmlFile.parentFile.parentFile.parentFile // resources dir parent
 
-        val results = JacocoXmlParser.parseReportFile(xmlFile, workspaceRoot)
+        val results = JacocoParser.parseReportFile(xmlFile, workspaceRoot)
 
         assertEquals(3, results.size)
 
@@ -74,10 +76,10 @@ class JacocoXmlParserTest {
         )
         val workspaceRoot = xmlFile.parentFile.parentFile.parentFile
 
-        val response = JacocoXmlParser.parseReportFile(xmlFile, workspaceRoot)
-        val coverage = com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse(
+        val response = JacocoParser.parseReportFile(xmlFile, workspaceRoot)
+        val coverage = CoverageResponse(
             files = response,
-            summary = com.github.albertocavalcante.groovylsp.providers.coverage.CoverageSummary(
+            summary = CoverageSummary(
                 lineCoveragePercent = 0.0,
                 branchCoveragePercent = 0.0,
                 linesCovered = response.sumOf { it.summary.linesCovered },
@@ -98,7 +100,7 @@ class JacocoXmlParserTest {
 
     @Test
     fun `should handle empty JaCoCo report`(@TempDir tempDir: Path) {
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(0, response.files.size)
         assertEquals(0.0, response.summary.lineCoveragePercent)
@@ -123,7 +125,7 @@ class JacocoXmlParserTest {
         File(gradleDir, "jacocoTestReport.xml").writeText(testXmlContent)
         File(mavenDir, "jacoco.xml").writeText(testXmlContent)
 
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         // Should find and merge coverage from both locations
         assertEquals(3, response.files.size)
@@ -152,7 +154,7 @@ class JacocoXmlParserTest {
             ?.readText() ?: error("Test resource not found")
         File(jacocoDir, "jacoco.xml").writeText(testXmlContent)
 
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(3, response.files.size)
     }
@@ -173,7 +175,7 @@ class JacocoXmlParserTest {
             ?.readText() ?: error("Test resource not found")
         File(jacocoDir, "jacocoTestReport.xml").writeText(testXmlContent)
 
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(3, response.files.size)
     }
@@ -187,7 +189,7 @@ class JacocoXmlParserTest {
         File(jacocoDir, "jacoco.xml").writeText("<invalid>xml")
 
         // Should not throw, just log warning and continue
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(0, response.files.size)
     }
@@ -245,7 +247,7 @@ class JacocoXmlParserTest {
         File(dir1, "jacoco.xml").writeText(xml1)
         File(dir2, "jacoco.xml").writeText(xml2)
 
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         // Should have one file with merged coverage
         assertEquals(1, response.files.size)
@@ -271,7 +273,7 @@ class JacocoXmlParserTest {
             ?.readText() ?: error("Test resource not found")
         File(jacocoDir, "jacoco.xml").writeText(testXmlContent)
 
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         // 6 covered out of 7 total lines = 85.71%
         assertEquals(85.71, response.summary.lineCoveragePercent, 0.01)
@@ -297,7 +299,7 @@ class JacocoXmlParserTest {
 
         File(jacocoDir, "jacoco.xml").writeText(xmlContent)
 
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         // Should skip files with no lines
         assertEquals(0, response.files.size)
@@ -326,7 +328,7 @@ class JacocoXmlParserTest {
 
         File(jacocoDir, "jacoco.xml").writeText(xmlContent)
 
-        val response = JacocoXmlParser.parseWorkspace(tempDir.toFile())
+        val response = JacocoParser.parseWorkspace(tempDir.toFile())
 
         assertEquals(1, response.files.size)
         val file = response.files[0]

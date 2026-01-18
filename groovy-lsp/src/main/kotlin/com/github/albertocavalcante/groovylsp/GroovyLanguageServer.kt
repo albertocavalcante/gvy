@@ -16,7 +16,6 @@ import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.groovylsp.providers.ast.AstParams
 import com.github.albertocavalcante.groovylsp.providers.ast.AstRequestHandler
 import com.github.albertocavalcante.groovylsp.providers.ast.AstResult
-import com.github.albertocavalcante.groovylsp.providers.coverage.CoverageResponse
 import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
 import com.github.albertocavalcante.groovylsp.providers.dependencies.DependenciesResult
 import com.github.albertocavalcante.groovylsp.providers.dependencies.DependencyRequestHandler
@@ -44,6 +43,7 @@ import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
+import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import io.github.oshai.kotlinlogging.KotlinLogging
