@@ -3,9 +3,11 @@ package com.github.albertocavalcante.groovylsp.services
 import com.github.albertocavalcante.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
+import com.github.albertocavalcante.groovylsp.compilation.CompilationEnsurer
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.groovylsp.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.groovylsp.documentation.DocumentationProvider
 import com.github.albertocavalcante.groovylsp.providers.SignatureHelpProvider
 import com.github.albertocavalcante.groovylsp.providers.callhierarchy.CallHierarchyProvider
@@ -27,6 +29,7 @@ import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProv
 import com.github.albertocavalcante.groovylsp.providers.rename.RenameProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.GroovySemanticTokenProvider
 import com.github.albertocavalcante.groovylsp.providers.semantictokens.JenkinsSemanticTokenProvider
+import com.github.albertocavalcante.groovylsp.providers.semantictokens.SemanticTokensEncoder
 import com.github.albertocavalcante.groovylsp.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.groovylsp.providers.symbols.toSymbolInformation
 import com.github.albertocavalcante.groovylsp.providers.typedefinition.TypeDefinitionProvider
@@ -38,16 +41,9 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
-import kotlinx.coroutines.joinAll
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import org.codehaus.groovy.ast.ModuleNode
-import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -101,11 +97,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
-import java.io.IOException
 import java.net.URI
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.coroutines.coroutineContext
 
 data class GroovyTextDocumentServiceOptions(
     val serverConfiguration: ServerConfiguration = ServerConfiguration(),
@@ -138,46 +131,21 @@ class GroovyTextDocumentService(
         logger.info { "Definition link support set to $supported" }
     }
 
-    companion object {
-        /**
-         * Maximum iterations for ensureAllOpenDocumentsCompiled loop.
-         *
-         * This is a defensive bound to avoid looping indefinitely when compilation
-         * continuously fails or new files keep being added. Note that the overall
-         * duration of ensureAllOpenDocumentsCompiled is still capped by
-         * [MAX_COMPILATION_TIMEOUT_MS], so increasing this value does not allow the
-         * method to run longer than that hard timeout.
-         */
-        private const val MAX_COMPILATION_ITERATIONS = 10
-
-        /**
-         * Maximum time (milliseconds) to spend in ensureAllOpenDocumentsCompiled.
-         *
-         * This value acts as the hard upper bound for the operation. Even though
-         * the combination of [MAX_COMPILATION_ITERATIONS] and [MAX_JOB_WAIT_TIMEOUT_MS]
-         * could theoretically suggest a longer duration (e.g. 10 iterations × 10 seconds
-         * per joinAll = 100+ seconds), the use of this timeout (typically via
-         * withTimeoutOrNull) ensures the actual worst-case latency is limited to
-         * approximately this value (30 seconds).
-         */
-        private const val MAX_COMPILATION_TIMEOUT_MS = 30_000L
-
-        /**
-         * Maximum time (milliseconds) to wait for diagnostic jobs to complete.
-         *
-         * This bounds each joinAll() call so that slow or stuck jobs do not block
-         * indefinitely. The overall operation is still additionally constrained by
-         * [MAX_COMPILATION_TIMEOUT_MS], which defines the true worst-case latency.
-         */
-        private const val MAX_JOB_WAIT_TIMEOUT_MS = 10_000L
-    }
-
-    // Track active diagnostic jobs per URI to cancel stale ones (debouncing/throttling)
-    private val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
     // Initialize diagnostics service with provider-based architecture
     private val diagnosticsService by lazy {
         createDiagnosticsService()
+    }
+
+    // Diagnostics orchestrator - manages diagnostic jobs and publication
+    private val diagnosticsOrchestrator by lazy {
+        DiagnosticsOrchestrator(
+            coroutineScope = coroutineScope,
+            compilationService = compilationService,
+            diagnosticsService = diagnosticsService,
+            documentProvider = documentProvider,
+            serverConfiguration = serverConfiguration,
+            client = client,
+        )
     }
 
     /**
@@ -302,19 +270,6 @@ class GroovyTextDocumentService(
     }
 
     /**
-     * Helper function to publish diagnostics with better readability
-     */
-    private fun publishDiagnostics(uri: String, diagnostics: List<Diagnostic>) {
-        logger.debug { "Publishing ${diagnostics.size} diagnostics for $uri" }
-        client()?.publishDiagnostics(
-            PublishDiagnosticsParams().apply {
-                this.uri = uri
-                this.diagnostics = diagnostics
-            },
-        )
-    }
-
-    /**
      * Ensures all open documents are compiled and indexed.
      * Critical for cross-file features (definition, references, implementation) that depend on
      * the symbol index containing all relevant files.
@@ -330,198 +285,11 @@ class GroovyTextDocumentService(
      * - Exception handling: Catches compilation failures to avoid retry loops
      */
     private suspend fun ensureAllOpenDocumentsCompiled() {
-        CompilationEnsurer().ensureAllCompiled()
-    }
-
-    /**
-     * Helper class that encapsulates the logic for ensuring all open documents are compiled.
-     * Extracted from ensureAllOpenDocumentsCompiled to reduce complexity.
-     *
-     * This class manages the compilation process with multiple safeguards to prevent
-     * infinite loops and timeouts.
-     */
-    private inner class CompilationEnsurer(
-        private val maxTimeMs: Long = MAX_COMPILATION_TIMEOUT_MS,
-        private val maxIterations: Int = MAX_COMPILATION_ITERATIONS,
-    ) {
-        private val failedUris = mutableSetOf<URI>()
-
-        suspend fun ensureAllCompiled() {
-            val startTime = System.currentTimeMillis()
-
-            // Initial check for pending jobs and compilation status
-            if (!hasWorkToDo()) return
-
-            var iterations = 0
-            var compiledAny = true
-
-            while (compiledAny) {
-                if (!checkSafeguards(iterations++, System.currentTimeMillis() - startTime)) {
-                    return
-                }
-
-                // Wait for pending diagnostic jobs
-                val currentJob = currentCoroutineContext()[Job]
-                val pendingJobs = diagnosticJobs.values.toList().filter { it != currentJob }
-                if (pendingJobs.isNotEmpty()) {
-                    waitForPendingJobs(pendingJobs, iterations, System.currentTimeMillis() - startTime)
-                }
-
-                // Compile unindexed URIs
-                compiledAny = compileUnindexedUris(startTime, iterations) ?: return
-            }
-
-            val completionElapsedMs = System.currentTimeMillis() - startTime
-            logger.debug {
-                "ensureAllOpenDocumentsCompiled: Completed after $iterations iterations " +
-                    "(${completionElapsedMs}ms)"
-            }
-        }
-
-        private suspend fun hasWorkToDo(): Boolean {
-            // PERFORMANCE OPTIMIZATION: Check if all documents are already compiled
-            // This avoids unnecessary blocking when all documents are already compiled
-            val currentJob = currentCoroutineContext()[Job]
-            val hasPendingJobs = diagnosticJobs.values.any { it != currentJob && it.isActive }
-
-            // Check if all open documents are already compiled
-            val allDocumentsCompiled = try {
-                documentProvider.getAllUris().all { uri ->
-                    compilationService.getSymbolStorage(uri) != null
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.debug(e) { "ensureAllOpenDocumentsCompiled: Error checking compilation status" }
-                false
-            }
-
-            if (!hasPendingJobs && allDocumentsCompiled) {
-                logger.debug { "ensureAllOpenDocumentsCompiled: No pending jobs and all documents compiled, skipping" }
-                return false
-            }
-
-            return true
-        }
-
-        private suspend fun checkSafeguards(iterations: Int, elapsedMs: Long): Boolean {
-            // SAFEGUARD 1: Check coroutine cancellation
-            currentCoroutineContext().ensureActive()
-
-            // SAFEGUARD 2: Check iteration limit to prevent infinite loops
-            if (iterations >= maxIterations) {
-                logger.warn {
-                    "ensureAllOpenDocumentsCompiled: Reached max iterations ($maxIterations). " +
-                        "Some documents may not be fully compiled. This may indicate a compilation loop or " +
-                        "excessive file churn."
-                }
-                return false
-            }
-
-            // SAFEGUARD 3: Check overall timeout to prevent indefinite blocking
-            if (elapsedMs > maxTimeMs) {
-                logger.warn {
-                    "ensureAllOpenDocumentsCompiled: Timeout after ${elapsedMs}ms " +
-                        "(limit: ${maxTimeMs}ms). " +
-                        "Some documents may not be fully compiled."
-                }
-                return false
-            }
-
-            return true
-        }
-
-        private suspend fun waitForPendingJobs(pendingJobs: List<Job>, iterations: Int, elapsedMs: Long) {
-            logger.debug {
-                "ensureAllOpenDocumentsCompiled: Iteration $iterations - " +
-                    "Waiting for ${pendingJobs.size} pending compilation jobs " +
-                    "(elapsed: ${elapsedMs}ms)"
-            }
-
-            // SAFEGUARD 4: Timeout on joinAll to prevent indefinite blocking
-            // Cap wait time by remaining overall timeout to avoid overshooting the hard limit
-            val remainingMs = (maxTimeMs - elapsedMs).coerceAtLeast(0)
-            val waitMs = minOf(MAX_JOB_WAIT_TIMEOUT_MS, remainingMs)
-            val joinResult = if (waitMs > 0) {
-                withTimeoutOrNull(waitMs) {
-                    pendingJobs.joinAll()
-                }
-            } else {
-                null
-            }
-
-            if (joinResult == null) {
-                logger.warn {
-                    "ensureAllOpenDocumentsCompiled: Timeout waiting for diagnostic jobs " +
-                        "after ${waitMs}ms. Proceeding anyway."
-                }
-            }
-        }
-
-        @Suppress("NestedBlockDepth") // Complexity inherited from original implementation
-        private suspend fun compileUnindexedUris(startTime: Long, iterations: Int): Boolean? {
-            // Take a snapshot to avoid concurrent modification issues
-            val urisSnapshot = try {
-                documentProvider.getAllUris().toList()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.error(e) { "ensureAllOpenDocumentsCompiled: Error getting URIs snapshot" }
-                return false
-            }
-
-            logger.debug {
-                "ensureAllOpenDocumentsCompiled: Iteration $iterations - Processing ${urisSnapshot.size} open documents"
-            }
-
-            var compiledAny = false
-
-            for (uri in urisSnapshot) {
-                // SAFEGUARD 5: Check timeout inside loop to prevent long-running iterations
-                val elapsed = System.currentTimeMillis() - startTime
-                if (elapsed > maxTimeMs) {
-                    logger.warn {
-                        "ensureAllOpenDocumentsCompiled: Timeout during compilation loop after ${elapsed}ms. " +
-                            "Stopping mid-iteration."
-                    }
-                    return null // Signal early termination due to timeout
-                }
-
-                // SAFEGUARD 6: Check cancellation in loop
-                currentCoroutineContext().ensureActive()
-
-                // Skip URIs that failed in previous iterations
-                if (uri in failedUris) {
-                    continue
-                }
-
-                if (compilationService.getSymbolStorage(uri) == null) {
-                    val content = documentProvider.get(uri)
-                    if (content != null) {
-                        logger.debug { "ensureAllOpenDocumentsCompiled: Compiling unindexed document: $uri" }
-
-                        // SAFEGUARD 7: Catch exceptions to prevent retry loops
-                        try {
-                            compilationService.compile(uri, content)
-                            compiledAny = true
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            // Log but continue - don't let one bad file break everything
-                            // Track failed URIs to skip them in subsequent iterations
-                            logger.error(e) {
-                                "ensureAllOpenDocumentsCompiled: Failed to compile $uri. " +
-                                    "Skipping in subsequent iterations."
-                            }
-                            failedUris.add(uri)
-                            // Do not set compiledAny here; we only mark successful compilations
-                        }
-                    }
-                }
-            }
-
-            return compiledAny
-        }
+        CompilationEnsurer(
+            documentProvider = documentProvider,
+            compilationService = compilationService,
+            diagnosticJobs = diagnosticsOrchestrator.getDiagnosticJobsMap(),
+        ).ensureAllCompiled()
     }
 
     private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
@@ -545,7 +313,7 @@ class GroovyTextDocumentService(
         val content = params.textDocument.text
         documentProvider.put(uri, content)
 
-        triggerDiagnostics(uri, content)
+        diagnosticsOrchestrator.trigger(uri, content)
     }
 
     override fun didChange(params: DidChangeTextDocumentParams) {
@@ -560,7 +328,7 @@ class GroovyTextDocumentService(
             // Invalidate documentation cache for this document
             DocumentationProvider.invalidateDocument(uri)
 
-            triggerDiagnostics(uri, newContent)
+            diagnosticsOrchestrator.trigger(uri, newContent)
         }
     }
 
@@ -569,73 +337,21 @@ class GroovyTextDocumentService(
         val uri = URI.create(params.textDocument.uri)
         documentProvider.remove(uri)
 
-        // Cancel and remove any running diagnostics for this file atomically
-        diagnosticJobs.remove(uri)?.cancel()
+        // Cancel and remove any running diagnostics for this file
+        diagnosticsOrchestrator.cancelAndRemove(uri)
 
         // Clear diagnostics for closed document
-        publishDiagnostics(params.textDocument.uri, emptyList())
+        client()?.publishDiagnostics(
+            PublishDiagnosticsParams().apply {
+                this.uri = params.textDocument.uri
+                this.diagnostics = emptyList()
+            },
+        )
     }
 
     override fun didSave(params: DidSaveTextDocumentParams) {
         logger.debug { "Document saved: ${params.textDocument.uri}" }
         // Could trigger additional processing if needed
-    }
-
-    @Suppress("TooGenericExceptionCaught")
-    private fun triggerDiagnostics(uri: URI, content: String) {
-        // Launch a new diagnostic job
-        val job = coroutineScope.launch {
-            try {
-                runCatching {
-                    // Use compileAsync for proper coordination
-                    val result = compilationService.compileAsync(this, uri, content).await()
-
-                    ensureActive() // Ensure job wasn't cancelled before publishing
-
-                    val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
-                        "parser",
-                        enabledByDefault = true,
-                    )
-                    val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
-
-                    // Publish compilation diagnostics first to keep UX responsive.
-                    // NOTE: Tradeoff (See #564):
-                    // This can result in two diagnostics publications (compile first, then provider merge),
-                    // but avoids blocking syntax feedback on slow lint initialization.
-                    publishDiagnostics(uri.toString(), parserDiagnostics)
-
-                    val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-                    val allDiagnostics = parserDiagnostics + extraDiagnostics
-
-                    ensureActive()
-                    if (extraDiagnostics.isNotEmpty()) {
-                        publishDiagnostics(uri.toString(), allDiagnostics)
-                    }
-
-                    logger.debug { "Published ${allDiagnostics.size} diagnostics for $uri" }
-                }.onFailure { e ->
-                    when (e) {
-                        is CompilationFailedException -> logger.error(e) { "Compilation failed for: $uri" }
-                        is IllegalArgumentException -> logger.error(e) { "Invalid arguments for: $uri" }
-                        is IOException -> logger.error(e) { "I/O error for: $uri" }
-                        is CancellationException -> {
-                            logger.debug { "Diagnostics job cancelled for: $uri" }
-                            throw e
-                        }
-                        else -> logger.error(e) { "Unexpected error during diagnostics for: $uri" }
-                    }
-                }
-            } finally {
-                // Remove job from map if it's the current one
-                diagnosticJobs.remove(uri, coroutineContext[Job])
-            }
-        }
-
-        // Atomically cancel existing job and register new one
-        diagnosticJobs.compute(uri) { _, existingJob ->
-            existingJob?.cancel()
-            job
-        }
     }
 
     /**
@@ -654,12 +370,7 @@ class GroovyTextDocumentService(
     }
 
     fun refreshOpenDocuments() {
-        coroutineScope.launch {
-            documentProvider.snapshot().forEach { (uri, content) ->
-                triggerDiagnostics(uri, content)
-                logger.info { "Triggered diagnostics refresh for $uri after dependency update" }
-            }
-        }
+        diagnosticsOrchestrator.refreshAll()
     }
 
     override fun completion(params: CompletionParams): CompletableFuture<Either<List<CompletionItem>, CompletionList>> =
@@ -1100,8 +811,8 @@ class GroovyTextDocumentService(
                     emptyList()
                 }
 
-                // Combine all tokens and encode
-                val allTokens = combineTokens(groovyTokens, jenkinsTokens)
+                // Combine all tokens and encode using SemanticTokensEncoder
+                val allTokens = SemanticTokensEncoder.combine(groovyTokens, jenkinsTokens)
                     .sortedWith(
                         compareBy<JenkinsSemanticTokenProvider.SemanticToken> { it.line }
                             .thenBy { it.startChar }
@@ -1109,7 +820,7 @@ class GroovyTextDocumentService(
                             .thenBy { it.tokenType }
                             .thenBy { it.tokenModifiers },
                     )
-                val encodedData = encodeSemanticTokens(allTokens)
+                val encodedData = SemanticTokensEncoder.encode(allTokens)
 
                 logger.debug { "Returning ${allTokens.size} semantic tokens (${encodedData.size} integers)" }
                 SemanticTokens(encodedData)
@@ -1118,91 +829,6 @@ class GroovyTextDocumentService(
                 SemanticTokens(emptyList())
             }
         }
-
-    /**
-     * Combine Groovy and Jenkins semantic tokens into a single unified list.
-     *
-     * Both token types use the same data structure, so we convert them to a common format
-     * and merge them together for encoding.
-     */
-    private fun combineTokens(
-        groovyTokens: List<GroovySemanticTokenProvider.SemanticToken>,
-        jenkinsTokens: List<JenkinsSemanticTokenProvider.SemanticToken>,
-    ): List<JenkinsSemanticTokenProvider.SemanticToken> {
-        // Convert GroovySemanticTokenProvider tokens to JenkinsSemanticTokenProvider tokens
-        val convertedGroovyTokens = groovyTokens.map { token ->
-            JenkinsSemanticTokenProvider.SemanticToken(
-                line = token.line,
-                startChar = token.startChar,
-                length = token.length,
-                tokenType = token.tokenType,
-                tokenModifiers = token.tokenModifiers,
-            )
-        }
-
-        return convertedGroovyTokens + jenkinsTokens
-    }
-
-    /**
-     * Encode semantic tokens using LSP relative encoding format.
-     *
-     * LSP semantic tokens are encoded as a flat integer array where each token is
-     * represented by 5 consecutive integers: [deltaLine, deltaStart, length, tokenType, modifiers]
-     *
-     * Encoding rules:
-     * - deltaLine: Line offset from previous token (0 if same line)
-     * - deltaStart: If deltaLine == 0, offset from previous token's start
-     *               If deltaLine > 0, absolute column position (reset)
-     * - length: Token length in characters
-     * - tokenType: Index into SemanticTokensLegend.tokenTypes
-     * - modifiers: Bitfield of indices into SemanticTokensLegend.tokenModifiers
-     *
-     * NOTE: Tokens MUST be sorted by line, then by startChar within each line.
-     *
-     * Example:
-     *   Input:  [Token(line=0, char=0, len=8), Token(line=0, char=10, len=5)]
-     *   Output: [0, 0, 8, type, 0,  0, 10, 5, type, 0]
-     *            ^--token 1-----^   ^--token 2-----^
-     */
-    private fun encodeSemanticTokens(tokens: List<JenkinsSemanticTokenProvider.SemanticToken>): List<Int> {
-        if (tokens.isEmpty()) {
-            return emptyList()
-        }
-
-        val encoded = mutableListOf<Int>()
-        var prevLine = 0
-        var prevChar = 0
-
-        // Sort tokens by line, then by character
-        val sortedTokens = tokens.sortedWith(compareBy({ it.line }, { it.startChar }))
-
-        sortedTokens.forEach { token ->
-            // Calculate delta line
-            val deltaLine = token.line - prevLine
-
-            // Calculate delta char (depends on whether we changed lines)
-            val deltaChar = if (deltaLine == 0) {
-                // Same line: relative to previous token
-                token.startChar - prevChar
-            } else {
-                // New line: absolute position (reset)
-                token.startChar
-            }
-
-            // Add encoded token (5 integers)
-            encoded.add(deltaLine)
-            encoded.add(deltaChar)
-            encoded.add(token.length)
-            encoded.add(token.tokenType)
-            encoded.add(token.tokenModifiers)
-
-            // Update tracking for next token
-            prevLine = token.line
-            prevChar = token.startChar
-        }
-
-        return encoded
-    }
 
     private suspend fun ensureSymbolStorage(uri: URI): SymbolIndex? =
         compilationService.getSymbolStorage(uri) ?: documentProvider.get(uri)?.let { content ->
@@ -1215,7 +841,7 @@ class GroovyTextDocumentService(
      * This is useful for testing to ensure compilation is done before making assertions.
      */
     suspend fun awaitDiagnostics(uri: URI) {
-        diagnosticJobs[uri]?.join()
+        diagnosticsOrchestrator.awaitDiagnostics(uri)
     }
 
     /**
@@ -1238,7 +864,7 @@ class GroovyTextDocumentService(
         documentProvider.getAllUris().forEach { uri ->
             val content = documentProvider.get(uri)
             if (content != null) {
-                triggerDiagnostics(uri, content)
+                diagnosticsOrchestrator.trigger(uri, content)
             }
         }
     }
