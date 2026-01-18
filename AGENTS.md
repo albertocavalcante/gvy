@@ -58,6 +58,7 @@ The git workflow rules apply to any branch, commit, or PR work.
 | Addressing PR review comments   | `.agent/workflows/review.md`              |
 | Implementing a GitHub issue     | `.agent/workflows/solve.md`               |
 | Creating issue for future work  | `.agent/workflows/defer.md`               |
+| Reviewing stale/old PRs         | `.agent/workflows/stale-pr.md`            |
 | GitHub API, GraphQL, `gh` CLI   | `.agent/workflows/github-cli.md`          |
 | GitHub Actions, CI failures     | `.agent/workflows/github-actions.md`      |
 | Merge/rebase conflicts          | `.agent/workflows/conflict-resolution.md` |
