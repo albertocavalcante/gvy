@@ -18,3 +18,35 @@ internal fun rethrowIfCancellationOrError(throwable: Throwable) {
         is Error -> throw throwable
     }
 }
+
+/**
+ * Like [runCatching] but properly handles coroutine cancellation.
+ *
+ * Standard [runCatching] catches ALL exceptions including [CancellationException],
+ * which breaks structured concurrency. This variant rethrows [CancellationException]
+ * to preserve proper coroutine cancellation behavior.
+ *
+ * Usage:
+ * ```kotlin
+ * suspend fun doWork(): Result {
+ *     return runSuspendCatching {
+ *         // suspend operations that may fail
+ *         computeResult()
+ *     }.getOrElse { e ->
+ *         logger.error(e) { "Operation failed" }
+ *         defaultResult
+ *     }
+ * }
+ * ```
+ *
+ * @param block The block to execute
+ * @return [Result.success] with the result, or [Result.failure] with the exception
+ * @throws CancellationException if the block was cancelled (not caught)
+ */
+internal inline fun <T> runSuspendCatching(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (e: CancellationException) {
+    throw e
+} catch (e: Throwable) {
+    Result.failure(e)
+}

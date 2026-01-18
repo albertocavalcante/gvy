@@ -1,7 +1,5 @@
 @file:Suppress(
-    "TooGenericExceptionCaught", // LSP service final fallback
     "LongParameterList", // Handler requires multiple dependencies for cross-file operations
-    "ReturnCount", // Multiple return paths for error handling are intentional
 )
 
 package com.github.albertocavalcante.groovylsp.providers.crossfile
@@ -16,8 +14,8 @@ import com.github.albertocavalcante.groovylsp.providers.implementation.Implement
 import com.github.albertocavalcante.groovylsp.providers.references.ReferenceProvider
 import com.github.albertocavalcante.groovylsp.services.DocumentProvider
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
+import com.github.albertocavalcante.groovylsp.utils.runSuspendCatching
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
@@ -93,17 +91,17 @@ class CrossFileOperationsHandler(
 
         val documentUri = URI.create(uri)
 
-        try {
+        return runSuspendCatching {
             // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
             // Fixes #749: Race condition where target file may not be indexed yet
             ensureAllOpenDocumentsCompiled()
 
             // CRITICAL: Ensure compilation completes before proceeding
-            val compilationResult = ensureCompiledOrCompileNow(documentUri)
-            if (compilationResult == null) {
-                logger.warn { "Document $documentUri not compiled, cannot provide definitions" }
-                return Either.forLeft(emptyList())
-            }
+            ensureCompiledOrCompileNow(documentUri)
+                ?: run {
+                    logger.warn { "Document $documentUri not compiled, cannot provide definitions" }
+                    return@runSuspendCatching Either.forLeft<List<Location>, List<LocationLink>>(emptyList())
+                }
 
             // Try LocationLink format if supported
             if (definitionLinkSupport()) {
@@ -112,25 +110,24 @@ class CrossFileOperationsHandler(
                     logger.debug {
                         "Returning ${links.size} definition links (first=${links.first().targetUri})"
                     }
-                    return Either.forRight(links)
+                    return@runSuspendCatching Either.forRight<List<Location>, List<LocationLink>>(links)
                 }
             }
 
             // Fall back to Location format
             val locations = definitionProvider.provideDefinitions(uri, position).toList()
-
-            if (locations.isNotEmpty()) {
-                logger.debug { "Returning ${locations.size} definition locations (first=${locations.first().uri})" }
-            } else {
-                logger.debug { "Found 0 definitions" }
+            logger.debug {
+                if (locations.isNotEmpty()) {
+                    "Returning ${locations.size} definition locations (first=${locations.first().uri})"
+                } else {
+                    "Found 0 definitions"
+                }
             }
 
-            return Either.forLeft(locations)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+            Either.forLeft<List<Location>, List<LocationLink>>(locations)
+        }.getOrElse { e ->
             logException(e, "finding definitions")
-            return Either.forLeft(emptyList())
+            Either.forLeft(emptyList())
         }
     }
 
@@ -147,32 +144,25 @@ class CrossFileOperationsHandler(
             "References requested for $uri at ${position.line}:${position.character}"
         }
 
-        try {
-            val documentUri = URI.create(uri)
+        val documentUri = URI.create(uri)
 
+        return runSuspendCatching {
             // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
             // Fixes #749: Race condition where target file may not be indexed yet
             ensureAllOpenDocumentsCompiled()
 
-            val compilationResult = ensureCompiledOrCompileNow(documentUri)
-            if (compilationResult == null) {
-                logger.warn { "Document $documentUri not compiled, cannot provide references" }
-                return emptyList()
-            }
+            ensureCompiledOrCompileNow(documentUri)
+                ?: run {
+                    logger.warn { "Document $documentUri not compiled, cannot provide references" }
+                    return@runSuspendCatching emptyList()
+                }
 
-            val locations = referenceProvider.provideReferences(
-                uri,
-                position,
-                includeDeclaration,
-            ).toList()
-
-            logger.debug { "Found ${locations.size} references" }
-            return locations
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+            referenceProvider.provideReferences(uri, position, includeDeclaration)
+                .toList()
+                .also { logger.debug { "Found ${it.size} references" } }
+        }.getOrElse { e ->
             logException(e, "finding references")
-            return emptyList()
+            emptyList()
         }
     }
 
@@ -190,28 +180,26 @@ class CrossFileOperationsHandler(
             "Implementation requested for $uri at ${position.line}:${position.character}"
         }
 
-        try {
-            val documentUri = URI.create(uri)
+        val documentUri = URI.create(uri)
 
+        return runSuspendCatching {
             // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
             // Fixes #749: Race condition where target file may not be indexed yet
             ensureAllOpenDocumentsCompiled()
 
-            val compilationResult = ensureCompiledOrCompileNow(documentUri)
-            if (compilationResult == null) {
-                logger.warn { "Document $documentUri not compiled, cannot provide implementations" }
-                return Either.forLeft(emptyList())
-            }
+            ensureCompiledOrCompileNow(documentUri)
+                ?: run {
+                    logger.warn { "Document $documentUri not compiled, cannot provide implementations" }
+                    return@runSuspendCatching Either.forLeft<List<Location>, List<LocationLink>>(emptyList())
+                }
 
-            val locations = implementationProvider.provideImplementations(uri, position).toList()
-
-            logger.debug { "Found ${locations.size} implementations" }
-            return Either.forLeft(locations)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
+            implementationProvider.provideImplementations(uri, position)
+                .toList()
+                .also { logger.debug { "Found ${it.size} implementations" } }
+                .let { Either.forLeft<List<Location>, List<LocationLink>>(it) }
+        }.getOrElse { e ->
             logException(e, "finding implementations")
-            return Either.forLeft(emptyList())
+            Either.forLeft(emptyList())
         }
     }
 
@@ -263,13 +251,14 @@ class CrossFileOperationsHandler(
 
     /**
      * Helper function to log exceptions with appropriate context.
-     * Simplifies exception handling by consolidating logging logic.
+     * Uses idiomatic `when` expression for type-based message selection.
      */
-    private fun logException(e: Exception, operation: String) {
-        when (e) {
-            is IllegalArgumentException -> logger.error(e) { "Invalid arguments $operation" }
-            is IllegalStateException -> logger.error(e) { "Invalid state $operation" }
-            else -> logger.error(e) { "Unexpected error $operation" }
+    private fun logException(e: Throwable, operation: String) {
+        val message = when (e) {
+            is IllegalArgumentException -> "Invalid arguments $operation"
+            is IllegalStateException -> "Invalid state $operation"
+            else -> "Unexpected error $operation"
         }
+        logger.error(e) { message }
     }
 }
