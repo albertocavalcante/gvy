@@ -85,7 +85,7 @@ class TestDiscoveryProviderTest {
         val parseResult = realService.getParseResult(uri)!!
 
         val mockService = mockk<GroovyCompilationService>()
-        val mockWorkspaceManager = mockk<com.github.albertocavalcante.groovylsp.compilation.WorkspaceManager>()
+        val mockWorkspaceManager = mockk<WorkspaceManager>()
 
         every { mockService.workspaceManager } returns mockWorkspaceManager
         every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
