@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.write
 
 class TypeLubInternalMappingsTest {
 
@@ -36,17 +38,15 @@ class TypeLubInternalMappingsTest {
     @AfterEach
     fun clearCache() {
         // Clear the cache after each test to avoid interference
-        val cache = getAncestorCache()
-        cache.clear()
+        clearAncestorCache()
     }
 
     @Test
     fun `ANCESTOR_CACHE evicts oldest entries when exceeding max size`() {
         val maxSize = readPrivateIntConstant(TypeLub::class.java, "MAX_ANCESTOR_CACHE_SIZE")
-        val cache = getAncestorCache()
 
         // Clear cache first
-        cache.clear()
+        clearAncestorCache()
 
         // Populate cache with synthetic entries beyond the max size
         // We'll create (maxSize + 100) unique FQNs and trigger ancestor lookups
@@ -61,7 +61,7 @@ class TypeLubInternalMappingsTest {
         }
 
         // Cache size should not exceed max size
-        val finalSize = cache.size
+        val finalSize = getAncestorCacheSize()
         assertTrue(
             finalSize <= maxSize,
             "Cache size $finalSize should not exceed MAX_ANCESTOR_CACHE_SIZE $maxSize",
@@ -71,10 +71,9 @@ class TypeLubInternalMappingsTest {
     @Test
     fun `ANCESTOR_CACHE exhibits LRU behavior - recently accessed entries are retained`() {
         val maxSize = readPrivateIntConstant(TypeLub::class.java, "MAX_ANCESTOR_CACHE_SIZE")
-        val cache = getAncestorCache()
 
         // Clear cache first
-        cache.clear()
+        clearAncestorCache()
 
         // Fill cache almost to capacity with entries that will be evicted
         val fillSize = maxSize - 100 // Leave room for recently accessed entries
@@ -117,7 +116,7 @@ class TypeLubInternalMappingsTest {
         // Check that recently accessed entries are still in cache
         // They should be retained because they were accessed more recently
         val recentlyAccessedFqns = recentlyAccessedTypes.map { it.fqn }
-        val keysInCache = cache.keys.toSet()
+        val keysInCache = getAncestorCacheKeys()
 
         val retainedCount = recentlyAccessedFqns.count { fqn -> fqn in keysInCache }
 
@@ -132,10 +131,8 @@ class TypeLubInternalMappingsTest {
 
     @Test
     fun `ANCESTOR_CACHE handles concurrent access without corruption`() {
-        val cache = getAncestorCache()
-
         // Clear cache first
-        cache.clear()
+        clearAncestorCache()
 
         val threadCount = 10
         val operationsPerThread = 100
@@ -168,7 +165,7 @@ class TypeLubInternalMappingsTest {
         )
 
         // Verify cache is in a consistent state (no corruption)
-        val finalSize = cache.size
+        val finalSize = getAncestorCacheSize()
         val maxSize = readPrivateIntConstant(TypeLub::class.java, "MAX_ANCESTOR_CACHE_SIZE")
         assertTrue(
             finalSize <= maxSize,
@@ -179,10 +176,9 @@ class TypeLubInternalMappingsTest {
     @Test
     fun `ANCESTOR_CACHE size never exceeds MAX_ANCESTOR_CACHE_SIZE`() {
         val maxSize = readPrivateIntConstant(TypeLub::class.java, "MAX_ANCESTOR_CACHE_SIZE")
-        val cache = getAncestorCache()
 
         // Clear cache first
-        cache.clear()
+        clearAncestorCache()
 
         // Add many more entries than the max size
         val overflowCount = maxSize * 2
@@ -191,7 +187,7 @@ class TypeLubInternalMappingsTest {
             TypeLub.lub(type, TypeConstants.STRING)
 
             // Check that size never exceeds max
-            val currentSize = cache.size
+            val currentSize = getAncestorCacheSize()
             assertTrue(
                 currentSize <= maxSize,
                 "Cache size $currentSize exceeded MAX_ANCESTOR_CACHE_SIZE $maxSize at iteration $index",
@@ -199,7 +195,7 @@ class TypeLubInternalMappingsTest {
         }
 
         // Final verification
-        val finalSize = cache.size
+        val finalSize = getAncestorCacheSize()
         assertTrue(
             finalSize <= maxSize,
             "Final cache size $finalSize should not exceed MAX_ANCESTOR_CACHE_SIZE $maxSize",
@@ -220,5 +216,48 @@ class TypeLubInternalMappingsTest {
             isAccessible = true
         }
         return field.get(TypeLub) as MutableMap<String, Set<String>>
+    }
+
+    private fun getAncestorCacheLock(): ReentrantReadWriteLock {
+        val field = TypeLub::class.java.getDeclaredField("ancestorCacheLock").apply {
+            isAccessible = true
+        }
+        return field.get(TypeLub) as ReentrantReadWriteLock
+    }
+
+    /**
+     * Thread-safe method to clear the ancestor cache.
+     * Acquires write lock before clearing.
+     */
+    private fun clearAncestorCache() {
+        val lock = getAncestorCacheLock()
+        val cache = getAncestorCache()
+        lock.write {
+            cache.clear()
+        }
+    }
+
+    /**
+     * Thread-safe method to get the size of the ancestor cache.
+     * Acquires write lock before reading size (because accessOrder=true makes reads modify the map).
+     */
+    private fun getAncestorCacheSize(): Int {
+        val lock = getAncestorCacheLock()
+        val cache = getAncestorCache()
+        return lock.write {
+            cache.size
+        }
+    }
+
+    /**
+     * Thread-safe method to get the keys of the ancestor cache.
+     * Acquires write lock before reading keys (because accessOrder=true makes reads modify the map).
+     */
+    private fun getAncestorCacheKeys(): Set<String> {
+        val lock = getAncestorCacheLock()
+        val cache = getAncestorCache()
+        return lock.write {
+            cache.keys.toSet()
+        }
     }
 }
