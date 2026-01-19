@@ -16,10 +16,10 @@ import com.github.ajalt.mordant.rendering.TextColors.brightYellow
 import com.github.ajalt.mordant.rendering.TextColors.cyan
 import com.github.ajalt.mordant.rendering.TextColors.green
 import com.github.ajalt.mordant.terminal.Terminal
-import com.github.albertocavalcante.diagnostics.sarif.SarifRuleRegistry
-import com.github.albertocavalcante.diagnostics.sarif.SarifWriter
 import com.github.albertocavalcante.groovylsp.GroovyLanguageServer
 import com.github.albertocavalcante.groovylsp.services.GroovyTextDocumentService
+import com.github.albertocavalcante.gvy.diagnostics.sarif.SarifRuleRegistry
+import com.github.albertocavalcante.gvy.diagnostics.sarif.SarifWriter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.ClientCapabilities
