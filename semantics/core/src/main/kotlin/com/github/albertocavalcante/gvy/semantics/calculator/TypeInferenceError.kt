@@ -3,7 +3,7 @@ package com.github.albertocavalcante.gvy.semantics.calculator
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
-import com.github.albertocavalcante.groovycommon.functional.DomainError
+import com.github.albertocavalcante.gvy.common.functional.DomainError
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 
 /**

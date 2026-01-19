@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyspock
 
-import com.github.albertocavalcante.groovycommon.text.GroovyCodeCleaner
+import com.github.albertocavalcante.gvy.common.text.GroovyCodeCleaner
 import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.ast.ClassHelper

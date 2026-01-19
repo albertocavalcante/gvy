@@ -5,7 +5,7 @@ plugins {
 dependencies {
     // Core dependencies for parsing and common utilities
     api(project(":parser:native"))
-    api(project(":groovy-common"))
+    api(project(":common"))
 
     // Testing frameworks
     api(libs.junit.jupiter)

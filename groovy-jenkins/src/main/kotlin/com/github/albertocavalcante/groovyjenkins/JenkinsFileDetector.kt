@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins
 
-import com.github.albertocavalcante.groovycommon.UriPathConverter
+import com.github.albertocavalcante.gvy.common.UriPathConverter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.FileSystems

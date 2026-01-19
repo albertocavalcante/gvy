@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovycommon.hash.sha256
+import com.github.albertocavalcante.gvy.common.hash.sha256
 import java.nio.file.Path
 
 /**

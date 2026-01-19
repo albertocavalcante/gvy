@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovylsp.compilation
 
-import com.github.albertocavalcante.groovycommon.UriPathConverter
 import com.github.albertocavalcante.groovylsp.cache.LRUCache
 import com.github.albertocavalcante.groovylsp.worker.WorkerSessionManager
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
+import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher

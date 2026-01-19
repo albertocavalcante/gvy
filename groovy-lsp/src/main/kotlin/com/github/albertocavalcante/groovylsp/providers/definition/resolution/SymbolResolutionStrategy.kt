@@ -3,9 +3,9 @@ package com.github.albertocavalcante.groovylsp.providers.definition.resolution
 import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
-import com.github.albertocavalcante.groovycommon.functional.DomainError
 import com.github.albertocavalcante.groovylsp.providers.definition.DefinitionResolver
 import com.github.albertocavalcante.groovyparser.ast.types.Position
+import com.github.albertocavalcante.gvy.common.functional.DomainError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import org.codehaus.groovy.ast.ASTNode

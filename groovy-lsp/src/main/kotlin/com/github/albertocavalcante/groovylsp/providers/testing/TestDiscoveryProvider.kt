@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
-import com.github.albertocavalcante.groovycommon.UriPathConverter
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
+import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException

@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyformatter
 
-import com.github.albertocavalcante.groovycommon.text.ShebangUtils
+import com.github.albertocavalcante.gvy.common.text.ShebangUtils
 import org.openrewrite.ExecutionContext
 import org.openrewrite.InMemoryExecutionContext
 import org.openrewrite.SourceFile

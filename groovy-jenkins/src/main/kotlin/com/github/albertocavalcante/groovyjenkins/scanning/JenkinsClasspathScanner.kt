@@ -6,14 +6,14 @@
 
 package com.github.albertocavalcante.groovyjenkins.scanning
 
-import com.github.albertocavalcante.groovycommon.text.extractSymbolName
-import com.github.albertocavalcante.groovycommon.text.toLowerCamelCase
-import com.github.albertocavalcante.groovycommon.text.toPropertyName
-import com.github.albertocavalcante.groovycommon.text.toStepName
 import com.github.albertocavalcante.groovyjenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.StepParameter
+import com.github.albertocavalcante.gvy.common.text.extractSymbolName
+import com.github.albertocavalcante.gvy.common.text.toLowerCamelCase
+import com.github.albertocavalcante.gvy.common.text.toPropertyName
+import com.github.albertocavalcante.gvy.common.text.toStepName
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
 import io.github.classgraph.ScanResult

@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyjenkins.completion
 
-import com.github.albertocavalcante.groovycommon.text.GroovyCodeCleaner
 import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
+import com.github.albertocavalcante.gvy.common.text.GroovyCodeCleaner
 
 /**
  * Detects the cursor context within a Jenkinsfile to provide context-aware completions.

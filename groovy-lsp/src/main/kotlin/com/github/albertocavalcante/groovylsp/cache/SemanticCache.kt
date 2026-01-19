@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.cache
 
-import com.github.albertocavalcante.groovycommon.hash.sha256
+import com.github.albertocavalcante.gvy.common.hash.sha256
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.Range

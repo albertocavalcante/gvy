@@ -11,7 +11,7 @@ dependencies {
     api(libs.arrow.core)
 
     // Common functional utilities (DomainError, etc.)
-    implementation(project(":groovy-common"))
+    implementation(project(":common"))
 
     // Groovy AST for SemanticDocumentBuilder
     implementation(libs.groovy.core)
