@@ -1,0 +1,24 @@
+package com.github.albertocavalcante.gvy.jupyter.core.kernel.core
+
+import com.github.albertocavalcante.gvy.jupyter.core.handlers.ExecuteResult
+import com.github.albertocavalcante.gvy.jupyter.core.handlers.ExecuteStatus
+import com.github.albertocavalcante.gvy.repl.GroovyExecutor
+
+/**
+ * Adapter that adapts [GroovyExecutor] to [KernelExecutor].
+ */
+class GroovyKernelExecutorAdapter(private val groovyExecutor: GroovyExecutor) : KernelExecutor {
+    override fun execute(code: String): ExecuteResult {
+        val result = groovyExecutor.execute(code)
+
+        return ExecuteResult(
+            status = if (result.isSuccess) ExecuteStatus.OK else ExecuteStatus.ERROR,
+            result = result.value,
+            stdout = result.stdout,
+            stderr = result.stderr,
+            errorName = result.errorType,
+            errorValue = result.errorMessage,
+            traceback = result.stackTrace,
+        )
+    }
+}

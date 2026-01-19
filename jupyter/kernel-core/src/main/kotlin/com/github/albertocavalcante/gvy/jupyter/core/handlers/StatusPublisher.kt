@@ -1,0 +1,70 @@
+package com.github.albertocavalcante.gvy.jupyter.core.handlers
+
+import com.github.albertocavalcante.gvy.jupyter.core.protocol.Header
+import com.github.albertocavalcante.gvy.jupyter.core.protocol.JupyterMessage
+import com.github.albertocavalcante.gvy.jupyter.core.protocol.MessageType
+import com.github.albertocavalcante.gvy.jupyter.core.security.HmacSigner
+import com.github.albertocavalcante.gvy.jupyter.core.zmq.WireMessage
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.zeromq.ZMQ
+
+/**
+ * Publishes kernel execution status on the IOPub socket.
+ *
+ * its execution state. This helps UI show activity indicators.
+ */
+class StatusPublisher(private val iopubSocket: ZMQ.Socket, private val signer: HmacSigner) {
+    private val logger = KotlinLogging.logger {}
+
+    /**
+     * Publish that the kernel is busy processing a request.
+     */
+    fun publishBusy(parent: JupyterMessage) {
+        publishStatus(KernelStatus.BUSY, parent)
+    }
+
+    /**
+     * Publish that the kernel is idle and ready for new requests.
+     */
+    fun publishIdle(parent: JupyterMessage) {
+        publishStatus(KernelStatus.IDLE, parent)
+    }
+
+    private fun publishStatus(status: KernelStatus, parent: JupyterMessage) {
+        logger.debug { "Publishing status: ${status.value}" }
+
+        val header = Header(
+            session = parent.header.session,
+            username = parent.header.username,
+            msgType = MessageType.STATUS.value,
+        )
+
+        // Use proper JSON serialization instead of manual string construction
+        val content = buildJsonObject {
+            put("execution_state", status.value)
+        }.toString()
+
+        val wireMessage = WireMessage(
+            identities = emptyList(),
+            signature = "", // Will be computed
+            header = header.toJson(),
+            parentHeader = parent.header.toJson(),
+            metadata = "{}",
+            content = content,
+        )
+
+        val frames = wireMessage.toSignedFrames(signer)
+        sendMultipart(frames)
+
+        logger.trace { "Status ${status.value} published" }
+    }
+
+    private fun sendMultipart(frames: List<ByteArray>) {
+        frames.forEachIndexed { index, frame ->
+            val sendMore = index < frames.size - 1
+            iopubSocket.send(frame, if (sendMore) ZMQ.SNDMORE else 0)
+        }
+    }
+}

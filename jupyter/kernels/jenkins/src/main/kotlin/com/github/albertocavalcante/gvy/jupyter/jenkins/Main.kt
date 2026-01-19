@@ -1,0 +1,66 @@
+package com.github.albertocavalcante.gvy.jupyter.jenkins
+
+import com.github.albertocavalcante.gvy.jupyter.core.handlers.ExecuteHandler
+import com.github.albertocavalcante.gvy.jupyter.core.handlers.HeartbeatHandler
+import com.github.albertocavalcante.gvy.jupyter.core.handlers.KernelInfoHandler
+import com.github.albertocavalcante.gvy.jupyter.core.handlers.ShutdownHandler
+import com.github.albertocavalcante.gvy.jupyter.core.kernel.KernelServer
+import com.github.albertocavalcante.gvy.jupyter.core.protocol.ConnectionFile
+import com.github.albertocavalcante.gvy.jupyter.core.security.HmacSigner
+import com.github.albertocavalcante.gvy.jupyter.core.zmq.JupyterConnection
+import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.File
+import java.util.concurrent.CancellationException
+import kotlin.system.exitProcess
+
+fun main(args: Array<String>) {
+    val logger = KotlinLogging.logger("JenkinsKernelMain")
+
+    if (args.isEmpty()) {
+        logger.error { "Usage: java -jar jenkins-kernel.jar <connection_file>" }
+        exitProcess(1)
+    }
+
+    val connectionFilePath = args[0]
+    logger.info { "Starting Jenkins Kernel with connection file: $connectionFilePath" }
+
+    runCatching {
+        val connectionFileContent = File(connectionFilePath).readText()
+        val connectionFile = ConnectionFile.parse(connectionFileContent)
+
+        // Initialize Crypto
+        val signer = HmacSigner(connectionFile.key)
+
+        // Initialize Connection
+        val connection = JupyterConnection(connectionFile, signer)
+
+        // Initialize Executors specific to this kernel
+        val executor = JenkinsExecutor()
+
+        // Initialize Handlers
+        val heartbeatHandler = HeartbeatHandler(connection.heartbeatSocket)
+
+        lateinit var server: KernelServer
+        val handlers = listOf(
+            ExecuteHandler(executor),
+            KernelInfoHandler(
+                languageName = "jenkins-groovy",
+                languageVersion = "2.4.21", // Hardcoded for now
+            ),
+            ShutdownHandler { server.shutdown() },
+        )
+
+        // Start Server
+        server = KernelServer(connection, handlers, heartbeatHandler)
+        server.use {
+            it.run()
+        }
+    }.getOrElse { throwable ->
+        when (throwable) {
+            is CancellationException -> throw throwable
+            is Error -> throw throwable
+        }
+        logger.error(throwable) { "Fatal error starting kernel" }
+        exitProcess(1)
+    }
+}
