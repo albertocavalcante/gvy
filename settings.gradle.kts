@@ -15,7 +15,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "groovy-lsp-root"
 
-include("groovy-formatter")
+include("fmt")
 include("markdown")
 include("parser:api")
 include("parser:native")

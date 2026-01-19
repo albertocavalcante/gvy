@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyformatter
+package com.github.albertocavalcante.gvy.fmt
 
 import com.github.albertocavalcante.gvy.common.text.ShebangUtils
 import org.openrewrite.ExecutionContext
