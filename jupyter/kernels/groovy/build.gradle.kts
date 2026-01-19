@@ -12,7 +12,7 @@ dependencies {
     implementation(project(":repl"))
 
     // Groovy Parser/Common (transitive, but explicit for clarity)
-    implementation(project(":groovy-common"))
+    implementation(project(":common"))
     implementation(libs.groovy.core)
 
     // Logging

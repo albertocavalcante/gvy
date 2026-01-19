@@ -8,7 +8,7 @@ version = rootProject.version
 dependencies {
     implementation(project(":semantics:core"))
     implementation(project(":parser:core")) // For TypeSolver
-    implementation(project(":groovy-common")) // For FQN and type utilities
+    implementation(project(":common")) // For FQN and type utilities
 
     // Native Groovy AST
     implementation(libs.groovy.core)

@@ -3,7 +3,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":groovy-common"))
+    implementation(project(":common"))
     implementation(project(":parser:native"))
 
     // Logging

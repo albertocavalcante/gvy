@@ -15,7 +15,7 @@ dependencies {
         exclude(group = "net.java.dev.jna", module = "jna-platform")
     }
 
-    implementation(project(":groovy-common"))
+    implementation(project(":common"))
 
     detektPlugins(libs.detekt.formatting)
 

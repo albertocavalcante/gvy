@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyjenkins
 
-import com.github.albertocavalcante.groovycommon.text.ShebangUtils
+import com.github.albertocavalcante.gvy.common.text.ShebangUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode

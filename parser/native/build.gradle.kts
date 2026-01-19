@@ -7,7 +7,7 @@ group = "com.github.albertocavalcante"
 version = rootProject.version
 
 dependencies {
-    implementation(project(":groovy-common"))
+    implementation(project(":common"))
     api(project(":parser:api"))
     api(libs.groovy.core)
     implementation(libs.groovy.macro)

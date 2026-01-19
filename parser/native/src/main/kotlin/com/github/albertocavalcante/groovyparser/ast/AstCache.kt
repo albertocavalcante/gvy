@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyparser.ast
 
-import com.github.albertocavalcante.groovycommon.cache.ThreadSafeLRUCache
+import com.github.albertocavalcante.gvy.common.cache.ThreadSafeLRUCache
 import org.codehaus.groovy.ast.ASTNode
 import java.net.URI
 

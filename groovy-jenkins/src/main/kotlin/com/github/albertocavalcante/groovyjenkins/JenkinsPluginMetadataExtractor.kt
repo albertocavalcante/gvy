@@ -8,14 +8,14 @@
 
 package com.github.albertocavalcante.groovyjenkins
 
-import com.github.albertocavalcante.groovycommon.text.extractSymbolName
-import com.github.albertocavalcante.groovycommon.text.simpleClassName
-import com.github.albertocavalcante.groovycommon.text.toPropertyName
-import com.github.albertocavalcante.groovycommon.text.toStepName
 import com.github.albertocavalcante.groovyjenkins.extraction.FunctionNameExtractor
 import com.github.albertocavalcante.groovyjenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.StepParameter
+import com.github.albertocavalcante.gvy.common.text.extractSymbolName
+import com.github.albertocavalcante.gvy.common.text.simpleClassName
+import com.github.albertocavalcante.gvy.common.text.toPropertyName
+import com.github.albertocavalcante.gvy.common.text.toStepName
 import io.github.classgraph.ClassGraph
 import io.github.classgraph.ClassInfo
 import io.github.oshai.kotlinlogging.KotlinLogging

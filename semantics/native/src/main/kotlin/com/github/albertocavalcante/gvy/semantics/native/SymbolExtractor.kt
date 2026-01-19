@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.native
 
-import com.github.albertocavalcante.groovycommon.fqn.packageName
-import com.github.albertocavalcante.groovycommon.text.simpleClassName
+import com.github.albertocavalcante.gvy.common.fqn.packageName
+import com.github.albertocavalcante.gvy.common.text.simpleClassName
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper

@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.inlayhints
 
-import com.github.albertocavalcante.groovycommon.text.formatTypeName
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
+import com.github.albertocavalcante.gvy.common.text.formatTypeName
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.VariableExpression

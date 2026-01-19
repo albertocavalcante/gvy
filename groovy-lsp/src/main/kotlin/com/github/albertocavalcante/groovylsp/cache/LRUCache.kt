@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.cache
 
-import com.github.albertocavalcante.groovycommon.cache.CacheStats
-import com.github.albertocavalcante.groovycommon.cache.ThreadSafeLRUCache
+import com.github.albertocavalcante.gvy.common.cache.CacheStats
+import com.github.albertocavalcante.gvy.common.cache.ThreadSafeLRUCache
 
 /**
  * Thread-safe LRU cache implementation with size limits.
