@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovylsp.gradle
 
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
-import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
+import com.github.albertocavalcante.gvy.build.BuildTool
+import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
+import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope

@@ -34,7 +34,7 @@ dependencies {
 
     api(project(":common"))
     api(project(":groovy-gdsl"))
-    api(project(":groovy-build-tool"))
+    api(project(":build-tool"))
 
     // Testing
     testImplementation(libs.kotlin.test)

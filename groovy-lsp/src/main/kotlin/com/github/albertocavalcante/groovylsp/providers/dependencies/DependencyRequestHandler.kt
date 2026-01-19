@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.providers.dependencies
 
 import com.github.albertocavalcante.groovylsp.async.future
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
+import com.github.albertocavalcante.gvy.build.BuildToolManager
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope

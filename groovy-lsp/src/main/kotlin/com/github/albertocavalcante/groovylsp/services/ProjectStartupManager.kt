@@ -1,13 +1,5 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.groovylsp.buildtool.AsmErrorInfo
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
-import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.LogLevelConfigurator
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
@@ -21,6 +13,14 @@ import com.github.albertocavalcante.groovylsp.worker.WorkerFeature
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouter
 import com.github.albertocavalcante.groovylsp.worker.WorkerRouterFactory
 import com.github.albertocavalcante.groovylsp.worker.defaultWorkerDescriptors
+import com.github.albertocavalcante.gvy.build.AsmErrorInfo
+import com.github.albertocavalcante.gvy.build.BuildTool
+import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
+import com.github.albertocavalcante.gvy.build.WorkspaceResolution
+import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
+import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope

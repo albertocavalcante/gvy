@@ -2,12 +2,6 @@ package com.github.albertocavalcante.groovylsp
 
 import com.github.albertocavalcante.groovyjunit.junit.JUnit5TestDetector
 import com.github.albertocavalcante.groovyjunit.junit4.JUnit4TestDetector
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
-import com.github.albertocavalcante.groovylsp.buildtool.bsp.BspBuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleConnectionPool
-import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.config.ServerCapabilitiesFactory
 import com.github.albertocavalcante.groovylsp.project.DefaultProjectStrategy
@@ -40,6 +34,12 @@ import com.github.albertocavalcante.groovylsp.services.StatusNotification
 import com.github.albertocavalcante.groovylsp.sources.SourceNavigationService
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
+import com.github.albertocavalcante.gvy.build.BuildTool
+import com.github.albertocavalcante.gvy.build.TestCommand
+import com.github.albertocavalcante.gvy.build.bsp.BspBuildTool
+import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
+import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
+import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse

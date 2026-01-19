@@ -1,6 +1,7 @@
 # Build directories
 .gradle/
 build/
+!**/gvy/build/
 out/
 dist/
 editors/code/server/

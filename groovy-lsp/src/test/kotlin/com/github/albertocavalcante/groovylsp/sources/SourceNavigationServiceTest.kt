@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.sources
 
-import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
+import com.github.albertocavalcante.gvy.build.SourceArtifactResolver
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Nested

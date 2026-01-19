@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionStatus
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.project.ProjectStrategyRegistry
+import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
+import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
