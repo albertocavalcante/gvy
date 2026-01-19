@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import com.github.albertocavalcante.groovylsp.async.future
 import com.github.albertocavalcante.groovylsp.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.groovylsp.compilation.CompilationResult
@@ -31,6 +30,7 @@ import com.github.albertocavalcante.groovylsp.sources.SourceNavigator
 import com.github.albertocavalcante.groovylsp.types.SemanticTypeResolver
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
+import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.await

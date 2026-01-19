@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.codenarc
 
-import com.github.albertocavalcante.diagnostics.api.DiagnosticConfiguration
-import com.github.albertocavalcante.diagnostics.api.WorkspaceContext
 import com.github.albertocavalcante.groovylsp.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.diagnostics.api.DiagnosticConfiguration
+import com.github.albertocavalcante.gvy.diagnostics.api.WorkspaceContext
 import java.nio.file.Path
 
 /**

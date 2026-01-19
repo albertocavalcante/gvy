@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.providers.diagnostics
 
-import com.github.albertocavalcante.diagnostics.api.DiagnosticProvider
+import com.github.albertocavalcante.gvy.diagnostics.api.DiagnosticProvider
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import org.eclipse.lsp4j.Diagnostic
