@@ -3,14 +3,9 @@ load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
 
 # TypeScript compilation for the extension client
 #
-# NOTE: Dependencies are resolved through the pnpm workspace at editors/code/
-# The client/package.json dependencies (like vscode-languageclient) are included
-# in the unified pnpm-lock.yaml after running `pnpm install` from editors/code/
-#
+# Dependencies are resolved through the pnpm workspace at editors/code/
 # All deps are referenced as "//editors/code:node_modules/<package-name>" because
 # the workspace resolution makes them available at the root level.
-# NOTE: Requires `pnpm install` from editors/code/ to generate node_modules with @types/vscode
-# Run: cd editors/code && pnpm install
 ts_project(
     name = "client_lib",
     srcs = glob(
@@ -21,7 +16,7 @@ ts_project(
     declaration = True,
     out_dir = "out",
     source_map = True,
-    tags = ["manual"],  # Excluded until pnpm install generates @types/vscode
+    transpiler = "tsc",
     tsconfig = ":tsconfig.json",
     visibility = ["//visibility:public"],
     deps = [
@@ -32,12 +27,18 @@ ts_project(
         "//editors/code:node_modules/vscode-languageclient",
         "//editors/code:node_modules/vscode-languageserver-protocol",
 
+        # JDK utilities
+        "//editors/code:node_modules/jdk-utils",
+
         # Node types
         "//editors/code:node_modules/@types/node",
     ],
 )
 
 # TypeScript compilation for tests
+# NOTE: Tagged manual because VS Code extension tests require a running VS Code instance
+# and the test imports have complex path resolution issues with the out_dir structure.
+# Run tests using `pnpm test` in editors/code/client instead.
 ts_project(
     name = "test_lib",
     testonly = True,
@@ -46,7 +47,8 @@ ts_project(
     declaration = True,
     out_dir = "out",
     source_map = True,
-    tags = ["manual"],  # Excluded until pnpm install generates @types/vscode
+    tags = ["manual"],
+    transpiler = "tsc",
     tsconfig = ":tsconfig.json",
     visibility = ["//visibility:public"],
     deps = [
@@ -63,7 +65,7 @@ ts_project(
 esbuild(
     name = "extension_bundle",
     srcs = [":client_lib"],
-    entry_point = "src/extension.ts",
+    entry_point = "out/src/extension.js",
     external = ["vscode"],
     format = "cjs",
     minify = select({
@@ -72,11 +74,7 @@ esbuild(
     }),
     output = "extension.js",
     platform = "node",
-    sourcemap = select({
-        "//:production": "external",
-        "//conditions:default": "inline",
-    }),
-    tags = ["manual"],  # Excluded until pnpm install
+    sourcemap = "inline",
     target = "es2020",
     visibility = ["//visibility:public"],
 )
@@ -85,7 +83,7 @@ esbuild(
 esbuild(
     name = "ast_webview_bundle",
     srcs = [":client_lib"],
-    entry_point = "src/features/ast/webview/main.ts",
+    entry_point = "out/src/features/ast/webview/main.js",
     format = "iife",
     minify = select({
         "//:production": True,
@@ -93,11 +91,7 @@ esbuild(
     }),
     output = "main.js",
     platform = "browser",
-    sourcemap = select({
-        "//:production": "external",
-        "//conditions:default": "inline",
-    }),
-    tags = ["manual"],  # Excluded until pnpm install
+    sourcemap = "inline",
     target = "es2020",
     visibility = ["//visibility:public"],
 )

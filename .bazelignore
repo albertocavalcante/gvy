@@ -12,3 +12,4 @@ bazel-feat-bazel-setup
 .direnv
 editors/code/.vscode-test
 editors/code/node_modules
+editors/code/client/node_modules

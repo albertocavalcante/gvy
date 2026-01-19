@@ -27,3 +27,49 @@ exports_files([
     "language-configuration.json",
     "esbuild.js",
 ])
+
+# ============================================================================
+# VSIX Packaging
+# ============================================================================
+#
+# The VS Code extension is packaged as a .vsix file for distribution.
+# Full VSIX generation requires the language server JAR, which is currently
+# built via Gradle (groovy-lsp module has Bazel compatibility issues).
+#
+# To build a complete VSIX:
+#   1. Build the extension bundle: bazel build //editors/code/client:extension_bundle
+#   2. Build the server JAR: ./gradlew :groovy-lsp:shadowJar
+#   3. Copy artifacts to the expected locations and run: vsce package
+#
+# The filegroups below collect the static assets needed for the extension.
+
+# Static assets required for the VSIX
+filegroup(
+    name = "vsix_static_assets",
+    srcs = [
+        "CHANGELOG.md",
+        "LICENSE",
+        "README.md",
+        "language-configuration.json",
+        "package.json",
+    ] + glob([
+        "syntaxes/**",
+        "resources/**",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+# Extension bundle from client
+# This is the main extension entry point bundled with esbuild
+alias(
+    name = "extension_bundle",
+    actual = "//editors/code/client:extension_bundle",
+    visibility = ["//visibility:public"],
+)
+
+# AST webview bundle
+alias(
+    name = "ast_webview_bundle",
+    actual = "//editors/code/client:ast_webview_bundle",
+    visibility = ["//visibility:public"],
+)
