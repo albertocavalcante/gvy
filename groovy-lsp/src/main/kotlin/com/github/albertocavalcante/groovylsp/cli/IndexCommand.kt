@@ -8,13 +8,13 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.enum
 import com.github.ajalt.clikt.parameters.types.file
 import com.github.ajalt.clikt.parameters.types.path
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
-import com.github.albertocavalcante.groovylsp.buildtool.bsp.BspBuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
 import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.groovylsp.services.IndexExportService
+import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.bsp.BspBuildTool
+import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
+import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import java.io.File
 import java.nio.file.Path
 

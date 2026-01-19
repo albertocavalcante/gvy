@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.groovylsp.providers.testing
 
 import com.github.albertocavalcante.groovylsp.async.future
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
-import com.github.albertocavalcante.groovylsp.buildtool.TestCommand
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
 import com.github.albertocavalcante.groovylsp.providers.coverage.GetCoverageParams
+import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.TestCommand
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
 import com.github.albertocavalcante.reports.coverage.parsers.JacocoParser
 import com.github.albertocavalcante.reports.results.model.TestResultsResponse

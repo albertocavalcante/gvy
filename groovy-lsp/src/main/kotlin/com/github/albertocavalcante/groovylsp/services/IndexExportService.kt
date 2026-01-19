@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
 import com.github.albertocavalcante.groovylsp.indexing.IndexWriter
 import com.github.albertocavalcante.groovylsp.indexing.SymbolGenerator
@@ -8,6 +7,7 @@ import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
 import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
 import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
+import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.common.FileExtensions
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException

@@ -14,8 +14,8 @@ import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.groovyjenkins.metadata.MetadataMerger
 import com.github.albertocavalcante.groovyjenkins.metadata.StableStepDefinitions
 import com.github.albertocavalcante.groovyjenkins.updatecenter.JenkinsUpdateCenterClient
-import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
-import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
+import com.github.albertocavalcante.gvy.build.MavenSourceArtifactResolver
+import com.github.albertocavalcante.gvy.build.SourceArtifactResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock

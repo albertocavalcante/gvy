@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.integration
 
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleBuildTool
 import com.github.albertocavalcante.groovylsp.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import kotlinx.coroutines.test.runTest
 import java.net.URI
 import java.nio.file.Paths

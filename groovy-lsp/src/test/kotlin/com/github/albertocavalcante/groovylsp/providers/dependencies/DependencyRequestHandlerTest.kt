@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.providers.dependencies
 
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
-import com.github.albertocavalcante.groovylsp.buildtool.DependencyMetadata
+import com.github.albertocavalcante.gvy.build.BuildTool
+import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.DependencyMetadata
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.test.StandardTestDispatcher

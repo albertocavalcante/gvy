@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.sources
 
-import com.github.albertocavalcante.groovylsp.buildtool.MavenSourceArtifactResolver
-import com.github.albertocavalcante.groovylsp.buildtool.SourceArtifactResolver
 import com.github.albertocavalcante.groovylsp.documentation.Documentation
+import com.github.albertocavalcante.gvy.build.MavenSourceArtifactResolver
+import com.github.albertocavalcante.gvy.build.SourceArtifactResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files

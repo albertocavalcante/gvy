@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.config
 
 import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
-import com.github.albertocavalcante.groovylsp.buildtool.GradleBuildStrategy
 import com.github.albertocavalcante.groovylsp.engine.config.EngineType
 import com.github.albertocavalcante.groovylsp.providers.diagnostics.rules.DiagnosticAnalysisType
+import com.github.albertocavalcante.gvy.build.GradleBuildStrategy
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.DiagnosticSeverity
 

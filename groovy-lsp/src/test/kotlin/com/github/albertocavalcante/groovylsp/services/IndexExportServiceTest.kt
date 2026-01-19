@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
 import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
 import com.github.albertocavalcante.groovylsp.providers.indexing.ExportIndexParams
+import com.github.albertocavalcante.gvy.build.BuildTool
+import com.github.albertocavalcante.gvy.build.BuildToolManager
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.jupiter.api.Test

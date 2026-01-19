@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovylsp.gradle
 
-import com.github.albertocavalcante.groovylsp.buildtool.BuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolFileWatcher
-import com.github.albertocavalcante.groovylsp.buildtool.BuildToolManager
-import com.github.albertocavalcante.groovylsp.buildtool.WorkspaceResolution
-import com.github.albertocavalcante.groovylsp.buildtool.gradle.GradleFailureAnalyzer
-import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenBuildTool
-import com.github.albertocavalcante.groovylsp.buildtool.maven.MavenFailureAnalyzer
+import com.github.albertocavalcante.gvy.build.BuildTool
+import com.github.albertocavalcante.gvy.build.BuildToolFileWatcher
+import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.build.WorkspaceResolution
+import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
+import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
+import com.github.albertocavalcante.gvy.build.maven.MavenFailureAnalyzer
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

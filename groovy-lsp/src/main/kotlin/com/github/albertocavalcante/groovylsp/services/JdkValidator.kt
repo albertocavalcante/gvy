@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.groovylsp.buildtool.ResolutionCodes
-import com.github.albertocavalcante.groovylsp.buildtool.jdk.ProjectJdkValidator
+import com.github.albertocavalcante.gvy.build.ResolutionCodes
+import com.github.albertocavalcante.gvy.build.jdk.ProjectJdkValidator
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.MessageType
