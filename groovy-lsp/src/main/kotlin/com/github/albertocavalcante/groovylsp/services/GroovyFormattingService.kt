@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.services
 
-import com.github.albertocavalcante.groovyformatter.OpenRewriteFormatter
+import com.github.albertocavalcante.gvy.fmt.OpenRewriteFormatter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive

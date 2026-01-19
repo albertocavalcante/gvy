@@ -50,7 +50,7 @@ testing {
 
             dependencies {
                 implementation(project(":groovy-lsp"))
-                implementation(project(":groovy-formatter"))
+                implementation(project(":fmt"))
                 implementation(project(":groovy-jenkins"))
 
                 implementation(libs.lsp4j)

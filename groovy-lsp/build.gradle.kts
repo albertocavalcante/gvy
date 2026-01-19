@@ -105,7 +105,7 @@ dependencies {
 
     // Local Modules
     implementation(project(":common"))
-    implementation(project(":groovy-formatter"))
+    implementation(project(":fmt"))
     implementation(project(":parser:native"))
     implementation(project(":parser:core"))
     implementation(project(":groovy-diagnostics:api"))
