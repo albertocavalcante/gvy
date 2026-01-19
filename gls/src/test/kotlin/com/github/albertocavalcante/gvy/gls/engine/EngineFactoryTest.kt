@@ -1,0 +1,158 @@
+package com.github.albertocavalcante.gvy.gls.engine
+
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
+import com.github.albertocavalcante.gvy.gls.engine.config.EngineFeatures
+import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
+import com.github.albertocavalcante.gvy.gls.engine.impl.core.CoreLanguageEngine
+import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEngine
+import com.github.albertocavalcante.gvy.gls.engine.impl.rewrite.OpenRewriteLanguageEngine
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import io.mockk.mockk
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
+
+/**
+ * Comprehensive tests for [EngineFactory].
+ *
+ * Verifies factory creates correct engine types and handles all configurations.
+ */
+class EngineFactoryTest {
+
+    private val mockParser = mockk<GroovyParserFacade>(relaxed = true)
+    private val mockCompilationService = mockk<GroovyCompilationService>(relaxed = true)
+    private val mockDocumentProvider = mockk<DocumentProvider>(relaxed = true)
+    private val mockSourceNavigator = mockk<SourceNavigator>(relaxed = true)
+
+    @Test
+    fun `create returns NativeLanguageEngine for Native configuration`() {
+        val config = EngineConfiguration(type = EngineType.Native)
+
+        val engine = EngineFactory.create(
+            config = config,
+            parser = mockParser,
+            compilationService = mockCompilationService,
+            documentProvider = mockDocumentProvider,
+            sourceNavigator = mockSourceNavigator,
+        )
+
+        assertIs<NativeLanguageEngine>(engine)
+        assertEquals("native", engine.id)
+    }
+
+    @Test
+    fun `create returns CoreLanguageEngine for Core configuration`() {
+        val config = EngineConfiguration(type = EngineType.Core)
+
+        val engine = EngineFactory.create(
+            config = config,
+            parser = mockParser,
+            compilationService = mockCompilationService,
+            documentProvider = mockDocumentProvider,
+            sourceNavigator = mockSourceNavigator,
+        )
+
+        assertIs<CoreLanguageEngine>(engine)
+        assertEquals("core", engine.id)
+    }
+
+    @Test
+    fun `create returns OpenRewriteLanguageEngine for OpenRewrite configuration`() {
+        val config = EngineConfiguration(type = EngineType.OpenRewrite)
+
+        val engine = EngineFactory.create(
+            config = config,
+            parser = mockParser,
+            compilationService = mockCompilationService,
+            documentProvider = mockDocumentProvider,
+            sourceNavigator = mockSourceNavigator,
+        )
+
+        assertIs<OpenRewriteLanguageEngine>(engine)
+        assertEquals("rewrite", engine.id)
+    }
+
+    @Test
+    fun `create works with null sourceNavigator for Native engine`() {
+        val config = EngineConfiguration(type = EngineType.Native)
+
+        val engine = EngineFactory.create(
+            config = config,
+            parser = mockParser,
+            compilationService = mockCompilationService,
+            documentProvider = mockDocumentProvider,
+            sourceNavigator = null,
+        )
+
+        assertIs<NativeLanguageEngine>(engine)
+    }
+
+    @Test
+    fun `create works with null sourceNavigator for Core engine`() {
+        val config = EngineConfiguration(type = EngineType.Core)
+
+        val engine = EngineFactory.create(
+            config = config,
+            parser = mockParser,
+            compilationService = mockCompilationService,
+            documentProvider = mockDocumentProvider,
+            sourceNavigator = null,
+        )
+
+        assertIs<CoreLanguageEngine>(engine)
+    }
+
+    @Test
+    fun `create respects default configuration which is Core`() {
+        val config = EngineConfiguration() // Uses default
+
+        val engine = EngineFactory.create(
+            config = config,
+            parser = mockParser,
+            compilationService = mockCompilationService,
+            documentProvider = mockDocumentProvider,
+            sourceNavigator = null,
+        )
+
+        assertIs<CoreLanguageEngine>(engine)
+    }
+
+    @Test
+    fun `create with custom features does not affect engine type selection`() {
+        val customFeatures = EngineFeatures(typeInference = false, flowAnalysis = true)
+        val config = EngineConfiguration(type = EngineType.Core, features = customFeatures)
+
+        val engine = EngineFactory.create(
+            config = config,
+            parser = mockParser,
+            compilationService = mockCompilationService,
+            documentProvider = mockDocumentProvider,
+            sourceNavigator = null,
+        )
+
+        assertIs<CoreLanguageEngine>(engine)
+    }
+
+    @Test
+    fun `all EngineType values have corresponding factory case`() {
+        // This test ensures exhaustive coverage of EngineType in factory
+        val handledTypes = mutableSetOf<EngineType>()
+
+        for (type in EngineType.entries) {
+            val config = EngineConfiguration(type = type)
+            EngineFactory.create(
+                config = config,
+                parser = mockParser,
+                compilationService = mockCompilationService,
+                documentProvider = mockDocumentProvider,
+                sourceNavigator = null,
+            )
+            handledTypes.add(type)
+        }
+
+        assertEquals(EngineType.entries.toSet(), handledTypes, "All EngineType values should be handled by factory")
+    }
+}

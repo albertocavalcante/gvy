@@ -13,7 +13,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "groovy-lsp-root"
+rootProject.name = "gvy"
 
 include("fmt")
 include("markdown")
@@ -22,7 +22,7 @@ include("parser:native")
 include("parser:core")
 include("parser:rewrite")
 include("common")
-include("groovy-lsp")
+include("gls")
 include("indexer:core")
 include("indexer:scip")
 include("indexer:lsif")

@@ -1,0 +1,72 @@
+package com.github.albertocavalcante.gvy.gls.engine.impl.native.features
+
+import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider
+import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerator
+import com.github.albertocavalcante.gvy.gls.providers.hover.MethodCallMetadataResolver
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.nativeapi.ParseResult
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
+import org.eclipse.lsp4j.Hover
+import org.eclipse.lsp4j.HoverParams
+import org.eclipse.lsp4j.MarkupContent
+import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.jsonrpc.messages.Either
+import com.github.albertocavalcante.gvy.gls.providers.hover.HoverProvider as DelegateHoverProvider
+
+/**
+ * Native hover provider that delegates to the existing HoverProvider implementation.
+ * This ensures all existing hover logic (including Jenkins-specific handling) continues to work.
+ *
+ * @param parseResult The parse result for this session (reserved for future direct AST usage)
+ */
+class NativeHoverProvider(
+    @Suppress("UNUSED_PARAMETER") // TODO: Use parseResult directly instead of delegating
+    private val parseResult: ParseResult,
+    compilationService: GroovyCompilationService,
+    documentProvider: DocumentProvider,
+    sourceNavigator: SourceNavigator? = null,
+) : HoverProvider {
+
+    private val logger = KotlinLogging.logger {}
+
+    // Initialize semantic bridge and generator
+    private val semanticResolver = SemanticTypeResolver(
+        compilationService.classpathService.getTypeSolver(),
+    )
+    private val methodCallMetadataResolver =
+        MethodCallMetadataResolver(
+            compilationService.classpathService,
+            compilationService.gdkProvider,
+            semanticResolver,
+        )
+    private val contentGenerator =
+        HoverContentGenerator(semanticResolver, methodCallMetadataResolver)
+
+    // Delegate to existing HoverProvider which has all the domain logic
+    private val delegate = DelegateHoverProvider(
+        compilationService,
+        documentProvider,
+        contentGenerator,
+        sourceNavigator,
+    )
+
+    override suspend fun getHover(params: HoverParams): Hover = runCatching {
+        delegate.provideHover(params.textDocument.uri, params.position) ?: emptyHover()
+    }
+        .onFailure { throwable ->
+            when (throwable) {
+                is CancellationException -> throw throwable
+                is Error -> throw throwable
+                else -> logger.error(throwable) { "Error providing hover" }
+            }
+        }
+        .getOrDefault(emptyHover())
+
+    private fun emptyHover() = Hover().apply {
+        contents = Either.forRight(MarkupContent(MarkupKind.MARKDOWN, ""))
+    }
+}

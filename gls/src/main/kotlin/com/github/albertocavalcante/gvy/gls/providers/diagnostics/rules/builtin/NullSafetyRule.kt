@@ -1,0 +1,54 @@
+package com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.builtin
+
+import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.AbstractDiagnosticRule
+import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.DiagnosticAnalysisType
+import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
+import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
+import java.net.URI
+
+/**
+ * Detects potentially unsafe null handling patterns in Groovy code.
+ *
+ * This rule identifies:
+ * - Direct field/method access on potentially nullable expressions
+ * - Missing null-safe operators where they might be needed
+ *
+ * NOTE: This is a heuristic-based rule that may have false positives.
+ * It's designed to encourage defensive programming practices.
+ */
+class NullSafetyRule : AbstractDiagnosticRule() {
+
+    override val id = "groovy-null-safety"
+
+    override val description = "Detect potentially unsafe null handling in Groovy code"
+
+    override val defaultSeverity = DiagnosticSeverity.Hint
+
+    override val analysisType = DiagnosticAnalysisType.HEURISTIC
+
+    override val enabledByDefault = false // Disabled by default as it can be noisy
+
+    override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
+        // Pattern: method calls or field access that might be on null values
+        // Look for cases where collection methods are chained without null-safe operators
+        // Matches: list.find { }.value  OR  list.findAll { }.name  OR  x.collect { }.size
+        val unsafeAccessPattern = Regex("""(\w+)\.(get|find|findAll|collect|first|last)\s*[{(].*?[})]\.(\w+)""")
+
+        // Build diagnostics for potentially unsafe access patterns
+        return findPatternMatches(
+            content = content,
+            pattern = unsafeAccessPattern,
+            excludeComments = true,
+            excludeStrings = true,
+        ).map { lineMatch ->
+            diagnostic(
+                lineMatch.lineIndex,
+                lineMatch.match.range.first,
+                lineMatch.match.range.last + 1,
+                "Consider using null-safe operator (?.) to prevent potential NPE",
+                defaultSeverity,
+            )
+        }.toList()
+    }
+}

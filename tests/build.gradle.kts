@@ -10,8 +10,8 @@ repositories {
     mavenCentral()
 }
 
-// Ensure groovy-lsp is evaluated so we can access its tasks
-evaluationDependsOn(":groovy-lsp")
+// Ensure gls is evaluated so we can access its tasks
+evaluationDependsOn(":gls")
 
 // Exclude e2eTest from Kover instrumentation and coverage collection.
 // This prevents root koverHtmlReport/koverXmlReport from triggering e2eTest.
@@ -49,7 +49,7 @@ testing {
             }
 
             dependencies {
-                implementation(project(":groovy-lsp"))
+                implementation(project(":gls"))
                 implementation(project(":fmt"))
                 implementation(project(":groovy-jenkins"))
 
@@ -85,9 +85,9 @@ testing {
                         description = "Runs end-to-end LSP scenarios."
                         shouldRunAfter(tasks.test)
 
-                        val groovyLspProject = project(":groovy-lsp")
+                        val glsProject = project(":gls")
                         val shadowJarFileProvider =
-                            groovyLspProject.tasks
+                            glsProject.tasks
                                 .named(
                                     "shadowJar",
                                 ).map { it.outputs.files.singleFile }
@@ -110,8 +110,8 @@ testing {
 
                                 @get:Input
                                 val installDistBin =
-                                    groovyLspProject.layout.buildDirectory
-                                        .dir("install/groovy-lsp/bin/groovy-lsp")
+                                    glsProject.layout.buildDirectory
+                                        .dir("install/gls/bin/gls")
                                         .map { it.asFile.absolutePath }
 
                                 override fun asArguments() =
@@ -123,8 +123,8 @@ testing {
                             },
                         )
 
-                        dependsOn(groovyLspProject.tasks.named("shadowJar"))
-                        dependsOn(groovyLspProject.tasks.named("installDist"))
+                        dependsOn(glsProject.tasks.named("shadowJar"))
+                        dependsOn(glsProject.tasks.named("installDist"))
 
                         // E2E tests are heavy, give them more memory
                         maxHeapSize = "2G"
