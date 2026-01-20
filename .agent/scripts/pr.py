@@ -796,6 +796,38 @@ def run_gh(
     )
 
 
+def run_git(
+    args: list[str],
+    *,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """
+    Run git command with standard options.
+
+    Centralizes subprocess handling for consistency with run_gh().
+
+    Args:
+        args (list[str]): Arguments to pass to git (without "git" prefix).
+            Example: ["branch", "--show-current"] runs "git branch --show-current"
+        check (bool): If True, raise CalledProcessError on non-zero exit.
+            Defaults to True.
+
+    Returns:
+        subprocess.CompletedProcess[str]: Completed process with stdout/stderr
+            captured as text.
+
+    Raises:
+        subprocess.CalledProcessError: If check=True and command fails.
+        FileNotFoundError: If git is not installed.
+    """
+    return subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        text=True,
+        check=check,
+    )
+
+
 def rprint(*args, **kwargs):
     """Print using rich if in a TTY, otherwise use plain typer.echo."""
     if console.is_terminal:
@@ -1314,6 +1346,11 @@ DIFF_FULL_THRESHOLD = 3000  # Use full diff if under this
 DIFF_MAX_LINES = 8000  # Absolute max lines to send
 DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 
+# Prompt size limit (configurable via env var)
+# Default: 400KB - conservative for Node.js CLI stability (Gemini CLI)
+# This prevents OOM errors when diffs are very large
+PROMPT_MAX_CHARS = int(os.environ.get("GVY_PROMPT_MAX_CHARS", 400_000))
+
 # GitHub API error patterns that indicate diff is too large
 DIFF_TOO_LARGE_PATTERNS = [
     "exceeded the maximum number of files",
@@ -1582,12 +1619,7 @@ def _diff_via_local_git(head_ref: str, base_ref: str) -> DiffOutcome:
     """
     try:
         # Check current branch
-        current_branch = subprocess.run(
-            ["git", "branch", "--show-current"],
-            capture_output=True,
-            text=True,
-            check=True,
-        ).stdout.strip()
+        current_branch = run_git(["branch", "--show-current"]).stdout.strip()
 
         if current_branch != head_ref:
             return DiffError(
@@ -1597,28 +1629,17 @@ def _diff_via_local_git(head_ref: str, base_ref: str) -> DiffOutcome:
             )
 
         # Find merge base for accurate diff
-        merge_base_result = subprocess.run(
-            ["git", "merge-base", f"origin/{base_ref}", "HEAD"],
-            capture_output=True,
-            text=True,
+        merge_base_result = run_git(
+            ["merge-base", f"origin/{base_ref}", "HEAD"],
+            check=False,
         )
 
         if merge_base_result.returncode == 0:
             merge_base = merge_base_result.stdout.strip()
-            diff_result = subprocess.run(
-                ["git", "diff", merge_base, "HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            diff_result = run_git(["diff", merge_base, "HEAD"])
         else:
             # Fallback: three-dot diff
-            diff_result = subprocess.run(
-                ["git", "diff", f"origin/{base_ref}...HEAD"],
-                capture_output=True,
-                text=True,
-                check=True,
-            )
+            diff_result = run_git(["diff", f"origin/{base_ref}...HEAD"])
 
         content = diff_result.stdout
         file_count, total_adds, total_dels = _calculate_diff_stats(content)
@@ -1913,7 +1934,11 @@ def fetch_pr_diff(pr_number: int, pr_info: dict | None = None) -> DiffOutcome:
     )
 
 
-def prepare_diff_for_ai(pr_number: int, pr_info: dict | None = None) -> tuple[str, str]:
+def prepare_diff_for_ai(
+    pr_number: int,
+    pr_info: dict | None = None,
+    force_stats_only: bool = False,
+) -> tuple[str, str]:
     """
     Prepare diff content for AI, handling large diffs gracefully.
 
@@ -1923,6 +1948,8 @@ def prepare_diff_for_ai(pr_number: int, pr_info: dict | None = None) -> tuple[st
     Args:
         pr_number: PR number to fetch
         pr_info: Optional PR details (for local git fallback)
+        force_stats_only: If True, skip diff content and return stats-only summary.
+            Useful for very large PRs to avoid OOM errors.
 
     Returns:
         (diff_content, mode) where mode is 'full', 'truncated', 'stats_only', or 'error'
@@ -1930,6 +1957,15 @@ def prepare_diff_for_ai(pr_number: int, pr_info: dict | None = None) -> tuple[st
     Lock files (pnpm-lock.yaml, package-lock.json, etc.) are always excluded
     from diff content and shown as stats-only, regardless of diff size.
     """
+    # Force stats-only mode (for OOM prevention or user override)
+    if force_stats_only:
+        typer.echo("📊 Using stats-only mode (forced)...", err=True)
+        outcome = _diff_stats_only(pr_number)
+        if isinstance(outcome, DiffError):
+            typer.echo(f"⚠️ {outcome.message}", err=True)
+            return "", "error"
+        return outcome.content, outcome.mode.value
+
     # Fetch diff using strategy chain
     outcome = fetch_pr_diff(pr_number, pr_info)
 
@@ -2037,39 +2073,26 @@ def prepare_diff_for_ai(pr_number: int, pr_info: dict | None = None) -> tuple[st
     return "\n".join(output_parts), DiffMode.TRUNCATED.value
 
 
-def generate_ai_message(
+def _build_ai_prompt(
     pr: dict,
     pr_number: int,
-    provider: AIProvider = AIProvider.GEMINI,
-    model: Optional[str] = None,
-) -> tuple[str, str]:
-    """Generate commit message using AI CLI (gemini or claude).
+    diff_content: str,
+    diff_mode: str,
+) -> str:
+    """
+    Build the AI prompt for commit message generation.
+
+    Extracted to support retry logic when prompt is too large.
 
     Args:
         pr: PR details dict
         pr_number: PR number
-        provider: AI provider to use (default: gemini)
-        model: Optional model override (uses provider default if not specified)
+        diff_content: Diff content (full, truncated, or stats-only)
+        diff_mode: Mode of diff ('full', 'truncated', 'stats_only')
+
+    Returns:
+        Complete prompt string ready for AI processing
     """
-    config = AI_PROVIDER_DEFAULTS[provider]
-    emoji = config["emoji"]
-    cmd = config["cmd"]
-    model_to_use = model or config["default_model"]
-
-    # Build display string for logging
-    model_display = f" ({model_to_use})" if model_to_use else ""
-    typer.echo(
-        f"{emoji} Generating semantic commit message with {provider.value}{model_display}..."
-    )
-
-    # Get diff content with smart truncation for large diffs
-    # Pass pr_info to enable local git fallback when on PR branch
-    diff_content, diff_mode = prepare_diff_for_ai(pr_number, pr_info=pr)
-
-    if diff_mode == "error":
-        typer.echo("⚠️ Failed to retrieve PR diff; skipping AI generation.", err=True)
-        return "", ""
-
     # Add context about truncation/stats-only mode to the prompt
     truncation_note = ""
     if diff_mode == "truncated":
@@ -2079,8 +2102,7 @@ def generate_ai_message(
         truncation_note = """
     <instruction>IMPORTANT: This PR is very large. Only FILE STATS are available (no actual diff content). Generate the commit message based on file names, change counts, and the PR title/description. Focus on the overall nature of the change (refactor, feature, etc.) rather than specific code changes.</instruction>"""
 
-    # Build complete prompt
-    prompt = f"""<root>
+    return f"""<root>
   <instructions>
     <instruction>OUTPUT ONLY the commit message. No conversational text.</instruction>
     <instruction>SOURCE OF TRUTH: The content within the &lt;patch&gt; tag is the DEFINITIVE source of truth. PR titles and descriptions may be outdated or incomplete. Base your summary primarily on the code changes.</instruction>
@@ -2101,6 +2123,18 @@ def generate_ai_message(
       - FEATURES &amp; DOCS: When documenting new features, signatures, or important code changes, MUST use code blocks (e.g. ```kotlin) to make them standout.
       - ISSUE GUIDANCE: If referenced issues exist, pro-actively include guidance in the body (e.g. "See #N for full design specs").
       - Do NOT include footer links like "Fixes #N" (added automatically).
+    </instruction>
+    <instruction>
+      SCOPE DERIVATION: Infer scope from the most affected module/directory.
+      If most changes are in "src/lsp/", scope = "lsp".
+      If in ".agent/scripts/", scope = "scripts".
+      If mixed, use the top-level affected area or omit scope.
+    </instruction>
+    <instruction>
+      BODY QUALITY: Each bullet should describe a FUNCTIONAL change (what changed + why).
+      BAD: "- Modified pr.py" (just mentions file)
+      GOOD: "- Add fallback chain for large diffs: gh CLI → local git → API → stats-only"
+      Each bullet should be standalone and meaningful.
     </instruction>{truncation_note}
   </instructions>
   <context>
@@ -2115,6 +2149,85 @@ def generate_ai_message(
   </patch>
 </root>
 """
+
+
+# OOM error patterns for detection
+OOM_ERROR_PATTERNS = [
+    "mark-compact",
+    "heap",
+    "out of memory",
+    "oom",
+    "allocation failed",
+    "javascript heap",
+    "ineffective",
+]
+
+
+def generate_ai_message(
+    pr: dict,
+    pr_number: int,
+    provider: AIProvider = AIProvider.GEMINI,
+    model: Optional[str] = None,
+    force_stats_only: bool = False,
+) -> tuple[str, str]:
+    """Generate commit message using AI CLI (gemini or claude).
+
+    Args:
+        pr: PR details dict
+        pr_number: PR number
+        provider: AI provider to use (default: gemini)
+        model: Optional model override (uses provider default if not specified)
+        force_stats_only: If True, skip diff content and use stats-only mode
+    """
+    config = AI_PROVIDER_DEFAULTS[provider]
+    emoji = config["emoji"]
+    cmd = config["cmd"]
+    model_to_use = model or config["default_model"]
+
+    # Build display string for logging
+    model_display = f" ({model_to_use})" if model_to_use else ""
+    typer.echo(
+        f"{emoji} Generating semantic commit message with {provider.value}{model_display}..."
+    )
+
+    # Get diff content with smart truncation for large diffs
+    # Pass pr_info to enable local git fallback when on PR branch
+    diff_content, diff_mode = prepare_diff_for_ai(
+        pr_number, pr_info=pr, force_stats_only=force_stats_only
+    )
+
+    if diff_mode == "error":
+        typer.echo("⚠️ Failed to retrieve PR diff; skipping AI generation.", err=True)
+        return "", ""
+
+    # Build prompt
+    prompt = _build_ai_prompt(pr, pr_number, diff_content, diff_mode)
+
+    # Enterprise-grade auto-detection: prevent OOM by checking prompt size
+    if len(prompt) > PROMPT_MAX_CHARS and diff_mode != "stats_only":
+        typer.echo(
+            f"⚠️ Prompt exceeds limit ({len(prompt):,} > {PROMPT_MAX_CHARS:,} chars), "
+            "auto-downgrading to stats-only...",
+            err=True,
+        )
+        # Retry with stats-only
+        diff_content, diff_mode = prepare_diff_for_ai(
+            pr_number, pr_info=pr, force_stats_only=True
+        )
+        if diff_mode == "error":
+            typer.echo("⚠️ Stats-only fallback also failed.", err=True)
+            return "", ""
+
+        prompt = _build_ai_prompt(pr, pr_number, diff_content, diff_mode)
+
+        # Final check - if still too large, abort
+        if len(prompt) > PROMPT_MAX_CHARS:
+            typer.echo(
+                f"❌ Prompt still too large ({len(prompt):,} chars) with stats-only. "
+                "PR metadata may be too verbose.",
+                err=True,
+            )
+            return "", ""
 
     try:
         # Security: validate cmd is an expected value (allowlist check)
@@ -2149,6 +2262,16 @@ def generate_ai_message(
             typer.echo(f"⚠️ {provider.value} failed (exit {ps.returncode}):", err=True)
             # Show first 500 chars of error to avoid flooding terminal
             typer.echo(f"   {error_detail[:500]}", err=True)
+
+            # Detect OOM patterns and provide helpful guidance
+            error_lower = error_detail.lower()
+            if any(pattern in error_lower for pattern in OOM_ERROR_PATTERNS):
+                typer.echo(
+                    "   💡 This appears to be an out-of-memory error.\n"
+                    "   Try: --stats-only flag, or --provider claude, "
+                    "or set GVY_PROMPT_MAX_CHARS=200000",
+                    err=True,
+                )
             return "", ""
 
         output = stdout.strip()
@@ -2214,6 +2337,12 @@ def merge(
         "-M",
         help="AI model override (e.g. 'gemini-2.0-flash', 'opus', 'sonnet')",
     ),
+    stats_only: bool = typer.Option(
+        False,
+        "--stats-only",
+        "-S",
+        help="Use stats-only diff for AI (skip content for very large PRs)",
+    ),
     edit: bool = typer.Option(
         False, "--edit", "-e", help="Edit the commit message before finalization"
     ),
@@ -2273,7 +2402,9 @@ def merge(
         source = f"v{version}"
     # 2. AI Generation
     elif ai:
-        ai_title, ai_body = generate_ai_message(pr, pr_number, ai_provider, model)
+        ai_title, ai_body = generate_ai_message(
+            pr, pr_number, ai_provider, model, force_stats_only=stats_only
+        )
         if ai_title:
             merge_title = ai_title
             merge_body = ai_body
