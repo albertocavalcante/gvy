@@ -775,15 +775,18 @@ def run_gh(
     Centralizes subprocess handling for consistency across the codebase.
 
     Args:
-        args: Arguments to pass to gh CLI (without "gh" prefix)
-        check: If True, raise CalledProcessError on non-zero exit
+        args (list[str]): Arguments to pass to gh CLI (without "gh" prefix).
+            Example: ["pr", "diff", "123"] runs "gh pr diff 123"
+        check (bool): If True, raise CalledProcessError on non-zero exit.
+            Defaults to True.
 
     Returns:
-        CompletedProcess with stdout/stderr captured as text
+        subprocess.CompletedProcess[str]: Completed process with stdout/stderr
+            captured as text.
 
     Raises:
-        subprocess.CalledProcessError: If check=True and command fails
-        FileNotFoundError: If gh CLI is not installed
+        subprocess.CalledProcessError: If check=True and command fails.
+        FileNotFoundError: If gh CLI is not installed.
     """
     return subprocess.run(
         ["gh", *args],
@@ -1656,9 +1659,9 @@ def _fetch_pr_files_data(pr_number: int, source: str) -> list[dict] | DiffError:
     """
     try:
         owner, repo = get_repo_info()
-    except Exception as e:
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as e:
         return DiffError(
-            message=f"Failed to get repo info: {e}",
+            message=f"Failed to get repo info ({type(e).__name__}): {e}",
             source=source,
             is_too_large=False,
         )
@@ -1858,7 +1861,7 @@ def fetch_pr_diff(pr_number: int, pr_info: dict | None = None) -> DiffOutcome:
     Returns:
         DiffResult on success, DiffError if all strategies fail
     """
-    # Strategy 1: gh pr diff (most common path)
+    # Strategy 1: gh pr diff (most common path, works for ~99% of PRs)
     outcome = _diff_via_gh_cli(pr_number)
     if isinstance(outcome, DiffResult):
         return outcome
@@ -1866,7 +1869,10 @@ def fetch_pr_diff(pr_number: int, pr_info: dict | None = None) -> DiffOutcome:
     # Log the initial failure
     typer.echo(f"⚠️ {outcome.message}", err=True)
 
-    # Strategy 2: Local git (only if too large AND we have branch info)
+    # Strategy 2: Local git diff (optional - only useful for "too large" errors)
+    # This strategy requires being on the PR branch locally, so it's only
+    # attempted when: (a) the error was "too large" AND (b) we have branch info.
+    # For other errors (network, auth), this wouldn't help anyway.
     if outcome.is_too_large and pr_info:
         head_ref = pr_info.get("headRefName")
         base_ref = pr_info.get("baseRefName")
@@ -1880,23 +1886,24 @@ def fetch_pr_diff(pr_number: int, pr_info: dict | None = None) -> DiffOutcome:
                 return local_outcome
             typer.echo(f"   {local_outcome.message}", err=True)
 
-    # Strategy 3: PR Files API (paginated, handles large PRs)
-    if outcome.is_too_large:
-        typer.echo("📡 Trying PR Files API with pagination...", err=True)
-        api_outcome = _diff_via_files_api(pr_number)
-        if isinstance(api_outcome, DiffResult):
-            typer.echo(f"✓ PR Files API succeeded ({api_outcome.file_count} files)")
-            return api_outcome
-        typer.echo(f"   {api_outcome.message}", err=True)
+    # Strategy 3: PR Files API (always attempted on any failure)
+    # Uses a different API endpoint that may succeed when gh pr diff fails
+    # for any reason (too large, network issues, rate limits, etc.)
+    typer.echo("📡 Trying PR Files API with pagination...", err=True)
+    api_outcome = _diff_via_files_api(pr_number)
+    if isinstance(api_outcome, DiffResult):
+        typer.echo(f"✓ PR Files API succeeded ({api_outcome.file_count} files)")
+        return api_outcome
+    typer.echo(f"   {api_outcome.message}", err=True)
 
-    # Strategy 4: Stats only (last resort)
-    if outcome.is_too_large:
-        typer.echo("📊 Falling back to stats-only summary...", err=True)
-        stats_outcome = _diff_stats_only(pr_number)
-        if isinstance(stats_outcome, DiffResult):
-            typer.echo(f"✓ Stats summary created ({stats_outcome.file_count} files)")
-            return stats_outcome
-        typer.echo(f"   {stats_outcome.message}", err=True)
+    # Strategy 4: Stats only (last resort, always attempted)
+    # Provides file list with change counts even when no diff content available
+    typer.echo("📊 Falling back to stats-only summary...", err=True)
+    stats_outcome = _diff_stats_only(pr_number)
+    if isinstance(stats_outcome, DiffResult):
+        typer.echo(f"✓ Stats summary created ({stats_outcome.file_count} files)")
+        return stats_outcome
+    typer.echo(f"   {stats_outcome.message}", err=True)
 
     # All strategies failed
     return DiffError(
