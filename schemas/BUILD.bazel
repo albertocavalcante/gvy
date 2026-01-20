@@ -1,29 +1,16 @@
-load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+load("//tools/build_defs:wire.bzl", "wire_proto_library")
+load("//tools/build_defs:kotlin.bzl", "kt_test")
 
-# NOTE: This module requires Wire protobuf generation.
-# Wire doesn't have official Bazel rules, so proto generation must be done via Gradle first:
-#   ./gradlew :schemas:generateProtos
-# The generated sources would then need to be checked in or a custom Wire rule created.
-# See: https://github.com/square/wire - no Bazel support as of Jan 2026
-
-kt_library(
+# Generate Kotlin code from proto files using Wire
+wire_proto_library(
     name = "schemas",
-    srcs = glob(
-        ["src/main/kotlin/**/*.kt", "build/generated/source/wire/**/*.kt"],
-        allow_empty = True,
-    ),
+    srcs = glob(["src/main/proto/**/*.proto"]),
     visibility = ["//visibility:public"],
-    tags = ["manual"],  # Requires Wire proto generation - run: ./gradlew :schemas:generateProtos
-    deps = [
-        "@maven//:com_squareup_wire_wire_runtime_jvm",
-        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-    ],
 )
 
 kt_test(
     name = "schemas_test",
     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
-    test_packages = ["com.github.albertocavalcante.schemas"],
     associates = [":schemas"],
-    tags = ["manual"],
+    test_packages = ["com.github.albertocavalcante.schemas"],
 )
