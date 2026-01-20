@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyspock
+package com.github.albertocavalcante.gvy.spock
 
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals

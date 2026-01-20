@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyspock
+package com.github.albertocavalcante.gvy.spock
 
 /**
  * Represents a Spock feature method (test method).

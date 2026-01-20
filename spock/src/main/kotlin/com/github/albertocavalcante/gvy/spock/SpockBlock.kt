@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyspock
+package com.github.albertocavalcante.gvy.spock
 
 /**
  * Spock block types as defined by the Spock Framework specification.

@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyspock
+package com.github.albertocavalcante.gvy.spock
 
 import com.github.albertocavalcante.gvy.common.text.GroovyCodeCleaner
 import com.github.albertocavalcante.nativeapi.ParseResult

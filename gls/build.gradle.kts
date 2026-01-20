@@ -113,7 +113,7 @@ dependencies {
     implementation(project(":diagnostics:sarif"))
     implementation(project(":jenkins"))
     implementation(project(":build-tool"))
-    implementation(project(":groovy-spock"))
+    implementation(project(":spock"))
     implementation(project(":groovy-testing"))
     implementation(project(":groovy-junit"))
     implementation(project(":markdown"))
