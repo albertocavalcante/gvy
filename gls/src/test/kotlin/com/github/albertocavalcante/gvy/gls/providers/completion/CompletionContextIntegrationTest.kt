@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.completion.JenkinsContextDetector
+import com.github.albertocavalcante.gvy.jenkins.completion.JenkinsContextDetector
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

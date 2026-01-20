@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.documentation
 
-import com.github.albertocavalcante.groovyjenkins.JenkinsContext
-import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.gvy.jenkins.JenkinsContext
+import com.github.albertocavalcante.gvy.jenkins.JenkinsPluginManager
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression

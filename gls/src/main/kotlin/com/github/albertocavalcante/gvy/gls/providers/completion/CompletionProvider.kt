@@ -1,8 +1,5 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.completion.JenkinsContextDetector
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
@@ -21,6 +18,9 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.Jenkin
 import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.MemberAccessCompletionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.SpockCompletionStrategy
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.jenkins.completion.JenkinsContextDetector
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor

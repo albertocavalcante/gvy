@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
-import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsBlockMetadata
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsBlockMetadata
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers

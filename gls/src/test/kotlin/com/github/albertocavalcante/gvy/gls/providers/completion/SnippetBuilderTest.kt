@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 

@@ -1,7 +1,7 @@
-package com.github.albertocavalcante.groovyjenkins.extractor
+package com.github.albertocavalcante.gvy.jenkins.extractor
 
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.PluginInfo
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.PluginInfo
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test

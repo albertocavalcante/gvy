@@ -52,7 +52,7 @@ class JenkinsPropertyCompletionTest {
 
         // Initialize Jenkins strategy with file patterns
         val config = ServerConfiguration(
-            jenkinsConfig = com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration(
+            jenkinsConfig = com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration(
                 filePatterns = listOf("**/Jenkinsfile", "**/Jenkinsfile.*"),
             ),
         )

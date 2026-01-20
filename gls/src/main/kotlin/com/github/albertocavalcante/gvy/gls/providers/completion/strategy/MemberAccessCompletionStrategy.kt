@@ -1,7 +1,5 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
@@ -11,6 +9,8 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvi
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportInfo
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportParser
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind

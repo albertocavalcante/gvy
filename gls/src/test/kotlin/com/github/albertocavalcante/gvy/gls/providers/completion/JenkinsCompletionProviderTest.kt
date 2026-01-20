@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

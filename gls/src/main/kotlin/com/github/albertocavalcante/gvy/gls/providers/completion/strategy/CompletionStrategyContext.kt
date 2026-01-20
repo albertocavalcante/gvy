@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider.ContextType
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.gvy.semantics.native.SymbolCompletionContext
 import org.codehaus.groovy.ast.ASTNode
 

@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
-import com.github.albertocavalcante.groovyjenkins.GlobalVariable
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
+import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking

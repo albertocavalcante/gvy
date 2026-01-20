@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
-import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
-import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
-import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
-import com.github.albertocavalcante.groovyjenkins.metadata.JsonMetadataLoader
 import com.github.albertocavalcante.gvy.build.MavenSourceArtifactResolver
+import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
+import com.github.albertocavalcante.gvy.jenkins.JenkinsPluginManager
+import com.github.albertocavalcante.gvy.jenkins.extraction.PluginDownloader
+import com.github.albertocavalcante.gvy.jenkins.extraction.PluginsParser
+import com.github.albertocavalcante.gvy.jenkins.metadata.JsonMetadataLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import java.nio.file.Files

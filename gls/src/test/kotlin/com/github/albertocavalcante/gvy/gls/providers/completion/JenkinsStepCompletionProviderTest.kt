@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedDeclarativeOption
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedParameter
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedDeclarativeOption
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull

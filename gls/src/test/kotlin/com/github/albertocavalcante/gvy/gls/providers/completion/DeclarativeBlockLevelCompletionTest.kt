@@ -40,7 +40,7 @@ class DeclarativeBlockLevelCompletionTest {
         compilationService.workspaceManager.setStrategyRegistry(strategyRegistry)
 
         val config = ServerConfiguration(
-            jenkinsConfig = com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration(
+            jenkinsConfig = com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration(
                 filePatterns = listOf("**/Jenkinsfile", "**/Jenkinsfile.*"),
             ),
         )

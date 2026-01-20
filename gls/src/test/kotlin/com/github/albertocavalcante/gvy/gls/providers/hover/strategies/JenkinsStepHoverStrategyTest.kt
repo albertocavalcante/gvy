@@ -1,14 +1,14 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover.strategies
 
-import com.github.albertocavalcante.groovyjenkins.GlobalVariable
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedParameter
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedStepMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.enrichment.StepCategory
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContext
+import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.StepCategory
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat

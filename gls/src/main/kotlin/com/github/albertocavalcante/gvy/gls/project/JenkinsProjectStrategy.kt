@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.gvy.gls.project
 
-import com.github.albertocavalcante.groovyjenkins.GlobalVariable
-import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
-import com.github.albertocavalcante.groovyjenkins.JenkinsWorkspaceManager
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.JenkinsMetadataService
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.JenkinsPluginManager
+import com.github.albertocavalcante.gvy.jenkins.JenkinsWorkspaceManager
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
