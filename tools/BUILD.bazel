@@ -7,7 +7,7 @@ load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain")
 # Using Kotlin 2.3.0 compiler from locally-built rules_kotlin (master branch)
 define_kt_toolchain(
     name = "kotlin_toolchain",
-    api_version = "2.1",  # Kotlin 2.1 features (multi-dollar interpolation, etc.)
+    api_version = "2.3",  # Kotlin 2.3 features (nested type aliases, etc.)
     experimental_multiplex_workers = True,  # Better worker utilization
     experimental_report_unused_deps = "warn",
 
@@ -17,7 +17,7 @@ define_kt_toolchain(
     # Performance optimizations
     experimental_use_abi_jars = True,  # 20-40% faster incremental builds
     jvm_target = "21",
-    language_version = "2.1",
+    language_version = "2.3",
 )
 
 # Wire compiler for proto code generation

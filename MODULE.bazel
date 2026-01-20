@@ -164,9 +164,9 @@ maven.install(
         # Jupyter Kernel Protocol
         "org.zeromq:jeromq:0.6.0",
 
-        # CLI
-        "com.github.ajalt.clikt:clikt:5.0.3",
-        "com.github.ajalt.mordant:mordant:3.0.2",
+        # CLI - JVM variants for Kotlin Multiplatform artifacts
+        "com.github.ajalt.clikt:clikt-jvm:5.0.3",
+        "com.github.ajalt.mordant:mordant-jvm:3.0.2",
     ],
     repositories = [
         "https://repo1.maven.org/maven2",

@@ -2,17 +2,11 @@ load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary")
 load("//tools/build_defs:kotlin.bzl", "kt_library")
 
-# NOTE: groovy-lsp-lib is disabled (tags = ["manual"]) due to:
-# - Kotlin 2.2 features (multi-dollar interpolation, nested type aliases)
-# - Mordant 3.x API incompatibility
-# - Dependencies on disabled modules (viz/ast-model, indexer/scip)
-# Enable once source code is updated for Bazel compatibility
 kt_library(
     name = "gls-lib",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
-    tags = ["manual"],
     deps = [
         # Internal dependencies
         "//dsl/dsld",
@@ -34,9 +28,11 @@ kt_library(
         "//parser/native",
         "//indexer/core",
         "//indexer/lsif",
+        "//indexer/scip",
         "//parser/rewrite",
-        # "//indexer/scip",  # Disabled: needs protobuf generation for SCIP
-        # "//viz/ast-model",  # Disabled: needs Compose Multiplatform
+        "//reports/coverage",
+        "//reports/results",
+        "//viz/ast-model",
 
         # LSP4J - Language Server Protocol implementation
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
@@ -64,9 +60,9 @@ kt_library(
         "@maven//:org_slf4j_slf4j_api",
         "@maven//:ch_qos_logback_logback_classic",
 
-        # CLI
-        "@maven//:com_github_ajalt_clikt_clikt",
-        "@maven//:com_github_ajalt_mordant_mordant",
+        # CLI - JVM variants
+        "@maven//:com_github_ajalt_clikt_clikt_jvm",
+        "@maven//:com_github_ajalt_mordant_mordant_jvm",
 
         # Classpath Scanning
         "@maven//:io_github_classgraph_classgraph",
@@ -80,7 +76,6 @@ kt_jvm_binary(
     name = "gls",
     main_class = "com.github.albertocavalcante.groovylsp.MainKt",
     visibility = ["//visibility:public"],
-    tags = ["manual"],
     runtime_deps = [":gls-lib"],
 )
 
@@ -88,6 +83,5 @@ java_binary(
     name = "gls_deploy",
     main_class = "com.github.albertocavalcante.groovylsp.MainKt",
     visibility = ["//visibility:public"],
-    tags = ["manual"],
     runtime_deps = [":gls-lib"],
 )
