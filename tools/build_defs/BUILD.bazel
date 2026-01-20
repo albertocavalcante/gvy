@@ -13,3 +13,4 @@ kt_compiler_plugin(
         "@maven//:org_jetbrains_kotlin_kotlin_serialization_compiler_plugin_embeddable",
     ],
 )
+
