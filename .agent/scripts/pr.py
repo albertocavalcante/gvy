@@ -1352,7 +1352,9 @@ DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 PROMPT_MAX_CHARS_DEFAULT = 400_000
 PROMPT_MIN_CHARS = 1_000  # Minimum to accommodate basic prompts
 try:
-    _env_val = int(os.environ.get("GVY_PROMPT_MAX_CHARS", "400000"))
+    _env_val = int(
+        os.environ.get("GVY_PROMPT_MAX_CHARS", str(PROMPT_MAX_CHARS_DEFAULT))
+    )
     PROMPT_MAX_CHARS = (
         _env_val if _env_val >= PROMPT_MIN_CHARS else PROMPT_MAX_CHARS_DEFAULT
     )
@@ -2274,10 +2276,11 @@ def generate_ai_message(
             # Detect OOM patterns and provide helpful guidance
             error_lower = error_detail.lower()
             if any(pattern in error_lower for pattern in OOM_ERROR_PATTERNS):
+                default = PROMPT_MAX_CHARS_DEFAULT
                 typer.echo(
                     "   💡 This appears to be an out-of-memory error.\n"
                     "   Try: --stats-only flag or --provider claude.\n"
-                    "   Lowering GVY_PROMPT_MAX_CHARS (default: 400000) triggers\n"
+                    f"   Lowering GVY_PROMPT_MAX_CHARS (default: {default}) triggers\n"
                     "   earlier stats-only fallback but won't fix AI CLI OOM.",
                     err=True,
                 )
