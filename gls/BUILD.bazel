@@ -8,12 +8,20 @@ kt_library(
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
     deps = [
+        "@maven//:com_github_ajalt_clikt_clikt_core_jvm",
+        "@maven//:com_github_ajalt_mordant_mordant_core_jvm",
+        "@maven//:com_google_code_gson_gson",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         # Internal dependencies
         "//dsl/dsld",
         "//fmt",
         # TODO: build-tool temporarily disabled (requires gradle-tooling-api)
         # "//build-tool",
         "//diagnostics/api",
+        "//parser/api",
         "//semantics/core",
         "//semantics/native",
         "//diagnostics/codenarc",
@@ -42,19 +50,11 @@ kt_library(
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_apache_groovy_groovy_groovydoc",
 
-        "@maven//:org_gradle_gradle_tooling_api",
-
-        # Kotlin Coroutines
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
-
         # Kotlin Immutable Collections
         "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable_jvm",
 
         # Functional Programming - Arrow-kt
         "@maven//:io_arrow_kt_arrow_core_jvm",
-
-        # Serialization
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
 
         # Logging
         "@maven//:org_slf4j_slf4j_api",
@@ -62,7 +62,6 @@ kt_library(
 
         # CLI - JVM variants
         "@maven//:com_github_ajalt_clikt_clikt_jvm",
-        "@maven//:com_github_ajalt_mordant_mordant_jvm",
 
         # Classpath Scanning
         "@maven//:io_github_classgraph_classgraph",

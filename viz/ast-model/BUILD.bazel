@@ -6,15 +6,17 @@ kt_library(
         "src/commonMain/kotlin/**/*.kt",
         "src/jvmMain/kotlin/**/*.kt",
     ]),
-    visibility = ["//visibility:public"],
     # Disabled: Requires Compose Multiplatform Bazel configuration
     tags = ["manual"],
+    visibility = ["//visibility:public"],
     deps = [
+        "//parser/api",
         "//parser/core",
-        "//parser/native",
         "//parser/rewrite",
+        "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
 )
 
@@ -24,9 +26,9 @@ kt_test(
         "src/commonTest/kotlin/**/*.kt",
         "src/jvmTest/kotlin/**/*.kt",
     ]),
-    test_packages = ["com.github.albertocavalcante.gvy"],
     # Disabled: Requires Compose Multiplatform Bazel configuration
     tags = ["manual"],
+    test_packages = ["com.github.albertocavalcante.gvy"],
     deps = [
         ":ast-model",
         "@maven//:org_junit_platform_junit_platform_launcher",

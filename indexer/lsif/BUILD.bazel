@@ -7,7 +7,7 @@ kt_library(
     deps = [
         "//indexer/core",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
 )
 
@@ -17,6 +17,6 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.groovylsp"],
     deps = [
         ":lsif",
-        "@maven//:org_junit_platform_junit_platform_launcher",
+        "//indexer/core",
     ],
 )

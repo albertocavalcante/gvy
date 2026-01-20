@@ -12,18 +12,18 @@ kt_library(
         "@maven//:com_vladsch_flexmark_flexmark_html2md_converter",
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:io_github_classgraph_classgraph",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:io_ktor_ktor_client_cio_jvm",
         "@maven//:io_ktor_ktor_client_content_negotiation_jvm",
         "@maven//:io_ktor_ktor_client_core_jvm",
         "@maven//:io_ktor_ktor_http_jvm",
         "@maven//:io_ktor_ktor_io_jvm",
         "@maven//:io_ktor_ktor_serialization_kotlinx_json_jvm",
-        "@maven//:io_ktor_ktor_utils_jvm",
-        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
-        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+        "@maven//:org_ow2_asm_asm",
     ],
 )
 
@@ -31,8 +31,8 @@ kt_library(
 kt_test(
     name = "groovy-jenkins_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovyjenkins"],
     tags = ["manual"],
+    test_packages = ["com.github.albertocavalcante.groovyjenkins"],
     deps = [
         ":groovy-jenkins",
         "@maven//:io_ktor_ktor_client_mock_jvm",

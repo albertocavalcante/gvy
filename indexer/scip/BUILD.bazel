@@ -26,6 +26,7 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.groovylsp"],
     deps = [
         ":scip",
-        "@maven//:org_junit_platform_junit_platform_launcher",
+        ":scip_proto",
+        "//indexer/core",
     ],
 )

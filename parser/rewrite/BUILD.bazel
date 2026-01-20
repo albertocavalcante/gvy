@@ -7,17 +7,16 @@ kt_library(
     deps = [
         "//parser/api",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_openrewrite_rewrite_core",
         "@maven//:org_openrewrite_rewrite_groovy",
+        "@maven//:org_openrewrite_rewrite_java",
     ],
 )
 
 kt_test(
     name = "rewrite_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovyparser"],
     associates = [":rewrite"],
-    deps = [
-        "//parser/api",
-        "@maven//:org_junit_platform_junit_platform_launcher",
-    ],
+    test_packages = ["com.github.albertocavalcante.groovyparser"],
+    deps = ["//parser/api"],
 )

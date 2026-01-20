@@ -8,6 +8,7 @@ kt_library(
         "//dsl/dsld",
         "//parser/core",
         "//semantics/core",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
@@ -16,11 +17,12 @@ kt_library(
 kt_test(
     name = "native_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.gvy"],
     associates = [":native"],
+    test_packages = ["com.github.albertocavalcante.gvy"],
     deps = [
-        "//parser/api",
+        "//parser/core",
         "//parser/native",
-        "@maven//:org_junit_platform_junit_platform_launcher",
+        "//semantics/core",
+        "@maven//:org_apache_groovy_groovy",
     ],
 )

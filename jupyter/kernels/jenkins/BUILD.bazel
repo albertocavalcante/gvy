@@ -6,9 +6,9 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "//jupyter/kernel-core",
-        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_zeromq_jeromq",
     ],
 )
 

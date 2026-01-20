@@ -10,22 +10,21 @@ kt_library(
         "//parser/native",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_apache_groovy_groovy_json",
         "@maven//:org_codenarc_CodeNarc",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
-        "@maven//:org_gmetrics_GMetrics",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
-        "@maven//:org_slf4j_slf4j_api",
     ],
 )
 
 kt_test(
     name = "codenarc_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.diagnostics"],
     associates = [":codenarc"],
+    test_packages = ["com.github.albertocavalcante.diagnostics"],
     deps = [
+        "//diagnostics/api",
+        "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_codenarc_CodeNarc",
     ],
 )

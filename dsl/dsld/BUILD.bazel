@@ -17,8 +17,8 @@ kt_library(
 kt_test(
     name = "groovy-common_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovycommon"],
     tags = ["manual"],
+    test_packages = ["com.github.albertocavalcante.groovycommon"],
     deps = [
         ":groovy-common",
         "//parser/native",

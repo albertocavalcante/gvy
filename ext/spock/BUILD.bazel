@@ -8,18 +8,17 @@ kt_library(
         "//dsl/dsld",
         "//parser/native",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
-        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_apache_groovy_groovy",
     ],
 )
 
 kt_test(
     name = "groovy-spock_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovyspock"],
     associates = [":groovy-spock"],
+    test_packages = ["com.github.albertocavalcante.groovyspock"],
     deps = [
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_spockframework_spock_core",
     ],
 )

@@ -5,13 +5,12 @@ kt_library(
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//dsl/dsld",
         "//repl",
         "//jupyter/kernel-core",
-        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_zeromq_jeromq",
     ],
 )
 

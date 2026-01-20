@@ -6,9 +6,10 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "//repl",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
-        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         "@maven//:org_zeromq_jeromq",
     ],
 )
@@ -19,8 +20,9 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.groovyjupyter"],
     deps = [
         ":kernel-core",
+        "//repl",
+        "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
-        "@maven//:org_junit_platform_junit_platform_launcher",
+        "@maven//:org_zeromq_jeromq",
     ],
 )

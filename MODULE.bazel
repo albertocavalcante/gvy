@@ -14,7 +14,7 @@ module(
 # Core Bazel dependencies
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.0.0")
-bazel_dep(name = "rules_java", version = "9.0.3")
+bazel_dep(name = "rules_java", version = "9.3.0")
 bazel_dep(name = "rules_kotlin", version = "2.2.2")
 
 # Override with fork-built rules_kotlin (Kotlin 2.3.0)

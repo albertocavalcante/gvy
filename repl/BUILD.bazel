@@ -4,23 +4,20 @@ kt_library(
     name = "repl",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
+    # Ivy is needed for Grape dependency resolution at runtime
+    runtime_deps = [
+        "@maven//:org_apache_ivy_ivy",
+    ],
     deps = [
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-    ],
-    # Ivy is needed for Grape dependency resolution at runtime
-    runtime_deps = [
-        "@maven//:org_apache_ivy_ivy",
     ],
 )
 
 kt_test(
     name = "groovy-repl_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovyrepl"],
     associates = [":groovy-repl"],
-    deps = [
-        "@maven//:org_junit_platform_junit_platform_launcher",
-    ],
+    test_packages = ["com.github.albertocavalcante.groovyrepl"],
 )

@@ -6,7 +6,9 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_openrewrite_rewrite_core",
         "@maven//:org_openrewrite_rewrite_groovy",
+        "@maven//:org_openrewrite_rewrite_java",
     ],
 )
 
@@ -15,8 +17,8 @@ kt_library(
 kt_test(
     name = "rewrite-codenarc_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.refactor"],
     tags = ["manual"],
+    test_packages = ["com.github.albertocavalcante.refactor"],
     deps = [
         ":rewrite-codenarc",
         "@maven//:ch_qos_logback_logback_classic",

@@ -8,18 +8,19 @@ kt_library(
         "//ext/testing",
         "//parser/native",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_apache_groovy_groovy",
         "@maven//:org_slf4j_slf4j_api",
         # JUnit dependencies are compileOnly - not included at runtime
     ],
 )
 
 kt_test(
-    name = "groovy-junit_test",
+    name = "junit_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":junit"],
     test_packages = ["com.github.albertocavalcante.groovyjunit"],
-    associates = [":groovy-junit"],
     deps = [
-        "//testing",
+        "//ext/testing",
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
     ],

@@ -13,10 +13,7 @@ kt_library(
 kt_test(
     name = "results_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.reports.results"],
     associates = [":results"],
     resources = glob(["src/test/resources/**/*"]),
-    deps = [
-        "@maven//:io_mockk_mockk_jvm",
-    ],
+    test_packages = ["com.github.albertocavalcante.reports.results"],
 )

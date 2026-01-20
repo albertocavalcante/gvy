@@ -7,15 +7,17 @@ kt_library(
     deps = [
         "//dsl/dsld",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_openrewrite_rewrite_core",
         "@maven//:org_openrewrite_rewrite_groovy",
+        "@maven//:org_openrewrite_rewrite_java",
     ],
 )
 
 kt_test(
     name = "groovy-formatter_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovyformatter"],
     associates = [":groovy-formatter"],
+    test_packages = ["com.github.albertocavalcante.groovyformatter"],
     deps = [
         "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],

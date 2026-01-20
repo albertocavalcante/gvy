@@ -5,7 +5,6 @@ kt_library(
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//parser/core",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
@@ -16,10 +15,7 @@ kt_library(
 kt_test(
     name = "core_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovylsp"],
     associates = [":core"],
-    deps = [
-        "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_junit_platform_junit_platform_launcher",
-    ],
+    test_packages = ["com.github.albertocavalcante.groovylsp"],
+    deps = ["@maven//:org_apache_groovy_groovy"],
 )

@@ -5,11 +5,11 @@ kt_library(
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//diagnostics/api",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
 )
 
@@ -19,6 +19,6 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.diagnostics"],
     deps = [
         ":sarif",
-        "@maven//:org_junit_platform_junit_platform_launcher",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
 )
