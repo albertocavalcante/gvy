@@ -1,0 +1,37 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "maven-bsp",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_apache_maven_maven_model",
+        "@maven//:org_apache_maven_maven_model_builder",
+        "@maven//:org_apache_maven_maven_resolver_provider",
+        "@maven//:org_apache_maven_resolver_maven_resolver_api",
+        "@maven//:org_apache_maven_resolver_maven_resolver_connector_basic",
+        "@maven//:org_apache_maven_resolver_maven_resolver_impl",
+        "@maven//:org_apache_maven_resolver_maven_resolver_spi",
+        "@maven//:org_apache_maven_resolver_maven_resolver_transport_file",
+        "@maven//:org_apache_maven_resolver_maven_resolver_transport_http",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+    ],
+)
+
+kt_test(
+    name = "maven-bsp_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":maven-bsp"],
+    data = glob(["src/test/resources/**"]),
+    test_packages = ["com.github.groovylsp.bsp.maven"],
+    deps = [
+        "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_assertj_assertj_core",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
+    ],
+)
