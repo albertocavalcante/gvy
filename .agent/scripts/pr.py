@@ -2151,15 +2151,14 @@ def _build_ai_prompt(
 """
 
 
-# OOM error patterns for detection
+# OOM error patterns for detection (specific patterns to avoid false positives)
 OOM_ERROR_PATTERNS = [
-    "mark-compact",
-    "heap",
-    "out of memory",
-    "oom",
+    "ineffective mark-compact",
+    "javascript heap out of memory",
+    "fatal error: heap limit",
     "allocation failed",
-    "javascript heap",
-    "ineffective",
+    "out of memory",
+    "heap limit reached",
 ]
 
 
@@ -2204,7 +2203,7 @@ def generate_ai_message(
     prompt = _build_ai_prompt(pr, pr_number, diff_content, diff_mode)
 
     # Enterprise-grade auto-detection: prevent OOM by checking prompt size
-    if len(prompt) > PROMPT_MAX_CHARS and diff_mode != "stats_only":
+    if len(prompt) > PROMPT_MAX_CHARS and diff_mode != DiffMode.STATS_ONLY.value:
         typer.echo(
             f"⚠️ Prompt exceeds limit ({len(prompt):,} > {PROMPT_MAX_CHARS:,} chars), "
             "auto-downgrading to stats-only...",
@@ -2220,14 +2219,15 @@ def generate_ai_message(
 
         prompt = _build_ai_prompt(pr, pr_number, diff_content, diff_mode)
 
-        # Final check - if still too large, abort
-        if len(prompt) > PROMPT_MAX_CHARS:
-            typer.echo(
-                f"❌ Prompt still too large ({len(prompt):,} chars) with stats-only. "
-                "PR metadata may be too verbose.",
-                err=True,
-            )
-            return "", ""
+    # Final check - if still too large (even with stats-only), abort
+    # Un-nested to catch both auto-downgrade AND explicit --stats-only cases
+    if len(prompt) > PROMPT_MAX_CHARS:
+        typer.echo(
+            f"❌ Prompt still too large ({len(prompt):,} chars) with stats-only. "
+            "PR metadata may be too verbose.",
+            err=True,
+        )
+        return "", ""
 
     try:
         # Security: validate cmd is an expected value (allowlist check)
@@ -2268,8 +2268,8 @@ def generate_ai_message(
             if any(pattern in error_lower for pattern in OOM_ERROR_PATTERNS):
                 typer.echo(
                     "   💡 This appears to be an out-of-memory error.\n"
-                    "   Try: --stats-only flag, or --provider claude, "
-                    "or set GVY_PROMPT_MAX_CHARS=200000",
+                    "   Try: --stats-only flag, --provider claude, "
+                    "or lower GVY_PROMPT_MAX_CHARS (default: 400000, try 200000)",
                     err=True,
                 )
             return "", ""
