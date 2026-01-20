@@ -1,11 +1,13 @@
 """Build definitions and toolchains for the Groovy Language Server project."""
 
+load("@rules_java//java:defs.bzl", "java_binary")
 load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain")
 
 # Kotlin toolchain with performance optimizations
+# Using Kotlin 2.3.0 compiler from locally-built rules_kotlin (master branch)
 define_kt_toolchain(
     name = "kotlin_toolchain",
-    api_version = "2.0",  # Corresponds to compiler in rules_kotlin v2.2.2 (Kotlin 2.2.21)
+    api_version = "2.1",  # Kotlin 2.1 features (multi-dollar interpolation, etc.)
     experimental_multiplex_workers = True,  # Better worker utilization
     experimental_report_unused_deps = "warn",
 
@@ -15,5 +17,13 @@ define_kt_toolchain(
     # Performance optimizations
     experimental_use_abi_jars = True,  # 20-40% faster incremental builds
     jvm_target = "21",
-    language_version = "2.0",
+    language_version = "2.1",
+)
+
+# Wire compiler for proto code generation
+java_binary(
+    name = "wire_compiler",
+    main_class = "com.squareup.wire.WireCompiler",
+    runtime_deps = ["@maven//:com_squareup_wire_wire_compiler"],
+    visibility = ["//visibility:public"],
 )

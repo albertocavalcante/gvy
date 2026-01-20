@@ -1,18 +1,21 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+load("//tools/build_defs:wire.bzl", "wire_proto_library")
 
-# NOTE: These targets are disabled (tags = ["manual"]) because protobuf code
-# generation for SCIP protocol buffers is not yet configured in the Bazel build.
-# Once protobuf generation is set up, remove the "manual" tags to re-enable
-# these targets in wildcard builds (//...).
+# Generate and compile SCIP proto using Wire
+wire_proto_library(
+    name = "scip_proto",
+    srcs = ["//indexer/scip/src/main/proto:scip.proto"],
+    visibility = ["//visibility:public"],
+)
 
 kt_library(
     name = "scip",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
-    tags = ["manual"],
     deps = [
+        ":scip_proto",
         "//indexer/core",
-        "@maven//:com_squareup_wire_wire_runtime",
+        "@maven//:com_squareup_wire_wire_runtime_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
 )
@@ -21,7 +24,6 @@ kt_test(
     name = "scip_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     test_packages = ["com.github.albertocavalcante.groovylsp"],
-    tags = ["manual"],
     deps = [
         ":scip",
         "@maven//:org_junit_platform_junit_platform_launcher",

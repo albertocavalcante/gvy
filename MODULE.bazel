@@ -17,11 +17,14 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_java", version = "9.0.3")
 bazel_dep(name = "rules_kotlin", version = "2.2.2")
 
-# NOTE: Kotlin 2.3.0 requires rules_kotlin with commit f08e668+, but building from
-# source (git_override/archive_override) fails due to missing Dagger shading in kotlinbuilder.
-# The released rules_kotlin 2.2.2 includes pre-built kotlinbuilder JARs that work.
-# Until rules_kotlin releases a version with Kotlin 2.3.0, we must use 2.2.21.
-# Monitor: https://github.com/bazelbuild/rules_kotlin/releases
+# Override with fork-built rules_kotlin (Kotlin 2.3.0)
+# Published from: https://github.com/albertocavalcante/fork-rules_kotlin
+# To update: ./tools/scripts/publish-rules-kotlin-fork.sh --build --version v2.3.0-fork.N
+archive_override(
+    module_name = "rules_kotlin",
+    urls = ["https://github.com/albertocavalcante/fork-rules_kotlin/releases/download/v2.3.0-fork.1/rules_kotlin_release.tgz"],
+    integrity = "sha256-9vOI0nezePk0rrm7HaQ9h+MVvgo3H6h71Cl37UMZp1A=",
+)
 
 # Register custom Kotlin toolchain
 register_toolchains("//tools:kotlin_toolchain")
@@ -53,16 +56,15 @@ maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 
 maven.install(
     artifacts = [
-        # Kotlin - versions MUST align with rules_kotlin 2.2.2's bundled kotlinbuilder (Kotlin 2.2.21)
-        # Cannot use Kotlin 2.3.0 until rules_kotlin releases a version with pre-built kotlinbuilder
-        "org.jetbrains.kotlin:kotlin-stdlib:2.2.21",
+        # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
+        "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
         "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0",
         "org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0",
-        "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:2.2.21",
-        "org.jetbrains.kotlin:kotlin-test:2.2.21",
-        "org.jetbrains.kotlin:kotlin-test-junit5:2.2.21",
+        "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:2.3.0",
+        "org.jetbrains.kotlin:kotlin-test:2.3.0",
+        "org.jetbrains.kotlin:kotlin-test-junit5:2.3.0",
 
         # Groovy
         "org.apache.groovy:groovy:4.0.29",
@@ -79,9 +81,11 @@ maven.install(
         "org.eclipse.lsp4j:org.eclipse.lsp4j:0.24.0",
         "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
 
-        # SCIP / Protobuf
-        "com.squareup.wire:wire-runtime:5.4.0",
+        # SCIP / Protobuf (Wire)
+        # Note: wire-runtime is a Kotlin Multiplatform artifact, need -jvm classifier for JVM targets
+        "com.squareup.wire:wire-runtime-jvm:5.4.0",
         "com.squareup.wire:wire-compiler:5.4.0",
+        "com.squareup.okio:okio-jvm:3.10.2",  # Required by Wire-generated code
 
         # Code Quality & Analysis
         # Note: CodeNarc exclusions are defined separately via maven.artifact()

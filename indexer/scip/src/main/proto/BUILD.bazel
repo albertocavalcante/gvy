@@ -2,6 +2,9 @@ load("@rules_go//go:def.bzl", "go_library")
 load("@rules_go//proto:def.bzl", "go_proto_library")
 load("@rules_proto//proto:defs.bzl", "proto_library")
 
+# Export proto file for Wire codegen
+exports_files(["scip.proto"])
+
 proto_library(
     name = "proto_proto",
     srcs = ["scip.proto"],
