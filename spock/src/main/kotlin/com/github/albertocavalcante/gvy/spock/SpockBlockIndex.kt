@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyspock
+package com.github.albertocavalcante.gvy.spock
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.MethodNode

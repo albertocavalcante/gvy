@@ -6,7 +6,7 @@ dependencies {
     // Groovy AST for ClassNode/ModuleNode
     implementation(project(":parser:native"))
     // Spock-specific detection and extraction
-    implementation(project(":groovy-spock"))
+    implementation(project(":spock"))
 
     // Logging
     // kotlin-logging provides the API; SLF4J implementation needed at runtime.

@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.groovytesting.spock
 
-import com.github.albertocavalcante.groovyspock.SpockDetector
-import com.github.albertocavalcante.groovyspock.SpockFeatureExtractor
 import com.github.albertocavalcante.groovytesting.api.TestFramework
 import com.github.albertocavalcante.groovytesting.api.TestFrameworkDetector
 import com.github.albertocavalcante.groovytesting.api.TestItem
 import com.github.albertocavalcante.groovytesting.api.TestItemKind
+import com.github.albertocavalcante.gvy.spock.SpockDetector
+import com.github.albertocavalcante.gvy.spock.SpockFeatureExtractor
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassHelper
@@ -17,7 +17,7 @@ import org.codehaus.groovy.ast.ModuleNode
  *
  * Delegates to [SpockDetector] for detection and [SpockFeatureExtractor]
  * for extracting feature methods. This adapter bridges the existing
- * groovy-spock module with the new groovy-testing API.
+ * spock module with the new groovy-testing API.
  */
 class SpockTestDetector : TestFrameworkDetector {
 

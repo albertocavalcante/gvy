@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
-import com.github.albertocavalcante.groovyspock.SpockDetector
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
+import com.github.albertocavalcante.gvy.spock.SpockDetector
 import org.eclipse.lsp4j.CompletionItemKind
 
 /**
