@@ -9,6 +9,6 @@ package com.github.albertocavalcante.gvy.dsld
  * @see <a href="https://github.com/groovy/groovy-eclipse/wiki/DSL-Descriptors">DSLD Documentation</a>
  */
 class DsldParser {
-    // TODO(#XXX): Implement DSLD parsing
-    //   See: https://github.com/albertocavalcante/groovy-lsp/issues/XXX
+    // TODO(#1024): Implement DSLD parsing
+    //   See: https://github.com/albertocavalcante/gvy/issues/1024
 }
