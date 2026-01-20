@@ -5,7 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":jenkins"))
-    implementation(project(":groovy-gdsl"))
+    implementation(project(":dsl:gdsl"))
 
     // Kotlin serialization for JSON output
     implementation(libs.kotlin.serialization.json)
