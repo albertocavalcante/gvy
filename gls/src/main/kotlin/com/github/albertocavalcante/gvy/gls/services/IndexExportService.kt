@@ -1,0 +1,88 @@
+package com.github.albertocavalcante.gvy.gls.services
+
+import com.github.albertocavalcante.groovylsp.indexing.IndexFormat
+import com.github.albertocavalcante.groovylsp.indexing.IndexWriter
+import com.github.albertocavalcante.groovylsp.indexing.SymbolGenerator
+import com.github.albertocavalcante.groovylsp.indexing.UnifiedIndexer
+import com.github.albertocavalcante.groovylsp.indexing.lsif.LsifWriter
+import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
+import com.github.albertocavalcante.gvy.build.BuildToolManager
+import com.github.albertocavalcante.gvy.common.FileExtensions
+import com.github.albertocavalcante.gvy.gls.providers.indexing.ExportIndexParams
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
+import java.io.FileOutputStream
+import java.nio.file.Files
+import java.nio.file.Path
+import kotlin.io.path.extension
+import kotlin.io.path.name
+import kotlin.io.path.readText
+
+class IndexExportService(private val buildToolManagerProvider: () -> BuildToolManager?) {
+    private val logger = KotlinLogging.logger {}
+
+    private fun rethrowIfCancellationOrError(throwable: Throwable) {
+        when (throwable) {
+            is CancellationException -> throw throwable
+            is Error -> throw throwable
+        }
+    }
+
+    fun exportIndex(params: ExportIndexParams, workspaceRoot: Path): String {
+        logger.info { "Exporting index format=${params.format} to=${params.outputPath}" }
+
+        FileOutputStream(params.outputPath).use { fileOutputStream ->
+            val writers = createWriters(params.format, fileOutputStream, workspaceRoot)
+
+            val buildToolManager = buildToolManagerProvider()
+            val buildTool = buildToolManager?.detectBuildTool(workspaceRoot)
+            val manager = buildTool?.name?.lowercase() ?: "manual"
+            val symbolGenerator = SymbolGenerator(scheme = "scip-groovy", manager = manager)
+            val indexer = UnifiedIndexer(writers, symbolGenerator)
+
+            try {
+                indexFiles(workspaceRoot, indexer)
+            } finally {
+                // Explicitly close writers to flush footers
+                writers.forEach { it.close() }
+            }
+        }
+
+        return "Successfully exported ${params.format} index to ${params.outputPath}"
+    }
+
+    private fun createWriters(format: IndexFormat, outputStream: FileOutputStream, root: Path): List<IndexWriter> =
+        runCatching {
+            when (format) {
+                IndexFormat.SCIP -> listOf(ScipWriter(outputStream, root.toString()))
+                IndexFormat.LSIF -> listOf(LsifWriter(outputStream, root.toString()))
+            }
+        }
+            .onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                runCatching { outputStream.close() }
+                throw throwable
+            }
+            .getOrThrow()
+
+    private fun indexFiles(root: Path, indexer: UnifiedIndexer) {
+        Files.walk(root).use { stream ->
+            stream.filter { path ->
+                path.extension in FileExtensions.EXTENSIONS ||
+                    path.name in FileExtensions.FILENAMES
+            }
+                .forEach { path ->
+                    runCatching {
+                        val relativePath = root.relativize(path).toString()
+                        val content = path.readText()
+                        indexer.indexDocument(relativePath, content)
+                    }
+                        .onFailure { throwable ->
+                            rethrowIfCancellationOrError(throwable)
+                            // Keep indexing other files; log for debugging.
+                            logger.warn(throwable) { "Failed to index file $path" }
+                        }
+                }
+        }
+    }
+}

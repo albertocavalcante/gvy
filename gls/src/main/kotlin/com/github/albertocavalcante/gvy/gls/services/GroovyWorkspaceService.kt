@@ -1,0 +1,238 @@
+package com.github.albertocavalcante.gvy.gls.services
+
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.Version
+import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
+import com.github.albertocavalcante.gvy.gls.version.GroovyVersionResolver
+import com.github.albertocavalcante.gvy.gls.worker.WorkerFeature
+import com.github.albertocavalcante.gvy.gls.worker.WorkerRouter
+import com.github.albertocavalcante.gvy.gls.worker.WorkerRouterFactory
+import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
+import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import org.eclipse.lsp4j.DidChangeConfigurationParams
+import org.eclipse.lsp4j.DidChangeWatchedFilesParams
+import org.eclipse.lsp4j.ExecuteCommandParams
+import org.eclipse.lsp4j.FileChangeType
+import org.eclipse.lsp4j.FileEvent
+import org.eclipse.lsp4j.SymbolInformation
+import org.eclipse.lsp4j.WorkspaceSymbol
+import org.eclipse.lsp4j.WorkspaceSymbolParams
+import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.services.WorkspaceService
+import java.net.URI
+import java.util.concurrent.CompletableFuture
+
+/**
+ * Handles all workspace related LSP operations.
+ */
+class GroovyWorkspaceService(
+    private val compilationService: GroovyCompilationService,
+    private val symbolIndexer: SymbolIndexingService,
+    private val coroutineScope: CoroutineScope,
+    private val textDocumentService: GroovyTextDocumentService? = null,
+    private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
+) : WorkspaceService {
+
+    private val logger = KotlinLogging.logger {}
+
+    override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> {
+        logger.info { "Executing command: ${params.command}" }
+        return when (params.command) {
+            "groovy.version" -> CompletableFuture.completedFuture(Version.current)
+            else -> {
+                logger.warn { "Unknown command: ${params.command}" }
+                CompletableFuture.completedFuture(null)
+            }
+        }
+    }
+
+    override fun didChangeConfiguration(params: DidChangeConfigurationParams) {
+        logger.info { "Configuration changed, updating Jenkins context if applicable" }
+
+        // Parse new configuration
+        val settings = params.settings
+
+        @Suppress("UNCHECKED_CAST")
+        val settingsMap = when (val settings = params.settings) {
+            is Map<*, *> -> settings as? Map<String, Any>
+            else -> null
+        }
+
+        if (settingsMap != null) {
+            val newConfig = ServerConfiguration.fromMap(settingsMap)
+
+            // Update configuration on all active strategies
+            compilationService.workspaceManager.getStrategyRegistry()?.activeStrategies?.forEach { strategy ->
+                strategy.updateConfiguration(newConfig)
+            }
+            updateGroovyVersion(newConfig)
+            logger.info { "Configuration updated for active strategies" }
+        }
+    }
+
+    override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {
+        logger.debug { "Watched files changed: ${params.changes?.size ?: 0} changes" }
+
+        if (params.changes.isNullOrEmpty()) return
+
+        val changes = params.changes.groupBy { classifyFileChange(it.uri) }
+
+        // Handle CodeNarc config changes
+        changes[FileType.CODENARC]?.let { _ ->
+            logger.info { "CodeNarc config changed, reloading rulesets" }
+            textDocumentService?.reloadCodeNarcRulesets()
+            // Re-run diagnostics on open files
+            textDocumentService?.rerunDiagnosticsOnOpenFiles()
+        }
+
+        // Handle GDSL file changes
+        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+        val shouldReloadGdsl = params.changes.any { change ->
+            try {
+                val uri = URI.create(change.uri)
+                jenkinsCapabilities?.isGdslFile(uri) ?: false
+            } catch (e: Exception) {
+                false
+            }
+        }
+
+        if (shouldReloadGdsl) {
+            logger.info { "GDSL file changed, reloading metadata" }
+            jenkinsCapabilities?.reloadGdsl()
+        }
+
+        // Handle source file changes for incremental indexing
+        changes[FileType.SOURCE]?.let { sourceChanges ->
+            handleSourceFileChanges(sourceChanges)
+        }
+
+        // Build file changes are handled by BuildToolFileWatcher in DependencyManager
+    }
+
+    /**
+     * Handles source file changes for incremental workspace indexing.
+     * - Created files: Index the new file
+     * - Changed files: Re-index to update symbols
+     * - Deleted files: Remove from symbol index
+     */
+    private fun handleSourceFileChanges(changes: List<FileEvent>) {
+        val created = changes.filter { it.type == FileChangeType.Created }
+        val changed = changes.filter { it.type == FileChangeType.Changed }
+        val deleted = changes.filter { it.type == FileChangeType.Deleted }
+
+        // Handle deleted files - remove from cache
+        deleted.forEach { event ->
+            try {
+                val uri = URI.create(event.uri)
+                compilationService.invalidateCache(uri)
+                logger.debug { "Removed deleted file from index: ${event.uri}" }
+            } catch (e: Exception) {
+                logger.debug(e) { "Failed to process deleted file: ${event.uri}" }
+            }
+        }
+
+        // Index new and changed files in background
+        val toIndex = (created + changed).mapNotNull { event ->
+            try {
+                URI.create(event.uri)
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        if (toIndex.isNotEmpty()) {
+            logger.info { "Indexing ${toIndex.size} changed source files" }
+            coroutineScope.launch {
+                symbolIndexer.indexAllWorkspaceSources(toIndex)
+            }
+        }
+    }
+
+    private enum class FileType(val suffixes: List<String>) {
+        CODENARC(listOf(".codenarc", "codenarc.xml", "codenarc.groovy", "codenarc.properties")),
+        GDSL(listOf(".gdsl")),
+        BUILD(
+            listOf(
+                "build.gradle",
+                "build.gradle.kts",
+                "settings.gradle",
+                "settings.gradle.kts",
+                "pom.xml",
+                "gradle.properties",
+            ),
+        ),
+        SOURCE(listOf(".groovy", ".java")),
+        OTHER(emptyList()),
+        ;
+
+        companion object {
+            fun fromPath(path: String): FileType =
+                entries.firstOrNull { type -> type.suffixes.any { path.endsWith(it) } } ?: OTHER
+        }
+    }
+
+    private fun classifyFileChange(uriString: String): FileType {
+        val path = runCatching { URI.create(uriString).path }.getOrNull() ?: return FileType.OTHER
+        return FileType.fromPath(path)
+    }
+
+    private fun updateGroovyVersion(config: ServerConfiguration) {
+        val resolver = GroovyVersionResolver()
+        val dependencies = compilationService.workspaceManager.getDependencyClasspath()
+        val info = resolver.resolve(dependencies, config.groovyLanguageVersion)
+        compilationService.updateGroovyVersion(info)
+        selectWorker(info, config)
+    }
+
+    private fun selectWorker(
+        info: GroovyVersionInfo,
+        config: ServerConfiguration,
+        requiredFeatures: Set<WorkerFeature> = emptySet(),
+    ) {
+        val router = resolveWorkerRouter(config)
+        val selected = router.select(info, requiredFeatures)
+        val changed = compilationService.updateSelectedWorker(selected)
+        if (changed) {
+            val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
+            if (sourceUris.isEmpty()) {
+                logger.debug { "No workspace sources to reindex after worker change" }
+                return
+            }
+            logger.info { "Worker changed; reindexing ${sourceUris.size} workspace sources" }
+            coroutineScope.launch {
+                symbolIndexer.indexAllWorkspaceSources(sourceUris)
+            }
+        }
+    }
+
+    private fun resolveWorkerRouter(config: ServerConfiguration): WorkerRouter {
+        if (config.workerDescriptors.isEmpty()) {
+            return workerRouter
+        }
+        return WorkerRouterFactory.fromConfig(config)
+    }
+
+    override fun symbol(
+        params: WorkspaceSymbolParams,
+    ): CompletableFuture<Either<List<SymbolInformation>, List<WorkspaceSymbol>>> {
+        val query = params.query
+        if (query.isNullOrBlank()) {
+            logger.debug { "Workspace symbol query blank; returning empty result" }
+            return CompletableFuture.completedFuture(Either.forLeft(emptyList()))
+        }
+        val storages = symbolIndexer.getAllSymbolIndices()
+        val results = storages.flatMap { (uri, storage) ->
+            val symbols: List<Symbol> = storage.findMatching(uri, query)
+
+            symbols.mapNotNull { it.toSymbolInformation() }
+        }
+
+        return CompletableFuture.completedFuture(Either.forLeft(results))
+    }
+}

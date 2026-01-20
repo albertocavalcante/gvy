@@ -450,7 +450,7 @@ jobs:
       # Build shadowJar for verification (E2E tests run in parallel job)
       - name: Build Shadow JAR
         if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        run: ./gradlew :groovy-lsp:shadowJar --parallel --build-cache --stacktrace
+        run: ./gradlew :gls:shadowJar --parallel --build-cache --stacktrace
 
       # Upload test results BEFORE test reporter to ensure artifacts are preserved
       # even if tests fail (test reporter may fail when tests fail with fail-on-error)
@@ -501,9 +501,9 @@ jobs:
         run: |-
           set -euo pipefail
           shopt -s nullglob
-          jar_files=(groovy-lsp/build/libs/gls-*-all.jar)
+          jar_files=(gls/build/libs/gls-*-all.jar)
           if [[ ${#jar_files[@]} -eq 0 ]]; then
-            echo "::error::Shadow JAR not found in groovy-lsp/build/libs"
+            echo "::error::Shadow JAR not found in gls/build/libs"
             exit 1
           fi
           echo "jar_path=${jar_files[0]}" >> "$GITHUB_OUTPUT"
