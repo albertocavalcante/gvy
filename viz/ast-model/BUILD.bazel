@@ -6,8 +6,6 @@ kt_library(
         "src/commonMain/kotlin/**/*.kt",
         "src/jvmMain/kotlin/**/*.kt",
     ]),
-    # Disabled: Requires Compose Multiplatform Bazel configuration
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "//parser/api",
@@ -26,11 +24,11 @@ kt_test(
         "src/commonTest/kotlin/**/*.kt",
         "src/jvmTest/kotlin/**/*.kt",
     ]),
-    # Disabled: Requires Compose Multiplatform Bazel configuration
-    tags = ["manual"],
+    associates = [":ast-model"],
     test_packages = ["com.github.albertocavalcante.gvy"],
     deps = [
-        ":ast-model",
-        "@maven//:org_junit_platform_junit_platform_launcher",
+        "//parser/native",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_assertj_assertj_core",
     ],
 )

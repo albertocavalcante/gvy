@@ -1,11 +1,9 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
-# NOTE: Disabled - uses kotlinx.serialization which needs compiler plugin
 kt_library(
     name = "jenkins",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
-    tags = ["manual"],
     deps = [
         "//build-tool",
         "//common",
@@ -28,14 +26,12 @@ kt_library(
     ],
 )
 
-# NOTE: Test disabled - uses kotlinx.serialization which needs compiler plugin
 kt_test(
-    name = "groovy-jenkins_test",
+    name = "jenkins_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    tags = ["manual"],
+    associates = [":jenkins"],
     test_packages = ["com.github.albertocavalcante.groovyjenkins"],
     deps = [
-        ":jenkins",
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_assertj_assertj_core",

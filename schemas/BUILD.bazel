@@ -15,7 +15,7 @@ kt_library(
     visibility = ["//visibility:public"],
     tags = ["manual"],  # Requires Wire proto generation - run: ./gradlew :schemas:generateProtos
     deps = [
-        "@maven//:com_squareup_wire_wire_runtime",
+        "@maven//:com_squareup_wire_wire_runtime_jvm",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
 )

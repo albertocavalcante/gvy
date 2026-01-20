@@ -1,7 +1,6 @@
 load("//tools/build_defs:kotlin.bzl", "kt_test")
 
 # E2E tests for the Groovy LSP
-# NOTE: Test disabled - uses kotlinx.serialization which needs compiler plugin
 kt_test(
     name = "e2e_test",
     srcs = glob([
@@ -9,7 +8,6 @@ kt_test(
         "lsp-client/kotlin/**/*.kt",
     ]),
     test_packages = ["com.github.albertocavalcante.groovylsp"],
-    tags = ["manual"],
     data = glob(
         [
             "e2e/resources/**",
@@ -29,10 +27,11 @@ kt_test(
         "@maven//:com_jayway_jsonpath_json_path",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         "@maven//:org_slf4j_slf4j_api",
         "@maven//:org_spockframework_spock_core",
+        "@maven//:org_assertj_assertj_core",
     ],
 )
