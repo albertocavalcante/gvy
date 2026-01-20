@@ -56,8 +56,9 @@ def _kt_test_impl(
     """Implementation for kt_test symbolic macro."""
     all_plugins = _DEFAULT_PLUGINS + plugins
 
-    # JUnit 6 Platform runtime dependencies
+    # JUnit 6 Platform runtime dependencies (not directly imported in source)
     runtime_deps = [
+        # JUnit Platform runtime
         "@maven//:org_junit_jupiter_junit_jupiter_engine",
         "@maven//:org_junit_platform_junit_platform_launcher",
         "@maven//:org_junit_platform_junit_platform_console",
@@ -89,12 +90,17 @@ def _kt_test_impl(
     test_kwargs = {
         "name": name,
         "srcs": srcs,
+        # Compile-time test deps (actually imported in source code)
+        # - kotlin_test: assertions like assertEquals, assertTrue
+        # - kotlin_test_junit5: provides kotlin.test.Test typealias to JUnit5
+        # - junit_jupiter_api: @Test annotation (used by kotlin.test.Test)
+        # Optional deps NOT included (add explicitly if needed):
+        # - assertj_core: only ~10 modules use AssertJ
+        # - junit_jupiter_params: only ~4 modules use @ParameterizedTest
         "deps": deps + [
             "@maven//:org_jetbrains_kotlin_kotlin_test",
             "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
-            "@maven//:org_junit_jupiter_junit_jupiter",
             "@maven//:org_junit_jupiter_junit_jupiter_api",
-            "@maven//:org_assertj_assertj_core",
         ],
         "runtime_deps": runtime_deps,
         "associates": associates,
@@ -122,11 +128,14 @@ kt_test = macro(
     doc = """Kotlin test with JUnit 6 (Jupiter) and automatic test discovery.
 
     Provides:
-    - JUnit 6 (Jupiter) dependencies automatically included
+    - kotlin.test assertions (assertEquals, assertTrue, etc.)
+    - JUnit Jupiter @Test annotation
     - JUnit Platform ConsoleLauncher for automatic test discovery
-    - AssertJ for assertions
     - kotlinx-serialization plugin enabled by default
-    - Typed attributes with validation
+
+    Optional deps (add explicitly if needed):
+    - @maven//:org_assertj_assertj_core - AssertJ assertions
+    - @maven//:org_junit_jupiter_junit_jupiter_params - @ParameterizedTest
 
     Tests are discovered via --select-package for each package in test_packages.
     The test_packages attribute is REQUIRED to specify which packages to scan.

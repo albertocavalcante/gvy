@@ -37,6 +37,7 @@ kt_test(
         ":groovy-jenkins",
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_assertj_assertj_core",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
     ],
 )

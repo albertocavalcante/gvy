@@ -21,5 +21,6 @@ kt_test(
     deps = [
         ":jenkins-extractor",
         "//jenkins",
+        "@maven//:org_assertj_assertj_core",
     ],
 )

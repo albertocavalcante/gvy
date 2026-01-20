@@ -14,4 +14,5 @@ kt_test(
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":api"],
     test_packages = ["com.github.albertocavalcante.reports"],
+    deps = ["@maven//:org_assertj_assertj_core"],
 )

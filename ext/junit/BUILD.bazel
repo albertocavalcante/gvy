@@ -23,5 +23,6 @@ kt_test(
         "//ext/testing",
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
 )

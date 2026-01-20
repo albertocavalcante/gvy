@@ -19,6 +19,7 @@ kt_test(
     associates = [":groovy-formatter"],
     test_packages = ["com.github.albertocavalcante.groovyformatter"],
     deps = [
+        "@maven//:org_assertj_assertj_core",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
 )

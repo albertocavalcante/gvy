@@ -24,6 +24,7 @@ kt_test(
         "@maven//:ch_epfl_scala_bsp4j",
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_assertj_assertj_core",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
     ],
