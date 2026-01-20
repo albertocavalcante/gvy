@@ -9,14 +9,15 @@ All heavy lifting (GraphQL, caching, mutations) is handled here.
 Agent only needs: thread_id, file, line, message.
 """
 
+import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
-import hashlib
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
@@ -25,11 +26,10 @@ from typing import Optional
 import typer
 from pydantic import BaseModel, Field
 from rich.console import Console
-from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
-
 
 # =============================================================================
 # ENUMS
@@ -90,6 +90,44 @@ class AIProvider(str, Enum):
 
     GEMINI = "gemini"
     CLAUDE = "claude"
+
+
+class DiffMode(str, Enum):
+    """How the diff was retrieved/processed."""
+
+    FULL = "full"  # Complete diff, no truncation
+    TRUNCATED = "truncated"  # Diff truncated for size
+    STATS_ONLY = "stats_only"  # Only file stats, no content
+
+
+# =============================================================================
+# DIFF RETRIEVAL TYPES
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class DiffResult:
+    """Successful diff retrieval result."""
+
+    content: str
+    mode: DiffMode
+    source: str  # Strategy that succeeded (e.g., "gh_cli", "local_git")
+    file_count: int = 0
+    total_additions: int = 0
+    total_deletions: int = 0
+
+
+@dataclass(frozen=True)
+class DiffError:
+    """Failed diff retrieval with fallback context."""
+
+    message: str
+    source: str  # Strategy that failed
+    is_too_large: bool = False  # True if should try fallback strategies
+
+
+# Union type for explicit success/failure handling (PEP 604)
+DiffOutcome = DiffResult | DiffError
 
 
 # =============================================================================
@@ -726,6 +764,38 @@ def get_repo_info() -> tuple[str, str]:
     return data["owner"]["login"], data["name"]
 
 
+def run_gh(
+    args: list[str],
+    *,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """
+    Run gh CLI command with standard options.
+
+    Centralizes subprocess handling for consistency across the codebase.
+
+    Args:
+        args (list[str]): Arguments to pass to gh CLI (without "gh" prefix).
+            Example: ["pr", "diff", "123"] runs "gh pr diff 123"
+        check (bool): If True, raise CalledProcessError on non-zero exit.
+            Defaults to True.
+
+    Returns:
+        subprocess.CompletedProcess[str]: Completed process with stdout/stderr
+            captured as text.
+
+    Raises:
+        subprocess.CalledProcessError: If check=True and command fails.
+        FileNotFoundError: If gh CLI is not installed.
+    """
+    return subprocess.run(
+        ["gh", *args],
+        capture_output=True,
+        text=True,
+        check=check,
+    )
+
+
 def rprint(*args, **kwargs):
     """Print using rich if in a TTY, otherwise use plain typer.echo."""
     if console.is_terminal:
@@ -1132,7 +1202,7 @@ def get_pr_details(pr_number: int) -> dict:
             "view",
             str(pr_number),
             "--json",
-            "title,body,commits,headRefName,state,mergeable,closingIssuesReferences",
+            "title,body,commits,headRefName,baseRefName,state,mergeable,closingIssuesReferences",
         ],
         capture_output=True,
         text=True,
@@ -1243,6 +1313,14 @@ def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
 DIFF_FULL_THRESHOLD = 3000  # Use full diff if under this
 DIFF_MAX_LINES = 8000  # Absolute max lines to send
 DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
+
+# GitHub API error patterns that indicate diff is too large
+DIFF_TOO_LARGE_PATTERNS = [
+    "exceeded the maximum number of files",
+    "diff too large",
+    "PullRequest.diff too_large",
+    "HTTP 406",
+]
 
 # Files to exclude from diff content (show stats only)
 # These files are auto-generated, have huge diffs, and add no semantic value
@@ -1430,38 +1508,447 @@ def generate_diff_stats(files: list[tuple[str, str]]) -> str:
     return "\n".join(stats_lines)
 
 
-def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
+# =============================================================================
+# DIFF RETRIEVAL STRATEGIES
+# =============================================================================
+
+
+def _is_diff_too_large_error(error_text: str) -> bool:
+    """Check if an error indicates the diff exceeded GitHub API limits."""
+    error_lower = error_text.lower()
+    return any(pattern.lower() in error_lower for pattern in DIFF_TOO_LARGE_PATTERNS)
+
+
+def _calculate_diff_stats(content: str) -> tuple[int, int, int]:
+    """
+    Calculate file count, additions, and deletions from a diff string.
+
+    Args:
+        content: Unified diff content
+
+    Returns:
+        Tuple of (file_count, total_additions, total_deletions)
+    """
+    files = parse_diff_into_files(content)
+    total_adds = 0
+    total_dels = 0
+    for _, file_diff in files:
+        adds, dels = get_file_diff_stats(file_diff)
+        total_adds += adds
+        total_dels += dels
+    return len(files), total_adds, total_dels
+
+
+def _diff_via_gh_cli(pr_number: int) -> DiffOutcome:
+    """
+    Strategy 1: Fetch diff using `gh pr diff` command.
+
+    This is the fastest and most common path. Works for ~99% of PRs.
+    Fails with HTTP 406 when diff exceeds 300 files.
+    """
+    try:
+        result = run_gh(["pr", "diff", str(pr_number)])
+        content = result.stdout
+        file_count, total_adds, total_dels = _calculate_diff_stats(content)
+
+        return DiffResult(
+            content=content,
+            mode=DiffMode.FULL,
+            source="gh_cli",
+            file_count=file_count,
+            total_additions=total_adds,
+            total_deletions=total_dels,
+        )
+    except subprocess.CalledProcessError as e:
+        error_text = e.stderr or e.stdout or ""
+        return DiffError(
+            message=f"gh pr diff failed (exit {e.returncode}): {error_text[:200]}",
+            source="gh_cli",
+            is_too_large=_is_diff_too_large_error(error_text),
+        )
+    except FileNotFoundError:
+        return DiffError(
+            message="'gh' CLI not found - is GitHub CLI installed?",
+            source="gh_cli",
+            is_too_large=False,
+        )
+
+
+def _diff_via_local_git(head_ref: str, base_ref: str) -> DiffOutcome:
+    """
+    Strategy 2: Fetch diff using local git when PR branch is checked out.
+
+    Bypasses GitHub API entirely. Requires being on the PR's head branch.
+    """
+    try:
+        # Check current branch
+        current_branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+
+        if current_branch != head_ref:
+            return DiffError(
+                message=f"Not on PR branch (current: {current_branch}, need: {head_ref})",
+                source="local_git",
+                is_too_large=False,
+            )
+
+        # Find merge base for accurate diff
+        merge_base_result = subprocess.run(
+            ["git", "merge-base", f"origin/{base_ref}", "HEAD"],
+            capture_output=True,
+            text=True,
+        )
+
+        if merge_base_result.returncode == 0:
+            merge_base = merge_base_result.stdout.strip()
+            diff_result = subprocess.run(
+                ["git", "diff", merge_base, "HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        else:
+            # Fallback: three-dot diff
+            diff_result = subprocess.run(
+                ["git", "diff", f"origin/{base_ref}...HEAD"],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+        content = diff_result.stdout
+        file_count, total_adds, total_dels = _calculate_diff_stats(content)
+
+        return DiffResult(
+            content=content,
+            mode=DiffMode.FULL,
+            source="local_git",
+            file_count=file_count,
+            total_additions=total_adds,
+            total_deletions=total_dels,
+        )
+
+    except subprocess.CalledProcessError as e:
+        return DiffError(
+            message=f"Local git diff failed: {e.stderr or e.stdout or 'unknown error'}",
+            source="local_git",
+            is_too_large=False,
+        )
+    except FileNotFoundError:
+        return DiffError(
+            message="git not found",
+            source="local_git",
+            is_too_large=False,
+        )
+
+
+def _fetch_pr_files_data(pr_number: int, source: str) -> list[dict] | DiffError:
+    """
+    Fetch file data for a PR from the GitHub API.
+
+    Args:
+        pr_number: PR number to fetch files for
+        source: Source identifier for error messages (e.g., "files_api", "stats_only")
+
+    Returns:
+        List of file data dicts on success, DiffError on failure
+    """
+    try:
+        owner, repo = get_repo_info()
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as e:
+        return DiffError(
+            message=f"Failed to get repo info ({type(e).__name__}): {e}",
+            source=source,
+            is_too_large=False,
+        )
+
+    try:
+        result = run_gh(
+            [
+                "api",
+                "--paginate",
+                f"repos/{owner}/{repo}/pulls/{pr_number}/files",
+            ]
+        )
+
+        files_data = json.loads(result.stdout)
+        if not files_data:
+            return DiffError(
+                message="No files returned from API",
+                source=source,
+                is_too_large=False,
+            )
+        return files_data
+
+    except subprocess.CalledProcessError as e:
+        return DiffError(
+            message=f"PR Files API failed: {e.stderr or e.stdout or 'unknown error'}",
+            source=source,
+            is_too_large=False,
+        )
+    except json.JSONDecodeError as e:
+        return DiffError(
+            message=f"Failed to parse API response: {e}",
+            source=source,
+            is_too_large=False,
+        )
+
+
+def _diff_via_files_api(pr_number: int) -> DiffOutcome:
+    """
+    Strategy 3: Fetch diff using GitHub's List PR Files API with pagination.
+
+    Bypasses the 300-file limit of the diff endpoint. Returns file patches
+    individually, though large file patches may be truncated by GitHub.
+    """
+    files_data = _fetch_pr_files_data(pr_number, "files_api")
+    if isinstance(files_data, DiffError):
+        return files_data
+
+    # Build unified diff format from file patches
+    diff_parts: list[str] = []
+    total_adds = 0
+    total_dels = 0
+    files_with_patch = 0
+    files_without_patch = 0
+
+    for file_info in files_data:
+        filename = file_info.get("filename", "unknown")
+        status = file_info.get("status", "modified")
+        patch = file_info.get("patch", "")
+        additions = file_info.get("additions", 0)
+        deletions = file_info.get("deletions", 0)
+
+        total_adds += additions
+        total_dels += deletions
+
+        # Build diff header based on file status
+        if status == "added":
+            header = (
+                f"diff --git a/{filename} b/{filename}\n"
+                f"new file mode 100644\n"
+                f"--- /dev/null\n"
+                f"+++ b/{filename}"
+            )
+        elif status == "removed":
+            header = (
+                f"diff --git a/{filename} b/{filename}\n"
+                f"deleted file mode 100644\n"
+                f"--- a/{filename}\n"
+                f"+++ /dev/null"
+            )
+        elif status == "renamed":
+            prev = file_info.get("previous_filename", filename)
+            header = (
+                f"diff --git a/{prev} b/{filename}\n"
+                f"rename from {prev}\n"
+                f"rename to {filename}\n"
+                f"--- a/{prev}\n"
+                f"+++ b/{filename}"
+            )
+        else:
+            header = (
+                f"diff --git a/{filename} b/{filename}\n"
+                f"--- a/{filename}\n"
+                f"+++ b/{filename}"
+            )
+
+        if patch:
+            diff_parts.append(f"{header}\n{patch}")
+            files_with_patch += 1
+        else:
+            # No patch (binary file or too large)
+            diff_parts.append(
+                f"{header}\n@@ -0,0 +0,0 @@\n"
+                f"# [Patch unavailable: +{additions} -{deletions}]"
+            )
+            files_without_patch += 1
+
+    if files_without_patch > 0:
+        typer.echo(
+            f"📊 Retrieved {files_with_patch} patches via API "
+            f"({files_without_patch} files had unavailable patches)"
+        )
+
+    return DiffResult(
+        content="\n".join(diff_parts),
+        mode=DiffMode.FULL,
+        source="files_api",
+        file_count=len(files_data),
+        total_additions=total_adds,
+        total_deletions=total_dels,
+    )
+
+
+def _diff_stats_only(pr_number: int) -> DiffOutcome:
+    """
+    Strategy 4: Create stats-only summary (last resort).
+
+    Returns file list with change counts but no actual diff content.
+    Always succeeds if the PR exists.
+    """
+    files_data = _fetch_pr_files_data(pr_number, "stats_only")
+    if isinstance(files_data, DiffError):
+        return files_data
+
+    total_adds = 0
+    total_dels = 0
+    file_stats: list[tuple[str, str, int, int]] = []
+
+    for file_info in files_data:
+        filename = file_info.get("filename", "unknown")
+        additions = file_info.get("additions", 0)
+        deletions = file_info.get("deletions", 0)
+        status = file_info.get("status", "modified")
+
+        total_adds += additions
+        total_dels += deletions
+
+        status_marker = {"added": "A", "removed": "D", "renamed": "R"}.get(status, "M")
+        file_stats.append((filename, status_marker, additions, deletions))
+
+    # Sort by total changes (most changes first)
+    file_stats.sort(key=lambda x: -(x[2] + x[3]))
+
+    # Build summary
+    summary_lines = [
+        "=== DIFF SUMMARY (stats only - diff too large for API) ===",
+        f"Total: {len(file_stats)} files, +{total_adds} -{total_dels}",
+        "",
+        "Files (sorted by change size):",
+    ]
+
+    for filename, status, adds, dels in file_stats:
+        priority = get_file_priority(filename)
+        marker = "★" if priority >= 80 else "·"
+        summary_lines.append(f"  {marker} [{status}] {filename} | +{adds} -{dels}")
+
+    summary_lines.extend(
+        [
+            "",
+            "Legend: ★=high-priority source, ·=other, A=added, D=deleted, R=renamed, M=modified",
+        ]
+    )
+
+    return DiffResult(
+        content="\n".join(summary_lines),
+        mode=DiffMode.STATS_ONLY,
+        source="stats_only",
+        file_count=len(file_stats),
+        total_additions=total_adds,
+        total_deletions=total_dels,
+    )
+
+
+def fetch_pr_diff(pr_number: int, pr_info: dict | None = None) -> DiffOutcome:
+    """
+    Fetch PR diff using deterministic fallback chain.
+
+    Strategy order:
+    1. gh pr diff - Fast, works for ~99% of PRs
+    2. Local git - If (1) fails with "too large" AND we're on the PR branch
+    3. PR Files API - Paginated endpoint, handles any number of files
+    4. Stats only - Pure metadata, always works as last resort
+
+    Args:
+        pr_number: PR number to fetch
+        pr_info: Optional PR details dict (must have headRefName, baseRefName)
+
+    Returns:
+        DiffResult on success, DiffError if all strategies fail
+    """
+    # Strategy 1: gh pr diff (most common path, works for ~99% of PRs)
+    outcome = _diff_via_gh_cli(pr_number)
+    if isinstance(outcome, DiffResult):
+        return outcome
+
+    # Log the initial failure
+    typer.echo(f"⚠️ {outcome.message}", err=True)
+
+    # Strategy 2: Local git diff (optional - only useful for "too large" errors)
+    # This strategy requires being on the PR branch locally, so it's only
+    # attempted when: (a) the error was "too large" AND (b) we have branch info.
+    # For other errors (network, auth), this wouldn't help anyway.
+    if outcome.is_too_large and pr_info:
+        head_ref = pr_info.get("headRefName")
+        base_ref = pr_info.get("baseRefName")
+        if head_ref and base_ref:
+            typer.echo("📂 Trying local git diff...", err=True)
+            local_outcome = _diff_via_local_git(head_ref, base_ref)
+            if isinstance(local_outcome, DiffResult):
+                typer.echo(
+                    f"✓ Local git diff succeeded ({local_outcome.file_count} files)"
+                )
+                return local_outcome
+            typer.echo(f"   {local_outcome.message}", err=True)
+
+    # Strategy 3: PR Files API (always attempted on any failure)
+    # Uses a different API endpoint that may succeed when gh pr diff fails
+    # for any reason (too large, network issues, rate limits, etc.)
+    typer.echo("📡 Trying PR Files API with pagination...", err=True)
+    api_outcome = _diff_via_files_api(pr_number)
+    if isinstance(api_outcome, DiffResult):
+        typer.echo(f"✓ PR Files API succeeded ({api_outcome.file_count} files)")
+        return api_outcome
+    typer.echo(f"   {api_outcome.message}", err=True)
+
+    # Strategy 4: Stats only (last resort, always attempted)
+    # Provides file list with change counts even when no diff content available
+    typer.echo("📊 Falling back to stats-only summary...", err=True)
+    stats_outcome = _diff_stats_only(pr_number)
+    if isinstance(stats_outcome, DiffResult):
+        typer.echo(f"✓ Stats summary created ({stats_outcome.file_count} files)")
+        return stats_outcome
+    typer.echo(f"   {stats_outcome.message}", err=True)
+
+    # All strategies failed
+    return DiffError(
+        message="All diff retrieval strategies failed",
+        source="fetch_pr_diff",
+        is_too_large=outcome.is_too_large,
+    )
+
+
+def prepare_diff_for_ai(pr_number: int, pr_info: dict | None = None) -> tuple[str, str]:
     """
     Prepare diff content for AI, handling large diffs gracefully.
 
-    Returns (diff_content, mode) where mode is 'full', 'truncated', or 'error'.
+    This is the PUBLIC API that maintains backward compatibility.
+    Internally uses fetch_pr_diff with fallback chain.
+
+    Args:
+        pr_number: PR number to fetch
+        pr_info: Optional PR details (for local git fallback)
+
+    Returns:
+        (diff_content, mode) where mode is 'full', 'truncated', 'stats_only', or 'error'
 
     Lock files (pnpm-lock.yaml, package-lock.json, etc.) are always excluded
     from diff content and shown as stats-only, regardless of diff size.
     """
-    # Get full diff
-    try:
-        diff_result = subprocess.run(
-            ["gh", "pr", "diff", str(pr_number)],
-            capture_output=True,
-            text=True,
-            check=True,
-        )
-        full_diff = diff_result.stdout
-    except subprocess.CalledProcessError as e:
-        typer.echo(f"⚠️ Failed to get PR diff (exit {e.returncode}):", err=True)
-        typer.echo(f"   {(e.stderr or e.stdout or 'No output')[:300]}", err=True)
-        return "", "error"
-    except FileNotFoundError:
-        typer.echo("⚠️ 'gh' CLI not found. Is GitHub CLI installed?", err=True)
+    # Fetch diff using strategy chain
+    outcome = fetch_pr_diff(pr_number, pr_info)
+
+    if isinstance(outcome, DiffError):
+        typer.echo(f"⚠️ {outcome.message}", err=True)
         return "", "error"
 
-    # Parse into files to check for excluded patterns
+    # Stats-only mode: return as-is (already formatted)
+    if outcome.mode == DiffMode.STATS_ONLY:
+        return outcome.content, outcome.mode.value
+
+    # Full diff: apply filtering and truncation
+    full_diff = outcome.content
     files = parse_diff_into_files(full_diff)
 
     # Separate excluded files (lock files, etc.) from regular files
-    excluded_files = []
-    regular_files = []
+    excluded_files: list[tuple[str, int, int]] = []
+    regular_files: list[tuple[str, str]] = []
+
     for filepath, file_diff in files:
         if is_excluded_from_diff(filepath):
             adds, dels = get_file_diff_stats(file_diff)
@@ -1472,38 +1959,30 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
     # Calculate lines after excluding lock files
     total_lines = sum(len(diff.split("\n")) for _, diff in regular_files)
 
-    # Case 1: Small diff (after exclusions) - use filtered diff
+    # Case 1: Small diff - use filtered diff
     if total_lines <= DIFF_FULL_THRESHOLD:
         output_parts = format_excluded_files_summary(excluded_files)
-
-        # Add regular file diffs
-        for filepath, file_diff in regular_files:
+        for _, file_diff in regular_files:
             output_parts.append(file_diff)
-
-        return "\n".join(output_parts), "full"
-
-    typer.echo(
-        f"📊 Large diff detected ({total_lines} lines after exclusions), using smart truncation..."
-    )
+        return "\n".join(output_parts), DiffMode.FULL.value
 
     # Case 2: Large diff - smart truncation
-    # Generate stats from all files (including excluded)
+    typer.echo(
+        f"📊 Large diff ({total_lines} lines after exclusions), using smart truncation..."
+    )
+
     diff_stats = generate_diff_stats(files)
 
-    # Sort regular files by priority (highest first)
+    # Sort by priority (highest first)
     files_with_priority = [(get_file_priority(f), f, diff) for f, diff in regular_files]
     files_with_priority.sort(key=lambda x: -x[0])
 
-    # Build truncated diff with stats header
     output_parts = [
         "=== DIFF STATS (complete) ===",
         diff_stats,
         "",
     ]
-
-    # Add excluded files summary
     output_parts.extend(format_excluded_files_summary(excluded_files))
-
     output_parts.extend(
         [
             f"=== DIFF CONTENT (truncated from {total_lines} lines) ===",
@@ -1515,23 +1994,19 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
     lines_used = len("\n".join(output_parts).split("\n"))
     lines_budget = DIFF_MAX_LINES - lines_used
 
-    # Allocate lines per file based on priority and remaining budget
-    included_files = []
+    included_files: list[tuple[str, str, bool, int, int]] = []
     for priority, filepath, file_diff in files_with_priority:
         if lines_budget <= 0:
             break
 
         file_lines = len(file_diff.split("\n"))
-
-        # Calculate max lines for this file based on priority
-        # Higher priority files get more lines
         priority_factor = priority / 100.0
         file_max = min(
             int(DIFF_PER_FILE_MAX * priority_factor * 1.5),
             lines_budget,
             file_lines,
         )
-        file_max = max(file_max, 30)  # At least 30 lines per file
+        file_max = max(file_max, 30)
 
         truncated_diff, was_truncated = truncate_file_diff(file_diff, file_max)
         truncated_lines = len(truncated_diff.split("\n"))
@@ -1541,14 +2016,12 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
         )
         lines_budget -= truncated_lines
 
-    # Build final output
     for filepath, diff, truncated, orig_lines, kept_lines in included_files:
         marker = f" [TRUNCATED {orig_lines}→{kept_lines}]" if truncated else ""
         output_parts.append(f"--- FILE: {filepath}{marker} ---")
         output_parts.append(diff)
         output_parts.append("")
 
-    # Add note about any excluded files (low priority, not lock files)
     included_count = len(included_files)
     total_count = len(regular_files)
     if included_count < total_count:
@@ -1561,7 +2034,7 @@ def prepare_diff_for_ai(pr_number: int) -> tuple[str, str]:
         if len(skipped) > 10:
             output_parts.append(f"  ... and {len(skipped) - 10} more")
 
-    return "\n".join(output_parts), "truncated"
+    return "\n".join(output_parts), DiffMode.TRUNCATED.value
 
 
 def generate_ai_message(
@@ -1590,17 +2063,21 @@ def generate_ai_message(
     )
 
     # Get diff content with smart truncation for large diffs
-    diff_content, diff_mode = prepare_diff_for_ai(pr_number)
+    # Pass pr_info to enable local git fallback when on PR branch
+    diff_content, diff_mode = prepare_diff_for_ai(pr_number, pr_info=pr)
 
     if diff_mode == "error":
         typer.echo("⚠️ Failed to retrieve PR diff; skipping AI generation.", err=True)
         return "", ""
 
-    # Add context about truncation to the prompt if needed
+    # Add context about truncation/stats-only mode to the prompt
     truncation_note = ""
     if diff_mode == "truncated":
         truncation_note = """
     <instruction>IMPORTANT: This diff has been TRUNCATED due to size. The DIFF STATS section shows complete file-level changes. Use both stats and available code context to understand the full scope of changes.</instruction>"""
+    elif diff_mode == "stats_only":
+        truncation_note = """
+    <instruction>IMPORTANT: This PR is very large. Only FILE STATS are available (no actual diff content). Generate the commit message based on file names, change counts, and the PR title/description. Focus on the overall nature of the change (refactor, feature, etc.) rather than specific code changes.</instruction>"""
 
     # Build complete prompt
     prompt = f"""<root>
