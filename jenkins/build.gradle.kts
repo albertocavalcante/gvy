@@ -33,7 +33,7 @@ dependencies {
     implementation(libs.flexmark.html2md)
 
     api(project(":common"))
-    api(project(":groovy-gdsl"))
+    api(project(":dsl:gdsl"))
     api(project(":build-tool"))
 
     // Testing

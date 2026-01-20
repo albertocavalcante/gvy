@@ -6,9 +6,9 @@
 
 package com.github.albertocavalcante.gvy.jenkins
 
-import com.github.albertocavalcante.groovygdsl.GdslExecutor
-import com.github.albertocavalcante.groovygdsl.GdslLoadResults
-import com.github.albertocavalcante.groovygdsl.GdslLoader
+import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
+import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
+import com.github.albertocavalcante.gvy.gdsl.GdslLoader
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata

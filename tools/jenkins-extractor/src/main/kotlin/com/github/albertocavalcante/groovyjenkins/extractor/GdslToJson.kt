@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.gvy.jenkins.extractor
 
-import com.github.albertocavalcante.groovygdsl.GdslExecutor
-import com.github.albertocavalcante.groovygdsl.model.MethodDescriptor
-import com.github.albertocavalcante.groovygdsl.model.ParameterDescriptor
+import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
+import com.github.albertocavalcante.gvy.gdsl.model.MethodDescriptor
+import com.github.albertocavalcante.gvy.gdsl.model.ParameterDescriptor
 import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.ExtractedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.ExtractedParameter
 import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.ExtractedStep

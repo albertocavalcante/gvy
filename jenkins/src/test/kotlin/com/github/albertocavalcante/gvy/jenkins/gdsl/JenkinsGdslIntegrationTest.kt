@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.jenkins.gdsl
 
-import com.github.albertocavalcante.groovygdsl.GdslExecutor
+import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested

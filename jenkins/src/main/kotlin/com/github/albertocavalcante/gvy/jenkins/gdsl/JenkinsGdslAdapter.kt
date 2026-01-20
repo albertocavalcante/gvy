@@ -1,10 +1,10 @@
 package com.github.albertocavalcante.gvy.jenkins.gdsl
 
-import com.github.albertocavalcante.groovygdsl.model.GdslParseResult
-import com.github.albertocavalcante.groovygdsl.model.MethodDescriptor
-import com.github.albertocavalcante.groovygdsl.model.NamedParameterDescriptor
-import com.github.albertocavalcante.groovygdsl.model.ParameterDescriptor
-import com.github.albertocavalcante.groovygdsl.model.PropertyDescriptor
+import com.github.albertocavalcante.gvy.gdsl.model.GdslParseResult
+import com.github.albertocavalcante.gvy.gdsl.model.MethodDescriptor
+import com.github.albertocavalcante.gvy.gdsl.model.NamedParameterDescriptor
+import com.github.albertocavalcante.gvy.gdsl.model.ParameterDescriptor
+import com.github.albertocavalcante.gvy.gdsl.model.PropertyDescriptor
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata

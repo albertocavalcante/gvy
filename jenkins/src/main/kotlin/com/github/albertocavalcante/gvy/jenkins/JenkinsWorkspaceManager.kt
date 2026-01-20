@@ -2,7 +2,7 @@
 
 package com.github.albertocavalcante.gvy.jenkins
 
-import com.github.albertocavalcante.groovygdsl.GdslLoadResults
+import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
