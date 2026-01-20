@@ -1,7 +1,5 @@
 package com.github.albertocavalcante.gvy.gls
 
-import com.github.albertocavalcante.groovyjunit.junit.JUnit5TestDetector
-import com.github.albertocavalcante.groovyjunit.junit4.JUnit4TestDetector
 import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import com.github.albertocavalcante.gvy.build.BuildTool
@@ -40,6 +38,8 @@ import com.github.albertocavalcante.gvy.gls.services.IndexExportService
 import com.github.albertocavalcante.gvy.gls.services.ProjectStartupManager
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
+import com.github.albertocavalcante.gvy.junit.JUnit5TestDetector
+import com.github.albertocavalcante.gvy.junit4.JUnit4TestDetector
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
