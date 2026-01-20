@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.declarative.DeclarativePipelineSchema
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.providers.completion.CursorPositionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.detectCursorPositionContext
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 

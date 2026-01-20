@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.config
 
-import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
 import com.github.albertocavalcante.gvy.build.GradleBuildStrategy
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.DiagnosticAnalysisType
+import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.DiagnosticSeverity
 

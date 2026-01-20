@@ -111,7 +111,7 @@ dependencies {
     implementation(project(":diagnostics:api"))
     implementation(project(":diagnostics:codenarc"))
     implementation(project(":diagnostics:sarif"))
-    implementation(project(":groovy-jenkins"))
+    implementation(project(":jenkins"))
     implementation(project(":build-tool"))
     implementation(project(":groovy-spock"))
     implementation(project(":groovy-testing"))

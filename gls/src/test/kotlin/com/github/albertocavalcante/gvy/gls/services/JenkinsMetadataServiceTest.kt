@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
-import com.github.albertocavalcante.groovyjenkins.JenkinsPluginManager
-import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
+import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
+import com.github.albertocavalcante.gvy.jenkins.JenkinsPluginManager
+import com.github.albertocavalcante.gvy.jenkins.extraction.PluginDownloader
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk

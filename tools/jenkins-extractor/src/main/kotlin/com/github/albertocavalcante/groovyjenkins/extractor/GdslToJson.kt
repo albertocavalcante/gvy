@@ -1,15 +1,15 @@
-package com.github.albertocavalcante.groovyjenkins.extractor
+package com.github.albertocavalcante.gvy.jenkins.extractor
 
 import com.github.albertocavalcante.groovygdsl.GdslExecutor
 import com.github.albertocavalcante.groovygdsl.model.MethodDescriptor
 import com.github.albertocavalcante.groovygdsl.model.ParameterDescriptor
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.ExtractedGlobalVariable
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.ExtractedParameter
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.ExtractedStep
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.ExtractionInfo
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.PluginInfo
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.PluginMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.extracted.StepScope
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.ExtractedGlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.ExtractedParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.ExtractedStep
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.ExtractionInfo
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.PluginInfo
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.PluginMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString

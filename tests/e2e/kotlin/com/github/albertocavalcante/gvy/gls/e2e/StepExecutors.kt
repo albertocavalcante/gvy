@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.github.albertocavalcante.groovyjenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.gvy.gls.e2e.JsonBridge.toJavaObject
 import com.github.albertocavalcante.gvy.gls.e2e.JsonBridge.wrapJavaObject
 import com.github.albertocavalcante.gvy.gls.testing.api.DiscoverTestsParams
@@ -9,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.testing.api.GroovyLanguageServerProt
 import com.github.albertocavalcante.gvy.gls.testing.api.RunTestParams
 import com.github.albertocavalcante.gvy.gls.testing.api.TestCommand
 import com.github.albertocavalcante.gvy.gls.testing.api.TestSuite
+import com.github.albertocavalcante.gvy.jenkins.extraction.PluginDownloader
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.PathNotFoundException
 import io.github.oshai.kotlinlogging.KotlinLogging

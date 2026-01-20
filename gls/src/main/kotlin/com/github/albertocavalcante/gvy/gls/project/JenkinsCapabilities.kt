@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.project
 
-import com.github.albertocavalcante.groovyjenkins.GlobalVariable
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.GlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import java.net.URI
 import java.nio.file.Path
 

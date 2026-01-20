@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.cli.jenkins
 
-import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
+import com.github.albertocavalcante.gvy.jenkins.extraction.PluginsParser
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test

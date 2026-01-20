@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.groovyjenkins.metadata.JenkinsBlockMetadata
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedGlobalVariable
-import com.github.albertocavalcante.groovyjenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completion
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
+import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsBlockMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.MapExpression

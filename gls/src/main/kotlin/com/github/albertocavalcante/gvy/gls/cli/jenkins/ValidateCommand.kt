@@ -6,7 +6,7 @@ import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.types.path
 import com.github.ajalt.mordant.terminal.Terminal
-import com.github.albertocavalcante.groovyjenkins.extraction.PluginsParser
+import com.github.albertocavalcante.gvy.jenkins.extraction.PluginsParser
 
 /**
  * Validates the syntax of a plugins.txt file.

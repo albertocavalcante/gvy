@@ -51,7 +51,7 @@ testing {
             dependencies {
                 implementation(project(":gls"))
                 implementation(project(":fmt"))
-                implementation(project(":groovy-jenkins"))
+                implementation(project(":jenkins"))
 
                 implementation(libs.lsp4j)
                 implementation(platform(libs.jackson.bom))

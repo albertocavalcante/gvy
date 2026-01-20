@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.project
 
-import com.github.albertocavalcante.groovyjenkins.JenkinsConfiguration
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

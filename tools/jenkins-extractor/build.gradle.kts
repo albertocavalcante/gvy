@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":groovy-jenkins"))
+    implementation(project(":jenkins"))
     implementation(project(":groovy-gdsl"))
 
     // Kotlin serialization for JSON output
@@ -38,7 +38,7 @@ tasks.register<JavaExec>("convertGdsl") {
     group = "jenkins"
     description = "Convert GDSL to plugin metadata JSON"
     classpath = sourceSets["main"].runtimeClasspath
-    mainClass.set("com.github.albertocavalcante.groovyjenkins.extractor.GdslToJsonKt")
+    mainClass.set("com.github.albertocavalcante.gvy.jenkins.extractor.GdslToJsonKt")
 
     workingDir = rootProject.projectDir
 
