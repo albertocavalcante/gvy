@@ -1349,10 +1349,15 @@ DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 # Prompt size limit (configurable via env var)
 # Default: 400KB - conservative for Node.js CLI stability (Gemini CLI)
 # This prevents OOM errors when diffs are very large
+PROMPT_MAX_CHARS_DEFAULT = 400_000
+PROMPT_MIN_CHARS = 1_000  # Minimum to accommodate basic prompts
 try:
-    PROMPT_MAX_CHARS = int(os.environ.get("GVY_PROMPT_MAX_CHARS", "400000"))
+    _env_val = int(os.environ.get("GVY_PROMPT_MAX_CHARS", "400000"))
+    PROMPT_MAX_CHARS = (
+        _env_val if _env_val >= PROMPT_MIN_CHARS else PROMPT_MAX_CHARS_DEFAULT
+    )
 except ValueError:
-    PROMPT_MAX_CHARS = 400_000
+    PROMPT_MAX_CHARS = PROMPT_MAX_CHARS_DEFAULT
 
 # GitHub API error patterns that indicate diff is too large
 DIFF_TOO_LARGE_PATTERNS = [
@@ -2271,8 +2276,9 @@ def generate_ai_message(
             if any(pattern in error_lower for pattern in OOM_ERROR_PATTERNS):
                 typer.echo(
                     "   💡 This appears to be an out-of-memory error.\n"
-                    "   Try: --stats-only flag, --provider claude, "
-                    "or lower GVY_PROMPT_MAX_CHARS (default: 400000, try 200000)",
+                    "   Try: --stats-only flag or --provider claude.\n"
+                    "   Lowering GVY_PROMPT_MAX_CHARS (default: 400000) triggers\n"
+                    "   earlier stats-only fallback but won't fix AI CLI OOM.",
                     err=True,
                 )
             return "", ""
