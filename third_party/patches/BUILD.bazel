@@ -1,0 +1,5 @@
+exports_files([
+    "rules_jvm_external_gradle_resolver_java9.patch",
+    "rules_jvm_external_lockfile_java9.patch",
+    "rules_jvm_external_gradle_build_java9.patch",
+])

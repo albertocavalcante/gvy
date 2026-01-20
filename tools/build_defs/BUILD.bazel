@@ -14,3 +14,14 @@ kt_compiler_plugin(
     ],
 )
 
+# Compose compiler plugin for Jetpack Compose / Compose Multiplatform
+kt_compiler_plugin(
+    name = "compose_plugin",
+    compile_phase = True,
+    id = "androidx.compose.compiler.plugins.kotlin",
+    stubs_phase = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_compose_compiler_plugin_embeddable",
+    ],
+)
