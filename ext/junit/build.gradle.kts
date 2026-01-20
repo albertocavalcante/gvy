@@ -4,7 +4,7 @@ plugins {
 
 dependencies {
     // Shared testing API and types
-    api(project(":groovy-testing"))
+    api(project(":ext:testing"))
 
     // Groovy AST for ClassNode/ModuleNode
     implementation(project(":parser:native"))
