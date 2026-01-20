@@ -1349,7 +1349,10 @@ DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 # Prompt size limit (configurable via env var)
 # Default: 400KB - conservative for Node.js CLI stability (Gemini CLI)
 # This prevents OOM errors when diffs are very large
-PROMPT_MAX_CHARS = int(os.environ.get("GVY_PROMPT_MAX_CHARS", 400_000))
+try:
+    PROMPT_MAX_CHARS = int(os.environ.get("GVY_PROMPT_MAX_CHARS", "400000"))
+except ValueError:
+    PROMPT_MAX_CHARS = 400_000
 
 # GitHub API error patterns that indicate diff is too large
 DIFF_TOO_LARGE_PATTERNS = [
