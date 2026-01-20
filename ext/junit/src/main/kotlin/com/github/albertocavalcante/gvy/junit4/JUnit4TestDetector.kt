@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.gvy.junit4
 
-import com.github.albertocavalcante.groovytesting.api.TestFramework
-import com.github.albertocavalcante.groovytesting.api.TestFrameworkDetector
-import com.github.albertocavalcante.groovytesting.api.TestItem
-import com.github.albertocavalcante.groovytesting.api.TestItemKind
+import com.github.albertocavalcante.gvy.testing.api.TestFramework
+import com.github.albertocavalcante.gvy.testing.api.TestFrameworkDetector
+import com.github.albertocavalcante.gvy.testing.api.TestItem
+import com.github.albertocavalcante.gvy.testing.api.TestItemKind
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 

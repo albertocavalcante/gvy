@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.providers.testing
 
-import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
-import com.github.albertocavalcante.groovytesting.spock.SpockTestDetector
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
+import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
+import com.github.albertocavalcante.gvy.testing.spock.SpockTestDetector
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk

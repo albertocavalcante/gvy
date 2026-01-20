@@ -114,7 +114,7 @@ dependencies {
     implementation(project(":jenkins"))
     implementation(project(":build-tool"))
     implementation(project(":ext:spock"))
-    implementation(project(":groovy-testing"))
+    implementation(project(":ext:testing"))
     implementation(project(":ext:junit"))
     implementation(project(":markdown"))
     implementation(project(":indexer:core"))

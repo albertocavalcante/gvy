@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.gvy.junit
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
-import com.github.albertocavalcante.groovytesting.api.TestFramework
-import com.github.albertocavalcante.groovytesting.api.TestItemKind
+import com.github.albertocavalcante.gvy.testing.api.TestFramework
+import com.github.albertocavalcante.gvy.testing.api.TestItemKind
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode

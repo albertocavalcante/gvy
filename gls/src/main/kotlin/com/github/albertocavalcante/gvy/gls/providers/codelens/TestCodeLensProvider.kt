@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.providers.codelens
 
-import com.github.albertocavalcante.groovytesting.api.TestItemKind
-import com.github.albertocavalcante.groovytesting.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.testing.api.TestItemKind
+import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeLens
 import org.eclipse.lsp4j.Command
@@ -66,7 +66,7 @@ class TestCodeLensProvider(
      * Add class-level CodeLens (Run All, Debug All, Coverage).
      */
     private fun addClassLevelCodeLenses(
-        tests: List<com.github.albertocavalcante.groovytesting.api.TestItem>,
+        tests: List<com.github.albertocavalcante.gvy.testing.api.TestItem>,
         uri: URI,
         codeLenses: MutableList<CodeLens>,
     ) {
@@ -123,7 +123,7 @@ class TestCodeLensProvider(
      * Add method-level CodeLens (Run, Debug, Coverage).
      */
     private fun addMethodLevelCodeLenses(
-        tests: List<com.github.albertocavalcante.groovytesting.api.TestItem>,
+        tests: List<com.github.albertocavalcante.gvy.testing.api.TestItem>,
         uri: URI,
         codeLenses: MutableList<CodeLens>,
     ) {
