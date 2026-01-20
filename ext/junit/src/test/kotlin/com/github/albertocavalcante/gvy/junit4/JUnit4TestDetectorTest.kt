@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovyjunit.junit4
+package com.github.albertocavalcante.gvy.junit4
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovytesting.api.TestFramework
