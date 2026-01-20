@@ -1516,6 +1516,26 @@ def _is_diff_too_large_error(error_text: str) -> bool:
     return any(pattern.lower() in error_lower for pattern in DIFF_TOO_LARGE_PATTERNS)
 
 
+def _calculate_diff_stats(content: str) -> tuple[int, int, int]:
+    """
+    Calculate file count, additions, and deletions from a diff string.
+
+    Args:
+        content: Unified diff content
+
+    Returns:
+        Tuple of (file_count, total_additions, total_deletions)
+    """
+    files = parse_diff_into_files(content)
+    total_adds = 0
+    total_dels = 0
+    for _, file_diff in files:
+        adds, dels = get_file_diff_stats(file_diff)
+        total_adds += adds
+        total_dels += dels
+    return len(files), total_adds, total_dels
+
+
 def _diff_via_gh_cli(pr_number: int) -> DiffOutcome:
     """
     Strategy 1: Fetch diff using `gh pr diff` command.
@@ -1526,21 +1546,13 @@ def _diff_via_gh_cli(pr_number: int) -> DiffOutcome:
     try:
         result = run_gh(["pr", "diff", str(pr_number)])
         content = result.stdout
-        files = parse_diff_into_files(content)
-
-        # Calculate stats
-        total_adds = 0
-        total_dels = 0
-        for _, file_diff in files:
-            adds, dels = get_file_diff_stats(file_diff)
-            total_adds += adds
-            total_dels += dels
+        file_count, total_adds, total_dels = _calculate_diff_stats(content)
 
         return DiffResult(
             content=content,
             mode=DiffMode.FULL,
             source="gh_cli",
-            file_count=len(files),
+            file_count=file_count,
             total_additions=total_adds,
             total_deletions=total_dels,
         )
@@ -1606,20 +1618,13 @@ def _diff_via_local_git(head_ref: str, base_ref: str) -> DiffOutcome:
             )
 
         content = diff_result.stdout
-        files = parse_diff_into_files(content)
-
-        total_adds = 0
-        total_dels = 0
-        for _, file_diff in files:
-            adds, dels = get_file_diff_stats(file_diff)
-            total_adds += adds
-            total_dels += dels
+        file_count, total_adds, total_dels = _calculate_diff_stats(content)
 
         return DiffResult(
             content=content,
             mode=DiffMode.FULL,
             source="local_git",
-            file_count=len(files),
+            file_count=file_count,
             total_additions=total_adds,
             total_deletions=total_dels,
         )
@@ -1638,19 +1643,23 @@ def _diff_via_local_git(head_ref: str, base_ref: str) -> DiffOutcome:
         )
 
 
-def _diff_via_files_api(pr_number: int) -> DiffOutcome:
+def _fetch_pr_files_data(pr_number: int, source: str) -> list[dict] | DiffError:
     """
-    Strategy 3: Fetch diff using GitHub's List PR Files API with pagination.
+    Fetch file data for a PR from the GitHub API.
 
-    Bypasses the 300-file limit of the diff endpoint. Returns file patches
-    individually, though large file patches may be truncated by GitHub.
+    Args:
+        pr_number: PR number to fetch files for
+        source: Source identifier for error messages (e.g., "files_api", "stats_only")
+
+    Returns:
+        List of file data dicts on success, DiffError on failure
     """
     try:
         owner, repo = get_repo_info()
     except Exception as e:
         return DiffError(
             message=f"Failed to get repo info: {e}",
-            source="files_api",
+            source=source,
             is_too_large=False,
         )
 
@@ -1667,96 +1676,109 @@ def _diff_via_files_api(pr_number: int) -> DiffOutcome:
         if not files_data:
             return DiffError(
                 message="No files returned from API",
-                source="files_api",
+                source=source,
                 is_too_large=False,
             )
-
-        # Build unified diff format from file patches
-        diff_parts: list[str] = []
-        total_adds = 0
-        total_dels = 0
-        files_with_patch = 0
-        files_without_patch = 0
-
-        for file_info in files_data:
-            filename = file_info.get("filename", "unknown")
-            status = file_info.get("status", "modified")
-            patch = file_info.get("patch", "")
-            additions = file_info.get("additions", 0)
-            deletions = file_info.get("deletions", 0)
-
-            total_adds += additions
-            total_dels += deletions
-
-            # Build diff header based on file status
-            if status == "added":
-                header = (
-                    f"diff --git a/{filename} b/{filename}\n"
-                    f"new file mode 100644\n"
-                    f"--- /dev/null\n"
-                    f"+++ b/{filename}"
-                )
-            elif status == "removed":
-                header = (
-                    f"diff --git a/{filename} b/{filename}\n"
-                    f"deleted file mode 100644\n"
-                    f"--- a/{filename}\n"
-                    f"+++ /dev/null"
-                )
-            elif status == "renamed":
-                prev = file_info.get("previous_filename", filename)
-                header = (
-                    f"diff --git a/{prev} b/{filename}\n"
-                    f"rename from {prev}\n"
-                    f"rename to {filename}\n"
-                    f"--- a/{prev}\n"
-                    f"+++ b/{filename}"
-                )
-            else:
-                header = (
-                    f"diff --git a/{filename} b/{filename}\n"
-                    f"--- a/{filename}\n"
-                    f"+++ b/{filename}"
-                )
-
-            if patch:
-                diff_parts.append(f"{header}\n{patch}")
-                files_with_patch += 1
-            else:
-                # No patch (binary file or too large)
-                diff_parts.append(
-                    f"{header}\n@@ -0,0 +0,0 @@\n"
-                    f"# [Patch unavailable: +{additions} -{deletions}]"
-                )
-                files_without_patch += 1
-
-        if files_without_patch > 0:
-            typer.echo(
-                f"📊 Retrieved {files_with_patch} patches via API "
-                f"({files_without_patch} files had unavailable patches)"
-            )
-
-        return DiffResult(
-            content="\n".join(diff_parts),
-            mode=DiffMode.FULL,
-            source="files_api",
-            file_count=len(files_data),
-            total_additions=total_adds,
-            total_deletions=total_dels,
-        )
+        return files_data
 
     except subprocess.CalledProcessError as e:
         return DiffError(
             message=f"PR Files API failed: {e.stderr or e.stdout or 'unknown error'}",
-            source="files_api",
+            source=source,
             is_too_large=False,
         )
     except json.JSONDecodeError as e:
         return DiffError(
             message=f"Failed to parse API response: {e}",
-            source="files_api",
+            source=source,
             is_too_large=False,
         )
+
+
+def _diff_via_files_api(pr_number: int) -> DiffOutcome:
+    """
+    Strategy 3: Fetch diff using GitHub's List PR Files API with pagination.
+
+    Bypasses the 300-file limit of the diff endpoint. Returns file patches
+    individually, though large file patches may be truncated by GitHub.
+    """
+    files_data = _fetch_pr_files_data(pr_number, "files_api")
+    if isinstance(files_data, DiffError):
+        return files_data
+
+    # Build unified diff format from file patches
+    diff_parts: list[str] = []
+    total_adds = 0
+    total_dels = 0
+    files_with_patch = 0
+    files_without_patch = 0
+
+    for file_info in files_data:
+        filename = file_info.get("filename", "unknown")
+        status = file_info.get("status", "modified")
+        patch = file_info.get("patch", "")
+        additions = file_info.get("additions", 0)
+        deletions = file_info.get("deletions", 0)
+
+        total_adds += additions
+        total_dels += deletions
+
+        # Build diff header based on file status
+        if status == "added":
+            header = (
+                f"diff --git a/{filename} b/{filename}\n"
+                f"new file mode 100644\n"
+                f"--- /dev/null\n"
+                f"+++ b/{filename}"
+            )
+        elif status == "removed":
+            header = (
+                f"diff --git a/{filename} b/{filename}\n"
+                f"deleted file mode 100644\n"
+                f"--- a/{filename}\n"
+                f"+++ /dev/null"
+            )
+        elif status == "renamed":
+            prev = file_info.get("previous_filename", filename)
+            header = (
+                f"diff --git a/{prev} b/{filename}\n"
+                f"rename from {prev}\n"
+                f"rename to {filename}\n"
+                f"--- a/{prev}\n"
+                f"+++ b/{filename}"
+            )
+        else:
+            header = (
+                f"diff --git a/{filename} b/{filename}\n"
+                f"--- a/{filename}\n"
+                f"+++ b/{filename}"
+            )
+
+        if patch:
+            diff_parts.append(f"{header}\n{patch}")
+            files_with_patch += 1
+        else:
+            # No patch (binary file or too large)
+            diff_parts.append(
+                f"{header}\n@@ -0,0 +0,0 @@\n"
+                f"# [Patch unavailable: +{additions} -{deletions}]"
+            )
+            files_without_patch += 1
+
+    if files_without_patch > 0:
+        typer.echo(
+            f"📊 Retrieved {files_with_patch} patches via API "
+            f"({files_without_patch} files had unavailable patches)"
+        )
+
+    return DiffResult(
+        content="\n".join(diff_parts),
+        mode=DiffMode.FULL,
+        source="files_api",
+        file_count=len(files_data),
+        total_additions=total_adds,
+        total_deletions=total_dels,
+    )
 
 
 def _diff_stats_only(pr_number: int) -> DiffOutcome:
@@ -1766,87 +1788,57 @@ def _diff_stats_only(pr_number: int) -> DiffOutcome:
     Returns file list with change counts but no actual diff content.
     Always succeeds if the PR exists.
     """
-    try:
-        owner, repo = get_repo_info()
-    except Exception as e:
-        return DiffError(
-            message=f"Failed to get repo info: {e}",
-            source="stats_only",
-            is_too_large=False,
-        )
+    files_data = _fetch_pr_files_data(pr_number, "stats_only")
+    if isinstance(files_data, DiffError):
+        return files_data
 
-    try:
-        result = run_gh(
-            [
-                "api",
-                "--paginate",
-                f"repos/{owner}/{repo}/pulls/{pr_number}/files",
-            ]
-        )
+    total_adds = 0
+    total_dels = 0
+    file_stats: list[tuple[str, str, int, int]] = []
 
-        files_data = json.loads(result.stdout)
-        total_adds = 0
-        total_dels = 0
-        file_stats: list[tuple[str, str, int, int]] = []
+    for file_info in files_data:
+        filename = file_info.get("filename", "unknown")
+        additions = file_info.get("additions", 0)
+        deletions = file_info.get("deletions", 0)
+        status = file_info.get("status", "modified")
 
-        for file_info in files_data:
-            filename = file_info.get("filename", "unknown")
-            additions = file_info.get("additions", 0)
-            deletions = file_info.get("deletions", 0)
-            status = file_info.get("status", "modified")
+        total_adds += additions
+        total_dels += deletions
 
-            total_adds += additions
-            total_dels += deletions
+        status_marker = {"added": "A", "removed": "D", "renamed": "R"}.get(status, "M")
+        file_stats.append((filename, status_marker, additions, deletions))
 
-            status_marker = {"added": "A", "removed": "D", "renamed": "R"}.get(
-                status, "M"
-            )
-            file_stats.append((filename, status_marker, additions, deletions))
+    # Sort by total changes (most changes first)
+    file_stats.sort(key=lambda x: -(x[2] + x[3]))
 
-        # Sort by total changes (most changes first)
-        file_stats.sort(key=lambda x: -(x[2] + x[3]))
+    # Build summary
+    summary_lines = [
+        "=== DIFF SUMMARY (stats only - diff too large for API) ===",
+        f"Total: {len(file_stats)} files, +{total_adds} -{total_dels}",
+        "",
+        "Files (sorted by change size):",
+    ]
 
-        # Build summary
-        summary_lines = [
-            "=== DIFF SUMMARY (stats only - diff too large for API) ===",
-            f"Total: {len(file_stats)} files, +{total_adds} -{total_dels}",
+    for filename, status, adds, dels in file_stats:
+        priority = get_file_priority(filename)
+        marker = "★" if priority >= 80 else "·"
+        summary_lines.append(f"  {marker} [{status}] {filename} | +{adds} -{dels}")
+
+    summary_lines.extend(
+        [
             "",
-            "Files (sorted by change size):",
+            "Legend: ★=high-priority source, ·=other, A=added, D=deleted, R=renamed, M=modified",
         ]
+    )
 
-        for filename, status, adds, dels in file_stats:
-            priority = get_file_priority(filename)
-            marker = "★" if priority >= 80 else "·"
-            summary_lines.append(f"  {marker} [{status}] {filename} | +{adds} -{dels}")
-
-        summary_lines.extend(
-            [
-                "",
-                "Legend: ★=high-priority source, ·=other, A=added, D=deleted, R=renamed, M=modified",
-            ]
-        )
-
-        return DiffResult(
-            content="\n".join(summary_lines),
-            mode=DiffMode.STATS_ONLY,
-            source="stats_only",
-            file_count=len(file_stats),
-            total_additions=total_adds,
-            total_deletions=total_dels,
-        )
-
-    except subprocess.CalledProcessError as e:
-        return DiffError(
-            message=f"Stats API failed: {e.stderr or e.stdout or 'unknown error'}",
-            source="stats_only",
-            is_too_large=False,
-        )
-    except json.JSONDecodeError as e:
-        return DiffError(
-            message=f"Failed to parse API response: {e}",
-            source="stats_only",
-            is_too_large=False,
-        )
+    return DiffResult(
+        content="\n".join(summary_lines),
+        mode=DiffMode.STATS_ONLY,
+        source="stats_only",
+        file_count=len(file_stats),
+        total_additions=total_adds,
+        total_deletions=total_dels,
+    )
 
 
 def fetch_pr_diff(pr_number: int, pr_info: dict | None = None) -> DiffOutcome:
