@@ -15,12 +15,12 @@ kt_library(
 # a circular dependency (parser/native depends on groovy-common).
 # Need to refactor: move Groovydoc parsing tests to parser/native or extract shared test utils.
 kt_test(
-    name = "groovy-common_test",
-    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    name = "dsld_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
     tags = ["manual"],
     test_packages = ["com.github.albertocavalcante.groovycommon"],
     deps = [
-        ":groovy-common",
+        ":dsld",
         "//parser/native",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
     ],

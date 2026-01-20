@@ -16,10 +16,9 @@ kt_library(
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         # Internal dependencies
-        "//dsl/dsld",
+        "//common",
         "//fmt",
-        # TODO: build-tool temporarily disabled (requires gradle-tooling-api)
-        # "//build-tool",
+        "//build-tool",
         "//diagnostics/api",
         "//parser/api",
         "//semantics/core",

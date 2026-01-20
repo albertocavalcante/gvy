@@ -12,9 +12,9 @@ kt_library(
 )
 
 kt_test(
-    name = "groovy-gdsl_test",
+    name = "gdsl_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    associates = [":groovy-gdsl"],
+    associates = [":gdsl"],
     test_packages = ["com.github.albertocavalcante.groovygdsl"],
     deps = [
         "@maven//:org_apache_groovy_groovy",

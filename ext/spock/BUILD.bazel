@@ -15,7 +15,7 @@ kt_library(
 kt_test(
     name = "groovy-spock_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    associates = [":groovy-spock"],
+    associates = [":spock"],
     test_packages = ["com.github.albertocavalcante.groovyspock"],
     deps = [
         "//parser/native",

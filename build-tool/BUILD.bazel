@@ -1,35 +1,36 @@
-# TODO: Requires gradle-tooling-api which is not available in Maven Central
-# This module is temporarily disabled until we can add Gradle's repository
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
-# load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
-#
-# kt_library(
-#     name = "build-tool",
-#     srcs = glob(["src/main/kotlin/**/*.kt"]),
-#     visibility = ["//visibility:public"],
-#     deps = [
-#         "//bsp/bsp-core",
-#         "@maven//:ch_epfl_scala_bsp4j",
-#         "@maven//:org_apache_maven_maven_compat",
-#         "@maven//:org_apache_maven_maven_embedder",
-#         "@maven//:org_apache_maven_resolver_maven_resolver_connector_basic",
-#         "@maven//:org_apache_maven_resolver_maven_resolver_supplier",
-#         "@maven//:org_apache_maven_resolver_maven_resolver_transport_http",
-#         "@maven//:org_gradle_gradle_tooling_api",
-#         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-#         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core",
-#         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json",
-#         "@maven//:org_slf4j_slf4j_api",
-#     ],
-# )
-#
-# kt_test(
-#     name = "build-tool_test",
-#     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
-#     associates = [":build-tool"],
-#     deps = [
-#         "@maven//:io_mockk_mockk_jvm",
-#         "@maven//:org_jetbrains_kotlin_kotlin_test",
-#         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
-#     ],
-# )
+kt_library(
+    name = "build-tool",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:com_google_code_gson_gson",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_apache_maven_maven_model",
+        "@maven//:org_apache_maven_maven_model_builder",
+        "@maven//:org_apache_maven_maven_resolver_provider",
+        "@maven//:org_apache_maven_resolver_maven_resolver_api",
+        "@maven//:org_apache_maven_resolver_maven_resolver_supplier",
+        "@maven//:org_codehaus_plexus_plexus_utils",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
+        "@maven//:org_gradle_gradle_tooling_api",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+    ],
+)
+
+kt_test(
+    name = "build-tool_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
+    associates = [":build-tool"],
+    test_packages = ["com.github.albertocavalcante.gvy.buildtool"],
+    deps = [
+        "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@maven//:org_junit_jupiter_junit_jupiter_params",
+    ],
+)

@@ -5,7 +5,7 @@ kt_library(
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//dsl/dsld",
+        "//common",
         "//parser/core",
         "//semantics/core",
         "@maven//:io_arrow_kt_arrow_core_jvm",

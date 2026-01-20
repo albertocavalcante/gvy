@@ -1,13 +1,14 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
+# NOTE: Disabled - uses kotlinx.serialization which needs compiler plugin
 kt_library(
     name = "jenkins",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
+    tags = ["manual"],
     deps = [
-        # TODO: build-tool temporarily disabled (requires gradle-tooling-api)
-        # "//build-tool",
-        "//dsl/dsld",
+        "//build-tool",
+        "//common",
         "//dsl/gdsl",
         "@maven//:com_vladsch_flexmark_flexmark_html2md_converter",
         "@maven//:io_arrow_kt_arrow_core_jvm",
@@ -34,7 +35,7 @@ kt_test(
     tags = ["manual"],
     test_packages = ["com.github.albertocavalcante.groovyjenkins"],
     deps = [
-        ":groovy-jenkins",
+        ":jenkins",
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_assertj_assertj_core",
