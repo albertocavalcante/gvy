@@ -69,6 +69,8 @@ single_version_override(
         "//third_party/patches:rules_jvm_external_artifact_file_key_2.patch",
         # Fix absolute path in pinned mode - relativizes v1/ cache paths
         "//third_party/patches:rules_jvm_external_path_relativize.patch",
+        # Filter out metadata-only KMP modules (kotlin-stdlib-common etc) from deps
+        "//third_party/patches:rules_jvm_external_filter_kmp_common.patch",
     ],
     patch_strip = 1,
 )
@@ -104,7 +106,7 @@ maven.install(
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
-        # Note: kotlin-stdlib-common is handled via override_targets (metadata-only in 2.x)
+        # Note: kotlin-stdlib-common is filtered by rules_jvm_external_filter_kmp_common.patch
         "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0",
@@ -281,13 +283,6 @@ maven.install(
     # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
     fail_on_missing_checksum = False,
 )
-
-# kotlin-stdlib-common is metadata-only in Kotlin 2.x (no JAR).
-# TODO: Need a patch to filter out metadata-only KMP modules from deps.
-# maven.override(
-#     coordinates = "org.jetbrains.kotlin:kotlin-stdlib-common",
-#     target = "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
-# )
 
 # bsp4j with exclusions - lsp4j.generator pulls xtend which pulls guava with bundle packaging
 maven.artifact(

@@ -231,7 +231,25 @@ patch --dry-run -p1 < patch_file.patch
 3. ✅ Add patch to MODULE.bazel single_version_override
 4. ✅ GMM options already active in MODULE.bazel
 5. ✅ Test with `bazel build @maven//:pin` - PASSED
-6. Test actual Compose Desktop build (e.g., `bazel build //path/to:compose_target`)
+6. ✅ Create `rules_jvm_external_filter_kmp_common.patch` - filters kotlin-stdlib-common and kotlinx common modules
+7. ⚠️ Compose Desktop build blocked by Coursier cycle issue (see below)
+
+## Remaining Issue: Coursier Cycle in kotlinx-serialization
+
+Coursier GMM resolution creates a cycle:
+
+```
+kotlinx-serialization-json-jvm → kotlinx-serialization-json-io-jvm → kotlinx-serialization-json-jvm
+```
+
+**Root cause**: Coursier adds `json-jvm` as a dependency of `json-io-jvm` during resolution, even though the GMM
+metadata only declares dependency on `json` (common module).
+
+**Workarounds**:
+
+1. Remove kotlinx-serialization-json from direct dependencies (only use core)
+2. Wait for Coursier fix upstream
+3. Create cycle-detection patch for rules_jvm_external
 
 ---
 

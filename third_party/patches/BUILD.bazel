@@ -45,4 +45,6 @@ exports_files([
     "rules_jvm_external_artifact_file_key_2.patch",
     # Fixes absolute path issue in pinned mode - relativizes v1/ cache paths
     "rules_jvm_external_path_relativize.patch",
+    # Filters out metadata-only KMP modules (kotlin-stdlib-common etc) from deps
+    "rules_jvm_external_filter_kmp_common.patch",
 ])

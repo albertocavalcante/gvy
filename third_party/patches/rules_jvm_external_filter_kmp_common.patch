@@ -1,0 +1,20 @@
+--- a/private/dependency_tree_parser.bzl
++++ b/private/dependency_tree_parser.bzl
+@@ -186,6 +186,17 @@
+     target_import_labels = []
+     for dep in artifact["deps"]:
+         if get_packaging(dep) == "json":
++            continue
++        # Skip known metadata-only KMP modules that redirect to other modules.
++        # These modules have no JVM artifact or cause cycles when GMM resolves
++        # both common and platform-specific variants.
++        # See: https://github.com/bazel-contrib/rules_jvm_external/issues/909
++        if (":kotlin-stdlib-common:" in dep or 
++            ":kotlin-test-common:" in dep or 
++            ":kotlin-test-annotations-common:" in dep or
++            # Skip kotlinx common modules (without -jvm suffix) that cause cycles
++            (":kotlinx-" in dep and not "-jvm:" in dep and not "-js:" in dep and 
++             not "-native" in dep and not "-wasm" in dep and not "-android" in dep)):
+             continue
+         stripped_dep = strip_packaging_and_classifier_and_version(dep)
+         dep_target_label = escape(stripped_dep)
