@@ -2,10 +2,15 @@ load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 # Compose Desktop application for AST visualization
 # GMM support enabled via Coursier v2.1.25-M23 patches in MODULE.bazel
+#
+# NOTE: Tagged as "manual" to exclude from wildcard builds (bazel build //...)
+# Compose dependencies require GMM patches that are experimental.
+# Build explicitly with: bazel build //viz/desktop
 kt_library(
     name = "desktop",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     plugins = ["//tools/build_defs:compose_plugin"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "//parser/api",

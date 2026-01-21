@@ -30,7 +30,7 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.gvy.buildtool"],
     deps = [
         "@maven//:io_mockk_mockk_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
 )

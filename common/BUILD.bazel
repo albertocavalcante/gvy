@@ -18,6 +18,6 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.gvy.common"],
     deps = [
         "//parser/core",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
     ],
 )
