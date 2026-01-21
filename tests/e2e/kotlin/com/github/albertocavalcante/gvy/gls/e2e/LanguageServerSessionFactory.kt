@@ -29,7 +29,7 @@ class LanguageServerSessionFactory {
     }
 
     private val execJar: Path? = System.getProperty("groovy.lsp.e2e.execJar")
-        ?.let { Path.of(it) }
+        ?.let { Path.of(it).toAbsolutePath() }
         ?.takeIf { Files.exists(it) }
 
     private val serverClasspath: String? = System.getProperty("groovy.lsp.e2e.serverClasspath")

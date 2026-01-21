@@ -17,12 +17,16 @@ kt_test(
     ) + [
         "//gls:gls_deploy_deploy.jar",  # Fat jar from java_binary for E2E tests
     ],
+    # Inherit JAVA_HOME so subprocess invocations use the same JDK version.
+    # Without this, Bazel's hermetic sandbox won't pass through JAVA_HOME.
+    env_inherit = ["JAVA_HOME"],
     jvm_flags = [
         # Pass scenario directory path via a marker file (Bazel doesn't have directory labels)
         # The test code derives the directory from this file path
         "-Dgroovy.lsp.e2e.scenarioDir.marker=$(rootpath e2e/resources/scenarios/README.md)",
         "-Dgroovy.lsp.e2e.goldenDir.marker=$(rootpath e2e/resources/golden/index-lsif-calculator.lsif)",
-        "-Dgroovy.lsp.e2e.execJar=$(rootpath //gls:gls_deploy_deploy.jar)",
+        # Use execpath for absolute path that works from any working directory
+        "-Dgroovy.lsp.e2e.execJar=$(execpath //gls:gls_deploy_deploy.jar)",
     ],
     deps = [
         "//fmt",
