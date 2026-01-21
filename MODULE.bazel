@@ -279,8 +279,10 @@ maven.install(
         "--variant", "org.gradle.dependency.bundling=external|shadowed",
         "--variant", "ui=awt",  # skiko: select AWT variant over Android
     ],
-    fetch_sources = True,
-    fetch_javadoc = True,
+    # DISABLED: fetch_sources causes GMM to incorrectly resolve classes jar to sources jar
+    # See: https://github.com/albertocavalcante/gvy/issues/1031
+    # fetch_sources = True,
+    # fetch_javadoc = True,
     # Google Maven doesn't publish checksum files for some AndroidX artifacts
     # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
     fail_on_missing_checksum = False,
