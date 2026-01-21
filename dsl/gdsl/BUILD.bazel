@@ -15,7 +15,7 @@ kt_test(
     name = "gdsl_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":gdsl"],
-    test_packages = ["com.github.albertocavalcante.groovygdsl"],
+    test_packages = ["com.github.albertocavalcante.gvy.gdsl"],
     deps = [
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_assertj_assertj_core",

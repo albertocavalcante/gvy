@@ -170,15 +170,8 @@ maven.install(
         "ch.qos.logback:logback-classic:1.5.24",
 
         # Testing - JUnit 6 (released Jan 2026)
-        # Note: JUnit Platform now uses same version as Jupiter (6.x)
-        "org.junit.jupiter:junit-jupiter:6.0.2",
-        "org.junit.jupiter:junit-jupiter-api:6.0.2",
-        "org.junit.jupiter:junit-jupiter-engine:6.0.2",
-        "org.junit.jupiter:junit-jupiter-params:6.0.2",
-        "org.junit.platform:junit-platform-launcher:6.0.2",
-        "org.junit.platform:junit-platform-console:6.0.2",
-        "org.junit.platform:junit-platform-reporting:6.0.2",
-        # Note: junit-platform-suite-* excluded due to GMM creating circular deps
+        # Note: JUnit modules downloaded via http_file to work around GMM cycle bugs
+        # See: https://github.com/albertocavalcante/gvy/issues/1032
         "junit:junit:4.13.2",
         "org.assertj:assertj-core:3.27.6",
         "io.mockk:mockk:1.14.7",
@@ -327,6 +320,7 @@ maven.artifact(
         "org.codehaus.groovy:groovy-xml",
     ],
 )
+
 # Note: unpinned_maven is only available when lock_file is enabled
 # When re-enabling lock file, add "unpinned_maven" here and use:
 # REPIN=1 bazel run @unpinned_maven//:pin
@@ -360,4 +354,63 @@ use_repo(kotlin_logging, "kotlin_logging_jar")
 maven.override(
     coordinates = "io.github.oshai:kotlin-logging-jvm",
     target = "//tools:kotlin_logging",
+)
+
+# JUnit - downloaded directly due to GMM cycle bugs
+# GMM creates circular deps between Jupiter and Platform modules
+# See: https://github.com/albertocavalcante/gvy/issues/1032
+junit = use_extension("//tools/build_defs:junit.bzl", "junit")
+use_repo(
+    junit,
+    # Jupiter
+    "junit_jupiter_jar",
+    "junit_jupiter_api_jar",
+    "junit_jupiter_engine_jar",
+    "junit_jupiter_params_jar",
+    # Platform
+    "junit_platform_launcher_jar",
+    "junit_platform_engine_jar",
+    "junit_platform_commons_jar",
+    "junit_platform_console_jar",
+)
+
+# Override maven JUnit modules to use our directly-downloaded jars
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter",
+    target = "//tools:junit_jupiter",
+)
+
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter-api",
+    target = "//tools:junit_jupiter_api",
+)
+
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter-engine",
+    target = "//tools:junit_jupiter_engine",
+)
+
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter-params",
+    target = "//tools:junit_jupiter_params",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-launcher",
+    target = "//tools:junit_platform_launcher",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-engine",
+    target = "//tools:junit_platform_engine",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-commons",
+    target = "//tools:junit_platform_commons",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-console",
+    target = "//tools:junit_platform_console",
 )

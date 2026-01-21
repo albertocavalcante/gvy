@@ -57,13 +57,12 @@ def _kt_test_impl(
     all_plugins = _DEFAULT_PLUGINS + plugins
 
     # JUnit 6 Platform runtime dependencies (not directly imported in source)
-    # Note: junit-platform-suite-* excluded due to GMM cycle bug
+    # Note: JUnit jars downloaded via http_file due to GMM cycle bugs
     runtime_deps = [
         # JUnit Platform runtime
-        "@maven//:org_junit_jupiter_junit_jupiter_engine",
-        "@maven//:org_junit_platform_junit_platform_launcher",
-        "@maven//:org_junit_platform_junit_platform_console",
-        "@maven//:org_junit_platform_junit_platform_reporting",
+        "//tools:junit_jupiter_engine",
+        "//tools:junit_platform_launcher",
+        "//tools:junit_platform_console",
         # Logging runtime - required by kotlin-logging-jvm used in many modules
         "@maven//:org_slf4j_slf4j_api",
         "@maven//:ch_qos_logback_logback_classic",
@@ -71,19 +70,14 @@ def _kt_test_impl(
 
     # JUnit 6 Platform ConsoleLauncher args
     # JUnit 6 changed CLI to use subcommands: `junit execute ...`
-    # --scan-classpath doesn't work reliably with Bazel, use --select-package instead
     junit_args = [
         "execute",
         "--fail-if-no-tests",
     ]
 
     # Add package selectors for test discovery
-    # If no packages specified, use --scan-classpath as fallback
-    if len(test_packages) == 0:
-        junit_args.append("--scan-classpath")
-    else:
-        for pkg in test_packages:
-            junit_args.append("--select-package=" + pkg)
+    for pkg in test_packages:
+        junit_args.append("--select-package=" + pkg)
 
     # Build kt_jvm_test kwargs
     test_kwargs = {
@@ -99,7 +93,7 @@ def _kt_test_impl(
         "deps": deps + [
             "@maven//:org_jetbrains_kotlin_kotlin_test",
             "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
-            "@maven//:org_junit_jupiter_junit_jupiter_api",
+            "//tools:junit_jupiter_api",
         ],
         "runtime_deps": runtime_deps,
         "associates": associates,
@@ -120,7 +114,6 @@ def _kt_test_impl(
         test_kwargs["timeout"] = timeout
 
     # Use JUnit Platform ConsoleLauncher for test discovery
-    # This enables automatic discovery of @Test annotated methods
     kt_jvm_test(**test_kwargs)
 
 kt_test = macro(
