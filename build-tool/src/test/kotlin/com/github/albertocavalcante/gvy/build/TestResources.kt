@@ -26,9 +26,13 @@ object TestResources {
             "src/test/resources/$resourceDir",
             // Gradle: running from project root
             "build-tool/src/test/resources/$resourceDir",
-            // Bazel: runfiles with workspace prefix
+            // Bazel: RUNFILES_DIR with workspace prefix
+            System.getenv("RUNFILES_DIR")?.let { "$it/_main/build-tool/src/test/resources/$resourceDir" },
+            // Bazel: RUNFILES_DIR without workspace prefix
+            System.getenv("RUNFILES_DIR")?.let { "$it/build-tool/src/test/resources/$resourceDir" },
+            // Bazel: TEST_SRCDIR with workspace prefix
             System.getenv("TEST_SRCDIR")?.let { "$it/_main/build-tool/src/test/resources/$resourceDir" },
-            // Bazel: runfiles without workspace prefix
+            // Bazel: TEST_SRCDIR without workspace prefix
             System.getenv("TEST_SRCDIR")?.let { "$it/build-tool/src/test/resources/$resourceDir" },
         )
 
