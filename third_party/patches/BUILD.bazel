@@ -1,5 +1,48 @@
+# ==============================================================================
+# Patches for rules_jvm_external
+# ==============================================================================
+#
+# GRADLE RESOLVER PATCHES (for future use when Gradle resolver is needed):
+# These fix rules_java 9.x compatibility issues with the Gradle resolver.
+# The Gradle resolver supports GMM but has OSGi bundle packaging issues.
+#   - rules_jvm_external_gradle_resolver_java9.patch - Split java_binary for rules_java 9.x
+#   - rules_jvm_external_lockfile_java9.patch - Add missing java_library load statement
+#   - rules_jvm_external_gradle_build_java9.patch - Fix Gradle distribution BUILD file
+#
+# COURSIER GMM PATCH:
+# Upgrades Coursier v2.1.24 -> v2.1.25-M23 for Gradle Module Metadata support.
+#   - rules_jvm_external_coursier_gmm.patch - Coursier version + SHA256 update
+#
+# GMM VARIANT SYNTAX (IMPORTANT):
+#   The --variant flag requires SPACE-SEPARATED syntax in additional_coursier_options:
+#   ✓ Correct: "--variant", "org.gradle.usage=runtime"  (two list elements)
+#   ✗ Wrong:   "--variant=org.gradle.usage=runtime"     (single element)
+#
+#   See: coursier/modules/cli/src/main/scala/coursier/cli/resolve/Resolve.scala:341
+#   The parser expects value as separate arg, not combined with = sign.
+#
+# Key PRs:
+#   - https://github.com/coursier/coursier/pull/3320 (GMM variant matcher)
+#   - https://github.com/coursier/coursier/pull/3269 (Variant ADTs)
+#
+# Documentation:
+#   - https://get-coursier.io/docs/other-features#gradle-module-metadata
+#   - coursier/docs/pages/features-gradle-modules.md
+#
+# Full research: ~/dev/md/bazel-compose-research.md
+# ==============================================================================
+
 exports_files([
     "rules_jvm_external_gradle_resolver_java9.patch",
     "rules_jvm_external_lockfile_java9.patch",
     "rules_jvm_external_gradle_build_java9.patch",
+    "rules_jvm_external_coursier_gmm.patch",
+    # Fixes deduplication of additional_coursier_options which breaks repeated flags
+    # like --variant that must appear multiple times with different values
+    "rules_jvm_external_coursier_options_dedup.patch",
+    # Fixes artifact["file"] KeyError when GMM produces artifacts without file key
+    "rules_jvm_external_artifact_file_key_1.patch",
+    "rules_jvm_external_artifact_file_key_2.patch",
+    # Fixes absolute path issue in pinned mode - relativizes v1/ cache paths
+    "rules_jvm_external_path_relativize.patch",
 ])

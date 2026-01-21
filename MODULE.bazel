@@ -30,9 +30,51 @@ archive_override(
 register_toolchains("//tools:kotlin_toolchain")
 bazel_dep(name = "rules_jvm_external", version = "6.9")
 
-# Note: Patches for Gradle resolver + rules_java 9.x were previously required but
-# we switched back to Coursier resolver due to OSGi bundle packaging issues.
-# Patches retained in third_party/patches/ for future reference.
+# ==============================================================================
+# Coursier GMM (Gradle Module Metadata) Patch
+# ==============================================================================
+#
+# Compose Multiplatform Desktop requires GMM support for correct platform variant selection.
+# GMM was added in Coursier v2.1.25-M* milestones (not yet in stable v2.1.24).
+#
+# PATCH DETAILS:
+#   Upgrades Coursier v2.1.24 -> v2.1.25-M23
+#   Patch: //third_party/patches:rules_jvm_external_coursier_gmm.patch
+#   SHA256: 8b373a4aab15203c5bf43fcbe7475ae45e160a6c0f3b2560fc36a7d51d618dec
+#
+# IMPORTANT SYNTAX NOTE:
+#   The --variant flag requires SPACE-SEPARATED syntax, NOT equals:
+#   ✓ Correct: "--variant", "org.gradle.usage=runtime"  (two args)
+#   ✗ Wrong:   "--variant=org.gradle.usage=runtime"     (one arg - causes parsing error)
+#
+# Key PRs adding GMM support:
+#   - https://github.com/coursier/coursier/pull/3269 - Variant ADTs (Feb 2025)
+#   - https://github.com/coursier/coursier/pull/3320 - Gradle Modules handling (Mar 2025)
+#
+# Related rules_jvm_external issues:
+#   - https://github.com/bazel-contrib/rules_jvm_external/issues/909 - GMM for KMP
+#   - https://github.com/bazel-contrib/rules_jvm_external/issues/864 - Resolving KMP via GMM
+#
+# See full research at: ~/dev/md/bazel-compose-research.md
+# ==============================================================================
+single_version_override(
+    module_name = "rules_jvm_external",
+    patches = [
+        # Upgrade Coursier v2.1.24 -> v2.1.25-M23 for GMM support
+        "//third_party/patches:rules_jvm_external_coursier_gmm.patch",
+        # Fix deduplication of additional_coursier_options (breaks repeated --variant flags)
+        "//third_party/patches:rules_jvm_external_coursier_options_dedup.patch",
+        # Fix artifact["file"] KeyError when GMM produces virtual deps without file key
+        "//third_party/patches:rules_jvm_external_artifact_file_key_1.patch",
+        "//third_party/patches:rules_jvm_external_artifact_file_key_2.patch",
+        # Fix absolute path in pinned mode - relativizes v1/ cache paths
+        "//third_party/patches:rules_jvm_external_path_relativize.patch",
+    ],
+    patch_strip = 1,
+)
+
+# Note: Additional patches for Gradle resolver + rules_java 9.x are available in
+# third_party/patches/ if Gradle resolver is needed in the future.
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "protobuf", version = "33.2")
 bazel_dep(name = "aspect_rules_js", version = "2.8.3")
@@ -62,6 +104,7 @@ maven.install(
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
+        # Note: kotlin-stdlib-common is handled via override_targets (metadata-only in 2.x)
         "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0",
@@ -73,7 +116,7 @@ maven.install(
         # Groovy
         "org.apache.groovy:groovy:4.0.29",
         "org.apache.groovy:groovy-ant:4.0.29",
-        # groovy-console excluded: pulls org.abego.treelayout with bundle packaging that Gradle resolver can't handle
+        # groovy-console excluded: pulls swing dependencies not needed for LSP server
         "org.apache.groovy:groovy-json:4.0.29",
         "org.apache.groovy:groovy-groovydoc:4.0.29",
         "org.apache.groovy:groovy-macro:4.0.29",
@@ -147,7 +190,7 @@ maven.install(
         "com.fasterxml.jackson.core:jackson-databind:2.20.1",
         "com.fasterxml.jackson.module:jackson-module-kotlin:2.20.1",
 
-        # Guava - explicit to prevent bundle-packaged transitives (OSGi bundle packaging not supported)
+        # Guava - explicit to ensure consistent version across transitives
         "com.google.guava:guava:33.5.0-jre",
 
         # Classpath Scanning
@@ -177,15 +220,19 @@ maven.install(
         "com.github.ajalt.clikt:clikt-jvm:5.0.3",
         "com.github.ajalt.mordant:mordant-jvm:3.0.2",
 
-        # Compose Multiplatform Desktop - DISABLED: Coursier can't resolve GMM platform variants
-        # These pull Android artifacts (androidx.*) that conflict. Requires Gradle resolver
-        # but Gradle resolver has OSGi bundle packaging issues with guava:bundle.
-        # TODO: Revisit when rules_jvm_external fixes either GMM support in Coursier or
-        # bundle packaging in Gradle resolver.
-        # "org.jetbrains.compose.desktop:desktop-jvm-macos-arm64:1.10.0",
-        # "org.jetbrains.compose.material3:material3-desktop:1.9.0-beta03",
-        # "org.jetbrains.compose.material:material-icons-extended-desktop:1.7.3",
-        # Compose compiler plugin (kept for future use)
+        # ==========================================================================
+        # Compose Multiplatform Desktop
+        # ==========================================================================
+        # Requires GMM (Gradle Module Metadata) for correct variant selection.
+        # See: https://github.com/JetBrains/compose-multiplatform
+        # Maven: https://maven.pkg.jetbrains.space/public/p/compose/dev
+        #
+        # These artifacts use -desktop or -jvm suffixes for the JVM Desktop variant.
+        # GMM + variant attributes select correct platform (vs Android/JS/Native).
+        # ==========================================================================
+        "org.jetbrains.compose.desktop:desktop-jvm:1.7.3",
+        "org.jetbrains.compose.material3:material3-desktop:1.7.3",
+        "org.jetbrains.compose.material:material-icons-extended-desktop:1.7.3",
         "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.3.0",
     ],
     repositories = [
@@ -195,11 +242,52 @@ maven.install(
         "https://maven.pkg.jetbrains.space/public/p/compose/dev",  # JetBrains Compose
         "https://maven.google.com",  # Google Maven for AndroidX
     ],
-    # Note: Gradle resolver has issues with OSGi bundle packaging (guava:bundle from xtend/xtext)
-    # Using Coursier with explicit -desktop suffixed Compose artifacts instead
+    # ==========================================================================
+    # GMM (Gradle Module Metadata) Options
+    # ==========================================================================
+    # Enables variant-aware dependency resolution for Kotlin Multiplatform.
+    # Doc: https://get-coursier.io/docs/other-features#gradle-module-metadata
+    # Source: coursier/docs/pages/features-gradle-modules.md
+    #
+    # IMPORTANT: Use SPACE-SEPARATED syntax for --variant flag!
+    #   ✓ "--variant", "key=value"  (two separate list elements)
+    #   ✗ "--variant=key=value"     (single element - parsing fails)
+    #
+    # Variant attributes for JVM Desktop platform:
+    #   - org.gradle.category=library       → Select library artifacts
+    #   - org.gradle.usage=runtime          → Runtime deps (matches *-runtime)
+    #   - org.gradle.jvm.environment=standard-jvm → Exclude Android (vs android)
+    #   - org.jetbrains.kotlin.platform.type=jvm  → JVM platform (vs js/native/wasm)
+    #   - ui=awt                            → skiko AWT variant (vs ui=android)
+    #
+    # See: coursier/modules/core/shared/src/main/scala/coursier/core/VariantSelector.scala
+    # ==========================================================================
+    additional_coursier_options = [
+        "--enable-modules",
+        "--variant", "org.gradle.category=library",
+        "--variant", "org.gradle.usage=runtime",
+        "--variant", "org.gradle.jvm.environment=standard-jvm",
+        "--variant", "org.jetbrains.kotlin.platform.type=jvm",
+        "--variant", "org.gradle.libraryelements=jar",
+        # AnyOf syntax (value1|value2): prefer first, fall back to second
+        # - external: standard JARs (CodeNarc, caffeine)
+        # - shadowed: fat JARs (gradle-tooling-api only has this)
+        "--variant", "org.gradle.dependency.bundling=external|shadowed",
+        "--variant", "ui=awt",  # skiko: select AWT variant over Android
+    ],
     fetch_sources = True,
     fetch_javadoc = True,
+    # Google Maven doesn't publish checksum files for some AndroidX artifacts
+    # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
+    fail_on_missing_checksum = False,
 )
+
+# kotlin-stdlib-common is metadata-only in Kotlin 2.x (no JAR).
+# TODO: Need a patch to filter out metadata-only KMP modules from deps.
+# maven.override(
+#     coordinates = "org.jetbrains.kotlin:kotlin-stdlib-common",
+#     target = "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+# )
 
 # bsp4j with exclusions - lsp4j.generator pulls xtend which pulls guava with bundle packaging
 maven.artifact(

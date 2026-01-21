@@ -1,36 +1,25 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 # Compose Desktop application for AST visualization
-# DISABLED: Compose Multiplatform requires Gradle Module Metadata (GMM) support
-# - Coursier can't resolve GMM platform variants (pulls Android deps that conflict)
-# - Gradle resolver has OSGi bundle packaging issues (guava:bundle)
-# TODO: Re-enable when rules_jvm_external fixes GMM support
-#
-# kt_library(
-#     name = "desktop",
-#     srcs = glob(["src/main/kotlin/**/*.kt"]),
-#     plugins = ["//tools/build_defs:compose_plugin"],
-#     visibility = ["//visibility:public"],
-#     deps = [
-#         "//parser/api",
-#         "//parser/core",
-#         "//parser/native",
-#         "//parser/rewrite",
-#         "//viz/ast-model",
-#         "@maven//:org_jetbrains_compose_desktop_desktop_jvm_macos_arm64",
-#         "@maven//:org_jetbrains_compose_material3_material3_desktop",
-#         "@maven//:org_jetbrains_compose_material_material_icons_extended_desktop",
-#         "@maven//:io_github_oshai_kotlin_logging_jvm",
-#         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
-#         "@maven//:ch_qos_logback_logback_classic",
-#     ],
-# )
-
-# Placeholder target while Compose is disabled
-filegroup(
+# GMM support enabled via Coursier v2.1.25-M23 patches in MODULE.bazel
+kt_library(
     name = "desktop",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
+    plugins = ["//tools/build_defs:compose_plugin"],
     visibility = ["//visibility:public"],
+    deps = [
+        "//parser/api",
+        "//parser/core",
+        "//parser/native",
+        "//parser/rewrite",
+        "//viz/ast-model",
+        "@maven//:org_jetbrains_compose_desktop_desktop_jvm",
+        "@maven//:org_jetbrains_compose_material3_material3_desktop",
+        "@maven//:org_jetbrains_compose_material_material_icons_extended_desktop",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+        "@maven//:ch_qos_logback_logback_classic",
+    ],
 )
 
 # kt_test(

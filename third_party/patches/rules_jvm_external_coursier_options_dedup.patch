@@ -1,0 +1,24 @@
+--- a/private/extensions/maven.bzl
++++ b/private/extensions/maven.bzl
+@@ -605,10 +605,19 @@ def maven_impl(mctx):
+             merged_repo["artifacts"] = non_root_artifacts
+             merged_repo["boms"] = non_root_boms
+
+-        # For list attributes, concatenate but avoid duplicates (root items first)
+-        for list_attr in ["repositories", "excluded_artifacts", "additional_netrc_lines", "additional_coursier_options"]:
++        # For list attributes, concatenate but avoid duplicates (root items first).
++        # Note: additional_coursier_options is handled separately below to preserve
++        # duplicate flags like --variant which must appear multiple times.
++        for list_attr in ["repositories", "excluded_artifacts", "additional_netrc_lines"]:
+             root_list = root_repo.get(list_attr, [])
+             non_root_list = non_root_repo.get(list_attr, [])
+             merged_repo[list_attr] = _merge_repo_lists(root_list, non_root_list)
+
++        # additional_coursier_options: Concatenate WITHOUT deduplication.
++        # CLI flags like --variant must appear multiple times with different values.
++        # Deduplication breaks: ["--variant", "a=b", "--variant", "c=d"] -> ["--variant", "a=b", "c=d"]
++        root_opts = root_repo.get("additional_coursier_options", [])
++        non_root_opts = non_root_repo.get("additional_coursier_options", [])
++        merged_repo["additional_coursier_options"] = root_opts + non_root_opts
++
+         repos[repo_name] = merged_repo
