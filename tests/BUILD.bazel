@@ -7,6 +7,10 @@ kt_test(
         "e2e/kotlin/**/*.kt",
         "lsp-client/kotlin/**/*.kt",
     ]),
+    size = "large",  # 900s timeout for 49 scenarios
+    # no-sandbox: Allow access to ~/.gradle for Gradle wrapper/tooling API
+    # The language server subprocess needs to resolve Gradle dependencies
+    tags = ["no-sandbox"],
     test_packages = ["com.github.albertocavalcante.gvy.gls.e2e"],
     data = glob(
         [
@@ -17,9 +21,9 @@ kt_test(
     ) + [
         "//gls:gls_deploy_deploy.jar",  # Fat jar from java_binary for E2E tests
     ],
-    # Inherit JAVA_HOME so subprocess invocations use the same JDK version.
-    # Without this, Bazel's hermetic sandbox won't pass through JAVA_HOME.
-    env_inherit = ["JAVA_HOME"],
+    # Inherit JAVA_HOME for JDK version and HOME for ~/.gradle access.
+    # Without this, Bazel's hermetic sandbox won't pass through these env vars.
+    env_inherit = ["JAVA_HOME", "HOME"],
     jvm_flags = [
         # Pass scenario directory path via a marker file (Bazel doesn't have directory labels)
         # The test code derives the directory from this file path
