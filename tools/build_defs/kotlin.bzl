@@ -57,14 +57,13 @@ def _kt_test_impl(
     all_plugins = _DEFAULT_PLUGINS + plugins
 
     # JUnit 6 Platform runtime dependencies (not directly imported in source)
+    # Note: junit-platform-suite-* excluded due to GMM cycle bug
     runtime_deps = [
         # JUnit Platform runtime
         "@maven//:org_junit_jupiter_junit_jupiter_engine",
         "@maven//:org_junit_platform_junit_platform_launcher",
         "@maven//:org_junit_platform_junit_platform_console",
         "@maven//:org_junit_platform_junit_platform_reporting",
-        "@maven//:org_junit_platform_junit_platform_suite_api",
-        "@maven//:org_junit_platform_junit_platform_suite_engine",
         # Logging runtime - required by kotlin-logging-jvm used in many modules
         "@maven//:org_slf4j_slf4j_api",
         "@maven//:ch_qos_logback_logback_classic",
