@@ -20,11 +20,25 @@ define_kt_toolchain(
     language_version = "2.3",
 )
 
-# Wire compiler for proto code generation
-# Note: wire-compiler is a JVM-only CLI tool (not KMP like wire-runtime)
+# ==============================================================================
+# Wire Compiler for Proto Code Generation
+# ==============================================================================
+#
+# NOTE: Tagged "manual" to exclude from wildcard builds.
+#
+# KNOWN ISSUE: GMM (--enable-modules) causes rules_jvm_external to resolve
+# wire-compiler's jar attribute to the sources jar instead of the main jar,
+# resulting in ClassNotFoundException for com.squareup.wire.WireCompiler.
+#
+# wire-compiler is a JVM-only CLI tool (not KMP like wire-runtime).
+#
+# Tracking: https://github.com/albertocavalcante/gvy/issues/1029
+# Related: https://github.com/bazel-contrib/rules_jvm_external/issues/608
+# ==============================================================================
 java_binary(
     name = "wire_compiler",
     main_class = "com.squareup.wire.WireCompiler",
     runtime_deps = ["@maven//:com_squareup_wire_wire_compiler"],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
