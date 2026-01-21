@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Repin Maven dependencies
+#
+# Usage:
+#   ./tools/repin        # Update maven_install.json
+#   ./tools/repin --check # Check if repin is needed (CI mode)
+#
+# This script forces re-resolution of all Maven dependencies and updates
+# the lock file (maven_install.json) for reproducible builds.
+
+set -euo pipefail
+
+if [[ "${1:-}" == "--check" ]]; then
+    echo "Checking if maven_install.json is up to date..."
+    bazel run @maven//:pin -- --check
+else
+    echo "Repinning Maven dependencies..."
+    REPIN=1 bazel run @maven//:pin
+    echo ""
+    echo "Done! maven_install.json has been updated."
+    echo "Don't forget to commit the changes."
+fi
