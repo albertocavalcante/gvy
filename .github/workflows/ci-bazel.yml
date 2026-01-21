@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - 'MODULE.bazel'
-      - 'WORKSPACE*'
+      - 'MODULE.bazel.lock'
       - 'BUILD.bazel'
       - '**/BUILD.bazel'
       - '**/*.bzl'
@@ -19,7 +19,7 @@ on:
       - main
     paths:
       - 'MODULE.bazel'
-      - 'WORKSPACE*'
+      - 'MODULE.bazel.lock'
       - 'BUILD.bazel'
       - '**/BUILD.bazel'
       - '**/*.bzl'
