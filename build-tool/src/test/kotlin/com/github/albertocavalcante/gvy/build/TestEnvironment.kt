@@ -18,8 +18,13 @@ object TestEnvironment {
      * access to these build tools.
      */
     val isRunningInBazel: Boolean by lazy {
-        System.getenv("TEST_SRCDIR") != null ||
-            System.getenv("RUNFILES_DIR") != null ||
-            System.getenv("BUILD_WORKSPACE_DIRECTORY") != null
+        val testSrcDir = System.getenv("TEST_SRCDIR")
+        val runfilesDir = System.getenv("RUNFILES_DIR")
+        val buildWorkspace = System.getenv("BUILD_WORKSPACE_DIRECTORY")
+        val isBazel = testSrcDir != null || runfilesDir != null || buildWorkspace != null
+        if (isBazel) {
+            println("TestEnvironment: Detected Bazel (TEST_SRCDIR=$testSrcDir, RUNFILES_DIR=$runfilesDir)")
+        }
+        isBazel
     }
 }
