@@ -25,8 +25,8 @@ kt_test(
         # The test code derives the directory from this file path
         "-Dgroovy.lsp.e2e.scenarioDir.marker=$(rootpath e2e/resources/scenarios/README.md)",
         "-Dgroovy.lsp.e2e.goldenDir.marker=$(rootpath e2e/resources/golden/index-lsif-calculator.lsif)",
-        # Use execpath for absolute path that works from any working directory
-        "-Dgroovy.lsp.e2e.execJar=$(execpath //gls:gls_deploy_deploy.jar)",
+        # Use rootpath - path relative to runfiles where the test JVM runs
+        "-Dgroovy.lsp.e2e.execJar=$(rootpath //gls:gls_deploy_deploy.jar)",
     ],
     deps = [
         "//fmt",

@@ -29,7 +29,16 @@ class LanguageServerSessionFactory {
     }
 
     private val execJar: Path? = System.getProperty("groovy.lsp.e2e.execJar")
-        ?.let { Path.of(it).toAbsolutePath() }
+        ?.let { jarPath ->
+            // Resolve relative to runfiles directory if running under Bazel
+            val runfilesDir = System.getenv("RUNFILES_DIR")
+                ?: System.getenv("TEST_SRCDIR")
+            if (runfilesDir != null) {
+                Paths.get(runfilesDir, "_main", jarPath)
+            } else {
+                Path.of(jarPath).toAbsolutePath()
+            }
+        }
         ?.takeIf { Files.exists(it) }
 
     private val serverClasspath: String? = System.getProperty("groovy.lsp.e2e.serverClasspath")
