@@ -1,5 +1,4 @@
 load("//tools/build_defs:wire.bzl", "wire_proto_library")
-load("//tools/build_defs:kotlin.bzl", "kt_test")
 
 # Generate Kotlin code from proto files using Wire
 wire_proto_library(
@@ -8,9 +7,4 @@ wire_proto_library(
     visibility = ["//visibility:public"],
 )
 
-kt_test(
-    name = "schemas_test",
-    srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
-    associates = [":schemas"],
-    test_packages = ["com.github.albertocavalcante.gvy.schemas"],
-)
+# Note: No tests yet for this module (proto-only)
