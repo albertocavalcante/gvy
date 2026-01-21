@@ -14,7 +14,16 @@ kt_test(
             "lsp-client/resources/**",
         ],
         allow_empty = True,
-    ),
+    ) + [
+        "//gls:gls_deploy.jar",  # Deploy jar for E2E tests to launch the language server
+    ],
+    jvm_flags = [
+        # Pass scenario directory path via a marker file (Bazel doesn't have directory labels)
+        # The test code derives the directory from this file path
+        "-Dgroovy.lsp.e2e.scenarioDir.marker=$(rootpath e2e/resources/scenarios/README.md)",
+        "-Dgroovy.lsp.e2e.goldenDir.marker=$(rootpath e2e/resources/golden/index-lsif-calculator.lsif)",
+        "-Dgroovy.lsp.e2e.execJar=$(rootpath //gls:gls_deploy.jar)",
+    ],
     deps = [
         "//fmt",
         "//jenkins",

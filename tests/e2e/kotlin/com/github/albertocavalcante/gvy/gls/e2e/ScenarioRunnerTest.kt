@@ -31,9 +31,7 @@ class ScenarioRunnerTest {
     }
 
     private fun resolveScenarioDirectory(): Path {
-        val raw = System.getProperty("groovy.lsp.e2e.scenarioDir")
-            ?: fail("Missing system property 'groovy.lsp.e2e.scenarioDir'")
-
+        val raw = resolveScenarioDir()  // Use shared helper that supports both Gradle and Bazel
         val path = Path.of(raw)
         require(path.exists()) {
             "Scenario directory '$raw' does not exist (resolved to $path)"
