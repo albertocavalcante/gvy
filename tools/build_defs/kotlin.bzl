@@ -52,7 +52,7 @@ kt_library = macro(
 
 def _kt_test_impl(
         name, visibility, srcs, deps, associates, test_class, test_packages, plugins,
-        resources, data, jvm_flags, env, tags, size, timeout, **kwargs):
+        resources, data, jvm_flags, env, env_inherit, tags, size, timeout, **kwargs):
     """Implementation for kt_test symbolic macro."""
     all_plugins = _DEFAULT_PLUGINS + plugins
 
@@ -105,6 +105,7 @@ def _kt_test_impl(
         "data": data,
         "jvm_flags": jvm_flags,
         "env": env,
+        "env_inherit": env_inherit,
         "tags": tags,
         "size": size,
     }
@@ -176,6 +177,10 @@ kt_test = macro(
         "env": attr.string_dict(
             doc = "Environment variables to set for the test",
             default = {},
+        ),
+        "env_inherit": attr.string_list(
+            doc = "Environment variables to inherit from the external environment",
+            default = [],
         ),
         "tags": attr.string_list(
             doc = "Tags for the test target",
