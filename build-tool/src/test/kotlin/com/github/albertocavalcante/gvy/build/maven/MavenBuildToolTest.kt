@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.build.maven
 
-import com.github.albertocavalcante.groovylsp.buildtool.TestResources
+import com.github.albertocavalcante.gvy.build.TestResources
 import java.nio.file.Paths
 import kotlin.test.Test
 import kotlin.test.assertFalse
