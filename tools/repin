@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 # Repin Maven dependencies
 #
-# Usage:
-#   ./tools/repin        # Update maven_install.json
-#   ./tools/repin --check # Check if repin is needed (CI mode)
+# NOTE: Lock file is currently DISABLED due to GMM checksum inconsistency.
+# See MODULE.bazel for details and https://github.com/albertocavalcante/gvy/issues/1029
+# This script is kept for future use when the issue is resolved upstream.
 #
-# This script forces re-resolution of all Maven dependencies and updates
-# the lock file (maven_install.json) for reproducible builds.
+# Usage:
+#   ./tools/repin  # Update maven_install.json (when lock file is enabled)
 
 set -euo pipefail
 
-if [[ "${1:-}" == "--check" ]]; then
-    echo "Checking if maven_install.json is up to date..."
-    bazel run @maven//:pin -- --check
-else
-    echo "Repinning Maven dependencies..."
-    REPIN=1 bazel run @maven//:pin
-    echo ""
-    echo "Done! maven_install.json has been updated."
-    echo "Don't forget to commit the changes."
-fi
+echo "WARNING: Lock file is currently disabled in MODULE.bazel"
+echo "Re-enable lock_file config before running this script."
+echo ""
+echo "To enable: uncomment lock_file and fail_if_repin_required in MODULE.bazel"
+exit 1

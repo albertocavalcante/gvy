@@ -284,9 +284,12 @@ maven.install(
     # Google Maven doesn't publish checksum files for some AndroidX artifacts
     # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
     fail_on_missing_checksum = False,
-    lock_file = "//:maven_install.json",
-    # CI should fail if lock file is stale; use REPIN=1 bazel run @maven//:pin to update
-    fail_if_repin_required = True,
+    # KNOWN ISSUE: GMM (--enable-modules) causes Coursier to compute different checksums
+    # locally vs CI due to variant selection differences. Lock file disabled until resolved.
+    # Tracking: https://github.com/albertocavalcante/gvy/issues/1029
+    # Upstream: https://github.com/bazel-contrib/rules_jvm_external/issues/608
+    # lock_file = "//:maven_install.json",
+    # fail_if_repin_required = True,
 )
 
 # bsp4j with exclusions - lsp4j.generator pulls xtend which pulls guava with bundle packaging
