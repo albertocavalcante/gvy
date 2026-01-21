@@ -5,29 +5,21 @@ load("//tools/build_defs:wire.bzl", "wire_proto_library")
 # SCIP Protocol Buffers (Wire)
 # ==============================================================================
 #
-# NOTE: These targets are tagged "manual" to exclude from wildcard builds.
-#
-# KNOWN ISSUE: GMM (--enable-modules) causes rules_jvm_external to resolve
-# wire-compiler's jar attribute to the sources jar instead of the main jar,
-# resulting in ClassNotFoundException for com.squareup.wire.WireCompiler.
+# Wire compiler uses the shadow jar (jar-with-dependencies) to avoid GMM
+# variant selection issues. See tools/BUILD.bazel for details.
 #
 # Tracking: https://github.com/albertocavalcante/gvy/issues/1029
-# Related: https://github.com/bazel-contrib/rules_jvm_external/issues/608
-#
-# To build manually: bazel build //indexer/scip:scip_proto
 # ==============================================================================
 
 wire_proto_library(
     name = "scip_proto",
     srcs = ["//indexer/scip/src/main/proto:scip.proto"],
-    tags = ["manual"],
     visibility = ["//visibility:public"],
 )
 
 kt_library(
     name = "scip",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
-    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         ":scip_proto",
@@ -40,7 +32,6 @@ kt_library(
 kt_test(
     name = "scip_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    tags = ["manual"],
     test_packages = ["com.github.albertocavalcante.groovylsp"],
     deps = [
         ":scip",
