@@ -17,7 +17,7 @@ kt_library(
 kt_test(
     name = "kernel-core_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.groovyjupyter"],
+    test_packages = ["com.github.albertocavalcante.gvy.jupyter.core"],
     deps = [
         ":kernel-core",
         "//repl",

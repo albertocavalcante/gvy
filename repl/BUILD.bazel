@@ -19,6 +19,6 @@ kt_test(
     name = "groovy-repl_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":repl"],
-    test_packages = ["com.github.albertocavalcante.groovyrepl"],
+    test_packages = ["com.github.albertocavalcante.gvy.repl"],
     deps = ["@maven//:org_assertj_assertj_core"],
 )

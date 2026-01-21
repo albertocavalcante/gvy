@@ -16,7 +16,7 @@ kt_library(
 kt_test(
     name = "sarif_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    test_packages = ["com.github.albertocavalcante.diagnostics"],
+    test_packages = ["com.github.albertocavalcante.gvy.diagnostics.sarif"],
     deps = [
         ":sarif",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",

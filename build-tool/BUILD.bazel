@@ -27,7 +27,7 @@ kt_test(
     name = "build-tool_test",
     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
     associates = [":build-tool"],
-    test_packages = ["com.github.albertocavalcante.gvy.buildtool"],
+    test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",

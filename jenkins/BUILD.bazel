@@ -30,7 +30,7 @@ kt_test(
     name = "jenkins_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":jenkins"],
-    test_packages = ["com.github.albertocavalcante.groovyjenkins"],
+    test_packages = ["com.github.albertocavalcante.gvy.jenkins"],
     deps = [
         "@maven//:io_ktor_ktor_client_mock_jvm",
         "@maven//:io_mockk_mockk_jvm",

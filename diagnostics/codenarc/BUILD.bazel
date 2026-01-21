@@ -19,7 +19,7 @@ kt_test(
     name = "codenarc_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":codenarc"],
-    test_packages = ["com.github.albertocavalcante.diagnostics"],
+    test_packages = ["com.github.albertocavalcante.gvy.diagnostics.codenarc"],
     deps = [
         "//diagnostics/api",
         "@maven//:io_mockk_mockk_dsl_jvm",

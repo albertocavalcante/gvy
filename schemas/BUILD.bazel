@@ -12,5 +12,5 @@ kt_test(
     name = "schemas_test",
     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
     associates = [":schemas"],
-    test_packages = ["com.github.albertocavalcante.schemas"],
+    test_packages = ["com.github.albertocavalcante.gvy.schemas"],
 )
