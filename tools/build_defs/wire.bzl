@@ -22,14 +22,14 @@ Usage:
 
 load("//tools/build_defs:kotlin.bzl", "kt_library")
 
-def wire_proto_library(name, srcs, visibility = None, deps = None):
+def wire_proto_library(name, srcs, deps = None, **kwargs):
     """Generates Kotlin code from proto files and compiles into a library.
 
     Args:
         name: Target name for the compiled library
         srcs: Proto files to compile
-        visibility: Visibility of the target
         deps: Additional dependencies (wire-runtime is added automatically)
+        **kwargs: Common rule attributes (visibility, tags, testonly, etc.)
     """
     gen_name = name + "_gen"
 
@@ -37,6 +37,7 @@ def wire_proto_library(name, srcs, visibility = None, deps = None):
     _wire_codegen(
         name = gen_name,
         srcs = srcs,
+        **kwargs
     )
 
     # Compile the generated Kotlin code into a library
@@ -52,8 +53,8 @@ def wire_proto_library(name, srcs, visibility = None, deps = None):
     kt_library(
         name = name,
         srcs = [":" + gen_name],
-        visibility = visibility,
         deps = all_deps,
+        **kwargs
     )
 
 def _wire_codegen_impl(ctx):
@@ -122,6 +123,9 @@ _wire_codegen = rule(
             allow_files = [".proto"],
             mandatory = True,
             doc = "Proto files to compile with Wire",
+        ),
+        "tags": attr.string_list(
+            doc = "Tags to apply to the target",
         ),
         "_wire_compiler": attr.label(
             default = "//tools:wire_compiler",

@@ -11,7 +11,7 @@ building an automated migration tool.
 
 ### 📋 MIGRATION.md (Complete Migration Guide)
 
-**Location:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/MIGRATION.md`
+**Location:** `MIGRATION.md` (repository root)
 
 **Contents:**
 
@@ -29,7 +29,7 @@ building an automated migration tool.
 
 ### 🛠️ tools/migrate/README.md (Tool Design)
 
-**Location:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/tools/migrate/README.md`
+**Location:** `tools/migrate/README.md`
 
 **Contents:**
 
@@ -191,7 +191,7 @@ tools/BUILD.bazel             # Toolchain registration
 
 ### Example 1: Simple Library
 
-**Gradle:** `/Users/adsc/dev/ws/gvy/main/groovy-common/build.gradle.kts`
+**Gradle:** `groovy-common/build.gradle.kts` (from main branch)
 
 ```kotlin
 plugins {
@@ -208,7 +208,7 @@ dependencies {
 }
 ```
 
-**Bazel:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/groovy-common/BUILD.bazel`
+**Bazel:** `groovy-common/BUILD.bazel`
 
 ```python
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
@@ -244,7 +244,7 @@ kt_test(
 
 ### Example 2: Application with Dependencies
 
-**Gradle:** `/Users/adsc/dev/ws/gvy/main/groovy-lsp/build.gradle.kts` (simplified)
+**Gradle:** `groovy-lsp/build.gradle.kts` (from main branch, simplified)
 
 ```kotlin
 plugins {
@@ -265,7 +265,7 @@ dependencies {
 }
 ```
 
-**Bazel:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/groovy-lsp/BUILD.bazel`
+**Bazel:** `groovy-lsp/BUILD.bazel`
 
 ```python
 load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary")
@@ -318,7 +318,7 @@ java_binary(
 }
 ```
 
-**Bazel:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/editors/code/client/BUILD.bazel`
+**Bazel:** `editors/code/client/BUILD.bazel`
 
 ```python
 load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
@@ -531,15 +531,13 @@ build:remote --remote_upload_local_results
 ### For Understanding the Migration
 
 1. Read `MIGRATION.md` phases 1-5
-2. Compare Gradle files (in `/main`) with Bazel files (in `/feat-bazel-setup`)
+2. Compare Gradle files (main branch) with Bazel files (feat-bazel-setup branch)
 3. Run both builds to see differences:
    ```bash
-   # Gradle
-   cd /Users/adsc/dev/ws/gvy/main
+   # Gradle (from main branch/worktree)
    ./gradlew build
 
-   # Bazel
-   cd /Users/adsc/dev/ws/gvy/feat-bazel-setup
+   # Bazel (from feat-bazel-setup branch/worktree)
    bazel build //...
    ```
 
@@ -572,9 +570,9 @@ build:remote --remote_upload_local_results
 
 ### Example Files
 
-- **MODULE.bazel:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/MODULE.bazel`
-- **BUILD.bazel examples:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/{groovy-common,groovy-lsp}/BUILD.bazel`
-- **Custom macros:** `/Users/adsc/dev/ws/gvy/feat-bazel-setup/tools/build_defs/kotlin.bzl`
+- **MODULE.bazel:** `MODULE.bazel` (repository root)
+- **BUILD.bazel examples:** `groovy-common/BUILD.bazel`, `groovy-lsp/BUILD.bazel`
+- **Custom macros:** `tools/build_defs/kotlin.bzl`
 
 ### Contact
 
