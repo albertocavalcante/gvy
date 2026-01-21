@@ -31,7 +31,7 @@ class ScenarioRunnerTest {
     }
 
     private fun resolveScenarioDirectory(): Path {
-        val raw = resolveScenarioDir()  // Use shared helper that supports both Gradle and Bazel
+        val raw = resolveScenarioDir() // Use shared helper that supports both Gradle and Bazel
         val path = Path.of(raw)
         require(path.exists()) {
             "Scenario directory '$raw' does not exist (resolved to $path)"

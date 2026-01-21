@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.gvy.build.TestEnvironment
 import com.github.albertocavalcante.gvy.build.TestResources
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import java.nio.file.Paths
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -9,6 +11,9 @@ class GradleBuildToolTest {
 
     @Test
     fun `should resolve dependencies from gradle project using test resources`() {
+        // This test requires a real Gradle installation and network access
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+
         val resolver = GradleBuildTool()
         val testProjectPath = TestResources.getTestGradleProject()
 
@@ -44,6 +49,9 @@ class GradleBuildToolTest {
 
     @Test
     fun `should handle non-gradle project gracefully`() {
+        // This test requires Gradle Tooling API
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+
         val resolver = GradleBuildTool()
         val nonGradleProject = TestResources.getNonGradleProject()
 
@@ -55,6 +63,9 @@ class GradleBuildToolTest {
 
     @Test
     fun `should handle non-existent project gracefully`() {
+        // This test requires Gradle Tooling API
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+
         val resolver = GradleBuildTool()
         val nonExistentProject = Paths.get("non-existent-project")
 
@@ -96,6 +107,9 @@ class GradleBuildToolTest {
 
     @Test
     fun `getDependencyMetadata should return dependencies with metadata`() {
+        // This test requires a real Gradle installation and network access
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+
         val tool = GradleBuildTool()
         val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 
@@ -123,6 +137,9 @@ class GradleBuildToolTest {
 
     @Test
     fun `getDependencyMetadata should handle non-gradle project`() {
+        // This test requires Gradle Tooling API
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+
         val tool = GradleBuildTool()
         val nonGradleProject = Paths.get("src/test/resources/non-gradle-project")
 
@@ -133,6 +150,9 @@ class GradleBuildToolTest {
 
     @Test
     fun `getDependencyMetadata should deduplicate dependencies across modules`() {
+        // This test requires a real Gradle installation and network access
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Gradle Tooling API")
+
         val tool = GradleBuildTool()
         val testProjectPath = Paths.get("src/test/resources/test-gradle-project")
 

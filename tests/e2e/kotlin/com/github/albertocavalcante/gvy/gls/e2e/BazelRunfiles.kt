@@ -56,9 +56,9 @@ object BazelRunfiles {
      * @return Absolute path to the file
      * @throws IllegalStateException if the file doesn't exist
      */
-    fun resolveOrThrow(relativePath: String, description: String = relativePath): Path {
-        return resolve(relativePath)
-            ?: error(buildString {
+    fun resolveOrThrow(relativePath: String, description: String = relativePath): Path = resolve(relativePath)
+        ?: error(
+            buildString {
                 append("Unable to locate $description at path: $relativePath")
                 if (runfilesDir != null) {
                     append("\n  Bazel runfiles dir: $runfilesDir")
@@ -68,18 +68,16 @@ object BazelRunfiles {
                     append("\n  Working directory: ${Paths.get("").toAbsolutePath()}")
                     append("\n  Resolved path: ${Paths.get(relativePath).toAbsolutePath()}")
                 }
-            })
-    }
+            },
+        )
 
     /**
      * Gets the absolute path string for use in subprocess commands.
      * Returns the path even if file doesn't exist (for better error messages from subprocess).
      */
-    fun resolveForSubprocess(relativePath: String): String {
-        return if (runfilesDir != null) {
-            runfilesDir!!.resolve(workspaceName).resolve(relativePath).toString()
-        } else {
-            Paths.get(relativePath).toAbsolutePath().toString()
-        }
+    fun resolveForSubprocess(relativePath: String): String = if (runfilesDir != null) {
+        runfilesDir!!.resolve(workspaceName).resolve(relativePath).toString()
+    } else {
+        Paths.get(relativePath).toAbsolutePath().toString()
     }
 }

@@ -33,6 +33,7 @@ kt_test(
     deps = [
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_junit_jupiter_junit_jupiter_api",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
 )
