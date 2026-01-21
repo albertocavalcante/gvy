@@ -231,7 +231,7 @@ patch --dry-run -p1 < patch_file.patch
 3. ✅ Add patch to MODULE.bazel single_version_override
 4. ✅ GMM options already active in MODULE.bazel
 5. ✅ Test with `bazel build @maven//:pin` - PASSED
-6. ✅ Create `rules_jvm_external_filter_kmp_common.patch` - comprehensive cycle filter
+6. ✅ Create `HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch` - comprehensive cycle filter
 7. ✅ All dependency cycles fixed! Build passes analysis phase.
 8. ⚠️ New issue: sources.jar used instead of main JAR for some artifacts (see below)
 

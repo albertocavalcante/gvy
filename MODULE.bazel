@@ -70,7 +70,7 @@ single_version_override(
         # Fix absolute path in pinned mode - relativizes v1/ cache paths
         "//third_party/patches:rules_jvm_external_path_relativize.patch",
         # Filter out metadata-only KMP modules (kotlin-stdlib-common etc) from deps
-        "//third_party/patches:rules_jvm_external_filter_kmp_common.patch",
+        "//third_party/patches:HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch",
     ],
     patch_strip = 1,
 )
@@ -106,7 +106,7 @@ maven.install(
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
-        # Note: kotlin-stdlib-common is filtered by rules_jvm_external_filter_kmp_common.patch
+        # Note: kotlin-stdlib-common is filtered by HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch
         "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2",
         "org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0",
