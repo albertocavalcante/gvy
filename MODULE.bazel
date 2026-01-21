@@ -4,12 +4,7 @@ Groovy Language Server - Bazel Module Definition
 This is a Kotlin/TypeScript monorepo for the Groovy Language Server project.
 """
 
-module(
-    name = "gvy",
-    version = "0.4.8",
-    compatibility_level = 1,
-    repo_name = "groovy-lsp",
-)
+module(name = "gvy")
 
 # Core Bazel dependencies
 bazel_dep(name = "bazel_skylib", version = "1.9.0")
