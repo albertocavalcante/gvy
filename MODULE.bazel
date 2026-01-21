@@ -338,9 +338,10 @@ maven.artifact(
         "org.codehaus.groovy:groovy-xml",
     ],
 )
-# unpinned_maven is needed for repinning when lock_file is enabled
-# Command: REPIN=1 bazel run @unpinned_maven//:pin
-use_repo(maven, "maven", "unpinned_maven")
+# Note: unpinned_maven is only available when lock_file is enabled
+# When re-enabling lock file, add "unpinned_maven" here and use:
+# REPIN=1 bazel run @unpinned_maven//:pin
+use_repo(maven, "maven")
 
 # NPM Dependencies for TypeScript (VS Code extension)
 npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
