@@ -132,9 +132,12 @@ maven.install(
         "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
 
         # SCIP / Protobuf (Wire)
-        # wire-runtime is KMP (needs -jvm), wire-compiler configured below with classifier
+        # wire-runtime is KMP (needs -jvm), wire-compiler uses shadow jar
         "com.squareup.wire:wire-runtime-jvm:5.4.0",
-        # wire-compiler: use maven.artifact() with classifier for shadow jar (see below)
+        # wire-compiler shadow jar (jar-with-dependencies) - avoids GMM variant issues
+        # Label: @maven//:com_squareup_wire_wire_compiler_jar_with_dependencies
+        # See: https://github.com/albertocavalcante/gvy/issues/1029
+        "com.squareup.wire:wire-compiler:jar:jar-with-dependencies:5.4.0",
         "com.squareup.okio:okio-jvm:3.10.2",  # Required by Wire-generated code
 
         # Code Quality & Analysis
@@ -303,18 +306,6 @@ maven.artifact(
         "org.eclipse.xtend:org.eclipse.xtend.lib",
         "org.eclipse.xtext:org.eclipse.xtext.xbase.lib",
     ],
-)
-
-# Wire compiler with shadow jar (jar-with-dependencies) classifier
-# GMM variant selection doesn't work correctly for wire-compiler due to org.gradle.usage
-# mismatch (we use "runtime" but wire publishes "java-runtime"). The shadow jar bundles
-# all dependencies, avoiding classpath resolution issues entirely.
-# Tracking: https://github.com/albertocavalcante/gvy/issues/1029
-maven.artifact(
-    artifact = "wire-compiler",
-    classifier = "jar-with-dependencies",
-    group = "com.squareup.wire",
-    version = "5.4.0",
 )
 
 # CodeNarc with Groovy exclusions to avoid version conflicts
