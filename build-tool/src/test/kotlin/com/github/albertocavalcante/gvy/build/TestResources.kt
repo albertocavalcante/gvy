@@ -20,10 +20,24 @@ object TestResources {
      * @return Path to the resource directory
      */
     fun getResourcePath(resourceDir: String): Path {
-        // Debug: print environment variables
+        // Debug: print environment variables and list runfiles
         val testSrcDir = System.getenv("TEST_SRCDIR")
         val runfilesDir = System.getenv("RUNFILES_DIR")
         println("TestResources: TEST_SRCDIR=$testSrcDir, RUNFILES_DIR=$runfilesDir")
+
+        // Debug: List what's actually in the runfiles directory
+        if (runfilesDir != null) {
+            try {
+                val runfilesPath = Paths.get(runfilesDir)
+                if (Files.exists(runfilesPath)) {
+                    Files.list(runfilesPath).limit(20).forEach {
+                        println("TestResources: Runfiles contains: ${it.fileName}")
+                    }
+                }
+            } catch (e: Exception) {
+                println("TestResources: Error listing runfiles: $e")
+            }
+        }
 
         // Try multiple locations in order of preference
         val candidates = listOf(
