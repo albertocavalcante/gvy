@@ -5,7 +5,7 @@ This is a Kotlin/TypeScript monorepo for the Groovy Language Server project.
 """
 
 module(
-    name = "groovy_lsp",
+    name = "gvy",
     version = "0.4.8",
     compatibility_level = 1,
     repo_name = "groovy-lsp",
@@ -108,7 +108,7 @@ maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 maven.install(
     # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
     # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
-    known_contributing_modules = ["groovy_lsp", "protobuf"],
+    known_contributing_modules = ["gvy", "protobuf"],
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
