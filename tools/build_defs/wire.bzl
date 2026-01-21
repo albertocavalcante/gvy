@@ -124,9 +124,8 @@ _wire_codegen = rule(
             mandatory = True,
             doc = "Proto files to compile with Wire",
         ),
-        "tags": attr.string_list(
-            doc = "Tags to apply to the target",
-        ),
+        # Note: tags, visibility, testonly are built-in attributes
+        # and are automatically available via **kwargs in the macro
         "_wire_compiler": attr.label(
             default = "//tools:wire_compiler",
             executable = True,
