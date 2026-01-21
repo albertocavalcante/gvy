@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.groovylsp.buildtool
+package com.github.albertocavalcante.gvy.build
 
 import java.nio.file.Files
 import java.nio.file.Path
@@ -8,7 +8,7 @@ import java.nio.file.Paths
  * Utility for locating test resources in both Gradle and Bazel environments.
  *
  * In Gradle, resources are at: src/test/resources/...
- * In Bazel, resources are in runfiles at: groovy-build-tool/src/test/resources/...
+ * In Bazel, resources are in runfiles at: build-tool/src/test/resources/...
  */
 object TestResources {
 
@@ -25,11 +25,11 @@ object TestResources {
             // Gradle: running from module directory
             "src/test/resources/$resourceDir",
             // Gradle: running from project root
-            "groovy-build-tool/src/test/resources/$resourceDir",
+            "build-tool/src/test/resources/$resourceDir",
             // Bazel: runfiles with workspace prefix
-            System.getenv("TEST_SRCDIR")?.let { "$it/_main/groovy-build-tool/src/test/resources/$resourceDir" },
+            System.getenv("TEST_SRCDIR")?.let { "$it/_main/build-tool/src/test/resources/$resourceDir" },
             // Bazel: runfiles without workspace prefix
-            System.getenv("TEST_SRCDIR")?.let { "$it/groovy-build-tool/src/test/resources/$resourceDir" },
+            System.getenv("TEST_SRCDIR")?.let { "$it/build-tool/src/test/resources/$resourceDir" },
         )
 
         for (candidate in candidates.filterNotNull()) {
