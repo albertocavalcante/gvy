@@ -77,7 +77,17 @@ jobs:
         run: bazel build //...
 
       - name: Run tests
-        run: bazel test //...
+        run: bazel test //... --test_output=errors
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: bazel-testlogs-${{ matrix.name }}
+          path: |
+            bazel-testlogs/**/test.log
+            bazel-testlogs/**/test.xml
+          retention-days: 7
 
   buildifier:
     runs-on: ubuntu-24.04
