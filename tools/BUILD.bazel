@@ -1,6 +1,6 @@
 """Build definitions and toolchains for the Groovy Language Server project."""
 
-load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_java//java:defs.bzl", "java_binary", "java_import")
 load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain")
 
 # Kotlin toolchain with performance optimizations
@@ -27,11 +27,21 @@ define_kt_toolchain(
 # Uses the shadow jar (jar-with-dependencies) downloaded directly via http_file
 # to avoid GMM variant selection issues. See tools/build_defs/wire_compiler.bzl.
 #
+# TODO(rules_wire): Consider spinning off Wire support into a standalone ruleset.
+# See: https://github.com/albertocavalcante/gvy/issues/1030
+#
 # Tracking: https://github.com/albertocavalcante/gvy/issues/1029
 # ==============================================================================
+
+# Import the downloaded jar so it can be used as a Java dependency
+java_import(
+    name = "wire_compiler_jar_import",
+    jars = ["@wire_compiler_jar//file"],
+)
+
 java_binary(
     name = "wire_compiler",
     main_class = "com.squareup.wire.WireCompiler",
-    runtime_deps = ["@wire_compiler_jar//file"],
+    runtime_deps = [":wire_compiler_jar_import"],
     visibility = ["//visibility:public"],
 )

@@ -3,6 +3,10 @@
 GMM (Gradle Module Metadata) causes rules_jvm_external to resolve wire-compiler
 incorrectly. We download the shadow jar directly to avoid this issue.
 
+TODO(rules_wire): Consider spinning off Wire support into a standalone ruleset.
+This module extension + wire_proto_library macro could form the basis of rules_wire.
+See: https://github.com/albertocavalcante/gvy/issues/1030
+
 Tracking: https://github.com/albertocavalcante/gvy/issues/1029
 """
 
