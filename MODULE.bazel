@@ -104,17 +104,6 @@ maven.install(
     # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
     # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
     known_contributing_modules = ["gvy", "protobuf"],
-    # Globally exclude old Groovy 3.x coordinates to prevent version conflicts.
-    # We use org.apache.groovy:groovy:4.0.29 - the old org.codehaus.groovy artifacts
-    # are incompatible with Spock 2.3-groovy-4.0 and cause runtime errors.
-    excluded_artifacts = [
-        "org.codehaus.groovy:groovy",
-        "org.codehaus.groovy:groovy-ant",
-        "org.codehaus.groovy:groovy-groovydoc",
-        "org.codehaus.groovy:groovy-json",
-        "org.codehaus.groovy:groovy-templates",
-        "org.codehaus.groovy:groovy-xml",
-    ],
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",

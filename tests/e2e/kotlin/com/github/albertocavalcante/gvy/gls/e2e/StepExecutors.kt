@@ -559,16 +559,8 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
             if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins")) {
                 // Build command to invoke the GLS CLI.
                 // Priority: execJar (Bazel) > binary (Gradle script) > fallback
-                val execJarPath = System.getProperty("groovy.lsp.e2e.execJar")?.let { jarPath ->
-                    // Resolve relative to runfiles directory if running under Bazel
-                    val runfilesDir = System.getenv("RUNFILES_DIR")
-                        ?: System.getenv("TEST_SRCDIR")
-                    if (runfilesDir != null) {
-                        Paths.get(runfilesDir, "_main", jarPath).toString()
-                    } else {
-                        Paths.get(jarPath).toAbsolutePath().toString()
-                    }
-                }
+                val execJarPath = System.getProperty("groovy.lsp.e2e.execJar")
+                    ?.let { BazelRunfiles.resolveForSubprocess(it) }
                 val binaryPath = System.getProperty("groovy.lsp.binary")
                     ?: "./groovy-lsp/build/install/groovy-lsp/bin/groovy-lsp"
 
