@@ -1,2 +1,0 @@
-Build options: --color=yes --java_language_version=21 --java_runtime_version=21 --tool_java_language_version=21 --tool_java_runtime_version=21 --javacopt='-source 17' --javacopt='-target 17' --disk_cache='~/.cache/bazel' --worker_sandboxing --jobs=auto --verbose_failures --strategy='KotlinCompile=worker' --explain=explain.txt --verbose_explanations
-Executing action 'BazelWorkspaceStatusAction stable-status.txt': unconditional execution is requested.
