@@ -20,6 +20,11 @@ object TestResources {
      * @return Path to the resource directory
      */
     fun getResourcePath(resourceDir: String): Path {
+        // Debug: print environment variables
+        val testSrcDir = System.getenv("TEST_SRCDIR")
+        val runfilesDir = System.getenv("RUNFILES_DIR")
+        println("TestResources: TEST_SRCDIR=$testSrcDir, RUNFILES_DIR=$runfilesDir")
+
         // Try multiple locations in order of preference
         val candidates = listOf(
             // Gradle: running from module directory
@@ -38,6 +43,7 @@ object TestResources {
 
         for (candidate in candidates.filterNotNull()) {
             val path = Paths.get(candidate)
+            println("TestResources: Trying $candidate - exists=${Files.exists(path)}")
             if (Files.exists(path)) {
                 return path
             }
