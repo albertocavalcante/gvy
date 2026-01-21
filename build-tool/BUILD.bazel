@@ -27,6 +27,7 @@ kt_library(
 kt_test(
     name = "build-tool_test",
     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
+    data = glob(["src/test/resources/**"]),
     associates = [":build-tool"],
     test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [

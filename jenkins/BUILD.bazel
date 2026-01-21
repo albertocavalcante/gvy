@@ -30,6 +30,7 @@ kt_library(
 kt_test(
     name = "jenkins_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    resources = glob(["src/test/resources/**/*"]),
     associates = [":jenkins"],
     test_packages = ["com.github.albertocavalcante.gvy.jenkins"],
     deps = [
