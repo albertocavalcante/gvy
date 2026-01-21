@@ -21,9 +21,10 @@ define_kt_toolchain(
 )
 
 # Wire compiler for proto code generation
+# Uses -jvm variant for KMP compatibility with GMM resolution
 java_binary(
     name = "wire_compiler",
     main_class = "com.squareup.wire.WireCompiler",
-    runtime_deps = ["@maven//:com_squareup_wire_wire_compiler"],
+    runtime_deps = ["@maven//:com_squareup_wire_wire_compiler_jvm"],
     visibility = ["//visibility:public"],
 )

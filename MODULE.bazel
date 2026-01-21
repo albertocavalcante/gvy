@@ -132,9 +132,9 @@ maven.install(
         "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
 
         # SCIP / Protobuf (Wire)
-        # Note: wire-runtime is a Kotlin Multiplatform artifact, need -jvm classifier for JVM targets
+        # Wire is a Kotlin Multiplatform library - use -jvm variants for JVM targets
         "com.squareup.wire:wire-runtime-jvm:5.4.0",
-        "com.squareup.wire:wire-compiler:5.4.0",
+        "com.squareup.wire:wire-compiler-jvm:5.4.0",
         "com.squareup.okio:okio-jvm:3.10.2",  # Required by Wire-generated code
 
         # Code Quality & Analysis
