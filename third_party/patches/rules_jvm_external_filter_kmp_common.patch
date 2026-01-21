@@ -1,20 +1,85 @@
 --- a/private/dependency_tree_parser.bzl
 +++ b/private/dependency_tree_parser.bzl
-@@ -186,6 +186,17 @@
+@@ -186,6 +186,82 @@ def _generate_target(artifact, default_visibilities, repository_ctx, seen_impor
      target_import_labels = []
      for dep in artifact["deps"]:
          if get_packaging(dep) == "json":
 +            continue
-+        # Skip known metadata-only KMP modules that redirect to other modules.
-+        # These modules have no JVM artifact or cause cycles when GMM resolves
-+        # both common and platform-specific variants.
++        # ========================================================================
++        # Skip metadata-only KMP modules that redirect to platform variants.
++        # These modules have no JVM artifact, only GMM metadata pointing to
++        # platform-specific variants. Coursier resolves them but rules_jvm_external
++        # doesn't create targets for artifacts without JAR files.
 +        # See: https://github.com/bazel-contrib/rules_jvm_external/issues/909
-+        if (":kotlin-stdlib-common:" in dep or 
-+            ":kotlin-test-common:" in dep or 
-+            ":kotlin-test-annotations-common:" in dep or
-+            # Skip kotlinx common modules (without -jvm suffix) that cause cycles
-+            (":kotlinx-" in dep and not "-jvm:" in dep and not "-js:" in dep and 
-+             not "-native" in dep and not "-wasm" in dep and not "-android" in dep)):
++        # ========================================================================
++        #
++        # Kotlin stdlib/test common modules (merged into kotlin-stdlib in Kotlin 2.x)
++        if (":kotlin-stdlib-common:" in dep or
++            ":kotlin-test-common:" in dep or
++            ":kotlin-test-annotations-common:" in dep):
++            continue
++        # kotlinx common modules (without -jvm/-js/-native/-wasm/-android suffix)
++        if (":kotlinx-" in dep and
++            not "-jvm:" in dep and not "-js:" in dep and
++            not "-native" in dep and not "-wasm" in dep and not "-android" in dep):
++            continue
++        # Compose internal modules (metadata-only, redirect to androidx)
++        if ("-internal:" in dep and "compose" in dep):
++            continue
++        # JetBrains AndroidX lifecycle common modules (metadata-only)
++        if ("jetbrains.androidx.lifecycle:" in dep and
++            not "-desktop:" in dep and not "-jvm:" in dep and not "-android:" in dep):
++            continue
++        #
++        # ========================================================================
++        # Fix Coursier GMM bugs that add wrong dependencies to kotlinx modules.
++        # Coursier incorrectly expands BOMs or confuses variant resolution,
++        # adding dependencies that don't exist in the actual GMM metadata.
++        # ========================================================================
++        coords = artifact.get("coordinates", "")
++        #
++        # kotlinx-serialization cycle fixes:
++        # GMM for core-jvm: bom + kotlin-stdlib (NO json deps)
++        # GMM for json-io-jvm: bom + kotlin-stdlib + core + json + io-core (NO json-jvm)
++        #
++        if ":kotlinx-serialization-core-jvm:" in coords:
++            if ":kotlinx-serialization-json-jvm:" in dep or ":kotlinx-serialization-json-io-jvm:" in dep:
++                continue
++        if ":kotlinx-serialization-json-io-jvm:" in coords:
++            if ":kotlinx-serialization-json-jvm:" in dep:
++                continue
++        #
++        # kotlinx-coroutines cycle fixes:
++        # GMM for core-jvm: annotations + bom + kotlin-stdlib (NO test deps)
++        # Coursier incorrectly adds test-jvm creating: core-jvm → test-jvm → core-jvm
++        #
++        if ":kotlinx-coroutines-core-jvm:" in coords:
++            if ":kotlinx-coroutines-test-jvm:" in dep or ":kotlinx-coroutines-debug:" in dep:
++                continue
++        #
++        # Groovy module cycle fixes:
++        # GMM for groovy-xml/templates/etc only declares groovy + groovy-bom as deps.
++        # Coursier incorrectly expands BOM and adds all other groovy modules as deps,
++        # creating cycles like: groovy-xml → groovy-templates → groovy-xml
++        #
++        if "apache.groovy:groovy" in coords:
++            # Skip cross-dependencies between groovy modules (per GMM, no cross-deps)
++            # Base groovy only depends on: gpars, ivy, jansi, xstream
++            # Submodules only depend on: base groovy
++            if "groovy-" in dep:
++                continue
++        #
++        # Jackson cycle fixes:
++        # GMM for jackson-* modules only declares jackson-core/databind + jackson-bom as deps.
++        # Coursier incorrectly expands BOM and adds all other jackson modules as deps,
++        # creating cycles across jackson.module, jackson.datatype, jackson.dataformat, etc.
++        #
++        if "fasterxml.jackson" in coords:
++            # Skip cross-dependencies between jackson extension modules
++            # Keep only jackson-core, jackson-annotations, jackson-databind
++            if ("jackson-module-" in dep or "jackson-datatype-" in dep or
++                "jackson-dataformat-" in dep or "jackson-jaxrs-" in dep):
++                continue
              continue
          stripped_dep = strip_packaging_and_classifier_and_version(dep)
          dep_target_label = escape(stripped_dep)

@@ -231,25 +231,42 @@ patch --dry-run -p1 < patch_file.patch
 3. ✅ Add patch to MODULE.bazel single_version_override
 4. ✅ GMM options already active in MODULE.bazel
 5. ✅ Test with `bazel build @maven//:pin` - PASSED
-6. ✅ Create `rules_jvm_external_filter_kmp_common.patch` - filters kotlin-stdlib-common and kotlinx common modules
-7. ⚠️ Compose Desktop build blocked by Coursier cycle issue (see below)
+6. ✅ Create `rules_jvm_external_filter_kmp_common.patch` - comprehensive cycle filter
+7. ✅ All dependency cycles fixed! Build passes analysis phase.
+8. ⚠️ New issue: sources.jar used instead of main JAR for some artifacts (see below)
 
-## Remaining Issue: Coursier Cycle in kotlinx-serialization
+## RESOLVED: Coursier BOM Expansion Cycles
 
-Coursier GMM resolution creates a cycle:
+**Root cause**: Coursier's GMM + BOM handling incorrectly expands BOMs and adds all modules from the BOM as
+dependencies, creating cycles between sibling modules.
+
+**Affected modules**:
+
+- kotlinx-serialization: core-jvm → json-jvm, json-io-jvm → json-jvm
+- kotlinx-coroutines: core-jvm → test-jvm
+- Groovy: groovy → groovy-xml, groovy-xml → groovy-templates
+- Jackson: cross-deps between module/datatype/dataformat modules
+
+**Solution**: Created comprehensive filter patch that:
+
+1. Skips metadata-only KMP common modules (kotlin-stdlib-common, kotlinx-* without -jvm suffix)
+2. Skips Compose internal modules (collection-internal, annotation-internal)
+3. Skips JetBrains AndroidX lifecycle common modules
+4. Breaks Coursier-induced cycles for kotlinx-serialization, kotlinx-coroutines
+5. Filters Groovy cross-module deps (only keep base :groovy: dependency)
+6. Filters Jackson extension cross-deps (keep only core/databind/annotations)
+
+## Remaining Issue: Sources JAR Instead of Main JAR
+
+Some artifacts use sources.jar instead of main JAR in BUILD file:
 
 ```
-kotlinx-serialization-json-jvm → kotlinx-serialization-json-io-jvm → kotlinx-serialization-json-jvm
+jar = "v1/.../arrow-core-jvm-2.2.1-sources.jar"  # WRONG
+jar = "v1/.../arrow-core-jvm-2.2.1.jar"          # CORRECT
 ```
 
-**Root cause**: Coursier adds `json-jvm` as a dependency of `json-io-jvm` during resolution, even though the GMM
-metadata only declares dependency on `json` (common module).
-
-**Workarounds**:
-
-1. Remove kotlinx-serialization-json from direct dependencies (only use core)
-2. Wait for Coursier fix upstream
-3. Create cycle-detection patch for rules_jvm_external
+The dep-tree.json has both entries (main + sources), but BUILD generation picks wrong one. This may be a pre-existing
+rules_jvm_external bug exposed by GMM resolution.
 
 ---
 
