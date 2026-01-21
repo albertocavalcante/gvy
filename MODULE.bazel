@@ -170,8 +170,18 @@ maven.install(
         "ch.qos.logback:logback-classic:1.5.24",
 
         # Testing - JUnit 6 (released Jan 2026)
-        # Note: JUnit modules downloaded via http_file to work around GMM cycle bugs
+        # Note: JUnit jars downloaded via http_file due to GMM cycle bugs
+        # These artifacts are declared here for target existence, but maven.override
+        # redirects them to //tools:junit_* targets with correct dependency graph
         # See: https://github.com/albertocavalcante/gvy/issues/1032
+        "org.junit.jupiter:junit-jupiter:6.0.2",
+        "org.junit.jupiter:junit-jupiter-api:6.0.2",
+        "org.junit.jupiter:junit-jupiter-engine:6.0.2",
+        "org.junit.jupiter:junit-jupiter-params:6.0.2",
+        "org.junit.platform:junit-platform-launcher:6.0.2",
+        "org.junit.platform:junit-platform-engine:6.0.2",
+        "org.junit.platform:junit-platform-commons:6.0.2",
+        "org.junit.platform:junit-platform-console:6.0.2",
         "junit:junit:4.13.2",
         "org.assertj:assertj-core:3.27.6",
         "io.mockk:mockk:1.14.7",
