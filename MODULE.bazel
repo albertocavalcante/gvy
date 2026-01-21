@@ -132,9 +132,9 @@ maven.install(
         "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
 
         # SCIP / Protobuf (Wire)
-        # Wire is a Kotlin Multiplatform library - use -jvm variants for JVM targets
+        # wire-runtime is KMP (needs -jvm), wire-compiler is JVM-only CLI tool
         "com.squareup.wire:wire-runtime-jvm:5.4.0",
-        "com.squareup.wire:wire-compiler-jvm:5.4.0",
+        "com.squareup.wire:wire-compiler:5.4.0",
         "com.squareup.okio:okio-jvm:3.10.2",  # Required by Wire-generated code
 
         # Code Quality & Analysis
@@ -284,6 +284,7 @@ maven.install(
     # Google Maven doesn't publish checksum files for some AndroidX artifacts
     # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
     fail_on_missing_checksum = False,
+    lock_file = "//:maven_install.json",
 )
 
 # bsp4j with exclusions - lsp4j.generator pulls xtend which pulls guava with bundle packaging
