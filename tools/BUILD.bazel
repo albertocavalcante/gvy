@@ -24,17 +24,14 @@ define_kt_toolchain(
 # Wire Compiler for Proto Code Generation
 # ==============================================================================
 #
-# Uses the shadow jar (jar-with-dependencies) to avoid GMM variant selection
-# issues. The shadow jar bundles all dependencies, eliminating classpath problems.
-#
-# Background: GMM uses org.gradle.usage=java-runtime but our Coursier config uses
-# org.gradle.usage=runtime, causing mismatched variant selection.
+# Uses the shadow jar (jar-with-dependencies) downloaded directly via http_file
+# to avoid GMM variant selection issues. See tools/build_defs/wire_compiler.bzl.
 #
 # Tracking: https://github.com/albertocavalcante/gvy/issues/1029
 # ==============================================================================
 java_binary(
     name = "wire_compiler",
     main_class = "com.squareup.wire.WireCompiler",
-    runtime_deps = ["@maven//:com_squareup_wire_wire_compiler_jar_with_dependencies"],
+    runtime_deps = ["@wire_compiler_jar//file"],
     visibility = ["//visibility:public"],
 )

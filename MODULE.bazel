@@ -132,12 +132,9 @@ maven.install(
         "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
 
         # SCIP / Protobuf (Wire)
-        # wire-runtime is KMP (needs -jvm), wire-compiler uses shadow jar
+        # wire-runtime is KMP (needs -jvm)
+        # wire-compiler: downloaded separately via http_file (see below) due to GMM issues
         "com.squareup.wire:wire-runtime-jvm:5.4.0",
-        # wire-compiler shadow jar (jar-with-dependencies) - avoids GMM variant issues
-        # Label: @maven//:com_squareup_wire_wire_compiler_jar_with_dependencies
-        # See: https://github.com/albertocavalcante/gvy/issues/1029
-        "com.squareup.wire:wire-compiler:jar:jar-with-dependencies:5.4.0",
         "com.squareup.okio:okio-jvm:3.10.2",  # Required by Wire-generated code
 
         # Code Quality & Analysis
@@ -347,3 +344,8 @@ use_repo(npm, "npm")
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
 pnpm.pnpm(pnpm_version = "10.27.0")
 use_repo(pnpm, "pnpm")
+
+# Wire compiler - downloaded directly due to GMM variant selection issues
+# See: https://github.com/albertocavalcante/gvy/issues/1029
+wire = use_extension("//tools/build_defs:wire_compiler.bzl", "wire_compiler")
+use_repo(wire, "wire_compiler_jar")
