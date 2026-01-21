@@ -20,44 +20,18 @@ object TestResources {
      * @return Path to the resource directory
      */
     fun getResourcePath(resourceDir: String): Path {
-        // Debug: print environment variables and list runfiles
-        val testSrcDir = System.getenv("TEST_SRCDIR")
-        val runfilesDir = System.getenv("RUNFILES_DIR")
-        println("TestResources: TEST_SRCDIR=$testSrcDir, RUNFILES_DIR=$runfilesDir")
-
-        // Debug: List what's actually in the runfiles directory
-        if (runfilesDir != null) {
-            try {
-                val runfilesPath = Paths.get(runfilesDir)
-                if (Files.exists(runfilesPath)) {
-                    Files.list(runfilesPath).limit(20).forEach {
-                        println("TestResources: Runfiles contains: ${it.fileName}")
-                    }
-                }
-            } catch (e: Exception) {
-                println("TestResources: Error listing runfiles: $e")
-            }
-        }
-
         // Try multiple locations in order of preference
         val candidates = listOf(
             // Gradle: running from module directory
             "src/test/resources/$resourceDir",
             // Gradle: running from project root
             "build-tool/src/test/resources/$resourceDir",
-            // Bazel: RUNFILES_DIR with workspace prefix
+            // Bazel: data files in runfiles with full workspace path
             System.getenv("RUNFILES_DIR")?.let { "$it/_main/build-tool/src/test/resources/$resourceDir" },
-            // Bazel: RUNFILES_DIR without workspace prefix
-            System.getenv("RUNFILES_DIR")?.let { "$it/build-tool/src/test/resources/$resourceDir" },
-            // Bazel: TEST_SRCDIR with workspace prefix
-            System.getenv("TEST_SRCDIR")?.let { "$it/_main/build-tool/src/test/resources/$resourceDir" },
-            // Bazel: TEST_SRCDIR without workspace prefix
-            System.getenv("TEST_SRCDIR")?.let { "$it/build-tool/src/test/resources/$resourceDir" },
         )
 
         for (candidate in candidates.filterNotNull()) {
             val path = Paths.get(candidate)
-            println("TestResources: Trying $candidate - exists=${Files.exists(path)}")
             if (Files.exists(path)) {
                 return path
             }

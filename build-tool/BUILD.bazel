@@ -27,7 +27,13 @@ kt_library(
 kt_test(
     name = "build-tool_test",
     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
-    resources = glob(["src/test/resources/**/*"]),
+    # Resources: files loaded via classloader (txt, xml files)
+    resources = glob([
+        "src/test/resources/**/*.txt",
+        "src/test/resources/**/*.xml",
+    ]),
+    # Data: directories and their contents that need filesystem access
+    data = glob(["src/test/resources/test-*-project/**/*"]) + glob(["src/test/resources/non-*-project/**/*"]),
     associates = [":build-tool"],
     test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [
