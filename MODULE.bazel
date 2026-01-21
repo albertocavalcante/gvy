@@ -106,6 +106,9 @@ use_repo(go_sdk, "go_toolchains")
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
 
 maven.install(
+    # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
+    # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
+    known_contributing_modules = ["groovy_lsp", "protobuf"],
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
@@ -195,7 +198,8 @@ maven.install(
         "com.fasterxml.jackson.core:jackson-databind:2.20.1",
         "com.fasterxml.jackson.module:jackson-module-kotlin:2.20.1",
 
-        # Guava - explicit to ensure consistent version across transitives
+        # Guava - explicit to pin version (protobuf transitively brings 32.0.1-jre)
+        # Our explicit version wins; duplicate warning is expected and harmless
         "com.google.guava:guava:33.5.0-jre",
 
         # Classpath Scanning
