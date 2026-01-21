@@ -3,6 +3,7 @@ load("//tools/build_defs:kotlin.bzl", "kt_library")
 kt_library(
     name = "jenkins",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
+    resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
     deps = [
         "//jupyter/kernel-core",

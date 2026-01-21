@@ -3,6 +3,7 @@ load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 kt_library(
     name = "kernel-core",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
+    resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
     deps = [
         "//repl",
