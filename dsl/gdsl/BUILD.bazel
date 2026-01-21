@@ -1,9 +1,6 @@
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
-load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_library")
 
-# Using kt_jvm_library directly to debug dependency resolution issues
-# TODO: Switch back to kt_library macro once resolved
-kt_jvm_library(
+kt_library(
     name = "gdsl",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     resources = glob(["src/main/resources/**/*"]),
@@ -11,7 +8,6 @@ kt_jvm_library(
     deps = [
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
     ],
 )
 

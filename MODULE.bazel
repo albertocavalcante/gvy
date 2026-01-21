@@ -349,3 +349,14 @@ use_repo(pnpm, "pnpm")
 # See: https://github.com/albertocavalcante/gvy/issues/1029
 wire = use_extension("//tools/build_defs:wire_compiler.bzl", "wire_compiler")
 use_repo(wire, "wire_compiler_jar")
+
+# Kotlin-logging - downloaded directly due to GMM bug (resolves sources jar instead of classes)
+# See: https://github.com/albertocavalcante/gvy/issues/1031
+kotlin_logging = use_extension("//tools/build_defs:kotlin_logging.bzl", "kotlin_logging")
+use_repo(kotlin_logging, "kotlin_logging_jar")
+
+# Override maven kotlin-logging to use our directly-downloaded jar
+maven.override(
+    coordinates = "io.github.oshai:kotlin-logging-jvm",
+    target = "//tools:kotlin_logging",
+)

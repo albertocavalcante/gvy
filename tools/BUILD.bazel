@@ -39,6 +39,24 @@ java_import(
     jars = ["@wire_compiler_jar//file"],
 )
 
+# ==============================================================================
+# Kotlin-Logging (Direct Download)
+# ==============================================================================
+#
+# GMM (Gradle Module Metadata) causes rules_jvm_external to incorrectly resolve
+# kotlin-logging-jvm to the sources jar instead of the classes jar.
+# We download the classes jar directly via http_file to work around this bug.
+#
+# Tracking: https://github.com/albertocavalcante/gvy/issues/1031
+# ==============================================================================
+
+java_import(
+    name = "kotlin_logging",
+    jars = ["@kotlin_logging_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
+)
+
 java_binary(
     name = "wire_compiler",
     main_class = "com.squareup.wire.WireCompiler",
