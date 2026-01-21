@@ -72,14 +72,14 @@ kt_library(
 
 kt_jvm_binary(
     name = "gls",
-    main_class = "com.github.albertocavalcante.groovylsp.MainKt",
+    main_class = "com.github.albertocavalcante.gvy.gls.MainKt",
     visibility = ["//visibility:public"],
     runtime_deps = [":gls-lib"],
 )
 
 java_binary(
     name = "gls_deploy",
-    main_class = "com.github.albertocavalcante.groovylsp.MainKt",
+    main_class = "com.github.albertocavalcante.gvy.gls.MainKt",
     visibility = ["//visibility:public"],
     runtime_deps = [":gls-lib"],
 )
