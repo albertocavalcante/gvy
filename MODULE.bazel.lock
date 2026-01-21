@@ -324,6 +324,138 @@
   },
   "selectedYankedVersions": {},
   "moduleExtensions": {
+    "//tools/build_defs:junit.bzl%junit": {
+      "general": {
+        "bzlTransitiveDigest": "CivMHODtof4pzvrXa1v679iOuPj6Sk7j8wcyuIZeSFQ=",
+        "usagesDigest": "ajWiTWd2ISYShaZDenbsUyEUCYeIDlTkCVjXVmFn65s=",
+        "recordedInputs": [
+          "REPO_MAPPING:,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "junit_jupiter_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/jupiter/junit-jupiter/6.0.2/junit-jupiter-6.0.2.jar"
+              ],
+              "sha256": "ca5466a435a0b0f100382c5a77e91eae6d4ca330f60b4d24013a9a3f0cd742e8",
+              "downloaded_file_path": "junit-jupiter.jar"
+            }
+          },
+          "junit_jupiter_api_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/jupiter/junit-jupiter-api/6.0.2/junit-jupiter-api-6.0.2.jar"
+              ],
+              "sha256": "407b20aded40781ad5440309639ef0c428e735b2b6f8831c5d2ff9041613195d",
+              "downloaded_file_path": "junit-jupiter-api.jar"
+            }
+          },
+          "junit_jupiter_engine_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/jupiter/junit-jupiter-engine/6.0.2/junit-jupiter-engine-6.0.2.jar"
+              ],
+              "sha256": "2a7201cf4890483c1bb5045e91a59b7052a8189b2930a9be9514c63e1e58b3b6",
+              "downloaded_file_path": "junit-jupiter-engine.jar"
+            }
+          },
+          "junit_jupiter_params_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/jupiter/junit-jupiter-params/6.0.2/junit-jupiter-params-6.0.2.jar"
+              ],
+              "sha256": "4c6f5877e852a7b891207c6e8d6a5eb19680d25b0c401d09a649d1ea17117b59",
+              "downloaded_file_path": "junit-jupiter-params.jar"
+            }
+          },
+          "junit_platform_launcher_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-launcher/6.0.2/junit-platform-launcher-6.0.2.jar"
+              ],
+              "sha256": "bd9910f7bca4a9d4050ba85e1f076e3b8573239d45df79673862aab298595792",
+              "downloaded_file_path": "junit-platform-launcher.jar"
+            }
+          },
+          "junit_platform_engine_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-engine/6.0.2/junit-platform-engine-6.0.2.jar"
+              ],
+              "sha256": "31495b754ba882ba693c19fa9d887e61af6f3850f58741bd58c3f129deca5517",
+              "downloaded_file_path": "junit-platform-engine.jar"
+            }
+          },
+          "junit_platform_commons_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-commons/6.0.2/junit-platform-commons-6.0.2.jar"
+              ],
+              "sha256": "1c49eab8ed3d81280459e3f3e1f119b928f9cfc530c7500c2a15a9ae8e7ad30d",
+              "downloaded_file_path": "junit-platform-commons.jar"
+            }
+          },
+          "junit_platform_console_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console/6.0.2/junit-platform-console-6.0.2.jar"
+              ],
+              "sha256": "adfe7a292d6d8a48b16565cf807aac3fff1a56bc4be88b26707f3b20c902b2fd",
+              "downloaded_file_path": "junit-platform-console.jar"
+            }
+          }
+        }
+      }
+    },
+    "//tools/build_defs:kotlin_logging.bzl%kotlin_logging": {
+      "general": {
+        "bzlTransitiveDigest": "Okre98E84gRKDIUOc28tjt/tz1/G6/B+yRIsB6nTyeI=",
+        "usagesDigest": "8Fl57MsEtClycPF/HTbngtHnq4YR5B0ODc6meu4tKoI=",
+        "recordedInputs": [
+          "REPO_MAPPING:,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "kotlin_logging_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/io/github/oshai/kotlin-logging-jvm/7.0.14/kotlin-logging-jvm-7.0.14.jar"
+              ],
+              "sha256": "ac537321218c670aeeb98c3868d4e21a13ac0b5798125ee60096fb97c197c8f3",
+              "downloaded_file_path": "kotlin-logging-jvm.jar"
+            }
+          }
+        }
+      }
+    },
+    "//tools/build_defs:wire_compiler.bzl%wire_compiler": {
+      "general": {
+        "bzlTransitiveDigest": "/xl597iLaLesbY7xgpi/Oh8BmlfO77eIvjYycK2bv04=",
+        "usagesDigest": "97UaqHALi2GRhm3182cgOi1+oH4I2eDjEqtpC6dtXe4=",
+        "recordedInputs": [
+          "REPO_MAPPING:,bazel_tools bazel_tools"
+        ],
+        "generatedRepoSpecs": {
+          "wire_compiler_jar": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_file",
+            "attributes": {
+              "urls": [
+                "https://repo1.maven.org/maven2/com/squareup/wire/wire-compiler/5.4.0/wire-compiler-5.4.0-jar-with-dependencies.jar"
+              ],
+              "downloaded_file_path": "wire-compiler.jar"
+            }
+          }
+        }
+      }
+    },
     "@@aspect_rules_esbuild+//esbuild:extensions.bzl%esbuild": {
       "general": {
         "bzlTransitiveDigest": "IqHYVu2WfZbm3ow6uVBCxhMU28DwUec2y+YRa+E+Vjk=",
