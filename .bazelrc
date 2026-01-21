@@ -54,6 +54,10 @@ common --worker_sandboxing
 common --incompatible_strict_action_env=true
 common --incompatible_enable_cc_toolchain_resolution=true
 
+# Protobuf: use prebuilt protoc instead of compiling from source
+# See: https://blog.aspect.build/bazel-9-protobuf
+common --@protobuf//bazel/toolchains:prefer_prebuilt_protoc
+
 # Show verbose failures for debugging
 common --verbose_failures
 
