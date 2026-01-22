@@ -888,7 +888,7 @@
     "package": "vsce package --no-dependencies",
     "install-extension": "node tools/install-extension.js",
     "clean": "rm -rf client/out/ server/*.jar server/.gls-version",
-    "postinstall": "cd client && pnpm install && cd .. && pnpm run prepare-server",
+    "postinstall": "cd client && pnpm install --ignore-scripts && cd .. && pnpm run prepare-server",
     "test": "mocha",
     "test:watch": "mocha --watch",
     "compile:tests": "tsc -b client/tsconfig.json",
