@@ -140,8 +140,10 @@ maven.install(
 
         # Code Quality & Analysis
         # Note: CodeNarc exclusions are defined separately via maven.artifact()
+        # Note: rewrite-groovy exclusions are defined separately via maven.artifact()
         "org.gmetrics:GMetrics:2.1.0",
-        "org.openrewrite:rewrite-groovy:8.70.4",
+        "org.openrewrite:rewrite-core:8.70.4",
+        "org.openrewrite:rewrite-java:8.70.4",
 
         # Gradle Tooling API - from repo.gradle.org (configured in repositories)
         "org.gradle:gradle-tooling-api:9.2.1",
@@ -329,6 +331,18 @@ maven.artifact(
         "org.codehaus.groovy:groovy-json",
         "org.codehaus.groovy:groovy-templates",
         "org.codehaus.groovy:groovy-xml",
+    ],
+)
+
+# OpenRewrite Groovy with exclusions to avoid Groovy 3.x conflicts
+# rewrite-groovy 8.70.4 pulls in org.codehaus.groovy:groovy:3.0.25 which conflicts with our 4.0.29
+maven.artifact(
+    artifact = "rewrite-groovy",
+    group = "org.openrewrite",
+    version = "8.70.4",
+    exclusions = [
+        # Exclude Groovy 3.x - we provide Groovy 4.0.29 explicitly
+        "org.codehaus.groovy:groovy",
     ],
 )
 
