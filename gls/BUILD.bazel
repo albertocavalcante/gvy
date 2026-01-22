@@ -48,6 +48,7 @@ kt_library(
         # Groovy - For AST parsing and analysis
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_apache_groovy_groovy_groovydoc",
+        "@maven//:org_apache_groovy_groovy_xml",
 
         # Kotlin Immutable Collections
         "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable_jvm",

@@ -123,6 +123,7 @@ maven.install(
         "org.apache.groovy:groovy-json:4.0.29",
         "org.apache.groovy:groovy-groovydoc:4.0.29",
         "org.apache.groovy:groovy-macro:4.0.29",
+        "org.apache.groovy:groovy-xml:4.0.29",
 
         # Grape/Grab dependency resolution
         "org.apache.ivy:ivy:2.5.3",
