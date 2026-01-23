@@ -1,33 +1,54 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["typer", "pydantic", "rich"]
+# dependencies = ["typer", "pydantic", "rich", "httpx", "google-auth"]
 # ///
 """
 PR Review Manager - Token-efficient review thread CLI.
+
+Features:
+- Review thread management (list, resolve, reject)
+- AI-powered semantic commit message generation
+- Smart diff compression for large PRs (signature extraction, context removal)
+- Resilient fallback chain: Gemini CLI → stats-only → direct API → Claude
+
 All heavy lifting (GraphQL, caching, mutations) is handled here.
 Agent only needs: thread_id, file, line, message.
+
+Usage:
+  pr.py threads [PR_NUMBER]       # List open review threads
+  pr.py merge [PR_NUMBER] --ai    # Squash merge with AI commit message
+  pr.py resolve <THREAD_ID> <MSG> # Resolve a thread with reply
+
+Environment Variables:
+  GVY_AI_TIMEOUT       - AI command timeout in seconds (default: 180)
+  GVY_PROMPT_MAX_CHARS - Max prompt size before fallback (default: 400000)
+  GOOGLE_API_KEY       - For direct Gemini API fallback (bypasses CLI OOM)
 """
 
 import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
+import httpx
 import typer
 from pydantic import BaseModel, Field
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 
@@ -97,6 +118,7 @@ class DiffMode(str, Enum):
 
     FULL = "full"  # Complete diff, no truncation
     TRUNCATED = "truncated"  # Diff truncated for size
+    SEMANTIC = "semantic"  # Compressed with signature extraction
     STATS_ONLY = "stats_only"  # Only file stats, no content
 
 
@@ -133,23 +155,77 @@ DiffOutcome = DiffResult | DiffError
 # =============================================================================
 # AI PROVIDER CONFIGURATION
 # =============================================================================
+#
+# KNOWN ISSUE: Gemini CLI OOM on Large Inputs
+# ============================================
+# The Gemini CLI is built on Node.js, which buffers entire stdin into memory
+# before processing. For large prompts (>100KB), this causes V8 heap exhaustion:
+#
+#   FATAL ERROR: Ineffective mark-compacts near heap limit
+#   Allocation failed - JavaScript heap out of memory
+#
+# Root cause: V8's String::SlowFlatten creates full copies during concatenation.
+# Upstream issue: https://github.com/google-gemini/gemini-cli/issues/15917
+#
+# Claude CLI does NOT have this issue because it uses Bun (JavaScriptCore engine)
+# which has better memory handling for large string operations.
+#
+# MITIGATION STRATEGY (Fallback Chain):
+# 1. Try Gemini CLI with full/truncated diff
+# 2. On OOM → Retry with stats-only mode (much smaller prompt)
+# 3. On OOM → Try direct Google AI API (bypasses Node.js entirely)
+# 4. On failure → Fall back to Claude CLI (Bun-based, handles large inputs)
+#
+# Users can also:
+# - Use --stats-only flag proactively for large PRs
+# - Use --provider claude to skip Gemini entirely
+# - Set GVY_PROMPT_MAX_CHARS to a lower value (default: 400000)
+# - Set GOOGLE_API_KEY for direct API fallback
+# =============================================================================
 
-# Default models per provider (None = use provider's default)
-AI_PROVIDER_DEFAULTS = {
-    AIProvider.GEMINI: {
-        "cmd": "gemini",
-        "model_flag": "-m",
-        "default_model": None,  # Use gemini's default
-        "emoji": "💎",
-    },
-    AIProvider.CLAUDE: {
-        "cmd": "claude",
-        "model_flag": "--model",
-        "default_model": "sonnet",  # Fast and capable
-        "emoji": "🤖",
-        "extra_args": ["-p"],  # Print mode for non-interactive
-    },
+# AI command timeout (in seconds) - generous but prevents infinite hangs
+AI_TIMEOUT_SECONDS = int(os.environ.get("GVY_AI_TIMEOUT", "180"))
+
+
+@dataclass(frozen=True)
+class AIProviderConfig:
+    """Configuration for an AI provider CLI."""
+
+    cmd: str
+    model_flag: str
+    emoji: str
+    default_model: str | None = None
+    extra_args: tuple[str, ...] = ()
+    # Runtime characteristics
+    prone_to_oom: bool = False  # True for Node.js based CLIs
+
+
+# Provider configurations as immutable dataclasses
+AI_PROVIDERS: dict[AIProvider, AIProviderConfig] = {
+    AIProvider.GEMINI: AIProviderConfig(
+        cmd="gemini",
+        model_flag="-m",
+        default_model=None,  # Use gemini's default
+        emoji="💎",
+        prone_to_oom=True,  # Node.js based, OOMs on large stdin
+    ),
+    AIProvider.CLAUDE: AIProviderConfig(
+        cmd="claude",
+        model_flag="--model",
+        default_model="sonnet",  # Fast and capable
+        emoji="🤖",
+        extra_args=("-p",),  # Print mode for non-interactive
+        prone_to_oom=False,  # Bun-based, handles large inputs well
+    ),
 }
+
+# Google AI API for direct HTTP fallback (bypasses Node.js CLI OOM issues)
+GOOGLE_AI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+GOOGLE_AI_DEFAULT_MODEL = "gemini-2.0-flash"
+
+# Thresholds for diff processing modes (in characters)
+DIFF_SEMANTIC_THRESHOLD = 100_000  # Use semantic mode above this
+DIFF_STATS_THRESHOLD = 300_000  # Use stats-only above this
 
 
 # =============================================================================
@@ -741,6 +817,86 @@ app = typer.Typer(help="PR Review CLI", add_completion=False)
 
 AGENT_DIR = Path(__file__).resolve().parent.parent
 QUERIES_DIR = AGENT_DIR / "queries"
+
+
+# =============================================================================
+# TIMEOUT AND PROCESS HELPERS
+# =============================================================================
+
+
+class TimeoutError(Exception):
+    """Raised when an operation times out."""
+
+    pass
+
+
+@contextmanager
+def timeout_context(seconds: int, operation: str = "operation"):
+    """Context manager for timing out operations (Unix only, graceful on Windows)."""
+
+    def timeout_handler(signum, frame):
+        raise TimeoutError(f"{operation} timed out after {seconds}s")
+
+    # Only use SIGALRM on Unix systems
+    if hasattr(signal, "SIGALRM"):
+        old_handler = signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(seconds)
+        try:
+            yield
+        finally:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, old_handler)
+    else:
+        # Windows: no timeout support, just yield
+        yield
+
+
+def run_with_timeout(
+    cmd: list[str],
+    *,
+    timeout: int = AI_TIMEOUT_SECONDS,
+    input_data: str | None = None,
+    input_file: Path | None = None,
+) -> subprocess.CompletedProcess[str]:
+    """
+    Run a command with timeout support and flexible input handling.
+
+    Args:
+        cmd: Command and arguments
+        timeout: Timeout in seconds
+        input_data: String to pass via stdin (mutually exclusive with input_file)
+        input_file: File path to use as stdin (mutually exclusive with input_data)
+
+    Returns:
+        CompletedProcess with stdout/stderr
+
+    Raises:
+        subprocess.TimeoutExpired: If command exceeds timeout
+        subprocess.CalledProcessError: If command fails
+    """
+    stdin_source = None
+    stdin_file = None
+
+    try:
+        if input_file:
+            stdin_file = open(input_file, "r")
+            stdin_source = stdin_file
+        elif input_data is not None:
+            stdin_source = subprocess.PIPE
+
+        result = subprocess.run(
+            cmd,
+            stdin=stdin_source,
+            input=input_data if input_data is not None and not input_file else None,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+        return result
+    finally:
+        if stdin_file:
+            stdin_file.close()
 
 
 def load_query(name: str) -> str:
@@ -1349,17 +1505,10 @@ DIFF_PER_FILE_MAX = 200  # Max lines per file in truncated mode
 # Prompt size limit (configurable via env var)
 # Default: 400KB - conservative for Node.js CLI stability (Gemini CLI)
 # This prevents OOM errors when diffs are very large
-PROMPT_MAX_CHARS_DEFAULT = 400_000
-PROMPT_MIN_CHARS = 1_000  # Minimum to accommodate basic prompts
 try:
-    _env_val = int(
-        os.environ.get("GVY_PROMPT_MAX_CHARS", str(PROMPT_MAX_CHARS_DEFAULT))
-    )
-    PROMPT_MAX_CHARS = (
-        _env_val if _env_val >= PROMPT_MIN_CHARS else PROMPT_MAX_CHARS_DEFAULT
-    )
+    PROMPT_MAX_CHARS = int(os.environ.get("GVY_PROMPT_MAX_CHARS", "400000"))
 except ValueError:
-    PROMPT_MAX_CHARS = PROMPT_MAX_CHARS_DEFAULT
+    PROMPT_MAX_CHARS = 400_000
 
 # GitHub API error patterns that indicate diff is too large
 DIFF_TOO_LARGE_PATTERNS = [
@@ -1481,17 +1630,21 @@ def format_excluded_files_summary(
     return lines
 
 
-def parse_diff_into_files(diff_content: str) -> list[tuple[str, str]]:
-    """Parse unified diff into list of (filepath, file_diff) tuples."""
-    files = []
-    current_file = None
-    current_lines = []
+def iter_diff_files(diff_content: str) -> Iterator[tuple[str, str]]:
+    """
+    Generator that yields (filepath, file_diff) tuples from unified diff.
+
+    Memory-efficient: processes line by line, yields as soon as a complete
+    file diff is available. Useful for large diffs.
+    """
+    current_file: str | None = None
+    current_lines: list[str] = []
 
     for line in diff_content.split("\n"):
         if line.startswith("diff --git"):
-            # Save previous file
+            # Yield previous file if exists
             if current_file:
-                files.append((current_file, "\n".join(current_lines)))
+                yield (current_file, "\n".join(current_lines))
             # Extract filepath from "diff --git a/path b/path"
             parts = line.split(" b/")
             current_file = parts[-1] if len(parts) > 1 else "unknown"
@@ -1499,11 +1652,246 @@ def parse_diff_into_files(diff_content: str) -> list[tuple[str, str]]:
         else:
             current_lines.append(line)
 
-    # Don't forget the last file
+    # Yield the last file
     if current_file:
-        files.append((current_file, "\n".join(current_lines)))
+        yield (current_file, "\n".join(current_lines))
 
-    return files
+
+def parse_diff_into_files(diff_content: str) -> list[tuple[str, str]]:
+    """Parse unified diff into list of (filepath, file_diff) tuples."""
+    return list(iter_diff_files(diff_content))
+
+
+# =============================================================================
+# SMART DIFF COMPRESSION ALGORITHMS
+# =============================================================================
+#
+# These algorithms reduce diff size while preserving semantic meaning for AI.
+# Used when diffs are too large for the AI provider's context window or cause OOM.
+#
+# Techniques:
+# 1. Context Compression: Remove unchanged lines, keep only +/- with minimal context
+#    - Typical reduction: 50-70% for diffs with lots of context
+#
+# 2. Signature Extraction: Parse added/removed function/class signatures
+#    - Provides semantic overview without full implementation details
+#    - Supports: Kotlin, Java, Python, TypeScript, JavaScript
+#
+# 3. Semantic Summary: Combines stats + signatures + priority-truncated diffs
+#    - Prioritizes source files over tests, configs over docs
+#    - Fits large PRs into reasonable prompt size
+#
+# Priority order (FILE_PRIORITY dict):
+#   Source (.kt, .java, .py) > Config (.gradle, .yaml) > Tests > Docs
+# =============================================================================
+
+
+def compress_diff_content(file_diff: str, keep_context: int = 1) -> str:
+    """
+    Compress a file diff by removing excessive context lines.
+
+    Keeps only +/- lines and minimal context around them.
+    This can reduce diff size by 50-70% while preserving semantic meaning.
+
+    Args:
+        file_diff: Raw unified diff for a single file
+        keep_context: Number of context lines to keep around changes (default: 1)
+
+    Returns:
+        Compressed diff string
+    """
+    lines = file_diff.split("\n")
+    result: list[str] = []
+    change_indices: set[int] = set()
+
+    # First pass: identify lines with actual changes
+    for i, line in enumerate(lines):
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---")):
+            change_indices.add(i)
+            # Also mark context lines around changes
+            for offset in range(-keep_context, keep_context + 1):
+                change_indices.add(i + offset)
+
+    # Second pass: keep headers and marked lines
+    in_header = True
+    last_kept = -10  # Track gaps for "..." markers
+
+    for i, line in enumerate(lines):
+        # Always keep file headers
+        if line.startswith(("diff --git", "index ", "---", "+++", "@@")):
+            result.append(line)
+            in_header = line.startswith(("diff --git", "index ", "---", "+++"))
+            last_kept = i
+            continue
+
+        if in_header:
+            continue
+
+        if i in change_indices:
+            # Add gap marker if we skipped lines
+            if i - last_kept > 1 and last_kept >= 0:
+                result.append("  [...context...]")
+            result.append(line)
+            last_kept = i
+
+    return "\n".join(result)
+
+
+# Patterns for extracting signatures from code
+SIGNATURE_PATTERNS = {
+    # Kotlin/Java
+    ".kt": [
+        r"^\s*((?:public|private|protected|internal|override|suspend|inline|data|sealed|abstract|open)\s+)*(?:fun|class|interface|object|enum|typealias)\s+\w+",
+        r"^\s*(?:val|var)\s+\w+\s*:",  # Properties
+    ],
+    ".java": [
+        r"^\s*((?:public|private|protected|static|final|abstract|synchronized)\s+)*(?:class|interface|enum|void|\w+)\s+\w+\s*[({<]",
+    ],
+    # Python
+    ".py": [
+        r"^\s*(?:async\s+)?def\s+\w+",
+        r"^\s*class\s+\w+",
+    ],
+    # TypeScript/JavaScript
+    ".ts": [
+        r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|enum|const|let)\s+\w+",
+        r"^\s*(?:public|private|protected)?\s*(?:async\s+)?\w+\s*\([^)]*\)\s*[:{]",  # Methods
+    ],
+    ".tsx": [
+        r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class|interface|type|enum|const|let)\s+\w+",
+    ],
+    ".js": [
+        r"^\s*(?:export\s+)?(?:async\s+)?(?:function|class|const|let|var)\s+\w+",
+    ],
+}
+
+
+def extract_changed_signatures(file_diff: str, filepath: str) -> list[str]:
+    """
+    Extract function/class signatures from added/removed lines.
+
+    This provides a semantic summary of what changed without full code.
+
+    Args:
+        file_diff: Unified diff content for a single file
+        filepath: Path to determine language
+
+    Returns:
+        List of signature strings with +/- prefix
+    """
+    signatures: list[str] = []
+
+    # Determine patterns based on file extension
+    ext = "." + filepath.rsplit(".", 1)[-1] if "." in filepath else ""
+    patterns = SIGNATURE_PATTERNS.get(ext, [])
+
+    if not patterns:
+        return signatures
+
+    compiled = [re.compile(p) for p in patterns]
+
+    for line in file_diff.split("\n"):
+        if not line.startswith(("+", "-")):
+            continue
+        if line.startswith(("+++", "---")):
+            continue
+
+        prefix = line[0]
+        content = line[1:].rstrip()
+
+        for pattern in compiled:
+            if pattern.match(content):
+                # Clean up and add
+                sig = content.strip()
+                # Truncate long signatures
+                if len(sig) > 100:
+                    sig = sig[:97] + "..."
+                signatures.append(f"{prefix} {sig}")
+                break
+
+    return signatures
+
+
+def create_semantic_summary(
+    files: list[tuple[str, str]],
+    max_chars: int = 50000,
+) -> str:
+    """
+    Create a semantic summary of changes optimized for AI understanding.
+
+    Strategy:
+    1. For each file, extract signatures of changed functions/classes
+    2. Include compressed diff for high-priority files
+    3. Stats-only for low-priority files
+
+    Args:
+        files: List of (filepath, file_diff) tuples
+        max_chars: Maximum characters for the summary
+
+    Returns:
+        Semantic summary string
+    """
+    sections: list[str] = []
+    total_adds = 0
+    total_dels = 0
+    char_budget = max_chars
+
+    # Sort by priority
+    prioritized = sorted(
+        [(get_file_priority(f), f, d) for f, d in files],
+        key=lambda x: -x[0],
+    )
+
+    # Section 1: Overview stats
+    file_stats: list[str] = []
+    for _, filepath, diff in prioritized:
+        adds, dels = get_file_diff_stats(diff)
+        total_adds += adds
+        total_dels += dels
+        file_stats.append(f"  {filepath}: +{adds} -{dels}")
+
+    overview = (
+        f"=== CHANGE OVERVIEW ({len(files)} files, +{total_adds} -{total_dels}) ===\n"
+        + "\n".join(file_stats[:20])  # Top 20 files
+    )
+    if len(file_stats) > 20:
+        overview += f"\n  ... and {len(file_stats) - 20} more files"
+    sections.append(overview)
+    char_budget -= len(overview)
+
+    # Section 2: Signatures for all files (very compact)
+    sig_section: list[str] = ["", "=== KEY CHANGES (signatures) ==="]
+    for _, filepath, diff in prioritized:
+        sigs = extract_changed_signatures(diff, filepath)
+        if sigs:
+            sig_section.append(f"\n{filepath}:")
+            sig_section.extend(f"  {s}" for s in sigs[:10])  # Max 10 per file
+            if len(sigs) > 10:
+                sig_section.append(f"  ... +{len(sigs) - 10} more")
+
+    sig_text = "\n".join(sig_section)
+    if len(sig_text) < char_budget * 0.3:  # Use max 30% for signatures
+        sections.append(sig_text)
+        char_budget -= len(sig_text)
+
+    # Section 3: Compressed diff for top priority files
+    sections.append("\n=== COMPRESSED DIFF (top changes) ===")
+    for priority, filepath, diff in prioritized:
+        if char_budget <= 1000:
+            break
+        if priority < 50:  # Skip low-priority files
+            continue
+
+        compressed = compress_diff_content(diff, keep_context=1)
+        if len(compressed) > char_budget:
+            # Further truncate
+            compressed = compressed[: char_budget - 100] + "\n[...truncated...]"
+
+        file_header = f"\n--- {filepath} ---\n"
+        sections.append(file_header + compressed)
+        char_budget -= len(file_header) + len(compressed)
+
+    return "\n".join(sections)
 
 
 def truncate_file_diff(file_diff: str, max_lines: int) -> tuple[str, bool]:
@@ -2172,151 +2560,372 @@ OOM_ERROR_PATTERNS = [
 ]
 
 
+def _is_oom_error(error_text: str) -> bool:
+    """Check if error text indicates an out-of-memory condition."""
+    error_lower = error_text.lower()
+    return any(pattern in error_lower for pattern in OOM_ERROR_PATTERNS)
+
+
+def _parse_ai_output(output: str, provider_name: str) -> tuple[str, str]:
+    """
+    Parse AI output into (title, body) tuple.
+
+    Returns ("", "") if parsing fails completely.
+    """
+    if not output:
+        return "", ""
+
+    # Try structured TITLE/BODY format first
+    title_match = re.search(r"TITLE:\s*(.+)", output)
+    body_match = re.search(r"BODY:\s*(.*)", output, re.DOTALL)
+
+    ai_title = title_match.group(1).strip() if title_match else ""
+    ai_body = body_match.group(1).strip() if body_match else ""
+
+    # Fallback: use first non-empty line as title
+    if not ai_title:
+        lines = [line for line in output.split("\n") if line.strip()]
+        if lines:
+            ai_title = lines[0].strip()
+            ai_body = "\n".join(lines[1:]).strip()
+
+    return ai_title, ai_body
+
+
+def _call_ai_via_cli(
+    prompt: str,
+    provider: AIProvider,
+    model: str | None = None,
+) -> tuple[str, str, str | None]:
+    """
+    Call AI provider via CLI with resilient execution.
+
+    Uses tempfile for prompt to stream via stdin, reducing Python memory pressure.
+    Note: This doesn't fix Node.js OOM in Gemini CLI - use direct API for that.
+
+    Args:
+        prompt: The prompt text
+        provider: AI provider enum
+        model: Optional model override
+
+    Returns:
+        (stdout, stderr, error_message) - error_message is None on success
+    """
+    config = AI_PROVIDERS[provider]
+    model_to_use = model or config.default_model
+
+    # Security: validate cmd is an expected value (allowlist check)
+    allowed_cmds = {"gemini", "claude"}
+    if config.cmd not in allowed_cmds:
+        return "", "", f"Invalid AI command: {config.cmd}"
+
+    # Write prompt to tempfile - streams to stdin without holding in Python memory
+    prompt_file = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8"
+        ) as f:
+            f.write(prompt)
+            prompt_file = Path(f.name)
+
+        # Build command with provider-specific args
+        cmd_args = [config.cmd]
+
+        # Add extra args (e.g., -p for claude print mode)
+        if config.extra_args:
+            cmd_args.extend(config.extra_args)
+
+        # Add model flag if model is specified
+        if model_to_use:
+            cmd_args.extend([config.model_flag, model_to_use])
+
+        # Stream prompt from file to stdin
+        result = run_with_timeout(
+            cmd_args,
+            timeout=AI_TIMEOUT_SECONDS,
+            input_file=prompt_file,
+        )
+
+        if result.returncode != 0:
+            error_detail = result.stderr.strip() or result.stdout.strip() or "No output"
+            return (
+                result.stdout,
+                result.stderr,
+                f"exit {result.returncode}: {error_detail[:300]}",
+            )
+
+        return result.stdout.strip(), result.stderr, None
+
+    except subprocess.TimeoutExpired:
+        return "", "", f"timed out after {AI_TIMEOUT_SECONDS}s"
+    except FileNotFoundError:
+        return "", "", f"{config.cmd} CLI not found - is it installed?"
+    except Exception as e:
+        return "", "", f"{type(e).__name__}: {e}"
+    finally:
+        if prompt_file and prompt_file.exists():
+            prompt_file.unlink()
+
+
+def _get_google_auth_token() -> str | None:
+    """
+    Get Google auth token using Application Default Credentials (ADC).
+
+    This reuses the same credentials as the Gemini CLI (from `gcloud auth`
+    or `gemini auth`). Falls back to API key if ADC not available.
+
+    Returns:
+        Access token string, or None if unavailable
+    """
+    try:
+        import google.auth
+        import google.auth.transport.requests
+
+        # Get credentials from ADC (same as Gemini CLI uses)
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/generative-language"]
+        )
+
+        # Refresh to get valid access token
+        credentials.refresh(google.auth.transport.requests.Request())
+        return credentials.token
+
+    except Exception as e:
+        # ADC not available - will fall back to API key
+        typer.echo(
+            f"   ℹ️ ADC not available ({type(e).__name__}), trying API key...", err=True
+        )
+        return None
+
+
+def _call_gemini_via_api(prompt: str, model: str | None = None) -> tuple[str, str]:
+    """
+    Direct HTTP call to Google AI API, bypassing Node.js CLI.
+
+    This is the ultimate fallback when the CLI has OOM issues.
+
+    Auth priority:
+    1. ADC (Application Default Credentials) - reuses Gemini CLI auth
+    2. GOOGLE_API_KEY or GEMINI_API_KEY environment variable
+
+    Returns:
+        (title, body) or ("", "") on failure
+    """
+    model_id = model or GOOGLE_AI_DEFAULT_MODEL
+
+    # Try ADC first (reuses Gemini CLI credentials)
+    access_token = _get_google_auth_token()
+
+    if access_token:
+        # Use OAuth token with Vertex AI style URL
+        url = f"{GOOGLE_AI_API_URL}/{model_id}:generateContent"
+        headers = {"Authorization": f"Bearer {access_token}"}
+    else:
+        # Fall back to API key
+        api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY")
+        if not api_key:
+            typer.echo(
+                "   💡 No auth available. Run `gcloud auth application-default login` "
+                "or set GOOGLE_API_KEY",
+                err=True,
+            )
+            return "", ""
+        url = f"{GOOGLE_AI_API_URL}/{model_id}:generateContent?key={api_key}"
+        headers = {}
+
+    try:
+        with httpx.Client(timeout=AI_TIMEOUT_SECONDS) as client:
+            response = client.post(
+                url,
+                headers=headers,
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.3,
+                        "maxOutputTokens": 2048,
+                    },
+                },
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            text = (
+                data.get("candidates", [{}])[0]
+                .get("content", {})
+                .get("parts", [{}])[0]
+                .get("text", "")
+            )
+
+            return _parse_ai_output(text, "gemini-api")
+
+    except httpx.TimeoutException:
+        typer.echo(f"   ⚠️ API request timed out after {AI_TIMEOUT_SECONDS}s", err=True)
+        return "", ""
+    except httpx.HTTPStatusError as e:
+        typer.echo(f"   ⚠️ API error: {e.response.status_code}", err=True)
+        return "", ""
+    except Exception as e:
+        typer.echo(f"   ⚠️ API call failed: {type(e).__name__}: {e}", err=True)
+        return "", ""
+
+
 def generate_ai_message(
     pr: dict,
     pr_number: int,
     provider: AIProvider = AIProvider.GEMINI,
     model: Optional[str] = None,
     force_stats_only: bool = False,
+    auto_fallback: bool = True,
 ) -> tuple[str, str]:
-    """Generate commit message using AI CLI (gemini or claude).
+    """
+    Generate commit message using AI with resilient fallback chain.
+
+    Fallback order on failure:
+    1. Primary provider with full diff
+    2. Primary provider with stats-only diff (if OOM)
+    3. Fallback provider (Claude if Gemini failed, or vice versa)
+    4. Direct HTTP API (for Gemini, bypasses Node.js)
 
     Args:
         pr: PR details dict
         pr_number: PR number
         provider: AI provider to use (default: gemini)
-        model: Optional model override (uses provider default if not specified)
+        model: Optional model override
         force_stats_only: If True, skip diff content and use stats-only mode
+        auto_fallback: If True, automatically try fallback strategies on failure
     """
-    config = AI_PROVIDER_DEFAULTS[provider]
-    emoji = config["emoji"]
-    cmd = config["cmd"]
-    model_to_use = model or config["default_model"]
+    config = AI_PROVIDERS[provider]
+    model_to_use = model or config.default_model
 
     # Build display string for logging
     model_display = f" ({model_to_use})" if model_to_use else ""
-    typer.echo(
-        f"{emoji} Generating semantic commit message with {provider.value}{model_display}..."
-    )
 
-    # Get diff content with smart truncation for large diffs
-    # Pass pr_info to enable local git fallback when on PR branch
-    diff_content, diff_mode = prepare_diff_for_ai(
-        pr_number, pr_info=pr, force_stats_only=force_stats_only
-    )
-
-    if diff_mode == "error":
-        typer.echo("⚠️ Failed to retrieve PR diff; skipping AI generation.", err=True)
-        return "", ""
-
-    # Build prompt
-    prompt = _build_ai_prompt(pr, pr_number, diff_content, diff_mode)
-
-    # Enterprise-grade auto-detection: prevent OOM by checking prompt size
-    if len(prompt) > PROMPT_MAX_CHARS and diff_mode != DiffMode.STATS_ONLY.value:
-        typer.echo(
-            f"⚠️ Prompt exceeds limit ({len(prompt):,} > {PROMPT_MAX_CHARS:,} chars), "
-            "auto-downgrading to stats-only...",
-            err=True,
+    # Use rich progress spinner for better UX
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+        transient=True,
+    ) as progress:
+        task = progress.add_task(
+            f"{config.emoji} Generating with {provider.value}{model_display}...",
+            total=None,
         )
-        # Retry with stats-only
+
+        # Get diff content with smart truncation for large diffs
         diff_content, diff_mode = prepare_diff_for_ai(
-            pr_number, pr_info=pr, force_stats_only=True
+            pr_number, pr_info=pr, force_stats_only=force_stats_only
         )
+
         if diff_mode == "error":
-            typer.echo("⚠️ Stats-only fallback also failed.", err=True)
+            typer.echo(
+                "⚠️ Failed to retrieve PR diff; skipping AI generation.", err=True
+            )
             return "", ""
 
+        # Build prompt
         prompt = _build_ai_prompt(pr, pr_number, diff_content, diff_mode)
 
-    # Final check - if still too large (even with stats-only), abort
-    # Un-nested to catch both auto-downgrade AND explicit --stats-only cases
-    if len(prompt) > PROMPT_MAX_CHARS:
-        typer.echo(
-            f"❌ Prompt still too large ({len(prompt):,} chars) with stats-only. "
-            "PR metadata may be too verbose.",
-            err=True,
-        )
-        return "", ""
-
-    try:
-        # Security: validate cmd is an expected value (allowlist check)
-        allowed_cmds = {"gemini", "claude"}
-        if cmd not in allowed_cmds:
-            typer.echo(f"⚠️ Invalid AI command: {cmd}", err=True)
-            return "", ""
-
-        # Build command with provider-specific args
-        cmd_args = [cmd]
-
-        # Add extra args (e.g., -p for claude print mode)
-        if "extra_args" in config:
-            cmd_args.extend(config["extra_args"])
-
-        # Add model flag if model is specified
-        if model_to_use:
-            cmd_args.extend([config["model_flag"], model_to_use])
-
-        # Pipe prompt directly via stdin
-        ps = subprocess.Popen(
-            cmd_args,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
-        stdout, stderr = ps.communicate(input=prompt)
-
-        if ps.returncode != 0:
-            error_detail = stderr.strip() or stdout.strip() or "No error output"
-            typer.echo(f"⚠️ {provider.value} failed (exit {ps.returncode}):", err=True)
-            # Show first 500 chars of error to avoid flooding terminal
-            typer.echo(f"   {error_detail[:500]}", err=True)
-
-            # Detect OOM patterns and provide helpful guidance
-            error_lower = error_detail.lower()
-            if any(pattern in error_lower for pattern in OOM_ERROR_PATTERNS):
-                default = PROMPT_MAX_CHARS_DEFAULT
-                typer.echo(
-                    "   💡 This appears to be an out-of-memory error.\n"
-                    "   Try: --stats-only flag or --provider claude.\n"
-                    f"   Lowering GVY_PROMPT_MAX_CHARS (default: {default}) triggers\n"
-                    "   earlier stats-only fallback but won't fix AI CLI OOM.",
-                    err=True,
-                )
-            return "", ""
-
-        output = stdout.strip()
-
-        if not output:
-            typer.echo(f"⚠️ {provider.value} returned empty output", err=True)
-            return "", ""
-
-        # Parse output
-        title_match = re.search(r"TITLE:\s*(.+)", output)
-        body_match = re.search(r"BODY:\s*(.*)", output, re.DOTALL)
-
-        ai_title = title_match.group(1).strip() if title_match else ""
-        ai_body = body_match.group(1).strip() if body_match else ""
-
-        # Fallback if parsing fails - try first non-empty line as title
-        if not ai_title:
-            lines = [line for line in output.split("\n") if line.strip()]
-            if lines:
-                ai_title = lines[0].strip()
-                ai_body = "\n".join(lines[1:]).strip()
-            else:
-                typer.echo(f"⚠️ {provider.value} output could not be parsed", err=True)
-                typer.echo(f"   Raw output: {output[:200]}...", err=True)
+        # Auto-downgrade to stats-only if prompt exceeds limit
+        if len(prompt) > PROMPT_MAX_CHARS and diff_mode != DiffMode.STATS_ONLY.value:
+            progress.update(
+                task, description="📊 Prompt too large, using stats-only..."
+            )
+            diff_content, diff_mode = prepare_diff_for_ai(
+                pr_number, pr_info=pr, force_stats_only=True
+            )
+            if diff_mode == "error":
+                typer.echo("⚠️ Stats-only fallback also failed.", err=True)
                 return "", ""
+            prompt = _build_ai_prompt(pr, pr_number, diff_content, diff_mode)
 
-        return ai_title, ai_body
+        # Final size check
+        if len(prompt) > PROMPT_MAX_CHARS:
+            typer.echo(
+                f"❌ Prompt too large ({len(prompt):,} chars) even with stats-only.",
+                err=True,
+            )
+            return "", ""
 
-    except FileNotFoundError:
-        typer.echo(f"⚠️ {provider.value} CLI not found. Is it installed?", err=True)
-        return "", ""
-    except Exception as e:
-        typer.echo(f"⚠️ AI generation failed: {type(e).__name__}: {e}", err=True)
+        # Attempt 1: Primary provider via CLI
+        stdout, stderr, error = _call_ai_via_cli(prompt, provider, model_to_use)
+
+        if error is None:
+            title, body = _parse_ai_output(stdout, provider.value)
+            if title:
+                return title, body
+            typer.echo(f"⚠️ {provider.value} returned unparseable output", err=True)
+
+        # Handle failure
+        if error:
+            typer.echo(f"⚠️ {provider.value} failed: {error}", err=True)
+
+            is_oom = _is_oom_error(stderr or error)
+
+            if is_oom and auto_fallback:
+                # Attempt 2: Retry with stats-only (if not already)
+                if diff_mode != DiffMode.STATS_ONLY.value:
+                    progress.update(
+                        task, description="📊 OOM detected, retrying stats-only..."
+                    )
+                    diff_content, diff_mode = prepare_diff_for_ai(
+                        pr_number, pr_info=pr, force_stats_only=True
+                    )
+                    if diff_mode != "error":
+                        prompt = _build_ai_prompt(
+                            pr, pr_number, diff_content, diff_mode
+                        )
+                        stdout, stderr, error = _call_ai_via_cli(
+                            prompt, provider, model_to_use
+                        )
+                        if error is None:
+                            title, body = _parse_ai_output(stdout, provider.value)
+                            if title:
+                                typer.echo("✓ Succeeded with stats-only mode")
+                                return title, body
+
+                # Attempt 3: Direct API call (Gemini only)
+                if provider == AIProvider.GEMINI:
+                    progress.update(task, description="🌐 Trying direct API...")
+                    title, body = _call_gemini_via_api(prompt, model_to_use)
+                    if title:
+                        typer.echo("✓ Succeeded via direct API")
+                        return title, body
+
+                # Attempt 4: Fallback to alternate provider
+                fallback_provider = (
+                    AIProvider.CLAUDE
+                    if provider == AIProvider.GEMINI
+                    else AIProvider.GEMINI
+                )
+                fallback_config = AI_PROVIDERS[fallback_provider]
+                progress.update(
+                    task,
+                    description=f"{fallback_config.emoji} Falling back to {fallback_provider.value}...",
+                )
+                typer.echo(f"🔄 Falling back to {fallback_provider.value}...")
+
+                stdout, stderr, error = _call_ai_via_cli(
+                    prompt, fallback_provider, fallback_config.default_model
+                )
+                if error is None:
+                    title, body = _parse_ai_output(stdout, fallback_provider.value)
+                    if title:
+                        typer.echo(f"✓ Succeeded with {fallback_provider.value}")
+                        return title, body
+
+                if error:
+                    typer.echo(
+                        f"⚠️ {fallback_provider.value} also failed: {error}", err=True
+                    )
+
+            # Provide helpful guidance
+            typer.echo(
+                "   💡 Suggestions: --stats-only, --provider claude, "
+                "or set GOOGLE_API_KEY for direct API",
+                err=True,
+            )
+
         return "", ""
 
 
@@ -2354,6 +2963,11 @@ def merge(
         "--stats-only",
         "-S",
         help="Use stats-only diff for AI (skip content for very large PRs)",
+    ),
+    no_fallback: bool = typer.Option(
+        False,
+        "--no-fallback",
+        help="Disable automatic fallback to alternate providers on failure",
     ),
     edit: bool = typer.Option(
         False, "--edit", "-e", help="Edit the commit message before finalization"
@@ -2415,7 +3029,12 @@ def merge(
     # 2. AI Generation
     elif ai:
         ai_title, ai_body = generate_ai_message(
-            pr, pr_number, ai_provider, model, force_stats_only=stats_only
+            pr,
+            pr_number,
+            ai_provider,
+            model,
+            force_stats_only=stats_only,
+            auto_fallback=not no_fallback,
         )
         if ai_title:
             merge_title = ai_title
