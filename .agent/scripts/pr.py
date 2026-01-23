@@ -184,7 +184,10 @@ DiffOutcome = DiffResult | DiffError
 # =============================================================================
 
 # AI command timeout (in seconds) - generous but prevents infinite hangs
-AI_TIMEOUT_SECONDS = int(os.environ.get("GVY_AI_TIMEOUT", "180"))
+try:
+    AI_TIMEOUT_SECONDS = int(os.environ.get("GVY_AI_TIMEOUT", "180"))
+except ValueError:
+    AI_TIMEOUT_SECONDS = 180
 
 
 @dataclass(frozen=True)
@@ -1716,9 +1719,31 @@ def compress_diff_content(file_diff: str, keep_context: int = 1) -> str:
     in_header = True
     last_kept: int | None = None  # Track gaps for "..." markers
 
+    # Git diff metadata headers to preserve (contains semantic info about file operations)
+    git_headers = (
+        "diff --git",
+        "index ",
+        "---",
+        "+++",
+        "@@",
+        # File mode changes
+        "new file mode",
+        "deleted file mode",
+        "old mode",
+        "new mode",
+        # Rename/copy detection
+        "rename from",
+        "rename to",
+        "copy from",
+        "copy to",
+        "similarity index",
+        # Binary files
+        "Binary files",
+    )
+
     for i, line in enumerate(lines):
-        # Always keep file headers
-        if line.startswith(("diff --git", "index ", "---", "+++", "@@")):
+        # Always keep file headers and git metadata
+        if line.startswith(git_headers):
             result.append(line)
             in_header = line.startswith(("diff --git", "index ", "---", "+++"))
             last_kept = i
@@ -2862,7 +2887,8 @@ def generate_ai_message(
 
             is_oom = _is_oom_error(stderr or error)
 
-            if is_oom and auto_fallback:
+            # OOM recovery attempts (always attempted - not gated by auto_fallback)
+            if is_oom:
                 # Attempt 2: Retry with stats-only (if not already)
                 if diff_mode != DiffMode.STATS_ONLY.value:
                     progress.update(
@@ -2884,7 +2910,7 @@ def generate_ai_message(
                                 typer.echo("✓ Succeeded with stats-only mode")
                                 return title, body
 
-                # Attempt 3: Direct API call (Gemini only)
+                # Attempt 3: Direct API call (Gemini only - bypasses Node.js CLI)
                 if provider == AIProvider.GEMINI:
                     progress.update(task, description="🌐 Trying direct API...")
                     title, body = _call_gemini_via_api(prompt, model_to_use)
@@ -2892,7 +2918,8 @@ def generate_ai_message(
                         typer.echo("✓ Succeeded via direct API")
                         return title, body
 
-                # Attempt 4: Fallback to alternate provider
+            # Attempt 4: Fallback to alternate provider (gated by auto_fallback)
+            if auto_fallback:
                 fallback_provider = (
                     AIProvider.CLAUDE
                     if provider == AIProvider.GEMINI
