@@ -26,18 +26,26 @@ kt_library(
 
 kt_test(
     name = "build-tool_test",
-    srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
+    srcs = glob(
+        ["src/test/kotlin/**/*.kt"],
+        allow_empty = True,
+    ),
+    associates = [":build-tool"],
+    # Data: directories and their contents that need filesystem access
+    data = glob(["src/test/resources/test-*-project/**/*", "src/test/resources/non-*-project/**/*"]),
     # Resources: files loaded via classloader (txt, xml files)
     resources = glob([
         "src/test/resources/**/*.txt",
         "src/test/resources/**/*.xml",
     ]),
-    # Data: directories and their contents that need filesystem access
-    data = glob(["src/test/resources/test-*-project/**/*"]) + glob(["src/test/resources/non-*-project/**/*"]),
-    associates = [":build-tool"],
     test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [
+        "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_apache_maven_maven_model",
+        "@maven//:org_apache_maven_resolver_maven_resolver_api",
+        "@maven//:org_gradle_gradle_tooling_api",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_junit_jupiter_junit_jupiter_api",
         "@maven//:org_junit_jupiter_junit_jupiter_params",

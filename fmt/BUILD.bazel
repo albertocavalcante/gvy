@@ -6,7 +6,6 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "//common",
-        "@maven//:org_apache_groovy_groovy",  # Explicit Groovy 4.x (rewrite-groovy's Groovy 3.x is excluded)
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
         "@maven//:org_openrewrite_rewrite_core",
         "@maven//:org_openrewrite_rewrite_groovy",

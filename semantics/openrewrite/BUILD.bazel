@@ -18,7 +18,6 @@ kt_test(
     test_packages = ["com.github.albertocavalcante.gvy"],
     deps = [
         "//semantics/core",
-        "@maven//:org_apache_groovy_groovy",  # Explicit Groovy 4.x (rewrite-groovy's Groovy 3.x is excluded)
         "@maven//:org_openrewrite_rewrite_core",
         "@maven//:org_openrewrite_rewrite_groovy",
         "@maven//:org_openrewrite_rewrite_java",

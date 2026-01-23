@@ -27,8 +27,11 @@ kt_test(
     associates = [":ast-model"],
     test_packages = ["com.github.albertocavalcante.gvy"],
     deps = [
+        "//parser/core",
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_assertj_assertj_core",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
 )
