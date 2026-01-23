@@ -1,0 +1,10 @@
+load("//tools/build_defs:wire.bzl", "wire_proto_library")
+
+# Generate Kotlin code from proto files using Wire
+wire_proto_library(
+    name = "schemas",
+    srcs = glob(["src/main/proto/**/*.proto"]),
+    visibility = ["//visibility:public"],
+)
+
+# Note: No tests yet for this module (proto-only)

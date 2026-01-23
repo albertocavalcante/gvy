@@ -33,7 +33,7 @@ project-root/
 
 ```json
 {
-  "$schema": "https://groovy-lsp.dev/schemas/jenkins-config.json",
+  "$schema": "https://gls.dev/schemas/jenkins-config.json",
   
   // Target Jenkins version for metadata resolution
   "jenkinsVersion": "2.479.3",

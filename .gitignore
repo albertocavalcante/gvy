@@ -67,3 +67,9 @@ Thumbs.db
 
 # Python
 __pycache__/
+
+# Bazel
+user.bazelrc
+bazel-*
+.bazelproject
+# Note: maven_install.json is tracked for reproducible builds

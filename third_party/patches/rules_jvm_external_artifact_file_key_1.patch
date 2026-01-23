@@ -1,0 +1,11 @@
+--- a/private/artifact_utilities.bzl
++++ b/private/artifact_utilities.bzl
+@@ -33,7 +33,7 @@
+     deduped_artifacts = {}
+     null_artifacts = []
+     for artifact in dep_tree["dependencies"]:
+-        if artifact["file"] == None:
++        if artifact.get("file") == None:
+             null_artifacts.append(artifact)
+             continue
+         if artifact["coord"] in artifacts_with_exclusions:

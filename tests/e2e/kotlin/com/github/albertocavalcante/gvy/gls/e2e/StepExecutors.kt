@@ -35,6 +35,7 @@ import org.eclipse.lsp4j.WorkspaceFolder
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.time.Duration
 import java.util.Arrays
@@ -44,6 +45,23 @@ import java.util.concurrent.TimeoutException
 import kotlin.io.path.name
 
 private val logger = KotlinLogging.logger("StepExecutors")
+
+internal fun resolveJavaBinary(): String {
+    // Use JAVA_HOME if set to ensure we use the same JDK that compiled the code.
+    // This is critical in CI where the system Java may be a different version.
+    val javaHome = System.getenv("JAVA_HOME")
+    return if (!javaHome.isNullOrBlank()) {
+        val javaBin = Paths.get(javaHome, "bin", "java")
+        if (Files.isExecutable(javaBin)) {
+            javaBin.toString()
+        } else {
+            logger.warn { "JAVA_HOME set but $javaBin is not executable, falling back to PATH" }
+            "java"
+        }
+    } else {
+        "java"
+    }
+}
 
 // ============================================================================
 // Custom Request Routing
@@ -539,12 +557,21 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
 
         val fullCommand =
             if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins")) {
-                // We use the property "groovy.lsp.binary" which should be set by the test runner
-                // Fallback to local build path for local dev
+                // Build command to invoke the GLS CLI.
+                // Priority: execJar (Bazel) > binary (Gradle script) > fallback
+                val execJarPath = System.getProperty("groovy.lsp.e2e.execJar")
+                    ?.let { BazelRunfiles.resolveForSubprocess(it) }
                 val binaryPath = System.getProperty("groovy.lsp.binary")
                     ?: "./groovy-lsp/build/install/groovy-lsp/bin/groovy-lsp"
 
-                val cmd = mutableListOf(binaryPath)
+                val cmd = if (!execJarPath.isNullOrBlank()) {
+                    // Use java -jar for Bazel deploy jar (absolute path for working dir changes)
+                    val javaBinary = resolveJavaBinary()
+                    mutableListOf(javaBinary, "-jar", execJarPath)
+                } else {
+                    mutableListOf(binaryPath)
+                }
+
                 if (interpolatedCommand.contains(" ")) {
                     val parts = interpolatedCommand.split(" ")
                     if (parts.first() == "gls") {
@@ -629,8 +656,9 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
         val actualFile = Path.of(actualPathString)
 
         // Resolve golden file relative to the configured directory or default
-        val goldenDir = System.getProperty("groovy.lsp.e2e.goldenDir")
-            ?.let { Path.of(it) }
+        // Supports both direct path (Gradle) and marker file (Bazel)
+        val goldenDir = System.getProperty("groovy.lsp.e2e.goldenDir")?.let { Path.of(it) }
+            ?: System.getProperty("groovy.lsp.e2e.goldenDir.marker")?.let { Path.of(it).parent }
             ?: Path.of("e2e/resources/golden").toAbsolutePath()
 
         val expectedFile = goldenDir.resolve(expectedRelPath)

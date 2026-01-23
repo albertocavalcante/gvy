@@ -1,0 +1,160 @@
+"""Build definitions and toolchains for the Groovy Language Server project."""
+
+load("@rules_java//java:defs.bzl", "java_binary", "java_import")
+load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain")
+
+# Kotlin toolchain with performance optimizations
+# Using Kotlin 2.3.0 compiler from locally-built rules_kotlin (master branch)
+define_kt_toolchain(
+    name = "kotlin_toolchain",
+    api_version = "2.3",  # Kotlin 2.3 features (nested type aliases, etc.)
+    experimental_multiplex_workers = True,  # Better worker utilization
+    experimental_report_unused_deps = "warn",
+
+    # Strictness (start with warn, upgrade to error later)
+    experimental_strict_kotlin_deps = "warn",
+
+    # Performance optimizations
+    experimental_use_abi_jars = True,  # 20-40% faster incremental builds
+    jvm_target = "21",
+    language_version = "2.3",
+)
+
+# ==============================================================================
+# Wire Compiler for Proto Code Generation
+# ==============================================================================
+#
+# Uses the shadow jar (jar-with-dependencies) downloaded directly via http_file
+# to avoid GMM variant selection issues. See tools/build_defs/wire_compiler.bzl.
+#
+# TODO(rules_wire): Consider spinning off Wire support into a standalone ruleset.
+# See: https://github.com/albertocavalcante/gvy/issues/1030
+#
+# Tracking: https://github.com/albertocavalcante/gvy/issues/1029
+# ==============================================================================
+
+# Import the downloaded jar so it can be used as a Java dependency
+java_import(
+    name = "wire_compiler_jar_import",
+    jars = ["@wire_compiler_jar//file"],
+)
+
+# ==============================================================================
+# Kotlin-Logging (Direct Download)
+# ==============================================================================
+#
+# GMM (Gradle Module Metadata) causes rules_jvm_external to incorrectly resolve
+# kotlin-logging-jvm to the sources jar instead of the classes jar.
+# We download the classes jar directly via http_file to work around this bug.
+#
+# Tracking: https://github.com/albertocavalcante/gvy/issues/1031
+# ==============================================================================
+
+java_import(
+    name = "kotlin_logging",
+    jars = ["@kotlin_logging_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_stdlib"],
+)
+
+# ==============================================================================
+# JUnit (Direct Download)
+# ==============================================================================
+#
+# GMM (Gradle Module Metadata) creates circular dependencies between JUnit modules
+# when using variant selection. We download the jars directly via http_file to
+# work around this bug.
+#
+# GMM creates cycles like:
+# - launcher -> engine -> launcher (Platform modules)
+# - jupiter-engine -> jupiter-params -> jupiter-engine (Jupiter modules)
+#
+# Tracking: https://github.com/albertocavalcante/gvy/issues/1032
+# ==============================================================================
+
+# --- JUnit Platform ---
+
+java_import(
+    name = "junit_platform_commons",
+    jars = ["@junit_platform_commons_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = ["@maven//:org_apiguardian_apiguardian_api"],
+)
+
+java_import(
+    name = "junit_platform_engine",
+    jars = ["@junit_platform_engine_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_platform_commons",
+        "@maven//:org_opentest4j_opentest4j",
+    ],
+)
+
+java_import(
+    name = "junit_platform_launcher",
+    jars = ["@junit_platform_launcher_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_platform_engine",
+    ],
+)
+
+java_import(
+    name = "junit_platform_console",
+    jars = ["@junit_platform_console_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_platform_launcher",
+    ],
+)
+
+# --- JUnit Jupiter ---
+
+java_import(
+    name = "junit_jupiter_api",
+    jars = ["@junit_jupiter_api_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_platform_commons",
+        "@maven//:org_apiguardian_apiguardian_api",
+        "@maven//:org_opentest4j_opentest4j",
+    ],
+)
+
+java_import(
+    name = "junit_jupiter_params",
+    jars = ["@junit_jupiter_params_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_jupiter_api",
+    ],
+)
+
+java_import(
+    name = "junit_jupiter_engine",
+    jars = ["@junit_jupiter_engine_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_jupiter_api",
+        ":junit_platform_engine",
+    ],
+)
+
+java_import(
+    name = "junit_jupiter",
+    jars = ["@junit_jupiter_jar//file"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":junit_jupiter_api",
+        ":junit_jupiter_engine",
+        ":junit_jupiter_params",
+    ],
+)
+
+java_binary(
+    name = "wire_compiler",
+    main_class = "com.squareup.wire.WireCompiler",
+    runtime_deps = [":wire_compiler_jar_import"],
+    visibility = ["//visibility:public"],
+)

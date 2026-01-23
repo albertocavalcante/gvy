@@ -1,0 +1,18 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "api",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+    ],
+)
+
+kt_test(
+    name = "api_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":api"],
+    test_packages = ["com.github.albertocavalcante.reports"],
+    deps = ["@maven//:org_assertj_assertj_core"],
+)

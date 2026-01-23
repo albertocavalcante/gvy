@@ -1,0 +1,60 @@
+# Root BUILD file for Groovy LSP
+
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+load("@gazelle//:def.bzl", "gazelle")
+
+package(default_visibility = ["//visibility:public"])
+
+# Build mode flag for production builds
+bool_flag(
+    name = "production_flag",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "production",
+    flag_values = {":production_flag": "True"},
+)
+
+# Gazelle directives for the workspace
+# gazelle:prefix github.com/groovy-lsp/groovy-lsp
+# gazelle:exclude node_modules
+# gazelle:exclude build
+# gazelle:exclude bazel-*
+# gazelle:exclude .git
+# gazelle:exclude .gradle
+# gazelle:exclude gradle
+# gazelle:exclude editors/code/node_modules
+# gazelle:exclude **/test/resources
+# gazelle:exclude **/resources/workspaces
+# gazelle:exclude **/resources/fixtures
+
+gazelle(
+    name = "gazelle",
+    gazelle = "@gazelle//cmd/gazelle",
+)
+
+# Update BUILD files from external dependencies
+gazelle(
+    name = "gazelle-update-repos",
+    command = "update-repos",
+    gazelle = "@gazelle//cmd/gazelle",
+)
+
+# Alias to main deliverable
+# NOTE: Disabled until groovy-lsp is fixed for Bazel compatibility
+alias(
+    name = "gls",
+    actual = "//gls:gls",
+    tags = ["manual"],
+)
+
+# Default target when running bazel build //:all
+# NOTE: Disabled until groovy-lsp is fixed for Bazel compatibility
+filegroup(
+    name = "all",
+    srcs = [
+        ":gls",
+    ],
+    tags = ["manual"],
+)

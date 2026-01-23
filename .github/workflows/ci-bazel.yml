@@ -1,0 +1,112 @@
+name: CI (Bazel)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'MODULE.bazel'
+      - 'MODULE.bazel.lock'
+      - 'BUILD.bazel'
+      - '**/BUILD.bazel'
+      - '**/*.bzl'
+      - '.bazelrc'
+      - '.bazelversion'
+      - 'third_party/patches/**'
+      - '.github/workflows/ci-bazel.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'MODULE.bazel'
+      - 'MODULE.bazel.lock'
+      - 'BUILD.bazel'
+      - '**/BUILD.bazel'
+      - '**/*.bzl'
+      - '.bazelrc'
+      - '.bazelversion'
+      - 'third_party/patches/**'
+      - '.github/workflows/ci-bazel.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-amd64
+          # macOS disabled for now - enable when Bazel setup is stable
+          # - os: macos-15
+          #   name: darwin-arm64
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Bazelisk
+        uses: bazel-contrib/setup-bazel@e8776f58fb6a6e9055cbaf1b38c52ccc5247e9c4 # 0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}
+          repository-cache: true
+
+      - name: Build all targets
+        run: bazel build //...
+
+      - name: Run tests
+        run: bazel test //... --test_output=errors
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: bazel-testlogs-${{ matrix.name }}
+          path: |
+            bazel-testlogs/**/test.log
+            bazel-testlogs/**/test.xml
+          retention-days: 7
+
+  buildifier:
+    runs-on: ubuntu-24.04
+    name: Lint (Buildifier)
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Bazelisk
+        uses: bazel-contrib/setup-bazel@e8776f58fb6a6e9055cbaf1b38c52ccc5247e9c4 # 0.14.0
+        with:
+          bazelisk-cache: true
+          disk-cache: ${{ github.workflow }}-lint
+          repository-cache: true
+
+      - name: Check BUILD files formatting
+        run: bazel run @buildifier_prebuilt//:buildifier -- -mode=check -lint=warn -r .

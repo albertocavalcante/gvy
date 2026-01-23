@@ -1,0 +1,27 @@
+"""Build definitions for Groovy LSP."""
+
+load("@rules_kotlin//kotlin:core.bzl", "kt_compiler_plugin")
+
+# kotlinx-serialization compiler plugin
+kt_compiler_plugin(
+    name = "serialization_plugin",
+    compile_phase = True,
+    id = "org.jetbrains.kotlin.serialization",
+    stubs_phase = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_serialization_compiler_plugin_embeddable",
+    ],
+)
+
+# Compose compiler plugin for Jetpack Compose / Compose Multiplatform
+kt_compiler_plugin(
+    name = "compose_plugin",
+    compile_phase = True,
+    id = "androidx.compose.compiler.plugins.kotlin",
+    stubs_phase = True,
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_compose_compiler_plugin_embeddable",
+    ],
+)

@@ -1,0 +1,8 @@
+--- a/gradle.BUILD.bazel
++++ b/gradle.BUILD.bazel
+@@ -1,3 +1,5 @@
++load("@rules_java//java:defs.bzl", "java_import", "java_library")
++
+ java_library(
+     name = "gradle",
+     exports = [

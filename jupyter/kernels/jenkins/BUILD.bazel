@@ -1,0 +1,16 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library")
+
+kt_library(
+    name = "jenkins",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    resources = glob(["src/main/resources/**/*"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//jupyter/kernel-core",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_zeromq_jeromq",
+    ],
+)
+
+# No tests in this module yet - add kt_test when tests are created

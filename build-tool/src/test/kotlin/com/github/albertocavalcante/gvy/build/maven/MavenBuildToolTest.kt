@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.gvy.build.maven
 
+import com.github.albertocavalcante.gvy.build.TestEnvironment
+import com.github.albertocavalcante.gvy.build.TestResources
+import org.junit.jupiter.api.Assumptions.assumeFalse
 import java.nio.file.Paths
 import kotlin.test.Test
 import kotlin.test.assertFalse
@@ -10,14 +13,14 @@ class MavenBuildToolTest {
     @Test
     fun `should detect maven project`() {
         val tool = MavenBuildTool()
-        val project = Paths.get("src/test/resources/test-maven-project")
+        val project = TestResources.getTestMavenProject()
         assertTrue(tool.canHandle(project), "Should detect Maven project with pom.xml")
     }
 
     @Test
     fun `should not detect non-maven project`() {
         val tool = MavenBuildTool()
-        val project = Paths.get("src/test/resources")
+        val project = TestResources.getNonGradleProject()
         assertFalse(tool.canHandle(project), "Should not detect non-Maven project")
     }
 
@@ -67,6 +70,9 @@ class MavenBuildToolTest {
 
     @Test
     fun `getDependencyMetadata should return null for non-maven project`() {
+        // This test uses Maven resolver which requires network access
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Maven resolver")
+
         val tool = MavenBuildTool()
         val project = Paths.get("src/test/resources")
 
@@ -77,6 +83,9 @@ class MavenBuildToolTest {
 
     @Test
     fun `getDependencyMetadata should extract metadata from maven project`() {
+        // This test uses Maven resolver which requires network access
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Maven resolver")
+
         val tool = MavenBuildTool()
         val project = Paths.get("src/test/resources/test-maven-project")
 
@@ -110,6 +119,9 @@ class MavenBuildToolTest {
 
     @Test
     fun `getDependencyMetadata should deduplicate by path`() {
+        // This test uses Maven resolver which requires network access
+        assumeFalse(TestEnvironment.isRunningInBazel, "Skipped in Bazel: requires Maven resolver")
+
         val tool = MavenBuildTool()
         val project = Paths.get("src/test/resources/test-maven-project")
 

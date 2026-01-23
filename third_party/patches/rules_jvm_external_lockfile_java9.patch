@@ -1,0 +1,8 @@
+--- a/private/tools/java/com/github/bazelbuild/rules_jvm_external/resolver/lockfile/BUILD
++++ b/private/tools/java/com/github/bazelbuild/rules_jvm_external/resolver/lockfile/BUILD
+@@ -1,4 +1,5 @@
+ load("//private/rules:artifact.bzl", "artifact")
++load("@rules_java//java:defs.bzl", "java_library")
+ 
+ java_library(
+     name = "lockfile",

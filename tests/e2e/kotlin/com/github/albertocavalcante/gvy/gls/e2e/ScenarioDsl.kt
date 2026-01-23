@@ -4,6 +4,34 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import java.io.File
+
+/**
+ * Resolves the scenario directory path from system properties.
+ *
+ * Supports two modes:
+ * - Direct path: `groovy.lsp.e2e.scenarioDir` points directly to the scenarios directory (Gradle)
+ * - Marker file: `groovy.lsp.e2e.scenarioDir.marker` points to a file inside the directory (Bazel)
+ *
+ * Bazel doesn't have directory labels, so we pass a marker file path and derive the directory.
+ */
+internal fun resolveScenarioDir(): String {
+    // Try direct path first (Gradle)
+    System.getProperty("groovy.lsp.e2e.scenarioDir")?.let { return it }
+
+    // Try marker file (Bazel) - derive directory from file path
+    System.getProperty("groovy.lsp.e2e.scenarioDir.marker")?.let { markerPath ->
+        return File(markerPath).parent
+            ?: error("Could not derive directory from marker file: $markerPath")
+    }
+
+    error(
+        "System property 'groovy.lsp.e2e.scenarioDir' not set. " +
+            "Configure this system property in the test environment " +
+            "(for example via -Dgroovy.lsp.e2e.scenarioDir=/path/to/e2e/resources/scenarios) " +
+            "to point to the directory containing e2e scenario definitions.",
+    )
+}
 
 /**
  * Kotlin DSL for creating E2E test scenarios programmatically.
@@ -397,13 +425,7 @@ class ScenarioBuilder(private val source: String? = null) {
         // For DSL scenarios, use the e2e/resources/scenarios directory as source
         // This allows WorkspaceFixture to find the workspaces directory
         val effectiveSource = source ?: run {
-            val resourcesDir = System.getProperty("groovy.lsp.e2e.scenarioDir")
-                ?: error(
-                    "System property 'groovy.lsp.e2e.scenarioDir' not set. " +
-                        "Configure this system property in the test environment " +
-                        "(for example via -Dgroovy.lsp.e2e.scenarioDir=/path/to/e2e/resources/scenarios) " +
-                        "to point to the directory containing e2e scenario definitions.",
-                )
+            val resourcesDir = resolveScenarioDir()
             // Synthetic path for DSL scenarios: Uses .yaml extension for WorkspaceFixture compatibility
             // (expects scenario source to have .yaml extension). The '_' prefix distinguishes DSL-based
             // scenarios from actual YAML files. This path is never read; it's just used for path resolution.

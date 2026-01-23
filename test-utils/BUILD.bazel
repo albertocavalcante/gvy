@@ -1,0 +1,18 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library")
+
+# Test utilities library - provides common testing infrastructure
+kt_library(
+    name = "test-utils",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//common",
+        "//parser/native",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_assertj_assertj_core",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_junit_jupiter_junit_jupiter",
+    ],
+)

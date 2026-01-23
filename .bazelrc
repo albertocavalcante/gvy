@@ -1,0 +1,253 @@
+# Bazel Configuration for Groovy Language Server
+# Kotlin/TypeScript Monorepo - Bazel 9
+#
+# This configuration uses Bazel 9's improved flag inheritance:
+# - `common` flags apply to all commands (build, test, query, etc.)
+# - `build` flags are build-specific
+# - `test` flags are test-specific
+#
+# Available configurations:
+# - bazel build --config=debug      # Verbose output and debugging
+# - bazel build --config=profile    # Performance profiling
+# - bazel build --config=remote     # Remote caching
+# - bazel build --config=rbe        # Remote build execution
+# - bazel build --config=bep        # Build event protocol
+# - bazel build --config=ci         # CI/CD optimizations
+
+###############################
+# Core Settings
+###############################
+
+# Enable disk cache for faster rebuilds (shared across worktrees)
+common --disk_cache=~/.cache/bazel-disk
+
+# Enable repository cache for external dependencies (shared across worktrees)
+# This avoids re-downloading Maven/HTTP artifacts for each worktree
+common --repository_cache=~/.cache/bazel-repo
+
+# Use hardlinks instead of copies for repository cache (saves disk space)
+# This significantly reduces disk usage when using multiple worktrees
+common --experimental_repository_cache_hardlinks
+
+# Automatic garbage collection for disk cache (Bazel 7.4+)
+# Limits disk cache to 10 GB and removes entries older than 30 days
+common --experimental_disk_cache_gc_max_size=10G
+common --experimental_disk_cache_gc_max_age=30d
+common --experimental_disk_cache_gc_idle_delay=300s
+
+# Colorize output for better readability
+common --color=yes
+
+# Enable worker sandboxing for reproducibility
+common --worker_sandboxing
+
+# Resource limits (HOST_CPUS-1, HOST_RAM*.75)
+# Use HOST_CPUS-1 to keep system responsive
+# TODO: Uncomment when Bazel 9 stable supports arithmetic expressions
+# common --local_cpu_resources=HOST_CPUS-1
+
+# Use 75% of available RAM
+# TODO: Uncomment when Bazel 9 stable supports arithmetic expressions
+# common --local_ram_resources=HOST_RAM*.75
+
+# Hermetic configuration for reproducible builds
+common --incompatible_strict_action_env=true
+common --incompatible_enable_cc_toolchain_resolution=true
+
+# Protobuf: use prebuilt protoc instead of compiling from source
+# See: https://blog.aspect.build/bazel-9-protobuf
+common --@protobuf//bazel/toolchains:prefer_prebuilt_protoc
+
+# Show verbose failures for debugging
+common --verbose_failures
+
+###############################
+# Build Performance
+###############################
+
+# Use all available CPU cores (respecting local_cpu_resources)
+build --jobs=auto
+
+# Enable persistent workers for better performance
+build --worker_max_instances=auto
+
+###############################
+# Java Configuration
+###############################
+
+# Use hermetic JDK 21 toolchain
+build --java_language_version=21
+build --java_runtime_version=remotejdk_21
+build --tool_java_language_version=21
+build --tool_java_runtime_version=remotejdk_21
+
+# Target Java 17 bytecode for compatibility
+build --javacopt="-source 17"
+build --javacopt="-target 17"
+
+# Hermetic Java compilation
+build --javacopt="-encoding UTF-8"
+build --javacopt="-Xlint:all"
+build --javacopt="-Werror"
+
+###############################
+# Kotlin Configuration
+###############################
+
+# Use persistent workers for Kotlin compilation
+build --strategy=KotlinCompile=worker
+build --worker_max_multiplex_instances=KotlinCompile=4
+
+###############################
+# TypeScript Configuration
+###############################
+
+# Enable workers for rules_ts
+build --@aspect_rules_ts//ts:supports_workers=true
+
+###############################
+# Go/Gazelle Configuration
+###############################
+
+# Disable CGO to avoid Xcode toolchain issues on macOS
+build --@rules_go//go/config:pure
+
+###############################
+# Test Configuration
+###############################
+
+# Show detailed test output on errors
+test --test_output=errors
+
+# Use sandboxing for tests
+test --incompatible_exclusive_test_sandboxed
+
+# Keep test logs for analysis
+test --test_keep_going
+
+###############################
+# Debug Configuration
+###############################
+
+common:debug --verbose_failures
+common:debug --sandbox_debug
+common:debug --subcommands=pretty_print
+common:debug --announce_rc
+common:debug --explain=bazel-explain.txt
+common:debug --verbose_explanations
+
+###############################
+# Profiling Configuration
+###############################
+
+common:profile --profile=bazel-profile.json
+common:profile --generate_json_trace_profile
+common:profile --experimental_profile_cpu_usage
+common:profile --experimental_collect_worker_data_in_profiler
+common:profile --experimental_collect_system_network_usage
+common:profile --memory_profile=bazel-memory-profile.json
+
+###############################
+# Remote Cache Configuration
+###############################
+
+# Remote cache readiness (BuildBuddy, bazel-remote, etc.)
+# Uncomment and configure with your remote cache endpoint:
+#
+# build:remote --remote_cache=grpcs://remote.buildbuddy.io
+# build:remote --remote_upload_local_results
+# build:remote --remote_download_toplevel
+# build:remote --experimental_remote_cache_async
+# build:remote --experimental_remote_cache_compression
+# build:remote --remote_timeout=3600
+# build:remote --remote_local_fallback
+#
+# For authentication:
+# build:remote --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+
+###############################
+# Remote Build Execution (RBE)
+###############################
+
+# Remote execution readiness (requires platform configuration)
+# Uncomment and configure with your RBE endpoint:
+#
+# build:rbe --remote_executor=grpcs://remote.buildbuddy.io
+# build:rbe --remote_cache=grpcs://remote.buildbuddy.io
+# build:rbe --jobs=50
+# build:rbe --remote_timeout=3600
+# build:rbe --remote_download_toplevel
+# build:rbe --remote_upload_local_results
+# build:rbe --experimental_remote_cache_async
+#
+# Platform configuration (example - adjust for your needs):
+# build:rbe --host_platform=@buildbuddy_toolchain//:platform
+# build:rbe --platforms=@buildbuddy_toolchain//:platform
+# build:rbe --extra_execution_platforms=@buildbuddy_toolchain//:platform
+#
+# For authentication:
+# build:rbe --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+
+###############################
+# Build Event Protocol (BEP)
+###############################
+
+build:bep --build_event_json_file=bazel-bep.json
+build:bep --build_event_publish_all_actions
+build:bep --build_event_max_named_set_of_file_entries=10000
+
+# For BuildBuddy integration (uncomment and configure):
+# build:bep --bes_backend=grpcs://remote.buildbuddy.io
+# build:bep --bes_results_url=https://app.buildbuddy.io/invocation/
+# build:bep --bes_upload_mode=fully_async
+# build:bep --remote_header=x-buildbuddy-api-key=YOUR_API_KEY
+
+###############################
+# CI Configuration
+###############################
+
+# Enhanced CI settings with all optimizations
+build:ci --announce_rc
+build:ci --color=no
+build:ci --curses=no
+build:ci --show_progress_rate_limit=30
+build:ci --show_timestamps
+build:ci --keep_going
+build:ci --test_output=errors
+build:ci --verbose_failures
+build:ci --build_event_json_file=bazel-build-events.json
+
+# CI resource optimization
+# TODO: Uncomment when Bazel 9 stable supports arithmetic expressions
+# build:ci --local_cpu_resources=HOST_CPUS
+# build:ci --local_ram_resources=HOST_RAM*.80
+
+# CI test configuration
+test:ci --test_strategy=standalone
+test:ci --test_summary=detailed
+test:ci --flaky_test_attempts=2
+
+# CI caching
+build:ci --disk_cache=~/.cache/bazel-disk
+build:ci --repository_cache=~/.cache/bazel-repo
+
+# Optional: Enable BEP for CI
+# build:ci --config=bep
+
+###############################
+# Lint Configuration
+###############################
+
+# Lint configuration using aspect_rules_lint
+# NOTE: Disabled until lint binary targets are configured in //tools/lint/BUILD.bazel
+# build:lint --aspects=//tools/lint:linters.bzl%eslint,//tools/lint:linters.bzl%ktlint
+# build:lint --output_groups=+rules_lint_report
+# build:lint --@aspect_rules_lint//lint:fail_on_violation
+
+###############################
+# User Overrides
+###############################
+
+# Allow users to override settings with local configuration
+# Copy user.bazelrc.template to user.bazelrc and customize
+try-import %workspace%/user.bazelrc

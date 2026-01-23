@@ -1,0 +1,17 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "markdown",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+    ],
+)
+
+kt_test(
+    name = "markdown_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":markdown"],
+    test_packages = ["com.github.albertocavalcante.groovylsp"],
+)

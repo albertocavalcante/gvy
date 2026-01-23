@@ -15,11 +15,13 @@ import java.nio.file.Path
 class SurefireParserTest {
 
     @Test
-    fun `should parse valid Surefire XML report`() {
-        val xmlFile = File(
-            javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")?.file
-                ?: error("Test resource not found"),
-        )
+    fun `should parse valid Surefire XML report`(@TempDir tempDir: Path) {
+        val testXmlContent = javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")
+            ?.readText() ?: error("Test resource not found")
+        val surefireDir = File(tempDir.toFile(), "target/surefire-reports")
+        surefireDir.mkdirs()
+        val xmlFile = File(surefireDir, "TEST-com.example.MySpec.xml")
+        xmlFile.writeText(testXmlContent)
 
         val results = SurefireParser.parseReportFile(xmlFile)
 
@@ -74,11 +76,13 @@ class SurefireParserTest {
     }
 
     @Test
-    fun `should compute correct summary`() {
-        val xmlFile = File(
-            javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")?.file
-                ?: error("Test resource not found"),
-        )
+    fun `should compute correct summary`(@TempDir tempDir: Path) {
+        val testXmlContent = javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")
+            ?.readText() ?: error("Test resource not found")
+        val surefireDir = File(tempDir.toFile(), "target/surefire-reports")
+        surefireDir.mkdirs()
+        val xmlFile = File(surefireDir, "TEST-com.example.MySpec.xml")
+        xmlFile.writeText(testXmlContent)
 
         val results = SurefireParser.parseReportFile(xmlFile)
         val response = TestResultsResponse(
@@ -166,11 +170,13 @@ class SurefireParserTest {
     }
 
     @Test
-    fun `should parse time attribute correctly`() {
-        val xmlFile = File(
-            javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")?.file
-                ?: error("Test resource not found"),
-        )
+    fun `should parse time attribute correctly`(@TempDir tempDir: Path) {
+        val testXmlContent = javaClass.classLoader.getResource("surefire-reports/TEST-com.example.MySpec.xml")
+            ?.readText() ?: error("Test resource not found")
+        val surefireDir = File(tempDir.toFile(), "target/surefire-reports")
+        surefireDir.mkdirs()
+        val xmlFile = File(surefireDir, "TEST-com.example.MySpec.xml")
+        xmlFile.writeText(testXmlContent)
 
         val results = SurefireParser.parseReportFile(xmlFile)
 

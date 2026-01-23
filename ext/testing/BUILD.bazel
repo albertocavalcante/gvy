@@ -1,0 +1,28 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "testing",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//common",
+        "//ext/spock",
+        "//parser/native",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_slf4j_slf4j_api",
+    ],
+)
+
+kt_test(
+    name = "testing_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":testing"],
+    test_packages = ["com.github.albertocavalcante.gvy.testing"],
+    deps = [
+        "//parser/native",
+        "@maven//:org_apache_groovy_groovy",
+    ],
+)

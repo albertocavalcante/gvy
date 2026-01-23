@@ -6,6 +6,7 @@ import ch.epfl.scala.bsp4j.CompileParams
 import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.SourcesParams
 import ch.epfl.scala.bsp4j.StatusCode
+import com.github.groovylsp.bsp.maven.TestResources
 import com.github.groovylsp.bsp.maven.launcher.MavenBspLauncher
 import com.github.groovylsp.bsp.maven.server.MavenBuildServer
 import org.assertj.core.api.Assertions.assertThat
@@ -24,8 +25,6 @@ import java.nio.file.Paths
  */
 class MavenBspIntegrationTest {
 
-    private val fixturesDir: Path = Paths.get("src/test/resources/fixtures")
-
     @Nested
     inner class SingleModuleProject {
 
@@ -33,7 +32,7 @@ class MavenBspIntegrationTest {
 
         @BeforeEach
         fun setUp() {
-            val projectDir = fixturesDir.resolve("single-module").toAbsolutePath()
+            val projectDir = TestResources.getSingleModuleFixture()
             server = MavenBspLauncher.createServer(projectDir)
             initializeServer(server, projectDir)
         }
@@ -86,7 +85,7 @@ class MavenBspIntegrationTest {
 
         @BeforeEach
         fun setUp() {
-            val projectDir = fixturesDir.resolve("multi-module").toAbsolutePath()
+            val projectDir = TestResources.getMultiModuleFixture()
             server = MavenBspLauncher.createServer(projectDir)
             initializeServer(server, projectDir)
         }
@@ -135,7 +134,7 @@ class MavenBspIntegrationTest {
 
         @BeforeEach
         fun setUp() {
-            val projectDir = fixturesDir.resolve("jenkins-style").toAbsolutePath()
+            val projectDir = TestResources.getJenkinsStyleFixture()
             server = MavenBspLauncher.createServer(projectDir)
             initializeServer(server, projectDir)
         }
@@ -184,7 +183,7 @@ class MavenBspIntegrationTest {
         @Test
         fun `should handle workspace reload`() {
             // Given
-            val projectDir = fixturesDir.resolve("single-module").toAbsolutePath()
+            val projectDir = TestResources.getSingleModuleFixture()
             val server = MavenBspLauncher.createServer(projectDir)
             initializeServer(server, projectDir)
 
@@ -199,7 +198,7 @@ class MavenBspIntegrationTest {
         @Test
         fun `should handle compile request`() {
             // Given
-            val projectDir = fixturesDir.resolve("single-module").toAbsolutePath()
+            val projectDir = TestResources.getSingleModuleFixture()
             val server = MavenBspLauncher.createServer(projectDir)
             initializeServer(server, projectDir)
             val params = CompileParams(listOf(BuildTargetIdentifier("maven:com.example:simple-app")))

@@ -29,8 +29,7 @@ class LanguageServerSessionFactory {
     }
 
     private val execJar: Path? = System.getProperty("groovy.lsp.e2e.execJar")
-        ?.let { Path.of(it) }
-        ?.takeIf { Files.exists(it) }
+        ?.let { BazelRunfiles.resolve(it) }
 
     private val serverClasspath: String? = System.getProperty("groovy.lsp.e2e.serverClasspath")
     private val mainClass: String? = System.getProperty("groovy.lsp.e2e.mainClass")
@@ -101,9 +100,10 @@ class LanguageServerSessionFactory {
     }
 
     private fun buildCommand(mode: ServerLaunchMode): List<String> {
+        val javaBinary = resolveJavaBinary()
         val launchArgs = when {
-            serverClasspath != null && mainClass != null -> listOf("java", "-cp", serverClasspath, mainClass)
-            execJar != null -> listOf("java", "-jar", execJar.toString())
+            serverClasspath != null && mainClass != null -> listOf(javaBinary, "-cp", serverClasspath, mainClass)
+            execJar != null -> listOf(javaBinary, "-jar", execJar.toString())
             else -> error(
                 "Unable to locate language server executable; expected either groovy.lsp.e2e.execJar or " +
                     "(groovy.lsp.e2e.serverClasspath & groovy.lsp.e2e.mainClass) system properties",

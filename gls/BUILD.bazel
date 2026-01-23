@@ -1,0 +1,86 @@
+load("@rules_java//java:defs.bzl", "java_binary")
+load("@rules_kotlin//kotlin:jvm.bzl", "kt_jvm_binary")
+load("//tools/build_defs:kotlin.bzl", "kt_library")
+
+kt_library(
+    name = "gls-lib",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    resources = glob(["src/main/resources/**/*"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:com_github_ajalt_clikt_clikt_core_jvm",
+        "@maven//:com_github_ajalt_mordant_mordant_core_jvm",
+        "@maven//:com_google_code_gson_gson",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+        # Internal dependencies
+        "//common",
+        "//fmt",
+        "//build-tool",
+        "//diagnostics/api",
+        "//parser/api",
+        "//semantics/core",
+        "//semantics/native",
+        "//diagnostics/codenarc",
+        "//diagnostics/sarif",
+        "//dsl/gdsl",
+        "//jenkins",
+        "//ext/junit",
+        "//ext/spock",
+        "//ext/testing",
+        "//markdown",
+        "//parser/core",
+        "//parser/native",
+        "//indexer/core",
+        "//indexer/lsif",
+        "//indexer/scip",
+        "//parser/rewrite",
+        "//reports/coverage",
+        "//reports/results",
+        "//viz/ast-model",
+
+        # LSP4J - Language Server Protocol implementation
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
+
+        # Groovy - For AST parsing and analysis
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_apache_groovy_groovy_groovydoc",
+        "@maven//:org_apache_groovy_groovy_xml",
+
+        # Kotlin Immutable Collections
+        "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable_jvm",
+
+        # Functional Programming - Arrow-kt
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+
+        # Logging
+        "@maven//:org_slf4j_slf4j_api",
+        "@maven//:ch_qos_logback_logback_classic",
+
+        # CLI - JVM variants
+        "@maven//:com_github_ajalt_clikt_clikt_jvm",
+
+        # Classpath Scanning
+        "@maven//:io_github_classgraph_classgraph",
+
+        # Java Source Parsing
+        "@maven//:com_github_javaparser_javaparser_core",
+    ],
+)
+
+kt_jvm_binary(
+    name = "gls",
+    main_class = "com.github.albertocavalcante.gvy.gls.MainKt",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":gls-lib"],
+)
+
+java_binary(
+    name = "gls_deploy",
+    main_class = "com.github.albertocavalcante.gvy.gls.MainKt",
+    visibility = ["//visibility:public"],
+    runtime_deps = [":gls-lib"],
+)

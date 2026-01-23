@@ -210,7 +210,7 @@ class SarifRuleRegistryTest {
             assertNotNull(rule.id, "Rule should have an ID")
             assertTrue(rule.id.isNotBlank(), "Rule ID should not be blank")
             assertNotNull(rule.name, "Rule ${rule.id} should have a name")
-            assertTrue(rule.name.isNotBlank(), "Rule ${rule.id} name should not be blank")
+            assertTrue(rule.name?.isNotBlank() == true, "Rule ${rule.id} name should not be blank")
             assertNotNull(rule.shortDescription, "Rule ${rule.id} should have a shortDescription")
             assertNotNull(rule.shortDescription?.text, "Rule ${rule.id} shortDescription.text should not be null")
         }

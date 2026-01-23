@@ -1,0 +1,28 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "junit",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//ext/testing",
+        "//parser/native",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_slf4j_slf4j_api",
+        # JUnit dependencies are compileOnly - not included at runtime
+    ],
+)
+
+kt_test(
+    name = "junit_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":junit"],
+    test_packages = ["com.github.albertocavalcante.gvy.junit"],
+    deps = [
+        "//ext/testing",
+        "//parser/native",
+        "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_junit_jupiter_junit_jupiter_params",
+    ],
+)

@@ -151,33 +151,35 @@ class NativeTypeContext(
         workspaceInherited: (MemberLookup, String) -> SemanticType?,
         converter: (T) -> SemanticType,
         notFoundMessage: (String) -> String,
-    ): SemanticType? = when (receiverType) {
-        is SemanticType.Known -> {
-            // Strategy 1: Native AST (same module) - fast path
-            val nativeMember = nativeFinder(receiverType.fqn)
-            if (nativeMember != null) {
-                return converter(nativeMember)
-            }
-
-            // Strategy 2: Workspace Index (cross-file)
-            workspaceMemberLookup?.let { workspace ->
-                val directMember = workspaceDirect(workspace, receiverType.fqn)
-                if (directMember != null) {
-                    return directMember
+    ): SemanticType? {
+        return when (receiverType) {
+            is SemanticType.Known -> {
+                // Strategy 1: Native AST (same module) - fast path
+                val nativeMember = nativeFinder(receiverType.fqn)
+                if (nativeMember != null) {
+                    return converter(nativeMember)
                 }
 
-                // Strategy 3: Check inherited members if direct lookup fails
-                val inheritedMember = workspaceInherited(workspace, receiverType.fqn)
-                if (inheritedMember != null) {
-                    return inheritedMember
+                // Strategy 2: Workspace Index (cross-file)
+                workspaceMemberLookup?.let { workspace ->
+                    val directMember = workspaceDirect(workspace, receiverType.fqn)
+                    if (directMember != null) {
+                        return directMember
+                    }
+
+                    // Strategy 3: Check inherited members if direct lookup fails
+                    val inheritedMember = workspaceInherited(workspace, receiverType.fqn)
+                    if (inheritedMember != null) {
+                        return inheritedMember
+                    }
                 }
+
+                // Not found in any strategy
+                SemanticType.Unknown(notFoundMessage(receiverType.fqn))
             }
 
-            // Not found in any strategy
-            SemanticType.Unknown(notFoundMessage(receiverType.fqn))
+            else -> null // Dynamic, Null, Primitive, Union types don't support member lookup
         }
-
-        else -> null // Dynamic, Null, Primitive, Union types don't support member lookup
     }
 
     /**

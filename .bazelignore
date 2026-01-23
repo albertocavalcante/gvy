@@ -1,0 +1,15 @@
+node_modules
+build
+.gradle
+.idea
+.vscode
+bazel-bin
+bazel-out
+bazel-testlogs
+bazel-feat-bazel-setup
+.kover
+.envrc
+.direnv
+editors/code/.vscode-test
+editors/code/node_modules
+editors/code/client/node_modules

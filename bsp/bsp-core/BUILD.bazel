@@ -1,0 +1,31 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "bsp-core",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+    ],
+)
+
+kt_test(
+    name = "bsp-core_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":bsp-core"],
+    test_packages = ["com.github.groovylsp.bsp"],
+    deps = [
+        "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_assertj_assertj_core",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+    ],
+)

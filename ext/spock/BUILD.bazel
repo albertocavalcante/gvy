@@ -1,0 +1,24 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "spock",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//dsl/dsld",
+        "//parser/native",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_apache_groovy_groovy",
+    ],
+)
+
+kt_test(
+    name = "groovy-spock_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":spock"],
+    test_packages = ["com.github.albertocavalcante.gvy.spock"],
+    deps = [
+        "//parser/native",
+        "@maven//:org_apache_groovy_groovy",
+    ],
+)

@@ -1,0 +1,29 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "rewrite-codenarc",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    resources = glob(["src/main/resources/**/*"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@maven//:org_apache_groovy_groovy",  # Explicit Groovy 4.x (rewrite-groovy's Groovy 3.x is excluded)
+        "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_openrewrite_rewrite_core",
+        "@maven//:org_openrewrite_rewrite_groovy",
+        "@maven//:org_openrewrite_rewrite_java",
+    ],
+)
+
+# Tests require openrewrite-test dependency which is not currently configured.
+# Run manually with: bazel test //refactor/openrewrite/rewrite-codenarc:rewrite-codenarc_test
+kt_test(
+    name = "rewrite-codenarc_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    tags = ["manual"],
+    test_packages = ["com.github.albertocavalcante.refactor"],
+    deps = [
+        ":rewrite-codenarc",
+        "@maven//:ch_qos_logback_logback_classic",
+        "@maven//:org_junit_platform_junit_platform_launcher",
+    ],
+)

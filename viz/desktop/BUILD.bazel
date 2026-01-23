@@ -1,0 +1,36 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+# Compose Desktop application for AST visualization
+# GMM support enabled via Coursier v2.1.25-M23 patches in MODULE.bazel
+#
+# NOTE: Tagged as "manual" to exclude from wildcard builds (bazel build //...)
+# Compose dependencies require GMM patches that are experimental.
+# Build explicitly with: bazel build //viz/desktop
+kt_library(
+    name = "desktop",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    plugins = ["//tools/build_defs:compose_plugin"],
+    tags = ["manual"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//parser/api",
+        "//parser/core",
+        "//parser/native",
+        "//parser/rewrite",
+        "//viz/ast-model",
+        "@maven//:org_jetbrains_compose_desktop_desktop_jvm",
+        "@maven//:org_jetbrains_compose_material3_material3_desktop",
+        "@maven//:org_jetbrains_compose_material_material_icons_extended_desktop",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
+        "@maven//:ch_qos_logback_logback_classic",
+    ],
+)
+
+# kt_test(
+#     name = "desktop_test",
+#     srcs = glob(["src/test/kotlin/**/*.kt"], allow_empty = True),
+#     associates = [":desktop"],
+#     test_packages = ["com.github.albertocavalcante.gvy.viz.desktop"],
+#     deps = [],
+# )

@@ -1,0 +1,103 @@
+load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
+load("@aspect_rules_ts//ts:defs.bzl", "ts_project")
+
+# TypeScript compilation for the extension client
+#
+# Dependencies are resolved through the pnpm workspace at editors/code/
+# All deps are referenced as "//editors/code:node_modules/<package-name>" because
+# the workspace resolution makes them available at the root level.
+ts_project(
+    name = "client_lib",
+    srcs = glob(
+        ["src/**/*.ts"],
+        exclude = ["src/test/**"],
+    ),
+    composite = True,
+    declaration = True,
+    out_dir = "out",
+    source_map = True,
+    transpiler = "tsc",
+    tsconfig = ":tsconfig.json",
+    visibility = ["//visibility:public"],
+    deps = [
+        # VS Code API types
+        "//editors/code:node_modules/@types/vscode",
+
+        # Language Server Client dependencies
+        "//editors/code:node_modules/vscode-languageclient",
+        "//editors/code:node_modules/vscode-languageserver-protocol",
+
+        # JDK utilities
+        "//editors/code:node_modules/jdk-utils",
+
+        # Node types
+        "//editors/code:node_modules/@types/node",
+    ],
+)
+
+# TypeScript compilation for tests
+# NOTE: Tagged manual because VS Code extension tests require a running VS Code instance
+# and the test imports have complex path resolution issues with the out_dir structure.
+# Run tests using `pnpm test` in editors/code/client instead.
+ts_project(
+    name = "test_lib",
+    testonly = True,
+    srcs = glob(["src/test/**/*.ts"]),
+    composite = True,
+    declaration = True,
+    out_dir = "out",
+    source_map = True,
+    tags = ["manual"],
+    transpiler = "tsc",
+    tsconfig = ":tsconfig.json",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":client_lib",
+        "//editors/code:node_modules/@types/mocha",
+        "//editors/code:node_modules/@types/node",
+        "//editors/code:node_modules/@types/vscode",
+        "//editors/code:node_modules/@vscode/test-cli",
+        "//editors/code:node_modules/@vscode/test-electron",
+    ],
+)
+
+# esbuild bundle for the extension (production)
+esbuild(
+    name = "extension_bundle",
+    srcs = [":client_lib"],
+    entry_point = "out/src/extension.js",
+    external = ["vscode"],
+    format = "cjs",
+    minify = select({
+        "//:production": True,
+        "//conditions:default": False,
+    }),
+    output = "extension.js",
+    platform = "node",
+    sourcemap = "inline",
+    target = "es2020",
+    visibility = ["//visibility:public"],
+)
+
+# esbuild bundle for the AST webview (browser context)
+esbuild(
+    name = "ast_webview_bundle",
+    srcs = [":client_lib"],
+    entry_point = "out/src/features/ast/webview/main.js",
+    format = "iife",
+    minify = select({
+        "//:production": True,
+        "//conditions:default": False,
+    }),
+    output = "main.js",
+    platform = "browser",
+    sourcemap = "inline",
+    target = "es2020",
+    visibility = ["//visibility:public"],
+)
+
+# Export configuration files
+exports_files([
+    "package.json",
+    "tsconfig.json",
+])

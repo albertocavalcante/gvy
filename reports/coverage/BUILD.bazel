@@ -1,0 +1,19 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "coverage",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//reports/api",
+        "@maven//:io_github_oshai_kotlin_logging_jvm",
+    ],
+)
+
+kt_test(
+    name = "coverage_test",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":coverage"],
+    resources = glob(["src/test/resources/**/*"]),
+    test_packages = ["com.github.albertocavalcante.reports.coverage"],
+)

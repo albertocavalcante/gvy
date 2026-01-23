@@ -1,0 +1,441 @@
+"""
+Groovy Language Server - Bazel Module Definition
+
+This is a Kotlin/TypeScript monorepo for the Groovy Language Server project.
+"""
+
+module(name = "gvy")
+
+# Core Bazel dependencies
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.0.0")
+
+# Dev dependencies (linting, formatting)
+bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.1", dev_dependency = True)
+bazel_dep(name = "rules_java", version = "9.3.0")
+bazel_dep(name = "rules_kotlin", version = "2.2.2")
+
+# Override with fork-built rules_kotlin (Kotlin 2.3.0)
+# Published from: https://github.com/albertocavalcante/fork-rules_kotlin
+# To update: ./tools/scripts/publish-rules-kotlin-fork.sh --build --version v2.3.0-fork.N
+archive_override(
+    module_name = "rules_kotlin",
+    urls = ["https://github.com/albertocavalcante/fork-rules_kotlin/releases/download/v2.3.0-fork.1/rules_kotlin_release.tgz"],
+    integrity = "sha256-9vOI0nezePk0rrm7HaQ9h+MVvgo3H6h71Cl37UMZp1A=",
+)
+
+# Register custom Kotlin toolchain
+register_toolchains("//tools:kotlin_toolchain")
+bazel_dep(name = "rules_jvm_external", version = "6.9")
+
+# ==============================================================================
+# Coursier GMM (Gradle Module Metadata) Patch
+# ==============================================================================
+#
+# Compose Multiplatform Desktop requires GMM support for correct platform variant selection.
+# GMM was added in Coursier v2.1.25-M* milestones (not yet in stable v2.1.24).
+#
+# PATCH DETAILS:
+#   Upgrades Coursier v2.1.24 -> v2.1.25-M23
+#   Patch: //third_party/patches:rules_jvm_external_coursier_gmm.patch
+#   SHA256: 8b373a4aab15203c5bf43fcbe7475ae45e160a6c0f3b2560fc36a7d51d618dec
+#
+# IMPORTANT SYNTAX NOTE:
+#   The --variant flag requires SPACE-SEPARATED syntax, NOT equals:
+#   ✓ Correct: "--variant", "org.gradle.usage=runtime"  (two args)
+#   ✗ Wrong:   "--variant=org.gradle.usage=runtime"     (one arg - causes parsing error)
+#
+# Key PRs adding GMM support:
+#   - https://github.com/coursier/coursier/pull/3269 - Variant ADTs (Feb 2025)
+#   - https://github.com/coursier/coursier/pull/3320 - Gradle Modules handling (Mar 2025)
+#
+# Related rules_jvm_external issues:
+#   - https://github.com/bazel-contrib/rules_jvm_external/issues/909 - GMM for KMP
+#   - https://github.com/bazel-contrib/rules_jvm_external/issues/864 - Resolving KMP via GMM
+#
+# See full research at: ~/dev/md/bazel-compose-research.md
+# ==============================================================================
+single_version_override(
+    module_name = "rules_jvm_external",
+    patches = [
+        # Upgrade Coursier v2.1.24 -> v2.1.25-M23 for GMM support
+        "//third_party/patches:rules_jvm_external_coursier_gmm.patch",
+        # Fix deduplication of additional_coursier_options (breaks repeated --variant flags)
+        "//third_party/patches:rules_jvm_external_coursier_options_dedup.patch",
+        # Fix artifact["file"] KeyError when GMM produces virtual deps without file key
+        "//third_party/patches:rules_jvm_external_artifact_file_key_1.patch",
+        "//third_party/patches:rules_jvm_external_artifact_file_key_2.patch",
+        # Fix absolute path in pinned mode - relativizes v1/ cache paths
+        "//third_party/patches:rules_jvm_external_path_relativize.patch",
+        # Filter out metadata-only KMP modules (kotlin-stdlib-common etc) from deps
+        "//third_party/patches:HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch",
+    ],
+    patch_strip = 1,
+)
+
+# Note: Additional patches for Gradle resolver + rules_java 9.x are available in
+# third_party/patches/ if Gradle resolver is needed in the future.
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "protobuf", version = "33.4")
+bazel_dep(name = "aspect_rules_js", version = "2.8.3")
+bazel_dep(name = "aspect_rules_ts", version = "3.8.1")
+bazel_dep(name = "aspect_rules_esbuild", version = "0.25.0")
+
+# TypeScript toolchain - exact version required (package.json uses ^5.9.2 range)
+rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
+rules_ts_ext.deps(ts_version = "5.9.2")
+use_repo(rules_ts_ext, "npm_typescript")
+bazel_dep(name = "rules_nodejs", version = "6.6.2")
+bazel_dep(name = "aspect_rules_lint", version = "1.13.0")
+bazel_dep(name = "rules_go", version = "0.59.0")
+bazel_dep(name = "gazelle", version = "0.47.0")
+
+# Go SDK configuration for Gazelle
+go_sdk = use_extension("@rules_go//go:extensions.bzl", "go_sdk")
+go_sdk.download(
+    version = "1.23.5",
+)
+use_repo(go_sdk, "go_toolchains")
+
+# Maven Dependencies
+maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
+
+maven.install(
+    # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
+    # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
+    known_contributing_modules = ["gvy", "protobuf"],
+    artifacts = [
+        # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
+        "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
+        # Note: kotlin-stdlib-common is filtered by HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch
+        "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2",
+        "org.jetbrains.kotlinx:kotlinx-collections-immutable-jvm:0.4.0",
+        "org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0",
+        "org.jetbrains.kotlin:kotlin-serialization-compiler-plugin-embeddable:2.3.0",
+        "org.jetbrains.kotlin:kotlin-test:2.3.0",
+        "org.jetbrains.kotlin:kotlin-test-junit5:2.3.0",
+
+        # Groovy
+        "org.apache.groovy:groovy:4.0.29",
+        "org.apache.groovy:groovy-ant:4.0.29",
+        # groovy-console excluded: pulls swing dependencies not needed for LSP server
+        "org.apache.groovy:groovy-json:4.0.29",
+        "org.apache.groovy:groovy-groovydoc:4.0.29",
+        "org.apache.groovy:groovy-macro:4.0.29",
+        "org.apache.groovy:groovy-xml:4.0.29",
+
+        # Grape/Grab dependency resolution
+        "org.apache.ivy:ivy:2.5.3",
+
+        # LSP
+        "org.eclipse.lsp4j:org.eclipse.lsp4j:0.24.0",
+        "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
+
+        # SCIP / Protobuf (Wire)
+        # wire-runtime is KMP (needs -jvm)
+        # wire-compiler: downloaded separately via http_file (see below) due to GMM issues
+        "com.squareup.wire:wire-runtime-jvm:5.4.0",
+        "com.squareup.okio:okio-jvm:3.10.2",  # Required by Wire-generated code
+
+        # Code Quality & Analysis
+        # Note: CodeNarc exclusions are defined separately via maven.artifact()
+        # Note: rewrite-groovy exclusions are defined separately via maven.artifact()
+        "org.gmetrics:GMetrics:2.1.0",
+        "org.openrewrite:rewrite-core:8.70.4",
+        "org.openrewrite:rewrite-java:8.70.4",
+
+        # Gradle Tooling API - from repo.gradle.org (configured in repositories)
+        "org.gradle:gradle-tooling-api:9.2.1",
+
+        # Build Server Protocol
+        # bsp4j's lsp4j.generator pulls xtend which pulls guava with bundle packaging
+        # Exclude the generator since it's only needed at build time, not runtime
+        # "ch.epfl.scala:bsp4j:2.1.1",  # configured below with exclusions
+
+        # Ktor - Using JVM classifiers for Kotlin Multiplatform artifacts
+        "io.ktor:ktor-client-core-jvm:3.3.3",
+        "io.ktor:ktor-client-cio-jvm:3.3.3",
+        "io.ktor:ktor-client-content-negotiation-jvm:3.3.3",
+        "io.ktor:ktor-serialization-kotlinx-json-jvm:3.3.3",
+        "io.ktor:ktor-client-mock-jvm:3.3.3",
+        "io.ktor:ktor-http-jvm:3.3.3",
+        "io.ktor:ktor-io-jvm:3.3.3",
+        "io.ktor:ktor-utils-jvm:3.3.3",
+
+        # Functional Programming
+        "io.arrow-kt:arrow-core:2.2.1",
+        "io.arrow-kt:arrow-core-jvm:2.2.1",
+
+        # Logging
+        "io.github.oshai:kotlin-logging-jvm:7.0.14",
+        "org.slf4j:slf4j-api:2.0.17",
+        "ch.qos.logback:logback-classic:1.5.24",
+
+        # Testing - JUnit 6 (released Jan 2026)
+        # Note: JUnit jars downloaded via http_file due to GMM cycle bugs
+        # These artifacts are declared here for target existence, but maven.override
+        # redirects them to //tools:junit_* targets with correct dependency graph
+        # See: https://github.com/albertocavalcante/gvy/issues/1032
+        "org.junit.jupiter:junit-jupiter:6.0.2",
+        "org.junit.jupiter:junit-jupiter-api:6.0.2",
+        "org.junit.jupiter:junit-jupiter-engine:6.0.2",
+        "org.junit.jupiter:junit-jupiter-params:6.0.2",
+        "org.junit.platform:junit-platform-launcher:6.0.2",
+        "org.junit.platform:junit-platform-engine:6.0.2",
+        "org.junit.platform:junit-platform-commons:6.0.2",
+        "org.junit.platform:junit-platform-console:6.0.2",
+        "junit:junit:4.13.2",
+        "org.assertj:assertj-core:3.27.6",
+        "io.mockk:mockk:1.14.7",
+        "io.mockk:mockk-jvm:1.14.7",
+        "org.spockframework:spock-core:2.3-groovy-4.0",
+        "com.jayway.jsonpath:json-path:2.10.0",
+        "net.jqwik:jqwik:1.9.3",
+
+        # Jackson (Note: jackson-bom is POM-only, use explicit versions)
+        "com.fasterxml.jackson.dataformat:jackson-dataformat-yaml:2.20.1",
+        "com.fasterxml.jackson.core:jackson-databind:2.20.1",
+        "com.fasterxml.jackson.module:jackson-module-kotlin:2.20.1",
+
+        # Guava - explicit to pin version (protobuf transitively brings 32.0.1-jre)
+        # Our explicit version wins; duplicate warning is expected and harmless
+        "com.google.guava:guava:33.5.0-jre",
+
+        # Classpath Scanning
+        "io.github.classgraph:classgraph:4.8.184",
+        "com.guardsquare:proguard-gradle:7.8.2",
+        "net.java.dev.jna:jna:5.18.1",
+        "net.java.dev.jna:jna-platform:5.18.1",
+        "org.openrewrite.tools:jgit:1.3.0",
+
+        # Java Source Parsing
+        "com.github.javaparser:javaparser-core:3.27.1",
+
+        # HTML to Markdown
+        "com.vladsch.flexmark:flexmark-html2md-converter:0.64.8",
+
+        # Maven Embedder
+        "org.apache.maven:maven-embedder:3.9.12",
+        "org.apache.maven:maven-compat:3.9.12",
+        "org.apache.maven.resolver:maven-resolver-connector-basic:1.9.25",
+        "org.apache.maven.resolver:maven-resolver-transport-http:1.9.25",
+        "org.apache.maven.resolver:maven-resolver-supplier:1.9.25",
+
+        # Jupyter Kernel Protocol
+        "org.zeromq:jeromq:0.6.0",
+
+        # CLI - JVM variants for Kotlin Multiplatform artifacts
+        "com.github.ajalt.clikt:clikt-jvm:5.0.3",
+        "com.github.ajalt.mordant:mordant-jvm:3.0.2",
+
+        # ==========================================================================
+        # Compose Multiplatform Desktop
+        # ==========================================================================
+        # Requires GMM (Gradle Module Metadata) for correct variant selection.
+        # See: https://github.com/JetBrains/compose-multiplatform
+        # Maven: https://maven.pkg.jetbrains.space/public/p/compose/dev
+        #
+        # These artifacts use -desktop or -jvm suffixes for the JVM Desktop variant.
+        # GMM + variant attributes select correct platform (vs Android/JS/Native).
+        # ==========================================================================
+        "org.jetbrains.compose.desktop:desktop-jvm:1.7.3",
+        "org.jetbrains.compose.material3:material3-desktop:1.7.3",
+        "org.jetbrains.compose.material:material-icons-extended-desktop:1.7.3",
+        "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.3.0",
+    ],
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://plugins.gradle.org/m2/",
+        "https://repo.gradle.org/gradle/libs-releases/",  # For gradle-tooling-api
+        "https://maven.pkg.jetbrains.space/public/p/compose/dev",  # JetBrains Compose
+        "https://maven.google.com",  # Google Maven for AndroidX
+    ],
+    # ==========================================================================
+    # GMM (Gradle Module Metadata) Options
+    # ==========================================================================
+    # Enables variant-aware dependency resolution for Kotlin Multiplatform.
+    # Doc: https://get-coursier.io/docs/other-features#gradle-module-metadata
+    # Source: coursier/docs/pages/features-gradle-modules.md
+    #
+    # IMPORTANT: Use SPACE-SEPARATED syntax for --variant flag!
+    #   ✓ "--variant", "key=value"  (two separate list elements)
+    #   ✗ "--variant=key=value"     (single element - parsing fails)
+    #
+    # Variant attributes for JVM Desktop platform:
+    #   - org.gradle.category=library       → Select library artifacts
+    #   - org.gradle.usage=runtime          → Runtime deps (matches *-runtime)
+    #   - org.gradle.jvm.environment=standard-jvm → Exclude Android (vs android)
+    #   - org.jetbrains.kotlin.platform.type=jvm  → JVM platform (vs js/native/wasm)
+    #   - ui=awt                            → skiko AWT variant (vs ui=android)
+    #
+    # See: coursier/modules/core/shared/src/main/scala/coursier/core/VariantSelector.scala
+    # ==========================================================================
+    additional_coursier_options = [
+        "--enable-modules",
+        "--variant", "org.gradle.category=library",
+        "--variant", "org.gradle.usage=runtime",
+        "--variant", "org.gradle.jvm.environment=standard-jvm",
+        "--variant", "org.jetbrains.kotlin.platform.type=jvm",
+        "--variant", "org.gradle.libraryelements=jar",
+        # AnyOf syntax (value1|value2): prefer first, fall back to second
+        # - external: standard JARs (CodeNarc, caffeine)
+        # - shadowed: fat JARs (gradle-tooling-api only has this)
+        "--variant", "org.gradle.dependency.bundling=external|shadowed",
+        "--variant", "ui=awt",  # skiko: select AWT variant over Android
+    ],
+    # DISABLED: fetch_sources causes GMM to incorrectly resolve classes jar to sources jar
+    # See: https://github.com/albertocavalcante/gvy/issues/1031
+    # fetch_sources = True,
+    # fetch_javadoc = True,
+    # Google Maven doesn't publish checksum files for some AndroidX artifacts
+    # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
+    fail_on_missing_checksum = False,
+    # KNOWN ISSUE: GMM (--enable-modules) causes Coursier to compute different checksums
+    # locally vs CI due to variant selection differences. Lock file disabled until resolved.
+    # Tracking: https://github.com/albertocavalcante/gvy/issues/1029
+    # Upstream: https://github.com/bazel-contrib/rules_jvm_external/issues/608
+    # lock_file = "//:maven_install.json",
+    # fail_if_repin_required = True,
+)
+
+# bsp4j with exclusions - lsp4j.generator pulls xtend which pulls guava with bundle packaging
+maven.artifact(
+    artifact = "bsp4j",
+    group = "ch.epfl.scala",
+    version = "2.1.1",
+    exclusions = [
+        # Generator pulls xtend -> xtext -> guava:bundle which Gradle resolver can't handle
+        "org.eclipse.lsp4j:org.eclipse.lsp4j.generator",
+        "org.eclipse.xtend:org.eclipse.xtend.lib",
+        "org.eclipse.xtext:org.eclipse.xtext.xbase.lib",
+    ],
+)
+
+# CodeNarc with Groovy exclusions to avoid version conflicts
+# CodeNarc 3.7.0-groovy-4.0 bundles old Groovy 3.0.9 transitives that conflict with our 4.0.29
+maven.artifact(
+    artifact = "CodeNarc",
+    group = "org.codenarc",
+    version = "3.7.0-groovy-4.0",
+    exclusions = [
+        "org.apache.groovy:groovy",
+        "org.apache.groovy:groovy-ant",
+        "org.apache.groovy:groovy-groovydoc",
+        "org.apache.groovy:groovy-json",
+        "org.apache.groovy:groovy-templates",
+        "org.apache.groovy:groovy-xml",
+        "org.codehaus.groovy:groovy",
+        "org.codehaus.groovy:groovy-ant",
+        "org.codehaus.groovy:groovy-groovydoc",
+        "org.codehaus.groovy:groovy-json",
+        "org.codehaus.groovy:groovy-templates",
+        "org.codehaus.groovy:groovy-xml",
+    ],
+)
+
+# OpenRewrite Groovy with exclusions to avoid Groovy 3.x conflicts
+# rewrite-groovy 8.70.4 pulls in org.codehaus.groovy:groovy:3.0.25 which conflicts with our 4.0.29
+maven.artifact(
+    artifact = "rewrite-groovy",
+    group = "org.openrewrite",
+    version = "8.70.4",
+    exclusions = [
+        # Exclude Groovy 3.x - we provide Groovy 4.0.29 explicitly
+        "org.codehaus.groovy:groovy",
+    ],
+)
+
+# Note: unpinned_maven is only available when lock_file is enabled
+# When re-enabling lock file, add "unpinned_maven" here and use:
+# REPIN=1 bazel run @unpinned_maven//:pin
+use_repo(maven, "maven")
+
+# NPM Dependencies for TypeScript (VS Code extension)
+npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm")
+npm.npm_translate_lock(
+    name = "npm",
+    pnpm_lock = "//editors/code:pnpm-lock.yaml",
+    verify_node_modules_ignored = "//:.bazelignore",
+)
+use_repo(npm, "npm")
+
+# pnpm toolchain - align with project's pnpm version (pnpm-lock.yaml lockfileVersion: "9.0")
+pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
+pnpm.pnpm(pnpm_version = "10.27.0")
+use_repo(pnpm, "pnpm")
+
+# Wire compiler - downloaded directly due to GMM variant selection issues
+# See: https://github.com/albertocavalcante/gvy/issues/1029
+wire = use_extension("//tools/build_defs:wire_compiler.bzl", "wire_compiler")
+use_repo(wire, "wire_compiler_jar")
+
+# Kotlin-logging - downloaded directly due to GMM bug (resolves sources jar instead of classes)
+# See: https://github.com/albertocavalcante/gvy/issues/1031
+kotlin_logging = use_extension("//tools/build_defs:kotlin_logging.bzl", "kotlin_logging")
+use_repo(kotlin_logging, "kotlin_logging_jar")
+
+# Override maven kotlin-logging to use our directly-downloaded jar
+maven.override(
+    coordinates = "io.github.oshai:kotlin-logging-jvm",
+    target = "//tools:kotlin_logging",
+)
+
+# JUnit - downloaded directly due to GMM cycle bugs
+# GMM creates circular deps between Jupiter and Platform modules
+# See: https://github.com/albertocavalcante/gvy/issues/1032
+junit = use_extension("//tools/build_defs:junit.bzl", "junit")
+use_repo(
+    junit,
+    # Jupiter
+    "junit_jupiter_jar",
+    "junit_jupiter_api_jar",
+    "junit_jupiter_engine_jar",
+    "junit_jupiter_params_jar",
+    # Platform
+    "junit_platform_launcher_jar",
+    "junit_platform_engine_jar",
+    "junit_platform_commons_jar",
+    "junit_platform_console_jar",
+)
+
+# Override maven JUnit modules to use our directly-downloaded jars
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter",
+    target = "//tools:junit_jupiter",
+)
+
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter-api",
+    target = "//tools:junit_jupiter_api",
+)
+
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter-engine",
+    target = "//tools:junit_jupiter_engine",
+)
+
+maven.override(
+    coordinates = "org.junit.jupiter:junit-jupiter-params",
+    target = "//tools:junit_jupiter_params",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-launcher",
+    target = "//tools:junit_platform_launcher",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-engine",
+    target = "//tools:junit_platform_engine",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-commons",
+    target = "//tools:junit_platform_commons",
+)
+
+maven.override(
+    coordinates = "org.junit.platform:junit-platform-console",
+    target = "//tools:junit_platform_console",
+)
