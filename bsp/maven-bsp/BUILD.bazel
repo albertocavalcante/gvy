@@ -30,7 +30,10 @@ kt_test(
     test_packages = ["com.github.groovylsp.bsp.maven"],
     deps = [
         "@maven//:ch_epfl_scala_bsp4j",
+        "@maven//:com_google_code_gson_gson",
+        "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
+        "@maven//:org_apache_maven_resolver_maven_resolver_api",
         "@maven//:org_assertj_assertj_core",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
     ],

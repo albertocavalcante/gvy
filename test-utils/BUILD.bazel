@@ -6,13 +6,11 @@ kt_library(
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//common",
+        "//parser/api",
         "//parser/native",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:io_mockk_mockk_jvm",
-        "@maven//:org_assertj_assertj_core",
-        "@maven//:org_jetbrains_kotlin_kotlin_test",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_apache_groovy_groovy",
         "@maven//:org_junit_jupiter_junit_jupiter",
     ],
 )
