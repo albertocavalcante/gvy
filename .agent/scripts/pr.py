@@ -1714,7 +1714,7 @@ def compress_diff_content(file_diff: str, keep_context: int = 1) -> str:
 
     # Second pass: keep headers and marked lines
     in_header = True
-    last_kept = -10  # Track gaps for "..." markers
+    last_kept: int | None = None  # Track gaps for "..." markers
 
     for i, line in enumerate(lines):
         # Always keep file headers
@@ -1729,7 +1729,7 @@ def compress_diff_content(file_diff: str, keep_context: int = 1) -> str:
 
         if i in change_indices:
             # Add gap marker if we skipped lines
-            if i - last_kept > 1 and last_kept >= 0:
+            if last_kept is not None and i - last_kept > 1:
                 result.append("  [...context...]")
             result.append(line)
             last_kept = i
@@ -2614,8 +2614,8 @@ def _call_ai_via_cli(
     config = AI_PROVIDERS[provider]
     model_to_use = model or config.default_model
 
-    # Security: validate cmd is an expected value (allowlist check)
-    allowed_cmds = {"gemini", "claude"}
+    # Security: validate cmd is an expected value (derived from AI_PROVIDERS)
+    allowed_cmds = {cfg.cmd for cfg in AI_PROVIDERS.values()}
     if config.cmd not in allowed_cmds:
         return "", "", f"Invalid AI command: {config.cmd}"
 
