@@ -117,6 +117,8 @@ jobs:
               # Code that requires CI to run
               - 'src/**'
               - 'gradle/**'
+              # gls module (main LSP server, renamed from groovy-lsp)
+              - 'gls/**'
               # semantics module (multi-project: core, native, openrewrite, dsl)
               - 'semantics/**'
               # BSP infrastructure modules
