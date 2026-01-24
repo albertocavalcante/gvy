@@ -56,9 +56,15 @@ object CompletionPriority {
     /**
      * Format a sortText string for LSP completion item.
      *
-     * @param priority The priority level (lower = higher priority)
+     * @param priority The priority level (0-99, lower = higher priority)
      * @param label The completion item label for secondary sorting
      * @return A string like "05-myVariable" that sorts lexicographically
+     * @throws IllegalArgumentException if priority is outside 0-99 range
      */
-    fun sortText(priority: Int, label: String): String = "${priority.toString().padStart(2, '0')}-$label"
+    fun sortText(priority: Int, label: String): String {
+        require(priority in 0..99) {
+            "Priority must be 0-99 for correct lexicographic sorting, was: $priority"
+        }
+        return "${priority.toString().padStart(2, '0')}-$label"
+    }
 }

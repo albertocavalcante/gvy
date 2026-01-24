@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.providers.completion
 
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
@@ -94,6 +95,31 @@ class CompletionPriorityTest {
             assertEquals("03-apple", sorted[0])
             assertEquals("03-mango", sorted[1])
             assertEquals("03-zebra", sorted[2])
+        }
+
+        @Test
+        fun `sortText accepts boundary values 0 and 99`() {
+            assertEquals("00-min", CompletionPriority.sortText(0, "min"))
+            assertEquals("99-max", CompletionPriority.sortText(99, "max"))
+        }
+
+        @Test
+        fun `sortText handles empty label`() {
+            assertEquals("05-", CompletionPriority.sortText(5, ""))
+        }
+
+        @Test
+        fun `sortText rejects negative priority`() {
+            assertThrows<IllegalArgumentException> {
+                CompletionPriority.sortText(-1, "test")
+            }
+        }
+
+        @Test
+        fun `sortText rejects priority above 99`() {
+            assertThrows<IllegalArgumentException> {
+                CompletionPriority.sortText(100, "test")
+            }
         }
     }
 }
