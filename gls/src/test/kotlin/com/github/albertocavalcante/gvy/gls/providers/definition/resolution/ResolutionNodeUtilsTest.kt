@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 class ResolutionNodeUtilsTest {
 
@@ -65,10 +66,16 @@ class ResolutionNodeUtilsTest {
             assertNotNull(expr, "Expected MethodCallExpression for Math.abs()")
             val className = getClassName(expr)
             assertNotNull(className, "Expected class name to be extracted")
-            assert(className == "Math" || className == "java.lang.Math") {
-                "Expected Math or java.lang.Math but was $className"
-            }
+            assertTrue(
+                className == "Math" || className == "java.lang.Math",
+                "Expected Math or java.lang.Math but was $className",
+            )
         }
+
+        // Note: StaticMethodCallExpression branch in getClassName() handles cases where
+        // the Groovy compiler creates this node type (e.g., some static import scenarios).
+        // In our parser, static calls like Math.abs() create MethodCallExpression with
+        // ClassExpression receiver, which is tested above.
     }
 
     @Nested
@@ -94,9 +101,10 @@ class ResolutionNodeUtilsTest {
             // Parser returns simple name; resolution strategies handle FQN lookup
             val className = getClassName(expr)
             assertNotNull(className)
-            assert(className == "String" || className == "java.lang.String") {
-                "Expected String or java.lang.String but was $className"
-            }
+            assertTrue(
+                className == "String" || className == "java.lang.String",
+                "Expected String or java.lang.String but was $className",
+            )
         }
     }
 
@@ -123,9 +131,10 @@ class ResolutionNodeUtilsTest {
             // Parser returns simple name; resolution strategies handle FQN lookup
             val className = getClassName(expr)
             assertNotNull(className)
-            assert(className == "System" || className == "java.lang.System") {
-                "Expected System or java.lang.System but was $className"
-            }
+            assertTrue(
+                className == "System" || className == "java.lang.System",
+                "Expected System or java.lang.System but was $className",
+            )
         }
     }
 }
