@@ -114,7 +114,7 @@ jobs:
           - os: ubuntu-24.04
             name: linux-amd64
             buck2_target: x86_64-unknown-linux-gnu
-          - os: macos-14
+          - os: macos-15
             name: darwin-arm64
             buck2_target: aarch64-apple-darwin
 
