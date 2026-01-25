@@ -16,37 +16,15 @@ load("//third_party/jvm:deps.bzl", "DEPENDENCIES", "EXCLUSIONS", "FETCH_JAVADOC"
 
 def _generate_deps_json() -> str:
     """Generate deps.json content from deps.bzl configuration."""
-    lines = []
-    lines.append("{")
-
-    # repositories
-    lines.append('  "repositories": [')
-    for i, repo in enumerate(REPOSITORIES):
-        comma = "," if i < len(REPOSITORIES) - 1 else ""
-        lines.append('    "{}"{}'.format(repo, comma))
-    lines.append("  ],")
-
-    # dependencies
-    lines.append('  "dependencies": [')
-    for i, dep in enumerate(DEPENDENCIES):
-        comma = "," if i < len(DEPENDENCIES) - 1 else ""
-        lines.append('    "{}"{}'.format(dep, comma))
-    lines.append("  ],")
-
-    # exclusions
-    lines.append('  "exclusions": [')
-    for i, exc in enumerate(EXCLUSIONS):
-        comma = "," if i < len(EXCLUSIONS) - 1 else ""
-        lines.append('    "{}"{}'.format(exc, comma))
-    lines.append("  ],")
-
-    # booleans
-    lines.append('  "fetch_sources": {},'.format("true" if FETCH_SOURCES else "false"))
-    lines.append('  "fetch_javadoc": {},'.format("true" if FETCH_JAVADOC else "false"))
-    lines.append('  "resolver": "coursier"')
-
-    lines.append("}")
-    return "\n".join(lines)
+    data = {
+        "repositories": REPOSITORIES,
+        "dependencies": DEPENDENCIES,
+        "exclusions": EXCLUSIONS,
+        "fetch_sources": FETCH_SOURCES,
+        "fetch_javadoc": FETCH_JAVADOC,
+        "resolver": "coursier",
+    }
+    return json.encode(data)
 
 def _pin_impl(ctx):
     """Pin JVM dependencies using jvmdeer."""
