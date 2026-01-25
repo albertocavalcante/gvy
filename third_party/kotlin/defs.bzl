@@ -1,25 +1,23 @@
-# Kotlin dependency macros for Buck2
+# Maven dependency macros for Buck2
 #
-# This provides helper macros for defining Kotlin third-party dependencies.
+# Simple helper for defining Maven JAR dependencies.
 
+# Kotlin version - update this and SHA1 hashes when upgrading
 KOTLIN_VERSION = "2.3.0"
 
 KOTLINX_COROUTINES_VERSION = "1.10.1"
 
-def kotlin_jar(name, artifact, sha1, version = None, group = "org.jetbrains.kotlin", **kwargs):
-    """Define a Kotlin JAR dependency from Maven Central.
+def maven_jar(name, group, artifact, version, sha1, **kwargs):
+    """Define a JAR dependency from Maven Central.
 
     Args:
         name: Target name
-        artifact: Maven artifact ID
+        group: Maven group ID (e.g., "org.jetbrains.kotlin")
+        artifact: Maven artifact ID (e.g., "kotlin-stdlib")
+        version: Maven version (e.g., "2.3.0")
         sha1: SHA1 hash of the JAR
-        version: Version (defaults to KOTLIN_VERSION)
-        group: Maven group ID (defaults to org.jetbrains.kotlin)
         **kwargs: Additional args passed to prebuilt_jar
     """
-    if version == None:
-        version = KOTLIN_VERSION
-
     url = "mvn:{}:{}:jar:{}".format(group, artifact, version)
 
     native.remote_file(
@@ -31,25 +29,5 @@ def kotlin_jar(name, artifact, sha1, version = None, group = "org.jetbrains.kotl
     native.prebuilt_jar(
         name = name,
         binary_jar = ":{}_jar".format(name),
-        **kwargs
-    )
-
-def maven_jar(name, group, artifact, version, sha1, **kwargs):
-    """Define a Maven JAR dependency.
-
-    Args:
-        name: Target name
-        group: Maven group ID
-        artifact: Maven artifact ID
-        version: Maven version
-        sha1: SHA1 hash of the JAR
-        **kwargs: Additional args passed to prebuilt_jar
-    """
-    kotlin_jar(
-        name = name,
-        group = group,
-        artifact = artifact,
-        version = version,
-        sha1 = sha1,
         **kwargs
     )

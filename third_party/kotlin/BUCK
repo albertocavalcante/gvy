@@ -12,43 +12,53 @@
 #   1. Change KOTLIN_VERSION in defs.bzl
 #   2. Update SHA1 hashes (get from Maven Central: <artifact>-<version>.jar.sha1)
 
-load(":defs.bzl", "KOTLINX_COROUTINES_VERSION", "kotlin_jar", "maven_jar")
+load(":defs.bzl", "KOTLIN_VERSION", "KOTLINX_COROUTINES_VERSION", "maven_jar")
 
 # ============================================================================
-# Kotlin core libraries
+# Kotlin core libraries (org.jetbrains.kotlin)
 # ============================================================================
 
-kotlin_jar(
+maven_jar(
     name = "kotlin-stdlib",
+    group = "org.jetbrains.kotlin",
     artifact = "kotlin-stdlib",
+    version = KOTLIN_VERSION,
     sha1 = "ebc4eb2b6e6c91b6c844c1e3183920d86f2ef656",
     visibility = ["PUBLIC"],
 )
 
-kotlin_jar(
+maven_jar(
     name = "kotlin-compiler-embeddable",
+    group = "org.jetbrains.kotlin",
     artifact = "kotlin-compiler-embeddable",
+    version = KOTLIN_VERSION,
     sha1 = "dfa7ae7e29f042fe2abf0708315aa367989bb07d",
     visibility = ["PUBLIC"],
 )
 
-kotlin_jar(
+maven_jar(
     name = "kotlin-reflect",
+    group = "org.jetbrains.kotlin",
     artifact = "kotlin-reflect",
+    version = KOTLIN_VERSION,
     sha1 = "a723c4fbeeb7b48910a0f82b8ea826da1b17dd0b",
     visibility = ["PUBLIC"],
 )
 
-kotlin_jar(
+maven_jar(
     name = "kotlin-script-runtime",
+    group = "org.jetbrains.kotlin",
     artifact = "kotlin-script-runtime",
+    version = KOTLIN_VERSION,
     sha1 = "fb89e0ab064ea19d08c6d6bc9f044d16c5487fc4",
     visibility = ["PUBLIC"],
 )
 
-kotlin_jar(
+maven_jar(
     name = "kotlin-annotation-processing-embeddable",
+    group = "org.jetbrains.kotlin",
     artifact = "kotlin-annotation-processing-embeddable",
+    version = KOTLIN_VERSION,
     sha1 = "e41f212e1c3ec3fbc222e9bfe4e23f190124d764",
     visibility = ["PUBLIC"],
 )
