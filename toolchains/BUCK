@@ -1,33 +1,189 @@
 # Toolchain definitions for Buck2
 #
 # Toolchains configure the build tools used by Buck2 rules.
-# We use the prelude's system toolchains which detect tools from the host system.
+# This file sets up toolchains for building Kotlin/JVM code.
 #
-# Available toolchains in prelude/toolchains/:
-#   - genrule.bzl  : system_genrule_toolchain (for genrule())
-#   - cxx.bzl      : system_cxx_toolchain (for C/C++ builds)
-#   - java.bzl     : system_java_* (for Java builds)
-#   - kotlin.bzl   : kotlin_toolchain (for Kotlin builds)
-#   - python.bzl   : remote_python_toolchain (for Python builds)
-#   - rust.bzl     : system_rust_toolchain (for Rust builds)
-#   - go.bzl       : system_go_toolchain (for Go builds)
+# Kotlin version: 2.3.0 (configured in //third_party/kotlin)
+# Java version: 17 (detected from JAVA_HOME)
 #
-# See prelude/toolchains/demo.bzl for a comprehensive example.
+# See prelude/toolchains/demo.bzl for comprehensive examples.
 
 load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
+load("@prelude//toolchains:java.bzl", "system_java_bootstrap_toolchain", "system_java_tool", "system_java_lib", "system_prebuilt_jar_bootstrap_toolchain")
+load("@prelude//toolchains:dex.bzl", "system_noop_dex_toolchain")
+load("@prelude//toolchains:python.bzl", "remote_python_toolchain")
+load("@prelude//toolchains:zip_file.bzl", "zip_file_toolchain")
+load("@prelude//tests:test_toolchain.bzl", "noop_test_toolchain")
+load("@prelude//toolchains:cxx.bzl", "system_cxx_toolchain")
+load(":kotlin.bzl", "kotlin_toolchain")
 
-# Genrule toolchain - required for genrule() and sh_binary() targets.
-# This provides the basic build infrastructure for command-based rules.
+# ============================================================================
+# Genrule toolchain
+# ============================================================================
+
+# Required for genrule() and sh_binary() targets.
 system_genrule_toolchain(
     name = "genrule",
     visibility = ["PUBLIC"],
 )
 
-# Future: Add toolchains for Kotlin/JVM builds
-# load("@prelude//toolchains:java.bzl", "system_java_bootstrap_toolchain")
-# load("@prelude//toolchains:kotlin.bzl", "system_kotlin_bootstrap_toolchain")
+# ============================================================================
+# Java toolchain
+# ============================================================================
+
+# Detect JAVA_HOME from environment or use default
+JAVA_HOME = read_root_config("java", "java_home", "/usr/local/java-runtime/impl/17")
+
+system_java_tool(
+    name = "java_tool",
+    tool_name = JAVA_HOME + "/bin/java",
+    visibility = ["PUBLIC"],
+)
+
+system_java_tool(
+    name = "javac_tool",
+    tool_name = JAVA_HOME + "/bin/javac",
+    visibility = ["PUBLIC"],
+)
+
+system_java_tool(
+    name = "jlink_tool",
+    tool_name = JAVA_HOME + "/bin/jlink",
+    visibility = ["PUBLIC"],
+)
+
+system_java_tool(
+    name = "jmod_tool",
+    tool_name = JAVA_HOME + "/bin/jmod",
+    visibility = ["PUBLIC"],
+)
+
+system_java_lib(
+    name = "jrt_fs_jar",
+    jar = JAVA_HOME + "/lib/jrt-fs.jar",
+)
+
+# Java toolchain - uses system javac directly
+# Named "java" because that's the default expected by prelude rules
+system_java_bootstrap_toolchain(
+    name = "java",
+    java = ":java_tool",
+    javac = ":javac_tool",
+    jlink = ":jlink_tool",
+    jmod = ":jmod_tool",
+    jrt_fs_jar = ":jrt_fs_jar",
+    visibility = ["PUBLIC"],
+)
+
+# Duplicate for java_bootstrap (toolchain rules can't be aliased)
+system_java_bootstrap_toolchain(
+    name = "java_bootstrap",
+    java = ":java_tool",
+    javac = ":javac_tool",
+    jlink = ":jlink_tool",
+    jmod = ":jmod_tool",
+    jrt_fs_jar = ":jrt_fs_jar",
+    visibility = ["PUBLIC"],
+)
+
+# Prebuilt JAR toolchain - for prebuilt_jar() targets
+system_prebuilt_jar_bootstrap_toolchain(
+    name = "prebuilt_jar_bootstrap",
+    java = ":java_tool",
+    visibility = ["PUBLIC"],
+)
+
+# Alias for prebuilt_jar to use our toolchain
+system_prebuilt_jar_bootstrap_toolchain(
+    name = "prebuilt_jar",
+    java = ":java_tool",
+    visibility = ["PUBLIC"],
+)
+
+# Additional alias for prebuilt_jar_bootstrap_no_snapshot
+system_prebuilt_jar_bootstrap_toolchain(
+    name = "prebuilt_jar_bootstrap_no_snapshot",
+    java = ":java_tool",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# DEX toolchain (noop for non-Android builds)
+# ============================================================================
+
+system_noop_dex_toolchain(
+    name = "dex",
+    visibility = ["PUBLIC"],
+)
+
+system_noop_dex_toolchain(
+    name = "empty_dex",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# Python toolchain
+# ============================================================================
+
+# Note: remote_python_toolchain creates both :python and :python_bootstrap
+remote_python_toolchain(
+    name = "python",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# Zip file toolchain
+# ============================================================================
+
+zip_file_toolchain(
+    name = "zip_file",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# Test toolchain (noop)
+# ============================================================================
+
+noop_test_toolchain(
+    name = "test",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# C++ toolchain
+# ============================================================================
+
+system_cxx_toolchain(
+    name = "cxx",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# Kotlin toolchain (2.3.0)
+# ============================================================================
+
+# Custom Kotlin toolchain using our third_party/kotlin dependencies.
+# This allows us to use Kotlin 2.3.0 instead of the prelude's default.
 #
-# system_java_bootstrap_toolchain(
-#     name = "java_bootstrap",
-#     visibility = ["PUBLIC"],
-# )
+# The toolchain uses "classic" protocol which invokes kotlinc directly,
+# rather than "kotlincd" which uses a persistent daemon.
+
+# Main Kotlin toolchain (2.3.0)
+# Named "kotlin" because that's the default expected by prelude rules
+kotlin_toolchain(
+    name = "kotlin",
+    annotation_processing_jar = "root//third_party/kotlin:kotlin-annotation-processing-embeddable",
+    compile_kotlin = "@prelude//kotlin/tools/compile_kotlin:compile_kotlin",
+    kapt_base64_encoder = "@prelude//kotlin/tools/kapt_base64_encoder:kapt_base64_encoder",
+    kotlin_stdlib = "root//third_party/kotlin:kotlin-stdlib",
+    kotlin_version = "2.3.0",
+    kotlinc = "root//third_party/kotlin:kotlin-compiler-binary",
+    visibility = ["PUBLIC"],
+)
+
+# Alias for kotlin_bootstrap (some code may use this name)
+alias(
+    name = "kotlin_bootstrap",
+    actual = ":kotlin",
+    visibility = ["PUBLIC"],
+)

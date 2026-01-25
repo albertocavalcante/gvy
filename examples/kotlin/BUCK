@@ -1,0 +1,13 @@
+# Kotlin example targets for Buck2
+#
+# Build:
+#   buck2 build //examples/kotlin:hello_lib --target-platforms=prelude//platforms:default
+#
+# Note: kotlin_library is a native rule, no load() needed.
+# The Kotlin 2.3.0 toolchain is configured in toolchains/BUCK.
+
+kotlin_library(
+    name = "hello_lib",
+    srcs = ["Hello.kt"],
+    visibility = ["PUBLIC"],
+)

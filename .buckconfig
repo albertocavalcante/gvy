@@ -3,7 +3,7 @@
 #
 # Quick reference:
 #   buck2 build //... --target-platforms=prelude//platforms:default
-#   buck2 run //examples/hello:greet --target-platforms=prelude//platforms:default
+#   buck2 build //examples/kotlin:hello_lib --target-platforms=prelude//platforms:default
 #   buck2 starlark lint **/*.bzl BUCK **/BUCK
 #
 # NOTE: The buck2-prelude has some FB-internal references that require stub
@@ -52,6 +52,22 @@
         target, \
         node_modules, \
         out
+
+[java]
+    # Java home for toolchain detection.
+    # Override with: buck2 build --config java.java_home=/path/to/jdk
+    #
+    # NOTE: For local development, set JAVA_HOME in your environment or
+    # uncomment and customize one of the lines below:
+    #   java_home = /opt/homebrew/opt/openjdk@17/libexec/openjdk.jdk/Contents/Home  # macOS Homebrew
+    #   java_home = /usr/lib/jvm/java-17-openjdk-amd64                              # Ubuntu/Debian
+    #
+    # CI environments use setup-java action which sets JAVA_HOME automatically.
+    # The toolchain falls back to /usr/local/java-runtime/impl/17 if not set.
+
+[kotlin]
+    # Kotlin version (metadata only - actual JARs are in //third_party/kotlin)
+    kotlin_version = 2.3.0
 
 [buck2]
     # Use deferred materialization for faster incremental builds

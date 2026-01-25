@@ -1,0 +1,124 @@
+# Kotlin 2.3.0 third-party dependencies for Buck2
+#
+# This provides user-level Kotlin toolchain dependencies, allowing us to
+# use a different Kotlin version than the prelude's default (2.1.0).
+#
+# This is similar to rules_kotlin's define_kt_toolchain() pattern in Bazel.
+#
+# Usage:
+#   buck2 build //third_party/kotlin:kotlin-compiler-binary
+#
+# To update Kotlin version:
+#   1. Change KOTLIN_VERSION in defs.bzl
+#   2. Update SHA1 hashes (get from Maven Central: <artifact>-<version>.jar.sha1)
+
+load(":defs.bzl", "KOTLIN_VERSION", "KOTLINX_COROUTINES_VERSION", "maven_jar")
+
+# ============================================================================
+# Kotlin core libraries (org.jetbrains.kotlin)
+# ============================================================================
+
+maven_jar(
+    name = "kotlin-stdlib",
+    group = "org.jetbrains.kotlin",
+    artifact = "kotlin-stdlib",
+    version = KOTLIN_VERSION,
+    sha1 = "ebc4eb2b6e6c91b6c844c1e3183920d86f2ef656",
+    visibility = ["PUBLIC"],
+)
+
+maven_jar(
+    name = "kotlin-compiler-embeddable",
+    group = "org.jetbrains.kotlin",
+    artifact = "kotlin-compiler-embeddable",
+    version = KOTLIN_VERSION,
+    sha1 = "dfa7ae7e29f042fe2abf0708315aa367989bb07d",
+    visibility = ["PUBLIC"],
+)
+
+maven_jar(
+    name = "kotlin-reflect",
+    group = "org.jetbrains.kotlin",
+    artifact = "kotlin-reflect",
+    version = KOTLIN_VERSION,
+    sha1 = "a723c4fbeeb7b48910a0f82b8ea826da1b17dd0b",
+    visibility = ["PUBLIC"],
+)
+
+maven_jar(
+    name = "kotlin-script-runtime",
+    group = "org.jetbrains.kotlin",
+    artifact = "kotlin-script-runtime",
+    version = KOTLIN_VERSION,
+    sha1 = "fb89e0ab064ea19d08c6d6bc9f044d16c5487fc4",
+    visibility = ["PUBLIC"],
+)
+
+maven_jar(
+    name = "kotlin-annotation-processing-embeddable",
+    group = "org.jetbrains.kotlin",
+    artifact = "kotlin-annotation-processing-embeddable",
+    version = KOTLIN_VERSION,
+    sha1 = "e41f212e1c3ec3fbc222e9bfe4e23f190124d764",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# JetBrains annotations
+# ============================================================================
+
+maven_jar(
+    name = "kotlin-annotations",
+    group = "org.jetbrains",
+    artifact = "annotations",
+    version = "26.0.2",
+    sha1 = "c7ce3cdeda3d18909368dfe5977332dfad326c6d",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# Kotlinx coroutines (required by kotlin-compiler-embeddable)
+# ============================================================================
+
+maven_jar(
+    name = "kotlinx-coroutines-core-jvm",
+    group = "org.jetbrains.kotlinx",
+    artifact = "kotlinx-coroutines-core-jvm",
+    version = KOTLINX_COROUTINES_VERSION,
+    sha1 = "fe066928754beda3d59c8282e04289546465a360",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# Trove4j (required by kotlin-compiler-embeddable)
+# ============================================================================
+
+maven_jar(
+    name = "trove4j",
+    group = "net.sf.trove4j",
+    artifact = "trove4j",
+    version = "3.0.3",
+    sha1 = "42ccaf4761f0dfdfa805c9e340d99a755907e2dd",
+    visibility = ["PUBLIC"],
+)
+
+# ============================================================================
+# Kotlin compiler binary
+# ============================================================================
+
+# This is the main entry point for kotlinc - a java_binary that runs
+# org.jetbrains.kotlin.cli.jvm.K2JVMCompiler with all required dependencies.
+java_binary(
+    name = "kotlin-compiler-binary",
+    main_class = "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler",
+    visibility = ["PUBLIC"],
+    deps = [
+        ":kotlin-annotations",
+        ":kotlin-compiler-embeddable",
+        ":kotlin-reflect",
+        ":kotlin-script-runtime",
+        ":kotlin-stdlib",
+        ":kotlinx-coroutines-core-jvm",
+        ":trove4j",
+    ],
+)
