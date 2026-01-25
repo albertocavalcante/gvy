@@ -1,0 +1,126 @@
+# BXL script for pinning JVM dependencies
+#
+# Usage: buck2 bxl //third_party/jvm:pin.bxl:pin
+#
+# This generates deps.json and runs jvmdeer to resolve dependencies.
+# The generated BUCK rules are written to third_party/jvm/.
+#
+# TODO(future): Explore full Buck2 integration like rules_jvm_external where
+#   dependencies are resolved at analysis time using repository rules,
+#   eliminating the need for a separate pin step. This would require:
+#   - A custom repository rule that reads deps.lock at BUCK parse time
+#   - Dynamic target generation from the lockfile
+#   - See: https://github.com/bazelbuild/rules_jvm_external
+
+load("//third_party/jvm:deps.bzl", "DEPENDENCIES", "EXCLUSIONS", "FETCH_JAVADOC", "FETCH_SOURCES", "REPOSITORIES")
+
+def _generate_deps_json() -> str:
+    """Generate deps.json content from deps.bzl configuration."""
+    lines = []
+    lines.append("{")
+
+    # repositories
+    lines.append('  "repositories": [')
+    for i, repo in enumerate(REPOSITORIES):
+        comma = "," if i < len(REPOSITORIES) - 1 else ""
+        lines.append('    "{}"{}'.format(repo, comma))
+    lines.append("  ],")
+
+    # dependencies
+    lines.append('  "dependencies": [')
+    for i, dep in enumerate(DEPENDENCIES):
+        comma = "," if i < len(DEPENDENCIES) - 1 else ""
+        lines.append('    "{}"{}'.format(dep, comma))
+    lines.append("  ],")
+
+    # exclusions
+    lines.append('  "exclusions": [')
+    for i, exc in enumerate(EXCLUSIONS):
+        comma = "," if i < len(EXCLUSIONS) - 1 else ""
+        lines.append('    "{}"{}'.format(exc, comma))
+    lines.append("  ],")
+
+    # booleans
+    lines.append('  "fetch_sources": {},'.format("true" if FETCH_SOURCES else "false"))
+    lines.append('  "fetch_javadoc": {},'.format("true" if FETCH_JAVADOC else "false"))
+    lines.append('  "resolver": "coursier"')
+
+    lines.append("}")
+    return "\n".join(lines)
+
+def _pin_impl(ctx):
+    """Pin JVM dependencies using jvmdeer."""
+
+    # Get project root path
+    project_root = str(ctx.root())
+
+    # Generate deps.json content
+    deps_json_content = _generate_deps_json()
+
+    # Get the actions factory
+    bxl_actions = ctx.bxl_actions()
+    actions = bxl_actions.actions
+
+    # Write deps.json to an artifact
+    deps_json_artifact = actions.write("deps.json", deps_json_content)
+
+    # Run jvmdeer using the artifact directly (Buck will provide the path)
+    output_dir = "{}/third_party/jvm".format(project_root)
+
+    result = actions.declare_output("result.txt")
+
+    # Lockfile goes alongside BUCK file for consistency
+    lockfile_path = "{}/deps.lock".format(output_dir)
+
+    # Build the shell command that runs jvmdeer and writes result
+    # We use /bin/sh -c to chain jvmdeer with writing the output marker
+    shell_cmd = cmd_args([
+        "/bin/sh", "-c",
+        cmd_args(
+            "jvmdeer sync --config \"$1\" --output \"$2\" --lockfile \"$3\" && echo 'success' > \"$4\"",
+            hidden = [deps_json_artifact, result.as_output()],
+        ),
+        "--",  # End of sh options
+        deps_json_artifact,
+        output_dir,
+        lockfile_path,
+        result.as_output(),
+    ])
+
+    actions.run(
+        shell_cmd,
+        category = "jvmdeer_sync",
+        local_only = True,
+    )
+
+    # Print status first
+    ctx.output.print("=" * 60)
+    ctx.output.print("JVM Dependency Pin")
+    ctx.output.print("=" * 60)
+    ctx.output.print("")
+    ctx.output.print("Project root: {}".format(project_root))
+    ctx.output.print("")
+    ctx.output.print("Configuration (from deps.bzl):")
+    ctx.output.print("  {} dependencies".format(len(DEPENDENCIES)))
+    ctx.output.print("  {} repositories".format(len(REPOSITORIES)))
+    ctx.output.print("  {} exclusions".format(len(EXCLUSIONS)))
+    ctx.output.print("")
+    ctx.output.print("Running jvmdeer sync...")
+    ctx.output.print("")
+
+    # Ensure the result artifact, which triggers the jvmdeer action
+    ensured = ctx.output.ensure(result)
+
+    ctx.output.print("Done! Generated files in {}/".format(output_dir))
+    ctx.output.print("")
+    ctx.output.print("Next steps:")
+    ctx.output.print("  1. Review generated files in third_party/jvm/:")
+    ctx.output.print("     - BUCK (dependency targets)")
+    ctx.output.print("     - deps.lock (resolved versions + checksums)")
+    ctx.output.print("  2. git add third_party/jvm/BUCK third_party/jvm/deps.lock")
+    ctx.output.print("  3. Use deps: //third_party/jvm:<artifact_name>")
+
+pin = bxl_main(
+    impl = _pin_impl,
+    cli_args = {},
+)

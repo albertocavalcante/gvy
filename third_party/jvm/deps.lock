@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "artifacts": [
+    {
+      "coordinate": "com.google.code.gson:gson:2.13.2",
+      "group_id": "com.google.code.gson",
+      "artifact_id": "gson",
+      "version": "2.13.2",
+      "sha256": "dd0ce1b55a3ed2080cb70f9c655850cda86c206862310009dcb5e5c95265a5e0",
+      "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "com.google.errorprone:error_prone_annotations:2.41.0",
+      "group_id": "com.google.errorprone",
+      "artifact_id": "error_prone_annotations",
+      "version": "2.41.0",
+      "sha256": "a56e782b5b50811ac204073a355a21d915a2107fce13ec711331ad036f660fcc",
+      "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "org.apache.groovy:groovy:4.0.30",
+      "group_id": "org.apache.groovy",
+      "artifact_id": "groovy",
+      "version": "4.0.30",
+      "sha256": "7f1c5221a9350642391c1468e8ed83856f760597980fdf90300dbd69930d6d1b",
+      "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "org.apache.groovy:groovy-json:4.0.30",
+      "group_id": "org.apache.groovy",
+      "artifact_id": "groovy-json",
+      "version": "4.0.30",
+      "sha256": "bdb15ae7a030327b6cdcec9af1fafcfc9b657dcf29b38a02c956abb17c6cfc22",
+      "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "org.apache.groovy:groovy-templates:4.0.30",
+      "group_id": "org.apache.groovy",
+      "artifact_id": "groovy-templates",
+      "version": "4.0.30",
+      "sha256": "95ba48a107565868041539d346a14b5a804954d9a249ec2e82e201643f95872b",
+      "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "org.apache.groovy:groovy-xml:4.0.30",
+      "group_id": "org.apache.groovy",
+      "artifact_id": "groovy-xml",
+      "version": "4.0.30",
+      "sha256": "46413dad69ccab030ca9f31d1eecd6341090386615c983a1afbe45930519ed73",
+      "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "org.eclipse.lsp4j:org.eclipse.lsp4j:0.24.0",
+      "group_id": "org.eclipse.lsp4j",
+      "artifact_id": "org.eclipse.lsp4j",
+      "version": "0.24.0",
+      "sha1": "06a0653487ea58604fc0a4fe3cdad8324b4ee3f6",
+      "repository": "https://repo1.maven.org/maven2/"
+    },
+    {
+      "coordinate": "org.eclipse.lsp4j:org.eclipse.lsp4j.jsonrpc:0.24.0",
+      "group_id": "org.eclipse.lsp4j",
+      "artifact_id": "org.eclipse.lsp4j.jsonrpc",
+      "version": "0.24.0",
+      "sha1": "27512deb3601e0cbf71d61d1a5611fb99687ab8e",
+      "repository": "https://repo1.maven.org/maven2/"
+    }
+  ]
+}
