@@ -12,7 +12,7 @@
 #   1. Change KOTLIN_VERSION in defs.bzl
 #   2. Update SHA1 hashes (get from Maven Central: <artifact>-<version>.jar.sha1)
 
-load(":defs.bzl", "KOTLIN_VERSION", "KOTLINX_COROUTINES_VERSION", "kotlin_jar", "maven_jar")
+load(":defs.bzl", "KOTLINX_COROUTINES_VERSION", "kotlin_jar", "maven_jar")
 
 # ============================================================================
 # Kotlin core libraries

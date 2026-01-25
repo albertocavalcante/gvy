@@ -17,7 +17,7 @@ def kotlin_jar(name, artifact, sha1, version = None, group = "org.jetbrains.kotl
         group: Maven group ID (defaults to org.jetbrains.kotlin)
         **kwargs: Additional args passed to prebuilt_jar
     """
-    if version == None:
+    if version is None:
         version = KOTLIN_VERSION
 
     url = "mvn:{}:{}:jar:{}".format(group, artifact, version)
@@ -45,16 +45,11 @@ def maven_jar(name, group, artifact, version, sha1, **kwargs):
         sha1: SHA1 hash of the JAR
         **kwargs: Additional args passed to prebuilt_jar
     """
-    url = "mvn:{}:{}:jar:{}".format(group, artifact, version)
-
-    native.remote_file(
-        name = name + "_jar",
-        out = "{}-{}.jar".format(artifact, version),
-        sha1 = sha1,
-        url = url,
-    )
-    native.prebuilt_jar(
+    kotlin_jar(
         name = name,
-        binary_jar = ":{}_jar".format(name),
+        group = group,
+        artifact = artifact,
+        version = version,
+        sha1 = sha1,
         **kwargs
     )

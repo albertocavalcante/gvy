@@ -208,7 +208,13 @@ jobs:
           # Build all targets with explicit target platform
           # The --target-platforms flag is required because the prelude's
           # genrule rule uses select() which needs platform configuration.
-          buck2 build //... --target-platforms=${{ env.TARGET_PLATFORM }}
+          # Pass JAVA_HOME config so the toolchain can find the JDK
+          buck2 build //... \
+            --target-platforms=${{ env.TARGET_PLATFORM }} \
+            --config java.java_home="$JAVA_HOME"
 
       - name: Buck2 build Kotlin example
-        run: buck2 build //examples/kotlin:hello_lib --target-platforms=${{ env.TARGET_PLATFORM }}
+        run: |
+          buck2 build //examples/kotlin:hello_lib \
+            --target-platforms=${{ env.TARGET_PLATFORM }} \
+            --config java.java_home="$JAVA_HOME"

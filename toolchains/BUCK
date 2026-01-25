@@ -47,12 +47,6 @@ system_java_tool(
 )
 
 system_java_tool(
-    name = "jar_tool",
-    tool_name = JAVA_HOME + "/bin/jar",
-    visibility = ["PUBLIC"],
-)
-
-system_java_tool(
     name = "jlink_tool",
     tool_name = JAVA_HOME + "/bin/jlink",
     visibility = ["PUBLIC"],
@@ -81,14 +75,10 @@ system_java_bootstrap_toolchain(
     visibility = ["PUBLIC"],
 )
 
-# Duplicate for java_bootstrap (toolchain rules can't be aliased)
-system_java_bootstrap_toolchain(
+# Alias for java_bootstrap
+alias(
     name = "java_bootstrap",
-    java = ":java_tool",
-    javac = ":javac_tool",
-    jlink = ":jlink_tool",
-    jmod = ":jmod_tool",
-    jrt_fs_jar = ":jrt_fs_jar",
+    actual = ":java",
     visibility = ["PUBLIC"],
 )
 
@@ -100,16 +90,16 @@ system_prebuilt_jar_bootstrap_toolchain(
 )
 
 # Alias for prebuilt_jar to use our toolchain
-system_prebuilt_jar_bootstrap_toolchain(
+alias(
     name = "prebuilt_jar",
-    java = ":java_tool",
+    actual = ":prebuilt_jar_bootstrap",
     visibility = ["PUBLIC"],
 )
 
 # Additional alias for prebuilt_jar_bootstrap_no_snapshot
-system_prebuilt_jar_bootstrap_toolchain(
+alias(
     name = "prebuilt_jar_bootstrap_no_snapshot",
-    java = ":java_tool",
+    actual = ":prebuilt_jar_bootstrap",
     visibility = ["PUBLIC"],
 )
 
