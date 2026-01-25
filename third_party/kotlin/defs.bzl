@@ -17,7 +17,7 @@ def kotlin_jar(name, artifact, sha1, version = None, group = "org.jetbrains.kotl
         group: Maven group ID (defaults to org.jetbrains.kotlin)
         **kwargs: Additional args passed to prebuilt_jar
     """
-    if version is None:
+    if version == None:
         version = KOTLIN_VERSION
 
     url = "mvn:{}:{}:jar:{}".format(group, artifact, version)
