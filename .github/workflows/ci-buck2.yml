@@ -44,6 +44,9 @@ env:
   # Buck2 version - pinned for reproducible builds
   # Update by checking: https://github.com/facebook/buck2/releases
   BUCK2_VERSION: "2026-01-19"
+  # Buck2 prelude commit - pinned for reproducible builds
+  # Update by checking: https://github.com/facebook/buck2-prelude/commits/main
+  BUCK2_PRELUDE_COMMIT: "995098bdde54250a15887935df4e9bd0cda28ba7"
   # Target platform for builds (required for rules using select())
   TARGET_PLATFORM: prelude//platforms:default
 
@@ -56,7 +59,7 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -83,12 +86,15 @@ jobs:
 
       - name: Initialize Buck2 prelude
         run: |
-          # Clone the prelude if not present
+          # Clone the prelude at pinned commit for reproducibility
           if [ ! -d "prelude" ]; then
-            echo "Fetching Buck2 prelude..."
-            git clone --depth 1 https://github.com/facebook/buck2-prelude.git prelude
+            echo "Fetching Buck2 prelude at commit ${{ env.BUCK2_PRELUDE_COMMIT }}..."
+            git clone https://github.com/facebook/buck2-prelude.git prelude
+            cd prelude
+            git checkout "${{ env.BUCK2_PRELUDE_COMMIT }}"
+            cd ..
           fi
-          echo "Prelude ready"
+          echo "Prelude ready at commit $(cd prelude && git rev-parse --short HEAD)"
 
       - name: Lint BUCK files
         run: |
@@ -119,13 +125,13 @@ jobs:
       contents: read
 
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Set up JDK 21
-        uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
         with:
           distribution: temurin
           java-version: 21
@@ -161,12 +167,15 @@ jobs:
 
       - name: Initialize Buck2 prelude
         run: |
-          # Clone the prelude if not present
+          # Clone the prelude at pinned commit for reproducibility
           if [ ! -d "prelude" ]; then
-            echo "Fetching Buck2 prelude..."
-            git clone --depth 1 https://github.com/facebook/buck2-prelude.git prelude
+            echo "Fetching Buck2 prelude at commit ${{ env.BUCK2_PRELUDE_COMMIT }}..."
+            git clone https://github.com/facebook/buck2-prelude.git prelude
+            cd prelude
+            git checkout "${{ env.BUCK2_PRELUDE_COMMIT }}"
+            cd ..
           fi
-          echo "Prelude ready"
+          echo "Prelude ready at commit $(cd prelude && git rev-parse --short HEAD)"
 
       - name: Buck2 audit cells
         run: |

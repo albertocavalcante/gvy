@@ -7,7 +7,7 @@
 #   - genrule.bzl  : system_genrule_toolchain (for genrule())
 #   - cxx.bzl      : system_cxx_toolchain (for C/C++ builds)
 #   - java.bzl     : system_java_* (for Java builds)
-#   - kotlin.bzl   : kotlincd_toolchain (for Kotlin builds)
+#   - kotlin.bzl   : kotlin_toolchain (for Kotlin builds)
 #   - python.bzl   : remote_python_toolchain (for Python builds)
 #   - rust.bzl     : system_rust_toolchain (for Rust builds)
 #   - go.bzl       : system_go_toolchain (for Go builds)
