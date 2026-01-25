@@ -75,10 +75,14 @@ system_java_bootstrap_toolchain(
     visibility = ["PUBLIC"],
 )
 
-# Alias for java_bootstrap
-alias(
+# Duplicate for java_bootstrap (toolchain rules can't be aliased)
+system_java_bootstrap_toolchain(
     name = "java_bootstrap",
-    actual = ":java",
+    java = ":java_tool",
+    javac = ":javac_tool",
+    jlink = ":jlink_tool",
+    jmod = ":jmod_tool",
+    jrt_fs_jar = ":jrt_fs_jar",
     visibility = ["PUBLIC"],
 )
 
@@ -90,16 +94,16 @@ system_prebuilt_jar_bootstrap_toolchain(
 )
 
 # Alias for prebuilt_jar to use our toolchain
-alias(
+system_prebuilt_jar_bootstrap_toolchain(
     name = "prebuilt_jar",
-    actual = ":prebuilt_jar_bootstrap",
+    java = ":java_tool",
     visibility = ["PUBLIC"],
 )
 
 # Additional alias for prebuilt_jar_bootstrap_no_snapshot
-alias(
+system_prebuilt_jar_bootstrap_toolchain(
     name = "prebuilt_jar_bootstrap_no_snapshot",
-    actual = ":prebuilt_jar_bootstrap",
+    java = ":java_tool",
     visibility = ["PUBLIC"],
 )
 
