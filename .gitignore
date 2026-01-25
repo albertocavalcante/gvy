@@ -73,3 +73,9 @@ user.bazelrc
 bazel-*
 .bazelproject
 # Note: maven_install.json is tracked for reproducible builds
+
+# Buck2
+buck-out/
+prelude/
+.buck2-prelude/
+user.buckconfig

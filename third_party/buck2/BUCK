@@ -1,0 +1,22 @@
+# Third-party dependencies for Buck2
+#
+# This directory is reserved for external dependency definitions such as:
+# - Maven/Gradle artifact imports
+# - External tool configurations
+# - Remote file downloads
+#
+# Example: Downloading an external tool
+#
+# http_archive(
+#     name = "ktlint",
+#     urls = ["https://github.com/pinterest/ktlint/releases/download/1.0.0/ktlint"],
+#     sha256 = "...",
+# )
+#
+# Example: Prebuilt JAR
+#
+# prebuilt_jar(
+#     name = "guava",
+#     binary_jar = "guava-32.1.2-jre.jar",
+#     visibility = ["PUBLIC"],
+# )

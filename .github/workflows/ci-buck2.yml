@@ -1,0 +1,190 @@
+name: CI (Buck2)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.buckroot'
+      - '.buckconfig'
+      - '.buckversion'
+      - 'BUCK'
+      - '**/BUCK'
+      - '**/*.bzl'
+      - 'platforms/**'
+      - 'toolchains/**'
+      - 'examples/**'
+      - 'third_party/buck2/**'
+      - '.github/workflows/ci-buck2.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.buckroot'
+      - '.buckconfig'
+      - '.buckversion'
+      - 'BUCK'
+      - '**/BUCK'
+      - '**/*.bzl'
+      - 'platforms/**'
+      - 'toolchains/**'
+      - 'examples/**'
+      - 'third_party/buck2/**'
+      - '.github/workflows/ci-buck2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Buck2 version to use (latest prebuilt)
+  BUCK2_VERSION: latest
+  # Target platform for builds (required for rules using select())
+  TARGET_PLATFORM: prelude//platforms:default
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    name: Lint (Starlark)
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Buck2
+        run: |
+          set -euo pipefail
+
+          # Download Buck2
+          BUCK2_URL="https://github.com/facebook/buck2/releases/download/${{ env.BUCK2_VERSION }}/buck2-x86_64-unknown-linux-gnu.zst"
+          echo "Downloading Buck2 from: $BUCK2_URL"
+          curl -fsSL "$BUCK2_URL" -o buck2.zst
+
+          # Decompress
+          sudo apt-get update && sudo apt-get install -y zstd
+          zstd -d buck2.zst -o buck2
+
+          # Install
+          chmod +x buck2
+          sudo mv buck2 /usr/local/bin/
+
+          # Verify
+          buck2 --version
+
+      - name: Initialize Buck2 prelude
+        run: |
+          # Clone the prelude if not present
+          if [ ! -d "prelude" ]; then
+            echo "Fetching Buck2 prelude..."
+            git clone --depth 1 https://github.com/facebook/buck2-prelude.git prelude
+          fi
+          echo "Prelude ready"
+
+      - name: Lint BUCK files
+        run: |
+          # Find all BUCK files (excluding prelude which is external)
+          # Use xargs to properly handle the file list
+          echo "Finding BUCK files to lint..."
+          find . -name 'BUCK' -not -path './prelude/*' | sort | tee /tmp/buck_files.txt
+          echo ""
+          echo "Running starlark lint..."
+          xargs buck2 starlark lint < /tmp/buck_files.txt
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-amd64
+            buck2_target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            name: darwin-arm64
+            buck2_target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@7a6d8a8234af8eb26422e24e3006232cccaa061b # v4.6.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Buck2
+        run: |
+          set -euo pipefail
+
+          # Download Buck2
+          BUCK2_URL="https://github.com/facebook/buck2/releases/download/${{ env.BUCK2_VERSION }}/buck2-${{ matrix.buck2_target }}.zst"
+          echo "Downloading Buck2 from: $BUCK2_URL"
+          curl -fsSL "$BUCK2_URL" -o buck2.zst
+
+          # Decompress
+          if command -v zstd &> /dev/null; then
+            zstd -d buck2.zst -o buck2
+          else
+            # Install zstd if not available
+            if [[ "${{ runner.os }}" == "Linux" ]]; then
+              sudo apt-get update && sudo apt-get install -y zstd
+            else
+              brew install zstd
+            fi
+            zstd -d buck2.zst -o buck2
+          fi
+
+          # Install
+          chmod +x buck2
+          sudo mv buck2 /usr/local/bin/
+
+          # Verify
+          buck2 --version
+
+      - name: Initialize Buck2 prelude
+        run: |
+          # Clone the prelude if not present
+          if [ ! -d "prelude" ]; then
+            echo "Fetching Buck2 prelude..."
+            git clone --depth 1 https://github.com/facebook/buck2-prelude.git prelude
+          fi
+          echo "Prelude ready"
+
+      - name: Buck2 audit cells
+        run: |
+          # Verify cell configuration
+          buck2 audit cell
+
+      - name: Buck2 targets
+        run: |
+          # List all targets to verify parsing
+          buck2 targets //...
+
+      - name: Buck2 build
+        run: |
+          # Build all targets with explicit target platform
+          # The --target-platforms flag is required because the prelude's
+          # genrule rule uses select() which needs platform configuration.
+          buck2 build //... --target-platforms=${{ env.TARGET_PLATFORM }}
+
+      - name: Buck2 run examples
+        run: |
+          # Verify examples work
+          buck2 run //examples/hello:greet --target-platforms=${{ env.TARGET_PLATFORM }}

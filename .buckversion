@@ -1,0 +1,4 @@
+# Buck2 version for this project.
+# Use "latest" to track the most recent release, or pin to a specific version.
+# See: https://github.com/facebook/buck2/releases
+latest
