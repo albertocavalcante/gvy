@@ -50,6 +50,13 @@ env:
   # Target platform for builds (required for rules using select())
   TARGET_PLATFORM: prelude//platforms:default
 
+# TODO(#1037): Explore using dtolnay/install-buck2 action for simpler setup
+#   - Handles version pinning automatically
+#   - Can checkout prelude at matching commit via prelude-submodule input
+#   - Outputs prelude-hash for cache keys
+#   - See: https://github.com/dtolnay/install-buck2
+#   - Also: https://github.com/marketplace/actions/setup-buck2
+
 jobs:
   lint:
     runs-on: ubuntu-24.04
@@ -84,11 +91,17 @@ jobs:
           # Verify
           buck2 --version
 
+      - name: Cache Buck2 prelude
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: prelude
+          key: buck2-prelude-${{ env.BUCK2_PRELUDE_COMMIT }}
+
       - name: Initialize Buck2 prelude
         run: |
-          # Clone the prelude at pinned commit for reproducibility
-          if [ ! -d "prelude" ]; then
+          if [ ! -d "prelude/.git" ]; then
             echo "Fetching Buck2 prelude at commit ${{ env.BUCK2_PRELUDE_COMMIT }}..."
+            rm -rf prelude
             git clone https://github.com/facebook/buck2-prelude.git prelude
             cd prelude
             git checkout "${{ env.BUCK2_PRELUDE_COMMIT }}"
@@ -99,7 +112,6 @@ jobs:
       - name: Lint BUCK files
         run: |
           # Find all BUCK files (excluding prelude which is external)
-          # Use xargs to properly handle the file list
           echo "Finding BUCK files to lint..."
           find . -name 'BUCK' -not -path './prelude/*' | sort | tee /tmp/buck_files.txt
           echo ""
@@ -165,11 +177,17 @@ jobs:
           # Verify
           buck2 --version
 
+      - name: Cache Buck2 prelude
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: prelude
+          key: buck2-prelude-${{ env.BUCK2_PRELUDE_COMMIT }}
+
       - name: Initialize Buck2 prelude
         run: |
-          # Clone the prelude at pinned commit for reproducibility
-          if [ ! -d "prelude" ]; then
+          if [ ! -d "prelude/.git" ]; then
             echo "Fetching Buck2 prelude at commit ${{ env.BUCK2_PRELUDE_COMMIT }}..."
+            rm -rf prelude
             git clone https://github.com/facebook/buck2-prelude.git prelude
             cd prelude
             git checkout "${{ env.BUCK2_PRELUDE_COMMIT }}"
@@ -178,14 +196,10 @@ jobs:
           echo "Prelude ready at commit $(cd prelude && git rev-parse --short HEAD)"
 
       - name: Buck2 audit cells
-        run: |
-          # Verify cell configuration
-          buck2 audit cell
+        run: buck2 audit cell
 
       - name: Buck2 targets
-        run: |
-          # List all targets to verify parsing
-          buck2 targets //...
+        run: buck2 targets //...
 
       - name: Buck2 build
         run: |
@@ -195,6 +209,4 @@ jobs:
           buck2 build //... --target-platforms=${{ env.TARGET_PLATFORM }}
 
       - name: Buck2 run examples
-        run: |
-          # Verify examples work
-          buck2 run //examples/hello:greet --target-platforms=${{ env.TARGET_PLATFORM }}
+        run: buck2 run //examples/hello:greet --target-platforms=${{ env.TARGET_PLATFORM }}
