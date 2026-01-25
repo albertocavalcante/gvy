@@ -15,6 +15,7 @@ on:
       - 'toolchains/**'
       - 'examples/**'
       - 'third_party/buck2/**'
+      - 'third_party/kotlin/**'
       - '.github/workflows/ci-buck2.yml'
   pull_request:
     branches:
@@ -30,6 +31,7 @@ on:
       - 'toolchains/**'
       - 'examples/**'
       - 'third_party/buck2/**'
+      - 'third_party/kotlin/**'
       - '.github/workflows/ci-buck2.yml'
   workflow_dispatch:
 
@@ -208,5 +210,5 @@ jobs:
           # genrule rule uses select() which needs platform configuration.
           buck2 build //... --target-platforms=${{ env.TARGET_PLATFORM }}
 
-      - name: Buck2 run examples
-        run: buck2 run //examples/hello:greet --target-platforms=${{ env.TARGET_PLATFORM }}
+      - name: Buck2 build Kotlin example
+        run: buck2 build //examples/kotlin:hello_lib --target-platforms=${{ env.TARGET_PLATFORM }}
