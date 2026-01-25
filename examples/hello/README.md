@@ -10,14 +10,17 @@ This directory contains minimal Buck2 examples to verify the build system works.
 
 ## Usage
 
+Note: All commands require `--target-platforms=prelude//platforms:default` due to the prelude's use of `select()` in
+rule definitions.
+
 ```bash
 # Build all targets in this package
-buck2 build //examples/hello/...
+buck2 build //examples/hello/... --target-platforms=prelude//platforms:default
 
 # Run the greeting script
-buck2 run //examples/hello:greet
-buck2 run //examples/hello:greet -- "Buck2 User"
+buck2 run //examples/hello:greet --target-platforms=prelude//platforms:default
+buck2 run //examples/hello:greet --target-platforms=prelude//platforms:default -- "Buck2 User"
 
 # Show the generated file
-buck2 build //examples/hello:hello --show-output
+buck2 build //examples/hello:hello --show-output --target-platforms=prelude//platforms:default
 ```

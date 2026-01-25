@@ -41,8 +41,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  # Buck2 version to use (latest prebuilt)
-  BUCK2_VERSION: latest
+  # Buck2 version - pinned for reproducible builds
+  # Update by checking: https://github.com/facebook/buck2/releases
+  BUCK2_VERSION: "2026-01-19"
   # Target platform for builds (required for rules using select())
   TARGET_PLATFORM: prelude//platforms:default
 
