@@ -1,0 +1,17 @@
+# Platform definitions for Buck2
+#
+# NOTE: This project uses prelude//platforms:default as the execution
+# and target platform. This file is reserved for future custom platform
+# definitions if needed.
+#
+# See prelude/platforms/BUCK for the platform implementation.
+# See prelude/platforms/defs.bzl for the host_configuration helper.
+
+# Future: Define custom platforms for cross-compilation or remote execution
+# platform(
+#     name = "linux-x86_64",
+#     constraint_values = [
+#         "prelude//cpu:x86_64",
+#         "prelude//os:linux",
+#     ],
+# )

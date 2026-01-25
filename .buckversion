@@ -1,0 +1,4 @@
+# Buck2 version for this project.
+# Pin to a specific version for reproducible builds.
+# See: https://github.com/facebook/buck2/releases
+2026-01-19

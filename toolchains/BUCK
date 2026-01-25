@@ -1,0 +1,33 @@
+# Toolchain definitions for Buck2
+#
+# Toolchains configure the build tools used by Buck2 rules.
+# We use the prelude's system toolchains which detect tools from the host system.
+#
+# Available toolchains in prelude/toolchains/:
+#   - genrule.bzl  : system_genrule_toolchain (for genrule())
+#   - cxx.bzl      : system_cxx_toolchain (for C/C++ builds)
+#   - java.bzl     : system_java_* (for Java builds)
+#   - kotlin.bzl   : kotlin_toolchain (for Kotlin builds)
+#   - python.bzl   : remote_python_toolchain (for Python builds)
+#   - rust.bzl     : system_rust_toolchain (for Rust builds)
+#   - go.bzl       : system_go_toolchain (for Go builds)
+#
+# See prelude/toolchains/demo.bzl for a comprehensive example.
+
+load("@prelude//toolchains:genrule.bzl", "system_genrule_toolchain")
+
+# Genrule toolchain - required for genrule() and sh_binary() targets.
+# This provides the basic build infrastructure for command-based rules.
+system_genrule_toolchain(
+    name = "genrule",
+    visibility = ["PUBLIC"],
+)
+
+# Future: Add toolchains for Kotlin/JVM builds
+# load("@prelude//toolchains:java.bzl", "system_java_bootstrap_toolchain")
+# load("@prelude//toolchains:kotlin.bzl", "system_kotlin_bootstrap_toolchain")
+#
+# system_java_bootstrap_toolchain(
+#     name = "java_bootstrap",
+#     visibility = ["PUBLIC"],
+# )

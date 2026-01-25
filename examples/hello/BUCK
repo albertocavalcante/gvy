@@ -1,0 +1,25 @@
+# Example buildable targets for Buck2
+#
+# These demonstrate Buck2's basic functionality and serve as
+# verification that the build system is working correctly.
+
+# Simple genrule that produces a text file
+# This is the most minimal target that actually builds something.
+genrule(
+    name = "hello",
+    out = "hello.txt",
+    cmd = "echo 'Hello from Buck2!' > $OUT",
+)
+
+# Shell script example using sh_binary
+# Demonstrates how to package and run a shell script.
+sh_binary(
+    name = "greet",
+    main = "greet.sh",
+)
+
+# Export a file for use by other targets
+export_file(
+    name = "readme",
+    src = "README.md",
+)

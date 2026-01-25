@@ -1,0 +1,212 @@
+name: CI (Buck2)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.buckroot'
+      - '.buckconfig'
+      - '.buckversion'
+      - 'BUCK'
+      - '**/BUCK'
+      - '**/*.bzl'
+      - 'platforms/**'
+      - 'toolchains/**'
+      - 'examples/**'
+      - 'third_party/buck2/**'
+      - '.github/workflows/ci-buck2.yml'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.buckroot'
+      - '.buckconfig'
+      - '.buckversion'
+      - 'BUCK'
+      - '**/BUCK'
+      - '**/*.bzl'
+      - 'platforms/**'
+      - 'toolchains/**'
+      - 'examples/**'
+      - 'third_party/buck2/**'
+      - '.github/workflows/ci-buck2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Buck2 version - pinned for reproducible builds
+  # Update by checking: https://github.com/facebook/buck2/releases
+  BUCK2_VERSION: "2026-01-19"
+  # Buck2 prelude commit - pinned for reproducible builds
+  # Update by checking: https://github.com/facebook/buck2-prelude/commits/main
+  BUCK2_PRELUDE_COMMIT: "995098bdde54250a15887935df4e9bd0cda28ba7"
+  # Target platform for builds (required for rules using select())
+  TARGET_PLATFORM: prelude//platforms:default
+
+# TODO(#1037): Explore using dtolnay/install-buck2 action for simpler setup
+#   - Handles version pinning automatically
+#   - Can checkout prelude at matching commit via prelude-submodule input
+#   - Outputs prelude-hash for cache keys
+#   - See: https://github.com/dtolnay/install-buck2
+#   - Also: https://github.com/marketplace/actions/setup-buck2
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    name: Lint (Starlark)
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install Buck2
+        run: |
+          set -euo pipefail
+
+          # Download Buck2
+          BUCK2_URL="https://github.com/facebook/buck2/releases/download/${{ env.BUCK2_VERSION }}/buck2-x86_64-unknown-linux-gnu.zst"
+          echo "Downloading Buck2 from: $BUCK2_URL"
+          curl -fsSL "$BUCK2_URL" -o buck2.zst
+
+          # Decompress
+          sudo apt-get update && sudo apt-get install -y zstd
+          zstd -d buck2.zst -o buck2
+
+          # Install
+          chmod +x buck2
+          sudo mv buck2 /usr/local/bin/
+
+          # Verify
+          buck2 --version
+
+      - name: Cache Buck2 prelude
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: prelude
+          key: buck2-prelude-${{ env.BUCK2_PRELUDE_COMMIT }}
+
+      - name: Initialize Buck2 prelude
+        run: |
+          if [ ! -d "prelude/.git" ]; then
+            echo "Fetching Buck2 prelude at commit ${{ env.BUCK2_PRELUDE_COMMIT }}..."
+            rm -rf prelude
+            git clone https://github.com/facebook/buck2-prelude.git prelude
+            cd prelude
+            git checkout "${{ env.BUCK2_PRELUDE_COMMIT }}"
+            cd ..
+          fi
+          echo "Prelude ready at commit $(cd prelude && git rev-parse --short HEAD)"
+
+      - name: Lint BUCK files
+        run: |
+          # Find all BUCK files (excluding prelude which is external)
+          echo "Finding BUCK files to lint..."
+          find . -name 'BUCK' -not -path './prelude/*' | sort | tee /tmp/buck_files.txt
+          echo ""
+          echo "Running starlark lint..."
+          xargs buck2 starlark lint < /tmp/buck_files.txt
+
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            name: linux-amd64
+            buck2_target: x86_64-unknown-linux-gnu
+          - os: macos-15
+            name: darwin-arm64
+            buck2_target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+    name: Build (${{ matrix.name }})
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install Buck2
+        run: |
+          set -euo pipefail
+
+          # Download Buck2
+          BUCK2_URL="https://github.com/facebook/buck2/releases/download/${{ env.BUCK2_VERSION }}/buck2-${{ matrix.buck2_target }}.zst"
+          echo "Downloading Buck2 from: $BUCK2_URL"
+          curl -fsSL "$BUCK2_URL" -o buck2.zst
+
+          # Decompress
+          if command -v zstd &> /dev/null; then
+            zstd -d buck2.zst -o buck2
+          else
+            # Install zstd if not available
+            if [[ "${{ runner.os }}" == "Linux" ]]; then
+              sudo apt-get update && sudo apt-get install -y zstd
+            else
+              brew install zstd
+            fi
+            zstd -d buck2.zst -o buck2
+          fi
+
+          # Install
+          chmod +x buck2
+          sudo mv buck2 /usr/local/bin/
+
+          # Verify
+          buck2 --version
+
+      - name: Cache Buck2 prelude
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: prelude
+          key: buck2-prelude-${{ env.BUCK2_PRELUDE_COMMIT }}
+
+      - name: Initialize Buck2 prelude
+        run: |
+          if [ ! -d "prelude/.git" ]; then
+            echo "Fetching Buck2 prelude at commit ${{ env.BUCK2_PRELUDE_COMMIT }}..."
+            rm -rf prelude
+            git clone https://github.com/facebook/buck2-prelude.git prelude
+            cd prelude
+            git checkout "${{ env.BUCK2_PRELUDE_COMMIT }}"
+            cd ..
+          fi
+          echo "Prelude ready at commit $(cd prelude && git rev-parse --short HEAD)"
+
+      - name: Buck2 audit cells
+        run: buck2 audit cell
+
+      - name: Buck2 targets
+        run: buck2 targets //...
+
+      - name: Buck2 build
+        run: |
+          # Build all targets with explicit target platform
+          # The --target-platforms flag is required because the prelude's
+          # genrule rule uses select() which needs platform configuration.
+          buck2 build //... --target-platforms=${{ env.TARGET_PLATFORM }}
+
+      - name: Buck2 run examples
+        run: buck2 run //examples/hello:greet --target-platforms=${{ env.TARGET_PLATFORM }}

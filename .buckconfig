@@ -1,0 +1,61 @@
+# Buck2 Configuration for Groovy LSP
+# https://buck2.build/docs/
+#
+# Quick reference:
+#   buck2 build //... --target-platforms=prelude//platforms:default
+#   buck2 run //examples/hello:greet --target-platforms=prelude//platforms:default
+#   buck2 starlark lint **/*.bzl BUCK **/BUCK
+#
+# NOTE: The buck2-prelude has some FB-internal references that require stub
+# cells. Some advanced rules may not work until the prelude is fixed upstream.
+
+[cells]
+    # Root cell for this project
+    root = .
+
+    # Buck2 prelude (cloned from github.com/facebook/buck2-prelude)
+    prelude = prelude
+
+    # Project toolchains (genrule, etc.)
+    toolchains = toolchains
+
+    # Stub cells for FB-internal references in the prelude.
+    # These map to prelude to allow parsing, but some rules may
+    # reference targets that don't exist in the open-source prelude.
+    fbsource = prelude
+    fbcode = prelude
+
+[cell_aliases]
+    # Alias for prelude configuration
+    config = prelude
+
+[parser]
+    # Default target platform for builds.
+    # NOTE: Currently requires explicit --target-platforms flag on command line
+    # because some rules (genrule) use select() during rule definition.
+    default_target_platform = prelude//platforms:default
+
+[build]
+    # Execution platform for running actions
+    execution_platforms = prelude//platforms:default
+
+[project]
+    # Directories to ignore during Buck2 file watching and parsing.
+    # These match common build output and IDE directories.
+    ignore = \
+        .git, \
+        .gradle, \
+        .idea, \
+        .kotlin, \
+        bazel-*, \
+        build, \
+        target, \
+        node_modules, \
+        out
+
+[buck2]
+    # Use deferred materialization for faster incremental builds
+    materializations = deferred
+
+    # Digest algorithm for content-addressable storage
+    digest_algorithms = SHA256
