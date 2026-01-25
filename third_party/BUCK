@@ -1,0 +1,7 @@
+# Third-party dependencies for Buck2
+#
+# Subdirectories:
+#   - kotlin/  : Kotlin 2.3.0 compiler and runtime
+#
+# To add more third-party dependencies, create subdirectories
+# with their own BUCK files.

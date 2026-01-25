@@ -1,17 +1,16 @@
 # Root BUCK file for Groovy LSP
 #
-# Buck2 build configuration is being introduced gradually alongside
-# Gradle (primary) and Bazel build systems for comparison/learning.
+# Buck2 build configuration for Kotlin/JVM builds.
+# Uses Kotlin 2.3.0 toolchain defined in //toolchains and //third_party/kotlin.
 #
 # See https://buck2.build/docs/ for Buck2 documentation.
 #
 # Quick start:
 #   buck2 build //... --target-platforms=prelude//platforms:default
-#   buck2 run //examples/hello:greet --target-platforms=prelude//platforms:default
+#   buck2 build //third_party/kotlin:kotlin-compiler-binary
 #
-# Example targets are in //examples/hello/...
-# Toolchains are in //toolchains/...
-
+# Toolchains: //toolchains/...
+# Third-party deps: //third_party/...
+#
 # NOTE: Currently requires --target-platforms flag because the prelude's
-# genrule rule uses select() which needs platform configuration.
-# This is a known limitation with the buck2-prelude for OSS projects.
+# rules use select() which needs platform configuration.

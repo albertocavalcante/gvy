@@ -53,6 +53,16 @@
         node_modules, \
         out
 
+[java]
+    # Java home for toolchain detection.
+    # Override with: buck2 build --config java.java_home=/path/to/jdk
+    # SDKMAN-managed Java 17 (Temurin)
+    java_home = /opt/homebrew/opt/sdkman-cli/libexec/candidates/java/17.0.14-tem
+
+[kotlin]
+    # Kotlin version (metadata only - actual JARs are in //third_party/kotlin)
+    kotlin_version = 2.3.0
+
 [buck2]
     # Use deferred materialization for faster incremental builds
     materializations = deferred
