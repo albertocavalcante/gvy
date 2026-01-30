@@ -53,5 +53,15 @@ steps:
         - jsonPath: $.diagnostics[?(@.source=='Groovy')]
           expect:
             type: EMPTY
+  # Wait for server to become quiescent before shutdown to avoid connection pool race
+  # The async Gradle dependency resolution may still be running after publishDiagnostics
+  - waitNotification:
+      method: groovy/status
+      timeoutMs: 90000 # Gradle resolution can take a while
+      checks:
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
   - shutdown: {}
   - exit: {}
