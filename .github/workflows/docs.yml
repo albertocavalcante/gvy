@@ -29,12 +29,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # v6
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2
         with:
-          node-version: 22
-          cache: npm
-          cache-dependency-path: docs/website/package-lock.json
+          bun-version: latest
 
       - name: Setup Pages
         id: pages
@@ -42,11 +40,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: docs/website
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build
         working-directory: docs/website
-        run: npm run build
+        run: bun run build
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
