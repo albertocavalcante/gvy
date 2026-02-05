@@ -1,0 +1,88 @@
+---
+title: SemanticDB Design
+description: Semantic analysis architecture based on SemanticDB
+sidebar:
+  order: 1
+---
+
+The `semantics` module provides semantic analysis for Groovy source code based on the **SemanticDB** specification.
+
+## Architecture
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│  Groovy Source  │────▶│  Type Inference  │────▶│ SemanticDocument│
+│     Files       │     │   & Analysis     │     │   (per-file)    │
+└─────────────────┘     └──────────────────┘     └────────┬────────┘
+                                                          │
+                                                          ▼
+                                                ┌─────────────────┐
+                                                │ GroovySemanticDB│
+                                                │  (workspace DB) │
+                                                └────────┬────────┘
+                                                          │
+                        ┌─────────────────────────────────┼─────────────────────────────────┐
+                        │                                 │                                 │
+                        ▼                                 ▼                                 ▼
+               ┌────────────────┐              ┌─────────────────┐              ┌─────────────────┐
+               │ Go-to-Definition│              │ Find References │              │  Hover / Types  │
+               └────────────────┘              └─────────────────┘              └─────────────────┘
+```
+
+## What is SemanticDB?
+
+**SemanticDB is a data model and specification for semantic information about programs.**
+
+It was created by the [Scalameta](https://scalameta.org/) project and is used by:
+- [Metals](https://scalameta.org/metals/) (Scala LSP)
+- [Scalafix](https://scalacenter.github.io/scalafix/) (refactoring)
+- [SCIP](https://sourcegraph.com/docs/code-search/code-navigation/writing_an_indexer) (Sourcegraph code intelligence)
+
+### Specification
+
+- [SemanticDB Guide](https://scalameta.org/docs/semanticdb/guide.html)
+- [SemanticDB Specification](https://scalameta.org/docs/semanticdb/specification.html)
+- [Protobuf Schema](https://github.com/scalameta/scalameta/blob/main/semanticdb/semanticdb/semanticdb.proto)
+
+### Core Concepts
+
+| Concept | Description | Example |
+|---------|-------------|---------|
+| **Symbol** | Unique identifier for a definition | `com/example/MyClass#myMethod().` |
+| **SymbolInformation** | Metadata about a symbol | Method `myMethod` returns `String` |
+| **SymbolOccurrence** | Location where a symbol appears | Line 42, columns 10-18, role=REFERENCE |
+
+## Why SemanticDB?
+
+1. **Decoupling**: Clear boundary between producers (compilers) and consumers (IDEs)
+2. **Per-file granularity**: Incremental updates, parallel processing, low memory
+3. **Cross-language**: Navigate between Groovy and Java seamlessly
+4. **Well-defined spec**: Documented schema, versioning, existing ecosystem
+
+## Module Structure
+
+```
+semantics/
+├── core/           # Core SemanticDB implementation
+│   └── db/         # GroovySemanticDB, SemanticDocument
+│   └── calculator/ # Type inference
+├── dsl/            # DSL-specific semantic extensions
+├── native/         # Native (GraalVM) integration
+└── openrewrite/    # OpenRewrite type mapping
+```
+
+## LSP Integration
+
+| Feature | SemanticDB Usage |
+|---------|------------------|
+| **Go to Definition** | `findSymbolDefinition(symbolId)` |
+| **Find References** | `findAllOccurrences(symbolId)` |
+| **Hover** | `SymbolInfo.type` → display type |
+| **Document Symbols** | `SemanticDocument.symbols` |
+| **Workspace Symbols** | Query across all documents |
+
+## References
+
+- [SemanticDB Guide](https://scalameta.org/docs/semanticdb/guide.html)
+- [SemanticDB Specification](https://scalameta.org/docs/semanticdb/specification.html)
+- [SCIP-Java Design](https://github.com/sourcegraph/scip-java/blob/main/docs/design.md)

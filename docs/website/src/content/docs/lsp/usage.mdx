@@ -1,0 +1,38 @@
+---
+title: Usage
+description: How to build and run the Groovy Language Server
+sidebar:
+  order: 1
+---
+
+## Requirements
+
+- Java 17 or newer
+- Groovy 4.0+
+
+## Build
+
+```bash
+./gradlew build
+```
+
+This produces a fat JAR under `build/libs/`.
+
+## Run
+
+### Stdio mode (default)
+
+```bash
+java -jar build/libs/groovy-lsp-<version>.jar
+```
+
+### Socket mode
+
+```bash
+java -jar build/libs/groovy-lsp-<version>.jar socket 8080
+```
+
+## Editors
+
+- **VS Code extension**: See the [editors/code](https://github.com/albertocavalcante/gvy/tree/main/editors/code) directory
+- **Jupyter kernels**: Early WIP in `jupyter/`
