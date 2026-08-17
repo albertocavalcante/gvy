@@ -12,7 +12,7 @@ terraform {
   required_providers {
     mgc = {
       source  = "magalucloud/mgc"
-      version = "~> 0.41.0"
+      version = "~> 0.55.0"
     }
   }
 
