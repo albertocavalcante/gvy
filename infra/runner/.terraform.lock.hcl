@@ -42,18 +42,25 @@ provider "registry.terraform.io/hashicorp/tls" {
 }
 
 provider "registry.terraform.io/magalucloud/mgc" {
-  version     = "0.41.1"
-  constraints = ">= 0.18.0, ~> 0.41.0"
+  version     = "0.55.0"
+  constraints = ">= 0.18.0, ~> 0.55.0"
   hashes = [
-    "h1:rmdh/f9p5PCr+sxwnm3k5xrsMmiVaNa3wVjmKhS0/jg=",
-    "zh:072e80d7bd93473d64f9cdec152de1cbbf47bd85fa22b46bf274d1919a7429b4",
-    "zh:28d6c4c12ac40b25217c2bffc11c4941645686767d53a4361c8d220a08e85bd1",
+    "h1:9HmwH05jnqHAd2BrwCXOKN3+JqGc8lc53Bb+Jxtsvs4=",
+    "h1:N+Nr9zhpbbnEierciOzIW4JfmXjjpRF1/j1x5Ry9d3M=",
+    "h1:OSHKDhyK9QB+V2MnEW1Hc2aS1vPCXzsDG7nwCtQs+/Y=",
+    "h1:Tyo361wvcOpIiYFdKm2kaR7X3+rpDSwbv/J//+vGMcs=",
+    "h1:Z83nTUW98/GYGLlwfgtzpHJARHU54uJznJvoyViPumY=",
+    "h1:a1DNa8wmYBsGgIJ2e6PeownjQ3A4ypBCB089cQy6PEk=",
+    "h1:jPex7VYVeGHJb2LSpbAl2NS7YG7GLd3zratzduuir18=",
+    "h1:oaCI+QcjO47fjmD/2E87J7bXSVYuP+Bcs3NKowrxg+4=",
+    "zh:359cbe1c2df251dcd651f60ddd352d25a5b08213740bb3a69f586c1b89e4132b",
+    "zh:3f25a1f55dce3e511f6daebe9998fe577dfe42f7c0ecd6cf25c34e2270ee01e2",
+    "zh:43e142eb58b9e6179fa7a0bd683d82e18bddbf007b16cea5190f93a99144dfb0",
+    "zh:4e483724b3eb4f618154d14f480fcec21813e0f1a24aa5dc335ef359ea20d739",
+    "zh:5b83755a0a9569173fea8ff7dfca8284d9e1d3efd0005c7f25fbd3590dffe3e9",
     "zh:890df766e9b839623b1f0437355032a3c006226a6c200cd911e15ee1a9014e9f",
-    "zh:89cc085ca7260b7dab77c6684bb14ccc5c588bef93b32ddb8e1382202dde1638",
-    "zh:ba0217adf4f0dfa391fcff2511a584098a1271badc1f702436a7ef3994b2b579",
-    "zh:ce201847e7a43615eb51c0dc245012849156e672f7eb1c57a846beac2b5227ab",
-    "zh:da71da7424758a0776c50177f05078465a62cf4c3255d19bdc748e0bd46aa18b",
-    "zh:e432417ed0fbd82a1b450c81126996ae480843d17908f6e17c6d8999e555830e",
-    "zh:fb71c4857441c88ed7649ec313f5d282b080c6c184aeac9871615484cd1c2f8f",
+    "zh:94c6eb59500b338624a017e017a2123eb8080b5e9fc41d34360a4e6457d1dae8",
+    "zh:e57d4adfce9e43b1e570812a382eefe7c468a6cb51e721105f0d135ccbf6299f",
+    "zh:fe25d598c0460084feec79b4dc887f8a8d8541f3d3febff736670f38e64bcbba",
   ]
 }
