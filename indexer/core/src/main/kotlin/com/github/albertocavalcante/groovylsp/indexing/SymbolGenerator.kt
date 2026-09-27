@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.indexing
 
+import java.util.Base64
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 
@@ -16,8 +17,11 @@ class SymbolGenerator(
         val methodName = methodNode.name
         // TODO: This uses simple names if types are not resolved (CONVERSION phase).
         // For full accuracy, we need SEMANTIC_ANALYSIS to get FQNs.
-        val params = methodNode.parameters.joinToString(",") { it.type.name }
-        val descriptor = "${escapeDescriptor(methodName)}(${escapeDescriptor(params)})."
+        // NUL cannot appear in a JVM type name, so this preserves parameter boundaries.
+        // URL-safe Base64 yields only SCIP simple-identifier characters.
+        val params = methodNode.parameters.joinToString("\u0000") { it.type.name }
+        val disambiguator = Base64.getUrlEncoder().withoutPadding().encodeToString(params.toByteArray(Charsets.UTF_8))
+        val descriptor = "${escapeDescriptor(methodName)}($disambiguator)."
         return "$scheme $manager ${classNode.packageName ?: "."} $version $className#$descriptor"
     }
 
