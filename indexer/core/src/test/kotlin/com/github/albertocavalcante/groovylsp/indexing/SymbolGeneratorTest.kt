@@ -43,7 +43,29 @@ class SymbolGeneratorTest {
 
         val symbol = generator.forMethod(classNode, methodNode)
 
-        assertEquals("scip-groovy maven com.example 0.0.0 com.example.MyClass#myMethod(java.lang.String).", symbol)
+        assertEquals("scip-groovy maven com.example 0.0.0 com.example.MyClass#myMethod(`java.lang.String`).", symbol)
+    }
+
+    @Test
+    fun `method symbol escapes multiple qualified parameter types`() {
+        val generator = SymbolGenerator()
+        val classNode = ClassNode("com.example.MyClass", 0, null)
+        val methodNode = MethodNode(
+            "combine",
+            0,
+            null,
+            arrayOf(
+                Parameter(ClassNode("java.lang.String", 0, null), "left"),
+                Parameter(ClassNode("java.lang.Integer", 0, null), "right"),
+            ),
+            null,
+            null,
+        )
+
+        assertEquals(
+            "scip-groovy maven com.example 0.0.0 com.example.MyClass#combine(`java.lang.String,java.lang.Integer`).",
+            generator.forMethod(classNode, methodNode),
+        )
     }
 
     @Test

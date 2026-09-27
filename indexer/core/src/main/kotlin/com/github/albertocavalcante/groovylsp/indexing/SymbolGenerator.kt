@@ -17,8 +17,19 @@ class SymbolGenerator(
         // TODO: This uses simple names if types are not resolved (CONVERSION phase).
         // For full accuracy, we need SEMANTIC_ANALYSIS to get FQNs.
         val params = methodNode.parameters.joinToString(",") { it.type.name }
-        return "$scheme $manager ${classNode.packageName ?: "."} $version $className#$methodName($params)."
+        val descriptor = "${escapeDescriptor(methodName)}(${escapeDescriptor(params)})."
+        return "$scheme $manager ${classNode.packageName ?: "."} $version $className#$descriptor"
     }
 
     fun local(id: Int): String = "local $id"
+
+    private fun escapeDescriptor(value: String): String =
+        if (value.all(::isSimpleIdentifierChar)) {
+            value
+        } else {
+            "`${value.replace("`", "``")}`"
+        }
+
+    private fun isSimpleIdentifierChar(ch: Char): Boolean =
+        ch in 'a'..'z' || ch in 'A'..'Z' || ch in '0'..'9' || ch == '_' || ch == '+' || ch == '-' || ch == '$'
 }
