@@ -1,8 +1,8 @@
 package com.github.albertocavalcante.groovylsp.indexing
 
-import java.util.Base64
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
+import java.util.Base64
 
 class SymbolGenerator(
     private val scheme: String = "scip-groovy",
