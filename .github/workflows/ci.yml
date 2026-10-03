@@ -121,6 +121,8 @@ jobs:
               - 'gls/**'
               # semantics module (multi-project: core, native, openrewrite, dsl)
               - 'semantics/**'
+              # SCIP indexer modules, including nested indexer/core/src files
+              - 'indexer/**'
               # BSP infrastructure modules
               - 'bsp/**'
               # Single-level modules (e.g., groovy-lsp/src/)
