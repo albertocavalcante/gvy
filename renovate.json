@@ -2,5 +2,27 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
     "config:recommended"
+  ],
+  "packageRules": [
+    {
+      "description": "Keep Maven Resolver on 1.x: 2.x drops transport-http and the supplier artifacts, and maven-embedder 3.9.x is tied to resolver 1.x. Revisit on a Maven 4 migration.",
+      "matchPackageNames": ["org.apache.maven.resolver:**"],
+      "allowedVersions": "<2.0.0"
+    },
+    {
+      "description": "Stay on the -groovy-4.0 Spock variant: the project builds with Groovy 4.0.x (gradle/libs.versions.toml).",
+      "matchPackageNames": ["org.spockframework:**"],
+      "allowedVersions": "/-groovy-4\\.0$/"
+    },
+    {
+      "description": "@types/vscode must not exceed the minor of engines.vscode in editors/code/package.json (^1.103.0); bump both together.",
+      "matchPackageNames": ["@types/vscode"],
+      "allowedVersions": "<1.104.0"
+    },
+    {
+      "description": "infra/runner (self-hosted runner) is disabled/dormant; do not propose updates there.",
+      "matchFileNames": ["infra/runner/**"],
+      "enabled": false
+    }
   ]
 }
