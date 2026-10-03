@@ -536,6 +536,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+    env:
+      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # v6
@@ -581,25 +583,46 @@ jobs:
           fi
           ./gradlew "${args[@]}"
 
-      # SonarCloud (needs coverage reports)
-      - name: SonarCloud Analysis
-        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository))
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          args=(sonar --info)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          ./gradlew "${args[@]}"
-
       - name: Upload Coverage Reports
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: coverage-reports
           path: '**/build/reports/kover/'
           retention-days: 7
+
+      # SonarCloud (needs coverage reports)
+      # SonarCloud is advisory: it must never fail CI (auth or otherwise). See PR description.
+      - name: SonarCloud Analysis
+        id: sonar
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository)) && env.HAS_SONAR_TOKEN == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set +e
+          args=(sonar --info -Dsonar.qualitygate.wait=false)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then args+=("${GRADLE_SCAN_FLAG}"); fi
+          ./gradlew "${args[@]}" 2>&1 | tee sonar.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [[ $rc -eq 0 ]]; then
+            echo "### ✅ SonarCloud analysis uploaded" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if grep -qiE 'HTTP (401|403)|Unauthorized|Forbidden|sonar\.token|Not authorized' sonar.log; then
+            msg="SonarCloud AUTH failure (exit $rc): rotate SONAR_TOKEN or check sonar.projectKey. Analysis skipped; CI continues."
+          else
+            msg="SonarCloud analysis failed (exit $rc): non-blocking, see step log."
+          fi
+          echo "::warning title=SonarCloud::${msg}"
+          echo "### ⚠️ ${msg}" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: SonarCloud skipped (no token)
+        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository)) && env.HAS_SONAR_TOKEN != 'true'
+        run: |
+          echo "::notice title=SonarCloud::SONAR_TOKEN not set; SonarCloud analysis skipped."
+          echo "### ℹ️ SonarCloud skipped: SONAR_TOKEN not set" >> "$GITHUB_STEP_SUMMARY"
 
   # E2E tests run in parallel with coverage (both need build to complete)
   e2e-test:
