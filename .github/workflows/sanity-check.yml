@@ -28,6 +28,8 @@ jobs:
           COMMENT_FILE: ${{ runner.temp }}/large-file-comment.md
         run: |
           if ! bash tools/ci/check-large-files.sh "origin/${BASE_REF}"; then
-            gh pr comment "$PR_NUMBER" --body-file "$COMMENT_FILE"
+            if [[ -f "$COMMENT_FILE" ]]; then
+              gh pr comment "$PR_NUMBER" --body-file "$COMMENT_FILE"
+            fi
             exit 1
           fi
