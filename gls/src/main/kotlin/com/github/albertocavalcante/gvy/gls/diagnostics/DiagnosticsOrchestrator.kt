@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -58,8 +59,10 @@ class DiagnosticsOrchestrator(
      */
     @Suppress("TooGenericExceptionCaught")
     fun trigger(uri: URI, content: String) {
-        // Launch a new diagnostic job
-        val job = coroutineScope.launch {
+        // Create the job lazily so it is registered (and any previous job cancelled) before it starts.
+        // Otherwise a fast job could finish and run its cleanup before registration, leaving a
+        // completed job in the map, and the new job could run while the old one is still active.
+        val job = coroutineScope.launch(start = CoroutineStart.LAZY) {
             val currentJob = coroutineContext[Job]
             try {
                 runCatching {
@@ -107,11 +110,12 @@ class DiagnosticsOrchestrator(
             }
         }
 
-        // Atomically cancel existing job and register new one
+        // Atomically cancel existing job and register new one, then start it
         diagnosticJobs.compute(uri) { _, existingJob ->
             existingJob?.cancel()
             job
         }
+        job.start()
     }
 
     /**
