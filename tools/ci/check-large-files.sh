@@ -16,10 +16,14 @@ checked=0
 violations=0
 report=""
 
-# Capture first so a bad base ref fails loudly (set -e), then feed the loop via a
-# here-string: it runs in the current shell, so the counters survive.
-files=$(git diff --name-only --diff-filter=AM "${base_ref}...HEAD")
-while IFS= read -r file; do
+# Capture to a file first so a bad base ref fails loudly (set -e). Paths are
+# NUL-delimited (-z) so unusual names are not quoted, and every status except
+# deletions (d) is checked, including renames and type changes. Reading from a
+# file keeps the loop in the current shell, so the counters survive.
+paths=$(mktemp)
+trap 'rm -f "${paths}"' EXIT
+git diff -z --name-only --diff-filter=d "${base_ref}...HEAD" >"${paths}"
+while IFS= read -r -d '' file; do
   [[ -f "${file}" ]] || continue
   checked=$((checked + 1))
   size=$(wc -c <"${file}" | tr -d ' ')
@@ -29,7 +33,7 @@ while IFS= read -r file; do
     echo "VIOLATION: ${file} (${hs}, ${size} bytes) exceeds ${max_size} bytes"
     report="${report}| \`${file}\` | ${hs} |"$'\n'
   fi
-done <<<"${files}"
+done <"${paths}"
 
 echo "checked ${checked} files"
 

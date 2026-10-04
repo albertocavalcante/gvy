@@ -20,16 +20,18 @@ jobs:
       - name: Self-test large-file gate
         run: bash tools/ci/check-large-files_test.sh
 
+      # The PR-controlled script runs without a token; only the comment step
+      # below gets GH_TOKEN.
       - name: Check for large files (>700KB)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BASE_REF: ${{ github.base_ref }}
+          COMMENT_FILE: ${{ runner.temp }}/large-file-comment.md
+        run: bash tools/ci/check-large-files.sh "origin/${BASE_REF}"
+
+      - name: Comment large-file report on the PR
+        if: failure() && hashFiles(format('{0}/large-file-comment.md', runner.temp)) != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           COMMENT_FILE: ${{ runner.temp }}/large-file-comment.md
-        run: |
-          if ! bash tools/ci/check-large-files.sh "origin/${BASE_REF}"; then
-            if [[ -f "$COMMENT_FILE" ]]; then
-              gh pr comment "$PR_NUMBER" --body-file "$COMMENT_FILE"
-            fi
-            exit 1
-          fi
+        run: gh pr comment "$PR_NUMBER" --body-file "$COMMENT_FILE"
