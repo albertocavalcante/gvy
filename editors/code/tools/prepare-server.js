@@ -312,7 +312,7 @@ function deriveSelection(cliOptions) {
   const usePinned =
     process.env.GLS_USE_PINNED === "true" || channel === "pinned";
 
-  // Priority: tag > nightly > pinned > latest (default)
+  // Priority: explicit tag > nightly > pinned > latest > pinned default.
   if (explicitTag) {
     return { type: "tag", tag: explicitTag };
   }
@@ -325,7 +325,23 @@ function deriveSelection(cliOptions) {
     return { type: "pinned" };
   }
 
-  return { type: "latest" };
+  if (
+    cliOptions.latest ||
+    channel === "release" ||
+    process.env.USE_LATEST_GLS === "true" ||
+    process.env.USE_LATEST_GROOVY_LSP === "true"
+  ) {
+    return { type: "latest" };
+  }
+
+  return { type: "pinned" };
+}
+
+function requireChecksum(value, artifact) {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/i.test(value)) {
+    throw new Error(`SHA-256 checksum required for ${artifact}`);
+  }
+  return value.toLowerCase();
 }
 
 async function resolveTarget(selection, { authToken } = {}) {
@@ -430,7 +446,7 @@ function sha256File(filePath) {
  * Validates the checksum of the JAR if expected hash is available
  */
 async function verifyChecksum(filePath, expectedHash) {
-  if (!expectedHash) return;
+  expectedHash = requireChecksum(expectedHash, filePath);
   const actual = await sha256File(filePath);
   if (actual !== expectedHash) {
     throw new Error(
@@ -445,6 +461,7 @@ async function verifyChecksum(filePath, expectedHash) {
  * @param {string|null} expectedChecksum - Optional SHA256 checksum
  */
 async function downloadFromUrl(url, expectedChecksum) {
+  expectedChecksum = requireChecksum(expectedChecksum, "URL download");
   const artifact = resolveGitHubArtifactDownload(url);
   const downloadUrl = artifact.downloadUrl;
   const isArtifactZip = artifact.isArtifactZip;
@@ -509,15 +526,8 @@ async function downloadFromUrl(url, expectedChecksum) {
       throw new Error(`Downloaded JAR validation failed: ${error.message}`);
     }
 
-    // Verify checksum if provided
-    if (expectedChecksum) {
-      await verifyChecksum(JAR_PATH, expectedChecksum);
-      console.log("✓ Checksum verified");
-    } else {
-      console.warn(
-        "⚠️  No checksum provided for URL download; skipping verification.",
-      );
-    }
+    await verifyChecksum(JAR_PATH, expectedChecksum);
+    console.log("✓ Checksum verified");
 
     // Write version marker
     const urlObj = new URL(url);
@@ -546,6 +556,7 @@ async function downloadFromUrl(url, expectedChecksum) {
  * Downloads the target release JAR from GitHub
  */
 async function downloadRelease(target) {
+  requireChecksum(target.checksum, target.assetName);
   console.log(
     `Downloading Groovy LSP ${sanitizeForLog(target.tag)} (${sanitizeForLog(target.assetName)})...`,
   );
@@ -840,70 +851,43 @@ async function prepareServer(runtimeOptions = {}) {
 
     console.log(`Requested Groovy LSP selection: ${selectionLabel}`);
     const target = await resolveTarget(requestedSelection, { authToken });
-    if (!target.checksum) {
-      console.warn(
-        `⚠️  No checksum available for ${target.assetName}; proceeding without verification.`,
-      );
-    }
+    target.checksum = requireChecksum(target.checksum, target.assetName);
 
-    const jarExists = fs.existsSync(JAR_PATH);
-    const canVerify = !!target.checksum;
-
-    if (!forceDownload && jarExists) {
+    if (!forceDownload && fs.existsSync(JAR_PATH)) {
       if (installedVersion === target.tag) {
-        if (canVerify) {
-          try {
-            await verifyChecksum(JAR_PATH, target.checksum);
-            console.log(
-              `✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag}`,
-            );
-            return;
-          } catch (checksumError) {
-            console.warn(
-              `Checksum mismatch for existing ${CANONICAL_JAR_NAME}: ${checksumError.message}`,
-            );
-            console.warn("Re-downloading Groovy LSP...");
-            try {
-              fs.unlinkSync(JAR_PATH);
-            } catch (cleanupError) {
-              console.warn(
-                `Warning: Failed to remove corrupted JAR ${JAR_PATH}: ${cleanupError.message}`,
-              );
-            }
-          }
-        } else {
+        try {
+          await verifyChecksum(JAR_PATH, target.checksum);
           console.log(
-            `✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag} (checksum unavailable)`,
+            `✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag}`,
           );
           return;
+        } catch (checksumError) {
+          console.warn(
+            `Checksum mismatch for existing ${CANONICAL_JAR_NAME}: ${checksumError.message}`,
+          );
+          console.warn("Re-downloading Groovy LSP...");
         }
       } else {
-        if (canVerify) {
-          try {
-            await verifyChecksum(JAR_PATH, target.checksum);
-            writeInstalledVersion(target.tag);
-            console.log(
-              `✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag} (version marker refreshed)`,
-            );
-            return;
-          } catch (checksumError) {
-            console.warn(
-              `Existing ${CANONICAL_JAR_NAME} failed checksum: ${checksumError.message}`,
-            );
-            console.warn("Re-downloading Groovy LSP...");
-            try {
-              fs.unlinkSync(JAR_PATH);
-            } catch (cleanupError) {
-              console.warn(
-                `Warning: Failed to remove corrupted JAR ${JAR_PATH}: ${cleanupError.message}`,
-              );
-            }
-          }
-        } else {
+        try {
+          await verifyChecksum(JAR_PATH, target.checksum);
+          writeInstalledVersion(target.tag);
           console.log(
-            `Existing ${CANONICAL_JAR_NAME} does not match requested version (${target.tag}); downloading fresh copy...`,
+            `✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag} (version marker refreshed)`,
           );
+          return;
+        } catch (checksumError) {
+          console.warn(
+            `Existing ${CANONICAL_JAR_NAME} failed checksum: ${checksumError.message}`,
+          );
+          console.warn("Re-downloading Groovy LSP...");
         }
+      }
+      try {
+        fs.unlinkSync(JAR_PATH);
+      } catch (cleanupError) {
+        console.warn(
+          `Warning: Failed to remove corrupted JAR ${JAR_PATH}: ${cleanupError.message}`,
+        );
       }
     }
 
@@ -1066,11 +1050,11 @@ Usage: node tools/prepare-server.js [options]
 Options:
   --tag <tag>            Download a specific Groovy LSP release tag (e.g. v0.4.8, nightly-*)
   --nightly              Download the latest nightly/prerelease build
-  --latest               Download the latest stable release (now the default)
+  --latest               Download the latest stable release
   --channel <name>       Select channel: nightly | release | pinned
   --local <path>         Use a specific local groovy-lsp JAR (skips download)
   --url <url>            Download from a URL (supports GitHub Actions artifacts)
-  --checksum <sha256>    Optional SHA256 checksum for URL downloads
+  --checksum <sha256>    Required SHA256 checksum for URL downloads
   --prefer-local         Prefer local groovy-lsp builds from common paths
   --build-local          Build local JAR via 'make jar' if not found (monorepo only)
                          NOTE: Auto-enabled in monorepo (disabled in CI); use BUILD_LOCAL=false to disable
@@ -1080,15 +1064,15 @@ Options:
 
 Notes:
   Precedence: --local > --url > existing bundled JAR > --prefer-local > GitHub download
-  Default: Downloads latest stable release from GitHub
+  Default: Downloads the pinned, checksum-verified release from GitHub
   Monorepo: Auto-detected - local build used automatically
 
 Environment Variables:
   Version Selection:
     GLS_TAG=<version>         Use specific version (e.g., v0.4.8)
     GLS_CHANNEL=nightly       Use latest nightly build
-    GLS_CHANNEL=release       Use latest stable release (default)
-    GLS_CHANNEL=pinned        Use pinned version (v0.4.8)
+    GLS_CHANNEL=release       Use latest stable release
+    GLS_CHANNEL=pinned        Use pinned version (v0.4.8, default)
     GLS_USE_PINNED=true       Alternative to GLS_CHANNEL=pinned
 
   Download Behavior:
@@ -1101,7 +1085,7 @@ Environment Variables:
   Advanced:
     GLS_LOCAL_JAR=<path>      Use JAR from specific path
     GLS_URL=<url>             Download from custom URL
-    GLS_CHECKSUM=<sha256>     Verify custom download
+    GLS_CHECKSUM=<sha256>     Required for custom download
     GITHUB_TOKEN / GH_TOKEN   GitHub API authentication
 
 Token resolution (for GitHub API requests):
@@ -1113,4 +1097,6 @@ Token resolution (for GitHub API requests):
 
 module.exports = {
   PINNED_RELEASE_TAG,
+  deriveSelection,
+  requireChecksum,
 };

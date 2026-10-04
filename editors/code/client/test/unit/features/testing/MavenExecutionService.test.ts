@@ -15,13 +15,22 @@ interface VscodeMock {
     showWarningMessage: sinon.SinonStub;
   };
   TestRunRequest: new (include: unknown[]) => { include: unknown[] };
-  CancellationTokenSource: new () => { token: unknown; dispose: sinon.SinonStub };
+  CancellationTokenSource: new () => {
+    token: unknown;
+    dispose: sinon.SinonStub;
+  };
   TestMessage: new (message: string) => { message: string };
-  Location: new (uri: unknown, range: unknown) => { uri: unknown; range: unknown };
+  Location: new (
+    uri: unknown,
+    range: unknown,
+  ) => { uri: unknown; range: unknown };
   Uri: {
     parse: (s: string) => { toString: () => string };
   };
-  Position: new (line: number, character: number) => { line: number; character: number };
+  Position: new (
+    line: number,
+    character: number,
+  ) => { line: number; character: number };
   Range: new (start: unknown, end: unknown) => { start: unknown; end: unknown };
   TestRunProfileKind: { Run: number };
 }
@@ -41,7 +50,12 @@ interface FsMock {
 
 interface MavenExecutionServiceInstance {
   buildTestFilter: (request: unknown) => string[];
-  spawnMaven: (cwd: string, args: string[], consumer: unknown, token: unknown) => Promise<void>;
+  spawnMaven: (
+    cwd: string,
+    args: string[],
+    consumer: unknown,
+    token: unknown,
+  ) => Promise<void>;
   cpMock?: CpMock;
   fsMock?: FsMock;
 }
@@ -130,19 +144,26 @@ describe("MavenExecutionService", () => {
       }),
     };
 
-    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { MavenExecutionService: MavenExecutionServiceClass } }).noCallThru()(
-      "../../../../src/features/testing/MavenExecutionService",
-      {
+    const module = (
+      proxyquire as {
+        noCallThru: () => (
+          path: string,
+          stubs: unknown,
+        ) => { MavenExecutionService: MavenExecutionServiceClass };
+      }
+    ).noCallThru()("../../../../src/features/testing/MavenExecutionService", {
+      vscode: vscodeMock,
+      child_process: cpMock,
+      fs: fsMock,
+      readline: readlineMock,
+      "./TestEventConsumer": (
+        proxyquire as {
+          noCallThru: () => (path: string, stubs: unknown) => unknown;
+        }
+      ).noCallThru()("../../../../src/features/testing/TestEventConsumer", {
         vscode: vscodeMock,
-        child_process: cpMock,
-        fs: fsMock,
-        readline: readlineMock,
-        "./TestEventConsumer": (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => unknown }).noCallThru()(
-          "../../../../src/features/testing/TestEventConsumer",
-          { vscode: vscodeMock },
-        ),
-      },
-    );
+      }),
+    });
     MavenExecutionService = module.MavenExecutionService;
     service = new MavenExecutionService(loggerMock);
     // Expose mocks for tests
@@ -155,18 +176,53 @@ describe("MavenExecutionService", () => {
   });
 
   describe("buildTestFilter", () => {
-    it("should quote test names with spaces to prevent shell word splitting", () => {
+    it("keeps test names with spaces as one process argument", () => {
       const mockItem = {
         id: "com.example.MySpec.multi-argument capture",
         children: { size: 0 },
       };
       const request = { include: [mockItem] };
       const filter = service.buildTestFilter(request);
-      assert.ok(filter[0].includes('"'));
+      assert.deepStrictEqual(filter, [
+        "-Dtest=com.example.MySpec#multi-argument capture",
+      ]);
     });
   });
 
   describe("spawnMaven", () => {
+    it("does not invoke a shell for a global Maven command", async () => {
+      service.fsMock!.existsSync.returns(false);
+      const proc = {
+        stdout: { on: sandbox.stub() },
+        stderr: { on: sandbox.stub() },
+        on: sandbox.stub(),
+        kill: sandbox.stub(),
+      };
+      service.cpMock!.spawn.returns(proc);
+      const consumer = {
+        processLine: sandbox.stub(),
+        getAllRegisteredItems: sandbox.stub().returns([]),
+        markPassed: sandbox.stub(),
+        markFailed: sandbox.stub(),
+      };
+      const token = {
+        onCancellationRequested: sandbox
+          .stub()
+          .returns({ dispose: sandbox.stub() }),
+      };
+
+      const pending = service.spawnMaven(
+        "/cwd",
+        ['-Dtest=Spec#x"; printf unsafe; #'],
+        consumer,
+        token,
+      );
+      assert.strictEqual(service.cpMock!.spawn.firstCall.args[2].shell, false);
+      const close = proc.on.getCall(0).args[1];
+      close(0);
+      await pending;
+    });
+
     it("should detect HTTP blocker error in stderr and notify user", async () => {
       // Mock spawn process
       const stdout = { on: sandbox.stub() };
@@ -192,12 +248,7 @@ describe("MavenExecutionService", () => {
           .returns({ dispose: sandbox.stub() }),
       };
 
-      const promise = service.spawnMaven(
-        "/cwd",
-        [],
-        consumerMock,
-        token,
-      );
+      const promise = service.spawnMaven("/cwd", [], consumerMock, token);
 
       // Simulate stderr with error
       const errorOutput =
@@ -250,17 +301,13 @@ describe("MavenExecutionService", () => {
       let lineListener: ((line: string) => void) | undefined;
       readlineMock.createInterface.returns({
         on: (event: string, listener: unknown) => {
-          if (event === "line") lineListener = listener as (line: string) => void;
+          if (event === "line")
+            lineListener = listener as (line: string) => void;
         },
         close: sandbox.stub(),
       });
 
-      const promise = service.spawnMaven(
-        "/cwd",
-        [],
-        consumerMock,
-        token,
-      );
+      const promise = service.spawnMaven("/cwd", [], consumerMock, token);
 
       // Simulate stdout with error
       const errorLine = "[ERROR] ... maven-default-http-blocker ...";
