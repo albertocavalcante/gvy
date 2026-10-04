@@ -428,7 +428,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-    if: ${{ !inputs.dry_run }}
+    # TODO(publish): set repo variable PUBLISH_HOMEBREW=true and secret HOMEBREW_TAP_TOKEN to enable Homebrew publishing.
+    if: ${{ !inputs.dry_run && vars.PUBLISH_HOMEBREW == 'true' }}
     steps:
       - name: Update Homebrew Formula
         uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6
@@ -508,12 +509,19 @@ jobs:
           merge-multiple: true
           path: dist
           
+      # TODO(publish): set repo variable PUBLISH_VSCODE=true and secret VSCE_TOKEN to enable Marketplace publishing.
       - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_TOKEN }} --packagePath dist/*.vsix
+        if: vars.PUBLISH_VSCODE == 'true'
+        run: npx @vscode/vsce publish --packagePath dist/*.vsix
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_TOKEN }}
 
-      # Uncomment when ready to publish to Open VSX
+      # TODO(publish): set repo variable PUBLISH_OPENVSX=true and secret OVSX_TOKEN, then uncomment to enable Open VSX publishing.
       # - name: Publish to Open VSX Registry
-      #   run: npx ovsx publish -p ${{ secrets.OVSX_TOKEN }}
+      #   if: vars.PUBLISH_OPENVSX == 'true'
+      #   run: npx ovsx publish dist/*.vsix
+      #   env:
+      #     OVSX_PAT: ${{ secrets.OVSX_TOKEN }}
 
       - name: Upload VSIX to release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
