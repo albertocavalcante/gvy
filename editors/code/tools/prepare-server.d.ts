@@ -11,3 +11,8 @@ export declare function requireChecksum(
   value: unknown,
   artifact: string,
 ): string;
+
+export declare function verifyChecksumAndCleanup(
+  filePath: string,
+  expectedHash: string,
+): Promise<void>;

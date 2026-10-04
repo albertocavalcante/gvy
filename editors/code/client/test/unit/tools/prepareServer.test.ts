@@ -1,8 +1,12 @@
 import * as assert from "assert";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import {
   deriveSelection,
   requireChecksum,
+  verifyChecksumAndCleanup,
 } from "../../../../tools/prepare-server.js";
 
 describe("server artifact selection", () => {
@@ -45,5 +49,22 @@ describe("server artifact selection", () => {
       requireChecksum("a".repeat(64), "release JAR"),
       "a".repeat(64),
     );
+  });
+
+  it("removes a downloaded JAR when its checksum does not match", async () => {
+    const directory = fs.mkdtempSync(
+      path.join(os.tmpdir(), "gls-checksum-test-"),
+    );
+    const jarPath = path.join(directory, "gls.jar");
+    try {
+      fs.writeFileSync(jarPath, "unexpected JAR contents");
+      await assert.rejects(
+        verifyChecksumAndCleanup(jarPath, "a".repeat(64)),
+        /Checksum mismatch/,
+      );
+      assert.strictEqual(fs.existsSync(jarPath), false);
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

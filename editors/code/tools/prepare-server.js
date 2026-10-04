@@ -455,10 +455,25 @@ async function verifyChecksum(filePath, expectedHash) {
   }
 }
 
+async function verifyChecksumAndCleanup(filePath, expectedHash) {
+  try {
+    await verifyChecksum(filePath, expectedHash);
+  } catch (error) {
+    try {
+      fs.unlinkSync(filePath);
+    } catch (cleanupError) {
+      console.warn(
+        `Warning: Failed to remove corrupted download ${filePath}: ${cleanupError.message}`,
+      );
+    }
+    throw error;
+  }
+}
+
 /**
  * Downloads a JAR from a URL (handles ZIP extraction for GitHub artifacts)
  * @param {string} url - URL to download from
- * @param {string|null} expectedChecksum - Optional SHA256 checksum
+ * @param {string|null} expectedChecksum - Required SHA256 checksum
  */
 async function downloadFromUrl(url, expectedChecksum) {
   expectedChecksum = requireChecksum(expectedChecksum, "URL download");
@@ -526,7 +541,7 @@ async function downloadFromUrl(url, expectedChecksum) {
       throw new Error(`Downloaded JAR validation failed: ${error.message}`);
     }
 
-    await verifyChecksum(JAR_PATH, expectedChecksum);
+    await verifyChecksumAndCleanup(JAR_PATH, expectedChecksum);
     console.log("✓ Checksum verified");
 
     // Write version marker
@@ -577,18 +592,7 @@ async function downloadRelease(target) {
     throw new Error(`Downloaded JAR validation failed: ${error.message}`);
   }
 
-  try {
-    await verifyChecksum(JAR_PATH, target.checksum);
-  } catch (error) {
-    try {
-      fs.unlinkSync(JAR_PATH);
-    } catch (cleanupError) {
-      console.warn(
-        `Warning: Failed to remove corrupted download ${JAR_PATH}: ${cleanupError.message}`,
-      );
-    }
-    throw error;
-  }
+  await verifyChecksumAndCleanup(JAR_PATH, target.checksum);
   writeInstalledVersion(target.tag);
   console.log(`✓ Downloaded and saved as ${CANONICAL_JAR_NAME}`);
 }
@@ -1099,4 +1103,5 @@ module.exports = {
   PINNED_RELEASE_TAG,
   deriveSelection,
   requireChecksum,
+  verifyChecksumAndCleanup,
 };
