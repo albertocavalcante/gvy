@@ -6,16 +6,20 @@ on:
     paths:
       - "docs/website/**"
       - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/website/**"
+      - ".github/workflows/docs.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
+# PR builds get their own per-ref group so they never queue behind or cancel a
+# main deploy; deploys keep the shared "pages" group and are never cancelled.
 concurrency:
-  group: pages
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'pull_request' && format('docs-pr-{0}', github.ref) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -32,10 +36,11 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76 # v2
         with:
-          bun-version: latest
+          bun-version: 1.4.2
 
       - name: Setup Pages
         id: pages
+        if: github.event_name != 'pull_request'
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
       - name: Install dependencies
@@ -46,12 +51,23 @@ jobs:
         working-directory: docs/website
         run: bun run build
 
+      - name: Assert pages were generated
+        run: |
+          count=$(find docs/website/dist -name '*.html' | wc -l | tr -d ' ')
+          echo "Built ${count} pages" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "${count}" -lt 2 ]; then
+            echo "::error::Docs build produced ${count} HTML page(s), expected at least 2 (check src/content.config.ts and the content collections)"
+            exit 1
+          fi
+
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: docs/website/dist
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
