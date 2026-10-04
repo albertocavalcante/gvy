@@ -3,14 +3,27 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 interface LSPTestExecutionServiceInstance {
-  runTestsWithCoverage: (request: unknown, token: unknown, testController: unknown, coverageService: unknown) => Promise<void>;
-  runTests: (request: unknown, token: unknown, testController: unknown) => Promise<void>;
+  runTestsWithCoverage: (
+    request: unknown,
+    token: unknown,
+    testController: unknown,
+    coverageService: unknown,
+  ) => Promise<void>;
+  runTests: (
+    request: unknown,
+    token: unknown,
+    testController: unknown,
+  ) => Promise<void>;
   isValidJavaHome: (path: string) => boolean;
   collectAllTestItems: (items: unknown[]) => unknown[];
 }
 
 interface LSPTestExecutionServiceType {
-  new (testService: unknown, logger: unknown, extensionPath: string): LSPTestExecutionServiceInstance;
+  new (
+    testService: unknown,
+    logger: unknown,
+    extensionPath: string,
+  ): LSPTestExecutionServiceInstance;
 }
 
 interface TestServiceMock {
@@ -32,7 +45,10 @@ interface VscodeMock {
     showWarningMessage: sinon.SinonStub;
   };
   TestRunRequest: new (include: unknown[]) => unknown;
-  CancellationTokenSource: new () => { token: unknown; dispose: sinon.SinonStub };
+  CancellationTokenSource: new () => {
+    token: unknown;
+    dispose: sinon.SinonStub;
+  };
   TestMessage: new (message: string) => unknown;
   Location: new (uri: unknown, range: unknown) => unknown;
   Uri: { parse: (s: string) => unknown };
@@ -181,7 +197,14 @@ describe("LSPTestExecutionService", () => {
       delimiter: ":",
     };
 
-    const proxyquireNoCallThru = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { LSPTestExecutionService: LSPTestExecutionServiceType } }).noCallThru();
+    const proxyquireNoCallThru = (
+      proxyquire as {
+        noCallThru: () => (
+          path: string,
+          stubs: unknown,
+        ) => { LSPTestExecutionService: LSPTestExecutionServiceType };
+      }
+    ).noCallThru();
     const module = proxyquireNoCallThru(
       "../../../../src/features/testing/LSPTestExecutionService",
       {
@@ -190,10 +213,13 @@ describe("LSPTestExecutionService", () => {
         fs: fsMock,
         readline: readlineMock,
         path: pathMock,
-        "./TestEventConsumer": (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => unknown }).noCallThru()(
-          "../../../../src/features/testing/TestEventConsumer",
-          { vscode: vscodeMock },
-        ),
+        "./TestEventConsumer": (
+          proxyquire as {
+            noCallThru: () => (path: string, stubs: unknown) => unknown;
+          }
+        ).noCallThru()("../../../../src/features/testing/TestEventConsumer", {
+          vscode: vscodeMock,
+        }),
       },
     );
     LSPTestExecutionService = module.LSPTestExecutionService;
@@ -257,11 +283,13 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
-          if (event === "close") {
-            setTimeout(() => callback(0), 0);
-          }
-        }),
+        on: sandbox
+          .stub()
+          .callsFake((event: string, callback: (code: number) => void) => {
+            if (event === "close") {
+              setTimeout(() => callback(0), 0);
+            }
+          }),
         kill: sandbox.stub(),
       };
       cpMock.spawn.returns(proc);
@@ -330,7 +358,9 @@ describe("LSPTestExecutionService", () => {
       const spawnArgs = cpMock.spawn.getCall(0).args;
       const args = spawnArgs[1];
       assert.ok(
-        args.includes("jacoco:report"),
+        args.some(
+          (arg: string) => arg.replace(/^"|"$/gu, "") === "jacoco:report",
+        ),
         "Should append jacoco:report for Maven",
       );
     });
@@ -532,7 +562,9 @@ describe("LSPTestExecutionService", () => {
           );
         } else if (testCase.expectMaven) {
           assert.ok(
-            args.includes("jacoco:report"),
+            args.some(
+              (arg: string) => arg.replace(/^"|"$/gu, "") === "jacoco:report",
+            ),
             `Should detect Maven for ${testCase.executable}`,
           );
         }
@@ -584,14 +616,51 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
-          if (event === "close") {
-            setTimeout(() => callback(0), 0);
-          }
-        }),
+        on: sandbox
+          .stub()
+          .callsFake((event: string, callback: (code: number) => void) => {
+            if (event === "close") {
+              setTimeout(() => callback(0), 0);
+            }
+          }),
         kill: sandbox.stub(),
       };
       cpMock.spawn.returns(proc);
+    });
+
+    it("passes Maven test arguments safely on the current platform", async () => {
+      const testName =
+        process.platform === "win32" ? "safe name" : 'a"; printf unsafe; #';
+      const testItem = {
+        id: `com.example.Spec.${testName}`,
+        uri: { toString: () => "file:///test.groovy" },
+        children: { size: 0 },
+      };
+      const args = ["test", `-Dtest=com.example.Spec#${testName}`];
+      testServiceMock.getTestCommand.resolves({
+        executable: "/usr/bin/mvn",
+        args,
+        cwd: "/workspace",
+        env: {},
+      });
+      testServiceMock.getTestResults.resolves({ results: [] });
+
+      await service.runTests(
+        { include: [testItem] },
+        tokenMock,
+        testControllerMock,
+      );
+
+      assert.ok(cpMock.spawn.calledOnce);
+      assert.strictEqual(
+        cpMock.spawn.firstCall.args[2].shell,
+        process.platform === "win32",
+      );
+      assert.ok(
+        cpMock.spawn.firstCall.args[1].includes(
+          process.platform === "win32" ? `"${args[1]}"` : args[1],
+        ),
+      );
     });
 
     it("should not append coverage tasks when running without coverage", async () => {
@@ -1064,11 +1133,13 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
-          if (event === "close") {
-            setTimeout(() => callback(0), 0);
-          }
-        }),
+        on: sandbox
+          .stub()
+          .callsFake((event: string, callback: (code: number) => void) => {
+            if (event === "close") {
+              setTimeout(() => callback(0), 0);
+            }
+          }),
         kill: sandbox.stub(),
       };
       cpMock.spawn.returns(proc);
@@ -1128,11 +1199,13 @@ describe("LSPTestExecutionService", () => {
       const proc = {
         stdout,
         stderr,
-        on: sandbox.stub().callsFake((event: string, callback: (code: number) => void) => {
-          if (event === "close") {
-            setTimeout(() => callback(0), 0);
-          }
-        }),
+        on: sandbox
+          .stub()
+          .callsFake((event: string, callback: (code: number) => void) => {
+            if (event === "close") {
+              setTimeout(() => callback(0), 0);
+            }
+          }),
         kill: sandbox.stub(),
       };
       cpMock.spawn.returns(proc);

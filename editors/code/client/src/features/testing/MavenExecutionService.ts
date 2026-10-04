@@ -14,6 +14,7 @@ import * as path from "path";
 import * as readline from "readline";
 import { TestEventConsumer } from "./TestEventConsumer";
 import { ITestExecutionService } from "./ITestExecutionService";
+import { buildProcessInvocation } from "./processInvocation";
 
 export class MavenExecutionService implements ITestExecutionService {
   constructor(private readonly logger: vscode.OutputChannel) {}
@@ -137,7 +138,7 @@ export class MavenExecutionService implements ITestExecutionService {
 
   /**
    * Build Maven Surefire test filter.
-   * Format: -Dtest="ClassName#methodName" for methods, "ClassName" for suites
+   * Format: -Dtest=ClassName#methodName for methods, ClassName for suites.
    */
   private buildTestFilter(request: vscode.TestRunRequest): string[] {
     const testsToRun = request.include ?? [];
@@ -164,9 +165,7 @@ export class MavenExecutionService implements ITestExecutionService {
       return `${className}#${methodName}`;
     });
 
-    // Quote the pattern to handle spaces in test names (e.g., "single-argument capture")
-    // Without quotes, shell interprets spaces as arg separators, causing Maven errors
-    return [`-Dtest="${testPatterns.join(",")}"`];
+    return [`-Dtest=${testPatterns.join(",")}`];
   }
 
   private async spawnMaven(
@@ -186,9 +185,10 @@ export class MavenExecutionService implements ITestExecutionService {
 
       this.logger.appendLine(`Running: ${mvnCmd} ${args.join(" ")}`);
 
-      const proc = cp.spawn(mvnCmd, args, {
+      const invocation = buildProcessInvocation(mvnCmd, args);
+      const proc = cp.spawn(invocation.executable, invocation.args, {
         cwd,
-        shell: !hasMvnWrapper, // Use shell for global mvn, not for wrapper
+        shell: invocation.shell,
         env: { ...process.env },
       });
 
