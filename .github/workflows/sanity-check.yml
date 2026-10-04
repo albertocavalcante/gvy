@@ -17,30 +17,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Self-test large-file gate
+        run: bash tools/ci/check-large-files_test.sh
+
+      # The PR-controlled script runs without a token; only the comment step
+      # below gets GH_TOKEN.
       - name: Check for large files (>700KB)
         env:
+          BASE_REF: ${{ github.base_ref }}
+          COMMENT_FILE: ${{ runner.temp }}/large-file-comment.md
+        run: bash tools/ci/check-large-files.sh "origin/${BASE_REF}"
+
+      - name: Comment large-file report on the PR
+        if: failure() && hashFiles(format('{0}/large-file-comment.md', runner.temp)) != ''
+        env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          MAX_SIZE=716800 # 700KB
-          VIOLATIONS=""
-          
-          # Find added/modified files in this PR
-          git diff --name-only --diff-filter=AM "origin/${{ github.base_ref }}...HEAD" | while read -r file; do
-            if [ -f "$file" ]; then
-              size=$(wc -c < "$file" | tr -d ' ')
-              if [ "$size" -gt "$MAX_SIZE" ]; then
-                human_size=$(numfmt --to=iec-i --suffix=B "$size")
-                VIOLATIONS="$VIOLATIONS| \`$file\` | $human_size |\n"
-              fi
-            fi
-          done
-          
-          if [ -n "$VIOLATIONS" ]; then
-            MSG="### ⚠️ Large File Detected\n\nThe following files exceed the 700KB limit:\n\n| File | Size |\n|---|---|\n$VIOLATIONS\n\nPlease remove them, reduce their size, or use Git LFS."
-            
-            # Post comment to PR
-            gh pr comment ${{ github.event.pull_request.number }} --body "$(echo -e "$MSG")"
-            
-            # Fail the job
-            exit 1
-          fi
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMENT_FILE: ${{ runner.temp }}/large-file-comment.md
+        run: gh pr comment "$PR_NUMBER" --body-file "$COMMENT_FILE"
