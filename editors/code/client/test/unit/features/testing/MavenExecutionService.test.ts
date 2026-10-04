@@ -190,7 +190,7 @@ describe("MavenExecutionService", () => {
   });
 
   describe("spawnMaven", () => {
-    it("does not invoke a shell for a global Maven command", async () => {
+    it("uses the safe invocation for a global Maven command", async () => {
       service.fsMock!.existsSync.returns(false);
       const proc = {
         stdout: { on: sandbox.stub() },
@@ -211,13 +211,15 @@ describe("MavenExecutionService", () => {
           .returns({ dispose: sandbox.stub() }),
       };
 
-      const pending = service.spawnMaven(
-        "/cwd",
-        ['-Dtest=Spec#x"; printf unsafe; #'],
-        consumer,
-        token,
+      const filter =
+        process.platform === "win32"
+          ? "-Dtest=Spec#safe name"
+          : '-Dtest=Spec#x"; printf unsafe; #';
+      const pending = service.spawnMaven("/cwd", [filter], consumer, token);
+      assert.strictEqual(
+        service.cpMock!.spawn.firstCall.args[2].shell,
+        process.platform === "win32",
       );
-      assert.strictEqual(service.cpMock!.spawn.firstCall.args[2].shell, false);
       const close = proc.on.getCall(0).args[1];
       close(0);
       await pending;

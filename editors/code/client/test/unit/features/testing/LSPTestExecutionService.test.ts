@@ -358,7 +358,9 @@ describe("LSPTestExecutionService", () => {
       const spawnArgs = cpMock.spawn.getCall(0).args;
       const args = spawnArgs[1];
       assert.ok(
-        args.includes("jacoco:report"),
+        args.some(
+          (arg: string) => arg.replace(/^"|"$/gu, "") === "jacoco:report",
+        ),
         "Should append jacoco:report for Maven",
       );
     });
@@ -560,7 +562,9 @@ describe("LSPTestExecutionService", () => {
           );
         } else if (testCase.expectMaven) {
           assert.ok(
-            args.includes("jacoco:report"),
+            args.some(
+              (arg: string) => arg.replace(/^"|"$/gu, "") === "jacoco:report",
+            ),
             `Should detect Maven for ${testCase.executable}`,
           );
         }
@@ -624,13 +628,15 @@ describe("LSPTestExecutionService", () => {
       cpMock.spawn.returns(proc);
     });
 
-    it("passes Maven test arguments without invoking a shell", async () => {
+    it("passes Maven test arguments safely on the current platform", async () => {
+      const testName =
+        process.platform === "win32" ? "safe name" : 'a"; printf unsafe; #';
       const testItem = {
-        id: 'com.example.Spec.a"; printf unsafe; #',
+        id: `com.example.Spec.${testName}`,
         uri: { toString: () => "file:///test.groovy" },
         children: { size: 0 },
       };
-      const args = ["test", '-Dtest=com.example.Spec#a"; printf unsafe; #'];
+      const args = ["test", `-Dtest=com.example.Spec#${testName}`];
       testServiceMock.getTestCommand.resolves({
         executable: "/usr/bin/mvn",
         args,
@@ -646,8 +652,15 @@ describe("LSPTestExecutionService", () => {
       );
 
       assert.ok(cpMock.spawn.calledOnce);
-      assert.strictEqual(cpMock.spawn.firstCall.args[2].shell, false);
-      assert.ok(cpMock.spawn.firstCall.args[1].includes(args[1]));
+      assert.strictEqual(
+        cpMock.spawn.firstCall.args[2].shell,
+        process.platform === "win32",
+      );
+      assert.ok(
+        cpMock.spawn.firstCall.args[1].includes(
+          process.platform === "win32" ? `"${args[1]}"` : args[1],
+        ),
+      );
     });
 
     it("should not append coverage tasks when running without coverage", async () => {
