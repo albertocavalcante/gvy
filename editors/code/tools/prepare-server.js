@@ -337,6 +337,20 @@ function deriveSelection(cliOptions) {
   return { type: "pinned" };
 }
 
+function hasExplicitVersionSelection(cliOptions) {
+  return Boolean(
+    cliOptions.tag ||
+    cliOptions.nightly ||
+    cliOptions.latest ||
+    cliOptions.channel ||
+    process.env.GLS_TAG ||
+    process.env.GLS_CHANNEL ||
+    process.env.GLS_USE_PINNED === "true" ||
+    process.env.USE_LATEST_GLS === "true" ||
+    process.env.USE_LATEST_GROOVY_LSP === "true",
+  );
+}
+
 function requireChecksum(value, artifact) {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/i.test(value)) {
     throw new Error(`SHA-256 checksum required for ${artifact}`);
@@ -692,18 +706,8 @@ async function prepareServer(runtimeOptions = {}) {
     // Auto-detect monorepo and prefer local build
     // Only activate if no explicit version/channel selection is made
     const isMonorepo = detectMonorepoEnvironment();
-    const hasExplicitVersionSelection =
-      cliOptions.tag ||
-      cliOptions.nightly ||
-      cliOptions.latest ||
-      cliOptions.channel ||
-      process.env.GLS_TAG ||
-      process.env.GLS_CHANNEL ||
-      process.env.GLS_USE_PINNED === "true" ||
-      process.env.USE_LATEST_GLS === "true";
-
     const autoPreferLocal =
-      isMonorepo && !explicitUrl && !hasExplicitVersionSelection;
+      isMonorepo && !explicitUrl && !hasExplicitVersionSelection(cliOptions);
 
     const effectivePreferLocal = preferLocal || autoPreferLocal;
 
@@ -1102,6 +1106,7 @@ Token resolution (for GitHub API requests):
 module.exports = {
   PINNED_RELEASE_TAG,
   deriveSelection,
+  hasExplicitVersionSelection,
   requireChecksum,
   verifyChecksumAndCleanup,
 };

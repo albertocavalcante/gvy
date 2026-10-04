@@ -5,6 +5,7 @@ import * as path from "node:path";
 
 import {
   deriveSelection,
+  hasExplicitVersionSelection,
   requireChecksum,
   verifyChecksumAndCleanup,
 } from "../../../../tools/prepare-server.js";
@@ -34,6 +35,17 @@ describe("server artifact selection", () => {
     assert.deepStrictEqual(deriveSelection({ latest: true }), {
       type: "latest",
     });
+  });
+
+  it("treats the legacy latest-release toggle as an explicit selection", () => {
+    const previous = process.env.USE_LATEST_GROOVY_LSP;
+    process.env.USE_LATEST_GROOVY_LSP = "true";
+    try {
+      assert.strictEqual(hasExplicitVersionSelection({}), true);
+    } finally {
+      if (previous === undefined) delete process.env.USE_LATEST_GROOVY_LSP;
+      else process.env.USE_LATEST_GROOVY_LSP = previous;
+    }
   });
 
   it("rejects a downloaded artifact without a SHA-256 digest", () => {
