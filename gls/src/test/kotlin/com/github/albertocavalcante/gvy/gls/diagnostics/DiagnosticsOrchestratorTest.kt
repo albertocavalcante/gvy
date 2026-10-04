@@ -15,6 +15,7 @@ import io.mockk.unmockkAll
 import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
@@ -33,6 +34,7 @@ import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -50,16 +52,17 @@ class DiagnosticsOrchestratorTest {
 
     @Test
     fun `trigger cancels existing job for same URI`() = runTest {
-        // Given
+        // Given: compilations that stay pending until the test releases them
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
         val documentProvider = mockk<DocumentProvider>()
         val client = mockk<LanguageClient>()
 
-        // Mock compilation and diagnostics
-        val result = createMockCompilationResult()
-        coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
+        val firstCompilation = CompletableDeferred<CompilationResult>()
+        val secondCompilation = CompletableDeferred<CompilationResult>()
+        coEvery { compilationService.compileAsync(any(), any(), "first content") } returns firstCompilation
+        coEvery { compilationService.compileAsync(any(), any(), "second content") } returns secondCompilation
         coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
         every { client.publishDiagnostics(any()) } just Runs
 
@@ -74,15 +77,58 @@ class DiagnosticsOrchestratorTest {
 
         // When: Trigger diagnostics twice for the same URI
         orchestrator.trigger(testUri, "first content")
-
+        val firstJob = assertNotNull(orchestrator.getDiagnosticJob(testUri))
         orchestrator.trigger(testUri, "second content")
+        val secondJob = assertNotNull(orchestrator.getDiagnosticJob(testUri))
 
-        // Give jobs time to start
-        delay(50)
+        // Then: the first job is cancelled and the second one is registered and still running
+        assertNotSame(firstJob, secondJob)
+        firstJob.join()
+        assertTrue(firstJob.isCancelled, "First job should be cancelled")
+        assertTrue(secondJob.isActive, "Second job should be active while its compilation is pending")
 
-        // Then: Second trigger should have cancelled the first job
-        val secondJobActive = orchestrator.getDiagnosticJob(testUri)?.isActive ?: false
-        assertTrue(secondJobActive, "Second job should be active")
+        // And: once the second job completes it removes itself from the map
+        secondCompilation.complete(createMockCompilationResult())
+        secondJob.join()
+        assertNull(orchestrator.getDiagnosticJob(testUri))
+
+        // Cleanup
+        scope.cancel()
+    }
+
+    // ==================== Test: a job that finishes immediately does not leak ====================
+
+    @Test
+    fun `job that completes immediately is not left registered`() = runTest {
+        // Given: an eager dispatcher and a compilation that is already complete, so the job
+        // runs to completion inside trigger() unless it is registered before it starts
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
+        val compilationService = mockk<GroovyCompilationService>()
+        val diagnosticsService = mockk<DiagnosticsService>()
+        val documentProvider = mockk<DocumentProvider>()
+        val client = mockk<LanguageClient>()
+
+        coEvery {
+            compilationService.compileAsync(any(), any(), any())
+        } returns CompletableDeferred(createMockCompilationResult())
+        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+        every { client.publishDiagnostics(any()) } just Runs
+
+        val orchestrator = DiagnosticsOrchestrator(
+            coroutineScope = scope,
+            compilationService = compilationService,
+            diagnosticsService = diagnosticsService,
+            documentProvider = documentProvider,
+            serverConfiguration = ServerConfiguration(),
+            client = { client },
+        )
+
+        // When
+        orchestrator.trigger(testUri, testContent)
+
+        // Then: the finished job removed itself instead of being registered after its cleanup
+        verify { client.publishDiagnostics(any()) }
+        assertNull(orchestrator.getDiagnosticJob(testUri))
 
         // Cleanup
         scope.cancel()
