@@ -42,18 +42,25 @@ provider "registry.terraform.io/hashicorp/tls" {
 }
 
 provider "registry.terraform.io/magalucloud/mgc" {
-  version     = "0.41.1"
-  constraints = ">= 0.18.0, ~> 0.41.0"
+  version     = "0.56.0"
+  constraints = ">= 0.18.0, ~> 0.56.0"
   hashes = [
-    "h1:rmdh/f9p5PCr+sxwnm3k5xrsMmiVaNa3wVjmKhS0/jg=",
-    "zh:072e80d7bd93473d64f9cdec152de1cbbf47bd85fa22b46bf274d1919a7429b4",
-    "zh:28d6c4c12ac40b25217c2bffc11c4941645686767d53a4361c8d220a08e85bd1",
+    "h1:FdLJl7V9ATvaeAfDf1KlQ7QRAYbNwr3P0FWTys/wSIA=",
+    "h1:HRo8csNvO2FMcg55IXhF/04PbDtnFVkbSEbRk0DI2AE=",
+    "h1:SOVfVBx4X02wahRZ4Y0QrXPeutbc7mH5khP4qfQYawE=",
+    "h1:WukSgB/dTc4ipOjCWpfstwH88cuOcWl6nzngEljxtlM=",
+    "h1:YOFCWfkYzB+Nk8OPu2ernYMOAYkqkqOzi6iWs2Q+50c=",
+    "h1:ggaqyyn4UikbclXLgcZPTQtrJh5gHh8xVO6Fxgg1A94=",
+    "h1:hHQRHv+KSZ/sPCVZB9Vpp7yR0cUDd2225HqzzO6Rszw=",
+    "h1:pkdmVuqMtXMQLjPgs/Fa/+QNQf0FxOXqX9qQx5UAO8A=",
+    "zh:29d53bd25442e104b9f0f16f3a052851b482380e1981b3474621ef89a812c3d7",
+    "zh:4030e933a0f7772cdcbe13acd739a8da10e5bcbc448ed9b0385c44106180e12d",
+    "zh:60165085210596138ca82e1d93e568ced0e25104eb75fe299c53724ffd60fe84",
+    "zh:696fde2fe8f8e7166f69e9aa73df39c868e9ebd62627e1cc00b24ae37b13dd13",
+    "zh:6a0c90dbfd7d25c53172d1d0b1dd90f9e9041fec514548f388dacd34af0b1173",
     "zh:890df766e9b839623b1f0437355032a3c006226a6c200cd911e15ee1a9014e9f",
-    "zh:89cc085ca7260b7dab77c6684bb14ccc5c588bef93b32ddb8e1382202dde1638",
-    "zh:ba0217adf4f0dfa391fcff2511a584098a1271badc1f702436a7ef3994b2b579",
-    "zh:ce201847e7a43615eb51c0dc245012849156e672f7eb1c57a846beac2b5227ab",
-    "zh:da71da7424758a0776c50177f05078465a62cf4c3255d19bdc748e0bd46aa18b",
-    "zh:e432417ed0fbd82a1b450c81126996ae480843d17908f6e17c6d8999e555830e",
-    "zh:fb71c4857441c88ed7649ec313f5d282b080c6c184aeac9871615484cd1c2f8f",
+    "zh:b81d7f9d2d4b92d07e2e22ce5df9c8619bdf0f928b5cda2b8d9b01f89c372a8a",
+    "zh:f4317d5875a079b53fd354c0cf1174f821e279d46fa503881efd5a2250f68e78",
+    "zh:ff888359d1a1fb96042b745707305d5fafddac12ebf22dc91154a5c32a348df3",
   ]
 }
