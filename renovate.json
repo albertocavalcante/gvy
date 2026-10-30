@@ -15,7 +15,7 @@
       "allowedVersions": "/-groovy-4\\.0$/"
     },
     {
-      "description": "@types/vscode must not exceed the minor of engines.vscode in editors/code/package.json (^1.103.0); bump both together.",
+      "description": "@types/vscode must not exceed the minor of engines.vscode in editors/code/package.json (^1.103.0); bump both together. Note: editors/code/pnpm-lock.yaml currently resolves 1.108.1; this cap only blocks further Renovate bumps and does not downgrade, so fix the specifier and relock separately.",
       "matchPackageNames": ["@types/vscode"],
       "allowedVersions": "<1.104.0"
     },
