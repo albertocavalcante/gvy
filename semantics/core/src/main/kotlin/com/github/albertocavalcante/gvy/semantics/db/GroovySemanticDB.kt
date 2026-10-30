@@ -1,9 +1,10 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import java.net.URI
-import java.util.Collections
 import java.util.LinkedHashMap
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -36,9 +37,9 @@ class GroovySemanticDB {
             size > MAX_CACHE_SIZE
     }
 
-    // Statistics for cache performance
-    private var cacheHits = 0L
-    private var cacheMisses = 0L
+    // Statistics for cache performance (thread-safe counters)
+    private val cacheHits = AtomicLong(0)
+    private val cacheMisses = AtomicLong(0)
 
     /**
      * Get semantic document for a URI
@@ -85,13 +86,13 @@ class GroovySemanticDB {
         // Check cache first
         cacheLock.read {
             symbolCache[symbolId]?.let {
-                cacheHits++
+                cacheHits.incrementAndGet()
                 return it
             }
         }
 
         // Cache miss - look up in index
-        cacheMisses++
+        cacheMisses.incrementAndGet()
 
         val result = symbolIndex[symbolId]?.firstOrNull()
 
@@ -154,8 +155,8 @@ class GroovySemanticDB {
         cacheLock.write {
             symbolCache.clear()
         }
-        cacheHits = 0L
-        cacheMisses = 0L
+        cacheHits.set(0)
+        cacheMisses.set(0)
     }
 
     /**
@@ -164,8 +165,10 @@ class GroovySemanticDB {
     fun getStatistics(): SemanticDBStatistics {
         val allDocuments = documents.values
         val cacheSize = cacheLock.read { symbolCache.size }
-        val hitRate = if (cacheHits + cacheMisses > 0) {
-            cacheHits.toDouble() / (cacheHits + cacheMisses)
+        val hits = cacheHits.get()
+        val misses = cacheMisses.get()
+        val hitRate = if (hits + misses > 0) {
+            hits.toDouble() / (hits + misses)
         } else {
             0.0
         }
@@ -181,8 +184,8 @@ class GroovySemanticDB {
                 allDocuments.sumOf { doc -> doc.findOccurrencesByRole(role).size }
             },
             cacheSize = cacheSize,
-            cacheHits = cacheHits,
-            cacheMisses = cacheMisses,
+            cacheHits = hits,
+            cacheMisses = misses,
             cacheHitRate = hitRate,
         )
     }
@@ -193,14 +196,18 @@ class GroovySemanticDB {
     private fun buildIndexes(uri: URI, doc: SemanticDocument) {
         // Index symbols
         doc.symbols.forEach { symbol ->
-            symbolIndex.computeIfAbsent(symbol.symbol) { Collections.synchronizedList(mutableListOf()) }
-                .add(uri to symbol)
+            val list = symbolIndex.computeIfAbsent(symbol.symbol) { CopyOnWriteArrayList() }
+            synchronized(list) {
+                list.add(uri to symbol)
+            }
         }
 
         // Index occurrences
         doc.occurrences.forEach { occurrence ->
-            occurrenceIndex.computeIfAbsent(occurrence.symbol) { Collections.synchronizedList(mutableListOf()) }
-                .add(uri to occurrence)
+            val list = occurrenceIndex.computeIfAbsent(occurrence.symbol) { CopyOnWriteArrayList() }
+            synchronized(list) {
+                list.add(uri to occurrence)
+            }
         }
     }
 
