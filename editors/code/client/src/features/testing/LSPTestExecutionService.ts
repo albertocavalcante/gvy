@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as cp from "child_process";
+import { buildProcessInvocation } from "./processInvocation";
 import * as path from "path";
 import * as fs from "fs";
 import * as readline from "readline";
@@ -498,11 +499,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     // Detect Build Tool by executable name
     const executableName = path.basename(executable);
     const isGradle = executableName.startsWith("gradle");
-    const isMaven =
-      executableName === "mvn" ||
-      executableName === "mvnw" ||
-      executableName.startsWith("mvn.");
-    const isMavenWrapper = isMaven && executableName === "mvnw";
+    const isMaven = /^(mvn|mvnw)(\.cmd|\.bat)?$/iu.test(executableName);
 
     let finalArgs = [...args];
 
@@ -528,14 +525,11 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
 
     return new Promise((resolve) => {
-      const proc = cp.spawn(executable, finalArgs, {
+      const invocation = buildProcessInvocation(executable, finalArgs);
+      const proc = cp.spawn(invocation.executable, invocation.args, {
         cwd,
         env: resolvedEnv,
-        // Shell usage:
-        // - Maven Wrapper (mvnw): shell: false (executable script)
-        // - Global Maven (mvn): shell: true (needed for Windows batch/cmd shims)
-        // - Gradle (all): shell: false (executable script or binary)
-        shell: isMaven && !isMavenWrapper,
+        shell: invocation.shell,
       });
 
       // Cancellation

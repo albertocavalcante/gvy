@@ -71,12 +71,13 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 
 ## Environment toggles
 
-**Version Selection** (new defaults as of v0.4.9):
+**Version Selection**:
 
-- **Default**: Fetches latest stable release from GitHub
+- **Default**: Fetches pinned v0.4.8 with SHA-256 verification
 - `GLS_TAG=v0.4.8` — Use specific version
 - `GLS_CHANNEL=nightly` — Use latest nightly build
-- `GLS_CHANNEL=pinned` — Use pinned v0.4.8 (stable fallback)
+- `GLS_CHANNEL=release` — Use latest stable release
+- `GLS_CHANNEL=pinned` — Use pinned v0.4.8
 - `GLS_USE_PINNED=true` — Alternative to GLS_CHANNEL=pinned
 
 **Local Development** (auto-detected in monorepo):
@@ -92,10 +93,7 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 - `REQUIRE_SERVER_BUNDLE=true` — Fail build if server bundling fails (publish)
 - `SKIP_PREPARE_SERVER=true` — Skip server prep (used in some CI paths)
 
-**Migration from v0.4.8**:
-
-- Old: `USE_LATEST_GLS=true` to get latest
-- New: Latest is default, use `GLS_USE_PINNED=true` for pinned
+Custom URL downloads require `GLS_CHECKSUM=<sha256>` or `--checksum <sha256>`.
 
 ## Git & workflow
 
