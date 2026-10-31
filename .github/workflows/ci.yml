@@ -116,42 +116,58 @@ jobs:
             run_main_ci:
               # Code that requires CI to run
               - 'src/**'
-              - 'gradle/**'
-              # gls module (main LSP server, renamed from groovy-lsp)
+              # Gradle modules (every include() in settings.gradle.kts)
+              # fmt
+              - 'fmt/**'
+              # markdown
+              - 'markdown/**'
+              # common
+              - 'common/**'
+              # gls (main LSP server)
               - 'gls/**'
-              # semantics module (multi-project: core, native, openrewrite, dsl)
-              - 'semantics/**'
-              # SCIP indexer modules, including nested indexer/core/src files
-              - 'indexer/**'
-              # BSP infrastructure modules
-              - 'bsp/**'
-              # Single-level modules (e.g., groovy-lsp/src/)
-              - 'groovy-*/src/**'
-              - 'groovy-*/*.gradle.kts'
-              # groovyparser-core module (doesn't follow groovy-* naming)
-              - 'groovyparser-core/src/**'
-              - 'groovyparser-core/*.gradle.kts'
-              # Nested modules (e.g., groovy-diagnostics/codenarc/src/)
-              - 'groovy-diagnostics/*/src/**'
-              - 'groovy-diagnostics/*/*.gradle.kts'
-              - 'jupyter/*/src/**'
-              - 'jupyter/*/*.gradle.kts'
-              - 'tools/*/src/**'
-              - 'tools/*/*.gradle.kts'
-              - 'viz/*/src/**'
-              - 'viz/*/*.gradle.kts'
-              # Multi-project parser modules
+              # parser (api, native, core, rewrite)
               - 'parser/**'
-              # OpenRewrite recipes
+              # indexer (core, scip, lsif)
+              - 'indexer/**'
+              # diagnostics (api, codenarc, sarif)
+              - 'diagnostics/**'
+              # jenkins
+              - 'jenkins/**'
+              # dsl (gdsl, dsld)
+              - 'dsl/**'
+              # build-tool
+              - 'build-tool/**'
+              # ext (spock, testing, junit)
+              - 'ext/**'
+              # test-utils
+              - 'test-utils/**'
+              # jupyter (kernel-core, kernels/*)
+              - 'jupyter/**'
+              # repl
+              - 'repl/**'
+              # tools (jenkins-extractor)
+              - 'tools/**'
+              # viz (ast-model, desktop)
+              - 'viz/**'
+              # semantics (core, dsl, native, openrewrite)
+              - 'semantics/**'
+              # refactor/openrewrite recipes
               - 'refactor/openrewrite/**'
-              # Reports module (umbrella for report parsers)
+              # bsp (bsp-core, maven-bsp)
+              - 'bsp/**'
+              # schemas
+              - 'schemas/**'
+              # reports (api, coverage, results)
               - 'reports/**'
-              # Root-level files
+              # tests
               - 'tests/**'
+              # Root build inputs
+              - 'gradle/**'
               - '*.gradle'
               - '*.gradle.kts'
               - 'gradle.properties'
               - 'settings.gradle.kts'
+              - 'gradlew*'
               - '.github/workflows/ci.yml'
 
   check-runner:
