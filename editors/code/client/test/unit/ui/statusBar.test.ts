@@ -72,6 +72,7 @@ interface StatusNotification {
 }
 
 describe("StatusBar", () => {
+  let showErrorNotificationStub: sinon.SinonStub;
   let mockVscode: MockVscode;
   let mockLanguageClient: MockLanguageClient;
   let statusBarModule: StatusBarModule;
@@ -174,6 +175,7 @@ describe("StatusBar", () => {
     };
 
     // Load module with mocked dependencies
+    showErrorNotificationStub = sinon.stub();
     statusBarModule = proxyquire.noCallThru()("../../../src/ui/statusBar", {
       vscode: mockVscode,
       "vscode-languageclient/node": mockLanguageClient,
@@ -183,7 +185,7 @@ describe("StatusBar", () => {
         WorkDoneProgressEnd: {},
       },
       "./languageStatus": mockLanguageStatus,
-      "./errorNotificationHandler": { showErrorNotification: sinon.stub() },
+      "./errorNotificationHandler": { showErrorNotification: showErrorNotificationStub },
     }) as StatusBarModule;
   });
 
@@ -692,6 +694,27 @@ describe("StatusBar", () => {
 
       statusBarModule.registerStatusBarItem();
       statusBarModule.setClient(clientStub);
+    });
+
+    it("shows an actionable notification only when errorCode and errorDetails are present", () => {
+      const errorDetails = {
+        type: "GRADLE_JDK_INCOMPATIBLE",
+        gradleVersion: "7.4",
+        jdkVersion: 21,
+        suggestions: [],
+      };
+      statusHandler({ health: "error", quiescent: true, errorCode: "GRADLE_JDK_INCOMPATIBLE" } as StatusNotification);
+      assert.isTrue(showErrorNotificationStub.notCalled);
+
+      statusHandler({
+        health: "error",
+        quiescent: true,
+        errorCode: "GRADLE_JDK_INCOMPATIBLE",
+        errorDetails,
+      } as unknown as StatusNotification);
+      assert.isTrue(
+        showErrorNotificationStub.calledOnceWith("GRADLE_JDK_INCOMPATIBLE", errorDetails),
+      );
     });
 
     it("should register groovy/status notification handler", () => {
