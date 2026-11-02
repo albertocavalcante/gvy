@@ -16,7 +16,7 @@ define_kt_toolchain(
 
     # Performance optimizations
     experimental_use_abi_jars = True,  # 20-40% faster incremental builds
-    jvm_target = "21",
+    jvm_target = "17",  # Same bytecode level as Gradle (build.gradle.kts JvmTarget.JVM_17) and releases
     language_version = "2.3",
 )
 
