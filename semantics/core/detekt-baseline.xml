@@ -1,0 +1,28 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:BinaryExpressionCalculator.kt$BinaryExpressionCalculator$override fun calculateResult(node: Any, context: TypeContext): TypeResult</ID>
+    <ID>FunctionOnlyReturningConstant:ReflectionAccessTest.kt$ReflectionAccessTest.&lt;no name provided>$@Suppress("unused") fun coldMethod(): String</ID>
+    <ID>FunctionOnlyReturningConstant:ReflectionAccessTest.kt$ReflectionAccessTest.&lt;no name provided>$@Suppress("unused") fun newMethod(): String</ID>
+    <ID>FunctionOnlyReturningConstant:ReflectionAccessTest.kt$ReflectionAccessTest.&lt;no name provided>$@Suppress("unused") fun testMethod(): String</ID>
+    <ID>FunctionOnlyReturningConstant:ReflectionAccessTest.kt$ReflectionAccessTest.HotClass$fun hotMethod1(): String</ID>
+    <ID>FunctionOnlyReturningConstant:ReflectionAccessTest.kt$ReflectionAccessTest.HotClass$fun hotMethod2(): String</ID>
+    <ID>FunctionOnlyReturningConstant:ReflectionAccessTest.kt$ReflectionAccessTest.HotClass$fun hotMethod3(): String</ID>
+    <ID>MagicNumber:DelegationStrategy.kt$DelegationStrategy.DELEGATE_ONLY$3</ID>
+    <ID>MagicNumber:DelegationStrategy.kt$DelegationStrategy.TO_SELF$4</ID>
+    <ID>MagicNumber:ReflectionAccess.kt$ReflectionAccess.&lt;no name provided>$0.75f</ID>
+    <ID>MagicNumber:ReflectionAccess.kt$ReflectionAccess.&lt;no name provided>$16</ID>
+    <ID>MagicNumber:TypeLub.kt$TypeLub.&lt;no name provided>$0.75f</ID>
+    <ID>MagicNumber:TypeLub.kt$TypeLub.&lt;no name provided>$16</ID>
+    <ID>MaxLineLength:DelegationResolver.kt$DelegationResolver$*</ID>
+    <ID>MaxLineLength:ReflectionAccessTest.kt$ReflectionAccessTest$"All recently accessed hot entries should be retained in LRU cache, but found $retainedCount out of ${hotFields.size} retained"</ID>
+    <ID>MaxLineLength:ReflectionAccessTest.kt$ReflectionAccessTest$"All recently accessed hot entries should be retained in LRU cache, but found $retainedCount out of ${hotMethods.size} retained"</ID>
+    <ID>MaximumLineLength:ReflectionAccessTest.kt$ReflectionAccessTest$ </ID>
+    <ID>ReturnCount:MethodCallCalculator.kt$MethodCallCalculator$override fun calculateResult(node: Any, context: TypeContext): TypeResult</ID>
+    <ID>ReturnCount:PropertyAccessCalculator.kt$PropertyAccessCalculator$override fun calculateResult(node: Any, context: TypeContext): TypeResult</ID>
+    <ID>ReturnCount:SemanticDocumentBuilder.kt$SemanticDocumentBuilder$private fun nodeToRange(node: Any): Range?</ID>
+    <ID>SwallowedException:SemanticDocumentBuilder.kt$SemanticDocumentBuilder$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:SemanticDocumentBuilder.kt$SemanticDocumentBuilder$e: Exception</ID>
+  </CurrentIssues>
+</SmellBaseline>

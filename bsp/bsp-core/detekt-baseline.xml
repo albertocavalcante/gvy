@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>SwallowedException:BspSession.kt$BspSession$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:BspConnectionDetails.kt$BspConnectionDetails.Companion$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:DiagnosticReporter.kt$DiagnosticReporter$e: Exception</ID>
+  </CurrentIssues>
+</SmellBaseline>

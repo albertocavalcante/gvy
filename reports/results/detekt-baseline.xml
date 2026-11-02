@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:SurefireParser.kt$SurefireParser$1000</ID>
+    <ID>ReturnCount:SurefireParser.kt$SurefireParser$private fun parseTestStatus(testCase: Element): Triple&lt;TestResultStatus, String?, String?></ID>
+    <ID>TooGenericExceptionCaught:SurefireParser.kt$SurefireParser$e: Exception</ID>
+  </CurrentIssues>
+</SmellBaseline>
