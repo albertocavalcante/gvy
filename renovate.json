@@ -23,6 +23,13 @@
       "description": "infra/runner (self-hosted runner) is disabled/dormant; do not propose updates there.",
       "matchFileNames": ["infra/runner/**"],
       "enabled": false
+    },
+    {
+      "description": "Auto-merge low-risk updates (digests, pins, patches) through GitHub native auto-merge. The default ruleset requires Validation Check, so nothing merges red. Minor and major updates stay manual.",
+      "matchUpdateTypes": ["digest", "pinDigest", "pin", "patch"],
+      "automerge": true,
+      "automergeType": "pr",
+      "platformAutomerge": true
     }
   ]
 }
