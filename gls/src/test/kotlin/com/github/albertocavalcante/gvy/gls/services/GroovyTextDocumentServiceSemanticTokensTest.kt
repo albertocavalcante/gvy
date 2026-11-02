@@ -30,7 +30,9 @@ class GroovyTextDocumentServiceSemanticTokensTest {
     @BeforeEach
     fun setup() = runBlocking {
         coroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-        val compilationService = GroovyCompilationService()
+        // One DocumentProvider shared by both services, as GroovyLanguageServer wires them.
+        val documentProvider = DocumentProvider()
+        val compilationService = GroovyCompilationService(documentProvider = documentProvider)
 
         tempWorkspace = Files.createTempDirectory("groovy-lsp-test")
         compilationService.workspaceManager.initializeWorkspace(tempWorkspace)
@@ -57,6 +59,7 @@ class GroovyTextDocumentServiceSemanticTokensTest {
             compilationService = compilationService,
             options = GroovyTextDocumentServiceOptions(
                 client = { null },
+                documentProvider = documentProvider,
             ),
         )
     }

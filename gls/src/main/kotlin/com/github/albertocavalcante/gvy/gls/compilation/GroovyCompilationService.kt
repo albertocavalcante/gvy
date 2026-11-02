@@ -88,6 +88,7 @@ class GroovyCompilationService(
             errorHandler = errorHandler,
             semanticDb = semanticDb,
             dependencyGraph = dependencyGraph,
+            documentProvider = documentProvider,
         ),
     )
 
