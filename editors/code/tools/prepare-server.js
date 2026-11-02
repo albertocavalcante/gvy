@@ -534,6 +534,7 @@ async function downloadFromUrl(url, expectedChecksum) {
   // Create temp directory for download
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "groovy-lsp-"));
   const tempFile = path.join(tempDir, "download");
+  const stagedJar = downloadTempPath();
 
   try {
     console.log(`Downloading from URL: ${downloadUrl}`);
@@ -548,7 +549,6 @@ async function downloadFromUrl(url, expectedChecksum) {
       contentType?.includes("application/x-zip") ||
       isZipFile(tempFile);
 
-    const stagedJar = downloadTempPath();
     if (isZip) {
       console.log("Download is a ZIP archive, extracting JAR...");
       extractOrCopyJar(tempFile, stagedJar);
@@ -575,7 +575,8 @@ async function downloadFromUrl(url, expectedChecksum) {
 
     console.log(`✓ Downloaded and saved as ${CANONICAL_JAR_NAME}`);
   } finally {
-    // Clean up temp directory
+    // Clean up the temp directory and a staged JAR left by a failed extract.
+    fs.rmSync(stagedJar, { force: true });
     try {
       fs.rmSync(tempDir, { recursive: true, force: true });
     } catch {
@@ -656,6 +657,9 @@ function buildLocalJar() {
  */
 async function prepareServer(runtimeOptions = {}) {
   let requestedSelection = null;
+  // Set when the bundled JAR failed verification: it is kept only until a
+  // verified download replaces it, and must not survive a failed download.
+  let existingJarRejected = false;
   try {
     if (process.env.SKIP_PREPARE_SERVER === "true") {
       console.log("SKIP_PREPARE_SERVER=true, skipping server preparation.");
@@ -870,6 +874,7 @@ async function prepareServer(runtimeOptions = {}) {
           `Existing ${CANONICAL_JAR_NAME} does not match ${target.tag}: ${checksumError.message}`,
         );
         console.warn("Re-downloading Groovy LSP...");
+        existingJarRejected = true;
       }
     }
 
@@ -899,9 +904,23 @@ async function prepareServer(runtimeOptions = {}) {
     console.error("❌ Error preparing Groovy Language Server:");
     console.error(sanitizeForLog(error.message));
 
-    if (error instanceof HttpError && error.isGitHubRateLimit) {
-      const reset = error.rateLimit?.reset
-        ? new Date(Number(error.rateLimit.reset) * 1000).toISOString()
+    if (existingJarRejected) {
+      fs.rmSync(JAR_PATH, { force: true });
+      fs.rmSync(VERSION_FILE, { force: true });
+      console.error(
+        `Removed ${CANONICAL_JAR_NAME}: it failed verification and no replacement was installed.`,
+      );
+    }
+
+    const httpError =
+      error instanceof HttpError
+        ? error
+        : error?.cause instanceof HttpError
+          ? error.cause
+          : null;
+    if (httpError?.isGitHubRateLimit) {
+      const reset = httpError.rateLimit?.reset
+        ? new Date(Number(httpError.rateLimit.reset) * 1000).toISOString()
         : null;
       console.error("");
       console.error("GitHub API rate limit exceeded.");

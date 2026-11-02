@@ -89,6 +89,7 @@ async function fetchChecksumForAsset(assets, assetName, { authToken } = {}) {
     // a generic "checksum required" later.
     throw new Error(
       `Unable to read checksums.txt for ${assetName}: ${error.message}`,
+      { cause: error },
     );
   }
 }
