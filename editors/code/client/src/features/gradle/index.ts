@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { getClient } from "../../server/client";
+import { getClient, restartClient } from "../../server/client";
 import { GradleService } from "./GradleService";
 import { GradleTaskProvider } from "./GradleTaskProvider";
 
@@ -24,13 +24,11 @@ export function registerGradleFeatures(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("groovy.gradle.clean", () =>
       runGradleTask("clean"),
     ),
-    vscode.commands.registerCommand("groovy.gradle.refresh", async () => {
-      // This would ideally trigger a re-scan of tasks in the LSP.
-      // For now, we can just show a message.
-      vscode.window.showInformationMessage(
-        "Gradle project refresh requested. (Not implemented)",
-      );
-    }),
+    // The server has no reload request; it imports the build (dependencies,
+    // source sets) when it starts, and tests are rediscovered after a start.
+    vscode.commands.registerCommand("groovy.gradle.refresh", () =>
+      restartClient(),
+    ),
     vscode.commands.registerCommand("groovy.gradle.selectTask", () => {
       vscode.commands.executeCommand(
         "workbench.action.tasks.runTask",
