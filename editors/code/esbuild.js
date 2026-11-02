@@ -1,4 +1,6 @@
 const esbuild = require("esbuild");
+const fs = require("node:fs");
+const path = require("node:path");
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
@@ -25,7 +27,19 @@ const esbuildProblemMatcherPlugin = {
   },
 };
 
+/** Copies the codicon font used by the AST webview into packaged resources. */
+function copyCodicons() {
+  const from = path.dirname(require.resolve("@vscode/codicons/dist/codicon.css"));
+  const to = path.join(__dirname, "resources", "ast-view", "codicons");
+  fs.mkdirSync(to, { recursive: true });
+  for (const file of ["codicon.css", "codicon.ttf"]) {
+    fs.copyFileSync(path.join(from, file), path.join(to, file));
+  }
+}
+
 async function main() {
+  copyCodicons();
+
   const ctx = await esbuild.context({
     entryPoints: ["client/src/extension.ts"],
     bundle: true,
