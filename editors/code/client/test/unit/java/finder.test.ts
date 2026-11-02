@@ -880,7 +880,6 @@ describe("JDK Finder Module - Public API", () => {
 });
 
 describe("parseLoginShellJavaPath", () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { parseLoginShellJavaPath } = proxyquire.noCallThru()(
     "../../../src/java/finder",
     { vscode: {}, "jdk-utils": {} },
