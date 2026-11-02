@@ -27,6 +27,18 @@ describe("tools/install-extension", () => {
       );
     });
 
+    it("lets --latest override an inherited GLS_USE_PINNED", () => {
+      process.env.GLS_USE_PINNED = "true";
+      try {
+        assert.strictEqual(
+          tool.buildEnv({ latest: true }).GLS_USE_PINNED,
+          undefined,
+        );
+      } finally {
+        delete process.env.GLS_USE_PINNED;
+      }
+    });
+
     it("does not leak an inherited selection into an explicit local build", () => {
       process.env.GLS_TAG = "v0.0.1";
       try {

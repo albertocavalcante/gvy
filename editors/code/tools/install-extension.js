@@ -167,6 +167,7 @@ function buildEnv(args) {
   const select = (name, value) => {
     for (const key of SELECTION_VARS) delete env[key];
     delete env.USE_LATEST_GLS;
+    delete env.GLS_USE_PINNED;
     if (name) env[name] = value;
   };
 
