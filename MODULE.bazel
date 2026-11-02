@@ -220,7 +220,7 @@ maven.install(
         "org.apache.maven:maven-embedder:3.9.12",
         "org.apache.maven:maven-compat:3.9.12",
         "org.apache.maven.resolver:maven-resolver-connector-basic:1.9.27",
-        "org.apache.maven.resolver:maven-resolver-transport-http:1.9.25",
+        "org.apache.maven.resolver:maven-resolver-transport-http:1.9.27",
         "org.apache.maven.resolver:maven-resolver-supplier:1.9.27",
 
         # Jupyter Kernel Protocol
