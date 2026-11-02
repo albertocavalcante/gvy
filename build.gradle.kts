@@ -216,12 +216,14 @@ subprojects {
         dependsOn("detekt", "spotlessCheck")
     }
 
-    // Force sequential test execution on GitHub Actions to avoid resource contention/flakiness
+    // On GitHub Actions: two test JVMs with modest heaps (runner-sized)
     // Otherwise, use parallel execution and generous memory locally
     afterEvaluate {
         tasks.withType<Test>().configureEach {
             if (System.getenv("GITHUB_ACTIONS") == "true") {
-                maxParallelForks = 1
+                // Hosted runners have 4 vCPUs and 16 GB; two 1 GB test JVMs fit. Forks are separate
+                // JVMs, so they share no static state.
+                maxParallelForks = 2
                 minHeapSize = "256m"
                 maxHeapSize = "1g"
             } else {
