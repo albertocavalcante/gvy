@@ -58,6 +58,21 @@ function selectJarAsset(assets) {
 }
 
 /**
+ * Returns the digest for assetName from sha256sum-style manifest text, or null.
+ *
+ * Release manifests are written as "<hash>  ./gls-0.4.8.jar" (older ones omit
+ * the "./"), and sha256sum's binary mode prefixes the name with "*", so the
+ * name is normalised before comparing it exactly.
+ */
+function checksumFromManifest(content, assetName) {
+  for (const raw of content.split(/\r?\n/)) {
+    const match = /^([0-9a-fA-F]{64})\s+\*?(?:\.\/)?(.+)$/.exec(raw.trim());
+    if (match && match[2] === assetName) return match[1].toLowerCase();
+  }
+  return null;
+}
+
+/**
  * Attempts to find a checksum for the given asset name from checksums.txt
  */
 async function fetchChecksumForAsset(assets, assetName, { authToken } = {}) {
@@ -68,12 +83,7 @@ async function fetchChecksumForAsset(assets, assetName, { authToken } = {}) {
     const content = await fetchText(checksumAsset.browser_download_url, {
       authToken,
     });
-    const line = content
-      .split("\n")
-      .find((l) => l.trim().endsWith(` ${assetName}`));
-    if (!line) return null;
-    const [hash] = line.trim().split(/\s+/);
-    return hash || null;
+    return checksumFromManifest(content, assetName);
   } catch (error) {
     console.warn(`Warning: Unable to read checksums.txt: ${error.message}`);
     return null;
@@ -92,4 +102,5 @@ module.exports = {
   getLatestNightlyRelease,
   selectJarAsset,
   fetchChecksumForAsset,
+  checksumFromManifest,
 };

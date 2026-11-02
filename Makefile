@@ -122,9 +122,8 @@ version:
 # VS Code Extension (editors/code/)
 EXT_DIR := editors/code
 
-# Smart install: Runs pnpm install if package.json/lock has changed (root OR client) or node_modules is missing
-# Note: postinstall in root package.json handles client deps via "cd client && pnpm install"
-$(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/pnpm-lock.yaml $(EXT_DIR)/client/package.json $(EXT_DIR)/client/pnpm-lock.yaml
+# Smart install: the root workspace install includes client dependencies.
+$(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/pnpm-lock.yaml $(EXT_DIR)/pnpm-workspace.yaml $(EXT_DIR)/client/package.json
 	cd $(EXT_DIR) && pnpm install
 	@touch $@
 
