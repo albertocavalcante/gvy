@@ -235,6 +235,21 @@ class SemanticCacheTest {
         assertEquals(3, loaded.symbols.size)
     }
 
+    @Test
+    fun `documents cached before the symbol id scheme changed are ignored`(): Unit = runTest {
+        cache = SemanticCache(tempDir)
+        val uri = URI.create("file:///test/Old.groovy")
+        cache.save(uri, createTestDocument(uri), "hash")
+        assertNotNull(cache.load(uri, "hash"))
+
+        // Files written by older builds carry no format version.
+        val file = tempDir.toFile().listFiles { f -> f.extension == "json" }!!.single()
+        file.writeText(file.readText().replace(Regex("\"formatVersion\":\\d+,"), ""))
+
+        assertNull(cache.load(uri, "hash"), "stale ids must not be served")
+        assertFalse(cache.isValid(uri, "hash"))
+    }
+
     private fun createTestDocument(uri: URI): SemanticDocument {
         val symbols = listOf(
             SymbolInfo(
