@@ -71,10 +71,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
+private const val PARENT_EXIT_SHUTDOWN_TIMEOUT_SECONDS = 20L
 
 class GroovyLanguageServer(
     private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val processLiveness: ProcessLiveness = SystemProcessLiveness,
+    private val exitProcess: (Int) -> Unit = { kotlin.system.exitProcess(it) },
 ) : LanguageServer,
     LanguageClientAware {
 
@@ -88,6 +91,14 @@ class GroovyLanguageServer(
     private var groovyClient: GroovyLanguageClient? = null
 
     private val coroutineScope = CoroutineScope(dispatcher + SupervisorJob())
+
+    // Exits the server when the editor process dies, so the JVM is not orphaned.
+    private val parentWatchdog = ParentProcessWatchdog(processLiveness) {
+        runCatching { shutdown().get(PARENT_EXIT_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS) }
+            .onFailure { logger.warn(it) { "Shutdown after parent exit did not complete cleanly" } }
+        // Exit code 1: shutdown was not requested by the client (LSP convention).
+        exitProcess(1)
+    }
 
     // Shared Services
     private val documentProvider = DocumentProvider()
@@ -203,6 +214,7 @@ class GroovyLanguageServer(
         logger.info { "Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}" }
 
         savedInitParams = params
+        parentWatchdog.watch(params.processId)
         clientCapabilities = params.capabilities
 
         val linkSupport = params.capabilities?.textDocument?.definition?.linkSupport == true
