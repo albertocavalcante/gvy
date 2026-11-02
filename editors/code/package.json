@@ -8,7 +8,6 @@
   "engines": {
     "vscode": "^1.144.0"
   },
-  "packageManager": "pnpm@12.14.0",
   "categories": [
     "Programming Languages"
   ],

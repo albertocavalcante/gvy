@@ -7,7 +7,8 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 ### Prerequisites
 
 - **Node.js 22+**: For extension development
-- **pnpm**: The version pinned in `package.json` `packageManager` (`corepack enable` picks it up)
+- **pnpm**: 12 (CI pins 12.14.0). The manifest has no `packageManager` field on purpose: with one, pnpm writes a second
+  YAML document into `pnpm-lock.yaml` that Bazel's `rules_js` cannot parse
 - **Java 17+**: Required for the Groovy Language Server
 - **VS Code**: For testing the extension
 - **Git**: For version control
