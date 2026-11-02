@@ -31,6 +31,12 @@ describe("commands/logLevel", () => {
     ]);
   });
 
+  it("leaves the restart prompt to the configuration watcher", async () => {
+    const { mod, vscodeMock } = load([{ uri: {} }]);
+    await mod.toggleDebugLogs();
+    assert.ok(vscodeMock.window.showInformationMessage.notCalled);
+  });
+
   it("writes workspace settings when a folder is open", async () => {
     const { mod, update } = load([{ uri: {} }]);
     await mod.toggleDebugLogs();

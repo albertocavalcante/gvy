@@ -11,7 +11,7 @@ type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
 
 /**
  * Toggles between 'info' and 'debug' log levels for quick debugging.
- * Prompts for server restart after change.
+ * The configuration watcher prompts for the server restart.
  */
 export async function toggleDebugLogs(): Promise<void> {
   const config = vscode.workspace.getConfiguration("groovy");
@@ -23,20 +23,12 @@ export async function toggleDebugLogs(): Promise<void> {
 
   await config.update("server.logLevel", newLevel, settingsTarget());
 
-  const verb = newLevel === "debug" ? "enabled" : "disabled";
-  const action = await vscode.window.showInformationMessage(
-    `Debug logging ${verb}. Restart server for changes to take effect.`,
-    "Restart Now",
-    "Later",
-  );
-
-  if (action === "Restart Now") {
-    await vscode.commands.executeCommand("groovy.restartServer");
-  }
+  // The configuration watcher offers the restart (server.logLevel is a
+  // restart-required setting), so no second prompt here.
 }
 
 /**
- * Shows quick pick to select log level with restart prompt.
+ * Shows quick pick to select log level.
  */
 export async function selectLogLevel(): Promise<void> {
   const config = vscode.workspace.getConfiguration("groovy");
@@ -75,16 +67,6 @@ export async function selectLogLevel(): Promise<void> {
 
   if (selected && selected.level !== current) {
     await config.update("server.logLevel", selected.level, settingsTarget());
-
-    const action = await vscode.window.showInformationMessage(
-      `Log level set to "${selected.level}". Restart server?`,
-      "Restart Now",
-      "Later",
-    );
-
-    if (action === "Restart Now") {
-      await vscode.commands.executeCommand("groovy.restartServer");
-    }
   }
 }
 
