@@ -586,6 +586,16 @@
           "default": "core",
           "description": "Select the parser engine to use (Core: GroovyParser, Native: Groovy 3)."
         },
+        "groovy.server.vmargs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "-XX:+ExitOnOutOfMemoryError"
+          ],
+          "description": "JVM options passed to the language server before -jar, for example [\"-Xmx2g\"]. The default makes the server exit on OutOfMemoryError so it is restarted automatically. Setting this replaces the default list. Non-string entries are ignored. Requires a server restart."
+        },
         "groovy.server.logLevel": {
           "type": "string",
           "enum": [

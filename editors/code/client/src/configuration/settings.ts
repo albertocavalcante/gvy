@@ -5,6 +5,8 @@ export interface GroovyConfiguration {
   traceServer: "off" | "messages" | "verbose";
   maxNumberOfProblems: number;
   serverPath: string | undefined;
+  /** Raw `groovy.server.vmargs`; sanitized when the command line is built. */
+  serverVmArgs: unknown;
   /** Seconds to wait for the server to start; 0 waits indefinitely. */
   startTimeoutSeconds: number;
 }
@@ -25,6 +27,7 @@ export function getConfiguration(): GroovyConfiguration {
     ),
     maxNumberOfProblems: config.get<number>("server.maxNumberOfProblems", 100),
     serverPath: config.get<string>("server.path"),
+    serverVmArgs: config.get<unknown>("server.vmargs"),
     startTimeoutSeconds: startTimeoutFrom(
       config.get<unknown>("server.startTimeoutSeconds"),
     ),
@@ -55,6 +58,7 @@ export const RESTART_REQUIRED_SETTINGS: readonly string[] = [
   "languageServer.javaHome",
   "java.home",
   "server.path",
+  "server.vmargs",
   "server.logLevel",
   "languageServer.engine",
   "compilation.mode",
