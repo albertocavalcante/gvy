@@ -1,11 +1,16 @@
 import * as vscode from "vscode";
 import * as cp from "child_process";
-import { buildProcessInvocation } from "./processInvocation";
 import * as path from "path";
 import * as fs from "fs";
 import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
 import { resolveTestTarget, selectRunItems } from "./testTarget";
+import {
+  buildProcessInvocation,
+  buildToolOf,
+  ProcessInvocation,
+  withJavaHome,
+} from "./processInvocation";
 import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
 import { CoverageService } from "./CoverageService";
@@ -149,12 +154,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
         }
 
         // Execute the test command with optional coverage
-        const executableName = path.basename(command.executable);
-        const isGradle = executableName.startsWith("gradle");
-        const isMaven =
-          executableName === "mvn" ||
-          executableName === "mvnw" ||
-          executableName.startsWith("mvn.");
+        const tool = buildToolOf(command.executable);
+        const isGradle = tool === "gradle";
+        const isMaven = tool === "maven";
 
         // Track if any Maven execution occurred
         if (isMaven) {
@@ -477,11 +479,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     if (projectJavaHome) {
       // Validate JAVA_HOME for security
       if (this.isValidJavaHome(projectJavaHome)) {
-        resolvedEnv = {
-          ...resolvedEnv,
-          JAVA_HOME: projectJavaHome,
-          PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH || ""}`,
-        };
+        resolvedEnv = withJavaHome(resolvedEnv, projectJavaHome);
         this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
       } else {
         this.logger.appendLine(
@@ -491,9 +489,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
 
     // Detect Build Tool by executable name
-    const executableName = path.basename(executable);
-    const isGradle = executableName.startsWith("gradle");
-    const isMaven = /^(mvn|mvnw)(\.cmd|\.bat)?$/iu.test(executableName);
+    const tool = buildToolOf(executable);
+    const isGradle = tool === "gradle";
+    const isMaven = tool === "maven";
 
     let finalArgs = [...args];
 
@@ -518,8 +516,15 @@ export class LSPTestExecutionService implements ITestExecutionService {
       }
     }
 
+    let invocation: ProcessInvocation;
+    try {
+      invocation = buildProcessInvocation(executable, finalArgs);
+    } catch (error) {
+      this.logger.appendLine(`[Error] ${(error as Error).message}`);
+      return;
+    }
+
     return new Promise((resolve) => {
-      const invocation = buildProcessInvocation(executable, finalArgs);
       const proc = cp.spawn(invocation.executable, invocation.args, {
         cwd,
         env: resolvedEnv,
