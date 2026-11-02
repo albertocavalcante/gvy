@@ -53,11 +53,17 @@ class TextIndex(val text: String) {
  */
 fun firstNameOccurrence(index: TextIndex, range: Range, name: String): Range? {
     if (name.isEmpty()) return null
+    // Slashy strings (/…/, $/…/$) are not recognised, so a quote inside one can hide the rest of the
+    // line; fall back to a plain search rather than lose a declaration that is really there.
+    return findName(index, range, name, skipLiterals = true) ?: findName(index, range, name, skipLiterals = false)
+}
+
+private fun findName(index: TextIndex, range: Range, name: String, skipLiterals: Boolean): Range? {
     val text = index.text
     val end = index.offsetOf(range.end)
     var at = index.offsetOf(range.start)
     while (at < end) {
-        val skipTo = skipLiteralOrComment(text, at)
+        val skipTo = if (skipLiterals) skipLiteralOrComment(text, at) else at
         if (skipTo > at) {
             at = skipTo
         } else if (text.startsWith(name, at) && at + name.length <= end &&

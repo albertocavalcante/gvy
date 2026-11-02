@@ -169,4 +169,32 @@ class ReferenceNameRangeTest {
 
         assertEquals(listOf(1 to 9, 3 to 19), refs)
     }
+
+    @Test
+    fun `same-named nested classes in different outers are different classes`(): Unit = runBlocking {
+        val content = """
+            class X { static class Inner { void m() {} } }
+            class Y { static class Inner { void m() {} } }
+            def a = new X.Inner().m()
+            def b = new Y.Inner().m()
+        """.trimIndent()
+
+        val refs = references(content, 0, 37)
+
+        assertEquals(listOf(0 to 36, 2 to 22), refs)
+    }
+
+    @Test
+    fun `a slashy-string annotation does not hide the declared name`(): Unit = runBlocking {
+        val content = """
+            class Form {
+                @Deprecated(since = /^[^']+$/) String name
+                String show() { return name }
+            }
+        """.trimIndent()
+
+        val refs = references(content, 2, 27)
+
+        assertEquals(listOf(1 to 42, 2 to 27), refs)
+    }
 }

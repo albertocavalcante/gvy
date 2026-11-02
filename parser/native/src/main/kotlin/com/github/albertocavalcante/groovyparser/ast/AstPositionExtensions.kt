@@ -177,14 +177,19 @@ private fun MethodCallExpression.mayCall(method: MethodNode): Boolean {
     val owner = method.declaringClass?.let(::traitOrSelf) ?: return true
     if (ClassHelper.isDynamicTyped(type) || type == ClassHelper.OBJECT_TYPE) return true
     if (type.name == owner.name || type.isDerivedFrom(owner) || type.implementsInterface(owner)) return true
-    // Files that only reached CONVERSION leave types unresolved, written as they appear in source
-    // (`C`, not `p.C`); compare simple names then rather than dropping the call.
-    return !type.isResolved && simpleName(type) == simpleName(owner)
+    // Files that only reached CONVERSION leave an unresolved placeholder, named as written in source
+    // (`C`, not `p.C`); compare simple names then rather than dropping the call. Only for a
+    // placeholder: isResolved is false for every class compiled from source, so testing it alone
+    // would match `Y.Inner` calls against `X.Inner.m`.
+    return type.isUnresolvedPlaceholder() && simpleName(type) == simpleName(owner)
 }
 
 /** A trait's method bodies live in `T$Trait$Helper`; callers reach them through the trait `T`. */
 private fun traitOrSelf(type: ClassNode): ClassNode =
     if (type.name.endsWith("\$Trait\$Helper")) (type as? InnerClassNode)?.outerClass ?: type else type
+
+/** A type the compiler has not resolved yet: no redirect to a real class, not compiled from source. */
+private fun ClassNode.isUnresolvedPlaceholder(): Boolean = redirect() === this && !isPrimaryClassNode && !isResolved
 
 private fun simpleName(type: ClassNode): String = type.nameWithoutPackage.substringAfterLast('$')
 
