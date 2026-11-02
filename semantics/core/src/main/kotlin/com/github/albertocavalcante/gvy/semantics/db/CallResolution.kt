@@ -58,16 +58,21 @@ internal object OverloadResolver {
     fun choose(candidates: List<MethodNode>, argTypes: List<ClassNode?>): MethodNode? {
         val byArity = candidates.filter { acceptsArity(it, argTypes.size) }
         return when {
-            byArity.size <= 1 -> byArity.singleOrNull()
+            byArity.isEmpty() -> null
+            // Arity alone never decides when the arguments are known and cannot be passed.
+            byArity.size == 1 -> byArity.single().takeUnless { ruledOut(it, argTypes) }
             argTypes.any { it == null } -> null
             else -> chooseByTypes(byArity, argTypes.filterNotNull())
         }
     }
 
+    private fun ruledOut(method: MethodNode, argTypes: List<ClassNode?>): Boolean =
+        argTypes.withIndex().any { (i, arg) -> arg != null && fits(method, i, arg) == false }
+
     private fun chooseByTypes(candidates: List<MethodNode>, args: List<ClassNode>): MethodNode? {
         val wanted = TypeSignatures.parameterList(args)
         return candidates.singleOrNull { TypeSignatures.parameterList(it.parameters) == wanted }
-            ?: candidates.singleOrNull { method -> args.indices.all { assignable(method, it, args[it]) } }
+            ?: candidates.singleOrNull { method -> args.indices.all { fits(method, it, args[it]) == true } }
     }
 
     private fun acceptsArity(method: MethodNode, argCount: Int): Boolean {
@@ -77,17 +82,48 @@ internal object OverloadResolver {
         return argCount in required..params.size || (varargs && argCount >= params.size - 1)
     }
 
-    private fun assignable(method: MethodNode, index: Int, arg: ClassNode): Boolean {
+    /** True or false when decidable from what is loaded, null when the types cannot be compared. */
+    private fun fits(method: MethodNode, index: Int, arg: ClassNode): Boolean? {
         val params = method.parameters
-        val param = (params.getOrNull(index) ?: params.last()).type
-        val paramName = ClassHelper.getUnwrapper(param).name
-        val argName = ClassHelper.getUnwrapper(arg).name
+        val last = params.lastOrNull()?.type
+        val param = params.getOrNull(index)?.type ?: last ?: return null
+        val atVarargs = last?.isArray == true && index >= params.size - 1
+        val direct = fitsType(param, arg)
+        return if (atVarargs && direct != true) fitsType(last.componentType, arg) ?: direct else direct
+    }
+
+    @Suppress("ReturnCount")
+    private fun fitsType(param: ClassNode, arg: ClassNode): Boolean? {
+        if (param.isGenericsPlaceHolder || param.name == "java.lang.Object" || param.name == "Object") return true
+        val p = canonical(param) ?: return null
+        val a = canonical(arg) ?: return null
+        val paramName = ClassHelper.getUnwrapper(p).name
+        val argName = ClassHelper.getUnwrapper(a).name
         return when {
-            param.name == "java.lang.Object" || paramName == argName -> true
+            paramName == argName -> true
+            paramName == "java.lang.String" && a.name == "groovy.lang.GString" -> true
             paramName in numericWidening && argName in numericWidening ->
                 numericWidening.indexOf(argName) <= numericWidening.indexOf(paramName)
-            else -> runCatching { arg.isDerivedFrom(param) || arg.implementsInterface(param) }.getOrDefault(false)
+            else -> derives(a, p)
         }
+    }
+
+    private fun derives(arg: ClassNode, param: ClassNode): Boolean? {
+        if (!decidable(param) || !decidable(arg)) return null
+        return runCatching {
+            val pw = ClassHelper.getWrapper(param)
+            val aw = ClassHelper.getWrapper(arg)
+            aw.isDerivedFrom(pw) || aw.implementsInterface(pw)
+        }.getOrDefault(false)
+    }
+
+    private fun decidable(type: ClassNode): Boolean =
+        ClassHelper.isPrimitiveType(type) || type.name.startsWith("java.") || type.name == "groovy.lang.GString"
+
+    /** The type with a qualified name, or null for a name the compiler has not resolved yet. */
+    private fun canonical(type: ClassNode): ClassNode? = when {
+        type.isArray || type.name.contains('.') || ClassHelper.isPrimitiveType(type) -> type
+        else -> runCatching { ClassHelper.make(Class.forName("java.lang.${type.name}")) }.getOrNull()
     }
 }
 
@@ -150,24 +186,61 @@ internal class CallResolver(
         val receiver = receiverType(call.objectExpression) ?: return null
         val argTypes = argumentExpressions(call.arguments).map { staticTypeOf(it) }
         val target = declaredClass(receiver)
-        val candidates = target.getMethods(name).distinctBy { TypeSignatures.parameterList(it.parameters) }
+        val hierarchy = hierarchyOf(target)
+        val candidates = hierarchy.methods
+            .filter { it.name == name }
+            .distinctBy { TypeSignatures.parameterList(it.parameters) }
         return when {
             candidates.isNotEmpty() ->
                 OverloadResolver.choose(candidates, argTypes)?.let {
                     SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it)
                 }
-            target.name == currentClass.name -> null // our own class has no such method
+            hierarchy.complete -> null // every class in the chain is known and none has such a method
             argTypes.any { it == null } -> null
             else -> "${resolveTypeName(receiver)}#$name(${TypeSignatures.parameterList(argTypes)})."
         }
+    }
+
+    /** Methods of a class, then of its superclasses and interfaces, nearest first. */
+    private class Hierarchy(val methods: List<MethodNode>, val complete: Boolean)
+
+    /**
+     * Walks [start] and everything it extends or implements. Supertypes declared in this file are
+     * looked up in the module (before resolution their ClassNodes are empty stubs); [Hierarchy.complete]
+     * is false when a supertype lives elsewhere, so its methods are not visible.
+     */
+    private fun hierarchyOf(start: ClassNode): Hierarchy {
+        val seen = HashSet<String>()
+        val methods = ArrayList<MethodNode>()
+        var complete = true
+        val queue = ArrayDeque(listOf(start))
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.name == "java.lang.Object" || !seen.add(node.name)) continue
+            val local = moduleNode.classes.firstOrNull {
+                it.name == node.name || (!node.name.contains('.') && it.nameWithoutPackage == node.name)
+            }
+            if (local == null) complete = false
+            val resolved = local ?: node.redirect()
+            methods += resolved.methods
+            resolved.unresolvedSuperClass?.let(queue::addLast)
+            resolved.unresolvedInterfaces.forEach(queue::addLast)
+        }
+        return Hierarchy(methods, complete)
     }
 
     /** The class a member access is made on, or null when the receiver has no known static type. */
     fun receiverType(receiver: Expression): ClassNode? = when {
         receiver is VariableExpression && receiver.isThisExpression -> currentClass
         receiver is ClassExpression -> receiver.type
+        // Before name resolution `A.foo()` has a bare name for `A`; a class of this file wins over no binding.
+        receiver is VariableExpression && lookup(receiver.name) == null && !hasMember(receiver.name) ->
+            moduleNode.classes.firstOrNull { it.name == receiver.name || it.nameWithoutPackage == receiver.name }
+                ?: staticTypeOf(receiver)
         else -> staticTypeOf(receiver)
     }
+
+    private fun hasMember(name: String) = currentClass.getField(name) != null || currentClass.getProperty(name) != null
 
     private fun argumentExpressions(arguments: Expression): List<Expression> =
         if (arguments is TupleExpression) arguments.expressions else listOf(arguments)

@@ -312,7 +312,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             }
         }
 
-        private fun lookup(name: String): LocalBinding? = scopes.reversed().firstNotNullOfOrNull { it[name] }
+        private fun lookup(name: String): LocalBinding? = scopes.asReversed().firstNotNullOfOrNull { it[name] }
 
         /** Declare a local variable or parameter: bind the name and index it as a VARIABLE symbol. */
         private fun declareLocal(name: String, node: Any, type: ClassNode?) {

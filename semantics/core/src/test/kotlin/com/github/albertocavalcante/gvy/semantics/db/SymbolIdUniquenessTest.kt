@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -19,16 +21,26 @@ import java.net.URI
  * - parameters:  `Cls#m(String,int).(p)`
  * - locals:      `Cls#m(String,int).x@line:col` (0-indexed declaration position)
  */
-class SymbolIdUniquenessTest {
+open class SymbolIdUniquenessTest {
 
     private val uri = URI.create("file:///Test.groovy")
 
+    /** The compile phase the AST reaches before indexing; production uses CANONICALIZATION. */
+    protected open val phase: Int = Phases.CONVERSION
+
     private fun build(code: String): SemanticDocument {
-        val sourceUnit = SourceUnit("Test.groovy", code.trimIndent(), CompilerConfiguration(), null, null)
-        sourceUnit.parse()
-        sourceUnit.completePhase()
-        sourceUnit.convert()
-        return SemanticDocumentBuilder(sourceUnit.ast, uri).build()
+        if (phase == Phases.CONVERSION) {
+            val sourceUnit = SourceUnit("Test.groovy", code.trimIndent(), CompilerConfiguration(), null, null)
+            sourceUnit.parse()
+            sourceUnit.completePhase()
+            sourceUnit.convert()
+            return SemanticDocumentBuilder(sourceUnit.ast, uri).build()
+        }
+        val unit = CompilationUnit(CompilerConfiguration())
+        unit.addSource("Test.groovy", code.trimIndent())
+        // Like production, index whatever AST exists even when resolution reports errors (e.g. other files).
+        runCatching { unit.compile(phase) }
+        return SemanticDocumentBuilder(unit.ast.modules.single(), uri).build()
     }
 
     private fun SemanticDocument.calls(name: String) = occurrences.filter {
@@ -290,5 +302,101 @@ class SymbolIdUniquenessTest {
         val field = doc.symbols.single { it.kind == SymbolKind.FIELD }
         assertTrue(doc.occurrences.none { it.symbol == field.symbol && it.role == OccurrenceRole.REFERENCE })
         assertTrue(doc.symbols.any { it.kind == SymbolKind.VARIABLE && it.name == "i" })
+    }
+
+    @Test
+    @DisplayName("a call is credited to the inherited overload that fits, not a subclass overload of the same arity")
+    fun inheritedOverloadWins() {
+        val doc = build(
+            """
+            class Base { void foo(int x) {} }
+            class A extends Base {
+                void foo(String s) {}
+                void run() { foo(1) }
+            }
+            """,
+        )
+        assertEquals(
+            listOf("Base#foo(int)."),
+            doc.calls("foo").map { it.symbol.substringAfter("/").removePrefix("") }
+                .map { it.substringAfterLast('/') },
+        )
+    }
+
+    @Test
+    @DisplayName("calls to an inherited method resolve to the declaring class")
+    fun inheritedMethodsResolveToDeclaringClass() {
+        val doc = build(
+            """
+            class A { void foo() {} }
+            class B extends A {
+                void run() { foo() }
+            }
+            class C {
+                void use() { new B().foo() }
+            }
+            """,
+        )
+        val symbols = doc.calls("foo").map { it.symbol.substringAfterLast('/') }
+        assertEquals(listOf("A#foo().", "A#foo()."), symbols)
+    }
+
+    @Test
+    @DisplayName("an implicit-this call inside a closure resolves to the enclosing class")
+    fun implicitThisInClosure() {
+        val doc = build(
+            """
+            class A {
+                void foo(int x) {}
+                void run() { def c = { foo(1) }; c() }
+            }
+            """,
+        )
+        assertEquals(listOf("A#foo(int)."), doc.calls("foo").map { it.symbol.substringAfterLast('/') })
+    }
+
+    @Test
+    @DisplayName("a static method called through its class resolves")
+    fun staticCallResolves() {
+        val doc = build(
+            """
+            class A {
+                static void foo(String s) {}
+                static void foo(int x) {}
+                void run() { A.foo(1) }
+            }
+            """,
+        )
+        assertEquals(listOf("A#foo(int)."), doc.calls("foo").map { it.symbol.substringAfterLast('/') })
+    }
+
+    @Test
+    @DisplayName("a generic method resolves and a generic parameter accepts any argument")
+    fun genericMethodResolves() {
+        val doc = build(
+            """
+            class A {
+                def <T> T id(T value) { value }
+                void run() { id(1) }
+            }
+            """,
+        )
+        val definition = doc.symbols.single { it.kind == SymbolKind.METHOD && it.name == "id" }
+        assertEquals(listOf(definition.symbol), doc.calls("id").map { it.symbol })
+    }
+
+    @Test
+    @DisplayName("a call with fewer arguments than parameters resolves to the method with defaults")
+    fun defaultParameterCall() {
+        val doc = build(
+            """
+            class A {
+                void foo(int x, int y = 2) {}
+                void run() { foo(1) }
+            }
+            """,
+        )
+        assertEquals(1, doc.calls("foo").size)
+        assertTrue(doc.calls("foo").single().symbol.endsWith("A#foo(int,int)."))
     }
 }
