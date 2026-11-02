@@ -203,7 +203,7 @@ maven.install(
         "com.google.guava:guava:33.5.0-jre",
 
         # Classpath Scanning
-        "io.github.classgraph:classgraph:4.8.184",
+        "io.github.classgraph:classgraph:4.8.199",
         "com.guardsquare:proguard-gradle:7.8.2",
         "net.java.dev.jna:jna:5.18.1",
         "net.java.dev.jna:jna-platform:5.18.1",
