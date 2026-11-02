@@ -12,6 +12,7 @@
  */
 
 import * as vscode from "vscode";
+import { settingsTarget } from "../configuration/target";
 import { getRuntime } from "jdk-utils";
 import {
   findAllJdks,
@@ -285,7 +286,7 @@ async function setLspJavaHomeAndRestart(
   await config.update(
     "languageServer.javaHome",
     jdkPath,
-    vscode.ConfigurationTarget.Workspace,
+    settingsTarget(),
   );
 
   const restartAction = "Restart Server";
@@ -317,7 +318,7 @@ async function setProjectJavaHome(
   await config.update(
     "project.javaHome",
     jdkPath,
-    vscode.ConfigurationTarget.Workspace,
+    settingsTarget(),
   );
 
   vscode.window.showInformationMessage(

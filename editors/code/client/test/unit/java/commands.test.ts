@@ -144,7 +144,7 @@ describe("Java Commands", () => {
 
     // Load commands module with mocked dependencies
     commandsModule = proxyquire.noCallThru()("../../../src/java/commands", {
-      vscode: mockVscode,
+      vscode: { ...mockVscode, "@global": true },
       "./finder": mockFinder,
       "jdk-utils": mockJdkUtils,
     }) as CommandsModule;

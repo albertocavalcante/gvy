@@ -1,4 +1,5 @@
 import * as vscode from "vscode";
+import { settingsTarget } from "../configuration/target";
 import type { OutputChannel } from "vscode";
 import {
   ErrorDetails,
@@ -418,7 +419,7 @@ async function showJdkNewerWarning(
         await config.update(
           "jdk.suppressMismatchWarning",
           true,
-          vscode.ConfigurationTarget.Workspace,
+          settingsTarget(),
         );
         vscode.window.showInformationMessage(
           "JDK version mismatch warnings will be suppressed for this workspace. " +

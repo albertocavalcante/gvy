@@ -5,6 +5,7 @@
  */
 
 import * as vscode from "vscode";
+import { settingsTarget } from "../configuration/target";
 
 type LogLevel = "error" | "warn" | "info" | "debug" | "trace";
 
@@ -23,7 +24,7 @@ export async function toggleDebugLogs(): Promise<void> {
   await config.update(
     "server.logLevel",
     newLevel,
-    vscode.ConfigurationTarget.Workspace,
+    settingsTarget(),
   );
 
   const verb = newLevel === "debug" ? "enabled" : "disabled";
@@ -80,7 +81,7 @@ export async function selectLogLevel(): Promise<void> {
     await config.update(
       "server.logLevel",
       selected.level,
-      vscode.ConfigurationTarget.Workspace,
+      settingsTarget(),
     );
 
     const action = await vscode.window.showInformationMessage(
