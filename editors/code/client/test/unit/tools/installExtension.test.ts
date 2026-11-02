@@ -7,6 +7,20 @@ const tool = require("../../../../tools/install-extension.js") as {
     env: NodeJS.ProcessEnv,
     platform: NodeJS.Platform,
   ) => { cmd: string; args: string[]; shell: boolean };
+  installerCommand: (
+    cmd: string,
+    args: string[],
+    platform: NodeJS.Platform,
+  ) => { cmd: string; args: string[]; shell: boolean };
+  findInstaller: (
+    preferred: string | null,
+    platform: NodeJS.Platform,
+    spawn: (
+      cmd: string,
+      args: string[],
+      options: { shell?: boolean },
+    ) => { status: number | null; error?: NodeJS.ErrnoException },
+  ) => string | null;
 };
 
 describe("tools/install-extension", () => {
@@ -72,6 +86,88 @@ describe("tools/install-extension", () => {
         shell: false,
       });
       assert.strictEqual(tool.packageCommand({}, "win32").shell, true);
+    });
+  });
+
+  describe("installer lookup", () => {
+    // What Node does on Windows: `code` is code.cmd, found only by cmd.exe,
+    // and cmd itself always spawns: a missing command is a non-zero status
+    // (9009 or 1), never ENOENT.
+    const windowsSpawn =
+      (missingStatus: number) =>
+      (cmd: string, _args: string[], options: { shell?: boolean }) => {
+        if (!options.shell) {
+          return {
+            status: null,
+            error: Object.assign(new Error(`spawn ${cmd} EINVAL`), {
+              code: "EINVAL",
+            }),
+          };
+        }
+        return { status: cmd === '"cursor"' ? 0 : missingStatus };
+      };
+
+    it("finds a .cmd launcher on Windows, skipping missing ones", () => {
+      for (const missing of [9009, 1]) {
+        assert.strictEqual(
+          tool.findInstaller(null, "win32", windowsSpawn(missing)),
+          "cursor",
+          `cmd exit status ${missing} means not found`,
+        );
+      }
+    });
+
+    it("accepts parentheses, as in Program Files (x86)", () => {
+      const exe = "C:\\Program Files (x86)\\Microsoft VS Code\\bin\\code.cmd";
+      assert.strictEqual(
+        tool.installerCommand(exe, [], "win32").cmd,
+        `"${exe}"`,
+      );
+    });
+
+    it("reports an explicitly requested installer it cannot run safely", () => {
+      assert.throws(
+        () =>
+          tool.findInstaller("C:\\100%\\code.cmd", "win32", windowsSpawn(1)),
+        /unsafe for the Windows command shell/,
+      );
+    });
+
+    it("runs installers through cmd on Windows with quoted arguments", () => {
+      assert.deepStrictEqual(
+        tool.installerCommand(
+          "code",
+          ["--install-extension", "C:\\My Repo\\gvy.vsix"],
+          "win32",
+        ),
+        {
+          cmd: '"code"',
+          args: ['"--install-extension"', '"C:\\My Repo\\gvy.vsix"'],
+          shell: true,
+        },
+      );
+    });
+
+    it("refuses arguments cmd would still interpret", () => {
+      assert.throws(
+        () => tool.installerCommand("code", ["C:\\100%\\gvy.vsix"], "win32"),
+        /unsafe for the Windows command shell/,
+      );
+    });
+
+    it("spawns installers directly elsewhere", () => {
+      assert.deepStrictEqual(
+        tool.installerCommand(
+          "code",
+          ["--install-extension", "/a b.vsix"],
+          "darwin",
+        ),
+        {
+          cmd: "code",
+          args: ["--install-extension", "/a b.vsix"],
+          shell: false,
+        },
+      );
     });
   });
 });
