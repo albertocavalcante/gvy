@@ -94,7 +94,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         val uri = params.item.uri
         val position = params.item.selectionRange.start
 
-        val referenceProvider = ReferenceProvider(compilationService)
+        val referenceProvider = ReferenceProvider(compilationService, compilationService.getWorkspaceSymbolIndex())
 
         val references = referenceProvider.provideReferences(
             uri,

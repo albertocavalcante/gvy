@@ -121,10 +121,12 @@ data class ScenarioContext(
 
     fun evaluateCheck(node: JsonElement, check: JsonCheck, quiet: Boolean = false): Boolean {
         val javaObject = node.toJavaObject()
+        // Scenarios write variables such as {{workspace.uri}} inside filters, e.g. `$[?(@.uri == '…')]`.
+        val jsonPath = interpolateString(check.jsonPath)
         val (pathExists, readValue) = javaObject?.let {
             val document = JsonPath.using(jsonPathConfig).parse(it)
             try {
-                true to document.read<Any?>(check.jsonPath)
+                true to document.read<Any?>(jsonPath)
             } catch (ex: PathNotFoundException) {
                 false to null
             }
@@ -132,7 +134,7 @@ data class ScenarioContext(
 
         val expectation = check.expect.interpolate(this)
         val messagePrefix = buildString {
-            append("Assertion failed for jsonPath '${check.jsonPath}' with expectation ${expectation.type}")
+            append("Assertion failed for jsonPath '$jsonPath' with expectation ${expectation.type}")
             check.message?.let {
                 append(" (")
                 append(it)

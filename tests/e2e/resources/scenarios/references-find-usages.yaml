@@ -1,5 +1,3 @@
-# TODO(DEFERRED): #430 - Test disabled. Cross-file references not working.
-# See: https://github.com/albertocavalcante/groovy-devtools/issues/430
 name: references-find-usages
 description: Find all references for methods and classes with strict count validation.
 workspace:
