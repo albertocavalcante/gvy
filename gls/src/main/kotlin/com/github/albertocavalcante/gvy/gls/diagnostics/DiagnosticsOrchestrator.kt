@@ -9,6 +9,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.control.CompilationFailedException
@@ -18,6 +19,9 @@ import java.io.IOException
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.coroutines.coroutineContext
+
+/** Quiet period after the last edit before a debounced diagnostics run starts compiling. */
+const val DEFAULT_DIAGNOSTICS_DEBOUNCE_MS = 250L
 
 /**
  * Orchestrates diagnostic computation and publication for open documents.
@@ -30,6 +34,7 @@ import kotlin.coroutines.coroutineContext
  *
  * Extracted from GroovyTextDocumentService as part of god class refactoring (#951).
  */
+@Suppress("LongParameterList") // Injected collaborators plus the test-overridable debounce
 class DiagnosticsOrchestrator(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
@@ -37,6 +42,7 @@ class DiagnosticsOrchestrator(
     private val documentProvider: DocumentProvider,
     private val serverConfiguration: ServerConfiguration,
     private val client: () -> LanguageClient?,
+    private val debounceMillis: Long = DEFAULT_DIAGNOSTICS_DEBOUNCE_MS,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -56,9 +62,11 @@ class DiagnosticsOrchestrator(
      *
      * @param uri The document URI
      * @param content The document content
+     * @param debounce When true (used for didChange), wait [debounceMillis] before compiling so a burst
+     *   of edits results in a single compile of the latest content. Open/save/refresh run immediately.
      */
     @Suppress("TooGenericExceptionCaught")
-    fun trigger(uri: URI, content: String) {
+    fun trigger(uri: URI, content: String, debounce: Boolean = false) {
         // Create the job lazily so it is registered (and any previous job cancelled) before it starts.
         // Otherwise a fast job could finish and run its cleanup before registration, leaving a
         // completed job in the map, and the new job could run while the old one is still active.
@@ -66,6 +74,9 @@ class DiagnosticsOrchestrator(
             val currentJob = coroutineContext[Job]
             try {
                 runCatching {
+                    // A newer trigger cancels this job during the delay, before any expensive work starts.
+                    if (debounce && debounceMillis > 0) delay(debounceMillis)
+
                     // Use compileAsync for proper coordination
                     val result = compilationService.compileAsync(this, uri, content).await()
 

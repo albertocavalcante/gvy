@@ -311,7 +311,7 @@ class GroovyTextDocumentService(
             // Invalidate documentation cache for this document
             DocumentationProvider.invalidateDocument(uri)
 
-            diagnosticsOrchestrator.trigger(uri, newContent)
+            diagnosticsOrchestrator.trigger(uri, newContent, debounce = true)
         }
     }
 
