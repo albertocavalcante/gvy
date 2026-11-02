@@ -4,6 +4,18 @@ name: OSV-Scanner
 on:
   pull_request:
     branches: [main]
+    paths:
+      - '**/build.gradle.kts'
+      - '**/settings.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - '**/package.json'
+      - '**/pnpm-lock.yaml'
+      - '**/pnpm-workspace.yaml'
+      - 'MODULE.bazel'
+      - 'MODULE.bazel.lock'
+      - '**/*.lockfile'
+      - '**/gradle.lockfile'
+      - '.github/workflows/osv-scanner.yml'
   schedule:
     - cron: "0 5 * * 1"
 
@@ -11,6 +23,11 @@ permissions:
   actions: read
   contents: read
   security-events: write
+
+concurrency:
+  # Cancel superseded runs on PRs; never cancel runs on main.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   scan-scheduled:

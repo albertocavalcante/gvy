@@ -3,10 +3,26 @@ name: Dependency Review
 
 on:
   pull_request:
+    paths:
+      - '**/build.gradle.kts'
+      - '**/settings.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - '**/package.json'
+      - '**/pnpm-lock.yaml'
+      - '**/pnpm-workspace.yaml'
+      - 'MODULE.bazel'
+      - 'MODULE.bazel.lock'
+      - '.github/workflows/**'
+      - '.github/actions/**'
 
 permissions:
   contents: read
   pull-requests: read
+
+concurrency:
+  # Cancel superseded runs on PRs; never cancel runs on main.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   dependency-review:
