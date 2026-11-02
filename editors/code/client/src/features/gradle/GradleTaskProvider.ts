@@ -1,5 +1,31 @@
 import * as vscode from "vscode";
+import * as fs from "fs";
+import * as path from "path";
 import { GradleService } from "./GradleService";
+
+/**
+ * The project's wrapper (pinned Gradle version, works without a global
+ * install) when present, otherwise `gradle` from PATH.
+ */
+export function gradleExecutable(
+  folderPath: string,
+  platform: NodeJS.Platform = process.platform,
+  exists: (p: string) => boolean = fs.existsSync,
+): string {
+  const p = platform === "win32" ? path.win32 : path.posix;
+  const wrapper = p.join(folderPath, platform === "win32" ? "gradlew.bat" : "gradlew");
+  return exists(wrapper) ? wrapper : "gradle";
+}
+
+function gradleExecution(
+  folder: vscode.WorkspaceFolder | undefined,
+  taskName: string,
+): vscode.ShellExecution {
+  const cwd = folder?.uri.fsPath;
+  const executable = cwd ? gradleExecutable(cwd, process.platform, fs.existsSync) : "gradle";
+  // Argument form lets VS Code quote per shell instead of splicing a string.
+  return new vscode.ShellExecution(executable, [taskName], { cwd });
+}
 
 export class GradleTaskProvider implements vscode.TaskProvider {
   constructor(private readonly gradleService: GradleService) {}
@@ -28,9 +54,7 @@ export class GradleTaskProvider implements vscode.TaskProvider {
               ? `${taskInfo.project}:${taskInfo.name}`
               : taskInfo.name,
             "gradle",
-            new vscode.ShellExecution(`gradle ${taskInfo.name}`, {
-              cwd: workspaceFolder.uri.fsPath,
-            }),
+            gradleExecution(workspaceFolder, taskInfo.name),
           );
 
           // Map task group from server response if available
@@ -73,16 +97,16 @@ export class GradleTaskProvider implements vscode.TaskProvider {
   ): vscode.ProviderResult<vscode.Task> {
     // We need to ensure the task has a definition and that the definition is for 'gradle'
     if (task.definition.type === "gradle" && task.definition.task) {
+      const folder =
+        typeof task.scope === "object"
+          ? task.scope
+          : vscode.workspace.workspaceFolders?.[0];
       return new vscode.Task(
         task.definition,
-        task.scope ||
-          (vscode.workspace.workspaceFolders &&
-          vscode.workspace.workspaceFolders.length > 0
-            ? vscode.workspace.workspaceFolders[0]
-            : vscode.TaskScope.Global),
+        folder ?? vscode.TaskScope.Global,
         task.definition.task,
         "gradle",
-        new vscode.ShellExecution(`gradle ${task.definition.task}`),
+        gradleExecution(folder, task.definition.task),
       );
     }
     return undefined;
