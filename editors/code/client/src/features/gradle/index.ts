@@ -1,22 +1,18 @@
 import * as vscode from "vscode";
-import { getClient } from "../../server/client";
+import { getClient, restartClient } from "../../server/client";
 import { GradleService } from "./GradleService";
-import { GradleTaskProvider } from "./GradleTaskProvider";
+import {
+  GRADLE_TASK_TYPE,
+  GradleTaskProvider,
+  createGradleTask,
+} from "./GradleTaskProvider";
 
 export function registerGradleFeatures(context: vscode.ExtensionContext) {
-  const client = getClient();
-  if (!client) {
-    console.error(
-      "Gradle features cannot be registered: Language Client not ready.",
-    );
-    return;
-  }
-
-  const gradleService = new GradleService(client);
+  const gradleService = new GradleService(getClient);
   const taskProvider = new GradleTaskProvider(gradleService);
 
   const taskProviderDisposable = vscode.tasks.registerTaskProvider(
-    "gradle",
+    GRADLE_TASK_TYPE,
     taskProvider,
   );
 
@@ -32,29 +28,34 @@ export function registerGradleFeatures(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("groovy.gradle.clean", () =>
       runGradleTask("clean"),
     ),
-    vscode.commands.registerCommand("groovy.gradle.refresh", async () => {
-      // This would ideally trigger a re-scan of tasks in the LSP.
-      // For now, we can just show a message.
-      vscode.window.showInformationMessage(
-        "Gradle project refresh requested. (Not implemented)",
-      );
-    }),
+    // The server has no reload request; it imports the build (dependencies,
+    // source sets) when it starts, and tests are rediscovered after a start.
+    vscode.commands.registerCommand("groovy.gradle.refresh", () =>
+      restartClient(),
+    ),
     vscode.commands.registerCommand("groovy.gradle.selectTask", () => {
       vscode.commands.executeCommand(
         "workbench.action.tasks.runTask",
-        "gradle",
+        GRADLE_TASK_TYPE,
       );
     }),
   );
 }
 
+/**
+ * Runs a root-project task of the first workspace folder. Built directly
+ * rather than looked up among provided tasks: the server may not list any,
+ * and Build/Test/Clean exist in every Gradle project.
+ */
 async function runGradleTask(taskName: string) {
-  const tasks = await vscode.tasks.fetchTasks({ type: "gradle" });
-  const taskToRun = tasks.find((task) => task.name === taskName);
-
-  if (taskToRun) {
-    vscode.tasks.executeTask(taskToRun);
-  } else {
-    vscode.window.showErrorMessage(`Gradle task '${taskName}' not found.`);
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    vscode.window.showErrorMessage(
+      `Open a Gradle project folder to run '${taskName}'.`,
+    );
+    return;
   }
+  await vscode.tasks.executeTask(
+    createGradleTask({ type: GRADLE_TASK_TYPE, task: taskName }, folder),
+  );
 }

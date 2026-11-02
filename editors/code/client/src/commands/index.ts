@@ -5,7 +5,9 @@ import {
   window,
   Uri,
   ProgressLocation,
+  version,
 } from "vscode";
+import { buildIssueBody } from "../utils/reportIssue";
 import { restartClient, stopClient, getClient } from "../server/client";
 import { ExecuteCommandRequest } from "vscode-languageclient";
 import { UpdateService } from "../features/update/UpdateService";
@@ -130,9 +132,6 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
   const reportIssueCommand = commands.registerCommand(
     "groovy.reportIssue",
     async () => {
-      const { buildIssueBody } = await import("../utils/reportIssue");
-      const vscode = await import("vscode");
-
       // Gather system information
       const extensionVersion =
         context.extension?.packageJSON?.version || "unknown";
@@ -160,7 +159,7 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
       const info = {
         extensionVersion,
         serverVersion,
-        vscodeVersion: vscode.version,
+        vscodeVersion: version,
         osInfo: `${process.platform} ${process.arch}`,
       };
 
@@ -240,12 +239,12 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
 }
 
 /**
- * Initializes the update service with the current extension version.
- * Should be called after the language client starts.
+ * Initializes the update service with the installed server version (read at
+ * every check).
  */
 export function initializeUpdateService(
   context: ExtensionContext,
-  currentVersion: string,
+  currentVersion: string | (() => string),
 ): UpdateService {
   updateService = new UpdateService(currentVersion, context.globalState);
   return updateService;

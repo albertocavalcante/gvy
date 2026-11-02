@@ -108,25 +108,68 @@ function runCommand(cmd, args, options = {}) {
   }
 }
 
-function commandExists(cmd) {
-  try {
-    const result = spawnSync(cmd, ["--version"], { stdio: "ignore" });
-    if (result.error && result.error.code === "ENOENT") {
-      return false;
-    }
-    return result.status === 0 || result.status === 1; // some CLIs return 1 for --version
-  } catch (error) {
-    if (error.code === "ENOENT") return false;
-    return false;
+// Characters cmd.exe interprets even inside double quotes, or that end
+// them. Parentheses are safe when quoted ("Program Files (x86)").
+const WINDOWS_SHELL_META = /[\r\n\0"%!^&|<>]/u;
+
+/**
+ * How to spawn an editor CLI. On Windows these are .cmd launchers (code.cmd,
+ * cursor.cmd): Node finds them only through cmd.exe's PATHEXT lookup and
+ * refuses to spawn .cmd files without a shell (CVE-2024-27980), so they run
+ * through cmd with every argument quoted.
+ */
+function installerCommand(cmd, args, platform = process.platform) {
+  if (platform !== "win32") {
+    return { cmd, args, shell: false };
   }
+  for (const value of [cmd, ...args]) {
+    if (WINDOWS_SHELL_META.test(value)) {
+      throw new Error(
+        `Argument is unsafe for the Windows command shell: ${value}`,
+      );
+    }
+  }
+  return {
+    cmd: `"${cmd}"`,
+    args: args.map((arg) => `"${arg}"`),
+    shell: true,
+  };
 }
 
-function findInstaller(preferred) {
-  const candidates = preferred
-    ? [preferred, ...DEFAULT_INSTALLERS.filter((c) => c !== preferred)]
-    : DEFAULT_INSTALLERS;
-  for (const candidate of candidates) {
-    if (commandExists(candidate)) return candidate;
+function commandExists(cmd, platform = process.platform, spawn = spawnSync) {
+  // Throws for a name cmd cannot run safely.
+  const invocation = installerCommand(cmd, ["--version"], platform);
+  const result = spawn(invocation.cmd, invocation.args, {
+    stdio: "ignore",
+    shell: invocation.shell,
+  });
+  if (result.error) {
+    return false;
+  }
+  if (invocation.shell) {
+    // cmd itself always starts; a missing command exits non-zero.
+    return result.status === 0;
+  }
+  return result.status === 0 || result.status === 1; // some CLIs return 1 for --version
+}
+
+function findInstaller(
+  preferred,
+  platform = process.platform,
+  spawn = spawnSync,
+) {
+  // An explicitly requested installer that cannot be run safely is an error,
+  // not a reason to silently pick another one.
+  if (preferred && commandExists(preferred, platform, spawn)) {
+    return preferred;
+  }
+  for (const candidate of DEFAULT_INSTALLERS) {
+    if (candidate === preferred) continue;
+    try {
+      if (commandExists(candidate, platform, spawn)) return candidate;
+    } catch {
+      // not runnable through cmd; try the next one
+    }
   }
   return null;
 }
@@ -152,54 +195,67 @@ function findVsix(explicitPath) {
 
   if (entries.length === 0) {
     throw new Error(
-      "No VSIX found in the repository root. Run npm run package first.",
+      "No VSIX found in the repository root. Run pnpm run package first.",
     );
   }
 
   return entries[0].fullPath;
 }
 
+// Selection variables read by tools/prepare-server.js.
+const SELECTION_VARS = ["GLS_TAG", "GLS_CHANNEL", "GLS_LOCAL_JAR", "GLS_URL"];
+
 function buildEnv(args) {
   const env = { ...process.env };
+  const select = (name, value) => {
+    for (const key of SELECTION_VARS) delete env[key];
+    delete env.USE_LATEST_GLS;
+    delete env.GLS_USE_PINNED;
+    if (name) env[name] = value;
+  };
 
   if (args.tag) {
-    env.GROOVY_LSP_TAG = args.tag;
-    delete env.USE_LATEST_GROOVY_LSP;
-    delete env.GROOVY_LSP_CHANNEL;
+    select("GLS_TAG", args.tag);
   } else if (args.nightly || (args.channel || "").toLowerCase() === "nightly") {
-    env.GROOVY_LSP_CHANNEL = "nightly";
-    delete env.USE_LATEST_GROOVY_LSP;
+    select("GLS_CHANNEL", "nightly");
   } else if (args.latest || (args.channel || "").toLowerCase() === "release") {
-    env.USE_LATEST_GROOVY_LSP = "true";
-    delete env.GROOVY_LSP_CHANNEL;
+    select("GLS_CHANNEL", "release");
   }
 
   if (args.local) {
-    env.GROOVY_LSP_LOCAL_JAR = path.resolve(args.local);
-    delete env.GROOVY_LSP_TAG;
-    delete env.USE_LATEST_GROOVY_LSP;
-    delete env.GROOVY_LSP_CHANNEL;
-    delete env.GROOVY_LSP_URL;
+    select("GLS_LOCAL_JAR", path.resolve(args.local));
   }
 
   if (args.url) {
-    env.GROOVY_LSP_URL = args.url;
-    delete env.GROOVY_LSP_TAG;
-    delete env.USE_LATEST_GROOVY_LSP;
-    delete env.GROOVY_LSP_CHANNEL;
-    delete env.GROOVY_LSP_LOCAL_JAR;
+    select("GLS_URL", args.url);
   }
 
   if (args.checksum) {
-    env.GROOVY_LSP_CHECKSUM = args.checksum;
+    env.GLS_CHECKSUM = args.checksum;
   }
 
   if (args.forceDownload) {
     env.FORCE_DOWNLOAD = "true";
   }
 
-  env.REQUIRE_SERVER_BUNDLE = "true";
   return env;
+}
+
+/**
+ * Command that runs `pnpm run package`. Prefer the pnpm that launched this
+ * script (npm_execpath) so no .cmd shim is spawned; Node refuses to spawn
+ * .cmd files without a shell on Windows (CVE-2024-27980).
+ */
+function packageCommand(env = process.env, platform = process.platform) {
+  const args = ["run", "package"];
+  if (env.npm_execpath) {
+    return {
+      cmd: process.execPath,
+      args: [env.npm_execpath, ...args],
+      shell: false,
+    };
+  }
+  return { cmd: "pnpm", args, shell: platform === "win32" };
 }
 
 function printHelp() {
@@ -240,10 +296,10 @@ function main() {
   }
 
   const env = buildEnv(args);
-  const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+  const pkg = packageCommand(env);
 
   console.log("Packaging VSIX with requested Groovy LSP selection...");
-  runCommand(npmCmd, ["run", "package"], { cwd: REPO_ROOT, env });
+  runCommand(pkg.cmd, pkg.args, { cwd: REPO_ROOT, env, shell: pkg.shell });
 
   const vsixPath = findVsix(args.vsix);
   console.log(`VSIX ready: ${vsixPath}`);
@@ -261,9 +317,23 @@ function main() {
   }
 
   console.log(`Installing extension via ${installer}...`);
-  runCommand(installer, ["--install-extension", vsixPath], { cwd: REPO_ROOT });
+  const install = installerCommand(installer, [
+    "--install-extension",
+    vsixPath,
+  ]);
+  runCommand(install.cmd, install.args, {
+    cwd: REPO_ROOT,
+    shell: install.shell,
+  });
   console.log("✅ Extension installed");
 }
+
+module.exports = {
+  buildEnv,
+  packageCommand,
+  installerCommand,
+  findInstaller,
+};
 
 if (require.main === module) {
   try {

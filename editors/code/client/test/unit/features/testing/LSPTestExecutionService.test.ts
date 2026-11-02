@@ -80,6 +80,10 @@ interface PathMock {
   delimiter: string;
 }
 
+// On Windows, wrapper launchers run through cmd with every argument quoted.
+const unquoted = (args: string[]) =>
+  args.map((arg) => arg.replace(/^"|"$/gu, ""));
+
 describe("LSPTestExecutionService", () => {
   let LSPTestExecutionService: LSPTestExecutionServiceType;
   let service: LSPTestExecutionServiceInstance;
@@ -244,6 +248,7 @@ describe("LSPTestExecutionService", () => {
       errored: sinon.SinonStub;
       appendOutput: sinon.SinonStub;
       end: sinon.SinonStub;
+      token: unknown;
     };
     let coverageServiceMock: { addCoverageToRun: sinon.SinonStub };
     let tokenMock: {
@@ -260,6 +265,12 @@ describe("LSPTestExecutionService", () => {
         errored: sandbox.stub(),
         appendOutput: sandbox.stub(),
         end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: sandbox
+            .stub()
+            .returns({ dispose: sandbox.stub() }),
+        },
       };
 
       testControllerMock = {
@@ -299,7 +310,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -323,7 +334,7 @@ describe("LSPTestExecutionService", () => {
       const spawnArgs = cpMock.spawn.getCall(0).args;
       const args = spawnArgs[1];
       assert.ok(
-        args.includes("jacocoTestReport"),
+        unquoted(args).includes("jacocoTestReport"),
         "Should append jacocoTestReport for Gradle",
       );
     });
@@ -332,7 +343,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MyTest",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -369,7 +380,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -406,7 +417,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -425,28 +436,19 @@ describe("LSPTestExecutionService", () => {
         coverageServiceMock,
       );
 
-      // Note: With the dot-based heuristic, "com.example.MySpec" is treated as "com.example" suite + "MySpec" test
-      // This is a known limitation - the heuristic works for simple class names but not fully qualified ones
-      // In practice, TestItems created by GroovyTestController will have the correct structure
+      // Root items are suites even when their FQN contains dots.
       assert.ok(testServiceMock.getTestCommand.calledOnce);
       const callArgs = testServiceMock.getTestCommand.getCall(0).args;
-      assert.strictEqual(
-        callArgs[1],
-        "com.example",
-        "Should extract suite name before last dot",
-      );
-      assert.strictEqual(
-        callArgs[2],
-        "MySpec",
-        "Should extract test name after last dot",
-      );
+      assert.strictEqual(callArgs[1], "com.example.MySpec");
+      assert.strictEqual(callArgs[2], undefined);
     });
 
     it("should handle test-level execution (dot in ID)", async () => {
       const testItem = {
         id: "com.example.MySpec.testMethod",
+        parent: { id: "com.example.MySpec" },
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -480,7 +482,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -529,7 +531,7 @@ describe("LSPTestExecutionService", () => {
         const testItem = {
           id: "com.example.Test",
           uri: { toString: () => "file:///test.groovy" },
-          children: { size: 0 },
+          children: { size: 0, forEach: () => {} },
         };
 
         const request = { include: [testItem] };
@@ -557,7 +559,7 @@ describe("LSPTestExecutionService", () => {
 
         if (testCase.expectGradle) {
           assert.ok(
-            args.includes("jacocoTestReport"),
+            unquoted(args).includes("jacocoTestReport"),
             `Should detect Gradle for ${testCase.executable}`,
           );
         } else if (testCase.expectMaven) {
@@ -582,6 +584,7 @@ describe("LSPTestExecutionService", () => {
       errored: sinon.SinonStub;
       appendOutput: sinon.SinonStub;
       end: sinon.SinonStub;
+      token: unknown;
     };
     let tokenMock: {
       isCancellationRequested: boolean;
@@ -597,6 +600,12 @@ describe("LSPTestExecutionService", () => {
         errored: sandbox.stub(),
         appendOutput: sandbox.stub(),
         end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: sandbox
+            .stub()
+            .returns({ dispose: sandbox.stub() }),
+        },
       };
 
       testControllerMock = {
@@ -634,7 +643,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: `com.example.Spec.${testName}`,
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
       const args = ["test", `-Dtest=com.example.Spec#${testName}`];
       testServiceMock.getTestCommand.resolves({
@@ -667,7 +676,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -686,13 +695,92 @@ describe("LSPTestExecutionService", () => {
       const spawnArgs = cpMock.spawn.getCall(0).args;
       const args = spawnArgs[1];
       assert.ok(
-        !args.includes("jacocoTestReport"),
+        !unquoted(args).includes("jacocoTestReport"),
         "Should not append jacocoTestReport for regular test run",
       );
       assert.ok(
-        !args.includes("jacoco:report"),
+        !unquoted(args).includes("jacoco:report"),
         "Should not append jacoco:report for regular test run",
       );
+    });
+
+    it("marks a test errored when its name cannot pass through cmd on Windows", async () => {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+      Object.defineProperty(process, "platform", { value: "win32" });
+      try {
+        const testItem = {
+          id: "com.example.MySpec.100% pass",
+          label: "100% pass",
+          uri: { toString: () => "file:///test.groovy" },
+          children: { size: 0, forEach: () => {} },
+        };
+        testServiceMock.getTestCommand.resolves({
+          executable: "C:\\w\\gradlew.bat",
+          args: ["test", "--tests", "com.example.MySpec.100% pass"],
+          cwd: "C:\\w",
+          env: {},
+        });
+
+        await service.runTests(
+          { include: [testItem] },
+          tokenMock,
+          testControllerMock,
+        );
+
+        assert.ok(cpMock.spawn.notCalled, "nothing may run through cmd");
+        assert.ok(
+          testRunMock.errored.calledOnce,
+          "the test must not stay enqueued",
+        );
+        const [item, message] = testRunMock.errored.firstCall.args;
+        assert.strictEqual(item, testItem);
+        assert.match(
+          (message as { message: string }).message,
+          /cannot be run through the Windows command shell[\s\S]*100% pass/,
+        );
+        assert.ok(testRunMock.end.calledOnce);
+      } finally {
+        Object.defineProperty(process, "platform", platform);
+      }
+    });
+
+    it("does not let stale Maven results overwrite an unrunnable test", async () => {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+      Object.defineProperty(process, "platform", { value: "win32" });
+      try {
+        const testItem = {
+          id: "com.example.MySpec.100% pass",
+          label: "100% pass",
+          uri: { toString: () => "file:///test.groovy" },
+          children: { size: 0, forEach: () => {} },
+        };
+        testServiceMock.getTestCommand.resolves({
+          executable: "C:\\w\\mvnw.cmd",
+          args: ["test", "-Dtest=MySpec#100% pass"],
+          cwd: "C:\\w",
+          env: {},
+        });
+        testServiceMock.getTestResults.resolves({
+          results: [
+            { testId: testItem.id, name: "100% pass", status: "PASSED" },
+          ],
+        });
+
+        await service.runTests(
+          { include: [testItem] },
+          tokenMock,
+          testControllerMock,
+        );
+
+        assert.ok(testRunMock.errored.calledOnce);
+        assert.ok(
+          testServiceMock.getTestResults.notCalled,
+          "results of an earlier run must not be applied",
+        );
+        assert.ok(testRunMock.passed.notCalled);
+      } finally {
+        Object.defineProperty(process, "platform", platform);
+      }
     });
   });
 
@@ -1062,6 +1150,7 @@ describe("LSPTestExecutionService", () => {
       errored: sinon.SinonStub;
       appendOutput: sinon.SinonStub;
       end: sinon.SinonStub;
+      token: unknown;
     };
     let testControllerMock: { createTestRun: sinon.SinonStub };
     let tokenMock: {
@@ -1078,6 +1167,12 @@ describe("LSPTestExecutionService", () => {
         errored: sandbox.stub(),
         appendOutput: sandbox.stub(),
         end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: sandbox
+            .stub()
+            .returns({ dispose: sandbox.stub() }),
+        },
       };
 
       testControllerMock = {
@@ -1224,6 +1319,71 @@ describe("LSPTestExecutionService", () => {
         ),
         "Should warn about name collision",
       );
+    });
+  });
+  describe("cancellation", () => {
+    it("kills the build when the run's own Stop button is pressed", async () => {
+      let stopRun: (() => void) | undefined;
+      const run = {
+        enqueued: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: (cb: () => void) => {
+            stopRun = cb;
+            return { dispose: () => {} };
+          },
+        },
+      };
+      const controller = {
+        createTestRun: sandbox.stub().returns(run),
+        items: { forEach: () => {} },
+      };
+      // A token nobody ever cancels, as used by CodeLens and command runs.
+      const callerToken = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+
+      let onClose: ((code: number) => void) | undefined;
+      const proc = {
+        stdout: { on: sandbox.stub() },
+        stderr: { on: sandbox.stub() },
+        on: (event: string, cb: (code: number) => void) => {
+          if (event === "close") onClose = cb;
+        },
+        kill: sandbox.stub().callsFake(() => onClose?.(143)),
+      };
+      cpMock.spawn.returns(proc);
+      testServiceMock.getTestCommand.resolves({
+        executable: "/w/gradlew",
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+
+      const item = {
+        id: "com.x.Spec",
+        uri: { toString: () => "file:///w/Spec.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      const done = service.runTests(
+        { include: [item] },
+        callerToken,
+        controller,
+      );
+      await new Promise((r) => setTimeout(r, 0));
+      assert.ok(stopRun, "run token should be observed");
+      stopRun!();
+      await done;
+
+      assert.ok(proc.kill.calledOnce, "build process should be killed");
+      assert.ok(run.end.calledOnce);
     });
   });
 });

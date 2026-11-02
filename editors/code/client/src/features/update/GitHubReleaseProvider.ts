@@ -11,7 +11,7 @@ import {
  */
 export class GitHubReleaseProvider implements ReleaseProvider {
   private static readonly RELEASES_URL =
-    "https://api.github.com/repos/GroovyLanguageServer/groovy-lsp/releases/latest";
+    "https://api.github.com/repos/albertocavalcante/gvy/releases/latest";
   private static readonly TIMEOUT_MS = 10_000;
 
   private readonly versionChecker: VersionChecker;

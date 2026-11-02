@@ -8,6 +8,9 @@ class MockUri {
   static parse(value: string) {
     return new MockUri(value);
   }
+  static file(fsPath: string) {
+    return new MockUri(`file://${fsPath.replace(/\\/g, "/")}`);
+  }
   constructor(public readonly path: string) {}
   toString() {
     return this.path;
@@ -79,7 +82,9 @@ describe("LSPToolService", () => {
     };
 
     // Cast through unknown to the constructor parameter type for the incomplete mock
-    const vscodeLike = mockVscode as unknown as ConstructorParameters<typeof LSPToolService>[0];
+    const vscodeLike = mockVscode as unknown as ConstructorParameters<
+      typeof LSPToolService
+    >[0];
     service = new LSPToolService(vscodeLike, getClientStub);
   });
 
@@ -203,6 +208,23 @@ describe("LSPToolService", () => {
 
       const result = await service.findReferences(mockUri.toString(), 5, 0);
       assert.strictEqual(result.length, 0);
+    });
+  });
+
+  describe("uri arguments", () => {
+    it("treats bare file paths (including Windows drive paths) as files", async () => {
+      getClientStub.returns({});
+      executeCommandStub.resolves([]);
+      await service.findReferences("/w/src/A.groovy", 0, 0);
+      await service.findReferences("C:\\w\\A.groovy", 0, 0);
+      assert.strictEqual(
+        executeCommandStub.firstCall.args[1].toString(),
+        "file:///w/src/A.groovy",
+      );
+      assert.strictEqual(
+        executeCommandStub.secondCall.args[1].toString(),
+        "file://C:/w/A.groovy",
+      );
     });
   });
 

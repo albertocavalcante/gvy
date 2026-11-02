@@ -308,9 +308,7 @@ export class StatusBarManager implements vscode.Disposable {
    */
   private setupProgressHandling(client: LanguageClient): vscode.Disposable {
     type ProgressValue =
-      | WorkDoneProgressBegin
-      | WorkDoneProgressReport
-      | WorkDoneProgressEnd;
+      WorkDoneProgressBegin | WorkDoneProgressReport | WorkDoneProgressEnd;
     const progressType = new ProgressType<ProgressValue>();
 
     return client.onProgress(progressType, "*", (value: ProgressValue) => {

@@ -174,6 +174,31 @@ describe("JDK Finder Module - Public API", () => {
       });
     });
 
+    describe("invalid configured path", () => {
+      it("does not silently fall back to another JDK when the setting is broken", async () => {
+        const mockConfig = {
+          get: sinon.stub().callsFake((key: string, defaultValue?: unknown) => {
+            if (key === "languageServer.javaHome") return "/opt/typo-jdk";
+            if (key === "configuration.runtimes") return defaultValue ?? [];
+            return undefined;
+          }),
+        };
+        getConfigurationStub.returns(mockConfig);
+        getRuntimeStub.resolves(undefined);
+        findRuntimesStub.resolves([
+          {
+            homedir: "/usr/lib/jvm/21",
+            version: { major: 21 },
+            hasJavac: true,
+          },
+        ]);
+        getSourcesStub.returns(["PATH"]);
+
+        // null makes the validator report the configured path as invalid
+        assert.strictEqual(await findJava(), null);
+      });
+    });
+
     describe("jdk-utils library detection fallback", () => {
       it("should fall back to jdk-utils library detection when no setting configured", async () => {
         // Mock jdk-utils to return a JDK
@@ -379,7 +404,10 @@ describe("JDK Finder Module - Public API", () => {
           "Should have sourceDescription",
         );
         assert.strictEqual(typeof result[0].sourceDescription, "string");
-        assert.ok(result[0].sourceDescription, "sourceDescription should be defined");
+        assert.ok(
+          result[0].sourceDescription,
+          "sourceDescription should be defined",
+        );
         assert.ok(
           result[0].sourceDescription!.length > 0,
           "sourceDescription should not be empty",
@@ -735,17 +763,19 @@ describe("JDK Finder Module - Public API", () => {
       it("should include user-configured runtimes from groovy.configuration.runtimes", async () => {
         // Configure mock to return configured runtimes
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, _defaultValue?: unknown) => {
-            if (key === "configuration.runtimes") {
-              return [
-                {
-                  path: "/custom/java-17",
-                  name: "Custom JDK 17",
-                },
-              ];
-            }
-            return undefined;
-          }),
+          get: sinon
+            .stub()
+            .callsFake((key: string, _defaultValue?: unknown) => {
+              if (key === "configuration.runtimes") {
+                return [
+                  {
+                    path: "/custom/java-17",
+                    name: "Custom JDK 17",
+                  },
+                ];
+              }
+              return undefined;
+            }),
         };
         getConfigurationStub.returns(mockConfig);
 
@@ -780,17 +810,19 @@ describe("JDK Finder Module - Public API", () => {
       it("should deduplicate configured runtimes with auto-detected JDKs", async () => {
         // Configure mock to return configured runtime that matches auto-detected
         const mockConfig = {
-          get: sinon.stub().callsFake((key: string, _defaultValue?: unknown) => {
-            if (key === "configuration.runtimes") {
-              return [
-                {
-                  path: "/usr/lib/jvm/java-17",
-                  name: "Configured JDK 17",
-                },
-              ];
-            }
-            return undefined;
-          }),
+          get: sinon
+            .stub()
+            .callsFake((key: string, _defaultValue?: unknown) => {
+              if (key === "configuration.runtimes") {
+                return [
+                  {
+                    path: "/usr/lib/jvm/java-17",
+                    name: "Configured JDK 17",
+                  },
+                ];
+              }
+              return undefined;
+            }),
         };
         getConfigurationStub.returns(mockConfig);
 
@@ -855,5 +887,30 @@ describe("JDK Finder Module - Public API", () => {
         });
       });
     });
+  });
+});
+
+describe("parseLoginShellJavaPath", () => {
+  const { parseLoginShellJavaPath } = proxyquire.noCallThru()(
+    "../../../src/java/finder",
+    { vscode: {}, "jdk-utils": {} },
+  ) as { parseLoginShellJavaPath: (stdout: string) => string | null };
+
+  it("takes the last absolute path, ignoring rc-file banners", () => {
+    assert.strictEqual(
+      parseLoginShellJavaPath(
+        "Welcome back!\nsdkman: up to date\n/home/u/.sdkman/candidates/java/current/bin/java\n",
+      ),
+      "/home/u/.sdkman/candidates/java/current/bin/java",
+    );
+  });
+
+  it("rejects shell function bodies and 'not found' messages", () => {
+    assert.strictEqual(
+      parseLoginShellJavaPath("java () {\n  sdk use java\n}\n"),
+      null,
+    );
+    assert.strictEqual(parseLoginShellJavaPath("java not found\n"), null);
+    assert.strictEqual(parseLoginShellJavaPath(""), null);
   });
 });

@@ -22,7 +22,7 @@ describe("GradleService", () => {
       sendRequest: sandbox.stub(),
     };
     gradleService = new GradleService(
-      mockLanguageClient as unknown as LanguageClient,
+      () => mockLanguageClient as unknown as LanguageClient,
     );
   });
 
@@ -75,5 +75,25 @@ describe("GradleService", () => {
     const tasks = await gradleService.getTasks(workspaceUri);
 
     expect(tasks).to.be.an("array").that.is.empty;
+  });
+  it("uses the current client after a server restart", async () => {
+    const restarted = { sendRequest: sandbox.stub().resolves([]) };
+    let current: unknown = mockLanguageClient;
+    const service = new GradleService(() => current as LanguageClient);
+    current = restarted;
+    await service.getTasks("file:///w");
+    expect(restarted.sendRequest.calledOnce).to.equal(true);
+    expect(mockLanguageClient.sendRequest.called).to.equal(false);
+  });
+
+  it("rejects clearly when the server is not running", async () => {
+    const service = new GradleService(() => undefined);
+    let error: Error | undefined;
+    try {
+      await service.getTasks("file:///w");
+    } catch (e) {
+      error = e as Error;
+    }
+    expect(error?.message).to.match(/not running/);
   });
 });

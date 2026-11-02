@@ -3,7 +3,11 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 interface GroovyTestControllerType {
-  new (context: unknown, executionService: unknown, testService: unknown): { dispose: () => void };
+  new (
+    context: unknown,
+    executionService: unknown,
+    testService: unknown,
+  ): { dispose: () => void };
 }
 
 interface ExecutionServiceMock {
@@ -29,18 +33,28 @@ interface VscodeMock {
     visibleTextEditors: unknown[];
   };
   workspace: {
-    workspaceFolders: { uri: { toString: () => string }; name: string; index: number }[];
+    workspaceFolders: {
+      uri: { toString: () => string };
+      name: string;
+      index: number;
+    }[];
     getWorkspaceFolder: sinon.SinonStub;
     createFileSystemWatcher: sinon.SinonStub;
     onDidOpenTextDocument: sinon.SinonStub;
     onDidSaveTextDocument: sinon.SinonStub;
   };
   Range: new (start: unknown, end: unknown) => { start: unknown; end: unknown };
-  Position: new (line: number, character: number) => { line: number; character: number };
+  Position: new (
+    line: number,
+    character: number,
+  ) => { line: number; character: number };
   Uri: { parse: (str: string) => { toString: () => string } };
   TestRunProfileKind: { Run: number; Debug: number; Coverage: number };
   TestRunRequest: new (include: unknown[]) => { include: unknown[] };
-  CancellationTokenSource: new () => { token: unknown; dispose: sinon.SinonStub };
+  CancellationTokenSource: new () => {
+    token: unknown;
+    dispose: sinon.SinonStub;
+  };
 }
 
 interface TestControllerMock {
@@ -140,17 +154,19 @@ describe("GroovyTestController", () => {
           },
         ],
         // Mock getWorkspaceFolder to return undefined for external URIs
-        getWorkspaceFolder: sandbox.stub().callsFake((uri: { toString: () => string }) => {
-          const uriStr = uri.toString();
-          if (uriStr.startsWith("file:///workspace")) {
-            return {
-              uri: { toString: () => "file:///workspace" },
-              name: "test-workspace",
-              index: 0,
-            };
-          }
-          return undefined; // External file
-        }),
+        getWorkspaceFolder: sandbox
+          .stub()
+          .callsFake((uri: { toString: () => string }) => {
+            const uriStr = uri.toString();
+            if (uriStr.startsWith("file:///workspace")) {
+              return {
+                uri: { toString: () => "file:///workspace" },
+                name: "test-workspace",
+                index: 0,
+              };
+            }
+            return undefined; // External file
+          }),
         createFileSystemWatcher: sandbox.stub().returns({
           onDidCreate: sandbox.stub().returns({ dispose: sandbox.stub() }),
           onDidChange: sandbox.stub().returns({ dispose: sandbox.stub() }),
@@ -215,12 +231,16 @@ describe("GroovyTestController", () => {
     };
 
     // Load GroovyTestController with mocks
-    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { GroovyTestController: GroovyTestControllerType } }).noCallThru()(
-      "../../../../src/features/testing/GroovyTestController",
-      {
-        vscode: vscodeMock,
-      },
-    );
+    const module = (
+      proxyquire as {
+        noCallThru: () => (
+          path: string,
+          stubs: unknown,
+        ) => { GroovyTestController: GroovyTestControllerType };
+      }
+    ).noCallThru()("../../../../src/features/testing/GroovyTestController", {
+      vscode: vscodeMock,
+    });
     GroovyTestController = module.GroovyTestController;
   });
 
@@ -316,7 +336,9 @@ describe("GroovyTestController", () => {
         (call) => call.args[0] === "groovy.test.run",
       );
       assert.ok(runTestCall, "groovy.test.run command should be registered");
-      const runTestHandler = runTestCall.args[1] as (args: unknown) => Promise<void>;
+      const runTestHandler = runTestCall.args[1] as (
+        args: unknown,
+      ) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -356,7 +378,9 @@ describe("GroovyTestController", () => {
         (call) => call.args[0] === "groovy.test.run",
       );
       assert.ok(runTestCall, "groovy.test.run command should be registered");
-      const runTestHandler = runTestCall.args[1] as (args: unknown) => Promise<void>;
+      const runTestHandler = runTestCall.args[1] as (
+        args: unknown,
+      ) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -439,7 +463,9 @@ describe("GroovyTestController", () => {
         (call) => call.args[0] === "groovy.test.run",
       );
       assert.ok(runTestCall, "groovy.test.run command should be registered");
-      const runTestHandler = runTestCall.args[1] as (args: unknown) => Promise<void>;
+      const runTestHandler = runTestCall.args[1] as (
+        args: unknown,
+      ) => Promise<void>;
 
       // Act
       await runTestHandler(args);
@@ -503,7 +529,10 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
-      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
+      assert.ok(
+        testControllerMock.resolveHandler,
+        "resolveHandler should be set",
+      );
       await testControllerMock.resolveHandler(undefined);
 
       // Reset the mock to track only the run call
@@ -564,7 +593,10 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
-      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
+      assert.ok(
+        testControllerMock.resolveHandler,
+        "resolveHandler should be set",
+      );
       await testControllerMock.resolveHandler(undefined);
 
       // Act: Run specific test
@@ -618,7 +650,10 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
-      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
+      assert.ok(
+        testControllerMock.resolveHandler,
+        "resolveHandler should be set",
+      );
       await testControllerMock.resolveHandler(undefined);
 
       // Get the suite item
@@ -657,7 +692,10 @@ describe("GroovyTestController", () => {
       );
 
       // Trigger discovery
-      assert.ok(testControllerMock.resolveHandler, "resolveHandler should be set");
+      assert.ok(
+        testControllerMock.resolveHandler,
+        "resolveHandler should be set",
+      );
       await testControllerMock.resolveHandler(undefined);
 
       // Get the test item

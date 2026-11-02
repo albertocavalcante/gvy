@@ -85,8 +85,12 @@ async function fetchChecksumForAsset(assets, assetName, { authToken } = {}) {
     });
     return checksumFromManifest(content, assetName);
   } catch (error) {
-    console.warn(`Warning: Unable to read checksums.txt: ${error.message}`);
-    return null;
+    // Digests are required, so say why there is none instead of reporting
+    // a generic "checksum required" later.
+    throw new Error(
+      `Unable to read checksums.txt for ${assetName}: ${error.message}`,
+      { cause: error },
+    );
   }
 }
 

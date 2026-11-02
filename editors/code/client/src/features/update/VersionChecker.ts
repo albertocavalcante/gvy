@@ -40,7 +40,20 @@ export class VersionChecker {
       if (aParts[index] < bParts[index]) return -1;
     }
 
-    return 0;
+    // Semver: a pre-release (0.5.0-rc.1) precedes its release (0.5.0).
+    const aPre = this.preRelease(a);
+    const bPre = this.preRelease(b);
+    if (aPre === bPre) return 0;
+    if (!aPre) return 1;
+    if (!bPre) return -1;
+    return aPre.localeCompare(bPre, "en", { numeric: true });
+  }
+
+  private preRelease(version: string): string {
+    const match = /^\d+\.\d+\.\d+-([0-9A-Za-z.-]+)/.exec(
+      this.normalizeVersion(version),
+    );
+    return match ? match[1] : "";
   }
 
   isValidVersion(version: string): boolean {

@@ -15,13 +15,24 @@ export class UpdateChecker {
   private pendingAutoCheck: Promise<UpdateCheckResult> | null = null;
   private pendingManualCheck: Promise<UpdateCheckResult> | null = null;
 
+  private readonly currentVersionOf: () => string;
+
+  /**
+   * @param currentVersion the installed server version, or a function read at
+   *   every check (the running server's version becomes known only later).
+   */
   constructor(
-    private readonly currentVersion: string,
+    currentVersion: string | (() => string),
     private readonly cache: VersionCache,
     private readonly provider: ReleaseProvider,
     private readonly clock: Clock,
     private readonly versionChecker: VersionChecker = new VersionChecker(),
-  ) {}
+  ) {
+    this.currentVersionOf =
+      typeof currentVersion === "function"
+        ? currentVersion
+        : () => currentVersion;
+  }
 
   /**
    * Checks for updates with cache-first strategy.
@@ -57,9 +68,10 @@ export class UpdateChecker {
     // Check cache first
     const cached = this.cache.getCachedRelease();
     if (cached) {
+      const currentVersion = this.currentVersionOf();
       return {
-        status: "cache-hit",
-        currentVersion: this.currentVersion,
+        status: this.determineStatus(currentVersion, cached.release.version),
+        currentVersion,
         latestRelease: cached.release,
         checkedAt: cached.checkedAt,
         source: "cache",
@@ -78,6 +90,7 @@ export class UpdateChecker {
   private async performNetworkCheck(
     clearCacheOnFailure: boolean,
   ): Promise<UpdateCheckResult> {
+    const currentVersion = this.currentVersionOf();
     try {
       const latestRelease = await this.provider.fetchLatestRelease();
 
@@ -87,7 +100,7 @@ export class UpdateChecker {
         }
         return {
           status: "unknown",
-          currentVersion: this.currentVersion,
+          currentVersion,
           latestRelease: null,
           checkedAt: this.clock.now(),
           source: "network",
@@ -98,11 +111,14 @@ export class UpdateChecker {
       await this.cache.setCachedRelease(latestRelease);
 
       // Compare versions
-      const status = this.determineStatus(latestRelease.version);
+      const status = this.determineStatus(
+        currentVersion,
+        latestRelease.version,
+      );
 
       return {
         status,
-        currentVersion: this.currentVersion,
+        currentVersion,
         latestRelease,
         checkedAt: this.clock.now(),
         source: "network",
@@ -113,7 +129,7 @@ export class UpdateChecker {
       }
       return {
         status: "error",
-        currentVersion: this.currentVersion,
+        currentVersion,
         latestRelease: null,
         checkedAt: this.clock.now(),
         source: "network",
@@ -126,16 +142,17 @@ export class UpdateChecker {
    * Determines the update status by comparing current and latest versions.
    */
   private determineStatus(
+    currentVersion: string,
     latestVersion: string,
   ): "up-to-date" | "update-available" | "unknown" {
     // Check if current version is valid
-    if (!this.versionChecker.isValidVersion(this.currentVersion)) {
+    if (!this.versionChecker.isValidVersion(currentVersion)) {
       return "unknown";
     }
 
     // Compare versions
     const comparison = this.versionChecker.compareVersions(
-      this.currentVersion,
+      currentVersion,
       latestVersion,
     );
 

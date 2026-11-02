@@ -4,4 +4,4 @@ server/
 *.vsix
 *.jar
 *.min.js
-package-lock.json
+pnpm-lock.yaml

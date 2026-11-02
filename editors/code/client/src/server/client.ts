@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 import { workspace, ExtensionContext, window, commands } from 'vscode';
 import {
+    CloseAction,
+    ErrorHandler,
     LanguageClient,
     LanguageClientOptions,
     ServerOptions,
@@ -28,8 +30,108 @@ interface JenkinsSharedLibrary {
  */
 type LspInitializationOptions = Record<string, unknown>;
 
+// `**/Jenkinsfile` matches the extensionless pipeline file, which
+// `*.Jenkinsfile` alone never did.
+const GROOVY_FILE_EVENTS_GLOB = '{**/*.{groovy,gvy,gy,gsh,gradle,Jenkinsfile},**/Jenkinsfile}';
+
 let client: LanguageClient | undefined;
 let context: ExtensionContext | undefined;
+/** Server log channel, remembered so restarts keep writing to the same one. */
+let serverOutputChannel: vscode.LogOutputChannel | undefined;
+/** Created lazily once; recreating it on every start leaked channels. */
+let traceOutputChannel: vscode.LogOutputChannel | undefined;
+/** Resources owned by the current client instance (e.g. its file watcher). */
+let clientResources: vscode.Disposable[] = [];
+/**
+ * Start/stop/restart are serialized: vscode-languageclient cannot stop a
+ * client that is still starting, so overlapping calls used to orphan a JVM.
+ */
+let lifecycle: Promise<unknown> = Promise.resolve();
+
+const startedListeners = new Set<() => void>();
+
+/**
+ * Registers a callback that runs after each successful (re)start. Features
+ * that query the server once (e.g. test discovery) use it to refresh, since
+ * they are registered before the server is up.
+ */
+export function onClientStarted(listener: () => void): vscode.Disposable {
+    startedListeners.add(listener);
+    return { dispose: () => startedListeners.delete(listener) };
+}
+
+/**
+ * Error handler that defers to the client's default (restart a crashed server
+ * a few times) until the client is abandoned, after which the closed
+ * connection must not respawn the server we just killed.
+ */
+function abandonableErrorHandler(
+    fallback: () => ErrorHandler,
+    isAbandoned: () => boolean,
+): ErrorHandler {
+    return {
+        error: (error, message, count) => fallback().error(error, message, count),
+        closed: () =>
+            isAbandoned()
+                ? { action: CloseAction.DoNotRestart, handled: true }
+                : fallback().closed(),
+    };
+}
+
+/**
+ * Resolves with `start`, or rejects after `seconds` (0 disables the limit).
+ * vscode-languageclient cannot stop a client that is still starting, so
+ * without a limit a server that never answers `initialize` would hold the
+ * serialized lifecycle, and with it Stop and Restart, forever.
+ */
+function withStartTimeout(start: Promise<void>, seconds: number): Promise<void> {
+    if (!(seconds > 0)) {
+        return start;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () => reject(new Error(
+                `Server did not start within ${seconds} seconds (groovy.server.startTimeoutSeconds)`,
+            )),
+            seconds * 1000,
+        );
+    });
+    return Promise.race([start, timeout]).finally(() => clearTimeout(timer));
+}
+
+const LATE_SPAWN_POLL_MS = 250;
+const LATE_SPAWN_POLL_LIMIT = 120; // 30 s
+
+/**
+ * Ends a client whose start timed out. stop() refuses a starting client, so
+ * its JVM is killed directly and the closed connection fails the start. The
+ * JVM may not exist yet (the client spawns it after resolving its working
+ * directory), so a late spawn is killed when it appears, and a start that
+ * still completes is stopped.
+ */
+function abandonStartingClient(target: LanguageClient, starting: Promise<void>): void {
+    starting.then(
+        () => target.stop().catch(() => undefined),
+        () => undefined,
+    );
+    let polls = 0;
+    const killWhenSpawned = () => {
+        const proc = target.serverProcess;
+        if (proc) {
+            proc.kill();
+        } else if (target.state === State.Starting && ++polls < LATE_SPAWN_POLL_LIMIT) {
+            setTimeout(killWhenSpawned, LATE_SPAWN_POLL_MS).unref?.();
+        }
+    };
+    killWhenSpawned();
+}
+
+function serialize<T>(operation: () => Promise<T>): Promise<T> {
+    const result = lifecycle.then(operation, operation);
+    lifecycle = result.catch(() => undefined);
+    return result;
+}
 
 export function initializeClient(extensionContext: ExtensionContext) {
     context = extensionContext;
@@ -80,7 +182,11 @@ async function createServerOptions(): Promise<ServerOptions> {
     const javaValidation = await validateJava();
 
     if (!javaValidation.isValid) {
-        await showJavaError(javaValidation);
+        // Non-modal notifications only settle when dismissed; do not hold the
+        // start (and therefore activation) hostage to the user.
+        showJavaError(javaValidation).catch((error) =>
+            console.error('Failed to show Java error:', error),
+        );
         throw new Error(`Java validation failed: ${javaValidation.error}`);
     }
 
@@ -182,7 +288,23 @@ function buildInitializationOptions(): LspInitializationOptions {
     return buildServerSettingsMap();
 }
 
-function createClientOptions(outputChannel?: vscode.OutputChannel): LanguageClientOptions {
+/**
+ * The trace channel always exists so tracing can be turned on at runtime:
+ * vscode-languageclient traces when this channel's log level is Trace, with
+ * the verbosity from `groovy.trace.server`.
+ */
+function getTraceOutputChannel(): vscode.LogOutputChannel {
+    if (!traceOutputChannel) {
+        traceOutputChannel = window.createOutputChannel('Groovy Language Server Trace', { log: true });
+        context?.subscriptions.push(traceOutputChannel);
+    }
+    return traceOutputChannel;
+}
+
+function createClientOptions(
+    fileWatcher: vscode.FileSystemWatcher,
+    outputChannel?: vscode.LogOutputChannel,
+): LanguageClientOptions {
     const clientOptions: LanguageClientOptions = {
         // Register the server for Groovy and Jenkinsfile documents
         documentSelector: [
@@ -193,14 +315,12 @@ function createClientOptions(outputChannel?: vscode.OutputChannel): LanguageClie
         ],
         synchronize: {
             // Notify the server about file changes to Groovy files in the workspace
-            fileEvents: workspace.createFileSystemWatcher('**/*.{groovy,gvy,gy,gsh,gradle,Jenkinsfile}')
+            fileEvents: fileWatcher
         },
         initializationOptions: buildInitializationOptions(),
         outputChannel: outputChannel,
         outputChannelName: outputChannel ? undefined : 'Groovy Language Server',
-        traceOutputChannel: workspace.getConfiguration('groovy').get('trace.server') !== 'off'
-            ? window.createOutputChannel('Groovy Language Server Trace')
-            : undefined,
+        traceOutputChannel: getTraceOutputChannel(),
         // URI converters for Windows compatibility
         uriConverters: {
             code2Protocol: (value) => {
@@ -219,65 +339,21 @@ function createClientOptions(outputChannel?: vscode.OutputChannel): LanguageClie
 }
 
 /**
- * Starts the Language Client
+ * Starts the Language Client. The output channel, once given, is reused by
+ * later restarts.
  */
-export async function startClient(outputChannel?: vscode.OutputChannel): Promise<void> {
-    if (client && client.state === State.Running) {
-        return; // Already running
+export function startClient(outputChannel?: vscode.LogOutputChannel): Promise<void> {
+    if (outputChannel) {
+        serverOutputChannel = outputChannel;
     }
-
-    try {
-        const serverOptions = await createServerOptions();
-        const clientOptions = createClientOptions(outputChannel);
-
-        client = new LanguageClient(
-            'groovyLanguageServer',
-            'Groovy Language Server',
-            serverOptions,
-            clientOptions
-        );
-
-        // Update status bar with new client
-        setClient(client);
-
-        if (outputChannel) {
-            getStatusBarManager()?.setOutputChannel(outputChannel);
-        }
-
-        await client.start();
-        console.log('Groovy Language Server started successfully');
-
-    } catch (error) {
-        const message = `Failed to start Groovy Language Server: ${error instanceof Error ? error.message : 'Unknown error'}`;
-        console.error(message);
-        window.showErrorMessage(message);
-
-        // Update status bar to reflect failure
-        setClient(undefined);
-        throw error;
-    }
+    return serialize(doStart);
 }
 
 /**
  * Stops the Language Client
  */
-export async function stopClient(): Promise<void> {
-    if (!client) {
-        return;
-    }
-
-    try {
-        if (client.state === State.Running) {
-            await client.stop();
-        }
-        client = undefined;
-        setClient(undefined);
-        console.log('Groovy Language Server stopped');
-    } catch (error) {
-        console.error('Error stopping Language Server:', error);
-        client = undefined;
-        setClient(undefined);
-    }
+export function stopClient(): Promise<void> {
+    return serialize(doStop);
 }
 
 /**
@@ -285,12 +361,105 @@ export async function stopClient(): Promise<void> {
  */
 export async function restartClient(): Promise<void> {
     try {
-        await stopClient();
-        await startClient();
+        await serialize(async () => {
+            await doStop();
+            await doStart();
+        });
         window.showInformationMessage('Groovy Language Server restarted successfully');
     } catch (error) {
         const message = `Failed to restart Groovy Language Server: ${error instanceof Error ? error.message : 'Unknown error'}`;
         console.error(message);
         window.showErrorMessage(message);
+    }
+}
+
+async function doStart(): Promise<void> {
+    if (client?.isRunning()) {
+        return;
+    }
+    await doStop();
+
+    const fileWatcher = workspace.createFileSystemWatcher(GROOVY_FILE_EVENTS_GLOB);
+    clientResources.push(fileWatcher);
+
+    try {
+        const serverOptions = await createServerOptions();
+        const clientOptions = createClientOptions(fileWatcher, serverOutputChannel);
+        let abandoned = false;
+        let defaultErrorHandler: ErrorHandler | undefined;
+        clientOptions.errorHandler = abandonableErrorHandler(
+            () => (defaultErrorHandler ??= created.createDefaultErrorHandler()),
+            () => abandoned,
+        );
+
+        // The id is the configuration section the client reads
+        // `<id>.trace.server` from, so it must be "groovy".
+        const created = new LanguageClient(
+            'groovy',
+            'Groovy Language Server',
+            serverOptions,
+            clientOptions
+        );
+        client = created;
+
+        // Update status bar with new client
+        setClient(client);
+        if (serverOutputChannel) {
+            getStatusBarManager()?.setOutputChannel(serverOutputChannel);
+        }
+
+        const starting = created.start();
+        try {
+            await withStartTimeout(starting, getConfiguration().startTimeoutSeconds);
+        } catch (error) {
+            if (created.state === State.Starting) {
+                abandoned = true;
+                abandonStartingClient(created, starting);
+            }
+            throw error;
+        }
+        const version = created.initializeResult?.serverInfo?.version;
+        if (version) {
+            getStatusBarManager()?.setServerVersion(version);
+        }
+        console.log('Groovy Language Server started successfully');
+        startedListeners.forEach((listener) => {
+            try {
+                listener();
+            } catch (error) {
+                console.error('Client start listener failed:', error);
+            }
+        });
+    } catch (error) {
+        const message = `Failed to start Groovy Language Server: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        console.error(message);
+        window.showErrorMessage(message);
+        await doStop();
+        throw error;
+    }
+}
+
+async function doStop(): Promise<void> {
+    const current = client;
+    client = undefined;
+    setClient(undefined);
+    const resources = clientResources;
+    clientResources = [];
+    try {
+        if (current) {
+            // Also stop clients that are not Running (start failed after the
+            // JVM spawned): the node client kills its server process in
+            // stop() even when the protocol shutdown itself throws.
+            await current.stop().catch((error: unknown) => {
+                if (current.isRunning()) {
+                    throw error;
+                }
+            });
+            console.log('Groovy Language Server stopped');
+        }
+    } catch (error) {
+        console.error('Error stopping Language Server:', error);
+    } finally {
+        resources.forEach((resource) => resource.dispose());
     }
 }

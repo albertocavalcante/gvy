@@ -4,7 +4,9 @@ import * as proxyquire from "proxyquire";
 
 interface StatusBarItem {
   text: string;
-  tooltip: { isTrusted: boolean; supportThemeIcons: boolean; value: string } | undefined;
+  tooltip:
+    | { isTrusted: boolean; supportThemeIcons: boolean; value: string }
+    | undefined;
   backgroundColor: { id: string } | undefined;
   color: unknown;
   command: unknown;
@@ -59,7 +61,10 @@ interface ClientStub {
 }
 
 interface StatusBarModule {
-  registerStatusBarItem: (client?: unknown, version?: string) => { dispose: () => void };
+  registerStatusBarItem: (
+    client?: unknown,
+    version?: string,
+  ) => { dispose: () => void };
   setClient: (client: unknown) => void;
 }
 
@@ -72,6 +77,7 @@ interface StatusNotification {
 }
 
 describe("StatusBar", () => {
+  let showErrorNotificationStub: sinon.SinonStub;
   let mockVscode: MockVscode;
   let mockLanguageClient: MockLanguageClient;
   let statusBarModule: StatusBarModule;
@@ -174,15 +180,19 @@ describe("StatusBar", () => {
     };
 
     // Load module with mocked dependencies
+    showErrorNotificationStub = sinon.stub();
     statusBarModule = proxyquire.noCallThru()("../../../src/ui/statusBar", {
       vscode: mockVscode,
       "vscode-languageclient/node": mockLanguageClient,
-      "vscode-languageserver-protocol": {
+      "vscode-languageclient": {
         WorkDoneProgressBegin: {},
         WorkDoneProgressReport: {},
         WorkDoneProgressEnd: {},
       },
       "./languageStatus": mockLanguageStatus,
+      "./errorNotificationHandler": {
+        showErrorNotification: showErrorNotificationStub,
+      },
     }) as StatusBarModule;
   });
 
@@ -289,7 +299,11 @@ describe("StatusBar", () => {
   });
 
   describe("progress notification handling", () => {
-    let progressHandler: (notification: { kind: string; title?: string; message?: string }) => void;
+    let progressHandler: (notification: {
+      kind: string;
+      title?: string;
+      message?: string;
+    }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -365,7 +379,10 @@ describe("StatusBar", () => {
   });
 
   describe("state inference from messages", () => {
-    let progressHandler: (notification: { kind: string; message?: string }) => void;
+    let progressHandler: (notification: {
+      kind: string;
+      message?: string;
+    }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -498,7 +515,10 @@ describe("StatusBar", () => {
   });
 
   describe("background colors", () => {
-    let progressHandler: (notification: { kind: string; message?: string }) => void;
+    let progressHandler: (notification: {
+      kind: string;
+      message?: string;
+    }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -684,13 +704,43 @@ describe("StatusBar", () => {
         .stub()
         .callsFake((method: string, handler: unknown) => {
           if (method === "groovy/status") {
-            statusHandler = handler as (notification: StatusNotification) => void;
+            statusHandler = handler as (
+              notification: StatusNotification,
+            ) => void;
           }
           return { dispose: sinon.stub() };
         });
 
       statusBarModule.registerStatusBarItem();
       statusBarModule.setClient(clientStub);
+    });
+
+    it("shows an actionable notification only when errorCode and errorDetails are present", () => {
+      const errorDetails = {
+        type: "GRADLE_JDK_INCOMPATIBLE",
+        gradleVersion: "7.4",
+        jdkVersion: 21,
+        suggestions: [],
+      };
+      statusHandler({
+        health: "error",
+        quiescent: true,
+        errorCode: "GRADLE_JDK_INCOMPATIBLE",
+      } as StatusNotification);
+      assert.isTrue(showErrorNotificationStub.notCalled);
+
+      statusHandler({
+        health: "error",
+        quiescent: true,
+        errorCode: "GRADLE_JDK_INCOMPATIBLE",
+        errorDetails,
+      } as unknown as StatusNotification);
+      assert.isTrue(
+        showErrorNotificationStub.calledOnceWith(
+          "GRADLE_JDK_INCOMPATIBLE",
+          errorDetails,
+        ),
+      );
     });
 
     it("should register groovy/status notification handler", () => {

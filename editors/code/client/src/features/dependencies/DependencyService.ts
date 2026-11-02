@@ -1,4 +1,4 @@
-import { LanguageClient } from "vscode-languageclient/node";
+import { ClientProvider, requireClient } from "../../server/clientProvider";
 import { RequestType } from "vscode-languageserver-protocol";
 
 export interface DependencyInfo {
@@ -25,7 +25,11 @@ const GetDependenciesRequest = new RequestType<
 >("groovy/workspace/dependencies");
 
 export class DependencyService {
-  constructor(private readonly client: LanguageClient) {}
+  constructor(private readonly getClient: ClientProvider) {}
+
+  private get client() {
+    return requireClient(this.getClient);
+  }
 
   async getDependencies(
     workspaceUri: string,

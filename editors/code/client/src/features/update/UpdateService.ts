@@ -11,6 +11,8 @@ import {
   UpdateNotificationLevel,
 } from "../../configuration/settings";
 
+const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
 /**
  * Service that wires UpdateChecker to VS Code.
  * Handles automatic and manual update checks with proper scheduling.
@@ -18,9 +20,17 @@ import {
 export class UpdateService {
   private readonly checker: UpdateChecker;
   private checkTimeout: ReturnType<typeof setTimeout> | null = null;
+  private disposed = false;
 
-  constructor(currentVersion: string, memento: Memento) {
-    const cache = new VersionCache(memento);
+  /**
+   * @param currentVersion returns the installed server version; it is read at
+   *   every check because the running server reports it only after starting.
+   */
+  constructor(currentVersion: string | (() => string), memento: Memento) {
+    const cache = new VersionCache(
+      memento,
+      getUpdateConfiguration().checkIntervalHours,
+    );
     const provider = new GitHubReleaseProvider();
     this.checker = new UpdateChecker(
       currentVersion,
@@ -66,11 +76,26 @@ export class UpdateService {
       clearTimeout(this.checkTimeout);
     }
 
-    const intervalMs = Math.max(1, intervalHours) * 60 * 60 * 1000;
+    if (this.disposed) {
+      return;
+    }
+
+    // setTimeout fires after ~1 ms for delays above 2^31-1 ms (~24.8 days),
+    // which turned large intervals into a tight loop.
+    const intervalMs = Math.min(
+      Math.max(1, intervalHours) * 60 * 60 * 1000,
+      MAX_TIMEOUT_MS,
+    );
     this.checkTimeout = setTimeout(async () => {
       const config = getUpdateConfiguration();
-      const result = await this.checker.checkForUpdate();
-      await this.handleResult(result, config.notifications);
+      try {
+        const result = await this.checker.checkForUpdate();
+        if (!this.disposed) {
+          await this.handleResult(result, config.notifications);
+        }
+      } catch (error) {
+        console.warn("Scheduled update check failed:", error);
+      }
       this.scheduleNextCheck(config.checkIntervalHours);
     }, intervalMs);
   }
@@ -117,14 +142,6 @@ export class UpdateService {
       case "unknown":
         // Silent for version detection issues
         break;
-      case "cache-hit":
-        // This shouldn't happen for manual checks, but handle gracefully
-        if (result.latestRelease) {
-          window.showInformationMessage(
-            `Groovy Language Server ${result.currentVersion} is up to date (cached).`,
-          );
-        }
-        break;
     }
   }
 
@@ -168,6 +185,7 @@ export class UpdateService {
    * Disposes scheduled checks.
    */
   dispose(): void {
+    this.disposed = true;
     if (this.checkTimeout) {
       clearTimeout(this.checkTimeout);
       this.checkTimeout = null;

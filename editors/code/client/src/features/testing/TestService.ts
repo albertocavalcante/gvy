@@ -1,4 +1,4 @@
-import { LanguageClient } from "vscode-languageclient/node";
+import { ClientProvider, requireClient } from "../../server/clientProvider";
 import { RequestType } from "vscode-languageserver-protocol";
 
 export interface Test {
@@ -175,7 +175,11 @@ const GetCoverageRequest = new RequestType<
 >("groovy/getCoverage");
 
 export class TestService {
-  constructor(private readonly client: LanguageClient) {}
+  constructor(private readonly getClient: ClientProvider) {}
+
+  private get client() {
+    return requireClient(this.getClient);
+  }
 
   async discoverTestsInWorkspace(workspaceUri: string): Promise<TestSuite[]> {
     const suites = await this.client.sendRequest(DiscoverTestsRequest, {

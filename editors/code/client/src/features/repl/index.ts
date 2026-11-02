@@ -3,11 +3,54 @@ import { GroovyReplClient } from "./GroovyReplClient";
 import { getClient } from "../../server/client";
 import { ReplStatusBar } from "./ReplStatusBar";
 
-export class ReplService implements vscode.Disposable {
-  private replClient: GroovyReplClient | undefined;
-  private terminal: vscode.Terminal | undefined;
+/**
+ * One REPL terminal. Owns its own emitters so a disposed terminal's late
+ * close event cannot affect its successor, and buffers output until VS Code
+ * opens the pseudoterminal (events fired before open() are dropped).
+ */
+class ReplSession implements vscode.Disposable {
   private readonly writeEmitter = new vscode.EventEmitter<string>();
   private readonly closeEmitter = new vscode.EventEmitter<number>();
+  private pending: string[] | undefined = [];
+  readonly terminal: vscode.Terminal;
+
+  constructor(onUserClose: (session: ReplSession) => void) {
+    const pty: vscode.Pseudoterminal = {
+      onDidWrite: this.writeEmitter.event,
+      onDidClose: this.closeEmitter.event,
+      open: () => {
+        const buffered = this.pending ?? [];
+        this.pending = undefined;
+        this.write("Welcome to Groovy REPL\r\n");
+        this.write(
+          'Type your code in the editor and use "Send to REPL" commands.\r\n\r\n',
+        );
+        buffered.forEach((text) => this.write(text));
+      },
+      // Called when the user closes the terminal (or after dispose()).
+      close: () => onUserClose(this),
+    };
+    this.terminal = vscode.window.createTerminal({ name: "Groovy REPL", pty });
+  }
+
+  write(text: string): void {
+    if (this.pending) {
+      this.pending.push(text);
+    } else {
+      this.writeEmitter.fire(text);
+    }
+  }
+
+  dispose(): void {
+    this.terminal.dispose();
+    this.writeEmitter.dispose();
+    this.closeEmitter.dispose();
+  }
+}
+
+export class ReplService implements vscode.Disposable {
+  private readonly replClient = new GroovyReplClient(getClient);
+  private session: ReplSession | undefined;
   private readonly statusBar: ReplStatusBar;
 
   constructor() {
@@ -42,17 +85,11 @@ export class ReplService implements vscode.Disposable {
 
   public dispose() {
     this.stop();
-    this.writeEmitter.dispose();
-    this.closeEmitter.dispose();
-  }
-
-  public getStatus(): { isRunning: boolean } {
-    return { isRunning: !!this.terminal };
   }
 
   private show(): void {
-    if (this.terminal) {
-      this.terminal.show();
+    if (this.session) {
+      this.session.terminal.show();
     } else {
       vscode.window.showInformationMessage(
         'REPL is not running. Use "Groovy: Start REPL" to begin.',
@@ -61,19 +98,18 @@ export class ReplService implements vscode.Disposable {
   }
 
   private clear(): void {
-    if (!this.terminal) {
+    if (!this.session) {
       vscode.window.showInformationMessage("REPL is not running.");
       return;
     }
-    // We can use a special sequence to clear the terminal
-    this.writeEmitter.fire("\x1b[2J\x1b[3J\x1b[;H");
+    this.session.write("\x1b[2J\x1b[3J\x1b[;H");
   }
 
   private stop(): void {
-    if (this.terminal) {
-      this.terminal.dispose();
-      this.terminal = undefined;
-      this.replClient = undefined;
+    const session = this.session;
+    if (session) {
+      this.session = undefined;
+      session.dispose();
       this.statusBar.update(false);
     }
   }
@@ -94,48 +130,24 @@ export class ReplService implements vscode.Disposable {
     }
   }
 
-  private async startRepl() {
-    const client = getClient();
-    if (!client) {
+  private async startRepl(): Promise<ReplSession | undefined> {
+    if (!getClient()) {
       vscode.window.showErrorMessage("Groovy Language Server is not ready.");
       this.statusBar.update(false);
-      return;
+      return undefined;
     }
 
-    this.replClient = new GroovyReplClient(client);
-
-    if (this.terminal) {
-      this.terminal.show();
-      this.statusBar.update(true);
-      return;
+    if (!this.session) {
+      this.session = new ReplSession((closed) => {
+        // Ignore late close events from a terminal that was already replaced.
+        if (this.session === closed) {
+          this.stop();
+        }
+      });
     }
-
-    const pty: vscode.Pseudoterminal = {
-      onDidWrite: this.writeEmitter.event,
-      onDidClose: this.closeEmitter.event,
-      open: () => {
-        this.writeEmitter.fire("Welcome to Groovy REPL\r\n");
-        this.writeEmitter.fire(
-          'Type your code in the editor and use "Send to REPL" commands.\r\n\r\n',
-        );
-      },
-      close: () => {
-        // This is called when the terminal is closed by the user (e.g. clicking the trash icon)
-        this.stop();
-      },
-      handleInput: (_data: string) => {
-        // Basic input handling if we wanted an interactive shell,
-        // but for now we rely on editor commands.
-      },
-    };
-
-    this.terminal = vscode.window.createTerminal({
-      name: "Groovy REPL",
-      pty,
-    });
-
-    this.terminal.show();
+    this.session.terminal.show();
     this.statusBar.update(true);
+    return this.session;
   }
 
   private async sendLine() {
@@ -163,37 +175,28 @@ export class ReplService implements vscode.Disposable {
   }
 
   private async evaluate(code: string) {
-    if (!this.replClient || !this.terminal) {
-      await this.startRepl();
+    const session = this.session ?? (await this.startRepl());
+    if (!session) {
+      return; // startRepl() already told the user why
     }
 
-    if (!this.replClient) {
-      // If replClient is still undefined after attempting to start,
-      // it means startRepl() failed (e.g., LSP not ready) and already showed an error.
-      // Log this for clarity and prevent further execution.
-      console.error(
-        "REPL client could not be initialized. Evaluation aborted.",
-      );
-      return;
-    }
-
-    this.writeEmitter.fire(`> ${code.replaceAll("\n", "\r\n> ")}\r\n`);
+    session.write(`> ${code.replaceAll("\n", "\r\n> ")}\r\n`);
 
     try {
       const result = await this.replClient.evaluate(code);
       if (result.output) {
-        this.writeEmitter.fire(result.output.replaceAll("\n", "\r\n"));
+        session.write(result.output.replaceAll("\n", "\r\n"));
       }
       if (result.result && result.result !== "null") {
-        this.writeEmitter.fire(`<= ${result.result}\r\n`);
+        session.write(`<= ${result.result}\r\n`);
       }
     } catch (error) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      this.writeEmitter.fire(`Error: ${errorMessage}\r\n`);
+      session.write(`Error: ${errorMessage}\r\n`);
     }
 
-    this.writeEmitter.fire("\r\n");
+    session.write("\r\n");
   }
 }
 

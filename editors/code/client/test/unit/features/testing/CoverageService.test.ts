@@ -7,11 +7,25 @@ interface VscodeMock {
     file: (path: string) => { fsPath: string; toString: () => string };
     parse: (path: string) => { fsPath: string; toString: () => string };
   };
-  Position: new (line: number, character: number) => { line: number; character: number };
-  BranchCoverage: new (executed: number | boolean, location: unknown, label?: string) => unknown;
-  StatementCoverage: new (executed: number | boolean, location: unknown, branches?: unknown[]) => unknown;
+  Position: new (
+    line: number,
+    character: number,
+  ) => { line: number; character: number };
+  BranchCoverage: new (
+    executed: number | boolean,
+    location: unknown,
+    label?: string,
+  ) => unknown;
+  StatementCoverage: new (
+    executed: number | boolean,
+    location: unknown,
+    branches?: unknown[],
+  ) => unknown;
   FileCoverage: {
-    fromDetails: (uri: unknown, details: unknown[]) => { uri: unknown; details: unknown[] };
+    fromDetails: (
+      uri: unknown,
+      details: unknown[],
+    ) => { uri: unknown; details: unknown[] };
   };
   OutputChannel: new () => unknown;
 }
@@ -37,7 +51,10 @@ interface CoverageServiceInstance {
 }
 
 interface CoverageServiceClass {
-  new (testService: TestServiceMock, logger: LoggerMock): CoverageServiceInstance;
+  new (
+    testService: TestServiceMock,
+    logger: LoggerMock,
+  ): CoverageServiceInstance;
 }
 
 describe("CoverageService", () => {
@@ -106,13 +123,17 @@ describe("CoverageService", () => {
     };
 
     // Load CoverageService with mocks
-    const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { CoverageService: CoverageServiceClass } }).noCallThru()(
-      "../../../../src/features/testing/CoverageService",
-      {
-        vscode: vscodeMock,
-        fs: fsMock,
-      },
-    );
+    const module = (
+      proxyquire as {
+        noCallThru: () => (
+          path: string,
+          stubs: unknown,
+        ) => { CoverageService: CoverageServiceClass };
+      }
+    ).noCallThru()("../../../../src/features/testing/CoverageService", {
+      vscode: vscodeMock,
+      fs: fsMock,
+    });
     CoverageService = module.CoverageService;
     coverageService = new CoverageService(testServiceMock, loggerMock);
   });
@@ -174,11 +195,15 @@ describe("CoverageService", () => {
     );
 
     // Verify Covered Branches (cb=2)
-    const coveredBranches = line.branches.filter((b: unknown) => (b as { executed: number }).executed === 1);
+    const coveredBranches = line.branches.filter(
+      (b: unknown) => (b as { executed: number }).executed === 1,
+    );
     assert.equal(coveredBranches.length, 2, "Should have 2 covered branches");
 
     // Verify Missed Branches (mb=1)
-    const missedBranches = line.branches.filter((b: unknown) => (b as { executed: number }).executed === 0);
+    const missedBranches = line.branches.filter(
+      (b: unknown) => (b as { executed: number }).executed === 0,
+    );
     assert.equal(missedBranches.length, 1, "Should have 1 missed branch");
   });
 

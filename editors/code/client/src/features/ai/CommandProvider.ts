@@ -19,9 +19,12 @@ export class CommandProvider implements vscode.Disposable {
     TOOL_DEFINITIONS.forEach((tool) => {
       if (this.registry.isToolEnabled(tool.name)) {
         this.disposables.push(
-          vscode.commands.registerCommand(tool.command, async (args: unknown) => {
-            return await tool.handler(this.lspService, args);
-          }),
+          vscode.commands.registerCommand(
+            tool.command,
+            async (args: unknown) => {
+              return await tool.handler(this.lspService, args);
+            },
+          ),
         );
       }
     });

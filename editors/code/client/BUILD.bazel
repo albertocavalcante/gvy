@@ -30,7 +30,9 @@ ts_project(
         # JDK utilities
         "//editors/code:node_modules/jdk-utils",
 
-        # Node types
+        # Node and mocha types: client/tsconfig.json lists both in "types"
+        # (TypeScript 6 no longer loads every @types package by default).
+        "//editors/code:node_modules/@types/mocha",
         "//editors/code:node_modules/@types/node",
     ],
 )

@@ -129,7 +129,8 @@ export class GroovyTestController {
    * Refresh tests with debouncing to avoid excessive LSP calls.
    */
   private refreshTimeout: ReturnType<typeof setTimeout> | undefined;
-  private refreshTests(): void {
+  /** Re-runs (debounced) discovery, e.g. once the language server is up. */
+  refreshTests(): void {
     if (this.refreshTimeout) {
       clearTimeout(this.refreshTimeout);
     }

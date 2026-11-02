@@ -3,7 +3,7 @@ import {
   determineStateFromStatus,
   inferStateFromMessage,
   GroovyStatusParams,
-} from "../../ui/statusUtils";
+} from "../../../src/ui/statusUtils";
 
 describe("Status Utils", () => {
   describe("determineStateFromStatus", () => {

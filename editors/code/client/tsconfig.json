@@ -1,13 +1,14 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "ES2020",
+    "module": "node20",
+    "target": "ES2022",
     "outDir": "out",
-    "lib": ["ES2021", "DOM"],
+    "lib": ["ES2023", "DOM"],
     "sourceMap": true,
     "rootDir": "src",
+    "types": ["node", "mocha"],
     "strict": true,
-    "moduleResolution": "node",
+    "moduleResolution": "node16",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,

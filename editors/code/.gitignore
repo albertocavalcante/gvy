@@ -15,6 +15,7 @@ dist/
 # This file is regenerated on every compile/package-build with different
 # minification settings (dev vs production), causing unwanted git diffs.
 /resources/ast-view/main.js
+/resources/ast-view/codicons/
 
 # Dependencies
 node_modules/

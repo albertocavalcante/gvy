@@ -19,7 +19,9 @@ export declare function requireChecksum(
   artifact: string,
 ): string;
 
-export declare function verifyChecksumAndCleanup(
-  filePath: string,
-  expectedHash: string,
+export declare function installVerifiedJar(
+  sourcePath: string,
+  destPath: string,
+  expectedChecksum: string | null,
+  validate?: (filePath: string) => void,
 ): Promise<void>;

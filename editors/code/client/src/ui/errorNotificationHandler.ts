@@ -1,3 +1,5 @@
+import * as vscode from "vscode";
+import { settingsTarget } from "../configuration/target";
 import type { OutputChannel } from "vscode";
 import {
   ErrorDetails,
@@ -45,9 +47,6 @@ export async function showErrorNotification(
   outputChannel?: OutputChannel,
   retryCommand?: string,
 ): Promise<void> {
-  // Lazy import vscode to avoid breaking unit tests
-  const vscode = await import("vscode");
-
   // Handle JDK newer warning specially - it has unique action buttons
   if (errorDetails.type === "PROJECT_JDK_NEWER_WARNING") {
     await showJdkNewerWarning(
@@ -216,7 +215,6 @@ async function handleSpecialActions(
   }
 
   if (action === "Retry Resolution" && retryCommand) {
-    const vscode = await import("vscode");
     await vscode.commands.executeCommand(retryCommand);
     return true;
   }
@@ -270,9 +268,6 @@ async function handleActionClick(
   action: string,
   errorDetails?: ErrorDetails,
 ): Promise<void> {
-  // Lazy import vscode to avoid breaking unit tests
-  const vscode = await import("vscode");
-
   // Handle Configure Java action
   if (action === CONFIGURE_JAVA) {
     // Extract required version from error details if available
@@ -382,8 +377,6 @@ async function showJdkNewerWarning(
   warning: ProjectJdkNewerWarning,
   _outputChannel?: OutputChannel,
 ): Promise<void> {
-  const vscode = await import("vscode");
-
   // Check if warning is suppressed
   const config = vscode.workspace.getConfiguration("groovy");
   const suppressWarning = config.get<boolean>(
@@ -423,7 +416,7 @@ async function showJdkNewerWarning(
         await config.update(
           "jdk.suppressMismatchWarning",
           true,
-          vscode.ConfigurationTarget.Workspace,
+          settingsTarget(),
         );
         vscode.window.showInformationMessage(
           "JDK version mismatch warnings will be suppressed for this workspace. " +

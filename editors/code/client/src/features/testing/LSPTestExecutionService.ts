@@ -1,10 +1,17 @@
 import * as vscode from "vscode";
 import * as cp from "child_process";
-import { buildProcessInvocation } from "./processInvocation";
 import * as path from "path";
 import * as fs from "fs";
 import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
+import { resolveTestTarget, selectRunItems } from "./testTarget";
+import {
+  buildProcessInvocation,
+  buildToolOf,
+  killProcessTree,
+  ProcessInvocation,
+  withJavaHome,
+} from "./processInvocation";
 import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
 import { CoverageService } from "./CoverageService";
@@ -26,6 +33,9 @@ function normalizeTestId(id: string): string {
       .replace(/^_+|_+$/g, "")
   );
 }
+
+/** The build command for a test item cannot be spawned safely. */
+class UnrunnableCommandError extends Error {}
 
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
@@ -69,12 +79,23 @@ export class LSPTestExecutionService implements ITestExecutionService {
     options: TestRunOptions = {},
   ): Promise<void> {
     const run = testController.createTestRun(request);
+    // Runs started from commands or CodeLens pass a token nobody cancels;
+    // the run's own token is what Test Explorer's Stop button cancels.
+    const tokens = [token, run.token];
+    const isCancelled = () => tokens.some((t) => t.isCancellationRequested);
     const consumer = new TestEventConsumer(run, this.logger, testController);
-    const testsToRun = request.include ?? [];
+    const testsToRun = selectRunItems(
+      request.include,
+      request.exclude,
+      testController.items,
+    );
 
-    // Register items with consumer
-    for (const item of testsToRun) {
+    // Register requested items and their descendants so events for child
+    // tests update the existing items instead of replacing them.
+    for (const item of this.collectAllTestItems(testsToRun)) {
       consumer.registerTestItem(item.id, item);
+    }
+    for (const item of testsToRun) {
       run.enqueued(item);
     }
 
@@ -104,7 +125,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       let isMavenExecution = false;
 
       for (const item of testsToRun) {
-        if (token.isCancellationRequested) break;
+        if (isCancelled()) break;
 
         // Parse suite/test from Item ID
         const uri = item.uri?.toString();
@@ -115,25 +136,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
           continue;
         }
 
-        let suiteName: string;
-        let testName: string | undefined;
-
-        // Heuristic: If the item ID contains a dot, it's a test method (ClassName.methodName). Otherwise, it's a suite.
-        const isSuite = !item.id.includes(".");
-
-        if (isSuite) {
-          suiteName = item.id;
-          testName = undefined;
-        } else {
-          // It's a method
-          const lastDot = item.id.lastIndexOf(".");
-          if (lastDot > 0) {
-            suiteName = item.id.substring(0, lastDot);
-            testName = item.id.substring(lastDot + 1);
-          } else {
-            suiteName = item.id;
-          }
-        }
+        const { suite: suiteName, test: testName } = resolveTestTarget(item);
 
         const command = await this.testService.getTestCommand(
           uri,
@@ -155,17 +158,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
         }
 
         // Execute the test command with optional coverage
-        const executableName = path.basename(command.executable);
-        const isGradle = executableName.startsWith("gradle");
-        const isMaven =
-          executableName === "mvn" ||
-          executableName === "mvnw" ||
-          executableName.startsWith("mvn.");
-
-        // Track if any Maven execution occurred
-        if (isMaven) {
-          isMavenExecution = true;
-        }
+        const tool = buildToolOf(command.executable);
+        const isGradle = tool === "gradle";
+        const isMaven = tool === "maven";
 
         // Clone command.args to avoid mutation
         const coverageArgs = [...command.args];
@@ -180,24 +175,30 @@ export class LSPTestExecutionService implements ITestExecutionService {
           }
         }
 
-        await this.executeCommand(
-          { ...command, args: coverageArgs },
-          consumer,
-          token,
-        );
+        try {
+          await this.executeCommand(
+            { ...command, args: coverageArgs },
+            consumer,
+            tokens,
+          );
+          // Only builds that ran leave Surefire reports for this run.
+          if (isMaven) {
+            isMavenExecution = true;
+          }
+        } catch (error) {
+          if (!(error instanceof UnrunnableCommandError)) throw error;
+          this.logger.appendLine(`[Error] ${error.message}`);
+          run.errored(item, new vscode.TestMessage(error.message));
+        }
       }
 
       // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
-      if (isMavenExecution && !token.isCancellationRequested) {
+      if (isMavenExecution && !isCancelled()) {
         await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
       }
 
       // After all tests complete, fetch and add coverage if requested
-      if (
-        options.withCoverage &&
-        options.coverageService &&
-        !token.isCancellationRequested
-      ) {
+      if (options.withCoverage && options.coverageService && !isCancelled()) {
         await options.coverageService.addCoverageToRun(run, workspaceUri);
       }
     } catch (error) {
@@ -468,7 +469,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
   private async executeCommand(
     cmd: TestCommand,
     consumer: TestEventConsumer,
-    token: vscode.CancellationToken,
+    tokens: readonly vscode.CancellationToken[],
   ): Promise<void> {
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
@@ -483,11 +484,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     if (projectJavaHome) {
       // Validate JAVA_HOME for security
       if (this.isValidJavaHome(projectJavaHome)) {
-        resolvedEnv = {
-          ...resolvedEnv,
-          JAVA_HOME: projectJavaHome,
-          PATH: `${projectJavaHome}/bin${path.delimiter}${resolvedEnv.PATH || ""}`,
-        };
+        resolvedEnv = withJavaHome(resolvedEnv, projectJavaHome);
         this.logger.appendLine(`[Test] Using project JDK: ${projectJavaHome}`);
       } else {
         this.logger.appendLine(
@@ -497,9 +494,9 @@ export class LSPTestExecutionService implements ITestExecutionService {
     }
 
     // Detect Build Tool by executable name
-    const executableName = path.basename(executable);
-    const isGradle = executableName.startsWith("gradle");
-    const isMaven = /^(mvn|mvnw)(\.cmd|\.bat)?$/iu.test(executableName);
+    const tool = buildToolOf(executable);
+    const isGradle = tool === "gradle";
+    const isMaven = tool === "maven";
 
     let finalArgs = [...args];
 
@@ -524,8 +521,19 @@ export class LSPTestExecutionService implements ITestExecutionService {
       }
     }
 
+    let invocation: ProcessInvocation;
+    try {
+      invocation = buildProcessInvocation(executable, finalArgs);
+    } catch (error) {
+      throw new UnrunnableCommandError(
+        `This test cannot be run through the Windows command shell, which ` +
+          `${executable} needs. ${(error as Error).message}. If that is ` +
+          `the test name, rename the test or run its enclosing class; if it ` +
+          `is a path, move the project to a path without those characters.`,
+      );
+    }
+
     return new Promise((resolve) => {
-      const invocation = buildProcessInvocation(executable, finalArgs);
       const proc = cp.spawn(invocation.executable, invocation.args, {
         cwd,
         env: resolvedEnv,
@@ -533,10 +541,15 @@ export class LSPTestExecutionService implements ITestExecutionService {
       });
 
       // Cancellation
-      const cancelDis = token.onCancellationRequested(() => {
-        proc.kill();
-        this.logger.appendLine("Test run cancelled.");
-      });
+      const cancelSubscriptions = tokens.map((t) =>
+        t.onCancellationRequested(() => {
+          killProcessTree(proc);
+          this.logger.appendLine("Test run cancelled.");
+        }),
+      );
+      const cancelDis = {
+        dispose: () => cancelSubscriptions.forEach((d) => d.dispose()),
+      };
 
       // Output Parsing
       const rl = readline.createInterface({ input: proc.stdout });

@@ -33,13 +33,19 @@ export function setupConfigurationWatcher(): Disposable {
 
     // Handle settings that can be applied dynamically
     if (canBeAppliedDynamically(event)) {
-      console.log("Configuration changed, notifying server...");
       const client = getClient();
-      if (client) {
-        client.sendNotification("workspace/didChangeConfiguration", {
+      if (!client?.isRunning()) {
+        return; // the next start sends the current settings anyway
+      }
+      try {
+        await client.sendNotification("workspace/didChangeConfiguration", {
           settings: buildServerSettingsMap(),
         });
-        console.log("Sent workspace/didChangeConfiguration to server");
+      } catch (error) {
+        console.error(
+          "Failed to send workspace/didChangeConfiguration:",
+          error,
+        );
       }
     }
   });

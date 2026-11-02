@@ -46,7 +46,7 @@ export class LSPToolService implements ILSPToolService {
       throw new Error("Language Server client is not available");
     }
 
-    const uri = this.vscode.Uri.parse(uriStr);
+    const uri = this.toUri(uriStr);
     const position = new this.vscode.Position(line, character);
 
     const locations = await this.vscode.commands.executeCommand<
@@ -74,7 +74,7 @@ export class LSPToolService implements ILSPToolService {
       throw new Error("Language Server client is not available");
     }
 
-    const uri = this.vscode.Uri.parse(uriStr);
+    const uri = this.toUri(uriStr);
     const position = new this.vscode.Position(line, character);
 
     const result = await this.vscode.commands.executeCommand<
@@ -151,5 +151,16 @@ export class LSPToolService implements ILSPToolService {
         },
       },
     };
+  }
+
+  /**
+   * Models often pass plain paths. Uri.parse("C:\\x\\A.groovy") would read
+   * "c" as the scheme, so only a scheme of two or more characters ("file:",
+   * "untitled:") is parsed as a URI; anything else is a file path.
+   */
+  private toUri(value: string): vscodeType.Uri {
+    return /^[a-zA-Z][\w+.-]+:/.test(value)
+      ? this.vscode.Uri.parse(value)
+      : this.vscode.Uri.file(value);
   }
 }

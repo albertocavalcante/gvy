@@ -222,6 +222,18 @@ Use `Groovy: Check for Language Server Updates` command to check manually.
 - `Groovy: Show Language Server Version` - Display the current LSP server version
 - `Groovy: Check for Language Server Updates` - Check for new LSP releases
 
+### Gradle tasks
+
+`Gradle: Build`, `Gradle: Test` and `Gradle: Clean` run the root project's task with the project's wrapper (`gradlew`)
+when present. Tasks in `tasks.json` use the `groovy-gradle` type, with an optional subproject:
+
+```json
+{ "type": "groovy-gradle", "task": "test", "project": ":app" }
+```
+
+**Migrating:** the type used to be `gradle`, which belongs to the Gradle for Java extension; tasks of type `gradle`
+are no longer handled by this extension. Change their `type` to `groovy-gradle`.
+
 ## Status Bar
 
 The extension displays real-time language server status in the status bar:

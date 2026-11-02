@@ -52,7 +52,10 @@ interface MockJdkUtils {
 }
 
 interface CommandsModule {
-  configureJava: (requiredVersion?: number, purpose?: string) => Promise<boolean>;
+  configureJava: (
+    requiredVersion?: number,
+    purpose?: string,
+  ) => Promise<boolean>;
   addFoojayResolver: () => Promise<boolean>;
   registerJavaCommands: (context: unknown) => void;
 }
@@ -93,7 +96,9 @@ describe("Java Commands", () => {
           getText: sinon.stub().returns(""),
         }),
         applyEdit: sinon.stub().resolves(true),
-        asRelativePath: sinon.stub().callsFake((uri: { path: string }) => uri.path),
+        asRelativePath: sinon
+          .stub()
+          .callsFake((uri: { path: string }) => uri.path),
         getWorkspaceFolder: sinon.stub().callsFake((uri: unknown) => ({
           name: "test-workspace",
           uri,
@@ -144,7 +149,7 @@ describe("Java Commands", () => {
 
     // Load commands module with mocked dependencies
     commandsModule = proxyquire.noCallThru()("../../../src/java/commands", {
-      vscode: mockVscode,
+      vscode: { ...mockVscode, "@global": true },
       "./finder": mockFinder,
       "jdk-utils": mockJdkUtils,
     }) as CommandsModule;
@@ -266,7 +271,9 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const browseItem = items.find((item: unknown) => (item as { action?: string }).action === "browse");
+        const browseItem = items.find(
+          (item: unknown) => (item as { action?: string }).action === "browse",
+        );
         assert.isDefined(browseItem);
         assert.include((browseItem as { label: string }).label, "Browse");
       });
@@ -318,7 +325,9 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) =>
+            (item as { kind?: number }).kind ===
+            mockVscode.QuickPickItemKind.Separator,
         );
         const lspCompatible = separators.find((s: unknown) =>
           (s as { label: string }).label.includes("LSP Compatible"),
@@ -348,7 +357,9 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) =>
+            (item as { kind?: number }).kind ===
+            mockVscode.QuickPickItemKind.Separator,
         );
         const cannotRunLsp = separators.find((s: unknown) =>
           (s as { label: string }).label.includes("Cannot Run LSP"),
@@ -378,7 +389,9 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) =>
+            (item as { kind?: number }).kind ===
+            mockVscode.QuickPickItemKind.Separator,
         );
         const bestMatch = separators.find((s: unknown) =>
           (s as { label: string }).label.includes("Best Match"),
@@ -409,7 +422,9 @@ describe("Java Commands", () => {
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
         const separators = items.filter(
-          (item: unknown) => (item as { kind?: number }).kind === mockVscode.QuickPickItemKind.Separator,
+          (item: unknown) =>
+            (item as { kind?: number }).kind ===
+            mockVscode.QuickPickItemKind.Separator,
         );
         const projectOnly = separators.find((s: unknown) =>
           (s as { label: string }).label.includes("Project Target Only"),
@@ -432,7 +447,9 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(21, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const jdkItems = items.filter((item: unknown) => (item as { jdk?: unknown }).jdk !== undefined);
+        const jdkItems = items.filter(
+          (item: unknown) => (item as { jdk?: unknown }).jdk !== undefined,
+        );
         const recommendedItem = jdkItems.find((item: unknown) =>
           (item as { label: string }).label.includes("$(star-full)"),
         );
@@ -454,7 +471,9 @@ describe("Java Commands", () => {
         await commandsModule.configureJava(undefined, "lsp");
 
         const items = mockVscode.window.showQuickPick.firstCall.args[0];
-        const jdkItems = items.filter((item: unknown) => (item as { jdk?: unknown }).jdk !== undefined);
+        const jdkItems = items.filter(
+          (item: unknown) => (item as { jdk?: unknown }).jdk !== undefined,
+        );
         const incompatibleItem = jdkItems[0] as { detail: string };
         assert.include(incompatibleItem.detail, "$(error)");
         assert.include(incompatibleItem.detail, "Cannot run LSP");
@@ -1050,7 +1069,9 @@ describe("Java Commands", () => {
       // Get the registered handler
       const registerCall = mockVscode.commands.registerCommand
         .getCalls()
-        .find((call: sinon.SinonSpyCall) => call.args[0] === "groovy.configureJava");
+        .find(
+          (call: sinon.SinonSpyCall) => call.args[0] === "groovy.configureJava",
+        );
 
       assert.isDefined(
         registerCall,

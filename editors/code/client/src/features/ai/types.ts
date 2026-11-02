@@ -79,13 +79,41 @@ export interface ToolDefinition {
   handler: (service: ILSPToolService, params: unknown) => Promise<unknown>;
 }
 
+function readLocation(
+  params: unknown,
+  tool: string,
+): { uri: string; line: number; character: number } {
+  const p = (params ?? {}) as {
+    uri?: unknown;
+    line?: unknown;
+    character?: unknown;
+  };
+  if (
+    typeof p.uri !== "string" ||
+    p.uri.length === 0 ||
+    typeof p.line !== "number" ||
+    typeof p.character !== "number"
+  ) {
+    throw new Error(
+      `Parameters 'uri', 'line', and 'character' are required for ${tool}.`,
+    );
+  }
+  const isPosition = (n: number) => Number.isInteger(n) && n >= 0;
+  if (!isPosition(p.line) || !isPosition(p.character)) {
+    throw new Error(
+      `Parameters 'line' and 'character' must be non-negative integers (0-indexed) for ${tool}.`,
+    );
+  }
+  return { uri: p.uri, line: p.line, character: p.character };
+}
+
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "groovy_find_symbol",
     command: "groovy.ai.find_symbol",
     // Expected params: FindSymbolParams
     handler: async (service, params) => {
-      const p = params as { query?: unknown };
+      const p = (params ?? {}) as { query?: unknown };
       if (typeof p.query !== "string") {
         throw new Error(
           "Parameter 'query' is required for groovy_find_symbol.",
@@ -99,17 +127,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     command: "groovy.ai.get_references",
     // Expected params: LocationParams
     handler: async (service, params) => {
-      const p = params as { uri?: unknown; line?: unknown; character?: unknown };
-      if (
-        typeof p.uri !== "string" ||
-        typeof p.line !== "number" ||
-        typeof p.character !== "number"
-      ) {
-        throw new Error(
-          "Parameters 'uri', 'line', and 'character' are required for groovy_get_references.",
-        );
-      }
-      return service.findReferences(p.uri, p.line, p.character);
+      const { uri, line, character } = readLocation(
+        params,
+        "groovy_get_references",
+      );
+      return service.findReferences(uri, line, character);
     },
   },
   {
@@ -117,17 +139,11 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     command: "groovy.ai.get_definition",
     // Expected params: LocationParams
     handler: async (service, params) => {
-      const p = params as { uri?: unknown; line?: unknown; character?: unknown };
-      if (
-        typeof p.uri !== "string" ||
-        typeof p.line !== "number" ||
-        typeof p.character !== "number"
-      ) {
-        throw new Error(
-          "Parameters 'uri', 'line', and 'character' are required for groovy_get_definition.",
-        );
-      }
-      return service.getDefinition(p.uri, p.line, p.character);
+      const { uri, line, character } = readLocation(
+        params,
+        "groovy_get_definition",
+      );
+      return service.getDefinition(uri, line, character);
     },
   },
 ];

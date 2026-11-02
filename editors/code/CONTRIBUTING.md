@@ -6,7 +6,9 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 
 ### Prerequisites
 
-- **Node.js 20+**: For extension development
+- **Node.js 22+**: For extension development
+- **pnpm**: 12 (CI pins 12.14.0). The manifest has no `packageManager` field on purpose: with one, pnpm writes a second
+  YAML document into `pnpm-lock.yaml` that Bazel's `rules_js` cannot parse
 - **Java 17+**: Required for the Groovy Language Server
 - **VS Code**: For testing the extension
 - **Git**: For version control
@@ -275,7 +277,7 @@ Verify functionality on:
 
 1. Clean build: `rm -rf node_modules client/node_modules && pnpm install`
 2. Reset server: `rm server/*.jar && pnpm run prepare-server`
-3. Check Node.js version: `node --version` (should be 20+)
+3. Check Node.js version: `node --version` (should be 22+)
 
 ### Language Server Issues
 

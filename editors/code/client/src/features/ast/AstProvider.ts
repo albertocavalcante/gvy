@@ -16,6 +16,11 @@ class AstProvider {
   private readonly _panel: vscode.WebviewPanel;
   private readonly _extensionUri: vscode.Uri;
   private _disposables: vscode.Disposable[] = [];
+  /**
+   * The Groovy document the panel shows. While the webview has focus
+   * `activeTextEditor` is undefined, so the target must be remembered.
+   */
+  private _documentUri: string | undefined;
 
   public static createOrShow(extensionUri: vscode.Uri) {
     const column = vscode.window.activeTextEditor
@@ -46,6 +51,7 @@ class AstProvider {
   private constructor(panel: vscode.WebviewPanel, extensionUri: vscode.Uri) {
     this._panel = panel;
     this._extensionUri = extensionUri;
+    this.trackEditor(vscode.window.activeTextEditor);
 
     // Initial HTML
     this._panel.webview.html = this._getHtmlForWebview();
@@ -61,7 +67,12 @@ class AstProvider {
             this.highlightRange(message.range);
             break;
           case "refresh":
-            this.update(message.parser); // Refresh with requested parser
+            // Refresh with the requested parser (ignore unknown values)
+            this.update(
+              message.parser === "core" || message.parser === "native"
+                ? message.parser
+                : undefined,
+            );
             break;
         }
       },
@@ -74,7 +85,7 @@ class AstProvider {
       (document) => {
         if (
           this._panel.visible &&
-          vscode.window.activeTextEditor?.document === document
+          document.uri.toString() === this._documentUri
         ) {
           this.update(this._parserOverride || undefined); // Refresh with current state
         }
@@ -86,11 +97,7 @@ class AstProvider {
     // Auto-update when switching active editor
     vscode.window.onDidChangeActiveTextEditor(
       (editor) => {
-        if (
-          this._panel.visible &&
-          editor &&
-          editor.document.languageId === "groovy"
-        ) {
+        if (this.trackEditor(editor) && this._panel.visible) {
           this.update(this._parserOverride || undefined);
         }
       },
@@ -117,8 +124,27 @@ class AstProvider {
   private _parserOverride: "core" | "native" | null = null;
   private _parserSelection: "core" | "native" = "core";
 
+  /** Remembers `editor` if it shows a Groovy file; returns whether it did. */
+  private trackEditor(editor: vscode.TextEditor | undefined): boolean {
+    if (editor?.document.languageId !== "groovy") {
+      return false;
+    }
+    this._documentUri = editor.document.uri.toString();
+    return true;
+  }
+
+  private targetEditor(): vscode.TextEditor | undefined {
+    const active = vscode.window.activeTextEditor;
+    if (this.trackEditor(active)) {
+      return active;
+    }
+    return vscode.window.visibleTextEditors.find(
+      (e) => e.document.uri.toString() === this._documentUri,
+    );
+  }
+
   public async update(parserOverride?: "core" | "native") {
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.targetEditor() ?? vscode.window.activeTextEditor;
     if (!editor) {
       this._panel.webview.postMessage({
         type: "error",
@@ -187,15 +213,16 @@ class AstProvider {
         }
       | undefined,
   ) {
+    const valid = (n: unknown) => Number.isInteger(n) && (n as number) >= 1;
     if (
       !range ||
-      range.startLine < 1 ||
-      range.startColumn < 1 ||
-      range.endLine < 1 ||
-      range.endColumn < 1
+      !valid(range.startLine) ||
+      !valid(range.startColumn) ||
+      !valid(range.endLine) ||
+      !valid(range.endColumn)
     )
       return;
-    const editor = vscode.window.activeTextEditor;
+    const editor = this.targetEditor();
     if (!editor) return;
 
     const start = new vscode.Position(
@@ -242,13 +269,14 @@ class AstProvider {
     );
     const styleUri = webview.asWebviewUri(stylePathOnDisk);
 
-    // Codicons
+    // Codicons (copied from @vscode/codicons by esbuild.js; node_modules is
+    // neither packaged nor allowed by localResourceRoots)
     const codiconsUri = webview.asWebviewUri(
       vscode.Uri.joinPath(
         this._extensionUri,
-        "node_modules",
-        "@vscode/codicons",
-        "dist",
+        "resources",
+        "ast-view",
+        "codicons",
         "codicon.css",
       ),
     );

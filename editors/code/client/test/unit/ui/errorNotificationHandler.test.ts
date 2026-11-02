@@ -18,6 +18,7 @@ interface MockVscode {
   };
   workspace: {
     getConfiguration: sinon.SinonStub;
+    workspaceFolders: unknown[];
   };
   commands: {
     executeCommand: sinon.SinonStub;
@@ -76,6 +77,7 @@ describe("Error Notification Handler", () => {
       },
       workspace: {
         getConfiguration: getConfigurationStub,
+        workspaceFolders: [{ uri: {} }],
       },
       commands: {
         executeCommand: executeCommandStub,
@@ -100,7 +102,7 @@ describe("Error Notification Handler", () => {
     const module = proxyquire.noCallThru()(
       "../../../src/ui/errorNotificationHandler",
       {
-        vscode: mockVscode,
+        vscode: { ...mockVscode, "@global": true },
       },
     );
     showErrorNotification = module.showErrorNotification;
