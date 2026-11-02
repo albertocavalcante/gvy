@@ -880,11 +880,11 @@
     "format:check": "prettier --check \"**/*.{ts,js,json,css,md,yaml,yml}\"",
     "package": "vsce package --no-dependencies",
     "install-extension": "node tools/install-extension.js",
-    "clean": "rm -rf client/out/ server/*.jar server/.gls-version",
+    "clean": "rm -rf client/out/ client/tsconfig.tsbuildinfo server/*.jar server/.gls-version",
     "postinstall": "pnpm run prepare-server",
     "test": "mocha",
     "test:watch": "mocha --watch",
-    "compile:tests": "tsc -b client/tsconfig.json",
+    "compile:tests": "tsc -b --force client/tsconfig.json",
     "test:integration": "pnpm run compile:tests && vscode-test",
     "test:all": "pnpm run test && pnpm run test:integration"
   },
