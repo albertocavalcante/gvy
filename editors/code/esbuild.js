@@ -75,6 +75,12 @@ async function main() {
     await ctx.watch();
     await webviewCtx.watch();
   } else {
+    if (production) {
+      // A map left by an earlier development build would be packaged.
+      fs.rmSync(path.join(__dirname, "resources", "ast-view", "main.js.map"), {
+        force: true,
+      });
+    }
     await ctx.rebuild();
     await webviewCtx.rebuild();
     await ctx.dispose();
