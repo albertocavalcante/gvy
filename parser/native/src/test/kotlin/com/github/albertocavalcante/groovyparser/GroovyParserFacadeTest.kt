@@ -163,6 +163,68 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `an open buffer with a syntax error does not cost this file its AST or show its error`() {
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///w/Healthy.groovy"),
+                content = "class Healthy { String name }",
+                openSources = mapOf(URI.create("file:///w/MidEdit.groovy") to "class MidEdit { void foo( {"),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        )
+
+        assertNotNull(result.ast)
+        assertTrue(result.ast.classes.any { it.nameWithoutPackage == "Healthy" })
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
+    }
+
+    @Test
+    fun `a failing open buffer is dropped while healthy buffers still resolve`() {
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///w/UsesHelper.groovy"),
+                content = "class UsesHelper { Helper ref = new Helper() }",
+                openSources = mapOf(
+                    URI.create("file:///w/Helper.groovy") to "class Helper {}",
+                    URI.create("file:///w/Typing.groovy") to "class Typing { NoSuchTypeYet field }",
+                ),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        )
+
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
+        // Type resolution survived: compiled past CONVERSION, so the field type is the resolved class.
+        val field = result.ast?.classes?.single { it.nameWithoutPackage == "UsesHelper" }?.getField("ref")
+        assertEquals("Helper", field?.type?.name)
+        assertTrue(
+            field?.type?.redirect()?.isPrimaryClassNode == true,
+            "Helper should resolve to the buffer's class, not stay a CONVERSION placeholder",
+        )
+    }
+
+    @Test
+    fun `a buffer replaces its disk copy even when the editor encodes the URI differently`() {
+        // VS Code percent-encodes parentheses; Path.toUri() leaves them as they are.
+        val dir = Files.createDirectories(tempDir.resolve("Proj (2)"))
+        val onDisk = dir.resolve("Shared.groovy")
+        onDisk.toFile().writeText("class Shared { String saved }")
+        val editorUri = URI.create(onDisk.toUri().toString().replace("(", "%28").replace(")", "%29"))
+        assertTrue(editorUri != onDisk.toUri())
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///w/UsesShared.groovy"),
+                content = "class UsesShared { Shared ref }",
+                workspaceSources = listOf(onDisk),
+                openSources = mapOf(editorUri to "class Shared { String unsaved }"),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        )
+
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
+    }
+
+    @Test
     fun `open buffers that are not groovy sources are not compiled`() {
         val result = parser.parse(
             ParseRequest(

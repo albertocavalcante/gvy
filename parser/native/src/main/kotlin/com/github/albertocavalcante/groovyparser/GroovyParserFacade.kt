@@ -18,6 +18,8 @@ import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
+import org.codehaus.groovy.control.messages.SyntaxErrorMessage
+import java.net.URI
 import java.net.URL
 import java.nio.file.Files
 import java.nio.file.Path
@@ -108,6 +110,46 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     fun parse(request: ParseRequest): ParseResult {
         val result = parseInternal(request)
 
+        // Other open buffers are usually mid-edit. Their errors fail the whole compilation unit,
+        // which would cost this file its AST (or its type resolution, via the CONVERSION retry
+        // below) and show their error here. Compile again without the buffers that failed, or
+        // without any buffers if a failure cannot be attributed to one.
+        if (request.openSources.isNotEmpty()) {
+            val failing = failingOpenSources(request, result)
+            if (failing != null && failing.isNotEmpty()) {
+                logger.debug { "Open buffers with errors excluded from compiling ${request.uri}: $failing" }
+                return parse(request.copy(openSources = request.openSources.filterKeys { it !in failing }))
+            }
+            if (failing == null) {
+                logger.debug { "Unattributed compile errors for ${request.uri}; compiling without open buffers" }
+                return parse(request.copy(openSources = emptyMap()))
+            }
+        }
+
+        return retryAtEarlierPhaseIfNeeded(request, result)
+    }
+
+    /**
+     * The open buffers whose errors appear in [result], or null when an error comes from a source
+     * that cannot be identified (any non-syntax error, which Groovy does not attribute to a file).
+     */
+    private fun failingOpenSources(request: ParseRequest, result: ParseResult): Set<URI>? {
+        val errors = result.compilationUnit.errorCollector.errors.orEmpty()
+        val byName = request.openSources.keys.associateBy { it.path ?: it.toString() }
+        val failing = mutableSetOf<URI>()
+        for (message in errors) {
+            val locator = (message as? SyntaxErrorMessage)?.cause?.sourceLocator
+            when {
+                locator == request.sourceUnitName -> Unit // this file's own error
+                locator != null && locator in byName -> failing += byName.getValue(locator)
+                locator != null -> Unit // a workspace source on disk; unchanged behaviour
+                else -> return null
+            }
+        }
+        return failing
+    }
+
+    private fun retryAtEarlierPhaseIfNeeded(request: ParseRequest, result: ParseResult): ParseResult {
         // Check if we should retry at an earlier phase
         if (shouldRetryAtConversion(request, result)) {
             logger.info { "Detected Script fallback for ${request.uri}, retrying at CONVERSION phase" }
@@ -377,9 +419,12 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         }
 
         // Unsaved buffers replace their on-disk copies; adding both would declare each class twice.
+        // Compared as paths: editors percent-encode URIs differently from Path.toUri().
+        val self = fileKey(request.uri)
         val openSources = request.openSources.filterKeys { uri ->
-            uri != request.uri && (uri.path ?: "").endsWith(".groovy", ignoreCase = true)
+            fileKey(uri) != self && (uri.path ?: "").endsWith(".groovy", ignoreCase = true)
         }
+        val openKeys = openSources.keys.mapTo(HashSet()) { fileKey(it) }
         openSources.forEach { (uri, text) ->
             runCatching {
                 logger.trace { "Adding open source: $uri" }
@@ -401,7 +446,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
-                    it.toUri() !in openSources &&
+                    fileKey(it.toUri()) !in openKeys &&
                     it.extension.equals("groovy", ignoreCase = true) &&
                     it.isRegularFile()
             }
@@ -413,6 +458,13 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                     logger.trace { "Failed adding workspace source $path: ${throwable.message}" }
                 }
             }
+    }
+
+    /** A `file:` URI as a normalized path (decoded, platform case rules); other URIs unchanged. */
+    private fun fileKey(uri: URI): Any = if (uri.scheme.equals("file", ignoreCase = true)) {
+        runCatching { Path.of(uri).toAbsolutePath().normalize() }.getOrDefault(uri)
+    } else {
+        uri
     }
 
     /**
