@@ -43,7 +43,7 @@ function load(existing: string[]) {
 describe("GradleTaskProvider", () => {
   const service = {
     getTasks: async () => [
-      { name: "test", group: "verification", project: "w" },
+      { name: "test", group: "verification", project: ":" },
     ],
   };
 
@@ -65,15 +65,95 @@ describe("GradleTaskProvider", () => {
     const { mod, folder } = load(["/w/gradlew"]);
     const resolved = new mod.GradleTaskProvider(service).resolveTask(
       new Task(
-        { type: "gradle", task: "build" },
+        { type: "groovy-gradle", task: "build" },
         folder,
         "build",
-        "gradle",
+        "groovy-gradle",
         new ShellExecution("", []),
       ),
     );
     assert.strictEqual(resolved.execution.command, "/w/gradlew");
     assert.strictEqual(resolved.execution.options?.cwd, "/w");
+  });
+});
+
+describe("GradleTaskProvider task type and subprojects", () => {
+  const resolve = (definition: Record<string, string>) => {
+    const { mod, folder } = load(["/w/gradlew"]);
+    return new mod.GradleTaskProvider({ getTasks: async () => [] }).resolveTask(
+      new Task(
+        definition as { type: string; task: string },
+        folder,
+        definition.task,
+        "groovy-gradle",
+        new ShellExecution("", []),
+      ),
+    );
+  };
+
+  it("uses its own task type so it does not claim Gradle for Java's tasks", async () => {
+    const { mod } = load([]);
+    assert.strictEqual(mod.GRADLE_TASK_TYPE, "groovy-gradle");
+    const provider = new mod.GradleTaskProvider({
+      getTasks: async () => [{ name: "build", group: "build", project: ":" }],
+    });
+    const [task] = await provider.provideTasks();
+    assert.strictEqual(task.definition.type, "groovy-gradle");
+    assert.strictEqual(
+      resolve({ type: "gradle", task: "build" }),
+      undefined,
+      "tasks of type gradle belong to the Gradle for Java extension",
+    );
+  });
+
+  it("runs a subproject's task by its Gradle path", () => {
+    assert.deepStrictEqual(
+      resolve({ type: "groovy-gradle", task: "test", project: ":app" })
+        .execution.args,
+      [":app:test"],
+    );
+    assert.deepStrictEqual(
+      resolve({ type: "groovy-gradle", task: "test", project: ":libs:core" })
+        .execution.args,
+      [":libs:core:test"],
+    );
+  });
+
+  it("treats a project name (not a :path) as the root project", () => {
+    // The server's project field is not pinned to Gradle paths; a root
+    // project reported by name must not become :name:task.
+    assert.deepStrictEqual(
+      resolve({ type: "groovy-gradle", task: "test", project: "w" }).execution
+        .args,
+      ["test"],
+    );
+  });
+
+  it("runs root-project tasks and full task paths unchanged", () => {
+    for (const project of [undefined, "", ":"]) {
+      const definition: Record<string, string> = {
+        type: "groovy-gradle",
+        task: "build",
+      };
+      if (project !== undefined) definition.project = project;
+      assert.deepStrictEqual(resolve(definition).execution.args, ["build"]);
+    }
+    assert.deepStrictEqual(
+      resolve({ type: "groovy-gradle", task: ":app:build", project: ":app" })
+        .execution.args,
+      [":app:build"],
+    );
+  });
+
+  it("declares the task type and its properties in the manifest", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const manifest = require("../../../../../package.json");
+    const definition = manifest.contributes.taskDefinitions.find(
+      (d: { type: string }) => d.type === "groovy-gradle",
+    );
+    assert.ok(definition, "groovy-gradle task definition");
+    assert.deepStrictEqual(definition.required, ["task"]);
+    assert.ok(definition.properties.project);
   });
 });
 

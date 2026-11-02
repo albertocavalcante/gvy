@@ -24,10 +24,29 @@
     "onLanguage:jenkinsfile",
     "workspaceContains:**/Jenkinsfile",
     "workspaceContains:**/Jenkinsfile.*",
-    "workspaceContains:**/*.groovy"
+    "workspaceContains:**/*.groovy",
+    "onTaskType:groovy-gradle"
   ],
   "main": "./client/out/extension.js",
   "contributes": {
+    "taskDefinitions": [
+      {
+        "type": "groovy-gradle",
+        "required": [
+          "task"
+        ],
+        "properties": {
+          "task": {
+            "type": "string",
+            "description": "The Gradle task to run, for example build or :app:test."
+          },
+          "project": {
+            "type": "string",
+            "description": "Gradle path of the subproject that owns the task, starting with a colon, for example :app. Omit for the root project."
+          }
+        }
+      }
+    ],
     "commands": [
       {
         "command": "groovy.restartServer",
