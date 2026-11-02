@@ -1,13 +1,12 @@
 import * as path from "path";
 import * as fs from "fs";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
 import { workspace } from "vscode";
 import { findRuntimes, getRuntime, getSources, IJavaRuntime } from "jdk-utils";
 
-const execAsync = promisify(exec);
-const fsAccess = promisify(fs.access);
-const fsReaddir = promisify(fs.readdir);
+const execFileAsync = promisify(execFile);
+const fsRealpath = fs.promises.realpath;
 
 // Minimum supported Java version for Groovy Language Server
 export const MINIMUM_JAVA_VERSION = 17;
@@ -56,7 +55,7 @@ export async function findJava(): Promise<JavaResolution | null> {
         source: "setting",
       };
     }
-    // Setting configured but invalid - we'll report this later
+    // Configured but too old: report the configured JDK's version.
     if (runtime?.version?.major) {
       return {
         path: runtime.homedir,
@@ -64,6 +63,9 @@ export async function findJava(): Promise<JavaResolution | null> {
         source: "setting",
       };
     }
+    // Configured path is not a JDK. Do not silently start some other Java;
+    // null lets the validator tell the user the setting is invalid.
+    return null;
   }
 
   // 2. Use jdk-utils to scan JAVA_HOME, PATH, SDKMAN, jEnv, jabba, asdf, common paths
@@ -162,59 +164,43 @@ async function tryLoginShell(): Promise<{
   const shell = process.env.SHELL || "/bin/bash";
   try {
     // Login shell (-l) loads user's config files (.zshrc, .bashrc, etc.)
-    // This triggers lazy-loading shell functions like SDKMAN
-    const { stdout } = await execAsync(
-      `${shell} -l -c "which java 2>/dev/null"`,
-      {
-        timeout: 10000, // 10 second timeout
-      },
+    // This triggers lazy-loading shell functions like SDKMAN. execFile keeps
+    // a SHELL path with spaces intact and avoids nested quoting.
+    const { stdout } = await execFileAsync(
+      shell,
+      ["-l", "-c", "command -v java"],
+      { timeout: 10000 },
     );
-    const javaPath = stdout.trim();
-    if (
-      !javaPath ||
-      javaPath.includes("not found") ||
-      javaPath.includes("no java")
-    ) {
+    const javaPath = parseLoginShellJavaPath(stdout);
+    if (!javaPath) {
       return null;
     }
 
-    // Resolve symlinks and get the actual JAVA_HOME
-    const { stdout: realPath } = await execAsync(
-      `${shell} -l -c "readlink -f '${javaPath}' 2>/dev/null || realpath '${javaPath}' 2>/dev/null || echo '${javaPath}'"`,
-      {
-        timeout: 5000,
-      },
-    );
-    const resolvedPath = realPath.trim();
+    // JAVA_HOME is two levels above the resolved bin/java
+    const javaHome = path.dirname(path.dirname(await fsRealpath(javaPath)));
 
-    // Get JAVA_HOME (go up two directories from bin/java)
-    const javaHome = path.dirname(path.dirname(resolvedPath));
-
-    // Validate with jdk-utils
     const runtime = await getRuntime(javaHome, { withVersion: true });
     if (runtime?.version?.major) {
       return { path: runtime.homedir, version: runtime.version.major };
-    }
-
-    // Fallback: try to get version directly
-    const { stdout: versionOut, stderr: versionErr } = await execAsync(
-      `${shell} -l -c "java -version 2>&1"`,
-      {
-        timeout: 10000,
-      },
-    );
-    const versionOutput = versionOut || versionErr;
-    const versionMatch = versionOutput.match(/version "(\d+)(?:\.(\d+))?/);
-    if (versionMatch) {
-      const majorVersion = parseInt(versionMatch[1], 10);
-      if (!isNaN(majorVersion)) {
-        return { path: javaHome, version: majorVersion };
-      }
     }
   } catch {
     // Login shell approach failed
   }
   return null;
+}
+
+/**
+ * Picks the java executable from login-shell output. rc files may print
+ * banners first, and `command -v` prints a bare name for shell functions, so
+ * take the last line that is an absolute path.
+ */
+export function parseLoginShellJavaPath(stdout: string): string | null {
+  const lines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const last = lines[lines.length - 1];
+  return last && path.isAbsolute(last) && !/\s/.test(last) ? last : null;
 }
 
 /**
@@ -371,20 +357,7 @@ export async function findAllJdks(
     }
   }
 
-  // 3. SDKMAN detection (Homebrew-installed SDKMAN not covered by jdk-utils)
-  debugLog("Scanning SDKMAN (including Homebrew-installed)...");
-  const sdkmanJdks = await scanSdkmanJdks(existingPaths);
-  debugLog(`  Found ${sdkmanJdks.length} SDKMAN JDKs`);
-  for (const jdk of sdkmanJdks) {
-    debugLog(
-      `    Java ${jdk.version} at ${jdk.path} (${jdk.sourceDescription})`,
-    );
-    if (!minVersion || jdk.version >= minVersion) {
-      results.push(jdk);
-    }
-  }
-
-  // 4. Try login shell to find additional JDKs (handles SDKMAN lazy init)
+  // 3. Try login shell to find additional JDKs (handles SDKMAN lazy init)
   debugLog("Trying login shell fallback...");
   const loginShellResult = await tryLoginShell();
   if (loginShellResult) {
@@ -407,7 +380,7 @@ export async function findAllJdks(
     debugLog("  Login shell found no additional JDKs");
   }
 
-  // 5. Sort results
+  // 4. Sort results
   results.sort((a, b) => {
     // Preferred version first
     if (preferredVersion) {
@@ -429,7 +402,7 @@ export async function findAllJdks(
     );
   });
 
-  // 6. Remove duplicates (same path)
+  // 5. Remove duplicates (same path)
   const seen = new Set<string>();
   const deduplicated = results.filter((r) => {
     if (seen.has(r.path)) return false;
@@ -493,107 +466,6 @@ function getSourcePriorityByCategory(source: JavaSource): number {
     default:
       return 5;
   }
-}
-
-// =============================================================================
-// SDKMAN Detection (Homebrew-installed)
-// =============================================================================
-//
-// WORKAROUND(jdk-detection): Explicit Homebrew SDKMAN path scanning.
-// When SDKMAN is installed via `brew install sdkman-cli`, JDKs are stored at:
-//   /opt/homebrew/opt/sdkman-cli/libexec/candidates/java/ (ARM)
-//   /usr/local/opt/sdkman-cli/libexec/candidates/java/ (Intel)
-//
-// This is a defensive workaround to ensure Homebrew-installed SDKMAN is detected.
-// While jdk-utils@0.6.0+ may support Homebrew SDKMAN, this explicit scanning
-// provides redundancy and ensures detection across different jdk-utils versions.
-//
-// TODO(#22): Verify jdk-utils@0.6.0+ Homebrew SDKMAN detection and potentially
-//   remove this workaround if upstream support is confirmed reliable.
-//   See: https://github.com/Eskibear/node-jdk-utils/issues/22
-// =============================================================================
-
-/**
- * Known locations for Homebrew-installed SDKMAN.
- * Standard ~/.sdkman is handled by jdk-utils, these are the Homebrew-specific paths.
- */
-const HOMEBREW_SDKMAN_PATHS = {
-  arm64: "/opt/homebrew/opt/sdkman-cli/libexec",
-  x64: "/usr/local/opt/sdkman-cli/libexec",
-} as const;
-
-/**
- * Scans SDKMAN candidates directory for installed JDKs.
- *
- * Checks:
- * 1. SDKMAN_DIR environment variable (canonical, works for any installation)
- * 2. Homebrew-installed SDKMAN paths (not covered by jdk-utils)
- *
- * @param existingPaths Set of already discovered JDK paths (mutated: new paths are added)
- */
-async function scanSdkmanJdks(
-  existingPaths: Set<string>,
-): Promise<JavaResolutionExtended[]> {
-  const results: JavaResolutionExtended[] = [];
-
-  // Build list of SDKMAN locations to check
-  const sdkmanLocations: Array<{ dir: string; source: string }> = [];
-
-  // 1. SDKMAN_DIR environment variable (most reliable - set by SDKMAN itself)
-  const sdkmanDir = process.env.SDKMAN_DIR;
-  if (sdkmanDir) {
-    sdkmanLocations.push({ dir: sdkmanDir, source: "SDKMAN" });
-  }
-
-  // 2. Homebrew-installed SDKMAN (macOS only, not covered by jdk-utils)
-  // HACK: These are hardcoded Homebrew paths. See comment block above.
-  if (process.platform === "darwin") {
-    const arch = process.arch === "arm64" ? "arm64" : "x64";
-    const homebrewPath = HOMEBREW_SDKMAN_PATHS[arch];
-    // Only add if different from SDKMAN_DIR (avoid duplicate scanning)
-    if (homebrewPath !== sdkmanDir) {
-      sdkmanLocations.push({ dir: homebrewPath, source: "SDKMAN (Homebrew)" });
-    }
-  }
-
-  for (const { dir, source } of sdkmanLocations) {
-    const candidatesDir = path.join(dir, "candidates", "java");
-    try {
-      await fsAccess(candidatesDir, fs.constants.R_OK);
-      const entries = await fsReaddir(candidatesDir, { withFileTypes: true });
-
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        // Skip the "current" symlink
-        if (entry.name === "current") continue;
-
-        const javaHome = path.join(candidatesDir, entry.name);
-
-        // Skip if already discovered by jdk-utils
-        if (existingPaths.has(javaHome)) continue;
-
-        // Validate with jdk-utils to get version info
-        try {
-          const runtime = await getRuntime(javaHome, { withVersion: true });
-          if (runtime?.version?.major) {
-            results.push({
-              path: runtime.homedir,
-              version: runtime.version.major,
-              source: "jdk_manager",
-              sourceDescription: source,
-            });
-            existingPaths.add(runtime.homedir);
-          }
-        } catch (err) {
-          debugLog(`Invalid JDK path in ${source}: ${javaHome}`, err);
-        }
-      }
-    } catch (err) {
-      debugLog(`Could not scan SDKMAN directory ${candidatesDir}:`, err);
-    }
-  }
-
-  return results;
 }
 
 // =============================================================================

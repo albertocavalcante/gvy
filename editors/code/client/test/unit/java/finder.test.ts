@@ -174,6 +174,27 @@ describe("JDK Finder Module - Public API", () => {
       });
     });
 
+    describe("invalid configured path", () => {
+      it("does not silently fall back to another JDK when the setting is broken", async () => {
+        const mockConfig = {
+          get: sinon.stub().callsFake((key: string, defaultValue?: unknown) => {
+            if (key === "languageServer.javaHome") return "/opt/typo-jdk";
+            if (key === "configuration.runtimes") return defaultValue ?? [];
+            return undefined;
+          }),
+        };
+        getConfigurationStub.returns(mockConfig);
+        getRuntimeStub.resolves(undefined);
+        findRuntimesStub.resolves([
+          { homedir: "/usr/lib/jvm/21", version: { major: 21 }, hasJavac: true },
+        ]);
+        getSourcesStub.returns(["PATH"]);
+
+        // null makes the validator report the configured path as invalid
+        assert.strictEqual(await findJava(), null);
+      });
+    });
+
     describe("jdk-utils library detection fallback", () => {
       it("should fall back to jdk-utils library detection when no setting configured", async () => {
         // Mock jdk-utils to return a JDK
@@ -855,5 +876,26 @@ describe("JDK Finder Module - Public API", () => {
         });
       });
     });
+  });
+});
+
+describe("parseLoginShellJavaPath", () => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { parseLoginShellJavaPath } = proxyquire.noCallThru()(
+    "../../../src/java/finder",
+    { vscode: {}, "jdk-utils": {} },
+  ) as { parseLoginShellJavaPath: (stdout: string) => string | null };
+
+  it("takes the last absolute path, ignoring rc-file banners", () => {
+    assert.strictEqual(
+      parseLoginShellJavaPath("Welcome back!\nsdkman: up to date\n/home/u/.sdkman/candidates/java/current/bin/java\n"),
+      "/home/u/.sdkman/candidates/java/current/bin/java",
+    );
+  });
+
+  it("rejects shell function bodies and 'not found' messages", () => {
+    assert.strictEqual(parseLoginShellJavaPath("java () {\n  sdk use java\n}\n"), null);
+    assert.strictEqual(parseLoginShellJavaPath("java not found\n"), null);
+    assert.strictEqual(parseLoginShellJavaPath(""), null);
   });
 });
