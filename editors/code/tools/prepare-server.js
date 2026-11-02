@@ -351,11 +351,15 @@ function hasExplicitVersionSelection(cliOptions) {
   );
 }
 
+/**
+ * Returns the normalized (lower-case) SHA-256 digest or throws: every
+ * downloaded server JAR must be verified before it is bundled.
+ */
 function requireChecksum(value, artifact) {
-  if (typeof value !== "string" || !/^[a-f0-9]{64}$/i.test(value)) {
+  if (typeof value !== "string" || !/^[a-f0-9]{64}$/i.test(value.trim())) {
     throw new Error(`SHA-256 checksum required for ${artifact}`);
   }
-  return value.toLowerCase();
+  return value.trim().toLowerCase();
 }
 
 async function resolveTarget(selection, { authToken } = {}) {
@@ -469,25 +473,35 @@ async function verifyChecksum(filePath, expectedHash) {
   }
 }
 
-async function verifyChecksumAndCleanup(filePath, expectedHash) {
+/** Temp path next to the final JAR so the install is a same-volume rename. */
+function downloadTempPath() {
+  return path.join(SERVER_DIR, `.gls-download-${process.pid}.jar`);
+}
+
+/**
+ * Validates and verifies `sourcePath`, then atomically replaces `destPath`.
+ * On any failure the previous JAR stays in place and the source is removed,
+ * so an interrupted or tampered download can never become server/gls.jar.
+ */
+async function installVerifiedJar(
+  sourcePath,
+  destPath,
+  expectedChecksum,
+  validate = validateJarFile,
+) {
   try {
-    await verifyChecksum(filePath, expectedHash);
-  } catch (error) {
-    try {
-      fs.unlinkSync(filePath);
-    } catch (cleanupError) {
-      console.warn(
-        `Warning: Failed to remove corrupted download ${filePath}: ${cleanupError.message}`,
-      );
-    }
-    throw error;
+    await verifyChecksum(sourcePath, expectedChecksum);
+    validate(sourcePath);
+    fs.renameSync(sourcePath, destPath);
+  } finally {
+    fs.rmSync(sourcePath, { force: true });
   }
 }
 
 /**
  * Downloads a JAR from a URL (handles ZIP extraction for GitHub artifacts)
  * @param {string} url - URL to download from
- * @param {string|null} expectedChecksum - Required SHA256 checksum
+ * @param {string} expectedChecksum - Required SHA256 checksum
  */
 async function downloadFromUrl(url, expectedChecksum) {
   expectedChecksum = requireChecksum(expectedChecksum, "URL download");
@@ -534,28 +548,17 @@ async function downloadFromUrl(url, expectedChecksum) {
       contentType?.includes("application/x-zip") ||
       isZipFile(tempFile);
 
+    const stagedJar = downloadTempPath();
     if (isZip) {
       console.log("Download is a ZIP archive, extracting JAR...");
-      extractOrCopyJar(tempFile, JAR_PATH);
+      extractOrCopyJar(tempFile, stagedJar);
     } else {
       // Direct JAR download
       console.log("Download is a direct JAR file...");
-      fs.copyFileSync(tempFile, JAR_PATH);
+      fs.copyFileSync(tempFile, stagedJar);
     }
 
-    // Validate extracted/copied JAR
-    try {
-      validateJarFile(JAR_PATH);
-    } catch (error) {
-      try {
-        fs.unlinkSync(JAR_PATH);
-      } catch {
-        // ignore cleanup error
-      }
-      throw new Error(`Downloaded JAR validation failed: ${error.message}`);
-    }
-
-    await verifyChecksumAndCleanup(JAR_PATH, expectedChecksum);
+    await installVerifiedJar(stagedJar, JAR_PATH, expectedChecksum);
     console.log("✓ Checksum verified");
 
     // Write version marker
@@ -589,24 +592,15 @@ async function downloadRelease(target) {
   console.log(
     `Downloading Groovy LSP ${sanitizeForLog(target.tag)} (${sanitizeForLog(target.assetName)})...`,
   );
-  await downloadToFile(target.downloadUrl, JAR_PATH);
-
-  // Validate downloaded JAR
+  const checksum = requireChecksum(target.checksum, target.assetName);
+  const stagedJar = downloadTempPath();
   try {
-    validateJarFile(JAR_PATH);
+    await downloadToFile(target.downloadUrl, stagedJar);
   } catch (error) {
-    // Clean up corrupt download
-    try {
-      fs.unlinkSync(JAR_PATH);
-    } catch (cleanupError) {
-      console.warn(
-        `Warning: Failed to remove corrupted download ${JAR_PATH}: ${cleanupError.message}`,
-      );
-    }
-    throw new Error(`Downloaded JAR validation failed: ${error.message}`);
+    fs.rmSync(stagedJar, { force: true });
+    throw error;
   }
-
-  await verifyChecksumAndCleanup(JAR_PATH, target.checksum);
+  await installVerifiedJar(stagedJar, JAR_PATH, checksum);
   writeInstalledVersion(target.tag);
   console.log(`✓ Downloaded and saved as ${CANONICAL_JAR_NAME}`);
 }
@@ -861,41 +855,21 @@ async function prepareServer(runtimeOptions = {}) {
     const target = await resolveTarget(requestedSelection, { authToken });
     target.checksum = requireChecksum(target.checksum, target.assetName);
 
+    // Reuse the existing JAR only when it matches the release digest; the
+    // version marker alone does not prove the file is complete.
     if (!forceDownload && fs.existsSync(JAR_PATH)) {
-      if (installedVersion === target.tag) {
-        try {
-          await verifyChecksum(JAR_PATH, target.checksum);
-          console.log(
-            `✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag}`,
-          );
-          return;
-        } catch (checksumError) {
-          console.warn(
-            `Checksum mismatch for existing ${CANONICAL_JAR_NAME}: ${checksumError.message}`,
-          );
-          console.warn("Re-downloading Groovy LSP...");
-        }
-      } else {
-        try {
-          await verifyChecksum(JAR_PATH, target.checksum);
-          writeInstalledVersion(target.tag);
-          console.log(
-            `✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag} (version marker refreshed)`,
-          );
-          return;
-        } catch (checksumError) {
-          console.warn(
-            `Existing ${CANONICAL_JAR_NAME} failed checksum: ${checksumError.message}`,
-          );
-          console.warn("Re-downloading Groovy LSP...");
-        }
-      }
       try {
-        fs.unlinkSync(JAR_PATH);
-      } catch (cleanupError) {
+        await verifyChecksum(JAR_PATH, target.checksum);
+        if (installedVersion !== target.tag) {
+          writeInstalledVersion(target.tag);
+        }
+        console.log(`✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag}`);
+        return;
+      } catch (checksumError) {
         console.warn(
-          `Warning: Failed to remove corrupted JAR ${JAR_PATH}: ${cleanupError.message}`,
+          `Existing ${CANONICAL_JAR_NAME} does not match ${target.tag}: ${checksumError.message}`,
         );
+        console.warn("Re-downloading Groovy LSP...");
       }
     }
 
@@ -1107,6 +1081,6 @@ module.exports = {
   PINNED_RELEASE_TAG,
   deriveSelection,
   hasExplicitVersionSelection,
+  installVerifiedJar,
   requireChecksum,
-  verifyChecksumAndCleanup,
 };
