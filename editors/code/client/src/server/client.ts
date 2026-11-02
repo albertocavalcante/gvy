@@ -11,6 +11,7 @@ import {
 import { validateJava, showJavaError, getJavaExecutable } from '../java/validator';
 import { setClient, getStatusBarManager } from '../ui/statusBar';
 import { getConfiguration } from '../configuration/settings';
+import { buildJavaArgs } from './launchArgs';
 import { ServerResolver } from '../services/ServerResolver';
 
 /**
@@ -192,14 +193,12 @@ async function createServerOptions(): Promise<ServerOptions> {
 
     const javaExecutable = getJavaExecutable(javaValidation.resolution);
 
-    // Prepare arguments
-    const args = ['-jar', jarPath];
-
-    // Java 16+ requires --enable-native-access=ALL-UNNAMED for JNA
-    // to suppress "WARNING: A restricted method in java.lang.System has been called"
-    if (javaValidation.resolution?.version && javaValidation.resolution.version >= 16) {
-        args.unshift('--enable-native-access=ALL-UNNAMED');
-    }
+    // JVM options (user-configurable) go before -jar
+    const args = buildJavaArgs({
+        jarPath,
+        javaVersion: javaValidation.resolution?.version,
+        vmArgs: getConfiguration().serverVmArgs,
+    });
 
     // Server launch options
     const serverOptions: ServerOptions = {

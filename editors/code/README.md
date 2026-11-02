@@ -54,8 +54,28 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 
 **Requires Java 17+** to be installed on your system.
 
-1. Install this extension from the VS Code Marketplace
-2. Open any `.groovy`, `.gradle`, or `Jenkinsfile` - language support starts automatically
+1. Download `gvy-<version>.vsix` from the [latest GitHub Release](https://github.com/albertocavalcante/gvy/releases/latest). The extension is not published to the VS Code Marketplace or Open VSX.
+2. Optionally verify the download, either against `checksums.txt` from the same release (lines look like `<sha256>  ./gvy-0.5.2.vsix`):
+
+   ```bash
+   shasum -a 256 -c --ignore-missing checksums.txt
+   ```
+
+   or via its build attestation:
+
+   ```bash
+   gh attestation verify gvy-<version>.vsix --owner albertocavalcante
+   ```
+
+3. Install it:
+
+   ```bash
+   code --install-extension gvy-<version>.vsix
+   ```
+
+4. Open any `.groovy`, `.gradle`, or `Jenkinsfile` - language support starts automatically
+
+To update, install the newer `.vsix` the same way. The language server JAR is bundled in the `.vsix`; the separate `gls-<version>.jar` release asset is only needed for use outside VS Code.
 
 That's it! The extension will find Java automatically from your PATH or `JAVA_HOME`.
 
