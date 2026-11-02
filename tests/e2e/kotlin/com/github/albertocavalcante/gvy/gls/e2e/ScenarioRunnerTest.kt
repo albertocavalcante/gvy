@@ -14,9 +14,11 @@ class ScenarioRunnerTest {
     @TestFactory
     fun endToEndScenarios(): List<DynamicTest> {
         val scenarioDir = resolveScenarioDirectory()
+        val filter = System.getProperty("groovy.lsp.e2e.filter")
+        val shard = ScenarioShard.parse(System.getProperty("groovy.lsp.e2e.shard"))
         val definitions = loader.loadAll(scenarioDir).filter { definition ->
-            val filter = System.getProperty("groovy.lsp.e2e.filter")
-            filter.isNullOrBlank() || definition.scenario.name.contains(filter)
+            val name = definition.scenario.name
+            (filter.isNullOrBlank() || name.contains(filter)) && shard.includes(name)
         }
 
         if (definitions.isEmpty()) {

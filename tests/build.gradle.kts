@@ -154,6 +154,12 @@ testing {
                         // Fail tests that take too long (5 minutes default)
                         systemProperty("junit.jupiter.execution.timeout.default", "300s")
                         systemProperty("groovy.lsp.e2e.filter", System.getProperty("groovy.lsp.e2e.filter"))
+                        systemProperty("groovy.lsp.e2e.shard", System.getProperty("groovy.lsp.e2e.shard"))
+                        // Shards split only the scenario suite; the other e2e classes run once, in shard 0.
+                        val shardIndex = System.getProperty("groovy.lsp.e2e.shard")?.substringBefore('/')?.trim()
+                        if (shardIndex != null && shardIndex != "0") {
+                            filter.includeTestsMatching("*.ScenarioRunnerTest")
+                        }
                         systemProperty("groovy.lsp.e2e.updateGolden", System.getProperty("groovy.lsp.e2e.updateGolden"))
                         systemProperty(
                             "groovy.lsp.e2e.goldenDir",
