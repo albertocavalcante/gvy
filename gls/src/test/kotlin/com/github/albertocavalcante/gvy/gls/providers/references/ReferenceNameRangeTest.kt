@@ -197,4 +197,72 @@ class ReferenceNameRangeTest {
 
         assertEquals(listOf(1 to 42, 2 to 27), refs)
     }
+
+    @Test
+    fun `cross-file references find every call in other files`(): Unit = runBlocking {
+        val definitions = URI.create("file:///refs/Definitions.groovy")
+        val usages = URI.create("file:///refs/Usages.groovy")
+        val definitionsText = """
+            package com.example
+
+            class Service {
+                void performAction() {
+                    println "Action"
+                }
+            }
+        """.trimIndent()
+        val usagesText = """
+            package com.example
+
+            class Client {
+                void run() {
+                    Service s = new Service()
+                    s.performAction()
+                    s.performAction() // Double usage
+                }
+            }
+        """.trimIndent()
+        val documents = com.github.albertocavalcante.gvy.gls.services.DocumentProvider()
+        documents.put(definitions, definitionsText)
+        documents.put(usages, usagesText)
+        val crossFile = GroovyCompilationService(documentProvider = documents)
+        crossFile.compile(definitions, definitionsText)
+        crossFile.compile(usages, usagesText)
+
+        val refs = ReferenceProvider(crossFile, crossFile.getWorkspaceSymbolIndex())
+            .provideReferences(definitions.toString(), Position(3, 12), includeDeclaration = true)
+            .toList()
+            .map { "${it.uri.substringAfterLast('/')}:${it.range.start.line}:${it.range.start.character}" }
+            .sorted()
+
+        assertEquals(listOf("Definitions.groovy:3:9", "Usages.groovy:5:10", "Usages.groovy:6:10"), refs)
+    }
+
+    @Test
+    fun `references to a local stay in its method even with the workspace index`(): Unit = runBlocking {
+        val file = URI.create("file:///refs/Locals.groovy")
+        val content = """
+            class Locals {
+                String x
+                def a() {
+                    def x = 1
+                    x + 1
+                }
+                def b() {
+                    def x = 2
+                    x * 2
+                }
+            }
+        """.trimIndent()
+        val indexed = GroovyCompilationService()
+        indexed.compile(file, content)
+
+        val refs = ReferenceProvider(indexed, indexed.getWorkspaceSymbolIndex())
+            .provideReferences(file.toString(), Position(3, 12), includeDeclaration = true)
+            .toList()
+            .map { it.range.start.line to it.range.start.character }
+            .sortedWith(compareBy({ it.first }, { it.second }))
+
+        assertEquals(listOf(3 to 12, 4 to 8), refs)
+    }
 }

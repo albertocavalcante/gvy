@@ -68,7 +68,7 @@ class CrossFileOperationsHandler(
     }
 
     private val referenceProvider by lazy {
-        ReferenceProvider(compilationService)
+        ReferenceProvider(compilationService, compilationService.getWorkspaceSymbolIndex())
     }
 
     private val implementationProvider by lazy {

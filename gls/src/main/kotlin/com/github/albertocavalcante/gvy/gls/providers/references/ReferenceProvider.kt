@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
+import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
@@ -69,8 +70,14 @@ class ReferenceProvider(
         try {
             // First, try same-file AST-based reference finding
             val context = createReferenceContext(uri, position.toGroovyPosition())
+            var symbolName: String? = null
+            var isLocal = false
             if (context != null) {
                 val definition = resolveTargetDefinition(context)
+                symbolName = definition?.declaredName()
+                // Locals and parameters never cross files, and the index gives every local of a
+                // class one symbol id (shared with a same-named field), so it must not be searched.
+                isLocal = definition is VariableExpression || definition is Parameter
                 if (definition != null) {
                     logger.debug { "Found definition via AST: ${definition.javaClass.simpleName}" }
                     findReferences(
@@ -84,8 +91,8 @@ class ReferenceProvider(
             }
 
             // Second, search workspace-wide using SemanticDB
-            workspaceSymbolIndex?.let { index ->
-                findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations)
+            workspaceSymbolIndex?.takeUnless { isLocal }?.let { index ->
+                findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations, symbolName)
             }
         } catch (e: GroovyLspException) {
             logger.error(e) { "LSP error finding references" }
@@ -113,6 +120,7 @@ class ReferenceProvider(
         includeDeclaration: Boolean,
         index: WorkspaceSymbolIndex,
         emittedLocations: MutableSet<String>,
+        symbolName: String?,
     ) {
         try {
             // Get SemanticDocument for current file
@@ -122,10 +130,11 @@ class ReferenceProvider(
                 return
             }
 
-            // Find occurrence at cursor position (LSP uses 0-indexed positions)
-            val occurrence = doc.occurrences.find { occ ->
-                occ.range.contains(position.line, position.character)
-            }
+            // The innermost occurrence at the cursor: a method's occurrence lies inside its class's,
+            // and taking the first match returned the class (LSP uses 0-indexed positions).
+            val occurrence = doc.occurrences
+                .filter { occ -> occ.range.contains(position.line, position.character) }
+                .minWithOrNull(compareBy({ it.range.endLine - it.range.startLine }, { it.range.span() }))
 
             if (occurrence == null) {
                 logger.debug { "No occurrence found at ${position.line}:${position.character}" }
@@ -133,6 +142,14 @@ class ReferenceProvider(
             }
 
             logger.debug { "Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}" }
+
+            val symbol = index.findSymbol(occurrence.symbol)
+            if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER) {
+                logger.debug { "Not searching the workspace for local ${occurrence.symbol}" }
+                return
+            }
+            val name = symbolName ?: symbol?.name
+            val textIndexes = HashMap<String, TextIndex?>()
 
             // Find all references across workspace
             val locations = index.findReferences(occurrence.symbol)
@@ -157,10 +174,13 @@ class ReferenceProvider(
                     }
                 }
 
+                // Index ranges cover whole nodes; report the identifier, and skip nodes without it.
+                val named = location.narrowedTo(name, textIndexes) ?: return@forEach
+
                 // Emit with deduplication
-                val key = "${location.uri}:${location.range.start.line}:${location.range.start.character}"
+                val key = "${named.uri}:${named.range.start.line}:${named.range.start.character}"
                 if (emittedLocations.add(key)) {
-                    send(location)
+                    send(named)
                 }
             }
         } catch (e: Exception) {
@@ -440,6 +460,19 @@ class ReferenceProvider(
     }
 
     /**
+     * This location narrowed to [name] in its file's compiled text. Null when the name, the text
+     * (a file the index still lists but that is no longer compiled, e.g. deleted), or the name
+     * inside the range is missing: an index range is a whole node and is never reported as is.
+     */
+    private fun Location.narrowedTo(name: String?, textIndexes: MutableMap<String, TextIndex?>): Location? {
+        if (name == null) return null
+        val index = textIndexes.getOrPut(uri) {
+            compilationService.getCompiledContent(URI.create(uri))?.let(::TextIndex)
+        } ?: return null
+        return firstNameOccurrence(index, range, name)?.let { Location(uri, it) }
+    }
+
+    /**
      * The location of the identifier [name] in this node, not the whole node: a method declaration
      * would otherwise cover its body, and a call its receiver and arguments. Call and property names
      * have their own AST nodes; elsewhere the name is found in the compiled source text. Null when
@@ -484,3 +517,7 @@ class ReferenceProvider(
         return s1 == s2
     }
 }
+
+/** Column span on a single line; a large value for multi-line ranges, which sort after it. */
+private fun com.github.albertocavalcante.gvy.semantics.db.Range.span(): Int =
+    if (startLine == endLine) endColumn - startColumn else Int.MAX_VALUE

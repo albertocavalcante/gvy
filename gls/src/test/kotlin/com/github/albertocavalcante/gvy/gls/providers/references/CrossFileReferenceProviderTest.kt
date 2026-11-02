@@ -71,14 +71,14 @@ class CrossFileReferenceProviderTest {
                 SymbolInfo(
                     symbol = "ServiceClass#",
                     kind = SymbolKind.CLASS,
-                    range = Range(1, 6, 1, 18),
+                    range = Range(0, 6, 0, 18),
                     name = "ServiceClass",
                     owner = null,
                 ),
                 SymbolInfo(
                     symbol = methodSymbolId,
                     kind = SymbolKind.METHOD,
-                    range = Range(2, 8, 2, 20),
+                    range = Range(1, 8, 1, 20),
                     name = "helperMethod",
                     owner = "ServiceClass#",
                 ),
@@ -86,7 +86,7 @@ class CrossFileReferenceProviderTest {
             occurrences = listOf(
                 SymbolOccurrence(
                     symbol = methodSymbolId,
-                    range = Range(2, 8, 2, 20),
+                    range = Range(1, 8, 1, 20),
                     role = OccurrenceRole.DEFINITION,
                 ),
             ),
@@ -99,7 +99,7 @@ class CrossFileReferenceProviderTest {
             occurrences = listOf(
                 SymbolOccurrence(
                     symbol = methodSymbolId,
-                    range = Range(1, 25, 1, 37),
+                    range = Range(1, 21, 1, 33),
                     role = OccurrenceRole.CALL,
                 ),
             ),
@@ -112,7 +112,7 @@ class CrossFileReferenceProviderTest {
         // Act - Find references from the definition location
         val references = referenceProvider.provideReferences(
             defUri.toString(),
-            Position(2, 10), // in "helperMethod" definition
+            Position(1, 10), // in "helperMethod" definition
             includeDeclaration = true,
         ).toList()
 
@@ -154,14 +154,14 @@ class CrossFileReferenceProviderTest {
                 SymbolInfo(
                     symbol = "DataClass#",
                     kind = SymbolKind.CLASS,
-                    range = Range(1, 6, 1, 15),
+                    range = Range(0, 6, 0, 15),
                     name = "DataClass",
                     owner = null,
                 ),
                 SymbolInfo(
                     symbol = fieldSymbolId,
                     kind = SymbolKind.FIELD,
-                    range = Range(2, 8, 2, 15),
+                    range = Range(1, 8, 1, 15),
                     name = "myField",
                     owner = "DataClass#",
                 ),
@@ -169,7 +169,7 @@ class CrossFileReferenceProviderTest {
             occurrences = listOf(
                 SymbolOccurrence(
                     symbol = fieldSymbolId,
-                    range = Range(2, 8, 2, 15),
+                    range = Range(1, 8, 1, 15),
                     role = OccurrenceRole.DEFINITION,
                 ),
             ),
@@ -193,7 +193,7 @@ class CrossFileReferenceProviderTest {
         // Act - Find references from the field definition
         val references = referenceProvider.provideReferences(
             defUri.toString(),
-            Position(2, 10), // in "myField" definition
+            Position(1, 10), // in "myField" definition
             includeDeclaration = true,
         ).toList()
 
@@ -235,7 +235,7 @@ class CrossFileReferenceProviderTest {
                 SymbolInfo(
                     symbol = classSymbolId,
                     kind = SymbolKind.CLASS,
-                    range = Range(1, 6, 1, 13),
+                    range = Range(0, 6, 0, 13),
                     name = "MyClass",
                     owner = null,
                 ),
@@ -243,7 +243,7 @@ class CrossFileReferenceProviderTest {
             occurrences = listOf(
                 SymbolOccurrence(
                     symbol = classSymbolId,
-                    range = Range(1, 6, 1, 13),
+                    range = Range(0, 6, 0, 13),
                     role = OccurrenceRole.DEFINITION,
                 ),
             ),
@@ -255,12 +255,12 @@ class CrossFileReferenceProviderTest {
             occurrences = listOf(
                 SymbolOccurrence(
                     symbol = classSymbolId,
-                    range = Range(1, 19, 1, 26),
+                    range = Range(0, 19, 0, 26),
                     role = OccurrenceRole.TYPE_REF,
                 ),
                 SymbolOccurrence(
                     symbol = classSymbolId,
-                    range = Range(2, 0, 2, 7),
+                    range = Range(1, 0, 1, 7),
                     role = OccurrenceRole.TYPE_REF,
                 ),
             ),
@@ -272,7 +272,7 @@ class CrossFileReferenceProviderTest {
         // Act - Find references from the class definition
         val references = referenceProvider.provideReferences(
             defUri.toString(),
-            Position(1, 8), // in "MyClass" definition
+            Position(0, 8), // in "MyClass" definition
             includeDeclaration = true,
         ).toList()
 
