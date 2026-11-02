@@ -56,26 +56,24 @@ ${methodTests}
    * @todo PROD-READY: Replace heuristic with project-model query (e.g. Gradle model).
    * Current logic assumes standard 'src/main/groovy' -> 'src/test/groovy' layout.
    */
-  public resolveTestPath(sourcePath: string): string | undefined {
-    // Heuristic: Replace 'src/main' with 'src/test'
-    if (sourcePath.includes(path.sep + "main" + path.sep)) {
-      const testPath = sourcePath.replace(
-        path.sep + "main" + path.sep,
-        path.sep + "test" + path.sep,
-      );
+  public resolveTestPath(sourcePath: string): string {
+    const dir = path.dirname(sourcePath);
+    const testFileName = path
+      .basename(sourcePath)
+      .replace(/\.groovy$/, "Spec.groovy");
 
-      // Handle suffix change: .groovy -> Spec.groovy
-      // TODO: Use configurable suffix
-      if (testPath.endsWith(".groovy")) {
-        return testPath.replace(".groovy", "Spec.groovy");
-      }
+    // Standard layout: swap the last `src/main` for `src/test`.
+    const mainSegment = `${path.sep}src${path.sep}main${path.sep}`;
+    const at = `${dir}${path.sep}`.lastIndexOf(mainSegment);
+    if (at >= 0) {
+      const testDir =
+        `${dir}${path.sep}`.slice(0, at) +
+        `${path.sep}src${path.sep}test${path.sep}` +
+        `${dir}${path.sep}`.slice(at + mainSegment.length);
+      return path.join(testDir, testFileName);
     }
 
-    // Fallback: If not in src/main structure, create in 'test' sibling folder
-    // TODO: Handle non-standard layouts better
-    const dir = path.dirname(sourcePath);
-    const fileName = path.basename(sourcePath);
-    const testFileName = fileName.replace(".groovy", "Spec.groovy");
+    // Fallback for non-standard layouts: a sibling 'test' folder.
     return path.join(dir, "..", "test", testFileName);
   }
 

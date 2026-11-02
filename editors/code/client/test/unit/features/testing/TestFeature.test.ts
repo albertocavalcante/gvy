@@ -492,47 +492,6 @@ describe("TestFeature", () => {
       assert.strictEqual(fsWriteFileStub.called, false);
     });
 
-    it("should show error when test path cannot be resolved", async () => {
-      const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
-      const mockDocument = {
-        uri: mockUri,
-        getText: () => "package com.example\nclass MyClass {}",
-      };
-
-      // Mock generator to return null for test path
-      const mockGeneratorInstance = mockSpockGenerator.SpockGenerator();
-      mockGeneratorInstance.resolveTestPath.returns(null);
-
-      // Mock document symbol provider
-      executeCommandStub
-        .withArgs("vscode.executeDocumentSymbolProvider", mockUri)
-        .resolves([
-          {
-            kind: 4,
-            name: "MyClass",
-            children: [{ kind: 5, name: "method1" }],
-          },
-        ]);
-
-      openTextDocumentStub.withArgs(mockUri).resolves(mockDocument);
-
-      const _testFeature = new TestFeatureModule.TestFeature();
-      const commandHandler = registerCommandStub.firstCall.args[1];
-
-      await commandHandler(mockUri);
-
-      // Verify error message was shown
-      assert.strictEqual(showErrorMessageStub.calledOnce, true);
-      assert.ok(
-        showErrorMessageStub.firstCall.args[0].includes(
-          "Could not resolve test path",
-        ),
-      );
-
-      // Verify file was NOT written
-      assert.strictEqual(fsWriteFileStub.called, false);
-    });
-
     it("should show error when no URI provided and no active editor", async () => {
       mockVscode.window.activeTextEditor = undefined;
 

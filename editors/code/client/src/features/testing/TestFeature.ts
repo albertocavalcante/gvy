@@ -69,12 +69,6 @@ export class TestFeature implements vscode.Disposable {
 
       // 4. Resolve Path & Write
       const testPath = this.generator.resolveTestPath(sourceUri.fsPath);
-      if (!testPath) {
-        vscode.window.showErrorMessage(
-          "Could not resolve test path. Structure 'src/main' not found.",
-        );
-        return;
-      }
       const testUri = vscode.Uri.file(testPath);
 
       // Check if file already exists using async API
