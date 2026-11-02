@@ -2,20 +2,5 @@
   "name": "vscode-groovy-client",
   "description": "VSCode client for Groovy Language Server",
   "version": "0.1.0",
-  "engines": {
-    "vscode": "^1.100.0"
-  },
-  "dependencies": {
-    "jdk-utils": "^0.6.0",
-    "vscode-languageclient": "^9.0.1",
-    "vscode-languageserver-protocol": "^3.17.5"
-  },
-  "devDependencies": {
-    "@types/node": "^24.0.0",
-    "@types/vscode": "^1.100.0",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^3.1.0",
-    "glob": "^13.0.0"
-  },
   "private": true
 }

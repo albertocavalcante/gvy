@@ -6,8 +6,9 @@
   "publisher": "albertocavalcante",
   "license": "Apache-2.0",
   "engines": {
-    "vscode": "^1.103.0"
+    "vscode": "^1.144.0"
   },
+  "packageManager": "pnpm@12.14.0",
   "categories": [
     "Programming Languages"
   ],
@@ -878,7 +879,7 @@
     "prepare-server:build": "BUILD_LOCAL=true node tools/prepare-server.js",
     "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
     "package-build": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
-    "watch": "npm-run-all -p watch:*",
+    "watch": "pnpm run --parallel \"/^watch:/\"",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project client/tsconfig.json",
     "check-types": "tsc --noEmit --project client/tsconfig.json",
@@ -896,34 +897,30 @@
     "test:all": "pnpm run test && pnpm run test:integration"
   },
   "devDependencies": {
-    "@eslint/js": "^9.13.0",
+    "@eslint/js": "^10.0.1",
     "@types/chai": "^5.2.3",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^24.0.0",
+    "@types/node": "^24.19.2",
     "@types/proxyquire": "^1.3.31",
-    "@types/sinon": "^21.0.0",
-    "@types/vscode": "^1.100.0",
-    "@vscode/test-cli": "^0.0.12",
+    "@types/sinon": "^22.0.0",
+    "@types/vscode": "^1.144.0",
+    "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^3.0.0",
-    "jdk-utils": "^0.6.0",
-    "vscode-languageclient": "^9.0.1",
-    "vscode-languageserver-protocol": "^3.17.5",
-    "chai": "^6.2.1",
-    "esbuild": "^0.27.0",
-    "eslint": "^9.13.0",
-    "fast-check": "^4.4.0",
-    "mocha": "^11.7.5",
-    "npm-run-all2": "^8.0.0",
-    "prettier": "^3.7.3",
+    "@vscode/vsce": "^4.1.0",
+    "chai": "^6.3.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.13.0",
+    "fast-check": "^4.10.2",
+    "jdk-utils": "^0.7.0",
+    "mocha": "^12.0.3",
+    "prettier": "^3.9.10",
     "proxyquire": "^2.1.3",
-    "sinon": "^21.0.0",
+    "sinon": "^22.1.0",
     "ts-node": "^10.9.2",
-    "typescript": "^5.9.2",
-    "typescript-eslint": "^8.39.0"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": []
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.71.2",
+    "vscode-languageclient": "^11.0.0",
+    "vscode-languageserver-protocol": "^3.18.5"
   },
   "repository": {
     "type": "git",

@@ -5,7 +5,9 @@ import {
   window,
   Uri,
   ProgressLocation,
+  version,
 } from "vscode";
+import { buildIssueBody } from "../utils/reportIssue";
 import { restartClient, stopClient, getClient } from "../server/client";
 import { ExecuteCommandRequest } from "vscode-languageclient";
 import { UpdateService } from "../features/update/UpdateService";
@@ -130,8 +132,6 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
   const reportIssueCommand = commands.registerCommand(
     "groovy.reportIssue",
     async () => {
-      const { buildIssueBody } = await import("../utils/reportIssue");
-      const vscode = await import("vscode");
 
       // Gather system information
       const extensionVersion =
@@ -160,7 +160,7 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
       const info = {
         extensionVersion,
         serverVersion,
-        vscodeVersion: vscode.version,
+        vscodeVersion: version,
         osInfo: `${process.platform} ${process.arch}`,
       };
 

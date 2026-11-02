@@ -61,6 +61,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Create server output channel and link to status bar
     const serverOutputChannel = vscode.window.createOutputChannel(
       "Groovy Language Server",
+      { log: true },
     );
     context.subscriptions.push(serverOutputChannel);
     setServerOutputChannel(serverOutputChannel);

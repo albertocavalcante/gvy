@@ -5,3 +5,16 @@ allowBuilds:
   "@vscode/vsce-sign": false
   esbuild: true
   keytar: false
+
+# Only resolve versions that have been public for two weeks (supply-chain
+# cooling-off). Packages listed in the exclude list were adopted on purpose
+# before that window elapsed.
+minimumReleaseAge: 20160
+minimumReleaseAgeExclude:
+  - "@types/vscode"
+  - "@vscode/vsce"
+  - vscode-languageclient
+  - vscode-languageserver-protocol
+  - vscode-languageserver-types
+  - vscode-jsonrpc
+  - vscode-languageserver-textdocument

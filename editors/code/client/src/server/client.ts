@@ -182,7 +182,7 @@ function buildInitializationOptions(): LspInitializationOptions {
     return buildServerSettingsMap();
 }
 
-function createClientOptions(outputChannel?: vscode.OutputChannel): LanguageClientOptions {
+function createClientOptions(outputChannel?: vscode.LogOutputChannel): LanguageClientOptions {
     const clientOptions: LanguageClientOptions = {
         // Register the server for Groovy and Jenkinsfile documents
         documentSelector: [
@@ -199,7 +199,7 @@ function createClientOptions(outputChannel?: vscode.OutputChannel): LanguageClie
         outputChannel: outputChannel,
         outputChannelName: outputChannel ? undefined : 'Groovy Language Server',
         traceOutputChannel: workspace.getConfiguration('groovy').get('trace.server') !== 'off'
-            ? window.createOutputChannel('Groovy Language Server Trace')
+            ? window.createOutputChannel('Groovy Language Server Trace', { log: true })
             : undefined,
         // URI converters for Windows compatibility
         uriConverters: {
@@ -221,7 +221,7 @@ function createClientOptions(outputChannel?: vscode.OutputChannel): LanguageClie
 /**
  * Starts the Language Client
  */
-export async function startClient(outputChannel?: vscode.OutputChannel): Promise<void> {
+export async function startClient(outputChannel?: vscode.LogOutputChannel): Promise<void> {
     if (client && client.state === State.Running) {
         return; // Already running
     }

@@ -12,6 +12,7 @@
  */
 
 import * as vscode from "vscode";
+import { getRuntime } from "jdk-utils";
 import {
   findAllJdks,
   MINIMUM_JAVA_VERSION,
@@ -178,7 +179,6 @@ async function configureProjectJava(minimumVersion?: number): Promise<boolean> {
  * @returns true if a valid JDK was selected and configured, false otherwise
  */
 async function browseAndSetLspJavaHome(): Promise<boolean> {
-  const { getRuntime } = await import("jdk-utils");
 
   const selected = await vscode.window.showOpenDialog({
     canSelectFiles: false,
@@ -235,7 +235,6 @@ async function browseAndSetLspJavaHome(): Promise<boolean> {
  * @returns true if a valid JDK was selected and configured, false otherwise
  */
 async function browseAndSetProjectJavaHome(): Promise<boolean> {
-  const { getRuntime } = await import("jdk-utils");
 
   const selected = await vscode.window.showOpenDialog({
     canSelectFiles: false,

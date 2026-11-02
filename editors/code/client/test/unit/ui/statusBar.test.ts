@@ -177,12 +177,13 @@ describe("StatusBar", () => {
     statusBarModule = proxyquire.noCallThru()("../../../src/ui/statusBar", {
       vscode: mockVscode,
       "vscode-languageclient/node": mockLanguageClient,
-      "vscode-languageserver-protocol": {
+      "vscode-languageclient": {
         WorkDoneProgressBegin: {},
         WorkDoneProgressReport: {},
         WorkDoneProgressEnd: {},
       },
       "./languageStatus": mockLanguageStatus,
+      "./errorNotificationHandler": { showErrorNotification: sinon.stub() },
     }) as StatusBarModule;
   });
 
