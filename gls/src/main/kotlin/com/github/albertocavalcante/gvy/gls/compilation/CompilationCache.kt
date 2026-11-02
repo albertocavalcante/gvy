@@ -2,7 +2,6 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.nativeapi.ParseResult
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Cache entry storing content, parse result, and configuration fingerprint.
@@ -10,40 +9,60 @@ import java.util.concurrent.ConcurrentHashMap
  */
 private data class CacheEntry(val content: String, val parseResult: ParseResult, val configFingerprint: String)
 
-class CompilationCache {
-    private val cache = ConcurrentHashMap<URI, CacheEntry>()
+/**
+ * In-memory cache of compilation results, bounded by an LRU policy.
+ *
+ * Every cached [ParseResult] holds a whole AST, so an unbounded map grows with every file ever
+ * compiled (including files compiled from disk for navigation). Once [maxEntries] is exceeded the
+ * least recently used entries are evicted, except documents for which [isOpen] returns true: those
+ * are needed by every request and are never evicted. [isOpen] is consulted at eviction time, so the
+ * cache needs no didOpen/didClose lifecycle hooks and cannot leak a pin. An evicted file is simply
+ * recompiled on next use.
+ *
+ * The cap is a soft limit when more than [maxEntries] documents are open: only closed entries are
+ * ever evicted.
+ *
+ * Thread-safe: all access goes through a single monitor. Operations are O(1) except an over-cap
+ * [put], which scans from the LRU end past open entries to find victims.
+ */
+class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen: (URI) -> Boolean = { false }) {
+    @Volatile
+    var maxEntries: Int = maxEntries.coerceAtLeast(1)
+        private set
+
+    // access-ordered: iteration runs from least to most recently used
+    private val entries = LinkedHashMap<URI, CacheEntry>(INITIAL_CAPACITY, LOAD_FACTOR, true)
+    private var evictions = 0L
 
     /**
      * Gets cached result if content AND configuration fingerprint match.
      * Returns null if not cached or if either content or fingerprint has changed.
      */
-    fun get(uri: URI, content: String, configFingerprint: String): ParseResult? {
-        val entry = cache[uri] ?: return null
-        return if (entry.content == content && entry.configFingerprint == configFingerprint) {
-            entry.parseResult
-        } else {
-            null
-        }
+    fun get(uri: URI, content: String, configFingerprint: String): ParseResult? = synchronized(entries) {
+        val entry = entries[uri] ?: return null
+        if (entry.content == content && entry.configFingerprint == configFingerprint) entry.parseResult else null
     }
 
     /**
      * Gets cached result if content matches (ignores fingerprint).
      * For backward compatibility with callers that don't have fingerprint context.
      */
-    fun get(uri: URI, content: String): ParseResult? {
-        val entry = cache[uri] ?: return null
-        return if (entry.content == content) entry.parseResult else null
+    fun get(uri: URI, content: String): ParseResult? = synchronized(entries) {
+        val entry = entries[uri] ?: return null
+        if (entry.content == content) entry.parseResult else null
     }
 
-    fun get(uri: URI): ParseResult? = cache[uri]?.parseResult
+    fun get(uri: URI): ParseResult? = synchronized(entries) { entries[uri]?.parseResult }
 
-    fun getWithContent(uri: URI): Pair<String, ParseResult>? = cache[uri]?.let { it.content to it.parseResult }
+    fun getWithContent(uri: URI): Pair<String, ParseResult>? = synchronized(entries) {
+        entries[uri]?.let { it.content to it.parseResult }
+    }
 
     /**
      * Stores a parse result with its content and configuration fingerprint.
      */
     fun put(uri: URI, content: String, parseResult: ParseResult, configFingerprint: String) {
-        cache[uri] = CacheEntry(content, parseResult, configFingerprint)
+        store(uri, CacheEntry(content, parseResult, configFingerprint))
     }
 
     /**
@@ -53,20 +72,66 @@ class CompilationCache {
      * the fingerprint parameter is also empty.
      */
     fun put(uri: URI, content: String, parseResult: ParseResult) {
-        cache[uri] = CacheEntry(content, parseResult, "")
+        store(uri, CacheEntry(content, parseResult, ""))
     }
 
     fun invalidate(uri: URI) {
-        cache.remove(uri)
+        synchronized(entries) { entries.remove(uri) }
     }
 
     fun clear() {
-        cache.clear()
+        synchronized(entries) { entries.clear() }
     }
 
-    fun keys(): Set<URI> = cache.keys
+    /** Snapshot of the cached URIs, least recently used first. */
+    fun keys(): Set<URI> = synchronized(entries) { LinkedHashSet(entries.keys) }
 
-    fun getStatistics() = mapOf(
-        "cachedResults" to cache.size,
-    )
+    /** Changes the cap and evicts immediately if the cache is now over it. */
+    fun resize(newMaxEntries: Int) {
+        synchronized(entries) {
+            maxEntries = newMaxEntries.coerceAtLeast(1)
+            evictOverflow(keep = null)
+        }
+    }
+
+    fun getStatistics(): Map<String, Any> = synchronized(entries) {
+        mapOf(
+            "cachedResults" to entries.size,
+            "maxEntries" to maxEntries,
+            "evictions" to evictions,
+        )
+    }
+
+    private fun store(uri: URI, entry: CacheEntry) {
+        synchronized(entries) {
+            entries[uri] = entry
+            // Never evict what was just stored: callers read it back right away (e.g. go-to-definition
+            // compiles a closed file, then fetches its AST), and when open documents fill the cap the
+            // new entry would otherwise be the only candidate.
+            evictOverflow(keep = uri)
+        }
+    }
+
+    /**
+     * Must be called holding the monitor. Evicts closed entries other than [keep], least recently used
+     * first. The cap is soft: open documents and [keep] are never evicted, even if they exceed it.
+     */
+    private fun evictOverflow(keep: URI?) {
+        if (entries.size <= maxEntries) return
+        val candidates = entries.keys.iterator()
+        while (entries.size > maxEntries && candidates.hasNext()) {
+            val uri = candidates.next()
+            if (uri != keep && !isOpen(uri)) {
+                candidates.remove()
+                evictions++
+            }
+        }
+    }
+
+    companion object {
+        /** Default cap: a working set of open files plus recently navigated ones, not the workspace. */
+        const val DEFAULT_MAX_ENTRIES = 300
+        private const val INITIAL_CAPACITY = 64
+        private const val LOAD_FACTOR = 0.75f
+    }
 }

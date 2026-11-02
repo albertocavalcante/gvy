@@ -71,6 +71,7 @@ class GroovyWorkspaceService(
             compilationService.workspaceManager.getStrategyRegistry()?.activeStrategies?.forEach { strategy ->
                 strategy.updateConfiguration(newConfig)
             }
+            compilationService.updateCompilationCacheLimit(newConfig.compilationCacheMaxEntries)
             updateGroovyVersion(newConfig)
             logger.info { "Configuration updated for active strategies" }
         }

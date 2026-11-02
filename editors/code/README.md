@@ -174,7 +174,11 @@ For Jenkins shared libraries:
   "groovy.compilation.incrementalThreshold": 50,
 
   // Maximum files to compile in workspace mode
-  "groovy.compilation.maxWorkspaceFiles": 500
+  "groovy.compilation.maxWorkspaceFiles": 500,
+
+  // Compiled files kept in memory; open documents are never evicted, and
+  // least recently used closed files beyond this are recompiled on demand
+  "groovy.compilation.cacheMaxEntries": 300
 }
 ```
 
