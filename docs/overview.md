@@ -6,13 +6,15 @@ Jenkins metadata, test discovery, and editor integrations.
 
 ## Major components
 
-- `../groovy-lsp/`: Language Server (Kotlin/JVM)
+- `../gls/`: Language Server (Kotlin/JVM)
+- `../semantics/`: Semantic analysis based on [SemanticDB](https://scalameta.org/docs/semanticdb/guide.html)
+  ([design](semantics/design.md))
 - `../parser/`: Parsing libraries (`api`, `native`, `core`)
-- `../groovy-diagnostics/`: Compiler + CodeNarc diagnostics
-- `../groovy-formatter/`: OpenRewrite-based formatting
-- `../groovy-jenkins/`: Jenkins pipeline metadata + completions
-- `../groovy-spock/`: Spock framework awareness
-- `../groovy-testing/`, `../groovy-junit/`: Test discovery + adapters
+- `../diagnostics/`: Compiler + CodeNarc diagnostics
+- `../fmt/`: OpenRewrite-based formatting
+- `../jenkins/`: Jenkins pipeline metadata + completions
+- `../ext/spock/`: Spock framework awareness
+- `../ext/testing/`, `../ext/junit/`: Test discovery + adapters
 - `../jupyter/`: Groovy and Jenkins Jupyter kernels
 - `../editors/code/`: VS Code/Cursor/VSCodium extension
 - `../tools/jenkins-extractor/`: Jenkins metadata extractor
@@ -22,4 +24,5 @@ Jenkins metadata, test discovery, and editor integrations.
 
 - Running the language server: `lsp/usage.md`
 - LSP feature coverage: `lsp/feature-support.md`
+- Semantics and type inference: `semantics/design.md`
 - Roadmap and current priorities: `roadmap.md`

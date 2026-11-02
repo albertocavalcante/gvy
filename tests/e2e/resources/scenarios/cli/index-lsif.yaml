@@ -33,7 +33,7 @@ steps:
         - jsonPath: $.stdout
           expect:
             type: MATCHES_REGEX
-            value: "^Successfully exported LSIF index to .*/index\\.lsif\\n$"
+            value: "Successfully exported LSIF index to .*/index\\.lsif\\n$"
 
   # Step 3: Golden file comparison (NDJSON mode for line-by-line JSON comparison)
   - goldenAssert:

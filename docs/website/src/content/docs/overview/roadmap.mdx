@@ -1,0 +1,25 @@
+---
+title: Roadmap
+description: Development roadmap and current status
+sidebar:
+  order: 2
+---
+
+Groovy Devtools is under active development. The language server is usable for core Groovy projects today, while the
+broader monorepo is expanding to cover Jenkins pipelines, Spock, testing, and notebooks.
+
+## Current Status
+
+| Area | Status |
+|------|--------|
+| Core LSP | Completion, hover, navigation, formatting, diagnostics, code actions, rename, semantic tokens (Jenkins) |
+| Jenkins pipelines | Metadata-driven completion and diagnostics; deeper context support in progress |
+| Spock | Spec detection and block awareness; richer DSL support in progress |
+| Testing | CodeLens run/debug for tests, shared test discovery utilities |
+| Jupyter | Early kernel prototypes for Groovy and Jenkins |
+
+## Near-term Focus
+
+- Stability and performance for indexing and compilation
+- Workspace-scale features (config refresh, file watching, symbol accuracy)
+- Editor polish in VS Code and other clients

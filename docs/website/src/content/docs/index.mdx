@@ -1,0 +1,55 @@
+---
+title: Groovy Devtools
+description: Developer tooling for Apache Groovy
+template: splash
+hero:
+  tagline: A monorepo of Apache Groovy tooling. The Language Server is the primary component, with support for Jenkins pipelines and Spock tests.
+  actions:
+    - text: Get Started
+      link: /gvy/overview/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/albertocavalcante/gvy
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from "@astrojs/starlight/components";
+
+## Status
+
+The Groovy Language Server is **work in progress** but already provides core editor features.
+
+<CardGrid>
+  <Card title="Core LSP" icon="laptop">
+    Completion, hover, navigation, formatting, diagnostics, code actions,
+    rename, folding, semantic tokens.
+  </Card>
+  <Card title="Jenkins" icon="rocket">
+    Metadata-driven completion and diagnostics for Jenkins pipelines.
+  </Card>
+  <Card title="Spock" icon="puzzle">
+    Spec detection and block awareness for Spock tests.
+  </Card>
+  <Card title="Editors" icon="document">
+    VS Code/Cursor/VSCodium extension available.
+  </Card>
+</CardGrid>
+
+## Requirements
+
+- Java 17 or higher
+- Groovy 4.0+
+
+## Quick Start
+
+```bash
+# Build
+./gradlew build
+
+# Run (stdio mode)
+java -jar build/libs/groovy-lsp-<version>.jar
+
+# Run (socket mode)
+java -jar build/libs/groovy-lsp-<version>.jar socket 8080
+```
