@@ -2,7 +2,6 @@ package com.github.albertocavalcante.gvy.gls.providers.testing
 
 import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.build.TestCommand
-import com.github.albertocavalcante.gvy.gls.async.future
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.coverage.GetCoverageParams
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
@@ -13,6 +12,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.future.future
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
@@ -49,7 +49,7 @@ class TestRequestDelegate(
     fun runTest(params: RunTestParams): CompletableFuture<TestCommand> {
         logger.info { "Received groovy/runTest request for suite: ${params.suite}, test: ${params.test}" }
 
-        return CompletableFuture.supplyAsync {
+        return coroutineScope.future(ioDispatcher) {
             try {
                 generateTestCommand(params)
             } catch (e: ResponseErrorException) {
@@ -99,19 +99,19 @@ class TestRequestDelegate(
     fun getBuildToolInfo(params: GetBuildToolInfoParams): CompletableFuture<BuildToolInfo> {
         logger.info { "Received groovy/getBuildToolInfo request for: ${params.workspaceUri}" }
 
-        return CompletableFuture.supplyAsync {
+        return coroutineScope.future(ioDispatcher) {
             val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
-                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                ?: return@future BuildToolInfo(name = "unknown", detected = false).also {
                     logger.info { "No workspace root found, returning unknown build tool" }
                 }
 
             val buildToolManager = buildToolManagerProvider()
-                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                ?: return@future BuildToolInfo(name = "unknown", detected = false).also {
                     logger.info { "Build tool manager not initialized, returning unknown" }
                 }
 
             val buildTool = buildToolManager.detectBuildTool(workspaceRoot)
-                ?: return@supplyAsync BuildToolInfo(name = "unknown", detected = false).also {
+                ?: return@future BuildToolInfo(name = "unknown", detected = false).also {
                     logger.info { "No build tool detected for workspace: $workspaceRoot" }
                 }
 
