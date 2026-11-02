@@ -299,7 +299,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -332,7 +332,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MyTest",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -369,7 +369,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -406,7 +406,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -425,28 +425,19 @@ describe("LSPTestExecutionService", () => {
         coverageServiceMock,
       );
 
-      // Note: With the dot-based heuristic, "com.example.MySpec" is treated as "com.example" suite + "MySpec" test
-      // This is a known limitation - the heuristic works for simple class names but not fully qualified ones
-      // In practice, TestItems created by GroovyTestController will have the correct structure
+      // Root items are suites even when their FQN contains dots.
       assert.ok(testServiceMock.getTestCommand.calledOnce);
       const callArgs = testServiceMock.getTestCommand.getCall(0).args;
-      assert.strictEqual(
-        callArgs[1],
-        "com.example",
-        "Should extract suite name before last dot",
-      );
-      assert.strictEqual(
-        callArgs[2],
-        "MySpec",
-        "Should extract test name after last dot",
-      );
+      assert.strictEqual(callArgs[1], "com.example.MySpec");
+      assert.strictEqual(callArgs[2], undefined);
     });
 
     it("should handle test-level execution (dot in ID)", async () => {
       const testItem = {
         id: "com.example.MySpec.testMethod",
+        parent: { id: "com.example.MySpec" },
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -480,7 +471,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };
@@ -529,7 +520,7 @@ describe("LSPTestExecutionService", () => {
         const testItem = {
           id: "com.example.Test",
           uri: { toString: () => "file:///test.groovy" },
-          children: { size: 0 },
+          children: { size: 0, forEach: () => {} },
         };
 
         const request = { include: [testItem] };
@@ -667,7 +658,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: "com.example.MySpec",
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
 
       const request = { include: [testItem] };

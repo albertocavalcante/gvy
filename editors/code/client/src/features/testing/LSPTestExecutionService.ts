@@ -5,6 +5,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as readline from "readline";
 import { ITestExecutionService } from "./ITestExecutionService";
+import { resolveTestTarget, selectRunItems } from "./testTarget";
 import { TestService, TestCommand, TestResultItem } from "./TestService";
 import { TestEventConsumer } from "./TestEventConsumer";
 import { CoverageService } from "./CoverageService";
@@ -70,11 +71,18 @@ export class LSPTestExecutionService implements ITestExecutionService {
   ): Promise<void> {
     const run = testController.createTestRun(request);
     const consumer = new TestEventConsumer(run, this.logger, testController);
-    const testsToRun = request.include ?? [];
+    const testsToRun = selectRunItems(
+      request.include,
+      request.exclude,
+      testController.items,
+    );
 
-    // Register items with consumer
-    for (const item of testsToRun) {
+    // Register requested items and their descendants so events for child
+    // tests update the existing items instead of replacing them.
+    for (const item of this.collectAllTestItems(testsToRun)) {
       consumer.registerTestItem(item.id, item);
+    }
+    for (const item of testsToRun) {
       run.enqueued(item);
     }
 
@@ -115,25 +123,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
           continue;
         }
 
-        let suiteName: string;
-        let testName: string | undefined;
-
-        // Heuristic: If the item ID contains a dot, it's a test method (ClassName.methodName). Otherwise, it's a suite.
-        const isSuite = !item.id.includes(".");
-
-        if (isSuite) {
-          suiteName = item.id;
-          testName = undefined;
-        } else {
-          // It's a method
-          const lastDot = item.id.lastIndexOf(".");
-          if (lastDot > 0) {
-            suiteName = item.id.substring(0, lastDot);
-            testName = item.id.substring(lastDot + 1);
-          } else {
-            suiteName = item.id;
-          }
-        }
+        const { suite: suiteName, test: testName } = resolveTestTarget(item);
 
         const command = await this.testService.getTestCommand(
           uri,
