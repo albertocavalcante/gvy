@@ -45,6 +45,18 @@ let clientResources: vscode.Disposable[] = [];
  */
 let lifecycle: Promise<unknown> = Promise.resolve();
 
+const startedListeners = new Set<() => void>();
+
+/**
+ * Registers a callback that runs after each successful (re)start. Features
+ * that query the server once (e.g. test discovery) use it to refresh, since
+ * they are registered before the server is up.
+ */
+export function onClientStarted(listener: () => void): vscode.Disposable {
+    startedListeners.add(listener);
+    return { dispose: () => startedListeners.delete(listener) };
+}
+
 function serialize<T>(operation: () => Promise<T>): Promise<T> {
     const result = lifecycle.then(operation, operation);
     lifecycle = result.catch(() => undefined);
@@ -325,6 +337,13 @@ async function doStart(): Promise<void> {
             getStatusBarManager()?.setServerVersion(version);
         }
         console.log('Groovy Language Server started successfully');
+        startedListeners.forEach((listener) => {
+            try {
+                listener();
+            } catch (error) {
+                console.error('Client start listener failed:', error);
+            }
+        });
     } catch (error) {
         const message = `Failed to start Groovy Language Server: ${error instanceof Error ? error.message : 'Unknown error'}`;
         console.error(message);
@@ -341,8 +360,15 @@ async function doStop(): Promise<void> {
     const resources = clientResources;
     clientResources = [];
     try {
-        if (current?.isRunning()) {
-            await current.stop();
+        if (current) {
+            // Also stop clients that are not Running (start failed after the
+            // JVM spawned): the node client kills its server process in
+            // stop() even when the protocol shutdown itself throws.
+            await current.stop().catch((error: unknown) => {
+                if (current.isRunning()) {
+                    throw error;
+                }
+            });
             console.log('Groovy Language Server stopped');
         }
     } catch (error) {

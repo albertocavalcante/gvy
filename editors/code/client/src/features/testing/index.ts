@@ -3,7 +3,7 @@ import { GroovyTestController } from "./GroovyTestController";
 import { TestService } from "./TestService";
 import { CoverageService } from "./CoverageService";
 import { TestCodeLensProvider } from "./TestCodeLensProvider";
-import { getClient } from "../../server/client";
+import { getClient, onClientStarted } from "../../server/client";
 import { LSPTestExecutionService } from "./LSPTestExecutionService";
 
 export function registerTestingFeatures(
@@ -20,12 +20,14 @@ export function registerTestingFeatures(
   );
   const coverageService = new CoverageService(testService, logger);
 
-  new GroovyTestController(
+  const controller = new GroovyTestController(
     context,
     executionService,
     testService,
     coverageService,
   );
+  // Registered before the server starts: discover again on every (re)start.
+  context.subscriptions.push(onClientStarted(() => controller.refreshTests()));
 
   context.subscriptions.push(
     vscode.languages.registerCodeLensProvider(

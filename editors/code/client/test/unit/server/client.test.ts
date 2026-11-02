@@ -62,6 +62,7 @@ describe("server/client lifecycle", () => {
     stopClient: () => Promise<void>;
     restartClient: () => Promise<void>;
     getClient: () => FakeClient | undefined;
+    onClientStarted: (cb: () => void) => { dispose: () => void };
   };
   let watchers: Array<{ dispose: sinon.SinonStub }>;
   let validateJava: sinon.SinonStub;
@@ -186,6 +187,21 @@ describe("server/client lifecycle", () => {
   it("uses the groovy section so groovy.trace.server reaches the client", async () => {
     await mod.startClient();
     assert.strictEqual(FakeClient.instances[0].id, "groovy");
+  });
+
+  it("notifies listeners after every successful start", async () => {
+    const started = sinon.stub();
+    mod.onClientStarted(started);
+    await mod.startClient();
+    await mod.restartClient();
+    assert.strictEqual(started.callCount, 2);
+  });
+
+  it("stops a client whose start failed after spawning, killing its process", async () => {
+    FakeClient.nextStart = () => Promise.reject(new Error("initialize failed"));
+    await assert.rejects(mod.startClient(), /initialize failed/);
+    const [failed] = FakeClient.instances;
+    assert.ok(failed.stop.calledOnce, "stop() must run so the JVM is killed");
   });
 
   it("reports the server version from the initialize result", async () => {
