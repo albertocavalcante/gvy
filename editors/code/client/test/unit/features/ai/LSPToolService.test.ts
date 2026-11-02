@@ -82,7 +82,9 @@ describe("LSPToolService", () => {
     };
 
     // Cast through unknown to the constructor parameter type for the incomplete mock
-    const vscodeLike = mockVscode as unknown as ConstructorParameters<typeof LSPToolService>[0];
+    const vscodeLike = mockVscode as unknown as ConstructorParameters<
+      typeof LSPToolService
+    >[0];
     service = new LSPToolService(vscodeLike, getClientStub);
   });
 
@@ -215,8 +217,14 @@ describe("LSPToolService", () => {
       executeCommandStub.resolves([]);
       await service.findReferences("/w/src/A.groovy", 0, 0);
       await service.findReferences("C:\\w\\A.groovy", 0, 0);
-      assert.strictEqual(executeCommandStub.firstCall.args[1].toString(), "file:///w/src/A.groovy");
-      assert.strictEqual(executeCommandStub.secondCall.args[1].toString(), "file://C:/w/A.groovy");
+      assert.strictEqual(
+        executeCommandStub.firstCall.args[1].toString(),
+        "file:///w/src/A.groovy",
+      );
+      assert.strictEqual(
+        executeCommandStub.secondCall.args[1].toString(),
+        "file://C:/w/A.groovy",
+      );
     });
   });
 

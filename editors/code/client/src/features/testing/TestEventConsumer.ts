@@ -4,10 +4,7 @@ import * as vscode from "vscode";
  * Events emitted by the Gradle init script.
  */
 export type TestEventType =
-  | "suiteStarted"
-  | "suiteFinished"
-  | "testStarted"
-  | "testFinished";
+  "suiteStarted" | "suiteFinished" | "testStarted" | "testFinished";
 
 export interface TestEvent {
   event: TestEventType;

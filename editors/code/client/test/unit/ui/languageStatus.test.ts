@@ -23,9 +23,19 @@ interface MockVscode {
 }
 
 interface LanguageStatusManager {
-  updateServerStatus: (state: string, version: string, message?: string, filesIndexed?: number, filesTotal?: number) => void;
-  updateJavaRuntime: (resolution: { path: string; version: number; source: string } | undefined) => void;
-  updateBuildTool: (buildTool: { type: string; buildFile: string } | undefined) => void;
+  updateServerStatus: (
+    state: string,
+    version: string,
+    message?: string,
+    filesIndexed?: number,
+    filesTotal?: number,
+  ) => void;
+  updateJavaRuntime: (
+    resolution: { path: string; version: number; source: string } | undefined,
+  ) => void;
+  updateBuildTool: (
+    buildTool: { type: string; buildFile: string } | undefined,
+  ) => void;
   dispose: () => void;
 }
 

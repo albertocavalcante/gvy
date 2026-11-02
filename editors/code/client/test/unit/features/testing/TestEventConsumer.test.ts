@@ -3,7 +3,11 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 interface TestEventConsumerClass {
-  new (run: unknown, logger: unknown, testController: unknown): TestEventConsumerInstance;
+  new (
+    run: unknown,
+    logger: unknown,
+    testController: unknown,
+  ): TestEventConsumerInstance;
 }
 
 interface TestEventConsumerInstance {
@@ -644,7 +648,12 @@ describe("TestEventConsumer", () => {
       consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
 
       // Create deeply nested JSON (100+ levels)
-      const nested: { event: string; id: string; name: string; nested?: Record<string, unknown> } = { event: "testStarted", id: "test", name: "test" };
+      const nested: {
+        event: string;
+        id: string;
+        name: string;
+        nested?: Record<string, unknown>;
+      } = { event: "testStarted", id: "test", name: "test" };
       let current: Record<string, unknown> = nested;
       for (let i = 0; i < 100; i++) {
         current.nested = { level: i };

@@ -4,7 +4,9 @@ import * as proxyquire from "proxyquire";
 
 interface StatusBarItem {
   text: string;
-  tooltip: { isTrusted: boolean; supportThemeIcons: boolean; value: string } | undefined;
+  tooltip:
+    | { isTrusted: boolean; supportThemeIcons: boolean; value: string }
+    | undefined;
   backgroundColor: { id: string } | undefined;
   color: unknown;
   command: unknown;
@@ -59,7 +61,10 @@ interface ClientStub {
 }
 
 interface StatusBarModule {
-  registerStatusBarItem: (client?: unknown, version?: string) => { dispose: () => void };
+  registerStatusBarItem: (
+    client?: unknown,
+    version?: string,
+  ) => { dispose: () => void };
   setClient: (client: unknown) => void;
 }
 
@@ -185,7 +190,9 @@ describe("StatusBar", () => {
         WorkDoneProgressEnd: {},
       },
       "./languageStatus": mockLanguageStatus,
-      "./errorNotificationHandler": { showErrorNotification: showErrorNotificationStub },
+      "./errorNotificationHandler": {
+        showErrorNotification: showErrorNotificationStub,
+      },
     }) as StatusBarModule;
   });
 
@@ -292,7 +299,11 @@ describe("StatusBar", () => {
   });
 
   describe("progress notification handling", () => {
-    let progressHandler: (notification: { kind: string; title?: string; message?: string }) => void;
+    let progressHandler: (notification: {
+      kind: string;
+      title?: string;
+      message?: string;
+    }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -368,7 +379,10 @@ describe("StatusBar", () => {
   });
 
   describe("state inference from messages", () => {
-    let progressHandler: (notification: { kind: string; message?: string }) => void;
+    let progressHandler: (notification: {
+      kind: string;
+      message?: string;
+    }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -501,7 +515,10 @@ describe("StatusBar", () => {
   });
 
   describe("background colors", () => {
-    let progressHandler: (notification: { kind: string; message?: string }) => void;
+    let progressHandler: (notification: {
+      kind: string;
+      message?: string;
+    }) => void;
 
     beforeEach(() => {
       statusBarModule.registerStatusBarItem();
@@ -687,7 +704,9 @@ describe("StatusBar", () => {
         .stub()
         .callsFake((method: string, handler: unknown) => {
           if (method === "groovy/status") {
-            statusHandler = handler as (notification: StatusNotification) => void;
+            statusHandler = handler as (
+              notification: StatusNotification,
+            ) => void;
           }
           return { dispose: sinon.stub() };
         });
@@ -703,7 +722,11 @@ describe("StatusBar", () => {
         jdkVersion: 21,
         suggestions: [],
       };
-      statusHandler({ health: "error", quiescent: true, errorCode: "GRADLE_JDK_INCOMPATIBLE" } as StatusNotification);
+      statusHandler({
+        health: "error",
+        quiescent: true,
+        errorCode: "GRADLE_JDK_INCOMPATIBLE",
+      } as StatusNotification);
       assert.isTrue(showErrorNotificationStub.notCalled);
 
       statusHandler({
@@ -713,7 +736,10 @@ describe("StatusBar", () => {
         errorDetails,
       } as unknown as StatusNotification);
       assert.isTrue(
-        showErrorNotificationStub.calledOnceWith("GRADLE_JDK_INCOMPATIBLE", errorDetails),
+        showErrorNotificationStub.calledOnceWith(
+          "GRADLE_JDK_INCOMPATIBLE",
+          errorDetails,
+        ),
       );
     });
 

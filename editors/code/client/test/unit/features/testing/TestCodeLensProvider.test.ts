@@ -8,16 +8,23 @@ interface CodeLensType {
 }
 
 interface TestCodeLensProviderType {
-  new (testService: unknown): { provideCodeLenses: (document: unknown) => Promise<CodeLensType[]> };
+  new (testService: unknown): {
+    provideCodeLenses: (document: unknown) => Promise<CodeLensType[]>;
+  };
 }
 
 type ProxyquireNoCallThru = {
-  noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType };
+  noCallThru: () => (
+    path: string,
+    stubs: unknown,
+  ) => { TestCodeLensProvider: TestCodeLensProviderType };
 };
 
 describe("TestCodeLensProvider", () => {
   let TestCodeLensProvider: TestCodeLensProviderType;
-  let provider: { provideCodeLenses: (document: unknown) => Promise<CodeLensType[]> };
+  let provider: {
+    provideCodeLenses: (document: unknown) => Promise<CodeLensType[]>;
+  };
   let testServiceMock: { discoverTestsInWorkspace: sinon.SinonStub };
   let vscodeMock: {
     Range: new (start: unknown, end: unknown) => unknown;
@@ -64,13 +71,15 @@ describe("TestCodeLensProvider", () => {
       },
       workspace: {
         getConfiguration: sandbox.stub().callsFake((_section: string) => ({
-          get: sandbox.stub().callsFake((key: string, defaultValue: unknown) => {
-            // Override codelens.test.source to "extension" so tests work with the new logic
-            if (key === "codelens.test.source") {
-              return "extension";
-            }
-            return defaultValue;
-          }),
+          get: sandbox
+            .stub()
+            .callsFake((key: string, defaultValue: unknown) => {
+              // Override codelens.test.source to "extension" so tests work with the new logic
+              if (key === "codelens.test.source") {
+                return "extension";
+              }
+              return defaultValue;
+            }),
         })),
       },
     };
@@ -294,7 +303,11 @@ describe("TestCodeLensProvider", () => {
         "Should have one argument object",
       );
 
-      const args = runCommand.arguments![0] as { uri?: string; suite?: string; test?: string };
+      const args = runCommand.arguments![0] as {
+        uri?: string;
+        suite?: string;
+        test?: string;
+      };
       assert.ok(args.uri, "Arguments should include uri");
       assert.ok(args.suite, "Arguments should include suite (class name)");
       assert.ok(args.test, "Arguments should include test (method name)");
@@ -487,12 +500,16 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
-        "../../../../src/features/testing/TestCodeLensProvider",
-        {
-          vscode: vscodeMock,
-        },
-      );
+      const module = (
+        proxyquire as {
+          noCallThru: () => (
+            path: string,
+            stubs: unknown,
+          ) => { TestCodeLensProvider: TestCodeLensProviderType };
+        }
+      ).noCallThru()("../../../../src/features/testing/TestCodeLensProvider", {
+        vscode: vscodeMock,
+      });
       TestCodeLensProvider = module.TestCodeLensProvider;
 
       documentMock.getText.returns(
@@ -532,12 +549,16 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
-        "../../../../src/features/testing/TestCodeLensProvider",
-        {
-          vscode: vscodeMock,
-        },
-      );
+      const module = (
+        proxyquire as {
+          noCallThru: () => (
+            path: string,
+            stubs: unknown,
+          ) => { TestCodeLensProvider: TestCodeLensProviderType };
+        }
+      ).noCallThru()("../../../../src/features/testing/TestCodeLensProvider", {
+        vscode: vscodeMock,
+      });
       TestCodeLensProvider = module.TestCodeLensProvider;
 
       documentMock.getText.returns(
@@ -576,12 +597,16 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
-        "../../../../src/features/testing/TestCodeLensProvider",
-        {
-          vscode: vscodeMock,
-        },
-      );
+      const module = (
+        proxyquire as {
+          noCallThru: () => (
+            path: string,
+            stubs: unknown,
+          ) => { TestCodeLensProvider: TestCodeLensProviderType };
+        }
+      ).noCallThru()("../../../../src/features/testing/TestCodeLensProvider", {
+        vscode: vscodeMock,
+      });
       TestCodeLensProvider = module.TestCodeLensProvider;
 
       documentMock.getText.returns(
@@ -696,12 +721,16 @@ describe("TestCodeLensProvider", () => {
       };
 
       // Re-create provider with updated vscode mock
-      const module = (proxyquire as { noCallThru: () => (path: string, stubs: unknown) => { TestCodeLensProvider: TestCodeLensProviderType } }).noCallThru()(
-        "../../../../src/features/testing/TestCodeLensProvider",
-        {
-          vscode: vscodeMock,
-        },
-      );
+      const module = (
+        proxyquire as {
+          noCallThru: () => (
+            path: string,
+            stubs: unknown,
+          ) => { TestCodeLensProvider: TestCodeLensProviderType };
+        }
+      ).noCallThru()("../../../../src/features/testing/TestCodeLensProvider", {
+        vscode: vscodeMock,
+      });
       TestCodeLensProvider = module.TestCodeLensProvider;
 
       documentMock.getText.returns(

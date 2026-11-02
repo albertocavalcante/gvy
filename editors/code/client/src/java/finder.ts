@@ -12,11 +12,7 @@ const fsRealpath = fs.promises.realpath;
 export const MINIMUM_JAVA_VERSION = 17;
 
 export type JavaSource =
-  | "setting"
-  | "java_home"
-  | "jdk_manager"
-  | "system"
-  | "login_shell";
+  "setting" | "java_home" | "jdk_manager" | "system" | "login_shell";
 
 export interface JavaResolution {
   path: string;

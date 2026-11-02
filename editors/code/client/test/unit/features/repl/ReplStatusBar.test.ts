@@ -6,15 +6,17 @@ import { vscode } from "../../mocks/vscode";
 import type { ReplStatusBarLogic as ReplStatusBarLogicType } from "../../../../src/features/repl/ReplStatusBar";
 
 type ProxyquireNoCallThru = {
-  noCallThru: () => (path: string, stubs: unknown) => { ReplStatusBarLogic: typeof ReplStatusBarLogicType };
+  noCallThru: () => (
+    path: string,
+    stubs: unknown,
+  ) => { ReplStatusBarLogic: typeof ReplStatusBarLogicType };
 };
 
-const { ReplStatusBarLogic } = (proxyquire as ProxyquireNoCallThru).noCallThru()(
-  "../../../../src/features/repl/ReplStatusBar",
-  {
-    vscode: vscode,
-  },
-);
+const { ReplStatusBarLogic } = (
+  proxyquire as ProxyquireNoCallThru
+).noCallThru()("../../../../src/features/repl/ReplStatusBar", {
+  vscode: vscode,
+});
 
 describe("ReplStatusBarLogic", () => {
   let statusBarLogic: ReplStatusBarLogicType;

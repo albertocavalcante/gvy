@@ -717,10 +717,17 @@ describe("LSPTestExecutionService", () => {
           env: {},
         });
 
-        await service.runTests({ include: [testItem] }, tokenMock, testControllerMock);
+        await service.runTests(
+          { include: [testItem] },
+          tokenMock,
+          testControllerMock,
+        );
 
         assert.ok(cpMock.spawn.notCalled, "nothing may run through cmd");
-        assert.ok(testRunMock.errored.calledOnce, "the test must not stay enqueued");
+        assert.ok(
+          testRunMock.errored.calledOnce,
+          "the test must not stay enqueued",
+        );
         const [item, message] = testRunMock.errored.firstCall.args;
         assert.strictEqual(item, testItem);
         assert.match(
@@ -1361,7 +1368,11 @@ describe("LSPTestExecutionService", () => {
         uri: { toString: () => "file:///w/Spec.groovy" },
         children: { size: 0, forEach: () => {} },
       };
-      const done = service.runTests({ include: [item] }, callerToken, controller);
+      const done = service.runTests(
+        { include: [item] },
+        callerToken,
+        controller,
+      );
       await new Promise((r) => setTimeout(r, 0));
       assert.ok(stopRun, "run token should be observed");
       stopRun!();
