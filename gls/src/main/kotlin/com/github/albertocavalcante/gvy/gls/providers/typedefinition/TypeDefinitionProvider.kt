@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.gvy.gls.providers.typedefinition
 
-import com.github.albertocavalcante.gvy.gls.async.future
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationContext
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
@@ -9,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.future.future
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TypeDefinitionParams

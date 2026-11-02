@@ -1,11 +1,11 @@
 package com.github.albertocavalcante.gvy.gls.providers.dependencies
 
 import com.github.albertocavalcante.gvy.build.BuildToolManager
-import com.github.albertocavalcante.gvy.gls.async.future
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.future.future
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.URI
