@@ -5,15 +5,13 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.declaredName
+import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.toList
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.FieldNode
-import org.codehaus.groovy.ast.MethodNode
-import org.codehaus.groovy.ast.Parameter
-import org.codehaus.groovy.ast.PropertyNode
-import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.RenameFile
@@ -103,7 +101,7 @@ class RenameProvider(
         }
 
         // Get symbol name
-        val oldName = getSymbolName(definition)
+        val oldName = definition.declaredName()
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine symbol name")
 
         if (oldName == newName) {
@@ -182,19 +180,6 @@ class RenameProvider(
     }
 
     /**
-     * Get the symbol name from an AST node.
-     */
-    private fun getSymbolName(node: ASTNode): String? = when (node) {
-        is VariableExpression -> node.name
-        is Parameter -> node.name
-        is MethodNode -> node.name
-        is FieldNode -> node.name
-        is PropertyNode -> node.name
-        is ClassNode -> node.nameWithoutPackage
-        else -> null
-    }
-
-    /**
      * Narrows [locations] to occurrences of [name]. The definition is narrowed to its name (the
      * first occurrence in the declaration). Any other location that contains another reported
      * location is an enclosing node, not a reference, and is dropped: narrowing it could land on a
@@ -207,10 +192,11 @@ class RenameProvider(
                 logger.warn { "Cannot read $uri; skipping ${locs.size} rename location(s) there" }
                 return@flatMap emptyList()
             }
+            val index = TextIndex(text)
             locs.filter { loc ->
                 loc.isSameAs(definition) ||
                     locs.none { other -> other !== loc && loc.range.strictlyContains(other.range) }
-            }.mapNotNull { loc -> firstNameOccurrence(text, loc.range, name)?.let { Location(uri, it) } }
+            }.mapNotNull { loc -> firstNameOccurrence(index, loc.range, name)?.let { Location(uri, it) } }
                 .distinctBy { it.range.start.line to it.range.start.character }
         }
 
@@ -314,37 +300,6 @@ class RenameProvider(
 
 private fun readFromDisk(uri: URI): String? =
     if (uri.scheme == "file") runCatching { java.nio.file.Files.readString(Paths.get(uri)) }.getOrNull() else null
-
-/**
- * The first whole-word occurrence of [name] inside [range] of [text], as an LSP range; null if
- * there is none. Identifier characters are Java's, which covers Groovy identifiers.
- */
-internal fun firstNameOccurrence(text: String, range: org.eclipse.lsp4j.Range, name: String): org.eclipse.lsp4j.Range? {
-    val lineStarts = IntArray(text.count { it == '\n' } + 1).also { starts ->
-        var line = 1
-        text.forEachIndexed { i, c -> if (c == '\n') starts[line++] = i + 1 }
-    }
-    fun offsetOf(p: Position): Int =
-        if (p.line >= lineStarts.size) text.length else minOf(lineStarts[p.line] + p.character, text.length)
-    fun positionOf(offset: Int): Position {
-        val line = lineStarts.indexOfLast { it <= offset }
-        return Position(line, offset - lineStarts[line])
-    }
-    val end = offsetOf(range.end)
-    var from = offsetOf(range.start)
-    while (true) {
-        val at = text.indexOf(name, from)
-        if (at < 0 || at + name.length > end) return null
-        val before = text.getOrNull(at - 1)
-        val after = text.getOrNull(at + name.length)
-        if ((before == null || !Character.isJavaIdentifierPart(before)) &&
-            (after == null || !Character.isJavaIdentifierPart(after))
-        ) {
-            return org.eclipse.lsp4j.Range(positionOf(at), positionOf(at + name.length))
-        }
-        from = at + 1
-    }
-}
 
 private operator fun Position.compareTo(other: Position): Int =
     compareValuesBy(this, other, Position::getLine, Position::getCharacter)

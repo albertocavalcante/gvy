@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.FieldNode
@@ -111,33 +112,6 @@ fun ModuleNode.findNodeAt(line: Int, column: Int): ASTNode? {
 }
 
 /**
- * Get the definition node for a reference node using the visitor and symbol table.
- * For example, if hovering over a variable reference, return the variable declaration.
- */
-fun ASTNode.getDefinition(visitor: GroovyAstModel, symbolTable: SymbolTable): ASTNode? = when (this) {
-    is VariableExpression -> {
-        // First try to get the accessed variable directly
-        (accessedVariable as? ASTNode) ?: (symbolTable.resolveSymbol(this, visitor) as? ASTNode)
-    }
-
-    is Parameter -> symbolTable.resolveSymbol(this, visitor) as? ASTNode
-    is MethodCallExpression -> {
-        // Try to resolve the method call to its definition
-        visitor.getUri(this)?.let { uri ->
-            // For now, just return the first method with matching name
-            symbolTable.registry.findMethodDeclarations(uri, method.text).firstOrNull()
-        }
-    }
-
-    is DeclarationExpression -> {
-        // For declaration expressions, return the variable being declared
-        leftExpression as? VariableExpression
-    }
-
-    else -> null
-}
-
-/**
  * Get the original definition node for a reference, similar to fork-groovy-language-server's getDefinition
  */
 fun ASTNode.resolveToDefinition(visitor: GroovyAstModel, symbolTable: SymbolTable, strict: Boolean = true): ASTNode? =
@@ -185,8 +159,39 @@ private fun resolveMethodDefinition(
     symbolTable: SymbolTable,
     visitor: GroovyAstModel,
 ): ASTNode? = visitor.getUri(call)?.let { uri ->
-    symbolTable.registry.findMethodDeclarations(uri, call.method.text).firstOrNull()
+    symbolTable.registry.findMethodDeclarations(uri, call.method.text).firstOrNull { call.mayCall(it) }
 }
+
+/**
+ * False when this call cannot reach [method]: its receiver has a known static type that is not the
+ * method's class, a subclass, or an implementor of its interface/trait (`"x".size()` does not call a `size()` declared in this file). Spread calls and
+ * unresolved types are given the benefit of the doubt.
+ * Implicit-this, `this`/`super`, and dynamically typed receivers (`def x`) may reach it.
+ */
+private fun MethodCallExpression.mayCall(method: MethodNode): Boolean {
+    if (isImplicitThis) return true
+    val receiver = objectExpression
+    if (receiver is VariableExpression && (receiver.isThisExpression || receiver.isSuperExpression)) return true
+    if (isSpreadSafe) return true // `list*.m()` calls m on each element, whatever the list's type
+    val type = receiver.type ?: return true
+    val owner = method.declaringClass?.let(::traitOrSelf) ?: return true
+    if (ClassHelper.isDynamicTyped(type) || type == ClassHelper.OBJECT_TYPE) return true
+    if (type.name == owner.name || type.isDerivedFrom(owner) || type.implementsInterface(owner)) return true
+    // Files that only reached CONVERSION leave an unresolved placeholder, named as written in source
+    // (`C`, not `p.C`); compare simple names then rather than dropping the call. Only for a
+    // placeholder: isResolved is false for every class compiled from source, so testing it alone
+    // would match `Y.Inner` calls against `X.Inner.m`.
+    return type.isUnresolvedPlaceholder() && simpleName(type) == simpleName(owner)
+}
+
+/** A trait's method bodies live in `T$Trait$Helper`; callers reach them through the trait `T`. */
+private fun traitOrSelf(type: ClassNode): ClassNode =
+    if (type.name.endsWith("\$Trait\$Helper")) (type as? InnerClassNode)?.outerClass ?: type else type
+
+/** A type the compiler has not resolved yet: no redirect to a real class, not compiled from source. */
+private fun ClassNode.isUnresolvedPlaceholder(): Boolean = redirect() === this && !isPrimaryClassNode && !isResolved
+
+private fun simpleName(type: ClassNode): String = type.nameWithoutPackage.substringAfterLast('$')
 
 /**
  * Resolve type-related nodes to their definitions.
