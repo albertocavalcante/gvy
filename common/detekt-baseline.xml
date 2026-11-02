@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:TypeSignatureUtils.kt$fun parseSignatureParameters(signature: String?): List&lt;String></ID>
+    <ID>MagicNumber:TextIndex.kt$TextIndex.&lt;no name provided>$0.75f</ID>
+    <ID>MagicNumber:TextIndex.kt$TextIndex.&lt;no name provided>$16</ID>
+    <ID>ReturnCount:TypeSignatureUtils.kt$fun extractParameterCount(signature: String): Int</ID>
+    <ID>ReturnCount:TypeSignatureUtils.kt$fun parseSignatureParameters(signature: String?): List&lt;String></ID>
+  </CurrentIssues>
+</SmellBaseline>

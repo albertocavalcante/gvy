@@ -1,0 +1,25 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>LargeClass:MavenJdkRequirementExtractorTest.kt$MavenJdkRequirementExtractorTest</ID>
+    <ID>LongMethod:MavenJdkRequirementExtractorTest.kt$MavenJdkRequirementExtractorTest$@Test fun `should extract from real pipeline-library pom xml`()</ID>
+    <ID>LongMethod:MavenJdkRequirementExtractorTest.kt$MavenJdkRequirementExtractorTest$@Test fun `should select first JDK toolchain from multiple toolchains`()</ID>
+    <ID>MagicNumber:AsmErrorAnalyzer.kt$AsmErrorAnalyzer$17</ID>
+    <ID>MagicNumber:GradleJdkCompatibilityService.kt$GradleJdkCompatibilityService$25</ID>
+    <ID>MagicNumber:GradleJdkCompatibilityService.kt$GradleJdkCompatibilityService$44</ID>
+    <ID>MagicNumber:GradleJdkCompatibilityService.kt$GradleJdkCompatibilityService$8</ID>
+    <ID>MagicNumber:JdkVersionMapper.kt$JdkVersionMapper$44</ID>
+    <ID>MaxLineLength:GradleFailureAnalyzer.kt$GradleFailureAnalyzer$// Parse: "Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: {languageVersion=17, vendor=any vendor}"</ID>
+    <ID>MaxLineLength:GradleFailureAnalyzerTest.kt$GradleFailureAnalyzerTest$// Simulating real stack trace: BuildException -> LocationAwareException -> ... -> ToolchainProvisioningException</ID>
+    <ID>ReturnCount:GroovyVersionDetector.kt$GroovyVersionDetector$fun detectFromMaven(model: Model): GroovyVersionInfo?</ID>
+    <ID>SwallowedException:JdkExtractionSecurityTest.kt$JdkExtractionSecurityTest$e: UnsupportedOperationException</ID>
+    <ID>TooGenericExceptionCaught:GradleBuildTool.kt$GradleBuildTool$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:GradleJdkCompatibilityService.kt$GradleJdkCompatibilityService$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:MavenBuildTool.kt$MavenBuildTool$e: Exception</ID>
+    <ID>UnusedPrivateMember:RealProjectIntegrationTest.kt$RealProjectIntegrationTest$private fun pipelineLibraryExists(): Boolean</ID>
+    <ID>UnusedPrivateProperty:MavenBuildToolTest.kt$MavenBuildToolTest$val directDeps = metadata.filter { !it.isTransitive }</ID>
+    <ID>UnusedPrivateProperty:MavenBuildToolTest.kt$MavenBuildToolTest$val transitiveDeps = metadata.filter { it.isTransitive }</ID>
+    <ID>UseCheckOrError:TestResources.kt$TestResources$throw IllegalStateException( "Test resource not found: $resourceDir. Searched: ${candidates.filterNotNull().joinToString()}", )</ID>
+  </CurrentIssues>
+</SmellBaseline>

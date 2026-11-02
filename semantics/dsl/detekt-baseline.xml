@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>NestedBlockDepth:DslAstMatcher.kt$ClosureMatcher$override fun match(node: Expression): DslMatchResult</ID>
+    <ID>ReturnCount:DslAstMatcher.kt$ClosureMatcher$override fun match(node: Expression): DslMatchResult</ID>
+    <ID>ReturnCount:DslAstMatcher.kt$MethodCallMatcher$override fun match(node: Expression): DslMatchResult</ID>
+  </CurrentIssues>
+</SmellBaseline>

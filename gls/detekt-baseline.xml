@@ -2,6 +2,7 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>ComplexCondition:IdentifierRanges.kt$text.startsWith(name, at) &amp;&amp; at + name.length &lt;= end &amp;&amp; isWordBoundary(text, at - 1) &amp;&amp; isWordBoundary(text, at + name.length)</ID>
     <ID>ComplexCondition:TextImportParser.kt$TextImportParser$pending != null &amp;&amp; !state.pendingImportIsStatic &amp;&amp; pending.isNotBlank() &amp;&amp; !pending.endsWith(".")</ID>
     <ID>ComplexCondition:UnusedImportDiagnosticProvider.kt$UnusedImportDiagnosticProvider$importNode.lineNumber &lt;= 0 || importNode.columnNumber &lt;= 0 || importNode.lastLineNumber &lt;= 0 || importNode.lastColumnNumber &lt;= 0</ID>
     <ID>CyclomaticComplexMethod:AbstractDiagnosticRule.kt$AbstractDiagnosticRule$protected fun findPatternMatches( content: String, pattern: Regex, excludeComments: Boolean = true, excludeStrings: Boolean = false, ): Sequence&lt;LineMatch></ID>
@@ -12,27 +13,28 @@
     <ID>LargeClass:WhitespaceFixHandlersTest.kt$WhitespaceFixHandlersTest</ID>
     <ID>LongMethod:CompletionProvider.kt$CompletionProvider$private suspend fun buildCompletionsList(ctx: CompletionContext): List&lt;CompletionItem></ID>
     <ID>LongMethod:CompletionProvider.kt$CompletionProvider$suspend fun getContextualCompletions( uri: String, line: Int, character: Int, compilationService: GroovyCompilationService, semanticResolver: SemanticTypeResolver, content: String, ): List&lt;CompletionItem></ID>
-    <ID>LongMethod:CrossFileMemberCompletionTest.kt$CrossFileMemberCompletionTest.InheritedMemberCompletionTests$@Test @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration and inheritance support") fun `should show inherited method from parent class in another file`()</ID>
-    <ID>LongMethod:CrossFileReferenceProviderTest.kt$CrossFileReferenceProviderTest$@Test fun `test find references to class defined in another file`()</ID>
-    <ID>LongMethod:CrossFileReferenceProviderTest.kt$CrossFileReferenceProviderTest$@Test fun `test find references to field defined in another file`()</ID>
-    <ID>LongMethod:CrossFileReferenceProviderTest.kt$CrossFileReferenceProviderTest$@Test fun `test find references to method defined in another file`()</ID>
+    <ID>LongMethod:CrossFileMemberCompletionTest.kt$CrossFileMemberCompletionTest.InheritedMemberCompletionTests$@Test @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration and inheritance support") fun `should show inherited method from parent class in another file`(): Unit</ID>
+    <ID>LongMethod:CrossFileReferenceProviderTest.kt$CrossFileReferenceProviderTest$@Test fun `test find references to class defined in another file`(): Unit</ID>
+    <ID>LongMethod:CrossFileReferenceProviderTest.kt$CrossFileReferenceProviderTest$@Test fun `test find references to field defined in another file`(): Unit</ID>
+    <ID>LongMethod:CrossFileReferenceProviderTest.kt$CrossFileReferenceProviderTest$@Test fun `test find references to method defined in another file`(): Unit</ID>
     <ID>LongMethod:DependencyManager.kt$DependencyManager$@Suppress("TooGenericExceptionCaught") fun startAsyncResolution( workspaceRoot: Path, onProgress: ((Int, String) -> Unit)? = null, onComplete: (WorkspaceResolution) -> Unit, onError: ((Exception) -> Unit)? = null, enableFileWatching: Boolean = true, )</ID>
     <ID>LongMethod:JavaSourceInspectorTest.kt$JavaSourceInspectorTest.RealWorldJavaSourceTest$@Test fun `parses realistic JDK Date class with full Javadoc`()</ID>
     <ID>LongMethod:JavaSourceInspectorTest.kt$JavaSourceInspectorTest.RealWorldJavaSourceTest$@Test fun `parses realistic SimpleDateFormat class with pattern documentation`()</ID>
     <ID>LongMethod:LintFixAction.kt$LintFixAction$@Suppress("ReturnCount") // Multiple early returns for clarity in validation chain private fun isValidRange(diagnostic: Diagnostic, lines: List&lt;String>, ruleName: String): Boolean</ID>
     <ID>LongMethod:LocalSymbolResolutionStrategy.kt$LocalSymbolResolutionStrategy$override suspend fun resolve(context: ResolutionContext): ResolutionResult</ID>
     <ID>LongMethod:LocalSymbolResolutionStrategy.kt$LocalSymbolResolutionStrategy$private fun isLocallyDefinedClass(classNode: ClassNode, currentUri: URI): Boolean</ID>
-    <ID>LongMethod:LocalSymbolResolutionStrategyTest.kt$LocalSymbolResolutionStrategyTest$@Test fun `should NOT resolve cross-file constructor call - defer to other strategies`()</ID>
-    <ID>LongMethod:SemanticDBResolutionStrategyTest.kt$SemanticDBResolutionStrategyTest$@Test fun `should resolve most specific occurrence when ranges overlap`()</ID>
+    <ID>LongMethod:LocalSymbolResolutionStrategyTest.kt$LocalSymbolResolutionStrategyTest$@Test fun `should NOT resolve cross-file constructor call - defer to other strategies`(): Unit</ID>
+    <ID>LongMethod:SemanticDBResolutionStrategyTest.kt$SemanticDBResolutionStrategyTest$@Test fun `should resolve most specific occurrence when ranges overlap`(): Unit</ID>
     <ID>LongMethod:WorkspaceSymbolIndexTest.kt$WorkspaceSymbolIndexTest.ExtractParameterCountTests$@Test fun `findMethod with exact arity matches correct overload among many`()</ID>
     <ID>LongParameterList:AbstractDiagnosticRule.kt$AbstractDiagnosticRule$( content: String, pattern: Regex, messageProvider: (LineMatch) -> String, severity: DiagnosticSeverity = defaultSeverity, excludeComments: Boolean = true, excludeStrings: Boolean = false, )</ID>
     <ID>LongParameterList:CompletionProvider.kt$CompletionProvider$( uri: String, line: Int, character: Int, compilationService: GroovyCompilationService, semanticResolver: SemanticTypeResolver, content: String, )</ID>
-    <ID>LongParameterList:GroovySemanticTokenProvider.kt$GroovySemanticTokenProvider$( line: Int, column: Int, columnOffset: Int, length: Int, modifiers: Int, tokens: MutableList&lt;SemanticToken>, )</ID>
     <ID>LongParameterList:ImportCompletionStrategy.kt$ImportCompletionStrategy$( classSymbol: Symbol.Class, qualifier: String, memberPrefix: String?, range: Range, staticFieldNames: MutableSet&lt;String>, builder: CompletionsBuilder, )</ID>
     <ID>LongParameterList:ImportCompletionStrategy.kt$ImportCompletionStrategy$( classSymbol: Symbol.Class, qualifier: String, memberPrefix: String?, range: Range, staticFieldNames: Set&lt;String>, builder: CompletionsBuilder, )</ID>
+    <ID>LongParameterList:ReferenceProvider.kt$ReferenceProvider$( uri: String, position: Position, includeDeclaration: Boolean, index: WorkspaceSymbolIndex, emittedLocations: MutableSet&lt;String>, symbolName: String?, )</ID>
     <ID>LongParameterList:TestDiagnosticFactory.kt$TestDiagnosticFactory$( code: String, message: String, line: Int = 0, startChar: Int = 0, endChar: Int = 10, source: String? = "CodeNarc", severity: DiagnosticSeverity = DiagnosticSeverity.Warning, )</ID>
     <ID>LoopWithTooManyJumpStatements:AbstractDiagnosticRule.kt$AbstractDiagnosticRule$while</ID>
     <ID>LoopWithTooManyJumpStatements:SourceNavigationService.kt$SourceNavigationService$for</ID>
+    <ID>MagicNumber:CompletionPriority.kt$CompletionPriority$99</ID>
     <ID>MagicNumber:GdkMethodIndex.kt$GdkMethodIndex$5</ID>
     <ID>MagicNumber:GroovySourceResolver.kt$GroovySourceResolver$4</ID>
     <ID>MagicNumber:LspCommand.kt$LspCommand$10</ID>
@@ -53,6 +55,7 @@
     <ID>MaxLineLength:LocalSymbolResolutionStrategy.kt$LocalSymbolResolutionStrategy$"Field/Property's declaring class is not local (current: ${context.documentUri}), deferring to other strategies"</ID>
     <ID>MaxLineLength:LocalSymbolResolutionStrategy.kt$LocalSymbolResolutionStrategy$"Resolved local definition: ${filteredDefinition.javaClass.simpleName} at ${filteredDefinition.lineNumber}:${filteredDefinition.columnNumber}"</ID>
     <ID>MaxLineLength:NativeCompletionService.kt$NativeCompletionService$"Error getting completions for URI: $uri at position: ${position.line}:${position.character}"</ID>
+    <ID>MaxLineLength:SemanticTokensHandler.kt$SemanticTokensHandler$*</ID>
     <ID>MaxLineLength:WorkerRouterFactory.kt$WorkerRouterFactory$"Invalid worker descriptor range for ${config.id}: minVersion ${minVersion.raw} > maxVersion ${maxVersion.raw}"</ID>
     <ID>MaximumLineLength:ClasspathResolutionStrategy.kt$ClasspathResolutionStrategy$ </ID>
     <ID>MaximumLineLength:DependencyGraph.kt$DependencyGraph$ </ID>
@@ -61,13 +64,12 @@
     <ID>MaximumLineLength:NativeCompletionService.kt$NativeCompletionService$ </ID>
     <ID>MaximumLineLength:WorkerRouterFactory.kt$WorkerRouterFactory$ </ID>
     <ID>NestedBlockDepth:AstCompletionContextDetector.kt$AstCompletionContextDetector$@Suppress("ReturnCount") // Multiple traversal checks require early returns private fun findEnclosingMethodCall(node: ASTNode?, astModel: GroovyAstModel): MethodCallExpression?</ID>
-    <ID>NestedBlockDepth:GroovySemanticTokenProvider.kt$GroovySemanticTokenProvider$private fun tokenizeAnnotations(annotations: List&lt;AnnotationNode>?, tokens: MutableList&lt;SemanticToken>)</ID>
     <ID>NestedBlockDepth:GroovySemanticTokenProviderTest.kt$GroovySemanticTokenProviderTest$private fun findPosition(code: String, identifier: String, occurrence: Int = 1): Pair&lt;Int, Int>?</ID>
     <ID>NestedBlockDepth:GroovySourceResolver.kt$GroovySourceResolver$private fun indexGdkSources(sourcesJar: Path): Boolean</ID>
     <ID>NestedBlockDepth:HoverProvider.kt$HoverProvider$private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover?</ID>
     <ID>NestedBlockDepth:JdkSourceResolver.kt$JdkSourceResolver$private fun extractSourceFromZip(srcZip: Path, moduleName: String, classPath: String, className: String): Path?</ID>
     <ID>NestedBlockDepth:JenkinsSemanticTokenProvider.kt$JenkinsSemanticTokenProvider$fun getSemanticTokens( astModel: GroovyAstModel, uri: URI, isJenkinsFile: Boolean, varsNames: Set&lt;String> = emptySet(), ): List&lt;SemanticToken></ID>
-    <ID>NestedBlockDepth:ReferenceProvider.kt$ReferenceProvider$private suspend fun ProducerScope&lt;Location>.findWorkspaceReferences( uri: String, position: Position, includeDeclaration: Boolean, index: WorkspaceSymbolIndex, emittedLocations: MutableSet&lt;String>, )</ID>
+    <ID>NestedBlockDepth:ReferenceProvider.kt$ReferenceProvider$private suspend fun ProducerScope&lt;Location>.findWorkspaceReferences( uri: String, position: Position, includeDeclaration: Boolean, index: WorkspaceSymbolIndex, emittedLocations: MutableSet&lt;String>, symbolName: String?, )</ID>
     <ID>NestedBlockDepth:SignatureHelpProvider.kt$SignatureHelpProvider$private fun resolveReceiverType( documentUri: URI, methodCall: MethodCallExpression, symbolTable: SymbolTable, astVisitor: GroovyAstModel, ): String</ID>
     <ID>NestedBlockDepth:SourceJarExtractor.kt$SourceJarExtractor$@Suppress("ReturnCount") // Multiple validation checks require early returns fun extractAndIndex(sourceJarPath: Path): Map&lt;String, Path></ID>
     <ID>ReturnCount:ClasspathResolutionStrategy.kt$ClasspathResolutionStrategy$@Suppress("TooGenericExceptionCaught") override suspend fun resolve(context: ResolutionContext): ResolutionResult</ID>
@@ -89,6 +91,7 @@
     <ID>SwallowedException:SourceNavigationService.kt$SourceNavigationService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:ClasspathService.kt$ClasspathService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:CompilationOrchestrator.kt$CompilationOrchestrator$e: Exception</ID>
+    <ID>TooGenericExceptionCaught:CoroutineUtils.kt$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:DependencyManager.kt$DependencyManager$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DependencyRequestHandler.kt$DependencyRequestHandler$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DiagnosticsService.kt$DiagnosticsService$e: Exception</ID>

@@ -2,9 +2,11 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
+    <ID>ComplexCondition:SymbolResolverTest.kt$SymbolResolverTest$current is MethodNode || current is ConstructorNode || current is ClosureExpression || current is BlockStatement || current is ClassNode</ID>
     <ID>CyclomaticComplexMethod:AstPositionQuery.kt$AstPositionQuery$fun getNodeAt(uri: URI, lspLine: Int, lspCharacter: Int): ASTNode?</ID>
     <ID>CyclomaticComplexMethod:AstPositionQuery.kt$AstPositionQuery$private fun ASTNode.tokenLengthHint(): Int?</ID>
     <ID>FunctionOnlyReturningConstant:DefinitionResolver.kt$DefinitionResolver$private fun resolveVariableDefinition(@Suppress("UNUSED_PARAMETER") variable: VariableExpression): ASTNode?</ID>
+    <ID>LargeClass:AstPositionQueryTest.kt$AstPositionQueryTest</ID>
     <ID>LongMethod:AstPositionQuery.kt$AstPositionQuery$fun getNodeAt(uri: URI, lspLine: Int, lspCharacter: Int): ASTNode?</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$20</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$3</ID>
@@ -12,15 +14,13 @@
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$4</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$5</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$6</ID>
-    
-    
-    <ID>NestedBlockDepth:SymbolExtractor.kt$SymbolExtractor$fun extractVariableSymbols(methodNode: Any): List&lt;VariableSymbol></ID>
-    <ID>SwallowedException:SymbolExtractor.kt$SymbolExtractor$e: Exception</ID>
-    <ID>ThrowsCount:TypeInferencerTest.kt$TypeInferencerTest$private fun inferTypeFromFirstDeclaration(code: String): String</ID>
-    <ID>TooGenericExceptionCaught:SymbolExtractor.kt$SymbolExtractor$e: Exception</ID>
-    <ID>UnusedParameter:SymbolExtractor.kt$SymbolExtractor$character: Int</ID>
-    <ID>UseCheckOrError:TypeInferencerTest.kt$TypeInferencerTest$throw IllegalStateException("Failed to parse AST")</ID>
-    <ID>UseCheckOrError:TypeInferencerTest.kt$TypeInferencerTest$throw IllegalStateException("First statement is not a declaration: $statement")</ID>
-    <ID>UseCheckOrError:TypeInferencerTest.kt$TypeInferencerTest$throw IllegalStateException("No statements found")</ID>
+    <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$7</ID>
+    <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$8</ID>
+    <ID>MaxLineLength:AstPositionExtensions.kt$*</ID>
+    <ID>MaxLineLength:VisitorExpressionCoverageTest.kt$VisitorExpressionCoverageTest$"Should track at least 9 of 10 expression types (StaticMethodCallExpression is optional), found: ${typesFound.size} ($typesFound)"</ID>
+    <ID>MaximumLineLength:VisitorExpressionCoverageTest.kt$VisitorExpressionCoverageTest$ </ID>
+    <ID>NestedBlockDepth:SymbolTableBuilder.kt$SymbolTableBuilder$private fun processNodes(nodes: List&lt;ASTNode>, uri: URI, primaryClassNodes: Set&lt;ClassNode>)</ID>
+    <ID>ReturnCount:AstPositionExtensions.kt$private fun MethodCallExpression.mayCall(method: MethodNode): Boolean</ID>
+    <ID>ReturnCount:SymbolResolver.kt$SymbolResolver$private fun resolveVariableInScope( uri: java.net.URI, node: VariableExpression, visitor: GroovyAstModel, ): Variable?</ID>
   </CurrentIssues>
 </SmellBaseline>

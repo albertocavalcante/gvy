@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:JenkinsPluginManager.kt$JenkinsPluginManager.&lt;no name provided>$0.75f</ID>
+    <ID>MagicNumber:JenkinsPluginManager.kt$JenkinsPluginManager.&lt;no name provided>$16</ID>
+  </CurrentIssues>
+</SmellBaseline>

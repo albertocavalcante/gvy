@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>UseCheckOrError:TestResources.kt$TestResources$throw IllegalStateException( "Test fixture not found: $fixtureName. Searched: ${candidates.filterNotNull().joinToString()}", )</ID>
+  </CurrentIssues>
+</SmellBaseline>

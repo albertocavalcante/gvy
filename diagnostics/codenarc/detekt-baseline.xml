@@ -2,6 +2,10 @@
 <SmellBaseline>
   <ManuallySuppressedIssues/>
   <CurrentIssues>
-    <ID>SwallowedException:CodeAnalyzer.kt$DefaultCodeAnalyzer$e: Exception</ID>
+    <ID>CyclomaticComplexMethod:RuleRangeCalculator.kt$RuleRangeCalculator$fun calculateRange(violation: Violation, fallbackLine: String): Pair&lt;Int, Int></ID>
+    <ID>LongMethod:RuleRangeCalculator.kt$RuleRangeCalculator$fun calculateRange(violation: Violation, fallbackLine: String): Pair&lt;Int, Int></ID>
+    <ID>MagicNumber:RuleRangeCalculator.kt$RuleRangeCalculator$6</ID>
+    <ID>NestedBlockDepth:AstNodeFinder.kt$VariableAtLineFinder$override fun visitDeclarationExpression(expression: DeclarationExpression)</ID>
+    <ID>TooManyFunctions:RuleRangeCalculator.kt$RuleRangeCalculator</ID>
   </CurrentIssues>
 </SmellBaseline>

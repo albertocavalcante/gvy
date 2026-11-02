@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>InvalidPackageDeclaration:GdslToJson.kt$package com.github.albertocavalcante.gvy.jenkins.extractor</ID>
+    <ID>InvalidPackageDeclaration:GdslToJsonTest.kt$package com.github.albertocavalcante.gvy.jenkins.extractor</ID>
+  </CurrentIssues>
+</SmellBaseline>

@@ -1,0 +1,14 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:FieldNodeCalculator.kt$FieldNodeCalculator$20</ID>
+    <ID>MagicNumber:MethodNodeCalculator.kt$MethodNodeCalculator$20</ID>
+    <ID>MagicNumber:ParameterCalculator.kt$ParameterCalculator$20</ID>
+    <ID>ReturnCount:NativeTypeContext.kt$NativeTypeContext$@Suppress("LongParameterList") // Strategy pattern requires multiple resolution functions private inline fun &lt;T> resolveFromHierarchyNullable( receiverType: SemanticType, nativeFinder: (String) -> T?, workspaceDirect: (MemberLookup, String) -> SemanticType?, workspaceInherited: (MemberLookup, String) -> SemanticType?, converter: (T) -> SemanticType, notFoundMessage: (String) -> String, ): SemanticType?</ID>
+    <ID>TooManyFunctions:DeclarationWalker.kt$DeclarationWalker</ID>
+    <ID>TooManyFunctions:SymbolExtractor.kt$SymbolExtractor</ID>
+    <ID>UseCheckOrError:NativeTypeContextCrossFileTest.kt$NativeTypeContextCrossFileTest$throw IllegalStateException("Context not found for module after injection")</ID>
+    <ID>UseCheckOrError:NativeTypeContextTest.kt$NativeTypeContextTest$throw IllegalStateException("Context not found for module after injection")</ID>
+  </CurrentIssues>
+</SmellBaseline>

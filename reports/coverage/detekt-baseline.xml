@@ -1,0 +1,9 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>MagicNumber:JacocoParser.kt$JacocoParser$100.0</ID>
+    <ID>NestedBlockDepth:JacocoParser.kt$JacocoParser$override fun parseWorkspace(workspaceRoot: File): CoverageResponse</ID>
+    <ID>TooGenericExceptionCaught:JacocoParser.kt$JacocoParser$e: Exception</ID>
+  </CurrentIssues>
+</SmellBaseline>
