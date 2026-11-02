@@ -639,7 +639,7 @@ describe("LSPTestExecutionService", () => {
       const testItem = {
         id: `com.example.Spec.${testName}`,
         uri: { toString: () => "file:///test.groovy" },
-        children: { size: 0 },
+        children: { size: 0, forEach: () => {} },
       };
       const args = ["test", `-Dtest=com.example.Spec#${testName}`];
       testServiceMock.getTestCommand.resolves({
