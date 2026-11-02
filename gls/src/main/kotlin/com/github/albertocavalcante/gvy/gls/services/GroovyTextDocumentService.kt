@@ -512,7 +512,16 @@ class GroovyTextDocumentService(
         }
 
         try {
-            val renameProvider = RenameProvider(compilationService)
+            val renameProvider = RenameProvider(compilationService) { uri ->
+                documentProvider.get(uri)
+                    ?: if (uri.scheme ==
+                        "file"
+                    ) {
+                        runCatching { java.nio.file.Files.readString(java.nio.file.Path.of(uri)) }.getOrNull()
+                    } else {
+                        null
+                    }
+            }
             renameProvider.provideRename(
                 params.textDocument.uri,
                 params.position,
