@@ -528,7 +528,7 @@
             "verbose"
           ],
           "default": "off",
-          "description": "Trace communication with Groovy Language Server"
+          "markdownDescription": "Verbosity of the language server protocol trace. Tracing is recorded only while the **Groovy Language Server Trace** output channel's log level is set to Trace (Output view > gear icon > Set Log Level)."
         },
         "groovy.statusBar.show": {
           "type": "string",
