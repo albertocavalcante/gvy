@@ -400,13 +400,9 @@ class DiagnosticsOrchestratorTest {
         // When
         orchestrator.refreshAll()
 
-        // Give time for jobs to start
-        delay(200)
-
-        // Then: Should have triggered diagnostics for both files (order not guaranteed due to map iteration)
-        coVerify(atLeast = 1) { compilationService.compileAsync(any(), any(), any()) }
-        // Verify that at least 2 calls were made (one for each file)
-        coVerify(exactly = 2) { compilationService.compileAsync(any(), any(), any()) }
+        // Then: one compile per open file. The jobs run on a real dispatcher while runTest's delay() is
+        // virtual and returns at once, so wait in real time (bounded) instead of sleeping.
+        coVerify(timeout = 5_000, exactly = 2) { compilationService.compileAsync(any(), any(), any()) }
 
         // Cleanup
         scope.cancel()
