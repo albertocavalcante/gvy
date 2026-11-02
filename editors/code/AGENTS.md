@@ -90,7 +90,6 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 
 - `FORCE_DOWNLOAD=true` — Redownload the server JAR even if present
 - `GLS_ALLOW_PINNED_FALLBACK=true` — Fall back to pinned on network failure
-- `REQUIRE_SERVER_BUNDLE=true` — Fail build if server bundling fails (publish)
 - `SKIP_PREPARE_SERVER=true` — Skip server prep (used in some CI paths)
 
 Custom URL downloads require `GLS_CHECKSUM=<sha256>` or `--checksum <sha256>`.
