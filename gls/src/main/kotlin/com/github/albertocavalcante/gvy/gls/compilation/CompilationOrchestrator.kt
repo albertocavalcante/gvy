@@ -256,6 +256,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 }
                 // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
                 performCompilation(uri, content, parseMode = ParseMode.MINIMAL, configFingerprint = configFingerprint)
+            } catch (e: CancellationException) {
+                throw e // the request was cancelled; not a failure to compile
             } catch (e: Exception) {
                 logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
                 null

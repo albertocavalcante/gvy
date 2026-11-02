@@ -48,7 +48,10 @@ class CompilationCancellationTest {
         )
     }
 
-    private fun orchestrator(session: WorkerSession): CompilationOrchestrator {
+    private fun orchestrator(
+        session: WorkerSession,
+        cacheService: CompilationCacheService = CompilationCacheService(),
+    ): CompilationOrchestrator {
         val workspaceManager = mockk<WorkspaceManager>()
         every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns emptyList()
@@ -56,7 +59,7 @@ class CompilationCancellationTest {
         every { workspaceManager.getConfigurationFingerprint() } returns "fp"
         return CompilationOrchestrator(
             CompilationOrchestratorDependencies(
-                cacheService = CompilationCacheService(),
+                cacheService = cacheService,
                 workerSessionManager = WorkerSessionManager(session) { error("no remote workers") },
                 workspaceManager = workspaceManager,
                 symbolIndexer = mockk(relaxed = true),
@@ -98,5 +101,36 @@ class CompilationCancellationTest {
 
         assertFailsWith<CancellationException> { deferred.await() }
         assertEquals(2, session.calls.get())
+    }
+
+    @Test
+    fun `a cancelled compile caches nothing`(): Unit = runBlocking {
+        val session = CancellingSession(cancelAtCall = 2)
+        val cache = CompilationCacheService()
+        val orchestrator = orchestrator(session, cache)
+
+        val deferred = async(Dispatchers.Default, start = CoroutineStart.LAZY) { orchestrator.compile(uri, content) }
+        session.target.set(deferred)
+        assertFailsWith<CancellationException> { deferred.await() }
+
+        assertEquals(null, cache.getCached(uri, content, "fp"), "a cancelled compile must not be cached")
+    }
+
+    @Test
+    fun `an on-demand compile from disk propagates cancellation instead of returning null`(): Unit = runBlocking {
+        val file = kotlin.io.path.createTempFile("OnDisk", ".groovy").also { it.toFile().writeText(content) }
+        try {
+            // The hook throws as a cancelled caller's ensureActive() would, without cancelling this
+            // coroutine, so the result is observable: swallowing it would return null instead.
+            val throwing = object : WorkerSession {
+                private val delegate = InProcessWorkerSession(GroovyParserFacade())
+                override fun parse(request: ParseRequest): ParseResult =
+                    delegate.parse(request.copy(checkCancelled = { throw CancellationException("cancelled") }))
+            }
+
+            assertFailsWith<CancellationException> { orchestrator(throwing).ensureCompiled(file.toUri()) }
+        } finally {
+            java.nio.file.Files.deleteIfExists(file)
+        }
     }
 }
