@@ -13,6 +13,16 @@ kt_library(
         "@maven//:org_codenarc_CodeNarc",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
     ],
+    # CodeNarc is imported with its Groovy modules excluded (they are Groovy 3 in some versions);
+    # these are the Groovy 4 builds of the modules its POM declares. Without groovy-xml, rule sets
+    # fail to load and no diagnostics are published.
+    runtime_deps = [
+        "@maven//:org_apache_groovy_groovy_ant",
+        "@maven//:org_apache_groovy_groovy_groovydoc",
+        "@maven//:org_apache_groovy_groovy_json",
+        "@maven//:org_apache_groovy_groovy_templates",
+        "@maven//:org_apache_groovy_groovy_xml",
+    ],
 )
 
 kt_test(
