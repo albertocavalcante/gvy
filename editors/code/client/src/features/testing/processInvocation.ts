@@ -7,9 +7,27 @@ export interface ProcessInvocation {
   shell: boolean;
 }
 
-// Characters cmd.exe interprets even inside double quotes, or that would end
-// the quoting. Test names containing them cannot be passed safely.
-const WINDOWS_SHELL_META = /[\r\n\0"%!^&|<>()]/u;
+// Characters cmd.exe interprets even inside double quotes (% and, with delayed
+// expansion, !), that end the quoting ("), or that end the command line.
+// No launcher can receive these safely.
+const WINDOWS_QUOTE_BREAKERS = /[\r\n\0"%!]/u;
+
+// Characters cmd.exe treats literally inside double quotes but acts on outside
+// them. gradlew.bat expands its own location unquoted (`set DIRNAME=%~dp0`),
+// so a launcher path containing these runs commands before any argument is
+// read: a project under `C:\x & y\` makes gradlew.bat execute `y`. Maven's
+// launchers are held to the same rule. Parentheses are not in this set; a path like
+// `C:\Proj (copy)\gradlew.bat` was verified to work (Maven launchers were
+// not, so they keep rejecting parentheses too).
+const WINDOWS_UNQUOTED_META = /[&|<>^]/u;
+
+// Characters cmd.exe treats literally inside double quotes. gradlew.bat passes
+// its arguments on with %* inside quotes, so test names containing these reach
+// Gradle intact (verified on Windows 11 with Node 24 and the real gradlew.bat:
+// `x) & (echo pwned > f` arrives as one argument and runs nothing). Maven's
+// launchers re-read their arguments in other ways and have not been verified,
+// so they keep rejecting these.
+const WINDOWS_QUOTED_LITERALS = /[&|<>^()]/u;
 
 export type BuildTool = "gradle" | "maven";
 
@@ -45,10 +63,18 @@ export function buildProcessInvocation(
     return { executable, args: [...args], shell: false };
   }
 
-  for (const value of [executable, ...args]) {
+  // Only Gradle's launcher has been verified with these characters.
+  const verified = buildToolOf(executable) === "gradle";
+  const unsafe = (value: string, isExecutable: boolean): boolean =>
+    WINDOWS_QUOTE_BREAKERS.test(value) ||
     // A trailing backslash would escape the closing quote for the program's
     // own command-line parser and merge this argument with the next one.
-    if (WINDOWS_SHELL_META.test(value) || value.endsWith("\\")) {
+    value.endsWith("\\") ||
+    (isExecutable && WINDOWS_UNQUOTED_META.test(value)) ||
+    (!verified && WINDOWS_QUOTED_LITERALS.test(value));
+
+  for (const [index, value] of [executable, ...args].entries()) {
+    if (unsafe(value, index === 0)) {
       throw new Error(
         `Command argument is unsafe for the Windows command shell: ${value}`,
       );
