@@ -24,15 +24,15 @@ export default defineConfig({
       sidebar: [
         {
           label: "Overview",
-          autogenerate: { directory: "overview" },
+          items: [{ autogenerate: { directory: "overview" } }],
         },
         {
           label: "Language Server",
-          autogenerate: { directory: "lsp" },
+          items: [{ autogenerate: { directory: "lsp" } }],
         },
         {
           label: "Architecture",
-          autogenerate: { directory: "architecture" },
+          items: [{ autogenerate: { directory: "architecture" } }],
         },
       ],
     }),
