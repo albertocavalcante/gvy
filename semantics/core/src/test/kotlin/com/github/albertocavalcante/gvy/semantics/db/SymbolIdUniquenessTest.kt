@@ -593,17 +593,89 @@ open class SymbolIdUniquenessTest {
     }
 
     @Test
-    @DisplayName("an implicit-this call inside a closure resolves to the enclosing class")
-    fun implicitThisInClosure() {
+    @DisplayName("an implicit-this call inside a closure is unresolved: the closure's delegate may receive it")
+    fun implicitThisInClosureIsUnresolved() {
+        val doc = build(
+            """
+            class R {
+                void append(String s) {}
+                void m(StringBuilder sb) { sb.with { append('x') } }
+            }
+            """,
+        )
+        assertTrue(doc.calls("append").isEmpty(), "with {} sends append to the StringBuilder: ${doc.calls("append")}")
+    }
+
+    @Test
+    @DisplayName("an explicit this call inside a closure still resolves: this is always the enclosing class")
+    fun explicitThisInClosureResolves() {
         val doc = build(
             """
             class A {
                 void foo(int x) {}
-                void run() { def c = { foo(1) }; c() }
+                void run() { def c = { this.foo(1) }; c() }
             }
             """,
         )
         assertEquals(listOf(doc.def("A", "foo(int)")), doc.calls("foo").map { it.symbol })
+    }
+
+    @Test
+    @DisplayName("a name Groovy adds to every object (GDK) is unresolved: find { } calls the GDK find(Closure)")
+    fun gdkNameIsUnresolved() {
+        val doc = build(
+            """
+            class Repo {
+                def find(String id) { id }
+                void run() { this.find { it } }
+            }
+            """,
+        )
+        assertTrue(doc.calls("find").isEmpty(), "got: ${doc.calls("find")}")
+    }
+
+    @Test
+    @DisplayName("a java.lang.Class method called on a class reference is not credited to the class")
+    fun classMethodOnClassReferenceIsUnresolved() {
+        val doc = build(
+            """
+            class Person {
+                static String getName(int x) { "p" }
+                void run() { Person.getName() }
+            }
+            """,
+        )
+        assertTrue(doc.calls("getName").isEmpty(), "got: ${doc.calls("getName")}")
+    }
+
+    @Test
+    @DisplayName("a hierarchy with @Delegate is unknown: its generated methods are candidates too")
+    fun delegateMakesHierarchyUnknown() {
+        val doc = build(
+            """
+            class A {
+                @Delegate List items = []
+                void add(String s) {}
+                void run() { this.add(5) }
+            }
+            """,
+        )
+        assertTrue(doc.calls("add").none { it.symbol == doc.def("A", "add(String)") }, "got: ${doc.calls("add")}")
+    }
+
+    @Test
+    @DisplayName("a class with methodMissing is dynamic: unmatched calls go there, so none are credited")
+    fun methodMissingMakesCallsUnresolved() {
+        val doc = build(
+            """
+            class D {
+                void go(int x) {}
+                def methodMissing(String name, def args) { null }
+                void run() { this.go("s") }
+            }
+            """,
+        )
+        assertTrue(doc.calls("go").isEmpty(), "got: ${doc.calls("go")}")
     }
 
     @Test

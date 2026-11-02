@@ -298,6 +298,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         private val resolver = CallResolver(moduleNode, currentClass, ::lookup)
 
+        // Inside a closure an implicit-this call may be dispatched to the closure's delegate.
+        private var closureDepth = 0
+
         // Id prefix of the method (or initializer) whose body is being visited; scopes locals.
         private var scopeOwnerId: String = "${createClassSymbolId(currentClass)}{init}."
 
@@ -342,6 +345,15 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitBlockStatement(block: BlockStatement) = scoped { super.visitBlockStatement(block) }
 
         override fun visitClosureExpression(expression: ClosureExpression) = scoped {
+            closureDepth++
+            try {
+                visitClosureBody(expression)
+            } finally {
+                closureDepth--
+            }
+        }
+
+        private fun visitClosureBody(expression: ClosureExpression) {
             if (expression.isParameterSpecified) {
                 expression.parameters.forEach { declareLocal(it.name, it, it.type) }
             } else {
@@ -384,7 +396,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             val range = nodeToRange(call)
-            val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it) }
+            val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it, insideClosure = closureDepth > 0) }
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
             }

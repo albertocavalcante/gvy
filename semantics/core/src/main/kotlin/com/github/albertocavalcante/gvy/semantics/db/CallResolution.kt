@@ -127,11 +127,20 @@ internal class CallResolver(
      * an id built from static argument types can equal the real id of a different overload, since
      * the runtime type of an argument may differ from its declared type.
      */
-    fun resolveCall(call: MethodCallExpression, name: String): String? {
-        val start = startClass(call.objectExpression) ?: return null
+    fun resolveCall(call: MethodCallExpression, name: String, insideClosure: Boolean = false): String? {
+        // A closure resolves implicit-this calls through its delegate first in many cases (`with {}`,
+        // DSL builders, @DelegatesTo), so the enclosing class is not known to be the target.
+        if (insideClosure && call.isImplicitThis) return null
+        val receiver = call.objectExpression
+        // `Person.getName()` calls java.lang.Class.getName(), not a Person method.
+        if (receiver is ClassExpression && name in GroovyDispatch.classMethodNames) return null
+        val start = startClass(receiver) ?: return null
         val args = argumentExpressions(call.arguments)
         if (args.any { it is SpreadExpression }) return null
         val hierarchy = hierarchyOf(start) ?: return null
+        // Methods Groovy adds to every object (or to JDK types in the hierarchy) are candidates the
+        // class's own declarations do not show: `repo.find { }` calls the GDK find(Closure).
+        if (GroovyDispatch.isGdkName(name, hierarchy.hasClasspathType)) return null
         val method = hierarchy.methods.filter { it.name == name && Arity.accepts(it, args.size) }.singleOrNull()
         return method?.let { SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it) }
     }
@@ -144,8 +153,11 @@ internal class CallResolver(
             receiverType(receiver)
         }
 
-    /** A class's methods in [hierarchyOf] order, with overridden and implemented ones merged away. */
-    private class Hierarchy(val methods: List<MethodNode>)
+    /**
+     * A class's methods in [hierarchyOf] order, with overridden and implemented ones merged away;
+     * [hasClasspathType] when a compiled (JDK or library) class is part of it.
+     */
+    private class Hierarchy(val methods: List<MethodNode>, val hasClasspathType: Boolean)
 
     /**
      * Collects the methods of [start], its superclass chain and then its interfaces. Returns null
@@ -165,6 +177,7 @@ internal class CallResolver(
         while (node != null && node.name != OBJECT) {
             if (!seen.add(node.name)) break
             val local = localClass(node) ?: return null
+            if (GroovyDispatch.isDynamic(local)) return null
             chain += local
             node = local.unresolvedSuperClass
         }
@@ -176,6 +189,7 @@ internal class CallResolver(
             val next = pending.removeFirst()
             if (!seen.add(next.name)) continue
             val local = localClass(next) ?: return null
+            if (GroovyDispatch.isDynamic(local)) return null
             interfaces += local
             pending.addAll(local.unresolvedInterfaces)
         }
@@ -189,7 +203,7 @@ internal class CallResolver(
                     (it.name to TypeSignatures.parameterList(it.parameters)) in implemented
             }
         }
-        return Hierarchy(classMethods + inherited)
+        return Hierarchy(classMethods + inherited, (chain + interfaces).any { !it.isPrimaryClassNode })
     }
 
     /**
@@ -241,4 +255,52 @@ internal class CallResolver(
         val member = currentClass.getField(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
         return TypeSignatures.knownTypeOrNull(member)
     }
+}
+
+/**
+ * Ways Groovy reaches a method that a class's declared methods do not show. A hierarchy that uses
+ * them is treated as unknown, so its calls stay unresolved rather than risk the wrong id.
+ */
+internal object GroovyDispatch {
+    /** Transforms that add methods to a class or route calls elsewhere. */
+    private val methodAddingAnnotations = setOf("Delegate", "Mixin", "AutoImplement", "Category")
+
+    /** Methods through which Groovy dispatches calls that match no declared method, or all calls. */
+    private val dispatchMethods = setOf("methodMissing", "invokeMethod")
+
+    fun isDynamic(type: ClassNode): Boolean {
+        if (!type.isPrimaryClassNode) return false
+        val annotated = type.annotations.any { it.classNode.nameWithoutPackage in methodAddingAnnotations } ||
+            type.fields.any { field -> field.annotations.any { it.classNode.nameWithoutPackage == "Delegate" } } ||
+            type.properties.any { prop -> prop.field?.annotations?.any { it.classNode.nameWithoutPackage == "Delegate" } == true }
+        val dispatching = type.methods.any { it.name in dispatchMethods } ||
+            type.interfaces.any { it.name == "groovy.lang.GroovyInterceptable" || it.nameWithoutPackage == "GroovyInterceptable" }
+        return annotated || dispatching
+    }
+
+    /** Names of `java.lang.Class` methods. */
+    val classMethodNames: Set<String> by lazy { Class::class.java.methods.mapTo(HashSet()) { it.name } }
+
+    private class GdkNames(val anyObject: Set<String>, val all: Set<String>)
+
+    private val gdk: GdkNames by lazy {
+        val holders = listOf(
+            "org.codehaus.groovy.runtime.DefaultGroovyMethods",
+            "org.codehaus.groovy.runtime.StringGroovyMethods",
+            "org.codehaus.groovy.runtime.IOGroovyMethods",
+            "org.codehaus.groovy.runtime.ResourceGroovyMethods",
+        ).mapNotNull { runCatching { Class.forName(it) }.getOrNull() }
+        val methods = holders.flatMap { holder ->
+            holder.methods.filter { java.lang.reflect.Modifier.isStatic(it.modifiers) && it.parameterCount > 0 }
+        }
+        val forAnyObject = methods.filter { it.parameterTypes[0] == Any::class.java }.mapTo(HashSet()) { it.name }
+        GdkNames(forAnyObject, methods.mapTo(HashSet()) { it.name })
+    }
+
+    /**
+     * True when [name] may be a GDK method on the receiver: one Groovy adds to every object, or, when
+     * the hierarchy includes a compiled JDK/library type, any GDK method (they target such types).
+     */
+    fun isGdkName(name: String, hasClasspathType: Boolean): Boolean =
+        name in gdk.anyObject || (hasClasspathType && name in gdk.all)
 }
