@@ -2,11 +2,12 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 
@@ -23,7 +24,10 @@ import kotlin.io.path.isDirectory
  * of the compilation service to query and update workspace-related information.
  */
 @Suppress("TooManyFunctions")
-class WorkspaceManager {
+class WorkspaceManager(
+    private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
+        ConfigurationFingerprint::compute,
+) {
     private val logger = KotlinLogging.logger {}
 
     // Dependency classpath management
@@ -34,6 +38,17 @@ class WorkspaceManager {
 
     // Project strategy registry for project-type-specific functionality
     private var strategyRegistry: ProjectStrategyRegistry? = null
+
+    // Fingerprint cache. Every mutation of the classpath or source roots bumps [stateVersion] once the mutation
+    // is complete; a cached value is only trusted if it was computed under the current version. A reader that
+    // raced with a mutation therefore stores its (possibly stale) result under an outdated version, which is
+    // never served.
+    private class CachedFingerprint(val version: Long, val value: String)
+
+    private val stateVersion = AtomicLong()
+
+    @Volatile
+    private var cachedFingerprint: CachedFingerprint? = null
 
     /**
      * Sets the project strategy registry.
@@ -60,8 +75,12 @@ class WorkspaceManager {
     fun initializeWorkspace(workspaceRoot: Path) {
         logger.info { "Initializing workspace (non-blocking): $workspaceRoot" }
         this.workspaceRoot = workspaceRoot
-        refreshSourceRoots(workspaceRoot)
-        refreshWorkspaceSources()
+        try {
+            refreshSourceRoots(workspaceRoot)
+            refreshWorkspaceSources()
+        } finally {
+            stateVersion.incrementAndGet()
+        }
     }
 
     fun updateDependencies(newDependencies: List<Path>): Boolean {
@@ -78,10 +97,22 @@ class WorkspaceManager {
                 logger.debug { "Dependencies unchanged" }
             }
         }
+        if (changed) stateVersion.incrementAndGet()
         return changed
     }
 
-    fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>): Boolean {
+    fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>): Boolean =
+        try {
+            applyWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
+        } finally {
+            stateVersion.incrementAndGet()
+        }
+
+    private fun applyWorkspaceModel(
+        workspaceRoot: Path,
+        dependencies: List<Path>,
+        sourceDirectories: List<Path>,
+    ): Boolean {
         this.workspaceRoot = workspaceRoot
 
         val depsChanged = synchronized(dependencyClasspath) {
@@ -180,8 +211,15 @@ class WorkspaceManager {
      * Used for cache coherency - when this changes, cached compilations may be stale.
      * Issue #743: Normalize parse modes and cache authority for cross-file resolution
      */
-    fun getConfigurationFingerprint(): String =
-        ConfigurationFingerprint.compute(dependencyClasspath.toList(), sourceRoots.toList())
+    fun getConfigurationFingerprint(): String {
+        val version = stateVersion.get()
+        cachedFingerprint?.let { if (it.version == version) return it.value }
+
+        val dependencies = synchronized(dependencyClasspath) { dependencyClasspath.toList() }
+        val value = fingerprintComputer(dependencies, sourceRoots.toList())
+        cachedFingerprint = CachedFingerprint(version, value)
+        return value
+    }
 
     /**
      * Gets bounded workspace sources filtered by the given URIs.
@@ -220,13 +258,6 @@ class WorkspaceManager {
                 logger.warn(throwable) { "Failed to convert path to URI: $path" }
                 null
             }
-    }
-
-    private fun rethrowIfCancellationOrError(throwable: Throwable) {
-        when (throwable) {
-            is CancellationException -> throw throwable
-            is Error -> throw throwable
-        }
     }
 
     /**

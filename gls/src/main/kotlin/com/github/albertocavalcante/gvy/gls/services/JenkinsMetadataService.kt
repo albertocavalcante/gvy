@@ -1,13 +1,13 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.build.MavenSourceArtifactResolver
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
 import com.github.albertocavalcante.gvy.jenkins.JenkinsPluginManager
 import com.github.albertocavalcante.gvy.jenkins.extraction.PluginDownloader
 import com.github.albertocavalcante.gvy.jenkins.extraction.PluginsParser
 import com.github.albertocavalcante.gvy.jenkins.metadata.JsonMetadataLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.Path
@@ -28,13 +28,6 @@ class JenkinsMetadataService(
     ),
 ) {
     private val logger = KotlinLogging.logger {}
-
-    private fun rethrowIfCancellationOrError(throwable: Throwable) {
-        when (throwable) {
-            is CancellationException -> throw throwable
-            is Error -> throw throwable
-        }
-    }
 
     suspend fun initialize() {
         val pluginsFileStr = configuration.pluginsFile

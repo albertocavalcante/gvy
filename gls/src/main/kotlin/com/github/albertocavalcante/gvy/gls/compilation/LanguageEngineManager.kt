@@ -6,10 +6,10 @@ import com.github.albertocavalcante.gvy.gls.engine.api.LanguageEngine
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import java.net.URLClassLoader
 import java.util.concurrent.atomic.AtomicReference
 
@@ -115,13 +115,6 @@ class LanguageEngineManager(
                     }
                 currentClassLoader = null
             }
-        }
-    }
-
-    private fun rethrowIfCancellationOrError(throwable: Throwable) {
-        when (throwable) {
-            is CancellationException -> throw throwable
-            is Error -> throw throwable
         }
     }
 }

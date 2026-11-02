@@ -9,8 +9,8 @@ import com.github.albertocavalcante.groovylsp.indexing.scip.ScipWriter
 import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.common.FileExtensions
 import com.github.albertocavalcante.gvy.gls.providers.indexing.ExportIndexParams
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import java.io.FileOutputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -20,13 +20,6 @@ import kotlin.io.path.readText
 
 class IndexExportService(private val buildToolManagerProvider: () -> BuildToolManager?) {
     private val logger = KotlinLogging.logger {}
-
-    private fun rethrowIfCancellationOrError(throwable: Throwable) {
-        when (throwable) {
-            is CancellationException -> throw throwable
-            is Error -> throw throwable
-        }
-    }
 
     fun exportIndex(params: ExportIndexParams, workspaceRoot: Path): String {
         logger.info { "Exporting index format=${params.format} to=${params.outputPath}" }
