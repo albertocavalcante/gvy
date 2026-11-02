@@ -82,16 +82,8 @@
         "title": "Gradle: Select and Run Task"
       },
       {
-        "command": "groovy.gradle.dependencies",
-        "title": "Gradle: Show Dependencies"
-      },
-      {
         "command": "groovy.gradle.refresh",
         "title": "Gradle: Refresh Project"
-      },
-      {
-        "command": "groovy.gradle.projectInfo",
-        "title": "Gradle: Show Project Info"
       },
       {
         "command": "groovy.test.runAll",
