@@ -147,19 +147,19 @@ export class UpdateService {
 
   /**
    * Shows update available notification with actions.
+   *
+   * Only the release page is offered: the server JAR is bundled in the VSIX,
+   * so users update by installing the new gvy-<version>.vsix from the release.
    */
   private async showUpdateAvailable(result: UpdateCheckResult): Promise<void> {
     const latestVersion = result.latestRelease?.version || "unknown";
     const releaseUrl = result.latestRelease?.releaseUrl;
-    const downloadUrl = result.latestRelease?.downloadUrl;
 
     const openReleaseAction = "Open Release";
-    const downloadAction = "Download";
     const dontShowAgainAction = "Don't Show Again";
 
     const actions: string[] = [];
     if (releaseUrl) actions.push(openReleaseAction);
-    if (downloadUrl) actions.push(downloadAction);
     actions.push(dontShowAgainAction);
 
     const action = await window.showInformationMessage(
@@ -169,8 +169,6 @@ export class UpdateService {
 
     if (action === openReleaseAction && releaseUrl) {
       await env.openExternal(Uri.parse(releaseUrl));
-    } else if (action === downloadAction && downloadUrl) {
-      await env.openExternal(Uri.parse(downloadUrl));
     } else if (action === dontShowAgainAction) {
       await workspace
         .getConfiguration("groovy")

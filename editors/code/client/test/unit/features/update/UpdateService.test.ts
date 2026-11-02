@@ -164,7 +164,7 @@ describe("UpdateService", () => {
       assert.include(message, "2.0.0");
       assert.include(message, "1.0.0");
       assert.include(actions, "Open Release");
-      assert.include(actions, "Download");
+      assert.notInclude(actions, "Download");
       assert.include(actions, "Don't Show Again");
       updateService.dispose();
     });
@@ -204,24 +204,10 @@ describe("UpdateService", () => {
       await updateService.checkNow();
 
       assert.isTrue(mockEnv.openExternal.calledOnce);
-      updateService.dispose();
-    });
-
-    it("opens download URL when Download action selected", async () => {
-      const updateService = createUpdateService({
-        checkNowResult: {
-          status: "update-available",
-          currentVersion: "1.0.0",
-          latestRelease: sampleRelease("2.0.0"),
-          checkedAt: Date.now(),
-          source: "network",
-        },
-        showInfoResponse: "Download",
-      });
-
-      await updateService.checkNow();
-
-      assert.isTrue(mockEnv.openExternal.calledOnce);
+      assert.strictEqual(
+        String(mockEnv.openExternal.firstCall.args[0]),
+        sampleRelease("2.0.0").releaseUrl,
+      );
       updateService.dispose();
     });
 
