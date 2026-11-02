@@ -92,7 +92,8 @@ class CompilationCancellationTest {
         val session = CancellingSession(cancelAtCall = 2)
         val orchestrator = orchestrator(session)
 
-        val deferred = async(Dispatchers.Default, start = CoroutineStart.LAZY) { orchestrator.compileTransient(uri, content) }
+        val deferred =
+            async(Dispatchers.Default, start = CoroutineStart.LAZY) { orchestrator.compileTransient(uri, content) }
         session.target.set(deferred)
 
         assertFailsWith<CancellationException> { deferred.await() }

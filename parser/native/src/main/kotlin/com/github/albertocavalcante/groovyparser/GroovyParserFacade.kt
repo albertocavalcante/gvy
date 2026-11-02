@@ -276,6 +276,16 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
         addWorkspaceSources(compilationUnit, request, config, classLoader)
 
+        // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
+        // phase. Its progress callback runs after each phase instead; throwing from it aborts the compile.
+        // CancellationException is not a CompilationFailedException, so it propagates past the catch below.
+        // Groovy also reports per-source progress (context is a SourceUnit) from inside a source operation,
+        // where it would wrap anything thrown in a GroovyBugError; only the per-phase report is used.
+        request.checkCancelled()
+        compilationUnit.progressCallback = CompilationUnit.ProgressCallback { context, _ ->
+            if (context is CompilationUnit) request.checkCancelled()
+        }
+
         var compilationFailed = false
         try {
             compilationUnit.compile(request.compilePhase)
