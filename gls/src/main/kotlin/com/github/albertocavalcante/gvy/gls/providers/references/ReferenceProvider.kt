@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
@@ -187,6 +188,7 @@ class ReferenceProvider(
         val symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
         val includeDeclaration: Boolean,
         val emittedLocations: MutableSet<String>,
+        val textIndexes: MutableMap<String, TextIndex?>,
     )
 
     /**
@@ -286,6 +288,7 @@ class ReferenceProvider(
         includeDeclaration: Boolean,
         emittedLocations: MutableSet<String>,
     ) {
+        val textIndexes = HashMap<String, TextIndex?>()
         visitor.getAllNodes()
             .filter { it.hasValidPosition() }
             .forEach { node ->
@@ -296,6 +299,7 @@ class ReferenceProvider(
                     symbolTable = symbolTable,
                     includeDeclaration = includeDeclaration,
                     emittedLocations = emittedLocations,
+                    textIndexes = textIndexes,
                 )
                 processNode(params)
             }
@@ -353,7 +357,13 @@ class ReferenceProvider(
         }
 
         if (params.includeDeclaration || !isPartOfDeclaration) {
-            emitUniqueLocation(params.node, params.definition.declaredName(), params.visitor, params.emittedLocations)
+            emitUniqueLocation(
+                params.node,
+                params.definition.declaredName(),
+                params.visitor,
+                params.emittedLocations,
+                params.textIndexes,
+            )
         }
     }
 
@@ -408,7 +418,8 @@ class ReferenceProvider(
             // Import nodes
             ImportNode::class,
         )
-        return referenceableTypes.contains(this::class)
+        // Nested classes are InnerClassNode, a ClassNode subclass the exact-class set would miss.
+        return referenceableTypes.contains(this::class) || this is ClassNode
     }
 
     /**
@@ -419,8 +430,9 @@ class ReferenceProvider(
         name: String?,
         visitor: GroovyAstModel,
         seen: MutableSet<String>,
+        textIndexes: MutableMap<String, TextIndex?>,
     ) {
-        val location = node.nameLocation(name, visitor) ?: return
+        val location = node.nameLocation(name, visitor, textIndexes) ?: return
         val key = "${location.uri}:${location.range.start.line}:${location.range.start.character}"
         if (seen.add(key)) {
             send(location)
@@ -433,7 +445,11 @@ class ReferenceProvider(
      * have their own AST nodes; elsewhere the name is found in the compiled source text. Null when
      * the node does not contain the name, so such a node is never reported.
      */
-    private fun ASTNode.nameLocation(name: String?, visitor: GroovyAstModel): Location? {
+    private fun ASTNode.nameLocation(
+        name: String?,
+        visitor: GroovyAstModel,
+        textIndexes: MutableMap<String, TextIndex?>,
+    ): Location? {
         val nodeLocation = toLspLocation(visitor) ?: return null
         if (name == null) return nodeLocation
         val nameNode = when (this) {
@@ -442,8 +458,10 @@ class ReferenceProvider(
             else -> null
         }
         val searchIn = nameNode?.toLspLocation(visitor)?.range ?: nodeLocation.range
-        val text = compilationService.getCompiledContent(URI.create(nodeLocation.uri)) ?: return nodeLocation
-        return firstNameOccurrence(text, searchIn, name)?.let { Location(nodeLocation.uri, it) }
+        val index = textIndexes.getOrPut(nodeLocation.uri) {
+            compilationService.getCompiledContent(URI.create(nodeLocation.uri))?.let(::TextIndex)
+        } ?: return nodeLocation
+        return firstNameOccurrence(index, searchIn, name)?.let { Location(nodeLocation.uri, it) }
     }
 
     /**

@@ -56,8 +56,15 @@ steps:
         - jsonPath: $
           expect:
             type: SIZE
-            value: 5
-            message: "Should find 5 references to Calculator class (decl + 2 usages with constructor/type duality)"
+            value: 3
+            message: "Declaration + 2 'new Calculator()' uses, each reported once as the class name"
+        - jsonPath: $[*].range.start
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - { line: 0, character: 6 }
+              - { line: 6, character: 16 }
+              - { line: 7, character: 16 }
 
   # Test 2: Find references to a method
   - request:

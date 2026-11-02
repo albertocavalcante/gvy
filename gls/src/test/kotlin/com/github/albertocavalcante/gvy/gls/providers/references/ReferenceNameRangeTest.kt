@@ -17,8 +17,8 @@ class ReferenceNameRangeTest {
     private val service = GroovyCompilationService()
     private val uri = URI.create("file:///refs/Sample.groovy")
 
-    private suspend fun references(content: String, line: Int, column: Int): List<Pair<Int, Int>> {
-        service.compile(uri, content)
+    private suspend fun references(content: String, line: Int, column: Int, phase: Int? = null): List<Pair<Int, Int>> {
+        if (phase == null) service.compile(uri, content) else service.compile(uri, content, compilePhase = phase)
         val locations: List<Location> = ReferenceProvider(service)
             .provideReferences(uri.toString(), Position(line, column), includeDeclaration = true)
             .toList()
@@ -80,5 +80,93 @@ class ReferenceNameRangeTest {
         val refs = references(content, 1, 12)
 
         assertEquals(listOf(1 to 11, 2 to 27), refs)
+    }
+
+    @Test
+    fun `nested class references use the simple name`(): Unit = runBlocking {
+        val content = """
+            class Outer {
+                static class Inner {}
+                def make() { new Inner() }
+            }
+            def i = new Outer.Inner()
+        """.trimIndent()
+
+        val refs = references(content, 1, 18)
+
+        assertEquals(listOf(1 to 17, 2 to 21, 4 to 18), refs)
+    }
+
+    @Test
+    fun `a trait method is reached through a class that implements the trait`(): Unit = runBlocking {
+        val content = """
+            trait T {
+                String greet() { "hi" }
+            }
+            class C implements T {}
+            def r = new C().greet()
+        """.trimIndent()
+
+        val refs = references(content, 1, 12)
+
+        assertEquals(listOf(1 to 11, 4 to 16), refs)
+    }
+
+    @Test
+    fun `typed calls still match when the file only compiled to conversion`(): Unit = runBlocking {
+        val content = """
+            package p
+            import spock.lang.Specification
+            class C extends Specification {
+                void m() {}
+            }
+            def r = new C().m()
+        """.trimIndent()
+
+        val refs = references(content, 3, 10, phase = org.codehaus.groovy.control.Phases.CONVERSION)
+
+        assertEquals(listOf(3 to 9, 5 to 16), refs)
+    }
+
+    @Test
+    fun `annotation strings are not mistaken for the field name`(): Unit = runBlocking {
+        val content = """
+            class Dto {
+                @SuppressWarnings("id") Long id
+                Long next() { return id }
+            }
+        """.trimIndent()
+
+        val refs = references(content, 1, 33)
+
+        assertEquals(listOf(1 to 33, 2 to 25), refs)
+    }
+
+    @Test
+    fun `annotation arguments are not mistaken for the method name`(): Unit = runBlocking {
+        val content = """
+            class A {
+                @Deprecated(since = "foo") void foo() {}
+                void run() { foo() }
+            }
+        """.trimIndent()
+
+        val refs = references(content, 1, 37)
+
+        assertEquals(listOf(1 to 36, 2 to 17), refs)
+    }
+
+    @Test
+    fun `a spread call reaches the method on each element`(): Unit = runBlocking {
+        val content = """
+            class C {
+                void foo() {}
+            }
+            def r = [new C()]*.foo()
+        """.trimIndent()
+
+        val refs = references(content, 1, 13)
+
+        assertEquals(listOf(1 to 9, 3 to 19), refs)
     }
 }

@@ -136,6 +136,37 @@ class RenameProviderTest {
     }
 
     @Test
+    fun `renaming a field leaves the same word in its annotation string alone`(): Unit = runBlocking {
+        val content = """
+            class Dto {
+                @SuppressWarnings("id") Long id
+                Long next() { return id }
+            }
+        """.trimIndent()
+
+        val result = renameAndApply(content, Position(1, 33), "key")
+
+        assertEquals(
+            content.replace("Long id", "Long key").replace("return id", "return key"),
+            result,
+        )
+    }
+
+    @Test
+    fun `renaming a method leaves the same word in its annotation argument alone`(): Unit = runBlocking {
+        val content = """
+            class A {
+                @Deprecated(since = "foo") void foo() {}
+                void run() { foo() }
+            }
+        """.trimIndent()
+
+        val result = renameAndApply(content, Position(1, 37), "bar")
+
+        assertEquals(content.replace("void foo()", "void bar()").replace("{ foo() }", "{ bar() }"), result)
+    }
+
+    @Test
     fun `renaming a class from its declaration changes only the name and its uses`(): Unit = runBlocking {
         val content = """
             class Service {

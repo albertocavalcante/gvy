@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -179,10 +180,6 @@ class RenameProvider(
     }
 
     /**
-     * Get the symbol name from an AST node.
-     */
-
-    /**
      * Narrows [locations] to occurrences of [name]. The definition is narrowed to its name (the
      * first occurrence in the declaration). Any other location that contains another reported
      * location is an enclosing node, not a reference, and is dropped: narrowing it could land on a
@@ -195,10 +192,11 @@ class RenameProvider(
                 logger.warn { "Cannot read $uri; skipping ${locs.size} rename location(s) there" }
                 return@flatMap emptyList()
             }
+            val index = TextIndex(text)
             locs.filter { loc ->
                 loc.isSameAs(definition) ||
                     locs.none { other -> other !== loc && loc.range.strictlyContains(other.range) }
-            }.mapNotNull { loc -> firstNameOccurrence(text, loc.range, name)?.let { Location(uri, it) } }
+            }.mapNotNull { loc -> firstNameOccurrence(index, loc.range, name)?.let { Location(uri, it) } }
                 .distinctBy { it.range.start.line to it.range.start.character }
         }
 
