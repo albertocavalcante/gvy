@@ -7,16 +7,14 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
-import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
-import org.codehaus.groovy.ast.expr.GStringExpression
-import org.codehaus.groovy.ast.expr.ListExpression
-import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.SpreadExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.transform.trait.Traits
 
 /**
  * Erased type names used in method symbol ids.
@@ -35,95 +33,22 @@ internal object TypeSignatures {
     fun parameterList(parameters: Array<Parameter>?): String =
         parameters.orEmpty().joinToString(",") { erasedName(it.type) }
 
-    fun parameterList(types: List<ClassNode?>): String = types.joinToString(",") { erasedName(it) }
-
     /** The type itself, or null when it says nothing (`def`, `Object`), i.e. the value is dynamic. */
     fun knownTypeOrNull(type: ClassNode?): ClassNode? = type?.takeUnless {
         it.name == "java.lang.Object" || it.name == "Object" || it.isGenericsPlaceHolder
     }
 }
 
-/**
- * Picks the overload a call invokes, using only what is known statically.
- *
- * 1. Keep the overloads whose arity can take the call (default values and varargs counted).
- * 2. One left: that is the one, whatever the argument types (Groovy dispatches dynamically anyway).
- * 3. Several left and every argument type is known: an exact erased match wins, otherwise the single
- *    overload all arguments are assignable to.
- * 4. Anything else is ambiguous and yields null; a wrong guess would corrupt rename and references.
- */
-internal object OverloadResolver {
-    private val numericWidening = listOf("byte", "short", "int", "long", "float", "double")
+private const val OBJECT = "java.lang.Object"
 
-    fun choose(candidates: List<MethodNode>, argTypes: List<ClassNode?>): MethodNode? {
-        val byArity = candidates.filter { acceptsArity(it, argTypes.size) }
-        return when {
-            byArity.isEmpty() -> null
-            // Arity alone never decides when the arguments are known and cannot be passed.
-            byArity.size == 1 -> byArity.single().takeUnless { ruledOut(it, argTypes) }
-            argTypes.any { it == null } -> null
-            else -> chooseByTypes(byArity, argTypes.filterNotNull())
-        }
-    }
-
-    private fun ruledOut(method: MethodNode, argTypes: List<ClassNode?>): Boolean =
-        argTypes.withIndex().any { (i, arg) -> arg != null && fits(method, i, arg) == false }
-
-    private fun chooseByTypes(candidates: List<MethodNode>, args: List<ClassNode>): MethodNode? {
-        val wanted = TypeSignatures.parameterList(args)
-        return candidates.singleOrNull { TypeSignatures.parameterList(it.parameters) == wanted }
-            ?: candidates.singleOrNull { method -> args.indices.all { fits(method, it, args[it]) == true } }
-    }
-
-    private fun acceptsArity(method: MethodNode, argCount: Int): Boolean {
+/** Whether a method can be invoked with a given number of arguments, by declaration alone. */
+internal object Arity {
+    /** Default-valued parameters widen the range to `required..size`; a varargs last parameter takes any extra. */
+    fun accepts(method: MethodNode, argCount: Int): Boolean {
         val params = method.parameters.orEmpty()
         val required = params.count { !it.hasInitialExpression() }
         val varargs = params.lastOrNull()?.type?.isArray == true
         return argCount in required..params.size || (varargs && argCount >= params.size - 1)
-    }
-
-    /** True or false when decidable from what is loaded, null when the types cannot be compared. */
-    private fun fits(method: MethodNode, index: Int, arg: ClassNode): Boolean? {
-        val params = method.parameters
-        val last = params.lastOrNull()?.type
-        val param = params.getOrNull(index)?.type ?: last ?: return null
-        val atVarargs = last?.isArray == true && index >= params.size - 1
-        val direct = fitsType(param, arg)
-        return if (atVarargs && direct != true) fitsType(last.componentType, arg) ?: direct else direct
-    }
-
-    @Suppress("ReturnCount")
-    private fun fitsType(param: ClassNode, arg: ClassNode): Boolean? {
-        if (param.isGenericsPlaceHolder || param.name == "java.lang.Object" || param.name == "Object") return true
-        val p = canonical(param) ?: return null
-        val a = canonical(arg) ?: return null
-        val paramName = ClassHelper.getUnwrapper(p).name
-        val argName = ClassHelper.getUnwrapper(a).name
-        return when {
-            paramName == argName -> true
-            paramName == "java.lang.String" && a.name == "groovy.lang.GString" -> true
-            paramName in numericWidening && argName in numericWidening ->
-                numericWidening.indexOf(argName) <= numericWidening.indexOf(paramName)
-            else -> derives(a, p)
-        }
-    }
-
-    private fun derives(arg: ClassNode, param: ClassNode): Boolean? {
-        if (!decidable(param) || !decidable(arg)) return null
-        return runCatching {
-            val pw = ClassHelper.getWrapper(param)
-            val aw = ClassHelper.getWrapper(arg)
-            aw.isDerivedFrom(pw) || aw.implementsInterface(pw)
-        }.getOrDefault(false)
-    }
-
-    private fun decidable(type: ClassNode): Boolean =
-        ClassHelper.isPrimitiveType(type) || type.name.startsWith("java.") || type.name == "groovy.lang.GString"
-
-    /** The type with a qualified name, or null for a name the compiler has not resolved yet. */
-    private fun canonical(type: ClassNode): ClassNode? = when {
-        type.isArray || type.name.contains('.') || ClassHelper.isPrimitiveType(type) -> type
-        else -> runCatching { ClassHelper.make(Class.forName("java.lang.${type.name}")) }.getOrNull()
     }
 }
 
@@ -174,60 +99,116 @@ internal class CallResolver(
     }
 
     /**
-     * Resolve a call to the id of the method it invokes, or null when that cannot be known statically.
+     * Resolves a call to the id of the method it invokes, or null when that is not certain.
      *
-     * Policy: a call on a receiver with no declared or inferred type is never attributed to a class.
-     * When the receiver's methods are visible, pick the overload by arity, then by static argument
-     * types; when several overloads still fit, leave the call unresolved rather than guess.
-     * When the receiver's methods are not visible (the class lives in another file), the id is built
-     * from the static argument types and only exists if every argument has one.
+     * Renames are driven by these ids, so crediting a call to the wrong method is worse than missing
+     * one. A call is therefore attributed only when its target is uniquely determined:
+     *
+     * 1. The receiver has a declared or inferred type (`this`, `super`, a class name, a typed
+     *    variable, field, or `new X()`); an untyped receiver is never attributed.
+     * 2. Every class and interface of the receiver's hierarchy (the superclass chain first, then
+     *    interfaces and traits, cycles guarded) is visible in this compilation: declared in this
+     *    module, or in another source file the compiler resolved to its source class (a workspace
+     *    unit compiled with all workspace sources). So no unseen supertype can declare another
+     *    candidate. A supertype that is only a name (another file that is not part of the
+     *    compilation) or a classpath class makes the call unresolved.
+     * 3. Exactly one method of that name has an arity that can take the call (default parameters
+     *    count as a `min..max` range, a varargs last parameter takes any count of at least
+     *    `params - 1`). The call is unresolved if any argument is a spread, as its arity is unknown.
+     *    An override in the superclass chain is one method, the nearest declaration; an interface or
+     *    trait method counts separately unless it is abstract and a class in the chain implements it.
+     *
+     * The id is that of the declaring class's method. Argument types are never consulted: Groovy
+     * dispatches on runtime types and coerces freely (`1.5` to `double`, a list literal to
+     * `ArrayList`), so static types cannot choose between overloads without reimplementing Groovy's
+     * method selection. With a single candidate they need not: that method is the only target.
+     *
+     * A callee class that is not visible (declared in another file) yields no occurrence either:
+     * an id built from static argument types can equal the real id of a different overload, since
+     * the runtime type of an argument may differ from its declared type.
      */
     fun resolveCall(call: MethodCallExpression, name: String): String? {
-        val receiver = receiverType(call.objectExpression) ?: return null
-        val argTypes = argumentExpressions(call.arguments).map { staticTypeOf(it) }
-        val target = declaredClass(receiver)
-        val hierarchy = hierarchyOf(target)
-        val candidates = hierarchy.methods
-            .filter { it.name == name }
-            .distinctBy { TypeSignatures.parameterList(it.parameters) }
-        return when {
-            candidates.isNotEmpty() ->
-                OverloadResolver.choose(candidates, argTypes)?.let {
-                    SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it)
-                }
-            hierarchy.complete -> null // every class in the chain is known and none has such a method
-            argTypes.any { it == null } -> null
-            else -> "${resolveTypeName(receiver)}#$name(${TypeSignatures.parameterList(argTypes)})."
-        }
+        val start = startClass(call.objectExpression) ?: return null
+        val args = argumentExpressions(call.arguments)
+        if (args.any { it is SpreadExpression }) return null
+        val hierarchy = hierarchyOf(start) ?: return null
+        val method = hierarchy.methods.filter { it.name == name && Arity.accepts(it, args.size) }.singleOrNull()
+        return method?.let { SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it) }
     }
 
-    /** Methods of a class, then of its superclasses and interfaces, nearest first. */
-    private class Hierarchy(val methods: List<MethodNode>, val complete: Boolean)
+    /** The class whose hierarchy is searched: the superclass for `super`, else the receiver's class. */
+    private fun startClass(receiver: Expression): ClassNode? =
+        if (receiver is VariableExpression && receiver.isSuperExpression) {
+            currentClass.unresolvedSuperClass
+        } else {
+            receiverType(receiver)
+        }
+
+    /** A class's methods in [hierarchyOf] order, with overridden and implemented ones merged away. */
+    private class Hierarchy(val methods: List<MethodNode>)
 
     /**
-     * Walks [start] and everything it extends or implements. Supertypes declared in this file are
-     * looked up in the module (before resolution their ClassNodes are empty stubs); [Hierarchy.complete]
-     * is false when a supertype lives elsewhere, so its methods are not visible.
+     * Collects the methods of [start], its superclass chain and then its interfaces. Returns null
+     * unless every class involved is visible, see [localClass]: before resolution a supertype's
+     * ClassNode is an empty stub, so it is looked up in the module by name. `java.lang.Object` is the one
+     * exception, as its methods are known.
      */
-    private fun hierarchyOf(start: ClassNode): Hierarchy {
+    // Built once per class per document: a JDK receiver type has a deep hierarchy and is called often.
+    private val hierarchies = HashMap<String, Hierarchy?>()
+
+    private fun hierarchyOf(start: ClassNode): Hierarchy? = hierarchies.getOrPut(start.name) { buildHierarchy(start) }
+
+    private fun buildHierarchy(start: ClassNode): Hierarchy? {
         val seen = HashSet<String>()
-        val methods = ArrayList<MethodNode>()
-        var complete = true
-        val queue = ArrayDeque(listOf(start))
-        while (queue.isNotEmpty()) {
-            val node = queue.removeFirst()
-            if (node.name == "java.lang.Object" || !seen.add(node.name)) continue
-            val local = moduleNode.classes.firstOrNull {
-                it.name == node.name || (!node.name.contains('.') && it.nameWithoutPackage == node.name)
-            }
-            if (local == null) complete = false
-            val resolved = local ?: node.redirect()
-            methods += resolved.methods
-            resolved.unresolvedSuperClass?.let(queue::addLast)
-            resolved.unresolvedInterfaces.forEach(queue::addLast)
+        val chain = ArrayList<ClassNode>()
+        var node: ClassNode? = start
+        while (node != null && node.name != OBJECT) {
+            if (!seen.add(node.name)) break
+            val local = localClass(node) ?: return null
+            chain += local
+            node = local.unresolvedSuperClass
         }
-        return Hierarchy(methods, complete)
+        if (chain.isEmpty()) return null
+        val interfaces = ArrayList<ClassNode>()
+        val pending = ArrayDeque<ClassNode>()
+        chain.forEach { pending.addAll(it.unresolvedInterfaces) }
+        while (pending.isNotEmpty()) {
+            val next = pending.removeFirst()
+            if (!seen.add(next.name)) continue
+            val local = localClass(next) ?: return null
+            interfaces += local
+            pending.addAll(local.unresolvedInterfaces)
+        }
+        val classMethods = (chain.flatMap(::declared) + ClassHelper.OBJECT_TYPE.methods)
+            .distinctBy { it.name + "(" + TypeSignatures.parameterList(it.parameters) + ")" }
+        val implemented = classMethods.map { it.name to TypeSignatures.parameterList(it.parameters) }.toSet()
+        // A trait method is woven into the implementing class, so it overrides the superclass's: never merged.
+        val inherited = interfaces.flatMap { type ->
+            declared(type).filterNot {
+                !Traits.isTrait(type) && it.isAbstract &&
+                    (it.name to TypeSignatures.parameterList(it.parameters)) in implemented
+            }
+        }
+        return Hierarchy(classMethods + inherited)
     }
+
+    /**
+     * The methods [type] declares. For a source class only those written in the source (ones a transform
+     * added, trait forwarders say, have no position); for a compiled classpath class all of them, so an
+     * inherited `ArrayList.add(E)` still makes a local `add(String)` ambiguous.
+     */
+    private fun declared(type: ClassNode): List<MethodNode> =
+        if (type.isPrimaryClassNode) type.methods.filter { it.lineNumber > 0 } else type.methods
+
+    /**
+     * The class [type] names, or null when it is not fully known (a name-only stub). Known means: in
+     * this module; a class of another file the compiler resolved to its source ClassNode (a workspace
+     * unit compiled to SEMANTIC_ANALYSIS does so for every source in the unit); or a compiled classpath
+     * class, such as a script's `groovy.lang.Script`, whose methods all come from its bytecode.
+     */
+    private fun localClass(type: ClassNode): ClassNode? = moduleNode.classes.firstOrNull {
+        it.name == type.name || (!type.name.contains('.') && it.nameWithoutPackage == type.name)
+    } ?: type.redirect().takeIf { it.isPrimaryClassNode || it.isResolved }
 
     /** The class a member access is made on, or null when the receiver has no known static type. */
     fun receiverType(receiver: Expression): ClassNode? = when {
@@ -245,17 +226,12 @@ internal class CallResolver(
     private fun argumentExpressions(arguments: Expression): List<Expression> =
         if (arguments is TupleExpression) arguments.expressions else listOf(arguments)
 
-    /** The class whose methods describe [type]: a class from this file, else the (possibly loaded) type. */
-    private fun declaredClass(type: ClassNode): ClassNode = moduleNode.classes.firstOrNull {
-        it.name == type.name || (!type.name.contains('.') && it.nameWithoutPackage == type.name)
-    } ?: type.redirect()
-
     /** The statically known type of [expression] as a value, or null when it is dynamic. */
     private fun staticTypeOf(expression: Expression): ClassNode? = when (expression) {
         is VariableExpression -> variableType(expression)
         is ConstructorCallExpression -> expression.type.takeUnless { expression.isUsingAnonymousInnerClass }
         is CastExpression -> TypeSignatures.knownTypeOrNull(expression.type)
-        else -> literalType(expression)
+        else -> null
     }
 
     private fun variableType(variable: VariableExpression): ClassNode? {
@@ -264,16 +240,5 @@ internal class CallResolver(
         if (binding != null) return binding.type
         val member = currentClass.getField(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
         return TypeSignatures.knownTypeOrNull(member)
-    }
-
-    private fun literalType(expression: Expression): ClassNode? = when (expression) {
-        // Literals are primitives to Groovy's static view (`add(5)` fits `add(int)`).
-        is ConstantExpression ->
-            if (expression.isNullExpression) null else ClassHelper.getUnwrapper(expression.type)
-        is ClassExpression -> ClassHelper.CLASS_Type
-        is GStringExpression -> ClassHelper.GSTRING_TYPE
-        is ListExpression -> ClassHelper.LIST_TYPE
-        is MapExpression -> ClassHelper.MAP_TYPE
-        else -> null
     }
 }

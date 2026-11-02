@@ -503,10 +503,10 @@ class SemanticDocumentBuilderTest {
         }
 
         @Test
-        fun `method call on typed variable uses declared type for symbol ID`() {
-            // When we have "Calculator calc = new Calculator()", the declared type is Calculator.
-            // When calling calc.add(), the symbol should be "Calculator#add()", not "Main#add()".
-            // This is critical for cross-file go-to-definition to work correctly.
+        fun `method call on a type from another file is not attributed`() {
+            // The callee's overloads are not visible, and an id built from the static argument types can
+            // equal the real id of a different overload (Groovy dispatches on runtime types), so the call
+            // yields no occurrence. It must in particular never be credited to Main.
             val code = """
                 class Main {
                     void run() {
@@ -519,16 +519,7 @@ class SemanticDocumentBuilderTest {
             val doc = buildDocument(code)
 
             val calls = doc.findOccurrencesByRole(OccurrenceRole.CALL)
-
-            // Find the method call for 'add'
-            val addCall = calls.firstOrNull { it.symbol.contains("add") }
-            assertNotNull(addCall, "Should find 'add' method call occurrence")
-
-            // CRITICAL: The symbol should reference Calculator, not Main
-            assertTrue(
-                addCall!!.symbol.contains("Calculator"),
-                "Method call symbol should reference the declared type Calculator, not Main. Got: ${addCall.symbol}",
-            )
+            assertTrue(calls.none { it.symbol.contains("add") }, "Got: ${calls.map { it.symbol }}")
         }
 
         @Test
