@@ -43,7 +43,7 @@ internal class WorkspaceIndexer(
         client: LanguageClient?,
         onStatusUpdate: StatusUpdateCallback,
         strategyInitJobs: List<Job>,
-        config: ServerConfiguration = ServerConfiguration(),
+        config: ServerConfiguration,
     ) {
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
@@ -136,7 +136,8 @@ internal class WorkspaceIndexer(
                     type = MessageType.Info
                     message = "Workspace has $total files, over the limit of $limit, so the whole workspace " +
                         "is not compiled up front; files are compiled when opened. " +
-                        "Raise the limit with the setting groovy.compilation.maxWorkspaceFiles."
+                        "To raise the limit, change groovy.compilation.maxWorkspaceFiles and restart the " +
+                        "server (or reload the window); the limit is read once at startup."
                 },
             )
         }

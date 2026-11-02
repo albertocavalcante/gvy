@@ -71,6 +71,7 @@ class WorkspaceIndexerLimitTest {
         }
         assertEquals(1, infos.size)
         assertTrue("6" in infos.single().message && "5" in infos.single().message)
+        assertTrue("restart" in infos.single().message, "message must say a restart is needed")
     }
 
     @Test
