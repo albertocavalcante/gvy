@@ -14,9 +14,15 @@ function deferred(): Deferred {
 }
 
 const State = { Stopped: 1, Starting: 3, Running: 2 };
+const CloseAction = { DoNotRestart: 1, Restart: 2 };
+
+interface FakeErrorHandler {
+  closed: () => { action: number; handled?: boolean };
+}
 
 interface FakeClientOptions {
   outputChannel?: unknown;
+  errorHandler?: FakeErrorHandler;
 }
 
 class FakeClient {
@@ -24,6 +30,14 @@ class FakeClient {
   static nextStart: (() => Promise<void>) | undefined;
   state = State.Stopped;
   initializeResult: unknown = { serverInfo: { name: "gls", version: "9.9.9" } };
+  static spawnLate = false;
+  serverProcess: { kill: sinon.SinonStub } | undefined = FakeClient.spawnLate
+    ? undefined
+    : { kill: sinon.stub() };
+  createDefaultErrorHandler = () => ({
+    error: () => ({ action: 1 }),
+    closed: () => ({ action: CloseAction.Restart }),
+  });
   stop = sinon.stub().callsFake(async () => {
     if (this.state !== State.Running) {
       throw new Error(`Client is not running and can't be stopped. It's current state is: ${this.state}`);
@@ -69,10 +83,13 @@ describe("server/client lifecycle", () => {
   let showJavaError: sinon.SinonStub;
   let setServerVersion: sinon.SinonStub;
   let createOutputChannel: sinon.SinonStub;
+  let startTimeoutSeconds: number;
 
   beforeEach(() => {
     FakeClient.instances = [];
     FakeClient.nextStart = undefined;
+    FakeClient.spawnLate = false;
+    startTimeoutSeconds = 120;
     watchers = [];
     validateJava = sinon.stub().resolves({
       isValid: true,
@@ -103,7 +120,7 @@ describe("server/client lifecycle", () => {
 
     mod = proxyquire.noCallThru()("../../../src/server/client", {
       vscode: vscodeMock,
-      "vscode-languageclient/node": { LanguageClient: FakeClient, State },
+      "vscode-languageclient/node": { LanguageClient: FakeClient, State, CloseAction },
       "../java/validator": {
         validateJava,
         showJavaError,
@@ -114,7 +131,7 @@ describe("server/client lifecycle", () => {
         getStatusBarManager: () => ({ setOutputChannel: sinon.stub(), setServerVersion }),
       },
       "../configuration/settings": {
-        getConfiguration: () => ({ serverPath: undefined }),
+        getConfiguration: () => ({ serverPath: undefined, startTimeoutSeconds }),
       },
       "../services/ServerResolver": {
         ServerResolver: class {
@@ -207,5 +224,69 @@ describe("server/client lifecycle", () => {
   it("reports the server version from the initialize result", async () => {
     await mod.startClient();
     assert.ok(setServerVersion.calledWith("9.9.9"));
+  });
+
+  it("gives up on a start that never completes and kills its server", async () => {
+    startTimeoutSeconds = 0.02;
+    FakeClient.nextStart = () => new Promise(() => {}); // initialize never answered
+    await assert.rejects(mod.startClient(), /did not start within/);
+    const [hung] = FakeClient.instances;
+    assert.ok(hung.serverProcess?.kill.calledOnce, "the hung JVM must be killed");
+    assert.strictEqual(
+      hung.clientOptions.errorHandler?.closed().action,
+      CloseAction.DoNotRestart,
+      "the client must not respawn the server it was told to abandon",
+    );
+    assert.strictEqual(mod.getClient(), undefined);
+  });
+
+  it("keeps Stop and Restart usable after a start hangs", async () => {
+    startTimeoutSeconds = 0.02;
+    FakeClient.nextStart = () => new Promise(() => {});
+    const hung = mod.startClient().catch(() => undefined);
+    await mod.stopClient(); // queued behind the hung start; must not block
+    await hung;
+    startTimeoutSeconds = 120;
+    await mod.restartClient();
+    assert.strictEqual(FakeClient.instances.length, 2);
+    assert.strictEqual(mod.getClient()?.state, State.Running);
+  });
+
+  it("lets the default error handler decide restarts for a healthy client", async () => {
+    await mod.startClient();
+    const [client] = FakeClient.instances;
+    assert.strictEqual(client.clientOptions.errorHandler?.closed().action, CloseAction.Restart);
+  });
+
+  it("waits indefinitely when the start timeout is 0", async () => {
+    startTimeoutSeconds = 0;
+    FakeClient.nextStart = () => new Promise((r) => setTimeout(r, 40));
+    await mod.startClient();
+    assert.strictEqual(mod.getClient()?.state, State.Running);
+  });
+
+  it("kills a server spawned only after its start timed out", async () => {
+    startTimeoutSeconds = 0.02;
+    FakeClient.spawnLate = true; // still resolving its working directory
+    FakeClient.nextStart = () => new Promise(() => {});
+    await assert.rejects(mod.startClient(), /did not start within/);
+    const [late] = FakeClient.instances;
+    const proc = { kill: sinon.stub() };
+    late.serverProcess = proc;
+    await new Promise((r) => setTimeout(r, 700));
+    assert.ok(proc.kill.calledOnce, "the late JVM must be killed");
+  });
+
+  it("stops a timed-out client whose start completes later", async () => {
+    startTimeoutSeconds = 0.02;
+    FakeClient.spawnLate = true;
+    const late = deferred();
+    FakeClient.nextStart = () => late.promise;
+    await assert.rejects(mod.startClient(), /did not start within/);
+    const [client] = FakeClient.instances;
+    late.resolve();
+    await new Promise((r) => setTimeout(r, 10));
+    assert.ok(client.stop.called, "an abandoned client must not keep running");
+    assert.strictEqual(client.state, State.Stopped);
   });
 });

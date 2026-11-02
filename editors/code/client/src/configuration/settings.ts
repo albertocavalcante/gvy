@@ -5,6 +5,8 @@ export interface GroovyConfiguration {
   traceServer: "off" | "messages" | "verbose";
   maxNumberOfProblems: number;
   serverPath: string | undefined;
+  /** Seconds to wait for the server to start; 0 waits indefinitely. */
+  startTimeoutSeconds: number;
 }
 
 /**
@@ -23,7 +25,23 @@ export function getConfiguration(): GroovyConfiguration {
     ),
     maxNumberOfProblems: config.get<number>("server.maxNumberOfProblems", 100),
     serverPath: config.get<string>("server.path"),
+    startTimeoutSeconds: startTimeoutFrom(
+      config.get<unknown>("server.startTimeoutSeconds"),
+    ),
   };
+}
+
+const DEFAULT_START_TIMEOUT_SECONDS = 120;
+
+/** setTimeout clamps longer delays (2^31-1 ms) to 1 ms. */
+const MAX_START_TIMEOUT_SECONDS = 2147483;
+
+function startTimeoutFrom(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return DEFAULT_START_TIMEOUT_SECONDS;
+  }
+  // Longer than ~24.8 days is "no limit" in practice.
+  return value > MAX_START_TIMEOUT_SECONDS ? 0 : value;
 }
 
 /**
@@ -71,6 +89,8 @@ export const CLIENT_ONLY_SETTINGS: readonly string[] = [
   "configuration.runtimes",
   // vscode-languageclient reads <client id>.trace.server itself.
   "trace.server",
+  // Read at the next start.
+  "server.startTimeoutSeconds",
   "statusBar.show",
   "statusBar.clickAction",
   "update.checkOnStartup",

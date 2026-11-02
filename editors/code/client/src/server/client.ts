@@ -1,9 +1,12 @@
 import * as vscode from 'vscode';
 import { workspace, ExtensionContext, window, commands } from 'vscode';
 import {
+    CloseAction,
+    ErrorHandler,
     LanguageClient,
     LanguageClientOptions,
-    ServerOptions
+    ServerOptions,
+    State
 } from 'vscode-languageclient/node';
 import { validateJava, showJavaError, getJavaExecutable } from '../java/validator';
 import { setClient, getStatusBarManager } from '../ui/statusBar';
@@ -55,6 +58,73 @@ const startedListeners = new Set<() => void>();
 export function onClientStarted(listener: () => void): vscode.Disposable {
     startedListeners.add(listener);
     return { dispose: () => startedListeners.delete(listener) };
+}
+
+/**
+ * Error handler that defers to the client's default (restart a crashed server
+ * a few times) until the client is abandoned, after which the closed
+ * connection must not respawn the server we just killed.
+ */
+function abandonableErrorHandler(
+    fallback: () => ErrorHandler,
+    isAbandoned: () => boolean,
+): ErrorHandler {
+    return {
+        error: (error, message, count) => fallback().error(error, message, count),
+        closed: () =>
+            isAbandoned()
+                ? { action: CloseAction.DoNotRestart, handled: true }
+                : fallback().closed(),
+    };
+}
+
+/**
+ * Resolves with `start`, or rejects after `seconds` (0 disables the limit).
+ * vscode-languageclient cannot stop a client that is still starting, so
+ * without a limit a server that never answers `initialize` would hold the
+ * serialized lifecycle, and with it Stop and Restart, forever.
+ */
+function withStartTimeout(start: Promise<void>, seconds: number): Promise<void> {
+    if (!(seconds > 0)) {
+        return start;
+    }
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+            () => reject(new Error(
+                `Server did not start within ${seconds} seconds (groovy.server.startTimeoutSeconds)`,
+            )),
+            seconds * 1000,
+        );
+    });
+    return Promise.race([start, timeout]).finally(() => clearTimeout(timer));
+}
+
+const LATE_SPAWN_POLL_MS = 250;
+const LATE_SPAWN_POLL_LIMIT = 120; // 30 s
+
+/**
+ * Ends a client whose start timed out. stop() refuses a starting client, so
+ * its JVM is killed directly and the closed connection fails the start. The
+ * JVM may not exist yet (the client spawns it after resolving its working
+ * directory), so a late spawn is killed when it appears, and a start that
+ * still completes is stopped.
+ */
+function abandonStartingClient(target: LanguageClient, starting: Promise<void>): void {
+    starting.then(
+        () => target.stop().catch(() => undefined),
+        () => undefined,
+    );
+    let polls = 0;
+    const killWhenSpawned = () => {
+        const proc = target.serverProcess;
+        if (proc) {
+            proc.kill();
+        } else if (target.state === State.Starting && ++polls < LATE_SPAWN_POLL_LIMIT) {
+            setTimeout(killWhenSpawned, LATE_SPAWN_POLL_MS).unref?.();
+        }
+    };
+    killWhenSpawned();
 }
 
 function serialize<T>(operation: () => Promise<T>): Promise<T> {
@@ -315,15 +385,22 @@ async function doStart(): Promise<void> {
     try {
         const serverOptions = await createServerOptions();
         const clientOptions = createClientOptions(fileWatcher, serverOutputChannel);
+        let abandoned = false;
+        let defaultErrorHandler: ErrorHandler | undefined;
+        clientOptions.errorHandler = abandonableErrorHandler(
+            () => (defaultErrorHandler ??= created.createDefaultErrorHandler()),
+            () => abandoned,
+        );
 
         // The id is the configuration section the client reads
         // `<id>.trace.server` from, so it must be "groovy".
-        client = new LanguageClient(
+        const created = new LanguageClient(
             'groovy',
             'Groovy Language Server',
             serverOptions,
             clientOptions
         );
+        client = created;
 
         // Update status bar with new client
         setClient(client);
@@ -331,8 +408,17 @@ async function doStart(): Promise<void> {
             getStatusBarManager()?.setOutputChannel(serverOutputChannel);
         }
 
-        await client.start();
-        const version = client.initializeResult?.serverInfo?.version;
+        const starting = created.start();
+        try {
+            await withStartTimeout(starting, getConfiguration().startTimeoutSeconds);
+        } catch (error) {
+            if (created.state === State.Starting) {
+                abandoned = true;
+                abandonStartingClient(created, starting);
+            }
+            throw error;
+        }
+        const version = created.initializeResult?.serverInfo?.version;
         if (version) {
             getStatusBarManager()?.setServerVersion(version);
         }

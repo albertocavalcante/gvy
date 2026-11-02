@@ -547,6 +547,13 @@
           "default": 100,
           "description": "Controls the maximum number of problems produced by the server."
         },
+        "groovy.server.startTimeoutSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 0,
+          "maximum": 2147483,
+          "description": "Seconds to wait for the language server to start before giving up and stopping it, so Stop and Restart stay usable. Set to 0 to wait indefinitely."
+        },
         "groovy.server.path": {
           "scope": "machine",
           "type": "string",
