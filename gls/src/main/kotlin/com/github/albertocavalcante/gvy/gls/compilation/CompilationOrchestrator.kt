@@ -12,8 +12,11 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
@@ -108,7 +111,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
         val workspaceSources = getWorkspaceSourcesForCompilation(uri, logBounded = true)
 
-        // Parse the source code
+        // Parse the source code; the compile aborts between phases if this coroutine is cancelled
+        val checkCancelled = cancellationCheck()
         val parseResult = workerSessionManager.parse(
             ParseRequest(
                 uri = uri,
@@ -120,6 +124,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 parseMode = parseMode,
+                checkCancelled = checkCancelled,
             ),
         )
 
@@ -150,6 +155,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         // Use bounded workspace selection when available (Issue #743)
         val workspaceSources = getWorkspaceSourcesForCompilation(uri)
+        val checkCancelled = cancellationCheck()
 
         return workerSessionManager.parse(
             ParseRequest(
@@ -161,8 +167,15 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 openSources = openSourcesFor(uri),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
+                checkCancelled = checkCancelled,
             ),
         )
+    }
+
+    /** A hook that throws [CancellationException] once the calling coroutine is cancelled. */
+    private suspend fun cancellationCheck(): () -> Unit {
+        val job = currentCoroutineContext()[Job]
+        return { job?.ensureActive() }
     }
 
     /**
@@ -243,6 +256,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 }
                 // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
                 performCompilation(uri, content, parseMode = ParseMode.MINIMAL, configFingerprint = configFingerprint)
+            } catch (e: CancellationException) {
+                throw e // the request was cancelled; not a failure to compile
             } catch (e: Exception) {
                 logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
                 null
