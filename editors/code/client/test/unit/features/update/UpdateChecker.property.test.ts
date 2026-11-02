@@ -41,8 +41,8 @@ describe("UpdateChecker (property-based)", () => {
 
           // Second immediate call
           const result2 = await checker.checkForUpdate();
-          assert.strictEqual(result2.status, "cache-hit");
           assert.strictEqual(result2.source, "cache");
+          assert.strictEqual(result2.status, result1.status);
         },
       ),
       { seed: 424242, numRuns: 50 },
@@ -79,7 +79,6 @@ describe("UpdateChecker (property-based)", () => {
 
           // Manual check
           const result = await checker.checkForUpdateNow();
-          assert.notStrictEqual(result.status, "cache-hit");
           assert.strictEqual(result.source, "network");
         },
       ),

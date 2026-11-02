@@ -6,7 +6,6 @@ import { ReleaseInfo } from "./VersionChecker";
 export type UpdateCheckStatus =
   | "up-to-date" // Current version >= latest release
   | "update-available" // Latest release > current version
-  | "cache-hit" // Returned cached result (no network call)
   | "unknown" // Cannot determine (invalid versions, provider returned null)
   | "error"; // Unexpected error occurred
 

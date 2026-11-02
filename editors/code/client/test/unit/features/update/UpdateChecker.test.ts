@@ -65,7 +65,8 @@ describe("UpdateChecker", () => {
         false,
         "Provider should not be called when cache is valid",
       );
-      assert.strictEqual(result.status, "cache-hit");
+      // A cached newer release is still an available update.
+      assert.strictEqual(result.status, "update-available");
       assert.strictEqual(result.currentVersion, "1.0.0");
       assert.strictEqual(result.latestRelease?.version, "1.5.0");
       assert.strictEqual(result.source, "cache");

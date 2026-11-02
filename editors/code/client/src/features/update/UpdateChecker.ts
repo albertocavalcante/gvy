@@ -58,7 +58,7 @@ export class UpdateChecker {
     const cached = this.cache.getCachedRelease();
     if (cached) {
       return {
-        status: "cache-hit",
+        status: this.determineStatus(cached.release.version),
         currentVersion: this.currentVersion,
         latestRelease: cached.release,
         checkedAt: cached.checkedAt,

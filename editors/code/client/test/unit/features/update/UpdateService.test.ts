@@ -28,11 +28,13 @@ describe("UpdateService", () => {
   let checkForUpdateStub: sinon.SinonStub;
   let checkForUpdateNowStub: sinon.SinonStub;
   let getUpdateConfigurationStub: sinon.SinonStub;
+  let cacheHours: number | undefined;
 
   function createUpdateService(
     overrides: {
       checkNowResult?: unknown;
       showInfoResponse?: string;
+      checkIntervalHours?: number;
     } = {},
   ) {
     // Create fresh stubs for each test
@@ -76,7 +78,7 @@ describe("UpdateService", () => {
 
     getUpdateConfigurationStub = sinon.stub().returns({
       checkOnStartup: true,
-      checkIntervalHours: 24,
+      checkIntervalHours: overrides.checkIntervalHours ?? 24,
       notifications: "onlyWhenOutdated",
     });
 
@@ -95,7 +97,11 @@ describe("UpdateService", () => {
             checkForUpdate = checkForUpdateStub;
             checkForUpdateNow = checkForUpdateNowStub;
           },
-          VersionCache: class {},
+          VersionCache: class {
+            constructor(_memento: unknown, hours: number) {
+              cacheHours = hours;
+            }
+          },
           SystemClock: class {
             now() {
               return Date.now();
@@ -237,6 +243,58 @@ describe("UpdateService", () => {
       const updateCall = mockWorkspace.getConfiguration().update;
       assert.isTrue(updateCall.calledWith("update.notifications", "off", true));
       updateService.dispose();
+    });
+  });
+
+  describe("scheduling", () => {
+    let clock: sinon.SinonFakeTimers;
+    beforeEach(() => {
+      clock = sinon.useFakeTimers();
+    });
+    afterEach(() => clock.restore());
+
+    it("caches for the configured interval, not a fixed 24h", () => {
+      createUpdateService({ checkIntervalHours: 6 });
+      assert.strictEqual(cacheHours, 6);
+    });
+
+    it("does not spin when the interval exceeds setTimeout's limit", async () => {
+      const service = createUpdateService({ checkIntervalHours: 1000 });
+      await service.activate();
+      checkForUpdateStub.resetHistory();
+      await clock.tickAsync(1000);
+      assert.strictEqual(checkForUpdateStub.callCount, 0);
+      service.dispose();
+    });
+
+    it("does not re-arm after dispose during an in-flight check", async () => {
+      const service = createUpdateService({ checkIntervalHours: 1 });
+      await service.activate();
+      let finish!: () => void;
+      checkForUpdateStub.callsFake(
+        () =>
+          new Promise((resolve) => {
+            finish = () =>
+              resolve({ status: "up-to-date", currentVersion: "1.0.0", source: "network" });
+          }),
+      );
+      await clock.tickAsync(60 * 60 * 1000); // timer fires, check in flight
+      service.dispose();
+      finish();
+      await clock.tickAsync(0);
+      checkForUpdateStub.resetHistory();
+      await clock.tickAsync(2 * 60 * 60 * 1000);
+      assert.strictEqual(checkForUpdateStub.callCount, 0);
+    });
+
+    it("keeps checking after a check throws", async () => {
+      const service = createUpdateService({ checkIntervalHours: 1 });
+      await service.activate();
+      checkForUpdateStub.onSecondCall().rejects(new Error("boom"));
+      await clock.tickAsync(60 * 60 * 1000);
+      await clock.tickAsync(60 * 60 * 1000);
+      assert.strictEqual(checkForUpdateStub.callCount, 3);
+      service.dispose();
     });
   });
 
