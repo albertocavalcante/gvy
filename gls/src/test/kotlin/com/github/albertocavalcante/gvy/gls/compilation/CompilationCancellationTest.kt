@@ -9,6 +9,7 @@ import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -72,7 +73,7 @@ class CompilationCancellationTest {
         val session = CancellingSession(cancelAtCall = 2)
         val orchestrator = orchestrator(session)
 
-        val deferred = async(Dispatchers.Default) { orchestrator.compile(uri, content) }
+        val deferred = async(Dispatchers.Default, start = CoroutineStart.LAZY) { orchestrator.compile(uri, content) }
         session.target.set(deferred)
 
         assertFailsWith<CancellationException> { deferred.await() }
@@ -91,7 +92,7 @@ class CompilationCancellationTest {
         val session = CancellingSession(cancelAtCall = 2)
         val orchestrator = orchestrator(session)
 
-        val deferred = async(Dispatchers.Default) { orchestrator.compileTransient(uri, content) }
+        val deferred = async(Dispatchers.Default, start = CoroutineStart.LAZY) { orchestrator.compileTransient(uri, content) }
         session.target.set(deferred)
 
         assertFailsWith<CancellationException> { deferred.await() }
