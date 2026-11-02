@@ -87,4 +87,37 @@ class DiagnosticsOrchestratorDebounceTest {
 
         scope.cancel()
     }
+
+    @Test
+    fun `cancelAndRemove during the debounce delay cancels the pending compile`(): Unit = runTest {
+        val scope = scopeOnTestScheduler()
+        val f = Fixture(scope, debounceMillis = 250)
+
+        f.orchestrator.trigger(uri, "v1", debounce = true)
+        advanceTimeBy(100)
+        f.orchestrator.cancelAndRemove(uri)
+
+        advanceUntilIdle()
+        coVerify(exactly = 0) { f.compilationService.compileAsync(any(), any(), any()) }
+
+        scope.cancel()
+    }
+
+    @Test
+    fun `non debounced trigger after a debounced one compiles immediately and supersedes it`(): Unit = runTest {
+        val scope = scopeOnTestScheduler()
+        val f = Fixture(scope, debounceMillis = 250)
+
+        f.orchestrator.trigger(uri, "typed", debounce = true)
+        advanceTimeBy(100)
+        f.orchestrator.trigger(uri, "saved")
+        advanceTimeBy(1)
+        coVerify(exactly = 1) { f.compilationService.compileAsync(any(), uri, "saved") }
+
+        advanceUntilIdle()
+        coVerify(exactly = 1) { f.compilationService.compileAsync(any(), any(), any()) }
+        coVerify(exactly = 0) { f.compilationService.compileAsync(any(), uri, "typed") }
+
+        scope.cancel()
+    }
 }
