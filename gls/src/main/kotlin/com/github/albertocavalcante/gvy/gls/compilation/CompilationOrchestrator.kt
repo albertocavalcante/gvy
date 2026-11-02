@@ -116,6 +116,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 classpath = classpath,
                 sourceRoots = workspaceManager.getSourceRoots(),
                 workspaceSources = workspaceSources,
+                openSources = openSourcesFor(uri),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
                 parseMode = parseMode,
@@ -157,6 +158,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 classpath = classpath,
                 sourceRoots = workspaceManager.getSourceRoots(),
                 workspaceSources = workspaceSources,
+                openSources = openSourcesFor(uri),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
                 compilePhase = compilePhase,
             ),
@@ -269,6 +271,14 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         } else {
             workspaceManager.getWorkspaceSources()
         }
+
+    /**
+     * The other documents open in the editor, so a file compiles against their unsaved content:
+     * two new files can reference each other before either is saved. The parser keeps only
+     * `.groovy` sources and lets each buffer replace its on-disk copy.
+     */
+    private fun openSourcesFor(uri: URI): Map<URI, String> =
+        documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
 
     private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
         val candidates = mutableSetOf<String>()

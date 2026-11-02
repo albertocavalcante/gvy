@@ -41,6 +41,12 @@ data class ParseRequest(
     val classpath: List<Path> = emptyList(),
     val sourceRoots: List<Path> = emptyList(),
     val workspaceSources: List<Path> = emptyList(),
+    /**
+     * Unsaved editor buffers of other `.groovy` files, keyed by URI, compiled together with this
+     * file so it can reference classes they declare. A buffer replaces the on-disk copy of the same
+     * file in [workspaceSources]. Ignored in [ParseMode.MINIMAL], like [workspaceSources].
+     */
+    val openSources: Map<URI, String> = emptyMap(),
     val locatorCandidates: Set<String> = emptySet(),
     /**
      * Groovy compilation phase to compile to.
