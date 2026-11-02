@@ -135,6 +135,7 @@ function requestOnce(urlObj, headers, timeoutMs) {
   return new Promise((resolve, reject) => {
     const requestOptions = {
       hostname: urlObj.hostname,
+      port: urlObj.port || undefined,
       path: urlObj.pathname + urlObj.search,
       headers,
     };
@@ -143,6 +144,10 @@ function requestOnce(urlObj, headers, timeoutMs) {
       const chunks = [];
       let total = 0;
       let settled = false;
+
+      // A reset or our own timeout destroys the response mid-body; without
+      // a listener that 'error' is an uncaught exception.
+      response.on("error", reject);
 
       response.on("data", (chunk) => {
         if (settled) return;
@@ -233,6 +238,7 @@ function downloadOnce(urlObj, filePath, headers, timeoutMs) {
   return new Promise((resolve, reject) => {
     const requestOptions = {
       hostname: urlObj.hostname,
+      port: urlObj.port || undefined,
       path: urlObj.pathname + urlObj.search,
       headers,
     };
@@ -255,6 +261,7 @@ function downloadOnce(urlObj, filePath, headers, timeoutMs) {
       if (response.statusCode !== 200) {
         const chunks = [];
         let total = 0;
+        response.on("error", reject);
         response.setEncoding("utf8");
         response.on("data", (chunk) => {
           if (total < MAX_ERROR_BODY_BYTES) {
