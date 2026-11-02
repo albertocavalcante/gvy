@@ -89,6 +89,14 @@ describe("processInvocation", () => {
       );
     });
 
+    it("rejects a trailing backslash that would escape the closing quote", () => {
+      assert.throws(
+        () =>
+          buildProcessInvocation("gradlew.bat", ["-Pdir=C:\\out\\"], "win32"),
+        /unsafe for the Windows command shell/,
+      );
+    });
+
     it("rejects Windows command expansion and separators", () => {
       for (const arg of [
         '-Dtest=Spec#x" & echo unsafe',

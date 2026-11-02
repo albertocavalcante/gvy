@@ -46,7 +46,9 @@ export function buildProcessInvocation(
   }
 
   for (const value of [executable, ...args]) {
-    if (WINDOWS_SHELL_META.test(value)) {
+    // A trailing backslash would escape the closing quote for the program's
+    // own command-line parser and merge this argument with the next one.
+    if (WINDOWS_SHELL_META.test(value) || value.endsWith("\\")) {
       throw new Error(
         `Command argument is unsafe for the Windows command shell: ${value}`,
       );
