@@ -187,7 +187,7 @@ maven.install(
         "org.junit.platform:junit-platform-commons:6.0.2",
         "org.junit.platform:junit-platform-console:6.0.2",
         "junit:junit:4.13.2",
-        "org.assertj:assertj-core:3.27.6",
+        "org.assertj:assertj-core:3.27.7",
         "io.mockk:mockk:1.14.11",
         "io.mockk:mockk-jvm:1.14.11",
         "org.spockframework:spock-core:2.3-groovy-4.0",
