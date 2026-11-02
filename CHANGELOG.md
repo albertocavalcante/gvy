@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/albertocavalcante/gvy/compare/v0.5.1...v0.5.2) (2026-11-02)
+
+
+### Bug Fixes
+
+* **vscode:** run Gradle tests whose names or paths cmd keeps literal in quotes ([#1094](https://github.com/albertocavalcante/gvy/issues/1094)) ([1184e87](https://github.com/albertocavalcante/gvy/commit/1184e8727b6ccae6bacebf40c319519beb0a4751))
+
 ## [0.5.1](https://github.com/albertocavalcante/gvy/compare/v0.5.0...v0.5.1) (2026-11-02)
 
 
