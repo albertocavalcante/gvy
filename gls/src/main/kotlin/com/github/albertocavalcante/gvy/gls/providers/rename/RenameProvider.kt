@@ -33,7 +33,11 @@ import java.nio.file.Paths
  * Provider for rename refactoring operations.
  * Supports renaming variables, methods, properties, and classes across the workspace.
  */
-class RenameProvider(private val compilationService: GroovyCompilationService) {
+class RenameProvider(
+    private val compilationService: GroovyCompilationService,
+    /** Current text of a document (open buffer, else file on disk); null if unavailable. */
+    private val documentText: (URI) -> String? = ::readFromDisk,
+) {
     private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
 
@@ -121,11 +125,19 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
             logger.warn { "Found ${dependencyLocations.size} references in dependencies - these will not be renamed" }
         }
 
+        // References carry whole AST node ranges (a declaration's range is the whole declaration,
+        // and enclosing nodes can be reported too). Narrow each one to the old name so a rename can
+        // never replace anything but the identifier, and drop locations that do not contain it.
+        val nameLocations = narrowToName(workspaceLocations, oldName, definitionLocation)
+        if (nameLocations.isEmpty()) {
+            throw createError(ResponseErrorCode.InvalidRequest, "No occurrences of '$oldName' found to rename")
+        }
+
         // Build workspace edit
         return buildWorkspaceEdit(
             definition,
             newName,
-            workspaceLocations,
+            nameLocations,
             definitionLocation,
         )
     }
@@ -181,6 +193,28 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
         is ClassNode -> node.nameWithoutPackage
         else -> null
     }
+
+    /**
+     * Narrows [locations] to occurrences of [name]. The definition is narrowed to its name (the
+     * first occurrence in the declaration). Any other location that contains another reported
+     * location is an enclosing node, not a reference, and is dropped: narrowing it could land on a
+     * different symbol with the same name. The rest are narrowed to their whole-word occurrence.
+     */
+    private fun narrowToName(locations: List<Location>, name: String, definition: Location): List<Location> =
+        locations.groupBy { it.uri }.flatMap { (uri, locs) ->
+            val text = runCatching { documentText(URI.create(uri)) }.getOrNull()
+            if (text == null) {
+                logger.warn { "Cannot read $uri; skipping ${locs.size} rename location(s) there" }
+                return@flatMap emptyList()
+            }
+            locs.filter { loc ->
+                loc.isSameAs(definition) ||
+                    locs.none { other -> other !== loc && loc.range.strictlyContains(other.range) }
+            }.mapNotNull { loc -> firstNameOccurrence(text, loc.range, name)?.let { Location(uri, it) } }
+                .distinctBy { it.range.start.line to it.range.start.character }
+        }
+
+    private fun Location.isSameAs(other: Location) = uri == other.uri && range == other.range
 
     /**
      * Build a WorkspaceEdit from the collected references.
@@ -277,3 +311,44 @@ class RenameProvider(private val compilationService: GroovyCompilationService) {
     private fun createError(code: ResponseErrorCode, message: String): Nothing =
         throw ResponseErrorException(ResponseError(code, message, null))
 }
+
+private fun readFromDisk(uri: URI): String? =
+    if (uri.scheme == "file") runCatching { java.nio.file.Files.readString(Paths.get(uri)) }.getOrNull() else null
+
+/**
+ * The first whole-word occurrence of [name] inside [range] of [text], as an LSP range; null if
+ * there is none. Identifier characters are Java's, which covers Groovy identifiers.
+ */
+internal fun firstNameOccurrence(text: String, range: org.eclipse.lsp4j.Range, name: String): org.eclipse.lsp4j.Range? {
+    val lineStarts = IntArray(text.count { it == '\n' } + 1).also { starts ->
+        var line = 1
+        text.forEachIndexed { i, c -> if (c == '\n') starts[line++] = i + 1 }
+    }
+    fun offsetOf(p: Position): Int =
+        if (p.line >= lineStarts.size) text.length else minOf(lineStarts[p.line] + p.character, text.length)
+    fun positionOf(offset: Int): Position {
+        val line = lineStarts.indexOfLast { it <= offset }
+        return Position(line, offset - lineStarts[line])
+    }
+    val end = offsetOf(range.end)
+    var from = offsetOf(range.start)
+    while (true) {
+        val at = text.indexOf(name, from)
+        if (at < 0 || at + name.length > end) return null
+        val before = text.getOrNull(at - 1)
+        val after = text.getOrNull(at + name.length)
+        if ((before == null || !Character.isJavaIdentifierPart(before)) &&
+            (after == null || !Character.isJavaIdentifierPart(after))
+        ) {
+            return org.eclipse.lsp4j.Range(positionOf(at), positionOf(at + name.length))
+        }
+        from = at + 1
+    }
+}
+
+private operator fun Position.compareTo(other: Position): Int =
+    compareValuesBy(this, other, Position::getLine, Position::getCharacter)
+
+/** True if [inner] lies within this range and is not the same range. */
+private fun org.eclipse.lsp4j.Range.strictlyContains(inner: org.eclipse.lsp4j.Range): Boolean =
+    start <= inner.start && inner.end <= end && this != inner

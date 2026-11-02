@@ -27,7 +27,7 @@ class RenameProviderTest {
         compilationService = GroovyCompilationService()
         compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
         documentProvider = DocumentProvider()
-        renameProvider = RenameProvider(compilationService)
+        renameProvider = RenameProvider(compilationService) { documentProvider.get(it) }
     }
 
     @Test
@@ -58,6 +58,88 @@ class RenameProviderTest {
 
         assertTrue(textEdits.all { it.newText == "newVar" })
         assertTrue(textEdits.size >= 4, "Should rename declaration and all usages")
+    }
+
+    /**
+     * Applies [edits] to [text]. Fails, listing what each edit would replace, if edits overlap
+     * (LSP forbids that) or fall outside the text.
+     */
+    private fun applyEdits(text: String, edits: List<org.eclipse.lsp4j.TextEdit>): String {
+        val lineStarts = listOf(0) + text.indices.filter { text[it] == '\n' }.map { it + 1 }
+        fun offset(p: Position) = lineStarts.getOrNull(p.line)?.plus(p.character) ?: Int.MAX_VALUE
+        val spans = edits.map { offset(it.range.start) to offset(it.range.end) }.sortedBy { it.first }
+        val described = spans.joinToString("; ") { (from, to) ->
+            if (to <=
+                text.length
+            ) {
+                "[$from,$to)=" + text.substring(from, to).replace("\n", "\\n")
+            } else {
+                "[$from,$to)=<out of range>"
+            }
+        }
+        check(spans.all { it.second <= text.length } && spans.zipWithNext().all { (a, b) -> a.second <= b.first }) {
+            "Edits overlap or exceed the text: $described"
+        }
+        return spans.sortedByDescending { it.first }.fold(text) { acc, (from, to) ->
+            acc.substring(0, from) + edits.first { offset(it.range.start) == from }.newText + acc.substring(to)
+        }
+    }
+
+    private suspend fun renameAndApply(content: String, position: Position, newName: String): String {
+        val uri = workspaceRoot.resolve("Rename.groovy").toUri().toString()
+        val javaUri = java.net.URI.create(uri)
+        documentProvider.put(javaUri, content)
+        compilationService.compile(javaUri, content)
+        val edits = renameProvider.provideRename(uri, position, newName).documentChanges
+            .filter { it.isLeft && it.left.textDocument.uri == uri }
+            .flatMap { it.left.edits }
+        return applyEdits(content, edits)
+    }
+
+    @Test
+    fun `renaming a method from its declaration changes only the name and its calls`(): Unit = runBlocking {
+        val content = """
+            class Service {
+                void performAction() {
+                    println "Action"
+                }
+                void run() {
+                    performAction()
+                }
+            }
+        """.trimIndent()
+
+        val result = renameAndApply(content, Position(1, 12), "doSomething")
+
+        assertEquals(content.replace("performAction", "doSomething"), result)
+    }
+
+    @Test
+    fun `renaming a class from its declaration changes only the name and its uses`(): Unit = runBlocking {
+        val content = """
+            class Service {
+                String name
+            }
+            def s = new Service()
+        """.trimIndent()
+
+        val result = renameAndApply(content, Position(0, 7), "Worker")
+
+        assertEquals(content.replace("Service", "Worker"), result)
+    }
+
+    @Test
+    fun `renaming a field changes only the name and its uses`(): Unit = runBlocking {
+        val content = """
+            class Holder {
+                String label
+                String show() { return label }
+            }
+        """.trimIndent()
+
+        val result = renameAndApply(content, Position(1, 12), "title")
+
+        assertEquals(content.replace("label", "title"), result)
     }
 
     @Test
