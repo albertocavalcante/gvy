@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.3](https://github.com/albertocavalcante/gvy/compare/v0.5.2...v0.5.3) (2026-11-02)
+
+
+### Features
+
+* **vscode:** add groovy.server.vmargs and document GitHub release installs ([#1106](https://github.com/albertocavalcante/gvy/issues/1106)) ([d98b340](https://github.com/albertocavalcante/gvy/commit/d98b340ee0cc32bd417252eab59baf56c831f850))
+
+
+### Bug Fixes
+
+* **bsp:** replay compilation events to clients that join a running compile ([#1102](https://github.com/albertocavalcante/gvy/issues/1102)) ([5222af9](https://github.com/albertocavalcante/gvy/commit/5222af9924a3ff9bc0c3ac78f4b194b8e96d4487))
+* **gls:** compile each file together with the other open, unsaved files ([#1103](https://github.com/albertocavalcante/gvy/issues/1103)) ([94c39a4](https://github.com/albertocavalcante/gvy/commit/94c39a4fb54e74f46a15a36dc29f09a6dacdde7a))
+* **gls:** make rename replace only the symbol's name ([#1105](https://github.com/albertocavalcante/gvy/issues/1105)) ([80529f0](https://github.com/albertocavalcante/gvy/commit/80529f0b244173856d71d5404f097b8819812881))
+
 ## [0.5.2](https://github.com/albertocavalcante/gvy/compare/v0.5.1...v0.5.2) (2026-11-02)
 
 
