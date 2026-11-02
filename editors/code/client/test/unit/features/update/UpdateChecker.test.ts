@@ -536,4 +536,29 @@ describe("UpdateChecker", () => {
       assert.strictEqual(cached?.release.version, "1.5.0");
     });
   });
+
+  describe("Current version source", () => {
+    it("compares the version the source reports at each check", async () => {
+      const memento = createMementoStub();
+      const cache = new VersionCache(memento);
+      const provider = createReleaseProviderStub(sampleRelease("0.5.0"));
+      const clockStub = createClockStub(1000000);
+      let installed = "0.4.8";
+
+      const checker = new UpdateChecker(
+        () => installed,
+        cache,
+        provider,
+        clockStub,
+      );
+      const before = await checker.checkForUpdateNow();
+      assert.strictEqual(before.status, "update-available");
+      assert.strictEqual(before.currentVersion, "0.4.8");
+
+      installed = "0.5.0"; // e.g. the server started and reported its version
+      const after = await checker.checkForUpdateNow();
+      assert.strictEqual(after.status, "up-to-date");
+      assert.strictEqual(after.currentVersion, "0.5.0");
+    });
+  });
 });

@@ -22,7 +22,11 @@ export class UpdateService {
   private checkTimeout: ReturnType<typeof setTimeout> | null = null;
   private disposed = false;
 
-  constructor(currentVersion: string, memento: Memento) {
+  /**
+   * @param currentVersion returns the installed server version; it is read at
+   *   every check because the running server reports it only after starting.
+   */
+  constructor(currentVersion: string | (() => string), memento: Memento) {
     const cache = new VersionCache(
       memento,
       getUpdateConfiguration().checkIntervalHours,

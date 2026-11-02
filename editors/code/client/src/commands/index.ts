@@ -239,12 +239,12 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
 }
 
 /**
- * Initializes the update service with the current extension version.
- * Should be called after the language client starts.
+ * Initializes the update service with the installed server version (read at
+ * every check).
  */
 export function initializeUpdateService(
   context: ExtensionContext,
-  currentVersion: string,
+  currentVersion: string | (() => string),
 ): UpdateService {
   updateService = new UpdateService(currentVersion, context.globalState);
   return updateService;

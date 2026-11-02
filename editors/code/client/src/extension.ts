@@ -2,6 +2,7 @@
  * VSCode Groovy Language Extension
  */
 
+import * as fs from "fs";
 import * as vscode from "vscode";
 import {
   initializeClient,
@@ -20,7 +21,11 @@ import {
   setServerOutputChannel,
 } from "./commands";
 import { setupConfigurationWatcher } from "./configuration/watcher";
-import { getUpdateConfiguration } from "./configuration/settings";
+import {
+  getConfiguration,
+  getUpdateConfiguration,
+} from "./configuration/settings";
+import { resolveServerVersion } from "./features/update/serverVersion";
 import { replService } from "./features/repl";
 import { registerGradleFeatures } from "./features/gradle";
 import { registerTestingFeatures } from "./features/testing";
@@ -82,8 +87,16 @@ export async function activate(context: vscode.ExtensionContext) {
     new CommandProvider(lspToolService, toolRegistry),
   );
 
-  // Update checks for the bundled language server
-  const updateService = initializeUpdateService(context, extensionVersion);
+  // Update checks compare gvy releases with the server's own version (the
+  // extension is versioned separately).
+  const updateService = initializeUpdateService(context, () =>
+    resolveServerVersion({
+      reported: getClient()?.initializeResult?.serverInfo?.version,
+      serverPath: getConfiguration().serverPath,
+      readInstalledTag: () =>
+        fs.readFileSync(context.asAbsolutePath("server/.gls-version"), "utf8"),
+    }),
+  );
   context.subscriptions.push({ dispose: () => updateService.dispose() });
   if (getUpdateConfiguration().checkOnStartup) {
     updateService.activate().catch((error) => {

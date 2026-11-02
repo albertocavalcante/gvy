@@ -3,6 +3,11 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 describe("extension activation", () => {
+  let reportedClient: unknown;
+  beforeEach(() => {
+    reportedClient = undefined;
+  });
+
   function load(startClient: sinon.SinonStub) {
     const stubs = {
       registerGradleFeatures: sinon.stub(),
@@ -28,7 +33,7 @@ describe("extension activation", () => {
         initializeClient: () => {},
         startClient,
         stopClient: sinon.stub().resolves(),
-        getClient: () => undefined,
+        getClient: () => reportedClient,
       },
       "./ui/statusBar": {
         registerStatusBarItem: () => disposable,
@@ -48,6 +53,7 @@ describe("extension activation", () => {
       },
       "./configuration/settings": {
         getUpdateConfiguration: () => ({ checkOnStartup: false }),
+        getConfiguration: () => ({ serverPath: undefined }),
       },
       "./features/repl": { replService: { initialize: () => {} } },
       "./features/gradle": {
@@ -110,5 +116,22 @@ describe("extension activation", () => {
     assert.ok(
       stubs.executeCommand.calledWith("setContext", "groovy.hasProject", true),
     );
+  });
+
+  it("checks updates against the server's version, not the extension's", async () => {
+    const { ext, stubs } = load(sinon.stub().resolves());
+    await ext.activate({
+      ...context(),
+      asAbsolutePath: () => "/nonexistent/server/.gls-version",
+    });
+    const currentVersion = stubs.initializeUpdateService.firstCall.args[1];
+    assert.strictEqual(typeof currentVersion, "function");
+    assert.strictEqual(
+      currentVersion(),
+      "unknown",
+      "no version file, no server",
+    );
+    reportedClient = { initializeResult: { serverInfo: { version: "0.4.8" } } };
+    assert.strictEqual(currentVersion(), "0.4.8");
   });
 });
