@@ -34,6 +34,9 @@ function normalizeTestId(id: string): string {
   );
 }
 
+/** The build command for a test item cannot be spawned safely. */
+class UnrunnableCommandError extends Error {}
+
 export class LSPTestExecutionService implements ITestExecutionService {
   private readonly initScriptPath: string;
 
@@ -159,11 +162,6 @@ export class LSPTestExecutionService implements ITestExecutionService {
         const isGradle = tool === "gradle";
         const isMaven = tool === "maven";
 
-        // Track if any Maven execution occurred
-        if (isMaven) {
-          isMavenExecution = true;
-        }
-
         // Clone command.args to avoid mutation
         const coverageArgs = [...command.args];
         if (options.withCoverage) {
@@ -177,11 +175,21 @@ export class LSPTestExecutionService implements ITestExecutionService {
           }
         }
 
-        await this.executeCommand(
-          { ...command, args: coverageArgs },
-          consumer,
-          tokens,
-        );
+        try {
+          await this.executeCommand(
+            { ...command, args: coverageArgs },
+            consumer,
+            tokens,
+          );
+          // Only builds that ran leave Surefire reports for this run.
+          if (isMaven) {
+            isMavenExecution = true;
+          }
+        } catch (error) {
+          if (!(error instanceof UnrunnableCommandError)) throw error;
+          this.logger.appendLine(`[Error] ${error.message}`);
+          run.errored(item, new vscode.TestMessage(error.message));
+        }
       }
 
       // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
@@ -517,8 +525,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
     try {
       invocation = buildProcessInvocation(executable, finalArgs);
     } catch (error) {
-      this.logger.appendLine(`[Error] ${(error as Error).message}`);
-      return;
+      throw new UnrunnableCommandError(
+        `This test cannot be run through the Windows command shell, which ` +
+          `${executable} needs. ${(error as Error).message}. If that is ` +
+          `the test name, rename the test or run its enclosing class; if it ` +
+          `is a path, move the project to a path without those characters.`,
+      );
     }
 
     return new Promise((resolve) => {

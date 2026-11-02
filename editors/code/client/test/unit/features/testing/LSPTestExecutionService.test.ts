@@ -699,6 +699,78 @@ describe("LSPTestExecutionService", () => {
         "Should not append jacoco:report for regular test run",
       );
     });
+
+    it("marks a test errored when its name cannot pass through cmd on Windows", async () => {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+      Object.defineProperty(process, "platform", { value: "win32" });
+      try {
+        const testItem = {
+          id: "com.example.MySpec.100% pass",
+          label: "100% pass",
+          uri: { toString: () => "file:///test.groovy" },
+          children: { size: 0, forEach: () => {} },
+        };
+        testServiceMock.getTestCommand.resolves({
+          executable: "C:\\w\\gradlew.bat",
+          args: ["test", "--tests", "com.example.MySpec.100% pass"],
+          cwd: "C:\\w",
+          env: {},
+        });
+
+        await service.runTests({ include: [testItem] }, tokenMock, testControllerMock);
+
+        assert.ok(cpMock.spawn.notCalled, "nothing may run through cmd");
+        assert.ok(testRunMock.errored.calledOnce, "the test must not stay enqueued");
+        const [item, message] = testRunMock.errored.firstCall.args;
+        assert.strictEqual(item, testItem);
+        assert.match(
+          (message as { message: string }).message,
+          /cannot be run through the Windows command shell[\s\S]*100% pass/,
+        );
+        assert.ok(testRunMock.end.calledOnce);
+      } finally {
+        Object.defineProperty(process, "platform", platform);
+      }
+    });
+
+    it("does not let stale Maven results overwrite an unrunnable test", async () => {
+      const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+      Object.defineProperty(process, "platform", { value: "win32" });
+      try {
+        const testItem = {
+          id: "com.example.MySpec.100% pass",
+          label: "100% pass",
+          uri: { toString: () => "file:///test.groovy" },
+          children: { size: 0, forEach: () => {} },
+        };
+        testServiceMock.getTestCommand.resolves({
+          executable: "C:\\w\\mvnw.cmd",
+          args: ["test", "-Dtest=MySpec#100% pass"],
+          cwd: "C:\\w",
+          env: {},
+        });
+        testServiceMock.getTestResults.resolves({
+          results: [
+            { testId: testItem.id, name: "100% pass", status: "PASSED" },
+          ],
+        });
+
+        await service.runTests(
+          { include: [testItem] },
+          tokenMock,
+          testControllerMock,
+        );
+
+        assert.ok(testRunMock.errored.calledOnce);
+        assert.ok(
+          testServiceMock.getTestResults.notCalled,
+          "results of an earlier run must not be applied",
+        );
+        assert.ok(testRunMock.passed.notCalled);
+      } finally {
+        Object.defineProperty(process, "platform", platform);
+      }
+    });
   });
 
   describe("JAVA_HOME validation security", () => {
