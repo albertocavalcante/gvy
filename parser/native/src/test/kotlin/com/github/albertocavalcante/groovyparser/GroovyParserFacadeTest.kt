@@ -6,6 +6,7 @@ import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
@@ -115,6 +116,67 @@ class GroovyParserFacadeTest {
         assertTrue(result.isSuccessful)
         assertNotNull(result.ast)
         assertEquals(0, result.diagnostics.size)
+    }
+
+    @Test
+    fun `open sources let a file use classes from another unsaved file`() {
+        val request = ParseRequest(
+            uri = URI.create("file:///w/UsesBuffer.groovy"),
+            content = """
+                class UsesBuffer {
+                    OnlyInBuffer ref = new OnlyInBuffer()
+                }
+            """.trimIndent(),
+            compilePhase = Phases.CANONICALIZATION,
+        )
+        val withoutBuffer = parser.parse(request)
+        assertTrue(
+            withoutBuffer.diagnostics.any { it.message.contains("OnlyInBuffer") },
+            "Without the buffer the class should be unresolved: ${withoutBuffer.diagnostics}",
+        )
+
+        val result = parser.parse(
+            request.copy(openSources = mapOf(URI.create("file:///w/OnlyInBuffer.groovy") to "class OnlyInBuffer {}")),
+        )
+
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
+        assertEquals(request.sourceUnitName, result.ast?.context?.name)
+    }
+
+    @Test
+    fun `an open buffer replaces its on-disk copy instead of declaring its classes twice`() {
+        val onDisk = tempDir.resolve("Shared.groovy")
+        onDisk.toFile().writeText("class Shared { String saved }")
+        val request = ParseRequest(
+            uri = URI.create("file:///w/UsesShared.groovy"),
+            content = "class UsesShared { Shared ref }",
+            workspaceSources = listOf(onDisk),
+            compilePhase = Phases.CANONICALIZATION,
+        )
+        assertEquals(emptyList(), parser.parse(request).diagnostics.map { it.message })
+
+        val result = parser.parse(
+            request.copy(openSources = mapOf(onDisk.toUri() to "class Shared { String unsaved }")),
+        )
+
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
+    }
+
+    @Test
+    fun `open buffers that are not groovy sources are not compiled`() {
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///w/Plain.groovy"),
+                content = "class Plain {}",
+                openSources = mapOf(
+                    URI.create("file:///w/Jenkinsfile") to "pipeline { this is not valid groovy (",
+                    URI.create("file:///w/build.gradle") to "plugins { id 'java' ",
+                ),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        )
+
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
     }
 
     @Test

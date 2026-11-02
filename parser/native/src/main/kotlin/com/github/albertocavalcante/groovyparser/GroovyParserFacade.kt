@@ -232,7 +232,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val sourceUnit = SourceUnit(request.sourceUnitName, source, config, classLoader, compilationUnit.errorCollector)
         compilationUnit.addSource(sourceUnit)
 
-        addWorkspaceSources(compilationUnit, request)
+        addWorkspaceSources(compilationUnit, request, config, classLoader)
 
         var compilationFailed = false
         try {
@@ -364,16 +364,44 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         }
     }
 
-    private fun addWorkspaceSources(compilationUnit: CompilationUnit, request: ParseRequest) {
+    private fun addWorkspaceSources(
+        compilationUnit: CompilationUnit,
+        request: ParseRequest,
+        config: CompilerConfiguration,
+        classLoader: GroovyClassLoader,
+    ) {
         // In MINIMAL mode, skip workspace sources for fast, isolated parsing (Issue #743)
         if (request.parseMode == ParseMode.MINIMAL) {
             logger.trace { "Skipping workspace sources in MINIMAL mode for ${request.uri}" }
             return
         }
 
+        // Unsaved buffers replace their on-disk copies; adding both would declare each class twice.
+        val openSources = request.openSources.filterKeys { uri ->
+            uri != request.uri && (uri.path ?: "").endsWith(".groovy", ignoreCase = true)
+        }
+        openSources.forEach { (uri, text) ->
+            runCatching {
+                logger.trace { "Adding open source: $uri" }
+                val name = uri.path ?: uri.toString()
+                compilationUnit.addSource(
+                    SourceUnit(
+                        name,
+                        StringReaderSource(text, config),
+                        config,
+                        classLoader,
+                        compilationUnit.errorCollector,
+                    ),
+                )
+            }.onFailure { throwable ->
+                logger.trace { "Failed adding open source $uri: ${throwable.message}" }
+            }
+        }
+
         request.workspaceSources
             .filter {
                 it.toUri() != request.uri &&
+                    it.toUri() !in openSources &&
                     it.extension.equals("groovy", ignoreCase = true) &&
                     it.isRegularFile()
             }

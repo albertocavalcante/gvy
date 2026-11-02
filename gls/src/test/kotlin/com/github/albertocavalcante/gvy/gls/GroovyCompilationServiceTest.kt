@@ -9,7 +9,6 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.junit.jupiter.api.BeforeEach
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
@@ -370,7 +369,6 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    @Disabled("#1079: compiling one in-memory file does not see another in-memory file")
     fun `symbols indexed by IncrementalCompiler should be visible to queries`(): Unit = runBlocking {
         // This test ensures that when WorkspaceCompiler's IncrementalCompiler indexes symbols,
         // they are stored in a SemanticDB that is accessible to other components
@@ -388,6 +386,12 @@ class GroovyCompilationServiceTest {
 
         val uri1 = URI.create("file:///test/FirstClass.groovy")
         val uri2 = URI.create("file:///test/SecondClass.groovy")
+
+        // Both files are open and unsaved, as after didOpen; neither exists on disk.
+        val documents = com.github.albertocavalcante.gvy.gls.services.DocumentProvider()
+        documents.put(uri1, content1)
+        documents.put(uri2, content2)
+        val compilationService = GroovyCompilationService(documentProvider = documents)
 
         // Compile both files
         val result1 = compilationService.compile(uri1, content1)
@@ -437,7 +441,6 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    @Disabled("#1079: compiling one in-memory file does not see another in-memory file")
     fun `shared SemanticDB enables cross-file symbol resolution`(): Unit = runBlocking {
         // This test verifies that having a shared SemanticDB instance allows
         // symbols from one file to be resolved when compiling another file
@@ -459,6 +462,12 @@ class GroovyCompilationServiceTest {
 
         val baseUri = URI.create("file:///test/BaseClass.groovy")
         val derivedUri = URI.create("file:///test/DerivedClass.groovy")
+
+        // Both files are open and unsaved, as after didOpen; neither exists on disk.
+        val documents = com.github.albertocavalcante.gvy.gls.services.DocumentProvider()
+        documents.put(baseUri, baseClassContent)
+        documents.put(derivedUri, derivedClassContent)
+        val compilationService = GroovyCompilationService(documentProvider = documents)
 
         // Compile base class first
         val baseResult = compilationService.compile(baseUri, baseClassContent)
