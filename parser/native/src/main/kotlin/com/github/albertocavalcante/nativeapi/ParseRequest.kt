@@ -67,6 +67,15 @@ data class ParseRequest(
      * @see ParseMode
      */
     val parseMode: ParseMode = ParseMode.WORKSPACE,
+    /**
+     * Cooperative cancellation hook, invoked before compilation starts and after every compiler phase.
+     *
+     * It must throw (typically a `CancellationException`) when the caller no longer wants the result;
+     * the exception propagates out of the parse and abandons the rest of the compile. The default does
+     * nothing. Note: as a function it takes part in this data class's `equals`/`hashCode`, and nothing
+     * in the codebase keys a cache on `ParseRequest` equality.
+     */
+    val checkCancelled: () -> Unit = {},
 ) {
     val sourceUnitName: String = uri.path ?: uri.toString()
 }
