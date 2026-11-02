@@ -312,6 +312,16 @@ maven.artifact(
     ],
 )
 
+# bsp4j's generated toString() methods call org.eclipse.xtext.xbase.lib.util.ToStringBuilder at
+# runtime, so xbase.lib is needed even though the generator chain above is excluded. Its own Guava
+# is excluded so targets that need it (ToStringBuilder does) use the top-level com.google.guava:guava.
+maven.artifact(
+    artifact = "org.eclipse.xtext.xbase.lib",
+    group = "org.eclipse.xtext",
+    version = "2.28.0",
+    exclusions = ["com.google.guava:guava"],
+)
+
 # CodeNarc with Groovy exclusions to avoid version conflicts
 # CodeNarc 3.7.0-groovy-4.0 bundles old Groovy 3.0.9 transitives that conflict with our 4.0.29
 maven.artifact(
