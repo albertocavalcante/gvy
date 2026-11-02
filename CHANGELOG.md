@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.4](https://github.com/albertocavalcante/gvy/compare/v0.5.3...v0.5.4) (2026-11-02)
+
+
+### Features
+
+* **gls:** find references and incoming calls across files ([#1112](https://github.com/albertocavalcante/gvy/issues/1112)) ([8dc2518](https://github.com/albertocavalcante/gvy/commit/8dc2518593e2dacbcba1aa15872c7cc20bffff86))
+
+
+### Bug Fixes
+
+* **gls:** debounce diagnostics, exit when the editor dies, enforce maxWorkspaceFiles ([#1108](https://github.com/albertocavalcante/gvy/issues/1108)) ([96946d7](https://github.com/albertocavalcante/gvy/commit/96946d78408dbda3e28b545a722927e9aff37dd5))
+* **gls:** report the identifier, and only reachable calls, as references ([#1111](https://github.com/albertocavalcante/gvy/issues/1111)) ([bace154](https://github.com/albertocavalcante/gvy/commit/bace154c330f212b5159cecdcab0ff990cea2aad))
+
+
+### Performance Improvements
+
+* **gls:** stop compiles when the request that started them is cancelled ([#1123](https://github.com/albertocavalcante/gvy/issues/1123)) ([413bdb7](https://github.com/albertocavalcante/gvy/commit/413bdb792d159c66998c76109a26eb4975fc8819))
+
+
+### Reverts
+
+* **vscode:** restore pnpm.onlyBuiltDependencies in the extension package.json ([#1117](https://github.com/albertocavalcante/gvy/issues/1117)) ([251dbcc](https://github.com/albertocavalcante/gvy/commit/251dbcc9f87c66b71f2bf4349655e0564ebf03ea))
+
 ## [0.5.3](https://github.com/albertocavalcante/gvy/compare/v0.5.2...v0.5.3) (2026-11-02)
 
 
