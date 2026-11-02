@@ -70,6 +70,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
     options: TestRunOptions = {},
   ): Promise<void> {
     const run = testController.createTestRun(request);
+    // Runs started from commands or CodeLens pass a token nobody cancels;
+    // the run's own token is what Test Explorer's Stop button cancels.
+    const tokens = [token, run.token];
+    const isCancelled = () => tokens.some((t) => t.isCancellationRequested);
     const consumer = new TestEventConsumer(run, this.logger, testController);
     const testsToRun = selectRunItems(
       request.include,
@@ -112,7 +116,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       let isMavenExecution = false;
 
       for (const item of testsToRun) {
-        if (token.isCancellationRequested) break;
+        if (isCancelled()) break;
 
         // Parse suite/test from Item ID
         const uri = item.uri?.toString();
@@ -173,12 +177,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
         await this.executeCommand(
           { ...command, args: coverageArgs },
           consumer,
-          token,
+          tokens,
         );
       }
 
       // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
-      if (isMavenExecution && !token.isCancellationRequested) {
+      if (isMavenExecution && !isCancelled()) {
         await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
       }
 
@@ -186,7 +190,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       if (
         options.withCoverage &&
         options.coverageService &&
-        !token.isCancellationRequested
+        !isCancelled()
       ) {
         await options.coverageService.addCoverageToRun(run, workspaceUri);
       }
@@ -458,7 +462,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
   private async executeCommand(
     cmd: TestCommand,
     consumer: TestEventConsumer,
-    token: vscode.CancellationToken,
+    tokens: readonly vscode.CancellationToken[],
   ): Promise<void> {
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
@@ -523,10 +527,15 @@ export class LSPTestExecutionService implements ITestExecutionService {
       });
 
       // Cancellation
-      const cancelDis = token.onCancellationRequested(() => {
-        proc.kill();
-        this.logger.appendLine("Test run cancelled.");
-      });
+      const cancelSubscriptions = tokens.map((t) =>
+        t.onCancellationRequested(() => {
+          proc.kill();
+          this.logger.appendLine("Test run cancelled.");
+        }),
+      );
+      const cancelDis = {
+        dispose: () => cancelSubscriptions.forEach((d) => d.dispose()),
+      };
 
       // Output Parsing
       const rl = readline.createInterface({ input: proc.stdout });

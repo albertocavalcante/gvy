@@ -244,6 +244,7 @@ describe("LSPTestExecutionService", () => {
       errored: sinon.SinonStub;
       appendOutput: sinon.SinonStub;
       end: sinon.SinonStub;
+      token: unknown;
     };
     let coverageServiceMock: { addCoverageToRun: sinon.SinonStub };
     let tokenMock: {
@@ -260,6 +261,12 @@ describe("LSPTestExecutionService", () => {
         errored: sandbox.stub(),
         appendOutput: sandbox.stub(),
         end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: sandbox
+            .stub()
+            .returns({ dispose: sandbox.stub() }),
+        },
       };
 
       testControllerMock = {
@@ -573,6 +580,7 @@ describe("LSPTestExecutionService", () => {
       errored: sinon.SinonStub;
       appendOutput: sinon.SinonStub;
       end: sinon.SinonStub;
+      token: unknown;
     };
     let tokenMock: {
       isCancellationRequested: boolean;
@@ -588,6 +596,12 @@ describe("LSPTestExecutionService", () => {
         errored: sandbox.stub(),
         appendOutput: sandbox.stub(),
         end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: sandbox
+            .stub()
+            .returns({ dispose: sandbox.stub() }),
+        },
       };
 
       testControllerMock = {
@@ -1053,6 +1067,7 @@ describe("LSPTestExecutionService", () => {
       errored: sinon.SinonStub;
       appendOutput: sinon.SinonStub;
       end: sinon.SinonStub;
+      token: unknown;
     };
     let testControllerMock: { createTestRun: sinon.SinonStub };
     let tokenMock: {
@@ -1069,6 +1084,12 @@ describe("LSPTestExecutionService", () => {
         errored: sandbox.stub(),
         appendOutput: sandbox.stub(),
         end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: sandbox
+            .stub()
+            .returns({ dispose: sandbox.stub() }),
+        },
       };
 
       testControllerMock = {
@@ -1215,6 +1236,67 @@ describe("LSPTestExecutionService", () => {
         ),
         "Should warn about name collision",
       );
+    });
+  });
+  describe("cancellation", () => {
+    it("kills the build when the run's own Stop button is pressed", async () => {
+      let stopRun: (() => void) | undefined;
+      const run = {
+        enqueued: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token: {
+          isCancellationRequested: false,
+          onCancellationRequested: (cb: () => void) => {
+            stopRun = cb;
+            return { dispose: () => {} };
+          },
+        },
+      };
+      const controller = {
+        createTestRun: sandbox.stub().returns(run),
+        items: { forEach: () => {} },
+      };
+      // A token nobody ever cancels, as used by CodeLens and command runs.
+      const callerToken = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+
+      let onClose: ((code: number) => void) | undefined;
+      const proc = {
+        stdout: { on: sandbox.stub() },
+        stderr: { on: sandbox.stub() },
+        on: (event: string, cb: (code: number) => void) => {
+          if (event === "close") onClose = cb;
+        },
+        kill: sandbox.stub().callsFake(() => onClose?.(143)),
+      };
+      cpMock.spawn.returns(proc);
+      testServiceMock.getTestCommand.resolves({
+        executable: "/w/gradlew",
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+
+      const item = {
+        id: "com.x.Spec",
+        uri: { toString: () => "file:///w/Spec.groovy" },
+        children: { size: 0, forEach: () => {} },
+      };
+      const done = service.runTests({ include: [item] }, callerToken, controller);
+      await new Promise((r) => setTimeout(r, 0));
+      assert.ok(stopRun, "run token should be observed");
+      stopRun!();
+      await done;
+
+      assert.ok(proc.kill.calledOnce, "build process should be killed");
+      assert.ok(run.end.calledOnce);
     });
   });
 });
