@@ -206,10 +206,12 @@ function buildInitializationOptions(): LspInitializationOptions {
     return buildServerSettingsMap();
 }
 
-function getTraceOutputChannel(): vscode.LogOutputChannel | undefined {
-    if (workspace.getConfiguration('groovy').get('trace.server', 'off') === 'off') {
-        return undefined;
-    }
+/**
+ * The trace channel always exists so tracing can be turned on at runtime:
+ * vscode-languageclient traces when this channel's log level is Trace, with
+ * the verbosity from `groovy.trace.server`.
+ */
+function getTraceOutputChannel(): vscode.LogOutputChannel {
     if (!traceOutputChannel) {
         traceOutputChannel = window.createOutputChannel('Groovy Language Server Trace', { log: true });
         context?.subscriptions.push(traceOutputChannel);
@@ -302,8 +304,10 @@ async function doStart(): Promise<void> {
         const serverOptions = await createServerOptions();
         const clientOptions = createClientOptions(fileWatcher, serverOutputChannel);
 
+        // The id is the configuration section the client reads
+        // `<id>.trace.server` from, so it must be "groovy".
         client = new LanguageClient(
-            'groovyLanguageServer',
+            'groovy',
             'Groovy Language Server',
             serverOptions,
             clientOptions

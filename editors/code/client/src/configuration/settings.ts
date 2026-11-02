@@ -27,128 +27,84 @@ export function getConfiguration(): GroovyConfiguration {
 }
 
 /**
- * Checks if a configuration change affects the specified section
+ * Every contributed `groovy.*` setting belongs to exactly one of these lists
+ * (enforced by a unit test against package.json), so a new setting cannot be
+ * silently ignored on change.
  */
-export function affectsConfiguration(
-  event: ConfigurationChangeEvent,
-  section: string,
-): boolean {
-  return event.affectsConfiguration(`groovy.${section}`);
-}
 
-/**
- * Checks if a configuration change affects Java settings
- */
-export function affectsJavaConfiguration(
-  event: ConfigurationChangeEvent,
-): boolean {
-  return (
-    affectsConfiguration(event, "languageServer.javaHome") ||
-    affectsConfiguration(event, "java.home")
-  );
-}
+/** Read by the server only at startup (or used to launch it). */
+export const RESTART_REQUIRED_SETTINGS: readonly string[] = [
+  "languageServer.javaHome",
+  "java.home",
+  "server.path",
+  "server.logLevel",
+  "languageServer.engine",
+  "compilation.mode",
+  "repl.enabled",
+  "repl.maxSessions",
+  "repl.sessionTimeoutMinutes",
+  "gradle.buildStrategy",
+];
 
-/**
- * Checks if a configuration change affects server settings that require a restart
- */
-export function affectsServerConfiguration(
-  event: ConfigurationChangeEvent,
-): boolean {
-  return (
-    affectsConfiguration(event, "trace.server") ||
-    affectsConfiguration(event, "server.maxNumberOfProblems") ||
-    affectsConfiguration(event, "server.path")
-  );
-}
+/** Applied by the server through workspace/didChangeConfiguration. */
+export const SERVER_DYNAMIC_SETTINGS: readonly string[] = [
+  "server.maxNumberOfProblems",
+  "format.enable",
+  "compilation.incrementalThreshold",
+  "compilation.maxWorkspaceFiles",
+  "codenarc.enabled",
+  "codenarc.propertiesFile",
+  "codenarc.autoDetect",
+  "jenkins.filePatterns",
+  "jenkins.sharedLibraries",
+  "jenkins.gdslPaths",
+  "jenkins.gdslExecution.enabled",
+  "jenkins.pluginsTxtPath",
+  "jenkins.plugins",
+  "jenkins.includeDefaultPlugins",
+];
 
-/**
- * Checks if a configuration change affects compilation settings
- */
-export function affectsCompilationConfiguration(
-  event: ConfigurationChangeEvent,
-): boolean {
-  return (
-    affectsConfiguration(event, "compilation.mode") ||
-    affectsConfiguration(event, "compilation.incrementalThreshold") ||
-    affectsConfiguration(event, "compilation.maxWorkspaceFiles")
-  );
-}
+/** Read by the extension when needed; the server does not use them. */
+export const CLIENT_ONLY_SETTINGS: readonly string[] = [
+  "project.javaHome",
+  "jdk.suppressMismatchWarning",
+  "configuration.runtimes",
+  // vscode-languageclient reads <client id>.trace.server itself.
+  "trace.server",
+  "statusBar.show",
+  "statusBar.clickAction",
+  "update.checkOnStartup",
+  "update.checkIntervalHours",
+  "update.notifications",
+  "ai.tools.enabled",
+  "ai.tools.allowed",
+  "codelens.test.enabled",
+  "codelens.test.source",
+];
 
-/**
- * Checks if a configuration change affects CodeNarc settings
- */
-export function affectsCodeNarcConfiguration(
+function affectsAny(
   event: ConfigurationChangeEvent,
+  keys: readonly string[],
 ): boolean {
-  return (
-    affectsConfiguration(event, "codenarc.enabled") ||
-    affectsConfiguration(event, "codenarc.propertiesFile") ||
-    affectsConfiguration(event, "codenarc.autoDetect")
-  );
-}
-
-/**
- * Checks if a configuration change affects Jenkins settings
- */
-export function affectsJenkinsConfiguration(
-  event: ConfigurationChangeEvent,
-): boolean {
-  return (
-    affectsConfiguration(event, "jenkins.filePatterns") ||
-    affectsConfiguration(event, "jenkins.sharedLibraries") ||
-    affectsConfiguration(event, "jenkins.gdslPaths") ||
-    affectsConfiguration(event, "jenkins.gdslExecution.enabled") ||
-    affectsConfiguration(event, "jenkins.pluginsTxtPath") ||
-    affectsConfiguration(event, "jenkins.plugins") ||
-    affectsConfiguration(event, "jenkins.includeDefaultPlugins")
-  );
-}
-
-/**
- * Checks if a configuration change affects REPL settings
- */
-export function affectsReplConfiguration(
-  event: ConfigurationChangeEvent,
-): boolean {
-  return (
-    affectsConfiguration(event, "repl.enabled") ||
-    affectsConfiguration(event, "repl.maxSessions") ||
-    affectsConfiguration(event, "repl.sessionTimeoutMinutes")
-  );
+  return keys.some((key) => event.affectsConfiguration(`groovy.${key}`));
 }
 
 /**
  * Checks if a configuration change requires a server restart
- * These are critical settings that need a full restart to take effect
  */
 export function requiresServerRestart(
   event: ConfigurationChangeEvent,
 ): boolean {
-  return (
-    affectsJavaConfiguration(event) ||
-    affectsConfiguration(event, "server.path") ||
-    affectsConfiguration(event, "compilation.mode") ||
-    affectsReplConfiguration(event)
-  );
+  return affectsAny(event, RESTART_REQUIRED_SETTINGS);
 }
 
 /**
  * Checks if a configuration change can be applied dynamically via didChangeConfiguration
- * These settings can be updated without restarting the server
  */
 export function canBeAppliedDynamically(
   event: ConfigurationChangeEvent,
 ): boolean {
-  return (
-    affectsJenkinsConfiguration(event) ||
-    affectsCodeNarcConfiguration(event) ||
-    affectsConfiguration(event, "format.enable") ||
-    affectsConfiguration(event, "server.maxNumberOfProblems") ||
-    affectsConfiguration(event, "trace.server") ||
-    affectsConfiguration(event, "compilation.incrementalThreshold") ||
-    affectsConfiguration(event, "compilation.maxWorkspaceFiles") ||
-    affectsUpdateConfiguration(event)
-  );
+  return affectsAny(event, SERVER_DYNAMIC_SETTINGS);
 }
 
 /**
@@ -182,17 +138,4 @@ export function getUpdateConfiguration(): UpdateConfiguration {
       "onlyWhenOutdated",
     ),
   };
-}
-
-/**
- * Checks if a configuration change affects update settings
- */
-export function affectsUpdateConfiguration(
-  event: ConfigurationChangeEvent,
-): boolean {
-  return (
-    affectsConfiguration(event, "update.checkOnStartup") ||
-    affectsConfiguration(event, "update.checkIntervalHours") ||
-    affectsConfiguration(event, "update.notifications")
-  );
 }

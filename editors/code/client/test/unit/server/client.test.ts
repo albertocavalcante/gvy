@@ -183,6 +183,11 @@ describe("server/client lifecycle", () => {
     assert.strictEqual(mod.getClient()?.state, State.Running);
   });
 
+  it("uses the groovy section so groovy.trace.server reaches the client", async () => {
+    await mod.startClient();
+    assert.strictEqual(FakeClient.instances[0].id, "groovy");
+  });
+
   it("reports the server version from the initialize result", async () => {
     await mod.startClient();
     assert.ok(setServerVersion.calledWith("9.9.9"));
