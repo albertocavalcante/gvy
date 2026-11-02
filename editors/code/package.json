@@ -871,7 +871,7 @@
     "prepare-server:build": "BUILD_LOCAL=true node tools/prepare-server.js",
     "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
     "package-build": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
-    "watch": "pnpm run --parallel \"/^watch:/\"",
+    "watch": "pnpm run \"/^watch:/\"",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project client/tsconfig.json",
     "check-types": "tsc --noEmit --project client/tsconfig.json",
