@@ -18,7 +18,7 @@ describe("GroovyReplClient", () => {
       sendRequest: sandbox.stub(),
     };
     replClient = new GroovyReplClient(
-      mockLanguageClient as unknown as LanguageClient,
+      () => mockLanguageClient as unknown as LanguageClient,
     );
   });
 

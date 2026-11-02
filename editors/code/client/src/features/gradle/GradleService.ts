@@ -1,4 +1,4 @@
-import { LanguageClient } from "vscode-languageclient/node";
+import { ClientProvider, requireClient } from "../../server/clientProvider";
 import { RequestType } from "vscode-languageserver-protocol";
 
 export interface GradleTask {
@@ -14,7 +14,11 @@ const GradleTasksRequest = new RequestType<
 >("groovy/gradleTasks");
 
 export class GradleService {
-  constructor(private readonly client: LanguageClient) {}
+  constructor(private readonly getClient: ClientProvider) {}
+
+  private get client() {
+    return requireClient(this.getClient);
+  }
 
   async getTasks(workspaceUri: string): Promise<GradleTask[]> {
     const tasks = await this.client.sendRequest(GradleTasksRequest, {

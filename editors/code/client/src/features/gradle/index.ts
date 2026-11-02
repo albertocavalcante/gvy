@@ -4,15 +4,7 @@ import { GradleService } from "./GradleService";
 import { GradleTaskProvider } from "./GradleTaskProvider";
 
 export function registerGradleFeatures(context: vscode.ExtensionContext) {
-  const client = getClient();
-  if (!client) {
-    console.error(
-      "Gradle features cannot be registered: Language Client not ready.",
-    );
-    return;
-  }
-
-  const gradleService = new GradleService(client);
+  const gradleService = new GradleService(getClient);
   const taskProvider = new GradleTaskProvider(gradleService);
 
   const taskProviderDisposable = vscode.tasks.registerTaskProvider(

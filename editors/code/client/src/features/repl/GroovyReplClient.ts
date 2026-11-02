@@ -1,4 +1,4 @@
-import { LanguageClient } from "vscode-languageclient/node";
+import { ClientProvider, requireClient } from "../../server/clientProvider";
 
 export interface ReplResult {
   result: string;
@@ -6,7 +6,11 @@ export interface ReplResult {
 }
 
 export class GroovyReplClient {
-  constructor(private readonly client: LanguageClient) {}
+  constructor(private readonly getClient: ClientProvider) {}
+
+  private get client() {
+    return requireClient(this.getClient);
+  }
 
   async evaluate(expression: string): Promise<ReplResult> {
     return this.client.sendRequest("groovy/execute", { expression });

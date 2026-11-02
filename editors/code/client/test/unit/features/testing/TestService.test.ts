@@ -22,7 +22,7 @@ describe("TestService", () => {
       sendRequest: sandbox.stub(),
     };
     testService = new TestService(
-      mockLanguageClient as unknown as LanguageClient,
+      () => mockLanguageClient as unknown as LanguageClient,
     );
   });
 
@@ -77,5 +77,13 @@ describe("TestService", () => {
     const suites = await testService.discoverTestsInWorkspace(workspaceUri);
 
     expect(suites).to.be.an("array").that.is.empty;
+  });
+  it("uses the current client after a server restart", async () => {
+    const restarted = { sendRequest: sandbox.stub().resolves([]) };
+    let current: unknown = mockLanguageClient;
+    const service = new TestService(() => current as LanguageClient);
+    current = restarted;
+    await service.discoverTestsInWorkspace("file:///w");
+    expect(restarted.sendRequest.calledOnce).to.equal(true);
   });
 });

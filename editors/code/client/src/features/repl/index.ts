@@ -102,7 +102,7 @@ export class ReplService implements vscode.Disposable {
       return;
     }
 
-    this.replClient = new GroovyReplClient(client);
+    this.replClient = new GroovyReplClient(getClient);
 
     if (this.terminal) {
       this.terminal.show();
