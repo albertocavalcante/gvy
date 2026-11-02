@@ -100,7 +100,7 @@ class DomainResultTest {
 class PipelineTest {
 
     @Test
-    fun `firstSuccess returns first successful result`() = runTest {
+    fun `firstSuccess returns first successful result`(): Unit = runTest {
         val pipeline = Pipeline.firstSuccess(
             Pipeline<Unit, String> { "first error".failure("A") },
             Pipeline<Unit, String> { "success".success() },
@@ -112,7 +112,7 @@ class PipelineTest {
     }
 
     @Test
-    fun `firstSuccess returns last error if all fail`() = runTest {
+    fun `firstSuccess returns last error if all fail`(): Unit = runTest {
         val pipeline = Pipeline.firstSuccess(
             Pipeline<Unit, String> { "error A".failure("A") },
             Pipeline<Unit, String> { "error B".failure("B") },
@@ -128,7 +128,7 @@ class PipelineTest {
     }
 
     @Test
-    fun `firstSuccess handles empty list`() = runTest {
+    fun `firstSuccess handles empty list`(): Unit = runTest {
         val pipeline = Pipeline.firstSuccess<Unit, String>(emptyList())
 
         val result = pipeline.execute(Unit)
@@ -140,7 +140,7 @@ class PipelineTest {
     }
 
     @Test
-    fun `firstSuccess catches exceptions and continues`() = runTest {
+    fun `firstSuccess catches exceptions and continues`(): Unit = runTest {
         val pipeline = Pipeline.firstSuccess(
             Pipeline<Unit, String> { throw IllegalStateException("Boom!") },
             Pipeline<Unit, String> { "recovered".success() },
@@ -151,7 +151,7 @@ class PipelineTest {
     }
 
     @Test
-    fun `constant always succeeds with value`() = runTest {
+    fun `constant always succeeds with value`(): Unit = runTest {
         val pipeline = Pipeline.constant<Unit, Int>(42)
 
         val result = pipeline.execute(Unit)
@@ -159,7 +159,7 @@ class PipelineTest {
     }
 
     @Test
-    fun `fail always returns error`() = runTest {
+    fun `fail always returns error`(): Unit = runTest {
         val pipeline = Pipeline.fail<Unit, String>("Always fails", "FailPipeline")
 
         val result = pipeline.execute(Unit)
@@ -174,7 +174,7 @@ class PipelineTest {
     }
 
     @Test
-    fun `pipeline passes context to stages`() = runTest {
+    fun `pipeline passes context to stages`(): Unit = runTest {
         data class Context(val multiplier: Int)
 
         val pipeline = Pipeline<Context, Int> { ctx ->

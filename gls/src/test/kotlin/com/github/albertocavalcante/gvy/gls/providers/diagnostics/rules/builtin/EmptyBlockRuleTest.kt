@@ -14,7 +14,7 @@ class EmptyBlockRuleTest {
     private val rule = EmptyBlockRule()
 
     @Test
-    fun `should detect empty block`() = runBlocking {
+    fun `should detect empty block`(): Unit = runBlocking {
         val code = """
             class Example {
                 void test() {}
@@ -31,7 +31,7 @@ class EmptyBlockRuleTest {
     }
 
     @Test
-    fun `should detect multiple empty blocks`() = runBlocking {
+    fun `should detect multiple empty blocks`(): Unit = runBlocking {
         val code = """
             class Example {
                 void test1() {}
@@ -46,7 +46,7 @@ class EmptyBlockRuleTest {
     }
 
     @Test
-    fun `should not flag non-empty blocks`() = runBlocking {
+    fun `should not flag non-empty blocks`(): Unit = runBlocking {
         val code = """
             class Example {
                 void test() {
@@ -62,7 +62,7 @@ class EmptyBlockRuleTest {
     }
 
     @Test
-    fun `should not flag empty block in comment`() = runBlocking {
+    fun `should not flag empty block in comment`(): Unit = runBlocking {
         val code = """
             // This is a comment with {}
             class Example {

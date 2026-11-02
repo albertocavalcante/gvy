@@ -32,7 +32,7 @@ class SymbolExtractionTest {
     }
 
     @Test
-    fun `extract class names from simple groovy file`() = runBlocking {
+    fun `extract class names from simple groovy file`(): Unit = runBlocking {
         val content = """
             package com.example
 
@@ -69,7 +69,7 @@ class SymbolExtractionTest {
     }
 
     @Test
-    fun `extract method signatures from class`() = runBlocking {
+    fun `extract method signatures from class`(): Unit = runBlocking {
         val content = """
             class Calculator {
                 int add(int a, int b) {
@@ -121,7 +121,7 @@ class SymbolExtractionTest {
     }
 
     @Test
-    fun `extract field declarations from class`() = runBlocking {
+    fun `extract field declarations from class`(): Unit = runBlocking {
         val content = """
             class DataModel {
                 private String id
@@ -166,7 +166,7 @@ class SymbolExtractionTest {
     }
 
     @Test
-    fun `extract symbols from import statements`() = runBlocking {
+    fun `extract symbols from import statements`(): Unit = runBlocking {
         val content = """
             package com.example.services
 
@@ -204,7 +204,7 @@ class SymbolExtractionTest {
     }
 
     @Test
-    fun `extract local variable symbols with type inference`() = runBlocking {
+    fun `extract local variable symbols with type inference`(): Unit = runBlocking {
         val content = """
             class Test {
                 def method() {

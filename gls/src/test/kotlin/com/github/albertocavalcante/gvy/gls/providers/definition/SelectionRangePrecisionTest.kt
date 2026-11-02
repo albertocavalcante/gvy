@@ -28,7 +28,7 @@ class SelectionRangePrecisionTest {
     }
 
     @Test
-    fun `variable reference should have exact selection range without spaces`() = runTest {
+    fun `variable reference should have exact selection range without spaces`(): Unit = runTest {
         val file = tempDir.resolve("Test.groovy")
         val code = """
             def myVariable = 10
@@ -67,7 +67,7 @@ class SelectionRangePrecisionTest {
     }
 
     @Test
-    fun `constant string should have exact selection range`() = runTest {
+    fun `constant string should have exact selection range`(): Unit = runTest {
         val file = tempDir.resolve("Test.groovy")
         val code = """
             def text = "hello"
@@ -103,7 +103,7 @@ class SelectionRangePrecisionTest {
     }
 
     @Test
-    fun `variable with leading spaces should not include spaces in selection`() = runTest {
+    fun `variable with leading spaces should not include spaces in selection`(): Unit = runTest {
         val file = tempDir.resolve("Test.groovy")
         val code = """
             def myVar = 5

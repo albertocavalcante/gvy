@@ -76,7 +76,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `isValidNodePosition works with valid nodes`() = runTest {
+    fun `isValidNodePosition works with valid nodes`(): Unit = runTest {
         val groovyCode = "class TestClass {}"
         val uri = URI.create("file:///test.groovy")
         val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
@@ -87,7 +87,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `getNodeLspRange returns correct range for valid node`() = runTest {
+    fun `getNodeLspRange returns correct range for valid node`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {}
@@ -108,7 +108,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `getNodeLspRange works with valid nodes`() = runTest {
+    fun `getNodeLspRange works with valid nodes`(): Unit = runTest {
         val groovyCode = "class TestClass {}"
         val uri = URI.create("file:///test.groovy")
         val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
@@ -119,7 +119,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `nodeContainsPosition works with LSP coordinates`() = runTest {
+    fun `nodeContainsPosition works with LSP coordinates`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -142,7 +142,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `nodeContainsPosition correctly handles single-line nodes`() = runTest {
+    fun `nodeContainsPosition correctly handles single-line nodes`(): Unit = runTest {
         val groovyCode = "def x = 42"
         val uri = URI.create("file:///test.groovy")
         val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
@@ -165,7 +165,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `nodeContainsPosition correctly handles multi-line nodes`() = runTest {
+    fun `nodeContainsPosition correctly handles multi-line nodes`(): Unit = runTest {
         val groovyCode = """
             class MultilineClass {
                 def method() {
@@ -247,7 +247,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `getNodeLspRange returns exclusive end column for LSP spec compliance`() = runTest {
+    fun `getNodeLspRange returns exclusive end column for LSP spec compliance`(): Unit = runTest {
         // Groovy AST uses 1-based INCLUSIVE columns for both start and end
         // LSP uses 0-based, start INCLUSIVE, end EXCLUSIVE
         // This test verifies the fix for incorrect end column conversion
@@ -286,7 +286,7 @@ class CoordinateSystemTest {
      * Groovy's lastColumnNumber is inclusive, so we must use `<=` comparison.
      */
     @Test
-    fun `nodeContainsPosition should include end column because Groovy is inclusive`() = runTest {
+    fun `nodeContainsPosition should include end column because Groovy is inclusive`(): Unit = runTest {
         val groovyCode = "class Test { int x }"
         val uri = URI.create("file:///test.groovy")
         val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
@@ -319,7 +319,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `nodeContainsPosition should return false for synthetic or invalid nodes`() = runTest {
+    fun `nodeContainsPosition should return false for synthetic or invalid nodes`(): Unit = runTest {
         val node = VariableExpression("synthetic")
         // Synthetic nodes often have -1 or 0 for positions
         node.lineNumber = 0
@@ -347,7 +347,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `nodeContainsPosition should handle single-character nodes`() = runTest {
+    fun `nodeContainsPosition should handle single-character nodes`(): Unit = runTest {
         val node = VariableExpression("a")
         node.lineNumber = 10
         node.columnNumber = 5
@@ -360,7 +360,7 @@ class CoordinateSystemTest {
     }
 
     @Test
-    fun `nodeContainsPosition should handle multi-line boundary conditions`() = runTest {
+    fun `nodeContainsPosition should handle multi-line boundary conditions`(): Unit = runTest {
         val node = VariableExpression("multi")
         node.lineNumber = 10
         node.columnNumber = 5

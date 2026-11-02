@@ -15,7 +15,7 @@ class PrintlnDebugRuleTest {
     private val rule = PrintlnDebugRule()
 
     @Test
-    fun `should detect println statement`() = runBlocking {
+    fun `should detect println statement`(): Unit = runBlocking {
         val code = """
             class Example {
                 void test() {
@@ -35,7 +35,7 @@ class PrintlnDebugRuleTest {
     }
 
     @Test
-    fun `should highlight println starting at identifier even with indentation`() = runBlocking {
+    fun `should highlight println starting at identifier even with indentation`(): Unit = runBlocking {
         val code = """
             class Example {
                 void test() {
@@ -59,7 +59,7 @@ class PrintlnDebugRuleTest {
     }
 
     @Test
-    fun `should detect multiple println statements`() = runBlocking {
+    fun `should detect multiple println statements`(): Unit = runBlocking {
         val code = """
             println("first")
             println("second")
@@ -72,7 +72,7 @@ class PrintlnDebugRuleTest {
     }
 
     @Test
-    fun `should not flag commented println`() = runBlocking {
+    fun `should not flag commented println`(): Unit = runBlocking {
         val code = """
             // println("commented")
             /* println("block comment") */
@@ -87,7 +87,7 @@ class PrintlnDebugRuleTest {
     }
 
     @Test
-    fun `should handle code without println`() = runBlocking {
+    fun `should handle code without println`(): Unit = runBlocking {
         val code = """
             class Example {
                 void test() {

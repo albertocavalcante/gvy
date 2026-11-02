@@ -46,7 +46,7 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
-    fun `full flow - unused import gets both diagnostic and semantic token marker`() = runBlocking {
+    fun `full flow - unused import gets both diagnostic and semantic token marker`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList
             import java.util.HashMap
@@ -101,7 +101,7 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
-    fun `aliased imports are correctly detected as used or unused`() = runBlocking {
+    fun `aliased imports are correctly detected as used or unused`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList as AL
             import java.util.HashMap as HM
@@ -121,7 +121,7 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
-    fun `static imports are correctly detected`() = runBlocking {
+    fun `static imports are correctly detected`(): Unit = runBlocking {
         val code = """
             import static java.util.Collections.emptyList
             import static java.util.Collections.emptyMap
@@ -141,7 +141,7 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
-    fun `star imports are not reported as unused`() = runBlocking {
+    fun `star imports are not reported as unused`(): Unit = runBlocking {
         val code = """
             import java.util.*
 
@@ -156,7 +156,7 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
-    fun `imports used only in annotations are detected as used`() = runBlocking {
+    fun `imports used only in annotations are detected as used`(): Unit = runBlocking {
         val code = """
             import groovy.transform.ToString
             import java.util.HashMap
@@ -177,7 +177,7 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
-    fun `imports used in extends clause are detected as used`() = runBlocking {
+    fun `imports used in extends clause are detected as used`(): Unit = runBlocking {
         val code = """
             import java.util.AbstractList
             import java.util.HashMap
@@ -200,7 +200,7 @@ class UnusedImportDimmingIntegrationTest {
     }
 
     @Test
-    fun `imports used in generic type arguments are detected as used`() = runBlocking {
+    fun `imports used in generic type arguments are detected as used`(): Unit = runBlocking {
         val code = """
             import java.util.List
             import java.util.Map

@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 class MinimalTest {
 
     @Test
-    fun `test basic invalid groovy compilation`() = runBlocking {
+    fun `test basic invalid groovy compilation`(): Unit = runBlocking {
         val compilationService = GroovyCompilationService()
 
         val invalidGroovyContent = """

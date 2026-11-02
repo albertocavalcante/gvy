@@ -223,7 +223,7 @@ class ParseResultAccessorTest {
     }
 
     @Test
-    fun `getValidParseResult returns cached if not suspicious`() = runBlocking {
+    fun `getValidParseResult returns cached if not suspicious`(): Unit = runBlocking {
         val uri = URI.create("file:///NormalClass.groovy")
 
         val superClass = mockk<ClassNode>(relaxed = true)
@@ -245,7 +245,7 @@ class ParseResultAccessorTest {
     }
 
     @Test
-    fun `getValidParseResult re-compiles if suspicious Script detected`() = runBlocking {
+    fun `getValidParseResult re-compiles if suspicious Script detected`(): Unit = runBlocking {
         val file = tempDir.resolve("TestScript.groovy").apply {
             createFile()
             writeText("class TestScript {}")
@@ -288,7 +288,7 @@ class ParseResultAccessorTest {
     }
 
     @Test
-    fun `getValidParseResult returns null when not cached`() = runBlocking {
+    fun `getValidParseResult returns null when not cached`(): Unit = runBlocking {
         val uri = URI.create("file:///test.groovy")
 
         every { cacheService.getCached(uri) } returns null

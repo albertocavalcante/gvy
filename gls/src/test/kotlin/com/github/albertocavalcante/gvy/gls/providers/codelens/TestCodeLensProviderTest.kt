@@ -13,7 +13,7 @@ import java.net.URI
 
 class TestCodeLensProviderTest {
     @Test
-    fun `should provide Run and Debug CodeLenses for Spock features`() = runBlocking {
+    fun `should provide Run and Debug CodeLenses for Spock features`(): Unit = runBlocking {
         val uri = URI.create("file:///MySpec.groovy")
         val content = """
             package com.example

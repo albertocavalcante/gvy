@@ -66,7 +66,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `initialize creates workspace manager`() = runBlocking {
+    fun `initialize creates workspace manager`(): Unit = runBlocking {
         val config = createConfig(filePatterns = listOf("**/Jenkinsfile"))
 
         val job = strategy.initialize(tempDir, config)
@@ -87,7 +87,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `isJenkinsFile delegates to workspace manager after init`() = runBlocking {
+    fun `isJenkinsFile delegates to workspace manager after init`(): Unit = runBlocking {
         // Create a Jenkinsfile
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         Files.writeString(jenkinsfile, "pipeline { agent any }")
@@ -105,7 +105,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `getGlobalVariables returns vars from workspace after init`() = runBlocking {
+    fun `getGlobalVariables returns vars from workspace after init`(): Unit = runBlocking {
         // Create vars directory with a global variable
         val varsDir = tempDir.resolve("vars")
         Files.createDirectories(varsDir)
@@ -126,7 +126,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `getClasspathForFile returns null for non-Jenkins files`() = runBlocking {
+    fun `getClasspathForFile returns null for non-Jenkins files`(): Unit = runBlocking {
         val config = createConfig(filePatterns = listOf("**/Jenkinsfile"))
         strategy.initialize(tempDir, config)
 
@@ -143,7 +143,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `getClasspathForFile returns classpath for Jenkins files`() = runBlocking {
+    fun `getClasspathForFile returns classpath for Jenkins files`(): Unit = runBlocking {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         Files.writeString(jenkinsfile, "pipeline { agent any }")
 
@@ -168,7 +168,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `shutdown clears internal state`() = runBlocking {
+    fun `shutdown clears internal state`(): Unit = runBlocking {
         val config = createConfig(filePatterns = listOf("**/Jenkinsfile"))
         strategy.initialize(tempDir, config)
 
@@ -185,7 +185,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `updateConfiguration recreates workspace manager`() = runBlocking {
+    fun `updateConfiguration recreates workspace manager`(): Unit = runBlocking {
         val initialConfig = createConfig(filePatterns = listOf("**/Jenkinsfile"))
         strategy.initialize(tempDir, initialConfig)
 
@@ -198,7 +198,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `awaitInitialization waits for async job`() = runBlocking {
+    fun `awaitInitialization waits for async job`(): Unit = runBlocking {
         val config = createConfig(filePatterns = listOf("**/Jenkinsfile"))
         val job = strategy.initialize(tempDir, config)
 
@@ -212,7 +212,7 @@ class JenkinsProjectStrategyTest {
     }
 
     @Test
-    fun `isGdslFile detects gdsl files`() = runBlocking {
+    fun `isGdslFile detects gdsl files`(): Unit = runBlocking {
         val gdslFile = tempDir.resolve("jenkins.gdsl")
         Files.writeString(gdslFile, "// GDSL content")
 

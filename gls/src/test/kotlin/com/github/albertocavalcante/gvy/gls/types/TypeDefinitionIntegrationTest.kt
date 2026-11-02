@@ -38,7 +38,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test variable type definition`() = runTest {
+    fun `test variable type definition`(): Unit = runTest {
         val code = """
             class Person {
                 String name
@@ -66,7 +66,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test primitive types return correct type`() = runTest {
+    fun `test primitive types return correct type`(): Unit = runTest {
         val code = """
             int count = 42
             count + 1
@@ -87,7 +87,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test field type definition`() = runTest {
+    fun `test field type definition`(): Unit = runTest {
         val code = """
             class Person {
                 String name
@@ -110,7 +110,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test method return type`() = runTest {
+    fun `test method return type`(): Unit = runTest {
         val code = """
             class Calculator {
                 String getName() {
@@ -128,7 +128,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test parameter type`() = runTest {
+    fun `test parameter type`(): Unit = runTest {
         val code = """
             class Service {
                 void process(String input) {
@@ -146,7 +146,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test def keyword inference`() = runTest {
+    fun `test def keyword inference`(): Unit = runTest {
         val code = """
             def message = "Hello"
                //^ cursor here
@@ -160,7 +160,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test collection literal inference`() = runTest {
+    fun `test collection literal inference`(): Unit = runTest {
         val code = """
             def numbers = [1, 2, 3]
                //^ cursor here
@@ -182,7 +182,7 @@ class TypeDefinitionIntegrationTest {
     }
 
     @Test
-    fun `test constructor call type definition`() = runTest {
+    fun `test constructor call type definition`(): Unit = runTest {
         val code = """
             class Greeter{
                 String message="Hi"

@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 class UnifiedHoverProviderExtendedTest {
 
     @Test
-    fun `getHover returns empty when no node at position`() = runBlocking {
+    fun `getHover returns empty when no node at position`(): Unit = runBlocking {
         val parseUnit = createMockParseUnit(nodeAtPosition = null)
         val provider = UnifiedHoverProvider(parseUnit)
         val params = HoverParams(TextDocumentIdentifier("file:///test.groovy"), Position(0, 0))
@@ -36,7 +36,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover returns hover for class node`() = runBlocking {
+    fun `getHover returns hover for class node`(): Unit = runBlocking {
         val classNode = UnifiedNode(
             name = "MyClass",
             kind = UnifiedNodeKind.CLASS,
@@ -56,7 +56,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover returns hover for method node`() = runBlocking {
+    fun `getHover returns hover for method node`(): Unit = runBlocking {
         val methodNode = UnifiedNode(
             name = "doSomething",
             kind = UnifiedNodeKind.METHOD,
@@ -76,7 +76,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover returns hover for field node`() = runBlocking {
+    fun `getHover returns hover for field node`(): Unit = runBlocking {
         val fieldNode = UnifiedNode(
             name = "name",
             kind = UnifiedNodeKind.FIELD,
@@ -96,7 +96,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover returns hover for variable node`() = runBlocking {
+    fun `getHover returns hover for variable node`(): Unit = runBlocking {
         val varNode = UnifiedNode(
             name = "counter",
             kind = UnifiedNodeKind.VARIABLE,
@@ -116,7 +116,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover includes type information when available`() = runBlocking {
+    fun `getHover includes type information when available`(): Unit = runBlocking {
         val node = UnifiedNode(
             name = "value",
             kind = UnifiedNodeKind.FIELD,
@@ -136,7 +136,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover includes documentation when available`() = runBlocking {
+    fun `getHover includes documentation when available`(): Unit = runBlocking {
         val node = UnifiedNode(
             name = "documented",
             kind = UnifiedNodeKind.METHOD,
@@ -156,7 +156,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover handles interface node`() = runBlocking {
+    fun `getHover handles interface node`(): Unit = runBlocking {
         val interfaceNode = UnifiedNode(
             name = "MyInterface",
             kind = UnifiedNodeKind.INTERFACE,
@@ -176,7 +176,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover handles enum node`() = runBlocking {
+    fun `getHover handles enum node`(): Unit = runBlocking {
         val enumNode = UnifiedNode(
             name = "Status",
             kind = UnifiedNodeKind.ENUM,
@@ -196,7 +196,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover handles constructor node`() = runBlocking {
+    fun `getHover handles constructor node`(): Unit = runBlocking {
         val constructorNode = UnifiedNode(
             name = "MyClass",
             kind = UnifiedNodeKind.CONSTRUCTOR,
@@ -216,7 +216,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover handles trait node`() = runBlocking {
+    fun `getHover handles trait node`(): Unit = runBlocking {
         val traitNode = UnifiedNode(
             name = "MyTrait",
             kind = UnifiedNodeKind.TRAIT,
@@ -236,7 +236,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover handles property node`() = runBlocking {
+    fun `getHover handles property node`(): Unit = runBlocking {
         val propertyNode = UnifiedNode(
             name = "firstName",
             kind = UnifiedNodeKind.PROPERTY,
@@ -256,7 +256,7 @@ class UnifiedHoverProviderExtendedTest {
     }
 
     @Test
-    fun `getHover handles closure node`() = runBlocking {
+    fun `getHover handles closure node`(): Unit = runBlocking {
         val closureNode = UnifiedNode(
             name = null,
             kind = UnifiedNodeKind.CLOSURE,

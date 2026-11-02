@@ -51,7 +51,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: trigger cancels existing job ====================
 
     @Test
-    fun `trigger cancels existing job for same URI`() = runTest {
+    fun `trigger cancels existing job for same URI`(): Unit = runTest {
         // Given: compilations that stay pending until the test releases them
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -99,7 +99,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: a job that finishes immediately does not leak ====================
 
     @Test
-    fun `job that completes immediately is not left registered`() = runTest {
+    fun `job that completes immediately is not left registered`(): Unit = runTest {
         // Given: an eager dispatcher and a compilation that is already complete, so the job
         // runs to completion inside trigger() unless it is registered before it starts
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
@@ -137,7 +137,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: trigger publishes parser diagnostics first ====================
 
     @Test
-    fun `trigger publishes parser diagnostics first`() = runTest {
+    fun `trigger publishes parser diagnostics first`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -185,7 +185,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: trigger merges extra diagnostics ====================
 
     @Test
-    fun `trigger merges extra diagnostics from providers`() = runTest {
+    fun `trigger merges extra diagnostics from providers`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -235,7 +235,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: trigger handles compilation failure ====================
 
     @Test
-    fun `trigger handles compilation failure gracefully`() = runTest {
+    fun `trigger handles compilation failure gracefully`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -276,7 +276,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: trigger respects cancellation ====================
 
     @Test
-    fun `trigger respects cancellation`() = runTest {
+    fun `trigger respects cancellation`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -319,7 +319,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: cancelAndRemove stops running job ====================
 
     @Test
-    fun `cancelAndRemove stops running job`() = runTest {
+    fun `cancelAndRemove stops running job`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -363,7 +363,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: refreshAll triggers for all open documents ====================
 
     @Test
-    fun `refreshAll triggers diagnostics for all open documents`() = runTest {
+    fun `refreshAll triggers diagnostics for all open documents`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -415,7 +415,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: respects parser disabled configuration ====================
 
     @Test
-    fun `trigger respects parser disabled in configuration`() = runTest {
+    fun `trigger respects parser disabled in configuration`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -463,7 +463,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: awaitDiagnostics waits for job completion ====================
 
     @Test
-    fun `awaitDiagnostics waits for job completion`() = runTest {
+    fun `awaitDiagnostics waits for job completion`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
@@ -518,7 +518,7 @@ class DiagnosticsOrchestratorTest {
     // ==================== Test: does not publish twice when no extra diagnostics ====================
 
     @Test
-    fun `trigger does not publish twice when no extra diagnostics`() = runTest {
+    fun `trigger does not publish twice when no extra diagnostics`(): Unit = runTest {
         // Given
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()

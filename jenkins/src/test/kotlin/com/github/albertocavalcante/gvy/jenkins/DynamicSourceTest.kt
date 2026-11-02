@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
 class DynamicSourceTest {
 
     @Test
-    fun `dynamic source overrides stable definitions`() = runTest {
+    fun `dynamic source overrides stable definitions`(): Unit = runTest {
         // 1. Create a mock extractor
         val mockExtractor = mockk<JenkinsPluginMetadataExtractor>()
 

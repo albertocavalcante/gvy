@@ -31,7 +31,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename local variable updates all references`() = runBlocking {
+    fun `rename local variable updates all references`(): Unit = runBlocking {
         val content = """
             def localVar = 42
             println localVar
@@ -61,7 +61,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename with keyword should fail`() = runBlocking {
+    fun `rename with keyword should fail`(): Unit = runBlocking {
         val content = """
             def myVar = 42
             println myVar
@@ -80,7 +80,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename with same name should fail`() = runBlocking {
+    fun `rename with same name should fail`(): Unit = runBlocking {
         val content = """
             def myVar = 42
             println myVar
@@ -99,7 +99,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename with empty name should fail`() = runBlocking {
+    fun `rename with empty name should fail`(): Unit = runBlocking {
         val content = """
             def myVar = 42
             println myVar
@@ -118,7 +118,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename with invalid identifier should fail`() = runBlocking {
+    fun `rename with invalid identifier should fail`(): Unit = runBlocking {
         val content = """
             def myVar = 42
             println myVar
@@ -137,7 +137,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename method updates all calls`() = runBlocking {
+    fun `rename method updates all calls`(): Unit = runBlocking {
         val content = """
             def oldMethod() {
                 return 42
@@ -167,7 +167,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename class property updates all accesses`() = runBlocking {
+    fun `rename class property updates all accesses`(): Unit = runBlocking {
         val content = """
             class MyClass {
                 String oldProp = "value"
@@ -197,7 +197,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename top-level class includes file rename`() = runBlocking {
+    fun `rename top-level class includes file rename`(): Unit = runBlocking {
         val content = """
             class MyOldClass {
                 def myMethod() {
@@ -236,7 +236,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename parameter in method signature and body`() = runBlocking {
+    fun `rename parameter in method signature and body`(): Unit = runBlocking {
         val content = """
             def myMethod(String param1, int param2) {
                 println param1
@@ -263,7 +263,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename at position with no symbol should fail`() = runBlocking {
+    fun `rename at position with no symbol should fail`(): Unit = runBlocking {
         val content = """
             // This is just a comment
             def myVar = 42
@@ -286,7 +286,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename class in file with different name should not include file rename`() = runBlocking {
+    fun `rename class in file with different name should not include file rename`(): Unit = runBlocking {
         val content = """
             class SomeClass {
                 def method() { return 1 }
@@ -322,7 +322,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename with whitespace-only name should fail`() = runBlocking {
+    fun `rename with whitespace-only name should fail`(): Unit = runBlocking {
         val content = """
             def myVar = 42
             println myVar
@@ -343,7 +343,7 @@ class RenameProviderTest {
     }
 
     @Test
-    fun `rename with special characters should fail`() = runBlocking {
+    fun `rename with special characters should fail`(): Unit = runBlocking {
         val content = """
             def myVar = 42
             println myVar

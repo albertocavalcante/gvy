@@ -25,7 +25,7 @@ import kotlin.test.assertTrue
 class UnifiedDefinitionProviderExtendedTest {
 
     @Test
-    fun `getDefinition returns empty when node is null at position`() = runBlocking {
+    fun `getDefinition returns empty when node is null at position`(): Unit = runBlocking {
         val parseUnit = createMockParseUnit(nodeAtPosition = null)
         val service = MockDefinitionService(results = emptyList())
         val provider = UnifiedDefinitionProvider(parseUnit, service)
@@ -37,7 +37,7 @@ class UnifiedDefinitionProviderExtendedTest {
     }
 
     @Test
-    fun `getDefinition returns results from service when node exists`() = runBlocking {
+    fun `getDefinition returns results from service when node exists`(): Unit = runBlocking {
         val node = UnifiedNode(
             name = "myMethod",
             kind = UnifiedNodeKind.METHOD,
@@ -67,7 +67,7 @@ class UnifiedDefinitionProviderExtendedTest {
     }
 
     @Test
-    fun `getDefinition handles multiple definition results`() = runBlocking {
+    fun `getDefinition handles multiple definition results`(): Unit = runBlocking {
         val node = UnifiedNode(
             name = "overloaded",
             kind = UnifiedNodeKind.METHOD,
@@ -103,7 +103,7 @@ class UnifiedDefinitionProviderExtendedTest {
     }
 
     @Test
-    fun `getDefinition preserves range from service results`() = runBlocking {
+    fun `getDefinition preserves range from service results`(): Unit = runBlocking {
         val node = UnifiedNode(
             name = "target",
             kind = UnifiedNodeKind.FIELD,
@@ -134,7 +134,7 @@ class UnifiedDefinitionProviderExtendedTest {
     }
 
     @Test
-    fun `getDefinition works for class references`() = runBlocking {
+    fun `getDefinition works for class references`(): Unit = runBlocking {
         val node = UnifiedNode(
             name = "TargetClass",
             kind = UnifiedNodeKind.CLASS,
@@ -163,7 +163,7 @@ class UnifiedDefinitionProviderExtendedTest {
     }
 
     @Test
-    fun `getDefinition works for variable references`() = runBlocking {
+    fun `getDefinition works for variable references`(): Unit = runBlocking {
         val node = UnifiedNode(
             name = "localVar",
             kind = UnifiedNodeKind.VARIABLE,

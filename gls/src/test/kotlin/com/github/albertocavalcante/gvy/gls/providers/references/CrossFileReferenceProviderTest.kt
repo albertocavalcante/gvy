@@ -37,7 +37,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test find references to method defined in another file`() = runTest {
+    fun `test find references to method defined in another file`(): Unit = runTest {
         // Arrange - Create two files: one with method definition, one with method call
         val defUri = URI.create("file:///ServiceClass.groovy")
         val refUri = URI.create("file:///ClientClass.groovy")
@@ -125,7 +125,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test find references to field defined in another file`() = runTest {
+    fun `test find references to field defined in another file`(): Unit = runTest {
         // Arrange - Create two files: one with field definition, one with field access
         val defUri = URI.create("file:///DataClass.groovy")
         val refUri = URI.create("file:///AccessorClass.groovy")
@@ -206,7 +206,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test find references to class defined in another file`() = runTest {
+    fun `test find references to class defined in another file`(): Unit = runTest {
         // Arrange - Create two files: one with class definition, one with class usage
         val defUri = URI.create("file:///MyClass.groovy")
         val refUri = URI.create("file:///Usage.groovy")
@@ -285,7 +285,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test exclude declaration when includeDeclaration is false`() = runTest {
+    fun `test exclude declaration when includeDeclaration is false`(): Unit = runTest {
         // Arrange
         val defUri = URI.create("file:///Definition.groovy")
         val refUri = URI.create("file:///Reference.groovy")
@@ -355,7 +355,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test deduplication between AST and workspace index results`() = runTest {
+    fun `test deduplication between AST and workspace index results`(): Unit = runTest {
         // Arrange - Create a file with both AST analysis and SemanticDB index
         val uri = URI.create("file:///SameFile.groovy")
 
@@ -420,7 +420,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test fallback to same-file when workspace index unavailable`() = runTest {
+    fun `test fallback to same-file when workspace index unavailable`(): Unit = runTest {
         // Arrange - Create provider WITHOUT workspace index
         val providerWithoutIndex = ReferenceProvider(compilationService, null)
 
@@ -446,7 +446,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test workspace index returns empty when symbol not found`() = runTest {
+    fun `test workspace index returns empty when symbol not found`(): Unit = runTest {
         // Arrange - Create semantic document without the symbol we're looking for
         val uri = URI.create("file:///test.groovy")
         val content = """
@@ -486,7 +486,7 @@ class CrossFileReferenceProviderTest {
     }
 
     @Test
-    fun `test position matching with occurrence range`() = runTest {
+    fun `test position matching with occurrence range`(): Unit = runTest {
         // Arrange - Test that position matching works correctly with SemanticDB ranges
         val uri = URI.create("file:///test.groovy")
         val content = """

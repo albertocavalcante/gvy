@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 class CompilationEnsurerTest {
 
     @Test
-    fun `ensureAllCompiled returns immediately when all documents compiled`() = runBlocking {
+    fun `ensureAllCompiled returns immediately when all documents compiled`(): Unit = runBlocking {
         // Given
         val uri1 = URI.create("file:///test1.groovy")
         val uri2 = URI.create("file:///test2.groovy")
@@ -47,7 +47,7 @@ class CompilationEnsurerTest {
     }
 
     @Test
-    fun `ensureAllCompiled respects iteration limit`() = runBlocking {
+    fun `ensureAllCompiled respects iteration limit`(): Unit = runBlocking {
         // Given
         val uri = URI.create("file:///test.groovy")
 
@@ -77,7 +77,7 @@ class CompilationEnsurerTest {
     }
 
     @Test
-    fun `ensureAllCompiled respects timeout`() = runBlocking {
+    fun `ensureAllCompiled respects timeout`(): Unit = runBlocking {
         // Given
         val uri = URI.create("file:///test.groovy")
 
@@ -111,7 +111,7 @@ class CompilationEnsurerTest {
     }
 
     @Test
-    fun `ensureAllCompiled tracks failed URIs to avoid retry loops`() = runBlocking {
+    fun `ensureAllCompiled tracks failed URIs to avoid retry loops`(): Unit = runBlocking {
         // Given
         val uri = URI.create("file:///test.groovy")
 
@@ -147,7 +147,7 @@ class CompilationEnsurerTest {
     }
 
     @Test
-    fun `ensureAllCompiled waits for pending diagnostic jobs`() = runBlocking {
+    fun `ensureAllCompiled waits for pending diagnostic jobs`(): Unit = runBlocking {
         // Given
         val uri = URI.create("file:///test.groovy")
 
@@ -181,7 +181,7 @@ class CompilationEnsurerTest {
     }
 
     @Test
-    fun `ensureAllCompiled compiles unindexed documents`() = runBlocking {
+    fun `ensureAllCompiled compiles unindexed documents`(): Unit = runBlocking {
         // Given
         val uri1 = URI.create("file:///compiled.groovy")
         val uri2 = URI.create("file:///uncompiled.groovy")
@@ -219,7 +219,7 @@ class CompilationEnsurerTest {
     }
 
     @Test
-    fun `ensureAllCompiled handles null content gracefully`() = runBlocking {
+    fun `ensureAllCompiled handles null content gracefully`(): Unit = runBlocking {
         // Given
         val uri = URI.create("file:///test.groovy")
 

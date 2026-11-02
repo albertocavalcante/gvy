@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 class AbstractDiagnosticRuleTest {
 
     @Test
-    fun `should execute rule when no errors`() = runBlocking {
+    fun `should execute rule when no errors`(): Unit = runBlocking {
         val rule = object : AbstractDiagnosticRule() {
             override val id = "test-rule"
             override val description = "Test rule"
@@ -36,7 +36,7 @@ class AbstractDiagnosticRuleTest {
     }
 
     @Test
-    fun `should skip analysis when errors exist and rule does not allow errored code`() = runBlocking {
+    fun `should skip analysis when errors exist and rule does not allow errored code`(): Unit = runBlocking {
         val rule = object : AbstractDiagnosticRule() {
             override val id = "test-rule"
             override val description = "Test rule"
@@ -54,7 +54,7 @@ class AbstractDiagnosticRuleTest {
     }
 
     @Test
-    fun `should run analysis when errors exist but rule allows errored code`() = runBlocking {
+    fun `should run analysis when errors exist but rule allows errored code`(): Unit = runBlocking {
         val rule = object : AbstractDiagnosticRule() {
             override val id = "test-rule"
             override val description = "Test rule"
@@ -75,7 +75,7 @@ class AbstractDiagnosticRuleTest {
     }
 
     @Test
-    fun `should handle exceptions gracefully`() = runBlocking {
+    fun `should handle exceptions gracefully`(): Unit = runBlocking {
         val rule = object : AbstractDiagnosticRule() {
             override val id = "test-rule"
             override val description = "Test rule"

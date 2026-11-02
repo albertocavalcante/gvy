@@ -37,7 +37,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `save and load semantic document successfully`() = runTest {
+    fun `save and load semantic document successfully`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -56,7 +56,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `load returns null when cache does not exist`() = runTest {
+    fun `load returns null when cache does not exist`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/NonExistent.groovy")
         val sourceHash = "abc123"
@@ -67,7 +67,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `load returns null when source hash does not match`() = runTest {
+    fun `load returns null when source hash does not match`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -84,7 +84,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `isValid returns true when cache exists and hash matches`() = runTest {
+    fun `isValid returns true when cache exists and hash matches`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -98,7 +98,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `isValid returns false when cache does not exist`() = runTest {
+    fun `isValid returns false when cache does not exist`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/NonExistent.groovy")
         val sourceHash = "abc123"
@@ -109,7 +109,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `isValid returns false when hash does not match`() = runTest {
+    fun `isValid returns false when hash does not match`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -124,7 +124,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `invalidate removes cache for a file`() = runTest {
+    fun `invalidate removes cache for a file`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -150,7 +150,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `clear removes all cached files`() = runTest {
+    fun `clear removes all cached files`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri1 = URI.create("file:///test/Example1.groovy")
         val uri2 = URI.create("file:///test/Example2.groovy")
@@ -183,7 +183,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `save handles complex semantic document with types`() = runTest {
+    fun `save handles complex semantic document with types`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Complex.groovy")
         val document = createComplexDocument(uri)
@@ -203,7 +203,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `handles IO errors gracefully`() = runTest {
+    fun `handles IO errors gracefully`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
 
@@ -215,7 +215,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `save overwrites existing cache`() = runTest {
+    fun `save overwrites existing cache`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val doc1 = createTestDocument(uri)
@@ -318,7 +318,7 @@ class SemanticCacheTest {
     // ========================================================================
 
     @Test
-    fun `isValid should not block calling thread`() = runTest {
+    fun `isValid should not block calling thread`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -338,7 +338,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `invalidate should run on IO dispatcher`() = runTest {
+    fun `invalidate should run on IO dispatcher`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -356,7 +356,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `clear should run on IO dispatcher`() = runTest {
+    fun `clear should run on IO dispatcher`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri1 = URI.create("file:///test/Example1.groovy")
         val uri2 = URI.create("file:///test/Example2.groovy")
@@ -376,7 +376,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `concurrent cache operations should work correctly`() = runTest {
+    fun `concurrent cache operations should work correctly`(): Unit = runTest {
         cache = SemanticCache(tempDir)
 
         // Create multiple documents
@@ -419,7 +419,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `suspend functions should work with different coroutine contexts`() = runTest {
+    fun `suspend functions should work with different coroutine contexts`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Example.groovy")
         val document = createTestDocument(uri)
@@ -457,7 +457,7 @@ class SemanticCacheTest {
     // ========================================================================
 
     @Test
-    fun `hashString and hashSource should produce identical results for same content`() = runTest {
+    fun `hashString and hashSource should produce identical results for same content`(): Unit = runTest {
         val content = "class Example { String field }"
 
         // Use the public hashSource method
@@ -469,7 +469,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `sha256Hash should produce correct SHA-256 format`() = runTest {
+    fun `sha256Hash should produce correct SHA-256 format`(): Unit = runTest {
         val content = "test content"
         val hash = SemanticCache.hashSource(content)
 
@@ -488,7 +488,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `sha256Hash should handle empty string`() = runTest {
+    fun `sha256Hash should handle empty string`(): Unit = runTest {
         val emptyHash = SemanticCache.hashSource("")
 
         // Should produce a valid hash even for empty string
@@ -497,7 +497,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `different content should produce different hashes`() = runTest {
+    fun `different content should produce different hashes`(): Unit = runTest {
         val content1 = "class Example1 { }"
         val content2 = "class Example2 { }"
 
@@ -509,7 +509,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `hashing should be consistent across calls`() = runTest {
+    fun `hashing should be consistent across calls`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val content = "class Test { String field }"
 
@@ -522,7 +522,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `cache should use consistent hashing for file names`() = runTest {
+    fun `cache should use consistent hashing for file names`(): Unit = runTest {
         cache = SemanticCache(tempDir)
 
         // Create two URIs
@@ -552,7 +552,7 @@ class SemanticCacheTest {
     // ========================================================================
 
     @Test
-    fun `concurrent cache operations complete within reasonable time`() = runTest {
+    fun `concurrent cache operations complete within reasonable time`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val startTime = System.currentTimeMillis()
 
@@ -594,7 +594,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `cache miss and cache hit have predictable behavior`() = runTest {
+    fun `cache miss and cache hit have predictable behavior`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/MissHit.groovy")
         val document = createTestDocument(uri)
@@ -617,7 +617,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `invalidate affects specific file only not others`() = runTest {
+    fun `invalidate affects specific file only not others`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri1 = URI.create("file:///test/File1.groovy")
         val uri2 = URI.create("file:///test/File2.groovy")
@@ -650,7 +650,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `save and load preserve exact symbol and occurrence counts`() = runTest {
+    fun `save and load preserve exact symbol and occurrence counts`(): Unit = runTest {
         cache = SemanticCache(tempDir)
         val uri = URI.create("file:///test/Exact.groovy")
         val complexDoc = createComplexDocument(uri)
@@ -688,7 +688,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `hash output is deterministic for same input`() = runTest {
+    fun `hash output is deterministic for same input`(): Unit = runTest {
         val content = "class DeterministicTest { String field }"
 
         // Hash same content 100 times
@@ -713,7 +713,7 @@ class SemanticCacheTest {
     }
 
     @Test
-    fun `hash distinguishes minimal content differences`() = runTest {
+    fun `hash distinguishes minimal content differences`(): Unit = runTest {
         val content1 = "class Test { String field }"
         val content2 = "class Test { String field }" // Same
         val content3 = "class Test { String field  }" // Extra space

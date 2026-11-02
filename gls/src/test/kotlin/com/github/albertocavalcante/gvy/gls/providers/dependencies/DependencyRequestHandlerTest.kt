@@ -35,7 +35,7 @@ class DependencyRequestHandlerTest {
     )
 
     @Test
-    fun `getDependencies returns empty when no workspace root found`() = runTest(testDispatcher) {
+    fun `getDependencies returns empty when no workspace root found`(): Unit = runTest(testDispatcher) {
         // Given
         val params = GetDependenciesParams("file:///nonexistent/workspace")
         val handler = createHandlerWithMocks()
@@ -51,7 +51,7 @@ class DependencyRequestHandlerTest {
     }
 
     @Test
-    fun `getDependencies returns empty when build tool manager is null`() = runTest(testDispatcher) {
+    fun `getDependencies returns empty when build tool manager is null`(): Unit = runTest(testDispatcher) {
         // Given
         val params = GetDependenciesParams("file://$tempDir")
         val handler = createHandlerWithMocks(workspaceRoot = tempDir)
@@ -67,7 +67,7 @@ class DependencyRequestHandlerTest {
     }
 
     @Test
-    fun `getDependencies returns empty when no build tool detected`() = runTest(testDispatcher) {
+    fun `getDependencies returns empty when no build tool detected`(): Unit = runTest(testDispatcher) {
         // Given
         val params = GetDependenciesParams("file://$tempDir")
         val mockBuildToolManager = mockk<BuildToolManager>()
@@ -116,7 +116,7 @@ class DependencyRequestHandlerTest {
         }
 
     @Test
-    fun `getDependencies resolves workspace URI correctly`() = runTest(testDispatcher) {
+    fun `getDependencies resolves workspace URI correctly`(): Unit = runTest(testDispatcher) {
         // Given - workspace URI with file:// prefix
         val params = GetDependenciesParams("file://$tempDir")
         val mockBuildToolManager = mockk<BuildToolManager>()
@@ -135,7 +135,7 @@ class DependencyRequestHandlerTest {
     }
 
     @Test
-    fun `getDependencies returns dependencies from build tool`() = runTest(testDispatcher) {
+    fun `getDependencies returns dependencies from build tool`(): Unit = runTest(testDispatcher) {
         // Given
         val params = GetDependenciesParams("file://$tempDir")
         val mockMetadata = listOf(

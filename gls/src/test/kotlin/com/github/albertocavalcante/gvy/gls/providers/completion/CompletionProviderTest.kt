@@ -45,7 +45,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `test getContextualCompletions with valid URI`() = runTest {
+    fun `test getContextualCompletions with valid URI`(): Unit = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -77,7 +77,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `test getContextualCompletions with invalid URI`() = runTest {
+    fun `test getContextualCompletions with invalid URI`(): Unit = runTest {
         // Act
         val completions = CompletionProvider.getContextualCompletions(
             "invalid-uri",
@@ -93,7 +93,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `test getContextualCompletions without compilation`() = runTest {
+    fun `test getContextualCompletions without compilation`(): Unit = runTest {
         // Act - Try to get completions for a file that hasn't been compiled
         val completions = CompletionProvider.getContextualCompletions(
             "file:///unknown.groovy",
@@ -113,7 +113,7 @@ class CompletionProviderTest {
     // ========================================================================
 
     @Test
-    fun `should provide fallback completions when file has syntax error`() = runTest {
+    fun `should provide fallback completions when file has syntax error`(): Unit = runTest {
         // Arrange: File with broken syntax (missing closing brace)
         val brokenContent = """
             def x = {
@@ -145,7 +145,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should provide import completions even when file has syntax error elsewhere`() = runTest {
+    fun `should provide import completions even when file has syntax error elsewhere`(): Unit = runTest {
         // Arrange: File with import line and syntax error elsewhere
         val content = """
             import java.util.L
@@ -175,7 +175,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should not have duplicate keyword completions`() = runTest {
+    fun `should not have duplicate keyword completions`(): Unit = runTest {
         // Arrange: Simple file that will trigger general completions
         val content = """
             // Empty line for completions
@@ -205,7 +205,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should suggest methods for inferred variable type`() = runTest {
+    fun `should suggest methods for inferred variable type`(): Unit = runTest {
         // Arrange
         val content = """
             def list = new ArrayList()
@@ -233,7 +233,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should suggest methods for method parameter type`() = runTest {
+    fun `should suggest methods for method parameter type`(): Unit = runTest {
         // Arrange
         val content = """
             void process(String text) {
@@ -262,7 +262,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should gracefully handle type resolution failure with fallback to AST type`() = runTest {
+    fun `should gracefully handle type resolution failure with fallback to AST type`(): Unit = runTest {
         // Arrange
         val content = """
             String text = "hello"
@@ -296,7 +296,7 @@ class CompletionProviderTest {
     // ========================================================================
 
     @Test
-    fun `should suggest map literal keys for script-level declaration`() = runTest {
+    fun `should suggest map literal keys for script-level declaration`(): Unit = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """
             def config = [host: "localhost", port: 8080]
@@ -331,7 +331,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should suggest map literal keys inside class method`() = runTest {
+    fun `should suggest map literal keys inside class method`(): Unit = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """
             class MyService {
@@ -363,7 +363,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should suggest map literal keys inside if block`() = runTest {
+    fun `should suggest map literal keys inside if block`(): Unit = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """
             class MyService {
@@ -397,7 +397,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should still suggest map methods alongside literal keys`() = runTest {
+    fun `should still suggest map methods alongside literal keys`(): Unit = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """
             def m = [x: 1]
@@ -428,7 +428,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should handle empty map gracefully`() = runTest {
+    fun `should handle empty map gracefully`(): Unit = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """
             def emptyMap = [:]
@@ -453,7 +453,7 @@ class CompletionProviderTest {
     }
 
     @Test
-    fun `should suggest map keys from inner scoped variable`() = runTest {
+    fun `should suggest map keys from inner scoped variable`(): Unit = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """
 class MyService {
@@ -485,7 +485,7 @@ class MyService {
 
     @Test
     @org.junit.jupiter.api.Disabled("Multi-class map completion needs investigation - PR #839")
-    fun `should suggest map keys in second class of multi-class file`() = runTest {
+    fun `should suggest map keys in second class of multi-class file`(): Unit = runTest {
         val realSemanticResolver = createRealSemanticResolver()
         val content = """class FirstClass {
     void first() {
@@ -524,7 +524,7 @@ class SecondClass {
     // ========================================================================
 
     @Test
-    fun `should handle method completions with Map generic parameter`() = runTest {
+    fun `should handle method completions with Map generic parameter`(): Unit = runTest {
         // Test that method completion works with Map<String,String> parameter
         // This indirectly tests that parseSignatureToParams handles generics correctly
         val content = """
@@ -556,7 +556,7 @@ class SecondClass {
     }
 
     @Test
-    fun `should handle method completions with multiple generic parameters`() = runTest {
+    fun `should handle method completions with multiple generic parameters`(): Unit = runTest {
         // Test method with List<String> and Map<Integer,String> parameters
         val content = """
             class DataProcessor {
@@ -585,7 +585,7 @@ class SecondClass {
     }
 
     @Test
-    fun `should handle method completions with nested generic parameters`() = runTest {
+    fun `should handle method completions with nested generic parameters`(): Unit = runTest {
         // Test method with nested generics like Map<String,List<Integer>>
         val content = """
             class ComplexService {
@@ -614,7 +614,7 @@ class SecondClass {
     }
 
     @Test
-    fun `should differentiate overloaded methods with generic parameters`() = runTest {
+    fun `should differentiate overloaded methods with generic parameters`(): Unit = runTest {
         // Test that methods with different generic parameters can be distinguished
         val content = """
             class OverloadedService {

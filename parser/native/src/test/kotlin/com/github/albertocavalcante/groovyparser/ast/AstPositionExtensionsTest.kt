@@ -26,7 +26,7 @@ class AstPositionExtensionsTest {
     private val parserFacade = GroovyParserFacade()
 
     @Test
-    fun `containsPosition returns true for node containing position`() = runTest {
+    fun `containsPosition returns true for node containing position`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -45,7 +45,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `containsPosition returns false for position outside node bounds`() = runTest {
+    fun `containsPosition returns false for position outside node bounds`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -64,7 +64,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `containsPosition handles invalid node positions gracefully`() = runTest {
+    fun `containsPosition handles invalid node positions gracefully`(): Unit = runTest {
         val groovyCode = "def x = 1"
         val uri = URI.create("file:///test.groovy")
         val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
@@ -81,7 +81,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `findNodeAt returns most specific node at position`() = runTest {
+    fun `findNodeAt returns most specific node at position`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -106,7 +106,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `findNodeAt returns null for position outside any node`() = runTest {
+    fun `findNodeAt returns null for position outside any node`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {}
@@ -122,7 +122,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `getDefinition returns variable declaration for variable expression`() = runTest {
+    fun `getDefinition returns variable declaration for variable expression`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -145,7 +145,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `isHoverable returns true for hoverable nodes`() = runTest {
+    fun `isHoverable returns true for hoverable nodes`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 String field = "test"
@@ -166,7 +166,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `isHoverable returns false for non-hoverable nodes`() = runTest {
+    fun `isHoverable returns false for non-hoverable nodes`(): Unit = runTest {
         val groovyCode = "class TestClass {}"
         val uri = URI.create("file:///test.groovy")
         val ast = parserFacade.parse(ParseRequest(uri, groovyCode)).ast as ModuleNode
@@ -176,7 +176,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `findNodeAt returns specific node for string literal in method body`() = runTest {
+    fun `findNodeAt returns specific node for string literal in method body`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def hello() {
@@ -213,7 +213,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `findNodeAt returns specific node for method call in method body`() = runTest {
+    fun `findNodeAt returns specific node for method call in method body`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def hello() {
@@ -254,7 +254,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `findNodeAt returns most specific node not parent node`() = runTest {
+    fun `findNodeAt returns most specific node not parent node`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def calculate() {
@@ -288,7 +288,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `position calculations work correctly for multiline nodes`() = runTest {
+    fun `position calculations work correctly for multiline nodes`(): Unit = runTest {
         val groovyCode = """
             class MultilineClass {
                 def multilineMethod() {
@@ -313,7 +313,7 @@ class AstPositionExtensionsTest {
     }
 
     @Test
-    fun `findNodeAt returns ConstructorCallExpression not ClassNode for new expression`() = runTest {
+    fun `findNodeAt returns ConstructorCallExpression not ClassNode for new expression`(): Unit = runTest {
         val groovyCode = """
             package com.example
 

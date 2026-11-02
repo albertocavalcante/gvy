@@ -48,7 +48,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `compileWorkspace compiles multiple files together`() = runTest {
+    fun `compileWorkspace compiles multiple files together`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -73,7 +73,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `compileWorkspace resolves cross-file class references`() = runTest {
+    fun `compileWorkspace resolves cross-file class references`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -121,7 +121,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `compileWorkspace resolves cross-file method calls`() = runTest {
+    fun `compileWorkspace resolves cross-file method calls`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -160,7 +160,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `compileWorkspace handles syntax errors gracefully`() = runTest {
+    fun `compileWorkspace handles syntax errors gracefully`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -187,7 +187,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `compileWorkspace uses SEMANTIC_ANALYSIS phase for full resolution`() = runTest {
+    fun `compileWorkspace uses SEMANTIC_ANALYSIS phase for full resolution`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -224,7 +224,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `getResolvedModule returns null for unknown URI`() = runTest {
+    fun `getResolvedModule returns null for unknown URI`(): Unit = runTest {
         val unknownUri = URI.create("file:///unknown.groovy")
 
         val module = workspaceCompiler.getResolvedModule(unknownUri)
@@ -233,7 +233,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `compileWorkspace returns empty result for empty workspace`() = runTest {
+    fun `compileWorkspace returns empty result for empty workspace`(): Unit = runTest {
         workspaceManager.initializeWorkspace(tempDir)
 
         val result = workspaceCompiler.compileWorkspace()
@@ -244,7 +244,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `incrementalCompile updates only changed files`() = runTest {
+    fun `incrementalCompile updates only changed files`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -281,7 +281,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `compileWorkspace handles nested package structure`() = runTest {
+    fun `compileWorkspace handles nested package structure`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -322,7 +322,7 @@ class WorkspaceCompilerTest {
     // ========================================================================
 
     @Test
-    fun `concurrent incrementalCompile calls should only trigger one initial compilation`() = runTest {
+    fun `concurrent incrementalCompile calls should only trigger one initial compilation`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -379,7 +379,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `second incrementalCompile should skip initial compilation`() = runTest {
+    fun `second incrementalCompile should skip initial compilation`(): Unit = runTest {
         // Create source directory structure
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -434,7 +434,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `AtomicBoolean prevents race condition in initial compilation flag`() = runTest {
+    fun `AtomicBoolean prevents race condition in initial compilation flag`(): Unit = runTest {
         // This test verifies that the AtomicBoolean compareAndSet prevents
         // multiple threads from triggering initial compilation
         val srcDir = tempDir.resolve("src")
@@ -510,7 +510,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `concurrent incrementalCompile with 50 threads`() = runTest {
+    fun `concurrent incrementalCompile with 50 threads`(): Unit = runTest {
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
 
@@ -542,7 +542,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `concurrent incrementalCompile with 100 threads`() = runTest {
+    fun `concurrent incrementalCompile with 100 threads`(): Unit = runTest {
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
 
@@ -574,7 +574,7 @@ class WorkspaceCompilerTest {
     }
 
     @Test
-    fun `incrementalCompile populates exact field count in compiled class`() = runTest {
+    fun `incrementalCompile populates exact field count in compiled class`(): Unit = runTest {
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
 

@@ -39,7 +39,7 @@ class PropertyExpressionHoverStrategyTest {
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
     @Test
-    fun `hover on simple property access shows property information`() = runTest {
+    fun `hover on simple property access shows property information`(): Unit = runTest {
         val groovyCode = """
             class Person {
                 String name
@@ -70,7 +70,7 @@ class PropertyExpressionHoverStrategyTest {
     }
 
     @Test
-    fun `hover on property with type information`() = runTest {
+    fun `hover on property with type information`(): Unit = runTest {
         val groovyCode = """
             class Book {
                 String title
@@ -112,7 +112,7 @@ class PropertyExpressionHoverStrategyTest {
     }
 
     @Test
-    fun `hover on map property access`() = runTest {
+    fun `hover on map property access`(): Unit = runTest {
         val groovyCode = """
             def config = [
                 host: "localhost",
@@ -141,7 +141,7 @@ class PropertyExpressionHoverStrategyTest {
     }
 
     @Test
-    fun `hover on nested property access`() = runTest {
+    fun `hover on nested property access`(): Unit = runTest {
         val groovyCode = """
             class Address {
                 String street
@@ -190,7 +190,7 @@ class PropertyExpressionHoverStrategyTest {
     }
 
     @Test
-    fun `hover on safe navigation property access`() = runTest {
+    fun `hover on safe navigation property access`(): Unit = runTest {
         val groovyCode = """
             class Person {
                 String name
@@ -217,7 +217,7 @@ class PropertyExpressionHoverStrategyTest {
     }
 
     @Test
-    fun `hover on property with getter`() = runTest {
+    fun `hover on property with getter`(): Unit = runTest {
         val groovyCode = """
             class Counter {
                 private int count = 0
@@ -248,7 +248,7 @@ class PropertyExpressionHoverStrategyTest {
     }
 
     @Test
-    fun `hover on dynamic property access`() = runTest {
+    fun `hover on dynamic property access`(): Unit = runTest {
         val groovyCode = """
             def obj = new Object()
             obj.metaClass.dynamicProp = "dynamic value"

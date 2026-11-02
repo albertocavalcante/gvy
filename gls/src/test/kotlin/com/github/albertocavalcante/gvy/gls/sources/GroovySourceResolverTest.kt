@@ -173,7 +173,7 @@ class GroovySourceResolverTest {
     inner class JarHandlingTest {
 
         @Test
-        fun `should handle non-existent source JAR gracefully`() = runBlocking {
+        fun `should handle non-existent source JAR gracefully`(): Unit = runBlocking {
             // Given - a resolver with a mock artifact resolver that returns non-existent JAR
             val nonExistentJar = tempDir.resolve("nonexistent.jar")
             val mockResolver = object : SourceArtifactResolver {
@@ -202,7 +202,7 @@ class GroovySourceResolverTest {
         }
 
         @Test
-        fun `should handle corrupted JAR gracefully`() = runBlocking {
+        fun `should handle corrupted JAR gracefully`(): Unit = runBlocking {
             // Given - a corrupted JAR file (empty file pretending to be a JAR)
             val corruptedJar = tempDir.resolve("corrupted.jar")
             Files.write(corruptedJar, byteArrayOf(0x50, 0x4B, 0x03, 0x04)) // Partial ZIP header
@@ -233,7 +233,7 @@ class GroovySourceResolverTest {
         }
 
         @Test
-        fun `should handle empty JAR gracefully`() = runBlocking {
+        fun `should handle empty JAR gracefully`(): Unit = runBlocking {
             // Given - an empty but valid JAR file
             val emptyJar = createTestSourceJar()
 
@@ -263,7 +263,7 @@ class GroovySourceResolverTest {
         }
 
         @Test
-        fun `should handle missing source file in JAR`() = runBlocking {
+        fun `should handle missing source file in JAR`(): Unit = runBlocking {
             // Given - a JAR with some files but missing the GDK class we're looking for
             val jarWithWrongFiles = createTestSourceJar(
                 "com/example/SomeOtherClass.java" to "package com.example; class SomeOtherClass {}",
@@ -309,11 +309,12 @@ class GroovySourceResolverTest {
      * For now, we test what we can with the actual runtime Groovy version.
      */
     @Nested
-    @EnabledIf("hasGroovy")
+    // A bare method name resolves against the nested class; name the outer class's companion method.
+    @EnabledIf("com.github.albertocavalcante.gvy.gls.sources.GroovySourceResolverTest#hasGroovy")
     inner class GroovyVersionCoordinatesTest {
 
         @Test
-        fun `should use correct coordinates for current Groovy version`() = runBlocking {
+        fun `should use correct coordinates for current Groovy version`(): Unit = runBlocking {
             // Given - mock resolver that captures coordinates
             val mockResolver = object : SourceArtifactResolver {
                 var capturedGroupId: String? = null
@@ -363,7 +364,7 @@ class GroovySourceResolverTest {
     inner class CacheManagementTest {
 
         @Test
-        fun `should delete files when clearing cache with deleteFiles flag`() = runBlocking {
+        fun `should delete files when clearing cache with deleteFiles flag`(): Unit = runBlocking {
             // Given - create some files in the groovy source directory
             Files.createDirectories(groovySourceDir)
             val testFile1 = groovySourceDir.resolve("test1.java")
@@ -391,7 +392,7 @@ class GroovySourceResolverTest {
         }
 
         @Test
-        fun `should not delete files when clearing cache without deleteFiles flag`() = runBlocking {
+        fun `should not delete files when clearing cache without deleteFiles flag`(): Unit = runBlocking {
             // Given - create some files in the groovy source directory
             Files.createDirectories(groovySourceDir)
             val testFile = groovySourceDir.resolve("test.java")
@@ -415,7 +416,7 @@ class GroovySourceResolverTest {
         }
 
         @Test
-        fun `should use cached path on subsequent calls to extractSourceFromJar`() = runBlocking {
+        fun `should use cached path on subsequent calls to extractSourceFromJar`(): Unit = runBlocking {
             // Given - a JAR with a GDK class source
             val gdkClassPath = "org/codehaus/groovy/runtime/DefaultGroovyMethods.java"
             val sourceContent = """
@@ -477,7 +478,7 @@ class GroovySourceResolverTest {
                 "Enable manually for full integration testing. " +
                 "TODO: Create hermetic test with pre-downloaded groovy-sources.jar",
         )
-        fun `should download and index real Groovy sources from Maven Central`() = runBlocking {
+        fun `should download and index real Groovy sources from Maven Central`(): Unit = runBlocking {
             // This test would require:
             // 1. Real Groovy on classpath (for version detection)
             // 2. Network access to Maven Central

@@ -40,7 +40,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `getSession returns non-null session for compiled file`() = runBlocking {
+    fun `getSession returns non-null session for compiled file`(): Unit = runBlocking {
         val code = "class Foo { String name }"
         val uri = URI.create("file:///test/Foo.groovy")
 
@@ -62,7 +62,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session diagnostics are mapped correctly for valid code`() = runBlocking {
+    fun `session diagnostics are mapped correctly for valid code`(): Unit = runBlocking {
         val code = "class Foo { String name }"
         val uri = URI.create("file:///test/Foo.groovy")
 
@@ -76,7 +76,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session diagnostics are mapped correctly for code with warnings`() = runBlocking {
+    fun `session diagnostics are mapped correctly for code with warnings`(): Unit = runBlocking {
         val code = """
             class Foo {
                 def unusedVariable = 42
@@ -98,7 +98,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session result isSuccess is true for valid code`() = runBlocking {
+    fun `session result isSuccess is true for valid code`(): Unit = runBlocking {
         val code = """
             package test
             class ValidClass {
@@ -117,7 +117,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session features provides hover provider`() = runBlocking {
+    fun `session features provides hover provider`(): Unit = runBlocking {
         val code = "class Sample { String field }"
         val uri = URI.create("file:///test/Sample.groovy")
 
@@ -130,7 +130,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session result metadata properties are accessible`() = runBlocking {
+    fun `session result metadata properties are accessible`(): Unit = runBlocking {
         val code = "class MetadataTest { int value = 42 }"
         val uri = URI.create("file:///test/Metadata.groovy")
 
@@ -148,7 +148,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session persists after multiple getSession calls`() = runBlocking {
+    fun `session persists after multiple getSession calls`(): Unit = runBlocking {
         val code = "class Persistent { String data }"
         val uri = URI.create("file:///test/Persistent.groovy")
 
@@ -166,7 +166,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session handles complex Groovy features`() = runBlocking {
+    fun `session handles complex Groovy features`(): Unit = runBlocking {
         val code = """
             @groovy.transform.CompileStatic
             class ComplexExample {
@@ -200,7 +200,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session handles script files`() = runBlocking {
+    fun `session handles script files`(): Unit = runBlocking {
         val code = """
             println "Hello, World!"
             def x = 42
@@ -217,7 +217,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `session handles packages and imports`() = runBlocking {
+    fun `session handles packages and imports`(): Unit = runBlocking {
         val code = """
             package com.example.test
 
@@ -249,7 +249,7 @@ class NativeLanguageEngineTest {
     }
 
     @Test
-    fun `diagnostics list is immutable and safe to iterate`() = runBlocking {
+    fun `diagnostics list is immutable and safe to iterate`(): Unit = runBlocking {
         val code = "class DiagnosticsTest { String field }"
         val uri = URI.create("file:///test/DiagnosticsTest.groovy")
 

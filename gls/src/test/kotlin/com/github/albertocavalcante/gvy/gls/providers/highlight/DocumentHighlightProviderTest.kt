@@ -23,7 +23,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight variable references in same scope`() = runTest {
+    fun `test highlight variable references in same scope`(): Unit = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -52,7 +52,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight with read and write classification`() = runTest {
+    fun `test highlight with read and write classification`(): Unit = runTest {
         // Arrange
         val content = """
             def counter = 0
@@ -84,7 +84,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight with prefix and postfix operators`() = runTest {
+    fun `test highlight with prefix and postfix operators`(): Unit = runTest {
         // Arrange
         val content = """
             def i = 0
@@ -122,7 +122,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight with compound assignments`() = runTest {
+    fun `test highlight with compound assignments`(): Unit = runTest {
         // Arrange
         val content = """
             def x = 1
@@ -153,7 +153,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test no highlights for position with no symbol`() = runTest {
+    fun `test no highlights for position with no symbol`(): Unit = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -189,7 +189,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight method references`() = runTest {
+    fun `test highlight method references`(): Unit = runTest {
         // Arrange
         val content = """
             def testMethod() {
@@ -224,7 +224,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight parameter references`() = runTest {
+    fun `test highlight parameter references`(): Unit = runTest {
         // Arrange
         val content = """
             def testMethod(param) {
@@ -254,7 +254,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight parameter references with scoping`() = runTest {
+    fun `test highlight parameter references with scoping`(): Unit = runTest {
         // Arrange
         val content = """
             def method1(param) {
@@ -289,7 +289,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight closure parameter references`() = runTest {
+    fun `test highlight closure parameter references`(): Unit = runTest {
         // Arrange - closure has its own parameter scope separate from enclosing method
         val content = """
             def method(x) {
@@ -318,7 +318,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight method parameter referenced inside closure`() = runTest {
+    fun `test highlight method parameter referenced inside closure`(): Unit = runTest {
         // Arrange - method parameter used inside a nested closure
         val content = """
             def method(x) {
@@ -345,7 +345,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight with bitwise compound assignments`() = runTest {
+    fun `test highlight with bitwise compound assignments`(): Unit = runTest {
         // Arrange
         val content = """
             def flags = 0xFF
@@ -377,7 +377,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight with shift compound assignments`() = runTest {
+    fun `test highlight with shift compound assignments`(): Unit = runTest {
         // Arrange
         val content = """
             def bits = 1
@@ -408,7 +408,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight field references`() = runTest {
+    fun `test highlight field references`(): Unit = runTest {
         // Arrange
         val content = """
             class MyClass {
@@ -436,7 +436,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight class references`() = runTest {
+    fun `test highlight class references`(): Unit = runTest {
         // Arrange
         val content = """
             class Person {
@@ -461,7 +461,7 @@ class DocumentHighlightProviderTest {
     }
 
     @Test
-    fun `test highlight at position zero`() = runTest {
+    fun `test highlight at position zero`(): Unit = runTest {
         // Arrange - variable at very beginning of file
         val content = """def x = 1
 println x"""
@@ -483,7 +483,7 @@ println x"""
     }
 
     @Test
-    fun `test no cross-file highlights`() = runTest {
+    fun `test no cross-file highlights`(): Unit = runTest {
         // Arrange - Compile two files with same variable name
         val uri1 = URI.create("file:///file1.groovy")
         val uri2 = URI.create("file:///file2.groovy")
@@ -515,7 +515,7 @@ println x"""
     }
 
     @Test
-    fun `test highlight for unresolvable symbol returns empty`() = runTest {
+    fun `test highlight for unresolvable symbol returns empty`(): Unit = runTest {
         // Arrange - Reference to undefined variable
         val content = """
             println undefinedVariable
@@ -535,7 +535,7 @@ println x"""
     }
 
     @Test
-    fun `test highlight with multiple assignment operators`() = runTest {
+    fun `test highlight with multiple assignment operators`(): Unit = runTest {
         // Arrange - Test various assignment operators together
         val content = """
             def v = 10

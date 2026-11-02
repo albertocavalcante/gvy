@@ -21,7 +21,7 @@ class FindNodeAtCrossFileTest {
     private val parserFacade = GroovyParserFacade()
 
     @Test
-    fun `findNodeAt returns ConstructorCallExpression for cross-file constructor in Main groovy`() = runTest {
+    fun `findNodeAt returns ConstructorCallExpression for cross-file constructor in Main groovy`(): Unit = runTest {
         val calculatorCode = """
             package com.example
 

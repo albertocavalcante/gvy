@@ -35,7 +35,7 @@ class GlobalClassResolutionStrategyTest {
     }
 
     @Test
-    fun `should resolve cross-file class definition`() = runTest {
+    fun `should resolve cross-file class definition`(): Unit = runTest {
         // Arrange: Calculator.groovy defines com.example.Calculator
         val calculatorUri = URI.create("file:///test/com/example/Calculator.groovy")
         val calculatorContent = """
@@ -89,7 +89,7 @@ class GlobalClassResolutionStrategyTest {
     // this scenario is better covered by the "definition-crossfile-lazy-compile" E2E test.
     @org.junit.jupiter.api.Disabled("Covered by E2E test; requires files on disk")
     @Test
-    fun `should resolve cross-file class when target file not yet compiled`() = runTest {
+    fun `should resolve cross-file class when target file not yet compiled`(): Unit = runTest {
         // Arrange: Calculator.groovy (will be in index but NOT compiled yet)
         val calculatorUri = URI.create("file:///test/com/example/Calculator.groovy")
         val calculatorContent = """

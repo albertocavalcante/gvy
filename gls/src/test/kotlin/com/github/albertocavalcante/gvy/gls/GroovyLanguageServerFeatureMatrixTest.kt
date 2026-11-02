@@ -77,7 +77,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `completion provider returns static suggestions`() = runBlocking {
+    fun `completion provider returns static suggestions`(): Unit = runBlocking {
         val params = CompletionParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
             position = Position(7, 0)
@@ -90,7 +90,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `definition provider resolves class constructor reference`() = runBlocking {
+    fun `definition provider resolves class constructor reference`(): Unit = runBlocking {
         val params = DefinitionParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
             position = Position(7, 25) // On "Greeter" constructor call
@@ -107,7 +107,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `references provider finds variable usages`() = runBlocking {
+    fun `references provider finds variable usages`(): Unit = runBlocking {
         val params = ReferenceParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
             position = Position(7, 4) // Over "greeter" variable declaration
@@ -120,7 +120,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `hover provider returns markdown`() = runBlocking {
+    fun `hover provider returns markdown`(): Unit = runBlocking {
         val params = HoverParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
             position = Position(8, 2) // Over "greeter"
@@ -132,7 +132,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `type definition resolves to class declaration`() = runBlocking {
+    fun `type definition resolves to class declaration`(): Unit = runBlocking {
         val params = TypeDefinitionParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
             position = Position(7, 22) // Position on "Greeter" in "new Greeter()"
@@ -145,7 +145,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `document symbols return symbols`() = runBlocking {
+    fun `document symbols return symbols`(): Unit = runBlocking {
         val params = DocumentSymbolParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
         }
@@ -155,7 +155,7 @@ class GroovyLanguageServerFeatureMatrixTest {
 
     @Test
     @Suppress("DEPRECATION")
-    fun `workspace symbol search returns matches`() = runBlocking {
+    fun `workspace symbol search returns matches`(): Unit = runBlocking {
         val result: Either<List<SymbolInformation>, List<WorkspaceSymbol>> =
             server.workspaceService.symbol(WorkspaceSymbolParams("Greeter")).get()
         assertTrue(result.isLeft)
@@ -192,7 +192,7 @@ class GroovyLanguageServerFeatureMatrixTest {
     }
 
     @Test
-    fun `formatting returns edits for unformatted document`() = runBlocking {
+    fun `formatting returns edits for unformatted document`(): Unit = runBlocking {
         val params = DocumentFormattingParams().apply {
             textDocument = TextDocumentIdentifier(documentUri)
             options = FormattingOptions(4, true)

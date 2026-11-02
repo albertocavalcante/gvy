@@ -53,7 +53,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `initialCompile compiles all workspace files`() = runTest {
+    fun `initialCompile compiles all workspace files`(): Unit = runTest {
         // Create source files
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -76,7 +76,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile with single changed file only recompiles that file`() = runTest {
+    fun `compile with single changed file only recompiles that file`(): Unit = runTest {
         // Create source files
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -104,7 +104,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile with changed file recompiles dependents`() = runTest {
+    fun `compile with changed file recompiles dependents`(): Unit = runTest {
         // Create source files with dependency
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -133,7 +133,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile with multiple changed files recompiles all affected`() = runTest {
+    fun `compile with multiple changed files recompiles all affected`(): Unit = runTest {
         // Create complex dependency tree
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -169,7 +169,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile handles syntax errors in changed file`() = runTest {
+    fun `compile handles syntax errors in changed file`(): Unit = runTest {
         // Create source files
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -197,7 +197,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile with transitive dependencies`() = runTest {
+    fun `compile with transitive dependencies`(): Unit = runTest {
         // Create chain: Top -> Middle -> Base
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -226,7 +226,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile with import dependencies`() = runTest {
+    fun `compile with import dependencies`(): Unit = runTest {
         // Create files with import relationships
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
@@ -274,7 +274,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile updates dependency graph`() = runTest {
+    fun `compile updates dependency graph`(): Unit = runTest {
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
 
@@ -295,7 +295,7 @@ class IncrementalCompilerTest {
     }
 
     @Test
-    fun `compile with no changes performs no recompilation`() = runTest {
+    fun `compile with no changes performs no recompilation`(): Unit = runTest {
         val srcDir = tempDir.resolve("src")
         Files.createDirectories(srcDir)
 

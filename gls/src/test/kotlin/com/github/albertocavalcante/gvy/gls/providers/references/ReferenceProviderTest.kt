@@ -23,7 +23,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test find variable references in same scope`() = runTest {
+    fun `test find variable references in same scope`(): Unit = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -55,7 +55,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test find variable references without declaration`() = runTest {
+    fun `test find variable references without declaration`(): Unit = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -81,7 +81,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test find method references`() = runTest {
+    fun `test find method references`(): Unit = runTest {
         // Arrange
         val content = """
             def testMethod() {
@@ -111,7 +111,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test find class references`() = runTest {
+    fun `test find class references`(): Unit = runTest {
         // Arrange
         val content = """
             class TestClass {
@@ -141,7 +141,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test find field references`() = runTest {
+    fun `test find field references`(): Unit = runTest {
         // TODO: Enable this test once ReferenceProvider correctly handles field references via this.field
         // Currently finds only declaration (1) but misses usages (2)
         /*
@@ -180,7 +180,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test no references found for unique symbol`() = runTest {
+    fun `test no references found for unique symbol`(): Unit = runTest {
         // Arrange - Create a variable that is used, but test a different unused variable
         val content = """
             def unusedVar = "test"
@@ -214,7 +214,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test references with invalid URI`() = runTest {
+    fun `test references with invalid URI`(): Unit = runTest {
         // Act - Try to find references with invalid URI
         val references = referenceProvider.provideReferences(
             "invalid-uri",
@@ -227,7 +227,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test references at position with no symbol`() = runTest {
+    fun `test references at position with no symbol`(): Unit = runTest {
         // Arrange
         val content = """
             def localVar = "test"
@@ -252,7 +252,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test references without compilation`() = runTest {
+    fun `test references without compilation`(): Unit = runTest {
         // Act - Try to find references for a file that hasn't been compiled
         val references = referenceProvider.provideReferences(
             "file:///unknown.groovy",
@@ -265,7 +265,7 @@ class ReferenceProviderTest {
     }
 
     @Test
-    fun `test parameter references`() = runTest {
+    fun `test parameter references`(): Unit = runTest {
         // Arrange
         val content = """
             def testMethod(param) {

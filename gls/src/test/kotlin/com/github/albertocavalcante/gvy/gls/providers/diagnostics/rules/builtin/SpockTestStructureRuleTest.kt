@@ -14,7 +14,7 @@ class SpockTestStructureRuleTest {
     private val rule = SpockTestStructureRule()
 
     @Test
-    fun `should detect test without proper Spock blocks in Spec file`() = runBlocking {
+    fun `should detect test without proper Spock blocks in Spec file`(): Unit = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {
                 def "test something"() {
@@ -33,7 +33,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should not flag test with given-when-then blocks`() = runBlocking {
+    fun `should not flag test with given-when-then blocks`(): Unit = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {
                 def "test with given when then"() {
@@ -56,7 +56,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should flag test with given only`() = runBlocking {
+    fun `should flag test with given only`(): Unit = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {
                 def "test with given only"() {
@@ -73,7 +73,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should not flag test with expect block`() = runBlocking {
+    fun `should not flag test with expect block`(): Unit = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {
                 def "test with expect"() {
@@ -90,7 +90,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should not flag test with where block for data driven tests`() = runBlocking {
+    fun `should not flag test with where block for data driven tests`(): Unit = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {
                 def "test with where"() {
@@ -108,7 +108,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should not flag test with when-then only`() = runBlocking {
+    fun `should not flag test with when-then only`(): Unit = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {
                 def "test with when then"() {
@@ -128,7 +128,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should not analyze non-Spec files`() = runBlocking {
+    fun `should not analyze non-Spec files`(): Unit = runBlocking {
         val code = """
             class RegularClass {
                 def "test something"() {
@@ -144,7 +144,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should analyze Test groovy files`() = runBlocking {
+    fun `should analyze Test groovy files`(): Unit = runBlocking {
         val code = """
             class MyTest {
                 def "test without blocks"() {
@@ -160,7 +160,7 @@ class SpockTestStructureRuleTest {
     }
 
     @Test
-    fun `should skip analysis when URI has no path`() = runBlocking {
+    fun `should skip analysis when URI has no path`(): Unit = runBlocking {
         val code = """
             class MySpec extends spock.lang.Specification {
                 def "test without blocks"() {
