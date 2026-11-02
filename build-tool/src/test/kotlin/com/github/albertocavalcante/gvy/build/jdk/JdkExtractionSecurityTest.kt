@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.charset.Charset
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlin.system.measureNanoTime
 import kotlin.system.measureTimeMillis
 import kotlin.test.assertNotEquals
 
@@ -267,7 +268,8 @@ class JdkExtractionSecurityTest {
             append("sourceCompatibility = 17\n")
         }
         Files.writeString(buildFile, smallContent)
-        val smallTime = measureTimeMillis {
+        gradleExtractor.extract(tempDir) // warm up the JIT so the first timing is not compile time
+        val smallTime = measureNanoTime {
             gradleExtractor.extract(tempDir)
         }
 
@@ -279,13 +281,18 @@ class JdkExtractionSecurityTest {
             append("sourceCompatibility = 17\n")
         }
         Files.writeString(buildFile, largeContent)
-        val largeTime = measureTimeMillis {
+        val largeTime = measureNanoTime {
             gradleExtractor.extract(tempDir)
         }
 
-        // Parse time should scale linearly, not exponentially
-        // 10x size should take less than 100x time (allowing 100x for noise)
-        assertTrue(largeTime < smallTime * 100, "Parse time degraded exponentially: ${smallTime}ms -> ${largeTime}ms")
+        // Parse time should scale linearly, not exponentially: 10x the input may take at most 100x the
+        // time. The baseline is floored at 1 ms because the small file can parse faster than timer
+        // resolution, and a zero baseline would make the bound unsatisfiable.
+        val baseline = maxOf(smallTime, 1_000_000L)
+        assertTrue(
+            largeTime < baseline * 100,
+            "Parse time degraded exponentially: ${smallTime / 1_000}us -> ${largeTime / 1_000}us",
+        )
     }
 
     @Test
