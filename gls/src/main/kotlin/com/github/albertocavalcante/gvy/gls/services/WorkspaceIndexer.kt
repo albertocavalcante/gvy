@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
@@ -8,7 +9,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import org.eclipse.lsp4j.MessageParams
+import org.eclipse.lsp4j.MessageType
 import org.eclipse.lsp4j.services.LanguageClient
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val PERCENTAGE_MULTIPLIER = 100
 private const val STATUS_UPDATE_INTERVAL_MS = 100L
@@ -25,6 +29,7 @@ internal class WorkspaceIndexer(
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val logger = KotlinLogging.logger {}
+    private val tooLargeNotified = AtomicBoolean(false)
 
     /**
      * Starts workspace indexing in the background.
@@ -32,8 +37,14 @@ internal class WorkspaceIndexer(
      * @param client The LSP client for sending progress notifications.
      * @param onStatusUpdate Callback for status updates.
      * @param strategyInitJobs Jobs representing async strategy initialization.
+     * @param config Server configuration; its `maxWorkspaceFiles` limit gates the eager workspace compile.
      */
-    fun startIndexing(client: LanguageClient?, onStatusUpdate: StatusUpdateCallback, strategyInitJobs: List<Job>) {
+    fun startIndexing(
+        client: LanguageClient?,
+        onStatusUpdate: StatusUpdateCallback,
+        strategyInitJobs: List<Job>,
+        config: ServerConfiguration = ServerConfiguration(),
+    ) {
         val sourceUris = compilationService.workspaceManager.getWorkspaceSourceUris()
         if (sourceUris.isEmpty()) {
             handleEmptyWorkspace(strategyInitJobs, onStatusUpdate)
@@ -53,7 +64,7 @@ internal class WorkspaceIndexer(
         coroutineScope.launch(indexingDispatcher) {
             runCatching {
                 performIndexing(sourceUris, total, indexingProgressReporter, onStatusUpdate)
-                performCompilation(onStatusUpdate)
+                performCompilation(total, config, client, onStatusUpdate)
                 strategyInitJobs.forEach { it.join() }
                 onStatusUpdate(Health.Ok, true, "Ready", total, total, null, null)
             }.onFailure { throwable ->
@@ -90,7 +101,16 @@ internal class WorkspaceIndexer(
         logger.info { "Workspace indexing complete: $total files" }
     }
 
-    private suspend fun performCompilation(onStatusUpdate: StatusUpdateCallback) {
+    private suspend fun performCompilation(
+        total: Int,
+        config: ServerConfiguration,
+        client: LanguageClient?,
+        onStatusUpdate: StatusUpdateCallback,
+    ) {
+        if (config.isWorkspaceTooLarge(total)) {
+            skipCompilationForLargeWorkspace(total, config.maxWorkspaceFiles, client)
+            return
+        }
         logger.info { "Starting workspace compilation for cross-file resolution" }
         onStatusUpdate(Health.Ok, false, "Compiling workspace...", null, null, null, null)
         val workspaceCompiler = compilationService.getWorkspaceCompiler()
@@ -101,6 +121,24 @@ internal class WorkspaceIndexer(
         }
         if (!compilationResult.success) {
             logger.warn { "Workspace compilation had errors, but proceeding with partial results" }
+        }
+    }
+
+    private fun skipCompilationForLargeWorkspace(total: Int, limit: Int, client: LanguageClient?) {
+        logger.warn {
+            "Workspace has $total files, over the limit of $limit " +
+                "(groovy.compilation.maxWorkspaceFiles); skipping eager workspace compilation. " +
+                "Files are still compiled when opened."
+        }
+        if (client != null && tooLargeNotified.compareAndSet(false, true)) {
+            client.showMessage(
+                MessageParams().apply {
+                    type = MessageType.Info
+                    message = "Workspace has $total files, over the limit of $limit, so the whole workspace " +
+                        "is not compiled up front; files are compiled when opened. " +
+                        "Raise the limit with the setting groovy.compilation.maxWorkspaceFiles."
+                },
+            )
         }
     }
 
