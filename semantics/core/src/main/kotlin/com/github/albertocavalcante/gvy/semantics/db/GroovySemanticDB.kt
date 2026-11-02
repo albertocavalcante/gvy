@@ -1,9 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import java.net.URI
-import java.util.Collections
-import java.util.LinkedHashMap
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -12,234 +9,160 @@ import kotlin.concurrent.write
  * Metals-inspired semantic database for Groovy.
  * Stores per-file semantic information (symbols, occurrences, types).
  *
- * Thread-safe implementation using ConcurrentHashMap for concurrent LSP operations.
- * Includes LRU cache for frequently accessed symbols to improve performance.
+ * Thread safety: one read-write lock guards the documents and both indexes together, so a writer
+ * replaces a document and its index entries atomically and a reader never sees them out of step.
+ * Lookups return fresh lists, so nothing handed to a caller aliases internal state.
  */
 class GroovySemanticDB {
-    // Main storage: URI -> SemanticDocument
-    private val documents = ConcurrentHashMap<URI, SemanticDocument>()
+    private val lock = ReentrantReadWriteLock()
 
-    // Index for fast symbol lookup: symbolId -> (URI, SymbolInfo)
-    private val symbolIndex = ConcurrentHashMap<String, MutableList<Pair<URI, SymbolInfo>>>()
+    // URI -> SemanticDocument
+    private val documents = HashMap<URI, SemanticDocument>()
 
-    // Index for fast occurrence lookup: symbolId -> List<(URI, SymbolOccurrence)>
-    private val occurrenceIndex = ConcurrentHashMap<String, MutableList<Pair<URI, SymbolOccurrence>>>()
+    // symbolId -> definitions, grouped by file in the order the files were stored
+    private val symbolIndex = SymbolIndex<SymbolInfo>()
 
-    // LRU cache for frequently accessed symbols (improves repeated lookups)
-    private val cacheLock = ReentrantReadWriteLock()
-    private val symbolCache = object : LinkedHashMap<String, Pair<URI, SymbolInfo>>(
-        CACHE_INITIAL_CAPACITY,
-        CACHE_LOAD_FACTOR,
-        true, // accessOrder=true for LRU
-    ) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<URI, SymbolInfo>>?): Boolean =
-            size > MAX_CACHE_SIZE
-    }
-
-    // Statistics for cache performance
-    private var cacheHits = 0L
-    private var cacheMisses = 0L
+    // symbolId -> occurrences, grouped by file
+    private val occurrenceIndex = SymbolIndex<SymbolOccurrence>()
 
     /**
      * Get semantic document for a URI
      */
-    fun getDocument(uri: URI): SemanticDocument? = documents[uri]
+    fun getDocument(uri: URI): SemanticDocument? = lock.read { documents[uri] }
 
     /**
      * Update/store semantic document for a URI.
-     * This rebuilds indexes for the document.
+     * Replaces the previous document and its index entries atomically.
      */
     fun updateDocument(uri: URI, doc: SemanticDocument) {
-        // Remove old document indexes if present
-        documents[uri]?.let { oldDoc ->
-            removeFromIndexes(uri, oldDoc)
+        lock.write {
+            documents.put(uri, doc)?.let { removeFromIndexes(uri, it) }
+            addToIndexes(uri, doc)
         }
-
-        // Store new document
-        documents[uri] = doc
-
-        // Build indexes for new document
-        buildIndexes(uri, doc)
     }
 
     /**
      * Remove document when file is deleted
      */
     fun removeDocument(uri: URI) {
-        documents.remove(uri)?.let { doc ->
-            removeFromIndexes(uri, doc)
-        }
+        lock.write { documents.remove(uri)?.let { removeFromIndexes(uri, it) } }
     }
 
     /**
      * Get all documents
      */
-    fun getAllDocuments(): Map<URI, SemanticDocument> = documents.toMap()
+    fun getAllDocuments(): Map<URI, SemanticDocument> = lock.read { documents.toMap() }
 
     /**
      * Find symbol definition by ID.
      * Returns the first matching symbol if multiple exist (shouldn't happen in well-formed code).
-     * Uses LRU cache for improved performance on repeated lookups.
      */
-    fun findSymbolDefinition(symbolId: String): Pair<URI, SymbolInfo>? {
-        // Check cache first
-        cacheLock.read {
-            symbolCache[symbolId]?.let {
-                cacheHits++
-                return it
-            }
-        }
-
-        // Cache miss - look up in index
-        cacheMisses++
-
-        val result = symbolIndex[symbolId]?.firstOrNull()
-
-        // Add to cache if found
-        if (result != null) {
-            cacheLock.write {
-                symbolCache[symbolId] = result
-            }
-        }
-
-        return result
-    }
+    fun findSymbolDefinition(symbolId: String): Pair<URI, SymbolInfo>? = lock.read { symbolIndex.first(symbolId) }
 
     /**
      * Find all definitions of a symbol (handles duplicate symbols across files if they exist)
      */
-    fun findAllSymbolDefinitions(symbolId: String): List<Pair<URI, SymbolInfo>> = symbolIndex[symbolId]?.let { list ->
-        synchronized(list) { list.toList() }
-    } ?: emptyList()
+    fun findAllSymbolDefinitions(symbolId: String): List<Pair<URI, SymbolInfo>> =
+        lock.read { symbolIndex.all(symbolId) }
 
     /**
      * Find all occurrences of a symbol across all files
      */
     fun findAllOccurrences(symbolId: String): List<Pair<URI, SymbolOccurrence>> =
-        occurrenceIndex[symbolId]?.let { list ->
-            synchronized(list) { list.toList() }
-        } ?: emptyList()
+        lock.read { occurrenceIndex.all(symbolId) }
 
     /**
      * Find all symbols in a file by kind
      */
     fun findSymbolsByKind(uri: URI, kind: SymbolKind): List<SymbolInfo> =
-        documents[uri]?.findSymbolsByKind(kind) ?: emptyList()
+        getDocument(uri)?.findSymbolsByKind(kind) ?: emptyList()
 
     /**
      * Find all occurrences in a file by role
      */
     fun findOccurrencesByRole(uri: URI, role: OccurrenceRole): List<SymbolOccurrence> =
-        documents[uri]?.findOccurrencesByRole(role) ?: emptyList()
+        getDocument(uri)?.findOccurrencesByRole(role) ?: emptyList()
 
     /**
      * Find symbol at a specific position in a file
      */
     fun findSymbolAtPosition(uri: URI, line: Int, column: Int): SymbolInfo? =
-        documents[uri]?.symbols?.find { it.range.contains(line, column) }
+        getDocument(uri)?.symbols?.find { it.range.contains(line, column) }
 
     /**
      * Find occurrence at a specific position in a file
      */
     fun findOccurrenceAtPosition(uri: URI, line: Int, column: Int): SymbolOccurrence? =
-        documents[uri]?.occurrences?.find { it.range.contains(line, column) }
+        getDocument(uri)?.occurrences?.find { it.range.contains(line, column) }
 
     /**
      * Clear all documents
      */
     fun clear() {
-        documents.clear()
-        symbolIndex.clear()
-        occurrenceIndex.clear()
-        cacheLock.write {
-            symbolCache.clear()
+        lock.write {
+            documents.clear()
+            symbolIndex.clear()
+            occurrenceIndex.clear()
         }
-        cacheHits = 0L
-        cacheMisses = 0L
     }
 
     /**
      * Get statistics about the database
      */
     fun getStatistics(): SemanticDBStatistics {
-        val allDocuments = documents.values
-        val cacheSize = cacheLock.read { symbolCache.size }
-        val hitRate = if (cacheHits + cacheMisses > 0) {
-            cacheHits.toDouble() / (cacheHits + cacheMisses)
-        } else {
-            0.0
-        }
-
+        val allDocuments = lock.read { documents.values.toList() }
         return SemanticDBStatistics(
-            documentCount = documents.size,
+            documentCount = allDocuments.size,
             totalSymbols = allDocuments.sumOf { it.symbols.size },
             totalOccurrences = allDocuments.sumOf { it.occurrences.size },
-            symbolsByKind = SymbolKind.values().associateWith { kind ->
+            symbolsByKind = SymbolKind.entries.associateWith { kind ->
                 allDocuments.sumOf { doc -> doc.findSymbolsByKind(kind).size }
             },
-            occurrencesByRole = OccurrenceRole.values().associateWith { role ->
+            occurrencesByRole = OccurrenceRole.entries.associateWith { role ->
                 allDocuments.sumOf { doc -> doc.findOccurrencesByRole(role).size }
             },
-            cacheSize = cacheSize,
-            cacheHits = cacheHits,
-            cacheMisses = cacheMisses,
-            cacheHitRate = hitRate,
         )
     }
 
-    /**
-     * Build indexes for a document
-     */
-    private fun buildIndexes(uri: URI, doc: SemanticDocument) {
-        // Index symbols
-        doc.symbols.forEach { symbol ->
-            symbolIndex.computeIfAbsent(symbol.symbol) { Collections.synchronizedList(mutableListOf()) }
-                .add(uri to symbol)
-        }
-
-        // Index occurrences
-        doc.occurrences.forEach { occurrence ->
-            occurrenceIndex.computeIfAbsent(occurrence.symbol) { Collections.synchronizedList(mutableListOf()) }
-                .add(uri to occurrence)
-        }
+    // Callers hold the write lock.
+    private fun addToIndexes(uri: URI, doc: SemanticDocument) {
+        doc.symbols.groupBy { it.symbol }.forEach { (id, symbols) -> symbolIndex.put(id, uri, symbols) }
+        doc.occurrences.groupBy { it.symbol }.forEach { (id, occurrences) -> occurrenceIndex.put(id, uri, occurrences) }
     }
 
-    /**
-     * Remove indexes for a document
-     */
+    // Callers hold the write lock.
     private fun removeFromIndexes(uri: URI, doc: SemanticDocument) {
-        // Remove symbols from index and cache
-        doc.symbols.forEach { symbol ->
-            symbolIndex[symbol.symbol]?.let { list ->
-                synchronized(list) {
-                    list.removeIf { it.first == uri }
-                    if (list.isEmpty()) {
-                        symbolIndex.remove(symbol.symbol, list)
-                        cacheLock.write { symbolCache.remove(symbol.symbol) }
-                    }
-                }
-            }
-        }
+        doc.symbols.forEach { symbolIndex.remove(it.symbol, uri) }
+        doc.occurrences.forEach { occurrenceIndex.remove(it.symbol, uri) }
+    }
+}
 
-        // Remove occurrences from index
-        doc.occurrences.forEach { occurrence ->
-            occurrenceIndex[occurrence.symbol]?.let { list ->
-                synchronized(list) {
-                    list.removeIf { it.first == uri }
-                    if (list.isEmpty()) {
-                        occurrenceIndex.remove(occurrence.symbol, list)
-                    }
-                }
-            }
-        }
+/**
+ * symbolId -> (file -> that file's entries). Keeping entries per file makes adding or removing a file
+ * cost only that file's entries, however many other files mention the same symbol. Files keep the
+ * order they were stored in. Not thread-safe; [GroovySemanticDB] guards it.
+ */
+private class SymbolIndex<T> {
+    private val bySymbol = HashMap<String, LinkedHashMap<URI, List<T>>>()
+
+    fun put(id: String, uri: URI, entries: List<T>) {
+        bySymbol.getOrPut(id) { LinkedHashMap() }[uri] = entries
     }
 
-    companion object {
-        // Cache configuration
-        private const val MAX_CACHE_SIZE = 1000
-        private const val CACHE_INITIAL_CAPACITY = 16
-        private const val CACHE_LOAD_FACTOR = 0.75f
+    fun remove(id: String, uri: URI) {
+        val files = bySymbol[id] ?: return
+        files.remove(uri)
+        if (files.isEmpty()) bySymbol.remove(id)
     }
+
+    fun first(id: String): Pair<URI, T>? = bySymbol[id]?.entries?.firstOrNull()?.let { (uri, entries) ->
+        uri to entries.first()
+    }
+
+    fun all(id: String): List<Pair<URI, T>> =
+        bySymbol[id]?.flatMap { (uri, entries) -> entries.map { uri to it } } ?: emptyList()
+
+    fun clear() = bySymbol.clear()
 }
 
 /**
@@ -251,8 +174,4 @@ data class SemanticDBStatistics(
     val totalOccurrences: Int,
     val symbolsByKind: Map<SymbolKind, Int>,
     val occurrencesByRole: Map<OccurrenceRole, Int>,
-    val cacheSize: Int = 0,
-    val cacheHits: Long = 0L,
-    val cacheMisses: Long = 0L,
-    val cacheHitRate: Double = 0.0,
 )
