@@ -62,16 +62,85 @@ describe("processInvocation", () => {
       });
     });
 
-    it("rejects cmd metacharacters instead of running them", () => {
+    it("passes Gradle test names with characters cmd keeps literal inside quotes", () => {
+      // Verified on Windows 11 with the real gradlew.bat: each of these reached
+      // the wrapper as one intact argument and no command ran.
+      for (const name of [
+        "a & calc",
+        "x) & (echo pwned > f",
+        "MySpec.should work (edge case)",
+        "a|b",
+        "a<b>c",
+        "a^b",
+      ]) {
+        assert.deepStrictEqual(
+          buildProcessInvocation(
+            "C:\\w\\gradlew.bat",
+            ["--tests", name],
+            "win32",
+          ).args,
+          ['"--tests"', `"${name}"`],
+        );
+      }
+    });
+
+    it("keeps rejecting those characters for Maven launchers, which are not verified", () => {
+      for (const arg of [
+        "-Dtest=a & calc",
+        "-Dtest=Spec#x (y)",
+        "-Dtest=a^b",
+      ]) {
+        assert.throws(
+          () => buildProcessInvocation("C:\\w\\mvnw.cmd", [arg], "win32"),
+          /unsafe for the Windows command shell/,
+        );
+      }
+    });
+
+    it("rejects characters that break or expand inside quotes, even for Gradle", () => {
+      for (const arg of ['a" & calc', "%PATH%", "a!b", "a\r\nb"]) {
+        assert.throws(
+          () =>
+            buildProcessInvocation("gradlew.bat", ["--tests", arg], "win32"),
+          /unsafe for the Windows command shell/,
+        );
+      }
+    });
+
+    it("accepts a launcher path with parentheses", () => {
+      const inv = buildProcessInvocation(
+        "C:\\Proj (copy)\\gradlew.bat",
+        ["test"],
+        "win32",
+      );
+      assert.strictEqual(inv.executable, '"C:\\Proj (copy)\\gradlew.bat"');
+    });
+
+    it("keeps rejecting parentheses in a Maven launcher path, which is not verified", () => {
       assert.throws(
         () =>
           buildProcessInvocation(
-            "gradlew.bat",
-            ["--tests", "a & calc"],
+            "C:\\Proj (copy)\\mvnw.cmd",
+            ["test"],
             "win32",
           ),
         /unsafe for the Windows command shell/,
       );
+    });
+
+    it("rejects a launcher path the batch file would split into commands", () => {
+      // gradlew.bat runs `set DIRNAME=%~dp0` unquoted: under C:\x & y\ it
+      // executes `y` before reading any argument.
+      for (const exe of [
+        "C:\\x & y\\gradlew.bat",
+        "C:\\a|b\\mvnw.cmd",
+        "C:\\a^b\\gradlew.bat",
+      ]) {
+        assert.throws(
+          () => buildProcessInvocation(exe, ["test"], "win32"),
+          /unsafe for the Windows command shell/,
+        );
+      }
     });
 
     it("quotes safe arguments for a Windows Maven launcher", () => {
