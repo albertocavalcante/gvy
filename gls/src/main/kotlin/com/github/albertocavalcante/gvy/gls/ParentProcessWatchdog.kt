@@ -15,9 +15,26 @@ fun interface ProcessLiveness {
     fun exitFuture(pid: Long): CompletableFuture<*>?
 }
 
-/** [ProcessLiveness] backed by [ProcessHandle]; `onExit()` also works for non-child processes. */
+/**
+ * [ProcessLiveness] backed by [ProcessHandle]; `onExit()` also works for non-child processes.
+ * Some clients send the server's own pid (an in-process client, or a test harness); that process
+ * cannot be watched (`onExit()` throws for the current process) and is reported unobservable.
+ */
 object SystemProcessLiveness : ProcessLiveness {
-    override fun exitFuture(pid: Long): CompletableFuture<*>? = ProcessHandle.of(pid).map { it.onExit() }.orElse(null)
+    private val logger = KotlinLogging.logger {}
+
+    override fun exitFuture(pid: Long): CompletableFuture<*>? {
+        if (pid == ProcessHandle.current().pid()) return null
+        return try {
+            ProcessHandle.of(pid).map { it.onExit() }.orElse(null)
+        } catch (e: IllegalStateException) {
+            logger.debug(e) { "Cannot watch process $pid" }
+            null
+        } catch (e: SecurityException) {
+            logger.debug(e) { "Not allowed to watch process $pid" }
+            null
+        }
+    }
 }
 
 /**

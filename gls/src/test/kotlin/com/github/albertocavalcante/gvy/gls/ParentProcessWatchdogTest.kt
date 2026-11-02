@@ -6,6 +6,8 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ParentProcessWatchdogTest {
@@ -63,5 +65,16 @@ class ParentProcessWatchdogTest {
 
         assertTrue(latch.await(30, TimeUnit.SECONDS), "server should exit after parent death")
         assertEquals(1, exitCode.get())
+    }
+
+    @Test
+    fun `the server's own pid is unobservable, so initialize does not fail`() {
+        val ownPid = ProcessHandle.current().pid()
+
+        assertNull(SystemProcessLiveness.exitFuture(ownPid))
+
+        var exited = false
+        ParentProcessWatchdog(SystemProcessLiveness) { exited = true }.watch(ownPid.toInt())
+        assertFalse(exited)
     }
 }
