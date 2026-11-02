@@ -142,7 +142,8 @@ class LanguageServerSessionFactory {
         val (clientIn, serverOut) = createPipePair()
         val (serverIn, clientOut) = createPipePair()
 
-        val server = GroovyLanguageServer()
+        // In-process server: `exit` must not terminate the test JVM.
+        val server = GroovyLanguageServer(exitProcess = {})
 
         val serverLauncher = Launcher.Builder<GroovyLanguageClient>()
             .setLocalService(server)
