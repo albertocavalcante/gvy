@@ -58,7 +58,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `cross-file field access resolution`() = runTest {
+    fun `cross-file field access resolution`(): Unit = runTest {
         // Setup: ServiceB has a field, ServiceA accesses it
         val fileB = URI.create("file:///ServiceB.groovy")
         val fileBContent = """
@@ -94,7 +94,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `cross-file method call resolution`() = runTest {
+    fun `cross-file method call resolution`(): Unit = runTest {
         // Setup: HelperClass has a method, UtilClass calls it
         val helperFile = URI.create("file:///HelperClass.groovy")
         val helperContent = """
@@ -130,7 +130,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `cross-file constructor call resolution`() = runTest {
+    fun `cross-file constructor call resolution`(): Unit = runTest {
         // Setup: PersonModel class, PersonFactory creates instances
         val modelFile = URI.create("file:///PersonModel.groovy")
         val modelContent = """
@@ -171,7 +171,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `cross-file property access resolution`() = runTest {
+    fun `cross-file property access resolution`(): Unit = runTest {
         // Setup: ConfigHolder with a property, ConfigUser accesses it
         val holderFile = URI.create("file:///ConfigHolder.groovy")
         val holderContent = """
@@ -207,7 +207,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `cross-file static member access resolution`() = runTest {
+    fun `cross-file static member access resolution`(): Unit = runTest {
         // Setup: Constants class with static members, Application uses them
         val constantsFile = URI.create("file:///Constants.groovy")
         val constantsContent = """
@@ -258,7 +258,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `inherited field from parent class in different file`() = runTest {
+    fun `inherited field from parent class in different file`(): Unit = runTest {
         // Setup: BaseEntity in one file, UserEntity extends it in another
         val baseFile = URI.create("file:///BaseEntity.groovy")
         val baseContent = """
@@ -295,7 +295,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `inherited method from parent class in different file`() = runTest {
+    fun `inherited method from parent class in different file`(): Unit = runTest {
         // Setup: BaseService with method, UserService extends it
         val baseFile = URI.create("file:///BaseService.groovy")
         val baseContent = """
@@ -331,7 +331,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `interface method implementation resolution`() = runTest {
+    fun `interface method implementation resolution`(): Unit = runTest {
         // Setup: Runnable interface, Task implements it
         val interfaceFile = URI.create("file:///Runnable.groovy")
         val interfaceContent = """
@@ -366,7 +366,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `transitive inheritance - grandparent class resolution`() = runTest {
+    fun `transitive inheritance - grandparent class resolution`(): Unit = runTest {
         // Setup: Three-level hierarchy across files
         val grandparentFile = URI.create("file:///Entity.groovy")
         val grandparentContent = """
@@ -410,7 +410,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `diamond inheritance resolution`() = runTest {
+    fun `diamond inheritance resolution`(): Unit = runTest {
         // Setup: Diamond pattern - A <- B, A <- C, D <- B & C
         val baseFile = URI.create("file:///BaseFeature.groovy")
         val baseContent = """
@@ -476,7 +476,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `infer type from cross-file method return`() = runTest {
+    fun `infer type from cross-file method return`(): Unit = runTest {
         // Setup: DataProvider returns DataModel from another file
         val modelFile = URI.create("file:///DataModel.groovy")
         val modelContent = """
@@ -522,7 +522,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `infer type from cross-file field`() = runTest {
+    fun `infer type from cross-file field`(): Unit = runTest {
         // Setup: Repository has field of type from another file
         val entityFile = URI.create("file:///UserEntity.groovy")
         val entityContent = """
@@ -559,7 +559,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `generic type parameter resolution across files`() = runTest {
+    fun `generic type parameter resolution across files`(): Unit = runTest {
         // Setup: Generic Container class, concrete usage in another file
         val containerFile = URI.create("file:///Container.groovy")
         val containerContent = """
@@ -612,7 +612,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `star import resolution`() = runTest {
+    fun `star import resolution`(): Unit = runTest {
         // Setup: Package with multiple classes, star import
         val class1File = URI.create("file:///models/Person.groovy")
         val class1Content = """
@@ -659,7 +659,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `static import resolution`() = runTest {
+    fun `static import resolution`(): Unit = runTest {
         // Setup: Utility class with static methods, static import
         val utilFile = URI.create("file:///StringUtils.groovy")
         val utilContent = """
@@ -712,7 +712,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `aliased import resolution`() = runTest {
+    fun `aliased import resolution`(): Unit = runTest {
         // Setup: Class with alias import
         val originalFile = URI.create("file:///com/example/LongClassName.groovy")
         val originalContent = """
@@ -758,7 +758,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `complete methods from cross-file type`() = runTest {
+    fun `complete methods from cross-file type`(): Unit = runTest {
         // Setup: Service class in one file, usage in another
         val serviceFile = URI.create("file:///EmailService.groovy")
         val serviceContent = """
@@ -812,7 +812,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `complete inherited members from parent in different file`() = runTest {
+    fun `complete inherited members from parent in different file`(): Unit = runTest {
         // Setup: Base class in one file, child class in another
         val baseFile = URI.create("file:///BaseController.groovy")
         val baseContent = """
@@ -864,7 +864,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `complete static members from other file`() = runTest {
+    fun `complete static members from other file`(): Unit = runTest {
         // Setup: Utility class with static members
         val utilFile = URI.create("file:///MathUtils.groovy")
         val utilContent = """
@@ -920,7 +920,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `resolve through multiple file dependencies`() = runTest {
+    fun `resolve through multiple file dependencies`(): Unit = runTest {
         // Setup: Chain of dependencies: A -> B -> C
         val fileC = URI.create("file:///CoreModel.groovy")
         val contentC = """
@@ -968,7 +968,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `resolve inner class from different file`() = runTest {
+    fun `resolve inner class from different file`(): Unit = runTest {
         // Setup: Outer class with inner class, usage in another file
         val outerFile = URI.create("file:///OuterClass.groovy")
         val outerContent = """
@@ -1005,7 +1005,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `workspace-wide class resolution without explicit import`() = runTest {
+    fun `workspace-wide class resolution without explicit import`(): Unit = runTest {
         // Setup: Classes in same package, no explicit import needed
         val model1File = URI.create("file:///com/example/User.groovy")
         val model1Content = """
@@ -1042,7 +1042,7 @@ class FullCrossFileResolutionTest {
 
     @Test
     @Disabled("Phase -2: TDD - Expected to FAIL initially")
-    fun `resolve overridden method to both parent and child implementations`() = runTest {
+    fun `resolve overridden method to both parent and child implementations`(): Unit = runTest {
         // Setup: Parent method, child overrides it
         val parentFile = URI.create("file:///Animal.groovy")
         val parentContent = """

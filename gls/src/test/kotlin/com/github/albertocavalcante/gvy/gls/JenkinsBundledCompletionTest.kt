@@ -47,7 +47,7 @@ class JenkinsBundledCompletionTest {
     }
 
     @Test
-    fun `jenkinsfile should include bundled jenkins step completions`() = runBlocking {
+    fun `jenkinsfile should include bundled jenkins step completions`(): Unit = runBlocking {
         val uri = "file:///tmp/jenkins-test/Jenkinsfile"
         val content = """
             pipeline {
@@ -74,7 +74,7 @@ class JenkinsBundledCompletionTest {
     }
 
     @Test
-    fun `jenkinsfile should suggest map keys for bundled steps`() = runBlocking {
+    fun `jenkinsfile should suggest map keys for bundled steps`(): Unit = runBlocking {
         val uri = "file:///tmp/jenkins-test/Jenkinsfile"
         val content = """
             node {
@@ -95,7 +95,7 @@ class JenkinsBundledCompletionTest {
     }
 
     @Test
-    fun `jenkinsfile should suggest map keys for declarative options`() = runBlocking {
+    fun `jenkinsfile should suggest map keys for declarative options`(): Unit = runBlocking {
         val uri = "file:///tmp/jenkins-test/Jenkinsfile"
         val content = """
             pipeline {
@@ -122,7 +122,7 @@ class JenkinsBundledCompletionTest {
     }
 
     @Test
-    fun `options block should not suggest groovy keywords or steps`() = runBlocking {
+    fun `options block should not suggest groovy keywords or steps`(): Unit = runBlocking {
         val uri = "file:///tmp/jenkins-test/Jenkinsfile"
         val content = """
             pipeline {
@@ -146,7 +146,7 @@ class JenkinsBundledCompletionTest {
     }
 
     @Test
-    fun `jenkinsfile should provide rich hover for Jenkins steps`() = runBlocking {
+    fun `jenkinsfile should provide rich hover for Jenkins steps`(): Unit = runBlocking {
         val uri = "file:///tmp/jenkins-test/Jenkinsfile"
         val content = """
             stage('Build') {

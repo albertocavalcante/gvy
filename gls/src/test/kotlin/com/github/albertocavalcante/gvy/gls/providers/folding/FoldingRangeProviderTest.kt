@@ -21,7 +21,7 @@ class FoldingRangeProviderTest {
     }
 
     @Test
-    fun `test empty class folding`() = runBlocking {
+    fun `test empty class folding`(): Unit = runBlocking {
         val content = """
             class EmptyClass {
             }
@@ -37,7 +37,7 @@ class FoldingRangeProviderTest {
     }
 
     @Test
-    fun `test class with methods`() = runBlocking {
+    fun `test class with methods`(): Unit = runBlocking {
         val content = """
             class Foo {
                 void bar() {
@@ -68,7 +68,7 @@ class FoldingRangeProviderTest {
     }
 
     @Test
-    fun `test nested classes`() = runBlocking {
+    fun `test nested classes`(): Unit = runBlocking {
         val content = """
             class Outer {
                 class Inner {
@@ -103,7 +103,7 @@ class FoldingRangeProviderTest {
     }
 
     @Test
-    fun `test non folding single lines`() = runBlocking {
+    fun `test non folding single lines`(): Unit = runBlocking {
         val content = "class SingleLine {}"
         val uri = URI.create("file:///test/Single.groovy")
         compilationService.compile(uri, content)

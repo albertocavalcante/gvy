@@ -60,7 +60,7 @@ class JenkinsDeclarativeCompletionTest {
     }
 
     @Test
-    fun `agent block should suggest agent types but not steps`() = runTest {
+    fun `agent block should suggest agent types but not steps`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             pipeline {
@@ -88,7 +88,7 @@ class JenkinsDeclarativeCompletionTest {
     }
 
     @Test
-    fun `options block should suggest declarative options`() = runTest {
+    fun `options block should suggest declarative options`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             pipeline {
@@ -116,7 +116,7 @@ class JenkinsDeclarativeCompletionTest {
     }
 
     @Test
-    fun `steps block should still suggest sh`() = runTest {
+    fun `steps block should still suggest sh`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             pipeline {
@@ -147,7 +147,7 @@ class JenkinsDeclarativeCompletionTest {
     }
 
     @Test
-    fun `post block should suggest post conditions`() = runTest {
+    fun `post block should suggest post conditions`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             pipeline {
@@ -187,7 +187,7 @@ class JenkinsDeclarativeCompletionTest {
 
     @Test
     @Disabled("TODO: Fix brittle completion logic (see issue)")
-    fun `script block should suggest standard Groovy completions`() = runTest {
+    fun `script block should suggest standard Groovy completions`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             pipeline {

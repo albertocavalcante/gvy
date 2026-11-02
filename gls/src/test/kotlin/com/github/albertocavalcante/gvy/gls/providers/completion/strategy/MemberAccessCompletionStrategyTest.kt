@@ -47,7 +47,7 @@ class MemberAccessCompletionStrategyTest {
     // ========================================================================
 
     @Test
-    fun `should add GDK methods for String type`() = runTest {
+    fun `should add GDK methods for String type`(): Unit = runTest {
         // Arrange
         val content = """
             String text = "hello"
@@ -93,7 +93,7 @@ class MemberAccessCompletionStrategyTest {
     }
 
     @Test
-    fun `should add GDK methods for List type`() = runTest {
+    fun `should add GDK methods for List type`(): Unit = runTest {
         // Arrange
         val content = """
             def myList = []
@@ -143,7 +143,7 @@ class MemberAccessCompletionStrategyTest {
     // ========================================================================
 
     @Test
-    fun `should add classpath methods for resolved types`() = runTest {
+    fun `should add classpath methods for resolved types`(): Unit = runTest {
         // Arrange
         val content = """
             String text = "hello"
@@ -193,7 +193,7 @@ class MemberAccessCompletionStrategyTest {
     // ========================================================================
 
     @Test
-    fun `should add map literal keys when qualifier is map variable`() = runTest {
+    fun `should add map literal keys when qualifier is map variable`(): Unit = runTest {
         // Arrange
         val content = """
             def config = [host: "localhost", port: 8080]
@@ -240,7 +240,7 @@ class MemberAccessCompletionStrategyTest {
     }
 
     @Test
-    fun `should add map literal keys inside class method`() = runTest {
+    fun `should add map literal keys inside class method`(): Unit = runTest {
         // Arrange
         val content = """
             class MyService {
@@ -293,7 +293,7 @@ class MemberAccessCompletionStrategyTest {
     // ========================================================================
 
     @Test
-    fun `should add workspace members for cross-file types`() = runTest {
+    fun `should add workspace members for cross-file types`(): Unit = runTest {
         // Note: This test would require setting up a WorkspaceSymbolIndex
         // For now, we test that the strategy doesn't fail with null workspace index
 
@@ -337,7 +337,7 @@ class MemberAccessCompletionStrategyTest {
     // ========================================================================
 
     @Test
-    fun `should resolve workspace class FQNs from imports`() = runTest {
+    fun `should resolve workspace class FQNs from imports`(): Unit = runTest {
         // Arrange
         val content = """
             import com.example.MyClass
@@ -375,7 +375,7 @@ class MemberAccessCompletionStrategyTest {
     }
 
     @Test
-    fun `should fallback to workspace scan for simple names`() = runTest {
+    fun `should fallback to workspace scan for simple names`(): Unit = runTest {
         // Arrange
         val content = """
             UnknownClass obj = new UnknownClass()
@@ -415,7 +415,7 @@ class MemberAccessCompletionStrategyTest {
     // ========================================================================
 
     @Test
-    fun `should return notApplicable for non-MemberAccess context`() = runTest {
+    fun `should return notApplicable for non-MemberAccess context`(): Unit = runTest {
         // Arrange
         val content = "def x = 1"
         val uri = URI.create("file:///test.groovy")
@@ -447,7 +447,7 @@ class MemberAccessCompletionStrategyTest {
     }
 
     @Test
-    fun `should return notApplicable when context type is null`() = runTest {
+    fun `should return notApplicable when context type is null`(): Unit = runTest {
         // Arrange
         val content = "def x = 1"
         val uri = URI.create("file:///test.groovy")

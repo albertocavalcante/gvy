@@ -26,7 +26,7 @@ class TestDiscoveryProviderTest {
     }
 
     @Test
-    fun `should discover tests in Spock specification`() = runBlocking {
+    fun `should discover tests in Spock specification`(): Unit = runBlocking {
         val uri = URI.create("file:///MySpec.groovy")
         val content = """
             package com.example
@@ -60,7 +60,7 @@ class TestDiscoveryProviderTest {
     }
 
     @Test
-    fun `should return correct class line for test suite`() = runBlocking {
+    fun `should return correct class line for test suite`(): Unit = runBlocking {
         // Test with multiple lines between class and first test method
         // to ensure we use the actual class line, not an estimate from test methods
         val uri = URI.create("file:///TestWithSetup.groovy")
@@ -103,7 +103,7 @@ class TestDiscoveryProviderTest {
     }
 
     @Test
-    fun `should skip non-Spock classes`() = runBlocking {
+    fun `should skip non-Spock classes`(): Unit = runBlocking {
         val uri = URI.create("file:///RegularClass.groovy")
         val content = """
             class RegularClass {

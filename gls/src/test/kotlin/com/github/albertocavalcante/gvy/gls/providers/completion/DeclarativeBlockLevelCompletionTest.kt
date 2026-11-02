@@ -56,7 +56,7 @@ class DeclarativeBlockLevelCompletionTest {
     }
 
     @Test
-    fun `declarative options should NOT appear inside method call parameters`() = runTest {
+    fun `declarative options should NOT appear inside method call parameters`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             pipeline {
@@ -84,7 +84,7 @@ class DeclarativeBlockLevelCompletionTest {
     }
 
     @Test
-    fun `declarative options SHOULD appear at block level in options block`() = runTest {
+    fun `declarative options SHOULD appear at block level in options block`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             pipeline {

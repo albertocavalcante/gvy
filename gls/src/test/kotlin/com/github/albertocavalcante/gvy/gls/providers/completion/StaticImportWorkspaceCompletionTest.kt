@@ -27,7 +27,7 @@ class StaticImportWorkspaceCompletionTest {
     }
 
     @Test
-    fun `static import completion includes workspace members`() = runBlocking {
+    fun `static import completion includes workspace members`(): Unit = runBlocking {
         val utilFile = tempDir / "MathUtil.groovy"
         utilFile.writeText(
             """

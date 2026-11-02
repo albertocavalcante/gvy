@@ -20,7 +20,7 @@ import kotlin.test.assertTrue
 class ParserDiagnosticProviderTest {
 
     @Test
-    fun `should return empty list when no parser diagnostics`() = runBlocking {
+    fun `should return empty list when no parser diagnostics`(): Unit = runBlocking {
         val compilationService = mockk<GroovyCompilationService>()
         val uri = URI.create("file:///test.groovy")
         every { compilationService.getDiagnostics(uri) } returns emptyList()
@@ -33,7 +33,7 @@ class ParserDiagnosticProviderTest {
     }
 
     @Test
-    fun `should emit parser diagnostics from compilation service`() = runBlocking {
+    fun `should emit parser diagnostics from compilation service`(): Unit = runBlocking {
         val compilationService = mockk<GroovyCompilationService>()
         val uri = URI.create("file:///test.groovy")
 
@@ -55,7 +55,7 @@ class ParserDiagnosticProviderTest {
     }
 
     @Test
-    fun `should emit multiple parser diagnostics`() = runBlocking {
+    fun `should emit multiple parser diagnostics`(): Unit = runBlocking {
         val compilationService = mockk<GroovyCompilationService>()
         val uri = URI.create("file:///test.groovy")
 
@@ -83,7 +83,7 @@ class ParserDiagnosticProviderTest {
     }
 
     @Test
-    fun `should handle exceptions gracefully and return empty list`() = runBlocking {
+    fun `should handle exceptions gracefully and return empty list`(): Unit = runBlocking {
         val compilationService = mockk<GroovyCompilationService>()
         val uri = URI.create("file:///test.groovy")
 

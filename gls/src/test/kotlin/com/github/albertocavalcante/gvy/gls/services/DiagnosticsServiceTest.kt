@@ -21,7 +21,7 @@ class DiagnosticsServiceTest {
     // ==================== Basic Functionality Tests ====================
 
     @Test
-    fun `returns diagnostics from single enabled provider`() = runBlocking {
+    fun `returns diagnostics from single enabled provider`(): Unit = runBlocking {
         // Given
         val diagnostic = createTestDiagnostic("Test diagnostic", 1)
         val provider = TestStreamingDiagnosticProvider(
@@ -43,7 +43,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `returns combined diagnostics from multiple enabled providers`() = runBlocking {
+    fun `returns combined diagnostics from multiple enabled providers`(): Unit = runBlocking {
         // Given
         val diagnostic1 = createTestDiagnostic("Diagnostic 1", 1)
         val diagnostic2 = createTestDiagnostic("Diagnostic 2", 2)
@@ -76,7 +76,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `returns empty list when no providers are configured`() = runBlocking {
+    fun `returns empty list when no providers are configured`(): Unit = runBlocking {
         // Given
         val service = DiagnosticsService(
             providers = emptyList(),
@@ -93,7 +93,7 @@ class DiagnosticsServiceTest {
     // ==================== Configuration Filtering Tests ====================
 
     @Test
-    fun `respects disabled providers and skips disabled provider`() = runBlocking {
+    fun `respects disabled providers and skips disabled provider`(): Unit = runBlocking {
         // Given
         val diagnostic = createTestDiagnostic("Should not appear", 1)
         val provider = TestStreamingDiagnosticProvider(
@@ -115,7 +115,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `respects enabled providers and enables disabled-by-default provider`() = runBlocking {
+    fun `respects enabled providers and enables disabled-by-default provider`(): Unit = runBlocking {
         // Given
         val diagnostic = createTestDiagnostic("Should appear", 1)
         val provider = TestStreamingDiagnosticProvider(
@@ -138,7 +138,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `filters out multiple disabled providers`() = runBlocking {
+    fun `filters out multiple disabled providers`(): Unit = runBlocking {
         // Given
         val enabledProvider1 = TestStreamingDiagnosticProvider(
             id = "enabled1",
@@ -172,7 +172,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `disabled providers take precedence over enabled providers`() = runBlocking {
+    fun `disabled providers take precedence over enabled providers`(): Unit = runBlocking {
         // Given
         val provider = TestStreamingDiagnosticProvider(
             id = "conflicted-provider",
@@ -198,7 +198,7 @@ class DiagnosticsServiceTest {
     // ==================== Error Handling Tests ====================
 
     @Test
-    fun `continues processing when one provider throws exception`() = runBlocking {
+    fun `continues processing when one provider throws exception`(): Unit = runBlocking {
         // Given
         val workingProvider1 = TestStreamingDiagnosticProvider(
             id = "working1",
@@ -228,7 +228,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `handles provider that emits some diagnostics then fails`() = runBlocking {
+    fun `handles provider that emits some diagnostics then fails`(): Unit = runBlocking {
         // Given
         val partialProvider = TestStreamingDiagnosticProvider(
             id = "partial",
@@ -254,7 +254,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `logs provider ID when catching exceptions`() = runBlocking {
+    fun `logs provider ID when catching exceptions`(): Unit = runBlocking {
         // Given
         val failingProvider = TestStreamingDiagnosticProvider(
             id = "failing-provider-with-clear-id",
@@ -276,7 +276,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `propagates CancellationException when coroutine is cancelled`() = runBlocking {
+    fun `propagates CancellationException when coroutine is cancelled`(): Unit = runBlocking {
         // Given: A slow provider that we can cancel mid-execution
         val slowProvider = TestStreamingDiagnosticProvider(
             id = "slow-provider",
@@ -307,7 +307,7 @@ class DiagnosticsServiceTest {
     // ==================== Integration Tests ====================
 
     @Test
-    fun `works with DiagnosticProviderAdapter wrapping mock legacy provider`() = runBlocking {
+    fun `works with DiagnosticProviderAdapter wrapping mock legacy provider`(): Unit = runBlocking {
         // Given
         val diagnostic = createTestDiagnostic("Legacy diagnostic", 1)
         val legacyProvider = TestLegacyDiagnosticProvider(listOf(diagnostic))
@@ -331,7 +331,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `handles CodeNarcDiagnosticProvider via adapter`() = runBlocking {
+    fun `handles CodeNarcDiagnosticProvider via adapter`(): Unit = runBlocking {
         // NOTE: This is a slower integration test with real CodeNarc
         // Given: Groovy code with a known CodeNarc violation (trailing whitespace)
         val groovySourceWithViolation = """

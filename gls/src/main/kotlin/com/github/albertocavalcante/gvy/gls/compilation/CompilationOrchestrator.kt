@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
@@ -37,6 +38,8 @@ data class CompilationOrchestratorDependencies(
     val errorHandler: CompilationErrorHandler,
     val semanticDb: GroovySemanticDB? = null,
     val dependencyGraph: DependencyGraph? = null,
+    /** Open editor buffers; [CompilationOrchestrator.ensureCompiled] compiles these before falling back to disk. */
+    val documentProvider: DocumentProvider? = null,
 )
 
 class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
@@ -46,6 +49,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val symbolIndexer = dependencies.symbolIndexer
     private val parseAccessor = dependencies.parseAccessor
     private val resultMapper = dependencies.resultMapper
+    private val documentProvider = dependencies.documentProvider
     private val ioDispatcher = dependencies.ioDispatcher
     private val errorHandler = dependencies.errorHandler
     private val semanticDb = dependencies.semanticDb
@@ -202,6 +206,14 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                     cacheService.getActiveCompilation(uri)?.await()
                 }
             }
+        }
+
+        // An open buffer is the source of truth: it may be unsaved, untitled, or newer than the file on
+        // disk or the cached parse, and didOpen compiles it in a background job that may not have
+        // started yet. compile() reuses the cache when the content is unchanged.
+        documentProvider?.get(uri)?.let { content ->
+            logger.debug { "Compiling open document on-demand: $uri" }
+            return compile(uri, content)
         }
 
         // Get current fingerprint for cache coherency validation

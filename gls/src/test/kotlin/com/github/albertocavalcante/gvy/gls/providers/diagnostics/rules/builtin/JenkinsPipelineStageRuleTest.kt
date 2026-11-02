@@ -14,7 +14,7 @@ class JenkinsPipelineStageRuleTest {
     private val rule = JenkinsPipelineStageRule()
 
     @Test
-    fun `should detect incomplete Jenkins stage in Jenkinsfile`() = runBlocking {
+    fun `should detect incomplete Jenkins stage in Jenkinsfile`(): Unit = runBlocking {
         val code = """
             pipeline {
                 agent any
@@ -35,7 +35,7 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
-    fun `should not flag complete Jenkins stage`() = runBlocking {
+    fun `should not flag complete Jenkins stage`(): Unit = runBlocking {
         val code = """
             pipeline {
                 agent any
@@ -56,7 +56,7 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
-    fun `should not flag stage with script block`() = runBlocking {
+    fun `should not flag stage with script block`(): Unit = runBlocking {
         val code = """
             stage('Deploy') {
                 script {
@@ -72,7 +72,7 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
-    fun `should not use steps from a later stage`() = runBlocking {
+    fun `should not use steps from a later stage`(): Unit = runBlocking {
         val code = """
             pipeline {
                 stages {
@@ -96,7 +96,7 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
-    fun `should ignore stage declarations in line comments`() = runBlocking {
+    fun `should ignore stage declarations in line comments`(): Unit = runBlocking {
         val code = """
             pipeline {
                 // stage('Build') {
@@ -115,7 +115,7 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
-    fun `should not analyze non-Jenkins files`() = runBlocking {
+    fun `should not analyze non-Jenkins files`(): Unit = runBlocking {
         val code = """
             stage('Build') {
                 // This is not a Jenkins file
@@ -129,7 +129,7 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
-    fun `should not flag stage with steps beyond initial lookahead`() = runBlocking {
+    fun `should not flag stage with steps beyond initial lookahead`(): Unit = runBlocking {
         val code = """
             pipeline {
                 stages {
@@ -160,7 +160,7 @@ class JenkinsPipelineStageRuleTest {
     }
 
     @Test
-    fun `should analyze files in vars directory`() = runBlocking {
+    fun `should analyze files in vars directory`(): Unit = runBlocking {
         val code = """
             def call() {
                 stage('Test') {

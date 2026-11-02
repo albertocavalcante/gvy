@@ -118,7 +118,7 @@ class LocalSymbolResolutionStrategyTest {
         }
 
     @Test
-    fun `should NOT resolve cross-file constructor call - defer to other strategies`() = runBlocking {
+    fun `should NOT resolve cross-file constructor call - defer to other strategies`(): Unit = runBlocking {
         // Arrange: Calculator.groovy defines Calculator class
         val calculatorContent = """
             package com.example
@@ -225,7 +225,7 @@ class LocalSymbolResolutionStrategyTest {
     }
 
     @Test
-    fun `should resolve same-file constructor call`() = runBlocking {
+    fun `should resolve same-file constructor call`(): Unit = runBlocking {
         // Arrange: Single file with nested class
         val content = """
             package com.example
@@ -286,7 +286,7 @@ class LocalSymbolResolutionStrategyTest {
     }
 
     @Test
-    fun `should NOT resolve constructor for external class with no AST tracking`() = runBlocking {
+    fun `should NOT resolve constructor for external class with no AST tracking`(): Unit = runBlocking {
         // Arrange: Main.groovy uses Calculator, but Calculator.groovy is NOT compiled/tracked
         val mainContent = """
             package com.example

@@ -57,7 +57,7 @@ class CrossFileDefinitionRaceTest {
     }
 
     @Test
-    fun `should resolve cross-file definition when both files opened via didOpen`() = runTest {
+    fun `should resolve cross-file definition when both files opened via didOpen`(): Unit = runTest {
         // Arrange: Calculator.groovy defines com.example.Calculator
         val calculatorUri = "file:///test/com/example/Calculator.groovy"
         val calculatorContent = """
@@ -117,7 +117,7 @@ class CrossFileDefinitionRaceTest {
     }
 
     @Test
-    fun `should handle rapid didOpen followed by definition request`() = runTest {
+    fun `should handle rapid didOpen followed by definition request`(): Unit = runTest {
         // This test simulates the exact E2E scenario where files are opened
         // in quick succession and definition is requested immediately after
 
@@ -162,7 +162,7 @@ class CrossFileDefinitionRaceTest {
     }
 
     @Test
-    fun `should handle concurrent didOpen and definition requests`() = runTest {
+    fun `should handle concurrent didOpen and definition requests`(): Unit = runTest {
         // Test concurrent access: multiple files opening and definition requests happening
         // This tests thread safety of the fix
 
@@ -203,7 +203,7 @@ class CrossFileDefinitionRaceTest {
     }
 
     @Test
-    fun `should resolve definition when files opened in reverse dependency order`() = runTest {
+    fun `should resolve definition when files opened in reverse dependency order`(): Unit = runTest {
         // Open Main.groovy first (depends on Calculator)
         // Then open Calculator.groovy
         // Definition should still work
@@ -252,7 +252,7 @@ class CrossFileDefinitionRaceTest {
     }
 
     @Test
-    fun `should handle multiple cross-file references in single file`() = runTest {
+    fun `should handle multiple cross-file references in single file`(): Unit = runTest {
         // Main.groovy references Calculator, Logger, Utils - all in memory
 
         val calculatorUri = "file:///test/Calculator.groovy"
@@ -310,7 +310,7 @@ class CrossFileDefinitionRaceTest {
     }
 
     @Test
-    fun `should resolve definition after file content changes`() = runTest {
+    fun `should resolve definition after file content changes`(): Unit = runTest {
         // Open files, change Calculator.groovy, request definition in Main.groovy
 
         val calculatorUri = "file:///test/Calculator.groovy"

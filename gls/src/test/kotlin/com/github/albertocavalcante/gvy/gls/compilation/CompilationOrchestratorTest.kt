@@ -23,7 +23,7 @@ class CompilationOrchestratorTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `ensureCompiled on-disk parse does not include workspace sources`() = runBlocking {
+    fun `ensureCompiled on-disk parse does not include workspace sources`(): Unit = runBlocking {
         val targetPath = tempDir.resolve("Target.groovy")
         Files.writeString(
             targetPath,
@@ -85,7 +85,7 @@ class CompilationOrchestratorTest {
     }
 
     @Test
-    fun `cache invalidated when configuration fingerprint changes`() = runBlocking {
+    fun `cache invalidated when configuration fingerprint changes`(): Unit = runBlocking {
         val content = "class Test {}"
         val uri = URI.create("file:///Test.groovy")
 
@@ -144,7 +144,7 @@ class CompilationOrchestratorTest {
     }
 
     @Test
-    fun `compile uses bounded workspace sources when dependency info exists`() = runBlocking {
+    fun `compile uses bounded workspace sources when dependency info exists`(): Unit = runBlocking {
         val content = "class Test {}"
         val uri = URI.create("file:///Test.groovy")
         val depUri = URI.create("file:///Dep.groovy")
@@ -211,7 +211,7 @@ class CompilationOrchestratorTest {
     }
 
     @Test
-    fun `compile falls back to full workspace when no dependency info exists`() = runBlocking {
+    fun `compile falls back to full workspace when no dependency info exists`(): Unit = runBlocking {
         val content = "class Test {}"
         val uri = URI.create("file:///Test.groovy")
 
@@ -266,7 +266,7 @@ class CompilationOrchestratorTest {
     }
 
     @Test
-    fun `compile falls back to full workspace when dependencyGraph is null`() = runBlocking {
+    fun `compile falls back to full workspace when dependencyGraph is null`(): Unit = runBlocking {
         val content = "class Test {}"
         val uri = URI.create("file:///Test.groovy")
 

@@ -18,7 +18,7 @@ class SignatureHelpProviderTest {
     private val signatureHelpProvider = SignatureHelpProvider(compilationService, documentProvider, semanticResolver)
 
     @Test
-    fun `returns signatures for method call`() = runTest {
+    fun `returns signatures for method call`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelp.groovy")
         val source = """
             class Sample {
@@ -50,7 +50,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `computes active parameter based on caret`() = runTest {
+    fun `computes active parameter based on caret`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelpActiveParameter.groovy")
         val source = """
             class Calculator {
@@ -72,7 +72,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `cursor after comma selects next parameter`() = runTest {
+    fun `cursor after comma selects next parameter`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelpComma.groovy")
         val source = """
             class Sample {
@@ -94,7 +94,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `cursor after last argument selects upcoming parameter`() = runTest {
+    fun `cursor after last argument selects upcoming parameter`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelpTrailingSlot.groovy")
         val source = """
             class Sample {
@@ -116,7 +116,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `cursor in empty argument list stays at first parameter`() = runTest {
+    fun `cursor in empty argument list stays at first parameter`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelpEmptyCall.groovy")
         val source = """
             class Sample {
@@ -137,7 +137,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `returns empty signature help when no method call is found`() = runTest {
+    fun `returns empty signature help when no method call is found`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelpNoCall.groovy")
         val source = """
             class Sample {
@@ -156,7 +156,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `returns signatures for Script-level println GDK method`() = runTest {
+    fun `returns signatures for Script-level println GDK method`(): Unit = runTest {
         // println() is a GDK method inherited from groovy.lang.Script
         val uri = URI.create("file:///ScriptPrintln.groovy")
         val source = """
@@ -187,7 +187,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `handles static method calls`() = runTest {
+    fun `handles static method calls`(): Unit = runTest {
         val uri = URI.create("file:///StaticMethod.groovy")
         val source = """
             class Utils {
@@ -209,7 +209,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `handles varargs parameters`() = runTest {
+    fun `handles varargs parameters`(): Unit = runTest {
         val uri = URI.create("file:///VarargsMethod.groovy")
         val source = """
             class Varargs {
@@ -237,7 +237,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `handles nested method calls correctly`() = runTest {
+    fun `handles nested method calls correctly`(): Unit = runTest {
         val uri = URI.create("file:///NestedCalls.groovy")
         val source = """
             class Nested {
@@ -270,7 +270,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `clamps active parameter to last index`() = runTest {
+    fun `clamps active parameter to last index`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelpBounds.groovy")
         val source = """
             class Bounds {
@@ -292,7 +292,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `includes default values in parameter labels`() = runTest {
+    fun `includes default values in parameter labels`(): Unit = runTest {
         val uri = URI.create("file:///SignatureHelpDefaults.groovy")
         val source = """
             class Defaults {
@@ -331,7 +331,7 @@ class SignatureHelpProviderTest {
     // --- Edge Case Tests ---
 
     @Test
-    fun `displays array parameters correctly as Type brackets`() = runTest {
+    fun `displays array parameters correctly as Type brackets`(): Unit = runTest {
         val uri = URI.create("file:///ArrayParam.groovy")
         val source = """
             class ArrayProcessor {
@@ -355,7 +355,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `handles multiple method overloads`() = runTest {
+    fun `handles multiple method overloads`(): Unit = runTest {
         val uri = URI.create("file:///Overloads.groovy")
         val source = """
             class Calculator {
@@ -381,7 +381,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `handles explicit Object receiver for hashCode`() = runTest {
+    fun `handles explicit Object receiver for hashCode`(): Unit = runTest {
         val uri = URI.create("file:///ExplicitObject.groovy")
         val source = """
             class ObjectTest {
@@ -403,7 +403,7 @@ class SignatureHelpProviderTest {
     // --- Future Improvement Tests (Disabled with TODOs) ---
 
     @Test
-    fun `TODO - constructor signature help`() = runTest {
+    fun `TODO - constructor signature help`(): Unit = runTest {
         // TODO(FUTURE): Constructor signature help not yet implemented
         // When implemented, this test should verify signature help for `new Foo(...)` calls
         val uri = URI.create("file:///ConstructorHelp.groovy")
@@ -435,7 +435,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `TODO - chained method call signature help`() = runTest {
+    fun `TODO - chained method call signature help`(): Unit = runTest {
         // TODO(FUTURE): Chained method call resolution may need improvement
         // This test documents the expected behavior for chained calls
         val uri = URI.create("file:///ChainedCalls.groovy")
@@ -461,7 +461,7 @@ class SignatureHelpProviderTest {
     }
 
     @Test
-    fun `TODO - closure parameter display`() = runTest {
+    fun `TODO - closure parameter display`(): Unit = runTest {
         // TODO(FUTURE): Closure parameters could show more details (param types, return type)
         // Also affected by AST resolution issues at certain cursor positions
         val uri = URI.create("file:///ClosureParam.groovy")

@@ -30,7 +30,7 @@ class UnusedImportSemanticTokenTest {
     }
 
     @Test
-    fun `should mark unused import with unnecessary modifier`() = runBlocking {
+    fun `should mark unused import with unnecessary modifier`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList
             import java.util.HashMap
@@ -73,7 +73,7 @@ class UnusedImportSemanticTokenTest {
     }
 
     @Test
-    fun `should not mark used import with unnecessary modifier`() = runBlocking {
+    fun `should not mark used import with unnecessary modifier`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList
 
@@ -116,7 +116,7 @@ class UnusedImportSemanticTokenTest {
     }
 
     @Test
-    fun `should generate import tokens with CLASS type and DECLARATION modifier`() = runBlocking {
+    fun `should generate import tokens with CLASS type and DECLARATION modifier`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList
 
@@ -169,7 +169,7 @@ class UnusedImportSemanticTokenTest {
     }
 
     @Test
-    fun `should highlight static import field name not class name`() = runBlocking {
+    fun `should highlight static import field name not class name`(): Unit = runBlocking {
         val code = """
             import static java.util.Collections.emptyMap
 

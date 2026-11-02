@@ -59,7 +59,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test completion returns items`() = runBlocking {
+    fun `test completion returns items`(): Unit = runBlocking {
         val params = CompletionParams().apply {
             textDocument = TextDocumentIdentifier("file:///test.groovy")
             position = Position(0, 0)
@@ -78,7 +78,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test hover returns content`() = runBlocking {
+    fun `test hover returns content`(): Unit = runBlocking {
         val params = HoverParams().apply {
             textDocument = TextDocumentIdentifier("file:///test.groovy")
             position = Position(5, 10)
@@ -97,7 +97,7 @@ class GroovyLanguageServerTest {
     }
 
     @Test
-    fun `test document open compiles valid groovy file`() = runBlocking {
+    fun `test document open compiles valid groovy file`(): Unit = runBlocking {
         val params = DidOpenTextDocumentParams().apply {
             textDocument = TextDocumentItem().apply {
                 uri = "file:///TestClass.groovy"

@@ -32,7 +32,7 @@ class UnusedImportDiagnosticProviderTest {
     }
 
     @Test
-    fun `should return diagnostics for unused imports`() = runBlocking {
+    fun `should return diagnostics for unused imports`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList
             import java.util.HashMap
@@ -51,7 +51,7 @@ class UnusedImportDiagnosticProviderTest {
     }
 
     @Test
-    fun `should return empty list when all imports are used`() = runBlocking {
+    fun `should return empty list when all imports are used`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList
 
@@ -65,7 +65,7 @@ class UnusedImportDiagnosticProviderTest {
     }
 
     @Test
-    fun `should return empty list when no imports exist`() = runBlocking {
+    fun `should return empty list when no imports exist`(): Unit = runBlocking {
         val code = """
             class Test {
                 def x = 1
@@ -79,7 +79,7 @@ class UnusedImportDiagnosticProviderTest {
     }
 
     @Test
-    fun `diagnostic range should cover import line`() = runBlocking {
+    fun `diagnostic range should cover import line`(): Unit = runBlocking {
         val code = """
             import java.util.HashMap
 
@@ -96,7 +96,7 @@ class UnusedImportDiagnosticProviderTest {
     }
 
     @Test
-    fun `diagnostic should have correct code for quick fix integration`() = runBlocking {
+    fun `diagnostic should have correct code for quick fix integration`(): Unit = runBlocking {
         val code = """
             import java.util.HashMap
 
@@ -112,7 +112,7 @@ class UnusedImportDiagnosticProviderTest {
     }
 
     @Test
-    fun `should detect multiple unused imports`() = runBlocking {
+    fun `should detect multiple unused imports`(): Unit = runBlocking {
         val code = """
             import java.util.ArrayList
             import java.util.HashMap

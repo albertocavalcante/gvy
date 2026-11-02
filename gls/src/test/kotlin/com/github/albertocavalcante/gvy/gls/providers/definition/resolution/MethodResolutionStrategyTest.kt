@@ -62,7 +62,7 @@ class MethodResolutionStrategyTest {
     inner class ApplicabilityTests {
 
         @Test
-        fun `returns not applicable for VariableExpression nodes`() = runBlocking {
+        fun `returns not applicable for VariableExpression nodes`(): Unit = runBlocking {
             val context = mockk<ResolutionContext>()
             every { context.targetNode } returns VariableExpression("test")
 
@@ -75,7 +75,7 @@ class MethodResolutionStrategyTest {
         }
 
         @Test
-        fun `returns not applicable for ConstantExpression nodes`() = runBlocking {
+        fun `returns not applicable for ConstantExpression nodes`(): Unit = runBlocking {
             val context = mockk<ResolutionContext>()
             every { context.targetNode } returns ConstantExpression("literal")
 
@@ -88,7 +88,7 @@ class MethodResolutionStrategyTest {
         // The strategy should handle this gracefully instead of returning notApplicable
         @Test
         @Disabled("Requires methodAsString null handling - see issue #843")
-        fun `returns not applicable when methodAsString is null (dynamic method name)`() = runBlocking {
+        fun `returns not applicable when methodAsString is null (dynamic method name)`(): Unit = runBlocking {
             val methodCall = mockk<MethodCallExpression>()
             every { methodCall.methodAsString } returns null // Dynamic method name like "$methodName"()
 
@@ -114,7 +114,7 @@ class MethodResolutionStrategyTest {
     inner class ReceiverResolutionTests {
 
         @Test
-        fun `resolves static method call receiver from ClassExpression`() = runBlocking {
+        fun `resolves static method call receiver from ClassExpression`(): Unit = runBlocking {
             val methodCall = mockk<MethodCallExpression>()
             val classExpr = mockk<ClassExpression>()
             val classNode = mockk<ClassNode>()
@@ -155,7 +155,7 @@ class MethodResolutionStrategyTest {
         }
 
         @Test
-        fun `returns error when receiver type cannot be resolved for implicit this`() = runBlocking {
+        fun `returns error when receiver type cannot be resolved for implicit this`(): Unit = runBlocking {
             val methodCall = mockk<MethodCallExpression>()
             val receiver = VariableExpression("this")
 
@@ -188,7 +188,7 @@ class MethodResolutionStrategyTest {
     inner class MethodMatchingTests {
 
         @Test
-        fun `returns not found when method not in classpath`() = runBlocking {
+        fun `returns not found when method not in classpath`(): Unit = runBlocking {
             val methodCall = mockk<MethodCallExpression>()
             val classExpr = mockk<ClassExpression>()
             val classNode = mockk<ClassNode>()
@@ -217,7 +217,7 @@ class MethodResolutionStrategyTest {
         }
 
         @Test
-        fun `matches method by name and argument count`() = runBlocking {
+        fun `matches method by name and argument count`(): Unit = runBlocking {
             val methodCall = mockk<MethodCallExpression>()
             val classExpr = mockk<ClassExpression>()
             val classNode = mockk<ClassNode>()
@@ -270,7 +270,7 @@ class MethodResolutionStrategyTest {
         // Currently the test only checks that SOME method resolves, not that it's the right one
         @Test
         @Disabled("Need to verify correct overload selection - see issue #843")
-        fun `selects correct overload based on argument count`() = runBlocking {
+        fun `selects correct overload based on argument count`(): Unit = runBlocking {
             val methodCall = mockk<MethodCallExpression>()
             val classExpr = mockk<ClassExpression>()
             val classNode = mockk<ClassNode>()
@@ -329,7 +329,7 @@ class MethodResolutionStrategyTest {
         // FIXME(#843): TupleExpression argument handling is untested
         @Test
         @Disabled("TupleExpression argument count extraction - see issue #843")
-        fun `extracts argument count from TupleExpression`() = runBlocking {
+        fun `extracts argument count from TupleExpression`(): Unit = runBlocking {
             val methodCall = mockk<MethodCallExpression>()
             val classExpr = mockk<ClassExpression>()
             val classNode = mockk<ClassNode>()
@@ -377,7 +377,7 @@ class MethodResolutionStrategyTest {
     inner class SourceNavigationTests {
 
         @Test
-        fun `returns found with line number from source location`() = runBlocking {
+        fun `returns found with line number from source location`(): Unit = runBlocking {
             val methodCall = createStaticMethodCall("java.lang.String", "format", 1)
 
             val context = mockk<ResolutionContext>()
@@ -411,7 +411,7 @@ class MethodResolutionStrategyTest {
         }
 
         @Test
-        fun `returns not found when source navigator returns BinaryOnly`() = runBlocking {
+        fun `returns not found when source navigator returns BinaryOnly`(): Unit = runBlocking {
             val methodCall = createStaticMethodCall("java.lang.String", "format", 1)
 
             val context = mockk<ResolutionContext>()
@@ -439,7 +439,7 @@ class MethodResolutionStrategyTest {
         }
 
         @Test
-        fun `works without source navigator (null)`() = runBlocking {
+        fun `works without source navigator (null)`(): Unit = runBlocking {
             // Create strategy without source navigator
             val strategyNoNav = MethodResolutionStrategy(compilationService, sourceNavigator = null)
 
@@ -471,7 +471,7 @@ class MethodResolutionStrategyTest {
         // FIXME(#843): Private methods should not be resolved via this strategy
         @Test
         @Disabled("Private method visibility filtering - see issue #843")
-        fun `does not match private methods`() = runBlocking {
+        fun `does not match private methods`(): Unit = runBlocking {
             val methodCall = createStaticMethodCall("java.lang.String", "privateHelper", 0)
 
             val context = mockk<ResolutionContext>()
@@ -500,7 +500,7 @@ class MethodResolutionStrategyTest {
         // TODO(#843): Test inherited method resolution
         @Test
         @Disabled("Inherited method resolution - see issue #843")
-        fun `resolves inherited methods from superclass`() = runBlocking {
+        fun `resolves inherited methods from superclass`(): Unit = runBlocking {
             // ArrayList.toString() should resolve to Object.toString() or AbstractCollection.toString()
             val methodCall = mockk<MethodCallExpression>()
             val varExpr = VariableExpression("list")
@@ -532,7 +532,7 @@ class MethodResolutionStrategyTest {
         // TODO(#843): Varargs method matching
         @Test
         @Disabled("Varargs method matching - see issue #843")
-        fun `matches varargs method with multiple arguments`() = runBlocking {
+        fun `matches varargs method with multiple arguments`(): Unit = runBlocking {
             // String.format(String, Object...) should match calls with any number of args
             val methodCall = createStaticMethodCall("java.lang.String", "format", 5) // format + 4 varargs
 
@@ -573,7 +573,7 @@ class MethodResolutionStrategyTest {
         // TODO(#843): GDK extension method resolution
         @Test
         @Disabled("GDK extension method resolution - see issue #843")
-        fun `resolves GDK extension methods`() = runBlocking {
+        fun `resolves GDK extension methods`(): Unit = runBlocking {
             // "hello".each { } - each is a GDK method, not a String method
             val methodCall = mockk<MethodCallExpression>()
             val varExpr = VariableExpression("str")

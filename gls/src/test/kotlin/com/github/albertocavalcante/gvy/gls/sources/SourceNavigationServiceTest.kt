@@ -100,7 +100,7 @@ class SourceNavigationServiceTest {
     inner class NavigateToSourceTest {
 
         @Test
-        fun `returns BinaryOnly for invalid jar URI scheme`() = runBlocking {
+        fun `returns BinaryOnly for invalid jar URI scheme`(): Unit = runBlocking {
             val service = SourceNavigationService()
 
             // file: scheme is not a jar: URI
@@ -113,7 +113,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `handles jrt URI for JDK classes`() = runBlocking {
+        fun `handles jrt URI for JDK classes`(): Unit = runBlocking {
             val service = SourceNavigationService()
 
             val jrtUri = URI.create("jrt:/java.base/java/util/Date.class")
@@ -128,7 +128,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `returns BinaryOnly when jar path does not exist`() = runBlocking {
+        fun `returns BinaryOnly when jar path does not exist`(): Unit = runBlocking {
             val service = SourceNavigationService()
 
             val nonExistentJar = URI.create("jar:file:///nonexistent/lib.jar!/com/example/Foo.class")
@@ -138,7 +138,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `finds adjacent source JAR for local dependencies`() = runBlocking {
+        fun `finds adjacent source JAR for local dependencies`(): Unit = runBlocking {
             // Create binary JAR and matching source JAR
             val libDir = tempDir.resolve("libs")
             Files.createDirectories(libDir)
@@ -164,7 +164,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `returns SourceLocation for groovy sources`() = runBlocking {
+        fun `returns SourceLocation for groovy sources`(): Unit = runBlocking {
             val libDir = tempDir.resolve("libs")
             Files.createDirectories(libDir)
 
@@ -197,7 +197,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `derives maven coordinates from gradle cache paths`() = runBlocking {
+        fun `derives maven coordinates from gradle cache paths`(): Unit = runBlocking {
             val resolver = RecordingSourceArtifactResolver()
             val service = SourceNavigationService(sourceResolver = resolver)
 
@@ -229,7 +229,7 @@ class SourceNavigationServiceTest {
     inner class NavigateToMethodSourceTest {
 
         @Test
-        fun `navigates to method line number in Java source`() = runBlocking {
+        fun `navigates to method line number in Java source`(): Unit = runBlocking {
             // Create a JAR with source code
             val libDir = tempDir.resolve("libs")
             Files.createDirectories(libDir)
@@ -271,7 +271,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `falls back to class-level navigation when method not found`() = runBlocking {
+        fun `falls back to class-level navigation when method not found`(): Unit = runBlocking {
             val libDir = tempDir.resolve("libs")
             Files.createDirectories(libDir)
 
@@ -307,7 +307,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `returns BinaryOnly when source not available for method`() = runBlocking {
+        fun `returns BinaryOnly when source not available for method`(): Unit = runBlocking {
             val service = SourceNavigationService()
 
             // Use a non-existent JAR
@@ -320,7 +320,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `handles method overloads by name only`() = runBlocking {
+        fun `handles method overloads by name only`(): Unit = runBlocking {
             // Note: Current implementation matches by method name only (not signature)
             val libDir = tempDir.resolve("libs")
             Files.createDirectories(libDir)
@@ -358,7 +358,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `works with JDK classes that have source available`() = runBlocking {
+        fun `works with JDK classes that have source available`(): Unit = runBlocking {
             val service = SourceNavigationService()
 
             // Test with a JDK class - result depends on src.zip availability
@@ -395,10 +395,11 @@ class SourceNavigationServiceTest {
     inner class RegexInjectionTest {
 
         @Test
-        fun `findGroovyClassLineNumber handles dot in class name - regex injection via inner class`() = runBlocking {
-            // Test case: Dot (.) in regex matches ANY character, not literal dot
-            // This is a realistic scenario with inner classes
-            val groovySource = """
+        fun `findGroovyClassLineNumber handles dot in class name - regex injection via inner class`(): Unit =
+            runBlocking {
+                // Test case: Dot (.) in regex matches ANY character, not literal dot
+                // This is a realistic scenario with inner classes
+                val groovySource = """
                 package com.example
 
                 class MyClass {
@@ -410,45 +411,45 @@ class SourceNavigationServiceTest {
                     static class Bar {
                     }
                 }
-            """.trimIndent()
+                """.trimIndent()
 
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-            val binaryJar = libDir.resolve("test.jar")
-            val sourceJar = libDir.resolve("test-sources.jar")
-            createMinimalJar(binaryJar)
-            createSourceJar(sourceJar, "com/example/MyClass.groovy", groovySource)
+                val libDir = tempDir.resolve("libs")
+                Files.createDirectories(libDir)
+                val binaryJar = libDir.resolve("test.jar")
+                val sourceJar = libDir.resolve("test-sources.jar")
+                createMinimalJar(binaryJar)
+                createSourceJar(sourceJar, "com/example/MyClass.groovy", groovySource)
 
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            extractor.extractAndIndex(sourceJar)
-            val sourcePath = extractor.findSourceForClass("com.example.MyClass")
+                val extractionDir = tempDir.resolve("extracted")
+                val extractor = SourceJarExtractor(extractionDir)
+                extractor.extractAndIndex(sourceJar)
+                val sourcePath = extractor.findSourceForClass("com.example.MyClass")
 
-            assertNotNull(sourcePath, "Source should be extracted")
+                assertNotNull(sourcePath, "Source should be extracted")
 
-            // Call the private method via reflection to test it directly
-            val service = SourceNavigationService(sourceExtractor = extractor)
-            val findMethod = service.javaClass.getDeclaredMethod(
-                "findGroovyClassLineNumber",
-                Path::class.java,
-                String::class.java,
-            )
-            findMethod.isAccessible = true
+                // Call the private method via reflection to test it directly
+                val service = SourceNavigationService(sourceExtractor = extractor)
+                val findMethod = service.javaClass.getDeclaredMethod(
+                    "findGroovyClassLineNumber",
+                    Path::class.java,
+                    String::class.java,
+                )
+                findMethod.isAccessible = true
 
-            // Looking for "Foo.Bar" - after fix, dot should be escaped and treated literally
-            // Should NOT match "FooXBar" anymore (line 5)
-            val lineNumber = findMethod.invoke(service, sourcePath, "Foo.Bar") as Int?
+                // Looking for "Foo.Bar" - after fix, dot should be escaped and treated literally
+                // Should NOT match "FooXBar" anymore (line 5)
+                val lineNumber = findMethod.invoke(service, sourcePath, "Foo.Bar") as Int?
 
-            // FIXED: Should NOT match "FooXBar" (which would be line 5)
-            // The function extracts simple name "Bar" from "Foo.Bar" and matches class "Bar" on line 9
-            // This is acceptable behavior - the key is it doesn't match "FooXBar"
-            assertNotNull(lineNumber, "Should find class Bar")
-            assertNotEquals(5, lineNumber, "FIXED: Should NOT match FooXBar on line 5")
-            assertEquals(9, lineNumber, "Finds class Bar (simple name from Foo.Bar)")
-        }
+                // FIXED: Should NOT match "FooXBar" (which would be line 5)
+                // The function extracts simple name "Bar" from "Foo.Bar" and matches class "Bar" on line 9
+                // This is acceptable behavior - the key is it doesn't match "FooXBar"
+                assertNotNull(lineNumber, "Should find class Bar")
+                assertNotEquals(5, lineNumber, "FIXED: Should NOT match FooXBar on line 5")
+                assertEquals(9, lineNumber, "Finds class Bar (simple name from Foo.Bar)")
+            }
 
         @Test
-        fun `findGroovyMethodLineNumber handles dot in method name - realistic regex injection`() = runBlocking {
+        fun `findGroovyMethodLineNumber handles dot in method name - realistic regex injection`(): Unit = runBlocking {
             // Test case: Method name with dot treated as regex wildcard
             val groovySource = """
                 package com.example
@@ -500,10 +501,11 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `findGroovyMethodLineNumber handles star quantifier - catastrophic backtracking risk`() = runBlocking {
-            // Test case: Asterisk (*) is a regex quantifier meaning "zero or more"
-            // This demonstrates a security vulnerability
-            val groovySource = """
+        fun `findGroovyMethodLineNumber handles star quantifier - catastrophic backtracking risk`(): Unit =
+            runBlocking {
+                // Test case: Asterisk (*) is a regex quantifier meaning "zero or more"
+                // This demonstrates a security vulnerability
+                val groovySource = """
                 package com.example
 
                 class TestClass {
@@ -519,44 +521,44 @@ class SourceNavigationServiceTest {
                         println "actual target"
                     }
                 }
-            """.trimIndent()
+                """.trimIndent()
 
-            val libDir = tempDir.resolve("libs")
-            Files.createDirectories(libDir)
-            val binaryJar = libDir.resolve("test.jar")
-            val sourceJar = libDir.resolve("test-sources.jar")
-            createMinimalJar(binaryJar)
-            createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
+                val libDir = tempDir.resolve("libs")
+                Files.createDirectories(libDir)
+                val binaryJar = libDir.resolve("test.jar")
+                val sourceJar = libDir.resolve("test-sources.jar")
+                createMinimalJar(binaryJar)
+                createSourceJar(sourceJar, "com/example/TestClass.groovy", groovySource)
 
-            val extractionDir = tempDir.resolve("extracted")
-            val extractor = SourceJarExtractor(extractionDir)
-            extractor.extractAndIndex(sourceJar)
-            val sourcePath = extractor.findSourceForClass("com.example.TestClass")
+                val extractionDir = tempDir.resolve("extracted")
+                val extractor = SourceJarExtractor(extractionDir)
+                extractor.extractAndIndex(sourceJar)
+                val sourcePath = extractor.findSourceForClass("com.example.TestClass")
 
-            assertNotNull(sourcePath, "Source should be extracted")
+                assertNotNull(sourcePath, "Source should be extracted")
 
-            val service = SourceNavigationService(sourceExtractor = extractor)
-            val findMethod = service.javaClass.getDeclaredMethod(
-                "findGroovyMethodLineNumber",
-                Path::class.java,
-                String::class.java,
-            )
-            findMethod.isAccessible = true
+                val service = SourceNavigationService(sourceExtractor = extractor)
+                val findMethod = service.javaClass.getDeclaredMethod(
+                    "findGroovyMethodLineNumber",
+                    Path::class.java,
+                    String::class.java,
+                )
+                findMethod.isAccessible = true
 
-            // Looking for "test*" - after fix, * should be escaped and treated literally
-            // Should NOT match "testMethod" anymore
-            val lineNumber = findMethod.invoke(service, sourcePath, "test*") as Int?
+                // Looking for "test*" - after fix, * should be escaped and treated literally
+                // Should NOT match "testMethod" anymore
+                val lineNumber = findMethod.invoke(service, sourcePath, "test*") as Int?
 
-            // FIXED: Should NOT match "testMethod" (line 3) with escaped asterisk
-            // May find quoted method "test*" or return null - both acceptable
-            if (lineNumber != null) {
-                assertNotEquals(3, lineNumber, "FIXED: Should NOT match testMethod with escaped asterisk")
+                // FIXED: Should NOT match "testMethod" (line 3) with escaped asterisk
+                // May find quoted method "test*" or return null - both acceptable
+                if (lineNumber != null) {
+                    assertNotEquals(3, lineNumber, "FIXED: Should NOT match testMethod with escaped asterisk")
+                }
+                // Either finds line 11 (quoted method) or null (can't match quoted names) - both acceptable
             }
-            // Either finds line 11 (quoted method) or null (can't match quoted names) - both acceptable
-        }
 
         @Test
-        fun `findGroovyMethodLineNumber handles plus quantifier - another regex injection`() = runBlocking {
+        fun `findGroovyMethodLineNumber handles plus quantifier - another regex injection`(): Unit = runBlocking {
             // Test case: Plus (+) is a regex quantifier meaning "one or more"
             val groovySource = """
                 package com.example
@@ -607,7 +609,7 @@ class SourceNavigationServiceTest {
         }
 
         @Test
-        fun `findPatternInGroovySource handles multiple block comments on same line`() = runBlocking {
+        fun `findPatternInGroovySource handles multiple block comments on same line`(): Unit = runBlocking {
             // Test case: Multiple block comments on the same line should ALL be stripped
             // Bug scenario: `def x /* c1 */ = foo /* c2 */ bar` only removes first comment
             val groovySource = """

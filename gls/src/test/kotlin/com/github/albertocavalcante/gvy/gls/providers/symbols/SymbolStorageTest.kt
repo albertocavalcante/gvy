@@ -23,7 +23,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test buildFromVisitor creates symbol storage`() = runTest {
+    fun `test buildFromVisitor creates symbol storage`(): Unit = runTest {
         // Arrange
         val content = """
             class TestClass {
@@ -57,7 +57,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test symbol lookup by name`() = runTest {
+    fun `test symbol lookup by name`(): Unit = runTest {
         // Arrange
         val content = """
             def variable = "test"
@@ -93,7 +93,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test search non-existent symbol`() = runTest {
+    fun `test search non-existent symbol`(): Unit = runTest {
         // Arrange
         val content = """
             def variable = "test"
@@ -119,7 +119,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test immutable nature of SymbolStorage`() = runTest {
+    fun `test immutable nature of SymbolStorage`(): Unit = runTest {
         // Arrange
         val content = """
             def variable = "test"
@@ -146,7 +146,7 @@ class SymbolStorageTest {
     }
 
     @Test
-    fun `test empty storage behavior`() = runTest {
+    fun `test empty storage behavior`(): Unit = runTest {
         // Arrange
         val emptyIndex = SymbolIndex()
 

@@ -19,7 +19,7 @@ import kotlin.test.assertTrue
 class GroovyCompilationServiceSessionTest {
 
     @Test
-    fun `getSession returns non-null session for Core engine`() = runBlocking {
+    fun `getSession returns non-null session for Core engine`(): Unit = runBlocking {
         // This test verifies that getSession works with CoreLanguageEngine
         val engine = CoreLanguageEngine()
         val uri = URI.create("file:///test.groovy")
@@ -37,7 +37,7 @@ class GroovyCompilationServiceSessionTest {
     }
 
     @Test
-    fun `Core engine session provides hover`() = runBlocking {
+    fun `Core engine session provides hover`(): Unit = runBlocking {
         val engine = CoreLanguageEngine()
         val uri = URI.create("file:///test.groovy")
         val content = """

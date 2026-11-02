@@ -24,7 +24,7 @@ class DependencyManagerTest {
     private val testWorkspaceRoot = Paths.get("/tmp/test-workspace")
 
     @Test
-    fun `should classify toolchain exception and create failed resolution`() = runBlocking {
+    fun `should classify toolchain exception and create failed resolution`(): Unit = runBlocking {
         val toolchainError = RuntimeException(
             "Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: " +
                 "{languageVersion=17, vendor=any vendor}",
@@ -117,7 +117,7 @@ class DependencyManagerTest {
     }
 
     @Test
-    fun `should call onError for truly unexpected errors`() = runBlocking {
+    fun `should call onError for truly unexpected errors`(): Unit = runBlocking {
         val unexpectedError = NullPointerException("Something went really wrong")
 
         val buildToolManager = mockk<BuildToolManager> {

@@ -38,7 +38,7 @@ class ClosureHoverStrategyTest {
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
     @Test
-    fun `hover on simple closure with parameters`() = runTest {
+    fun `hover on simple closure with parameters`(): Unit = runTest {
         val groovyCode = """
             def closure = { String name, int age ->
                 println "Name: ${'$'}name, Age: ${'$'}age"
@@ -64,7 +64,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on closure with no parameters`() = runTest {
+    fun `hover on closure with no parameters`(): Unit = runTest {
         val groovyCode = """
             def simpleBlock = { println "Simple closure" }
         """.trimIndent()
@@ -83,7 +83,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on closure with implicit it parameter`() = runTest {
+    fun `hover on closure with implicit it parameter`(): Unit = runTest {
         val groovyCode = """
             def list = [1, 2, 3]
             list.each { println it }
@@ -103,7 +103,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on closure passed as method argument`() = runTest {
+    fun `hover on closure passed as method argument`(): Unit = runTest {
         val groovyCode = """
             def numbers = [1, 2, 3, 4, 5]
             numbers.findAll { it > 3 }
@@ -127,7 +127,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on closure with multiple parameters`() = runTest {
+    fun `hover on closure with multiple parameters`(): Unit = runTest {
         val groovyCode = """
             def map = [a: 1, b: 2, c: 3]
             map.each { key, value ->
@@ -153,7 +153,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on nested closures`() = runTest {
+    fun `hover on nested closures`(): Unit = runTest {
         val groovyCode = """
             def outer = { x ->
                 def inner = { y ->
@@ -194,7 +194,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on closure with typed parameters`() = runTest {
+    fun `hover on closure with typed parameters`(): Unit = runTest {
         val groovyCode = """
             def calculate = { int a, int b -> a + b }
             def result = calculate(5, 10)
@@ -218,7 +218,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on closure in variable declaration`() = runTest {
+    fun `hover on closure in variable declaration`(): Unit = runTest {
         val groovyCode = """
             def greeting = { name -> "Hello, ${'$'}name!" }
             println greeting("World")
@@ -242,7 +242,7 @@ class ClosureHoverStrategyTest {
     }
 
     @Test
-    fun `hover on closure with default parameter values`() = runTest {
+    fun `hover on closure with default parameter values`(): Unit = runTest {
         val groovyCode = """
             def greet = { String name = "Guest" ->
                 println "Hello, ${'$'}name!"

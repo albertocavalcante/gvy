@@ -48,10 +48,14 @@ core.workflow(
         # Move files from editors/code/ to root
         core.move("editors/code", ""),
         
-        # Remove monorepo-specific package.json directory field
+        # Remove the monorepo-specific package.json "directory" field together
+        # with the comma that precedes it, so the mirrored manifest stays valid
+        # JSON ("directory" is the last key of "repository").
         core.replace(
-            before = '"directory": "editors/code"',
+            before = '${sep}"directory": "editors/code"',
             after = "",
+            regex_groups = {"sep": ",\\s*"},
+            multiline = True,
             paths = glob(["package.json"]),
         ),
         
@@ -97,6 +101,21 @@ core.workflow(
             paths = glob(["README.md", "CONTRIBUTING.md"]),
         ),
         
+        # Fail the sync instead of pushing a manifest that pnpm, vsce and VS
+        # Code reject: the field must be gone and no trailing comma may remain.
+        core.verify_match(
+            regex = '"directory"\\s*:',
+            paths = glob(["package.json"]),
+            verify_no_match = True,
+        ),
+        core.verify_match(
+            # Only a comma that ends a line: string values such as "^[0-9,]+$"
+            # may legitimately contain ",]".
+            regex = ',[ \\t]*\\n\\s*[}\\]]',
+            paths = glob(["package.json"]),
+            verify_no_match = True,
+        ),
+
         # Expose standard Git trailers and GitHub keywords to preserve them in the destination
         metadata.expose_label("Co-authored-by"),
         metadata.expose_label("Signed-off-by"),

@@ -18,7 +18,7 @@ class JenkinsMetadataServiceTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `initialize downloads and registers plugins from plugins file`() = runBlocking {
+    fun `initialize downloads and registers plugins from plugins file`(): Unit = runBlocking {
         // Arrange
         val pluginManager = mockk<JenkinsPluginManager>(relaxed = true)
         val downloader = mockk<PluginDownloader>()
@@ -54,7 +54,7 @@ class JenkinsMetadataServiceTest {
     }
 
     @Test
-    fun `initialize does nothing if plugins file is missing`() = runBlocking {
+    fun `initialize does nothing if plugins file is missing`(): Unit = runBlocking {
         val pluginManager = mockk<JenkinsPluginManager>(relaxed = true)
         val downloader = mockk<PluginDownloader>()
         val config = JenkinsConfiguration(pluginsFile = "non/existent/path.txt")

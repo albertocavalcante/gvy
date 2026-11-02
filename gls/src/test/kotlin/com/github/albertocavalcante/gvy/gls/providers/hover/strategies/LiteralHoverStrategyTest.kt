@@ -38,7 +38,7 @@ class LiteralHoverStrategyTest {
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
     @Test
-    fun `hover on string literal shows String type`() = runTest {
+    fun `hover on string literal shows String type`(): Unit = runTest {
         val groovyCode = """
             def message = "Hello, World!"
             println message
@@ -63,7 +63,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on integer literal shows Integer type`() = runTest {
+    fun `hover on integer literal shows Integer type`(): Unit = runTest {
         val groovyCode = """
             def count = 42
             def doubled = count * 2
@@ -87,7 +87,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on decimal literal shows BigDecimal type`() = runTest {
+    fun `hover on decimal literal shows BigDecimal type`(): Unit = runTest {
         val groovyCode = """
             def pi = 3.14159
             def calculated = pi * 2
@@ -112,7 +112,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on boolean literal shows Boolean type`() = runTest {
+    fun `hover on boolean literal shows Boolean type`(): Unit = runTest {
         val groovyCode = """
             def enabled = true
             def disabled = false
@@ -152,7 +152,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on list literal shows List type`() = runTest {
+    fun `hover on list literal shows List type`(): Unit = runTest {
         val groovyCode = """
             def numbers = [1, 2, 3, 4, 5]
             def mixed = ['a', 1, true]
@@ -174,7 +174,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on map literal shows Map type`() = runTest {
+    fun `hover on map literal shows Map type`(): Unit = runTest {
         val groovyCode = """
             def person = [name: "Alice", age: 30]
             def empty = [:]
@@ -196,7 +196,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on null literal shows null type`() = runTest {
+    fun `hover on null literal shows null type`(): Unit = runTest {
         val groovyCode = """
             def nothing = null
             if (nothing == null) {
@@ -222,7 +222,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on GString literal shows GString type`() = runTest {
+    fun `hover on GString literal shows GString type`(): Unit = runTest {
         val groovyCode = """
             def name = "Alice"
             def greeting = "Hello, ${'$'}name!"
@@ -248,7 +248,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on long literal shows Long type`() = runTest {
+    fun `hover on long literal shows Long type`(): Unit = runTest {
         val groovyCode = """
             def bigNumber = 9999999999L
             def calculated = bigNumber + 1
@@ -272,7 +272,7 @@ class LiteralHoverStrategyTest {
     }
 
     @Test
-    fun `hover on character literal shows Character type`() = runTest {
+    fun `hover on character literal shows Character type`(): Unit = runTest {
         val groovyCode = """
             def letter = 'A' as char
             println letter

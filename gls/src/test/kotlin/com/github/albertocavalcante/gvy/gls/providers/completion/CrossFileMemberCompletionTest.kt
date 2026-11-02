@@ -52,7 +52,7 @@ class CrossFileMemberCompletionTest {
     inner class FieldCompletionTests {
 
         @Test
-        fun `should show field from class in another file`() = runBlocking {
+        fun `should show field from class in another file`(): Unit = runBlocking {
             // Arrange: Create Person class in another file
             val personFile = tempDir / "Person.groovy"
             personFile.writeText(
@@ -106,7 +106,7 @@ class CrossFileMemberCompletionTest {
 
         @Test
         @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration in CompletionProvider")
-        fun `should show method from class in another file`() = runBlocking {
+        fun `should show method from class in another file`(): Unit = runBlocking {
             // Arrange: Create Calculator class in another file
             val calcFile = tempDir / "Calculator.groovy"
             calcFile.writeText(
@@ -168,7 +168,7 @@ class CrossFileMemberCompletionTest {
 
         @Test
         @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration in CompletionProvider")
-        fun `should show property from class in another file`() = runBlocking {
+        fun `should show property from class in another file`(): Unit = runBlocking {
             // Arrange: Create Config class with Groovy properties
             val configFile = tempDir / "Config.groovy"
             configFile.writeText(
@@ -227,7 +227,7 @@ class CrossFileMemberCompletionTest {
 
         @Test
         @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration and inheritance support")
-        fun `should show inherited field from parent class in another file`() = runBlocking {
+        fun `should show inherited field from parent class in another file`(): Unit = runBlocking {
             // Arrange: Create parent class in one file
             val parentFile = tempDir / "Animal.groovy"
             parentFile.writeText(
@@ -297,7 +297,7 @@ class CrossFileMemberCompletionTest {
 
         @Test
         @Disabled("Test infrastructure - needs WorkspaceSymbolIndex integration and inheritance support")
-        fun `should show inherited method from parent class in another file`() = runBlocking {
+        fun `should show inherited method from parent class in another file`(): Unit = runBlocking {
             // Arrange: Create parent class in one file
             val parentFile = tempDir / "Vehicle.groovy"
             parentFile.writeText(
@@ -378,7 +378,7 @@ class CrossFileMemberCompletionTest {
     inner class NoDuplicateCompletionsTests {
 
         @Test
-        fun `should not show duplicate completions from workspace and classpath`() = runBlocking {
+        fun `should not show duplicate completions from workspace and classpath`(): Unit = runBlocking {
             // Arrange: Create a class that has toString() method (inherited from Object)
             val personFile = tempDir / "Person.groovy"
             personFile.writeText(

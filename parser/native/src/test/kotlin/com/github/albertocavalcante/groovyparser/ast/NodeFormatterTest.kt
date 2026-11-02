@@ -19,7 +19,7 @@ class NodeFormatterTest {
     private val parserFacade = GroovyParserFacade()
 
     @Test
-    fun `MethodNode toHoverString formats method signature correctly`() = runTest {
+    fun `MethodNode toHoverString formats method signature correctly`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 public static String formatName(String firstName, String lastName = "Unknown") {
@@ -59,7 +59,7 @@ class NodeFormatterTest {
     }
 
     @Test
-    fun `ClassNode toHoverString formats class declaration correctly`() = runTest {
+    fun `ClassNode toHoverString formats class declaration correctly`(): Unit = runTest {
         val groovyCode = """
             package com.example
 
@@ -96,7 +96,7 @@ class NodeFormatterTest {
     }
 
     @Test
-    fun `FieldNode toHoverString formats field declaration correctly`() = runTest {
+    fun `FieldNode toHoverString formats field declaration correctly`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 public static final String CONSTANT = "value"
@@ -131,7 +131,7 @@ class NodeFormatterTest {
     }
 
     @Test
-    fun `PropertyNode toHoverString formats properties correctly`() = runTest {
+    fun `PropertyNode toHoverString formats properties correctly`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 String name
@@ -153,7 +153,7 @@ class NodeFormatterTest {
     }
 
     @Test
-    fun `Variable toHoverString handles different variable types`() = runTest {
+    fun `Variable toHoverString handles different variable types`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method(String param, int number = 42) {
@@ -177,7 +177,7 @@ class NodeFormatterTest {
     }
 
     @Test
-    fun `getDocumentation extracts groovydoc content`() = runTest {
+    fun `getDocumentation extracts groovydoc content`(): Unit = runTest {
         val groovyCode = """
             /**
              * This is a documented class.
@@ -212,7 +212,7 @@ class NodeFormatterTest {
     }
 
     @Test
-    fun `expression toDisplayString truncates long content`() = runTest {
+    fun `expression toDisplayString truncates long content`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 // This will create an expression that might be long

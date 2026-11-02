@@ -27,7 +27,7 @@ class AstRequestHandlerTest {
     private val handler = AstRequestHandler(compilationService, coreConverter, nativeConverter)
 
     @Test
-    fun `getAst returns Core AST when requested`() = runTest {
+    fun `getAst returns Core AST when requested`(): Unit = runTest {
         val uri = "file:///test.groovy"
         val params = AstParams(uri, "core")
 

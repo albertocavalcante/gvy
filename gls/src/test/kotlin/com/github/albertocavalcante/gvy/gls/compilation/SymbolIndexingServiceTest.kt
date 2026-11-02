@@ -60,7 +60,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `getSymbolIndex returns from cache if available`() = runBlocking {
+    fun `getSymbolIndex returns from cache if available`(): Unit = runBlocking {
         val uri = URI.create("file:///test.groovy")
         val file = tempDir.resolve("test.groovy").apply {
             createFile()
@@ -91,7 +91,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexFile returns SymbolIndex for valid file`() = runBlocking {
+    fun `indexFile returns SymbolIndex for valid file`(): Unit = runBlocking {
         val file = tempDir.resolve("test.groovy").apply {
             createFile()
             writeText("class Test {}")
@@ -106,7 +106,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexFile returns null for non-existent file`() = runBlocking {
+    fun `indexFile returns null for non-existent file`(): Unit = runBlocking {
         val uri = URI.create("file:///does-not-exist.groovy")
 
         val result = indexingService.indexFile(uri)
@@ -115,7 +115,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexFile caches result in LRU cache`() = runBlocking {
+    fun `indexFile caches result in LRU cache`(): Unit = runBlocking {
         val file = tempDir.resolve("test.groovy").apply {
             createFile()
             writeText("class Test {}")
@@ -131,7 +131,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexFile skips indexing if already cached`() = runBlocking {
+    fun `indexFile skips indexing if already cached`(): Unit = runBlocking {
         val file = tempDir.resolve("test.groovy").apply {
             createFile()
             writeText("class Test {}")
@@ -150,7 +150,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexAllWorkspaceSources indexes all files`() = runBlocking {
+    fun `indexAllWorkspaceSources indexes all files`(): Unit = runBlocking {
         val file1 = tempDir.resolve("test1.groovy").apply {
             createFile()
             writeText("class Test1 {}")
@@ -170,7 +170,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexAllWorkspaceSources reports progress`() = runBlocking {
+    fun `indexAllWorkspaceSources reports progress`(): Unit = runBlocking {
         val file1 = tempDir.resolve("test1.groovy").apply {
             createFile()
             writeText("class Test1 {}")
@@ -197,7 +197,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexAllWorkspaceSources continues on individual failures`() = runBlocking {
+    fun `indexAllWorkspaceSources continues on individual failures`(): Unit = runBlocking {
         val validFile = tempDir.resolve("valid.groovy").apply {
             createFile()
             writeText("class Valid {}")
@@ -215,14 +215,14 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `indexAllWorkspaceSources handles empty list`() = runBlocking {
+    fun `indexAllWorkspaceSources handles empty list`(): Unit = runBlocking {
         indexingService.indexAllWorkspaceSources(emptyList())
         val indices = indexingService.getAllSymbolIndices()
         assertEquals(0, indices.size)
     }
 
     @Test
-    fun `getAllSymbolIndices merges cache and workspace index`() = runBlocking {
+    fun `getAllSymbolIndices merges cache and workspace index`(): Unit = runBlocking {
         val file1 = tempDir.resolve("test1.groovy").apply {
             createFile()
             writeText("class Test1 {}")
@@ -250,7 +250,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `invalidate removes from both caches`() = runBlocking {
+    fun `invalidate removes from both caches`(): Unit = runBlocking {
         val file = tempDir.resolve("test.groovy").apply {
             createFile()
             writeText("class Test {}")
@@ -270,7 +270,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `clear removes all entries`() = runBlocking {
+    fun `clear removes all entries`(): Unit = runBlocking {
         val file1 = tempDir.resolve("test1.groovy").apply {
             createFile()
             writeText("class Test1 {}")
@@ -292,7 +292,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `LRU eviction works when cache exceeds maxSize`() = runBlocking {
+    fun `LRU eviction works when cache exceeds maxSize`(): Unit = runBlocking {
         val parseResult = createMockParseResult()
         coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns parseResult
 

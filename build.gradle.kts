@@ -240,6 +240,10 @@ subprojects {
             
             // Shared JVM args for better test performance
             jvmArgs("-XX:+UseG1GC", "-XX:MaxMetaspaceSize=512m")
+
+            // Fail on discovery warnings. JUnit silently skips a @Test that returns a value (e.g. a Kotlin
+            // `fun x() = runBlocking { ...; assertNotNull(y) }`); this turns that into a build failure.
+            systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
         }
     }
 }

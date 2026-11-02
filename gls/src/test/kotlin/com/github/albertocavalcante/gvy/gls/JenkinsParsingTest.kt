@@ -24,7 +24,7 @@ class JenkinsParsingTest {
     }
 
     @Test
-    fun `test pipeline block resolves successfully with stubs`() = runBlocking {
+    fun `test pipeline block resolves successfully with stubs`(): Unit = runBlocking {
         // Initialize server
         val initParams = InitializeParams().apply {
             workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "project"))

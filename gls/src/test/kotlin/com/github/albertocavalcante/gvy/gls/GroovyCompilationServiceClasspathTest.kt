@@ -11,7 +11,7 @@ import java.nio.file.Path
 class GroovyCompilationServiceClasspathTest {
 
     @Test
-    fun `findClasspathClass returns URI for standard JDK class`() = runTest {
+    fun `findClasspathClass returns URI for standard JDK class`(): Unit = runTest {
         val service = GroovyCompilationService()
         // Initialize workspace with empty dependencies - JDK should still be available via system classloader
         // But our implementation uses a URLClassLoader with dependencies.
@@ -38,7 +38,7 @@ class GroovyCompilationServiceClasspathTest {
     }
 
     @Test
-    fun `findClasspathClass returns null for non-existent class`() = runTest {
+    fun `findClasspathClass returns null for non-existent class`(): Unit = runTest {
         val service = GroovyCompilationService()
         val uri = service.findClasspathClass("com.example.NonExistentClass")
         assertEquals(null, uri)
