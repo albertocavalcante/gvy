@@ -11,8 +11,7 @@ import kotlin.concurrent.write
  *
  * Thread safety: one read-write lock guards the documents and both indexes together, so a writer
  * replaces a document and its index entries atomically and a reader never sees them out of step.
- * Index values are immutable lists that writers replace rather than mutate, so lists handed to
- * callers never change underneath them.
+ * Lookups return fresh lists, so nothing handed to a caller aliases internal state.
  */
 class GroovySemanticDB {
     private val lock = ReentrantReadWriteLock()
@@ -20,11 +19,11 @@ class GroovySemanticDB {
     // URI -> SemanticDocument
     private val documents = HashMap<URI, SemanticDocument>()
 
-    // symbolId -> definitions, in the order their documents were stored
-    private val symbolIndex = HashMap<String, List<Pair<URI, SymbolInfo>>>()
+    // symbolId -> definitions, grouped by file in the order the files were stored
+    private val symbolIndex = SymbolIndex<SymbolInfo>()
 
-    // symbolId -> occurrences across all documents
-    private val occurrenceIndex = HashMap<String, List<Pair<URI, SymbolOccurrence>>>()
+    // symbolId -> occurrences, grouped by file
+    private val occurrenceIndex = SymbolIndex<SymbolOccurrence>()
 
     /**
      * Get semantic document for a URI
@@ -58,20 +57,19 @@ class GroovySemanticDB {
      * Find symbol definition by ID.
      * Returns the first matching symbol if multiple exist (shouldn't happen in well-formed code).
      */
-    fun findSymbolDefinition(symbolId: String): Pair<URI, SymbolInfo>? =
-        lock.read { symbolIndex[symbolId]?.firstOrNull() }
+    fun findSymbolDefinition(symbolId: String): Pair<URI, SymbolInfo>? = lock.read { symbolIndex.first(symbolId) }
 
     /**
      * Find all definitions of a symbol (handles duplicate symbols across files if they exist)
      */
     fun findAllSymbolDefinitions(symbolId: String): List<Pair<URI, SymbolInfo>> =
-        lock.read { symbolIndex[symbolId] } ?: emptyList()
+        lock.read { symbolIndex.all(symbolId) }
 
     /**
      * Find all occurrences of a symbol across all files
      */
     fun findAllOccurrences(symbolId: String): List<Pair<URI, SymbolOccurrence>> =
-        lock.read { occurrenceIndex[symbolId] } ?: emptyList()
+        lock.read { occurrenceIndex.all(symbolId) }
 
     /**
      * Find all symbols in a file by kind
@@ -128,24 +126,43 @@ class GroovySemanticDB {
 
     // Callers hold the write lock.
     private fun addToIndexes(uri: URI, doc: SemanticDocument) {
-        doc.symbols.groupBy { it.symbol }.forEach { (id, symbols) ->
-            symbolIndex[id] = symbolIndex[id].orEmpty() + symbols.map { uri to it }
-        }
-        doc.occurrences.groupBy { it.symbol }.forEach { (id, occurrences) ->
-            occurrenceIndex[id] = occurrenceIndex[id].orEmpty() + occurrences.map { uri to it }
-        }
+        doc.symbols.groupBy { it.symbol }.forEach { (id, symbols) -> symbolIndex.put(id, uri, symbols) }
+        doc.occurrences.groupBy { it.symbol }.forEach { (id, occurrences) -> occurrenceIndex.put(id, uri, occurrences) }
     }
 
     // Callers hold the write lock.
     private fun removeFromIndexes(uri: URI, doc: SemanticDocument) {
-        doc.symbols.mapTo(HashSet()) { it.symbol }.forEach { id -> symbolIndex.removeEntriesFor(id, uri) }
-        doc.occurrences.mapTo(HashSet()) { it.symbol }.forEach { id -> occurrenceIndex.removeEntriesFor(id, uri) }
+        doc.symbols.forEach { symbolIndex.remove(it.symbol, uri) }
+        doc.occurrences.forEach { occurrenceIndex.remove(it.symbol, uri) }
+    }
+}
+
+/**
+ * symbolId -> (file -> that file's entries). Keeping entries per file makes adding or removing a file
+ * cost only that file's entries, however many other files mention the same symbol. Files keep the
+ * order they were stored in. Not thread-safe; [GroovySemanticDB] guards it.
+ */
+private class SymbolIndex<T> {
+    private val bySymbol = HashMap<String, LinkedHashMap<URI, List<T>>>()
+
+    fun put(id: String, uri: URI, entries: List<T>) {
+        bySymbol.getOrPut(id) { LinkedHashMap() }[uri] = entries
     }
 
-    private fun <T> HashMap<String, List<Pair<URI, T>>>.removeEntriesFor(id: String, uri: URI) {
-        val remaining = this[id]?.filterNot { it.first == uri } ?: return
-        if (remaining.isEmpty()) remove(id) else this[id] = remaining
+    fun remove(id: String, uri: URI) {
+        val files = bySymbol[id] ?: return
+        files.remove(uri)
+        if (files.isEmpty()) bySymbol.remove(id)
     }
+
+    fun first(id: String): Pair<URI, T>? = bySymbol[id]?.entries?.firstOrNull()?.let { (uri, entries) ->
+        uri to entries.first()
+    }
+
+    fun all(id: String): List<Pair<URI, T>> =
+        bySymbol[id]?.flatMap { (uri, entries) -> entries.map { uri to it } } ?: emptyList()
+
+    fun clear() = bySymbol.clear()
 }
 
 /**

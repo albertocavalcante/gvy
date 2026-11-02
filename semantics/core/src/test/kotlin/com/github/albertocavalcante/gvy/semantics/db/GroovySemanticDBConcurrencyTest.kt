@@ -66,6 +66,21 @@ class GroovySemanticDBConcurrencyTest {
     }
 
     @Test
+    fun `lists returned to callers do not change when the database does`() {
+        val db = GroovySemanticDB()
+        db.updateDocument(uri(1), docDefining(uri(1), shared))
+        val definitions = db.findAllSymbolDefinitions(shared)
+        val occurrences = db.findAllOccurrences(shared)
+
+        db.updateDocument(uri(2), docDefining(uri(2), shared))
+        db.removeDocument(uri(1))
+
+        assertEquals(listOf(uri(1)), definitions.map { it.first })
+        assertEquals(listOf(uri(1)), occurrences.map { it.first })
+        assertEquals(listOf(uri(2)), db.findAllSymbolDefinitions(shared).map { it.first })
+    }
+
+    @Test
     fun `concurrent writers on different files never lose index entries`() {
         // Two writers per symbol, one file each: the symbol's entry list keeps emptying and refilling,
         // which is where an add can land on a list that a concurrent remove just dropped from the index.
