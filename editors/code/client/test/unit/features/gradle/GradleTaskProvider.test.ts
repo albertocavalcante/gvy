@@ -20,22 +20,32 @@ class Task {
 }
 
 function load(existing: string[]) {
-  const folder = { name: "w", uri: { fsPath: "/w", toString: () => "file:///w" } };
-  const mod = proxyquire.noCallThru()("../../../../src/features/gradle/GradleTaskProvider", {
-    vscode: {
-      workspace: { workspaceFolders: [folder] },
-      Task,
-      ShellExecution,
-      TaskGroup: { Build: "build", Test: "test" },
-      TaskScope: { Global: 1 },
+  const folder = {
+    name: "w",
+    uri: { fsPath: "/w", toString: () => "file:///w" },
+  };
+  const mod = proxyquire.noCallThru()(
+    "../../../../src/features/gradle/GradleTaskProvider",
+    {
+      vscode: {
+        workspace: { workspaceFolders: [folder] },
+        Task,
+        ShellExecution,
+        TaskGroup: { Build: "build", Test: "test" },
+        TaskScope: { Global: 1 },
+      },
+      fs: { existsSync: (p: string) => existing.includes(p) },
     },
-    fs: { existsSync: (p: string) => existing.includes(p) },
-  });
+  );
   return { mod, folder };
 }
 
 describe("GradleTaskProvider", () => {
-  const service = { getTasks: async () => [{ name: "test", group: "verification", project: "w" }] };
+  const service = {
+    getTasks: async () => [
+      { name: "test", group: "verification", project: "w" },
+    ],
+  };
 
   it("runs the project's Gradle wrapper in the folder when there is one", async () => {
     const { mod } = load(["/w/gradlew"]);
@@ -54,7 +64,13 @@ describe("GradleTaskProvider", () => {
   it("resolves a task from tasks.json with the wrapper and folder cwd", () => {
     const { mod, folder } = load(["/w/gradlew"]);
     const resolved = new mod.GradleTaskProvider(service).resolveTask(
-      new Task({ type: "gradle", task: "build" }, folder, "build", "gradle", new ShellExecution("", [])),
+      new Task(
+        { type: "gradle", task: "build" },
+        folder,
+        "build",
+        "gradle",
+        new ShellExecution("", []),
+      ),
     );
     assert.strictEqual(resolved.execution.command, "/w/gradlew");
     assert.strictEqual(resolved.execution.options?.cwd, "/w");
@@ -65,6 +81,9 @@ describe("gradleExecutable", () => {
   it("prefers gradlew.bat on Windows", () => {
     const { mod } = load([]);
     const exists = (p: string) => p.endsWith("gradlew.bat");
-    assert.strictEqual(mod.gradleExecutable("C:\\w", "win32", exists), "C:\\w\\gradlew.bat");
+    assert.strictEqual(
+      mod.gradleExecutable("C:\\w", "win32", exists),
+      "C:\\w\\gradlew.bat",
+    );
   });
 });

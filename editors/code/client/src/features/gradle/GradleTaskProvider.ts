@@ -13,7 +13,10 @@ export function gradleExecutable(
   exists: (p: string) => boolean = fs.existsSync,
 ): string {
   const p = platform === "win32" ? path.win32 : path.posix;
-  const wrapper = p.join(folderPath, platform === "win32" ? "gradlew.bat" : "gradlew");
+  const wrapper = p.join(
+    folderPath,
+    platform === "win32" ? "gradlew.bat" : "gradlew",
+  );
   return exists(wrapper) ? wrapper : "gradle";
 }
 
@@ -22,7 +25,9 @@ function gradleExecution(
   taskName: string,
 ): vscode.ShellExecution {
   const cwd = folder?.uri.fsPath;
-  const executable = cwd ? gradleExecutable(cwd, process.platform, fs.existsSync) : "gradle";
+  const executable = cwd
+    ? gradleExecutable(cwd, process.platform, fs.existsSync)
+    : "gradle";
   // Argument form lets VS Code quote per shell instead of splicing a string.
   return new vscode.ShellExecution(executable, [taskName], { cwd });
 }

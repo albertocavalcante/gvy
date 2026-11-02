@@ -29,7 +29,9 @@ const esbuildProblemMatcherPlugin = {
 
 /** Copies the codicon font used by the AST webview into packaged resources. */
 function copyCodicons() {
-  const from = path.dirname(require.resolve("@vscode/codicons/dist/codicon.css"));
+  const from = path.dirname(
+    require.resolve("@vscode/codicons/dist/codicon.css"),
+  );
   const to = path.join(__dirname, "resources", "ast-view", "codicons");
   fs.mkdirSync(to, { recursive: true });
   for (const file of ["codicon.css", "codicon.ttf"]) {

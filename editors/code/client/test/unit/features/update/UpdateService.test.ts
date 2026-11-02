@@ -275,7 +275,11 @@ describe("UpdateService", () => {
         () =>
           new Promise((resolve) => {
             finish = () =>
-              resolve({ status: "up-to-date", currentVersion: "1.0.0", source: "network" });
+              resolve({
+                status: "up-to-date",
+                currentVersion: "1.0.0",
+                source: "network",
+              });
           }),
       );
       await clock.tickAsync(60 * 60 * 1000); // timer fires, check in flight

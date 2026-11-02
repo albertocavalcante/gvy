@@ -4,7 +4,8 @@ import proxyquire from "proxyquire";
 
 describe("configuration/watcher", () => {
   let listener: (event: unknown) => Promise<void>;
-  let client: { isRunning: () => boolean; sendNotification: sinon.SinonStub } | undefined;
+  let client:
+    { isRunning: () => boolean; sendNotification: sinon.SinonStub } | undefined;
   let showInformationMessage: sinon.SinonStub;
   let restartClient: sinon.SinonStub;
 
@@ -41,13 +42,19 @@ describe("configuration/watcher", () => {
   });
 
   it("does not notify a server that is not running", async () => {
-    client = { isRunning: () => false, sendNotification: sinon.stub().rejects(new Error("not running")) };
+    client = {
+      isRunning: () => false,
+      sendNotification: sinon.stub().rejects(new Error("not running")),
+    };
     await listener(change("groovy.codenarc.enabled"));
     assert.ok(client.sendNotification.notCalled);
   });
 
   it("handles a rejected didChangeConfiguration notification", async () => {
-    client = { isRunning: () => true, sendNotification: sinon.stub().rejects(new Error("connection closed")) };
+    client = {
+      isRunning: () => true,
+      sendNotification: sinon.stub().rejects(new Error("connection closed")),
+    };
     await listener(change("groovy.codenarc.enabled"));
     assert.ok(client.sendNotification.calledOnce);
   });

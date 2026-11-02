@@ -47,7 +47,6 @@ export async function showErrorNotification(
   outputChannel?: OutputChannel,
   retryCommand?: string,
 ): Promise<void> {
-
   // Handle JDK newer warning specially - it has unique action buttons
   if (errorDetails.type === "PROJECT_JDK_NEWER_WARNING") {
     await showJdkNewerWarning(
@@ -269,7 +268,6 @@ async function handleActionClick(
   action: string,
   errorDetails?: ErrorDetails,
 ): Promise<void> {
-
   // Handle Configure Java action
   if (action === CONFIGURE_JAVA) {
     // Extract required version from error details if available
@@ -379,7 +377,6 @@ async function showJdkNewerWarning(
   warning: ProjectJdkNewerWarning,
   _outputChannel?: OutputChannel,
 ): Promise<void> {
-
   // Check if warning is suppressed
   const config = vscode.workspace.getConfiguration("groovy");
   const suppressWarning = config.get<boolean>(

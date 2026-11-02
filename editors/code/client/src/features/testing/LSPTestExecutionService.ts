@@ -189,11 +189,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       }
 
       // After all tests complete, fetch and add coverage if requested
-      if (
-        options.withCoverage &&
-        options.coverageService &&
-        !isCancelled()
-      ) {
+      if (options.withCoverage && options.coverageService && !isCancelled()) {
         await options.coverageService.addCoverageToRun(run, workspaceUri);
       }
     } catch (error) {

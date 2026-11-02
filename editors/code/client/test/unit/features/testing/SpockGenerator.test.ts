@@ -31,20 +31,48 @@ describe("SpockGenerator", () => {
 
   it("resolveTestPath: rewrites the src/main segment, not an earlier 'main' dir", () => {
     const inputPath = [
-      "", "home", "u", "main", "proj", "src", "main", "groovy", "Foo.groovy",
+      "",
+      "home",
+      "u",
+      "main",
+      "proj",
+      "src",
+      "main",
+      "groovy",
+      "Foo.groovy",
     ].join(path.sep);
     const expectedPath = [
-      "", "home", "u", "main", "proj", "src", "test", "groovy", "FooSpec.groovy",
+      "",
+      "home",
+      "u",
+      "main",
+      "proj",
+      "src",
+      "test",
+      "groovy",
+      "FooSpec.groovy",
     ].join(path.sep);
     assert.strictEqual(generator.resolveTestPath(inputPath), expectedPath);
   });
 
   it("resolveTestPath: only renames the file extension, not '.groovy' in a dir name", () => {
     const inputPath = [
-      "", "w", "my.groovy.proj", "src", "main", "groovy", "Foo.groovy",
+      "",
+      "w",
+      "my.groovy.proj",
+      "src",
+      "main",
+      "groovy",
+      "Foo.groovy",
     ].join(path.sep);
     const expectedPath = [
-      "", "w", "my.groovy.proj", "src", "test", "groovy", "FooSpec.groovy",
+      "",
+      "w",
+      "my.groovy.proj",
+      "src",
+      "test",
+      "groovy",
+      "FooSpec.groovy",
     ].join(path.sep);
     assert.strictEqual(generator.resolveTestPath(inputPath), expectedPath);
   });

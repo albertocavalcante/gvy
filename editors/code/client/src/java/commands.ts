@@ -180,7 +180,6 @@ async function configureProjectJava(minimumVersion?: number): Promise<boolean> {
  * @returns true if a valid JDK was selected and configured, false otherwise
  */
 async function browseAndSetLspJavaHome(): Promise<boolean> {
-
   const selected = await vscode.window.showOpenDialog({
     canSelectFiles: false,
     canSelectFolders: true,
@@ -236,7 +235,6 @@ async function browseAndSetLspJavaHome(): Promise<boolean> {
  * @returns true if a valid JDK was selected and configured, false otherwise
  */
 async function browseAndSetProjectJavaHome(): Promise<boolean> {
-
   const selected = await vscode.window.showOpenDialog({
     canSelectFiles: false,
     canSelectFolders: true,
@@ -283,11 +281,7 @@ async function setLspJavaHomeAndRestart(
   version: number,
 ): Promise<boolean> {
   const config = vscode.workspace.getConfiguration("groovy");
-  await config.update(
-    "languageServer.javaHome",
-    jdkPath,
-    settingsTarget(),
-  );
+  await config.update("languageServer.javaHome", jdkPath, settingsTarget());
 
   const restartAction = "Restart Server";
   const result = await vscode.window.showInformationMessage(
@@ -315,11 +309,7 @@ async function setProjectJavaHome(
   version: number,
 ): Promise<boolean> {
   const config = vscode.workspace.getConfiguration("groovy");
-  await config.update(
-    "project.javaHome",
-    jdkPath,
-    settingsTarget(),
-  );
+  await config.update("project.javaHome", jdkPath, settingsTarget());
 
   vscode.window.showInformationMessage(
     `Project build JDK set to Java ${version}. Tests will use this JDK.`,

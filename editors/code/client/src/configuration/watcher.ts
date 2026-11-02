@@ -42,7 +42,10 @@ export function setupConfigurationWatcher(): Disposable {
           settings: buildServerSettingsMap(),
         });
       } catch (error) {
-        console.error("Failed to send workspace/didChangeConfiguration:", error);
+        console.error(
+          "Failed to send workspace/didChangeConfiguration:",
+          error,
+        );
       }
     }
   });

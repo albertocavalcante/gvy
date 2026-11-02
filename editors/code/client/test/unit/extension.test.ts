@@ -43,13 +43,19 @@ describe("extension activation", () => {
         initializeUpdateService: stubs.initializeUpdateService,
         setServerOutputChannel: () => {},
       },
-      "./configuration/watcher": { setupConfigurationWatcher: () => disposable },
+      "./configuration/watcher": {
+        setupConfigurationWatcher: () => disposable,
+      },
       "./configuration/settings": {
         getUpdateConfiguration: () => ({ checkOnStartup: false }),
       },
       "./features/repl": { replService: { initialize: () => {} } },
-      "./features/gradle": { registerGradleFeatures: stubs.registerGradleFeatures },
-      "./features/testing": { registerTestingFeatures: stubs.registerTestingFeatures },
+      "./features/gradle": {
+        registerGradleFeatures: stubs.registerGradleFeatures,
+      },
+      "./features/testing": {
+        registerTestingFeatures: stubs.registerTestingFeatures,
+      },
       "./features/dependencies": {
         registerDependencyFeatures: stubs.registerDependencyFeatures,
       },
@@ -81,12 +87,17 @@ describe("extension activation", () => {
   });
 
   it("registers every feature even when the server fails to start", async () => {
-    const { ext, stubs } = load(sinon.stub().rejects(new Error("Java validation failed")));
+    const { ext, stubs } = load(
+      sinon.stub().rejects(new Error("Java validation failed")),
+    );
     await ext.activate(context());
 
     assert.ok(stubs.registerGradleFeatures.calledOnce, "gradle commands");
     assert.ok(stubs.registerTestingFeatures.calledOnce, "test commands");
-    assert.ok(stubs.registerDependencyFeatures.calledOnce, "dependency view commands");
+    assert.ok(
+      stubs.registerDependencyFeatures.calledOnce,
+      "dependency view commands",
+    );
     assert.ok(stubs.initializeUpdateService.calledOnce, "update service");
     assert.ok(
       !stubs.executeCommand.calledWith("setContext", "groovy.hasProject", true),
@@ -96,6 +107,8 @@ describe("extension activation", () => {
   it("marks the project context once the server is running", async () => {
     const { ext, stubs } = load(sinon.stub().resolves());
     await ext.activate(context());
-    assert.ok(stubs.executeCommand.calledWith("setContext", "groovy.hasProject", true));
+    assert.ok(
+      stubs.executeCommand.calledWith("setContext", "groovy.hasProject", true),
+    );
   });
 });

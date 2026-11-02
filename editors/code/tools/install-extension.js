@@ -205,7 +205,11 @@ function buildEnv(args) {
 function packageCommand(env = process.env, platform = process.platform) {
   const args = ["run", "package"];
   if (env.npm_execpath) {
-    return { cmd: process.execPath, args: [env.npm_execpath, ...args], shell: false };
+    return {
+      cmd: process.execPath,
+      args: [env.npm_execpath, ...args],
+      shell: false,
+    };
   }
   return { cmd: "pnpm", args, shell: platform === "win32" };
 }

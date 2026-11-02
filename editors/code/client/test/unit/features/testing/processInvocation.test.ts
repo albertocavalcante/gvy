@@ -49,7 +49,11 @@ describe("processInvocation", () => {
     });
 
     it("spawns .exe binaries directly on Windows", () => {
-      const inv = buildProcessInvocation("C:\\jdk\\bin\\java.exe", ["-version"], "win32");
+      const inv = buildProcessInvocation(
+        "C:\\jdk\\bin\\java.exe",
+        ["-version"],
+        "win32",
+      );
       assert.deepStrictEqual(inv, {
         executable: "C:\\jdk\\bin\\java.exe",
         args: ["-version"],
@@ -59,7 +63,12 @@ describe("processInvocation", () => {
 
     it("rejects cmd metacharacters instead of running them", () => {
       assert.throws(
-        () => buildProcessInvocation("gradlew.bat", ["--tests", "a & calc"], "win32"),
+        () =>
+          buildProcessInvocation(
+            "gradlew.bat",
+            ["--tests", "a & calc"],
+            "win32",
+          ),
         /unsafe for the Windows command shell/,
       );
     });

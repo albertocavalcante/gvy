@@ -4,8 +4,16 @@ import proxyquire from "proxyquire";
 
 describe("AstProvider", () => {
   it("keeps targeting the Groovy editor after the AST panel takes focus", async () => {
-    const doc = { uri: { toString: () => "file:///w/A.groovy" }, languageId: "groovy" };
-    const editor = { document: doc, viewColumn: 1, selection: undefined as unknown, revealRange: sinon.stub() };
+    const doc = {
+      uri: { toString: () => "file:///w/A.groovy" },
+      languageId: "groovy",
+    };
+    const editor = {
+      document: doc,
+      viewColumn: 1,
+      selection: undefined as unknown,
+      revealRange: sinon.stub(),
+    };
     const sendRequest = sinon.stub().resolves({ ast: "{}", parser: "core" });
     let onMessage: ((m: unknown) => void) | undefined;
     const posted: Array<{ type: string }> = [];
@@ -72,7 +80,9 @@ describe("AstProvider", () => {
     // Webview resources must come from the packaged resources/ folder
     // (node_modules is not in the VSIX nor in localResourceRoots).
     assert.ok(!webview.html.includes("node_modules"));
-    assert.ok(webview.html.includes("ext/resources/ast-view/codicons/codicon.css"));
+    assert.ok(
+      webview.html.includes("ext/resources/ast-view/codicons/codicon.css"),
+    );
 
     // The webview panel is now the active editor.
     window.activeTextEditor = undefined;
@@ -87,7 +97,10 @@ describe("AstProvider", () => {
       type: "highlight",
       range: { startLine: 1, startColumn: 1, endLine: 1, endColumn: 4 },
     });
-    assert.ok(editor.revealRange.calledOnce, "node click should reveal in the editor");
+    assert.ok(
+      editor.revealRange.calledOnce,
+      "node click should reveal in the editor",
+    );
 
     // Malformed ranges from the webview are ignored instead of throwing.
     onMessage!({ type: "highlight", range: { startLine: "x" } });

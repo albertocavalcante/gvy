@@ -132,7 +132,6 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
   const reportIssueCommand = commands.registerCommand(
     "groovy.reportIssue",
     async () => {
-
       // Gather system information
       const extensionVersion =
         context.extension?.packageJSON?.version || "unknown";

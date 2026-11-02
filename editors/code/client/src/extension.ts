@@ -46,7 +46,9 @@ export async function activate(context: vscode.ExtensionContext) {
 
   initializeClient(context);
 
-  context.subscriptions.push(registerStatusBarItem(undefined, extensionVersion));
+  context.subscriptions.push(
+    registerStatusBarItem(undefined, extensionVersion),
+  );
 
   const serverOutputChannel = vscode.window.createOutputChannel(
     "Groovy Language Server",

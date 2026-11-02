@@ -3,9 +3,15 @@ import { EventEmitter } from "events";
 import proxyquire from "proxyquire";
 
 /** Minimal stand-in for https.get whose response dies mid-body. */
-function fakeHttps(statusCode: number, onOptions?: (o: Record<string, unknown>) => void) {
+function fakeHttps(
+  statusCode: number,
+  onOptions?: (o: Record<string, unknown>) => void,
+) {
   return {
-    get: (options: Record<string, unknown>, callback: (res: EventEmitter) => void) => {
+    get: (
+      options: Record<string, unknown>,
+      callback: (res: EventEmitter) => void,
+    ) => {
       onOptions?.(options);
       const request = Object.assign(new EventEmitter(), {
         setTimeout: () => request,
@@ -21,7 +27,9 @@ function fakeHttps(statusCode: number, onOptions?: (o: Record<string, unknown>) 
       setImmediate(() => {
         callback(response);
         response.emit("data", Buffer.from("partial"));
-        const reset = Object.assign(new Error("aborted"), { code: "ECONNRESET" });
+        const reset = Object.assign(new Error("aborted"), {
+          code: "ECONNRESET",
+        });
         response.emit("error", reset);
       });
       return request;
@@ -42,7 +50,10 @@ describe("tools/http", () => {
       "node:https": fakeHttps(500),
     });
     await assert.rejects(
-      http.downloadToFile("https://example.test/x", "/nonexistent/never-written"),
+      http.downloadToFile(
+        "https://example.test/x",
+        "/nonexistent/never-written",
+      ),
       /aborted/,
     );
   });

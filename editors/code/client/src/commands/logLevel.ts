@@ -21,11 +21,7 @@ export async function toggleDebugLogs(): Promise<void> {
   const newLevel: LogLevel =
     current === "debug" || current === "trace" ? "info" : "debug";
 
-  await config.update(
-    "server.logLevel",
-    newLevel,
-    settingsTarget(),
-  );
+  await config.update("server.logLevel", newLevel, settingsTarget());
 
   const verb = newLevel === "debug" ? "enabled" : "disabled";
   const action = await vscode.window.showInformationMessage(
@@ -78,11 +74,7 @@ export async function selectLogLevel(): Promise<void> {
   });
 
   if (selected && selected.level !== current) {
-    await config.update(
-      "server.logLevel",
-      selected.level,
-      settingsTarget(),
-    );
+    await config.update("server.logLevel", selected.level, settingsTarget());
 
     const action = await vscode.window.showInformationMessage(
       `Log level set to "${selected.level}". Restart server?`,

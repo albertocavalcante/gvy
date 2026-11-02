@@ -41,10 +41,15 @@ describe("testTarget", () => {
   describe("selectRunItems", () => {
     const a = item("A");
     const b = item("B");
-    const roots = { forEach: (cb: (i: TestItemLike) => void) => [a, b].forEach(cb) };
+    const roots = {
+      forEach: (cb: (i: TestItemLike) => void) => [a, b].forEach(cb),
+    };
 
     it("runs every root item when include is undefined (Run All)", () => {
-      assert.deepStrictEqual(selectRunItems(undefined, undefined, roots), [a, b]);
+      assert.deepStrictEqual(selectRunItems(undefined, undefined, roots), [
+        a,
+        b,
+      ]);
     });
 
     it("keeps an explicit include list", () => {

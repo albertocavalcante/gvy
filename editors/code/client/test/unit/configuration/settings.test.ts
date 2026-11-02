@@ -33,7 +33,11 @@ describe("configuration/settings", () => {
     ];
     for (const key of contributed) {
       const owners = lists.filter((l) => l.includes(key)).length;
-      assert.strictEqual(owners, 1, `groovy.${key} must be in exactly one list`);
+      assert.strictEqual(
+        owners,
+        1,
+        `groovy.${key} must be in exactly one list`,
+      );
     }
     for (const key of lists.flat()) {
       assert.ok(contributed.includes(key), `groovy.${key} is not contributed`);
@@ -41,12 +45,18 @@ describe("configuration/settings", () => {
   });
 
   it("prompts for a restart when the parser engine changes", () => {
-    assert.ok(settings.requiresServerRestart(changeOf("groovy.languageServer.engine")));
+    assert.ok(
+      settings.requiresServerRestart(changeOf("groovy.languageServer.engine")),
+    );
   });
 
   it("prompts for a restart when the build strategy or log level changes", () => {
-    assert.ok(settings.requiresServerRestart(changeOf("groovy.gradle.buildStrategy")));
-    assert.ok(settings.requiresServerRestart(changeOf("groovy.server.logLevel")));
+    assert.ok(
+      settings.requiresServerRestart(changeOf("groovy.gradle.buildStrategy")),
+    );
+    assert.ok(
+      settings.requiresServerRestart(changeOf("groovy.server.logLevel")),
+    );
   });
 
   it("pushes CodeNarc changes without a restart", () => {

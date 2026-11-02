@@ -24,12 +24,20 @@ describe("commands/logLevel", () => {
   it("writes user settings when no folder is open", async () => {
     const { mod, update } = load(undefined);
     await mod.toggleDebugLogs();
-    assert.deepStrictEqual(update.firstCall.args, ["server.logLevel", "debug", 1]);
+    assert.deepStrictEqual(update.firstCall.args, [
+      "server.logLevel",
+      "debug",
+      1,
+    ]);
   });
 
   it("writes workspace settings when a folder is open", async () => {
     const { mod, update } = load([{ uri: {} }]);
     await mod.toggleDebugLogs();
-    assert.deepStrictEqual(update.firstCall.args, ["server.logLevel", "debug", 2]);
+    assert.deepStrictEqual(update.firstCall.args, [
+      "server.logLevel",
+      "debug",
+      2,
+    ]);
   });
 });

@@ -6,9 +6,15 @@ describe("VersionChecker", () => {
 
   describe("compareVersions", () => {
     it("orders a pre-release before its release", () => {
-      expect(versionChecker.compareVersions("0.5.0-rc.1", "0.5.0")).to.be.lessThan(0);
-      expect(versionChecker.compareVersions("0.5.0", "v0.5.0-SNAPSHOT")).to.be.greaterThan(0);
-      expect(versionChecker.compareVersions("0.5.0-rc.1", "0.5.0-rc.1")).to.equal(0);
+      expect(
+        versionChecker.compareVersions("0.5.0-rc.1", "0.5.0"),
+      ).to.be.lessThan(0);
+      expect(
+        versionChecker.compareVersions("0.5.0", "v0.5.0-SNAPSHOT"),
+      ).to.be.greaterThan(0);
+      expect(
+        versionChecker.compareVersions("0.5.0-rc.1", "0.5.0-rc.1"),
+      ).to.equal(0);
     });
 
     it("returns 0 for identical versions (with or without v prefix)", () => {

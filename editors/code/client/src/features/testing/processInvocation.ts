@@ -37,7 +37,8 @@ export function buildProcessInvocation(
   platform: NodeJS.Platform = process.platform,
 ): ProcessInvocation {
   const ext = path.win32.extname(executable).toLowerCase();
-  const needsShell = platform === "win32" && (ext === "" || ext === ".cmd" || ext === ".bat");
+  const needsShell =
+    platform === "win32" && (ext === "" || ext === ".cmd" || ext === ".bat");
 
   if (!needsShell) {
     return { executable, args: [...args], shell: false };

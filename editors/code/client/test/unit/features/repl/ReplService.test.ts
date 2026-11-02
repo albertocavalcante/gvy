@@ -21,7 +21,11 @@ interface Pty {
 }
 
 describe("ReplService", () => {
-  let terminals: Array<{ pty: Pty; dispose: sinon.SinonStub; written: string[] }>;
+  let terminals: Array<{
+    pty: Pty;
+    dispose: sinon.SinonStub;
+    written: string[];
+  }>;
   let commands: Map<string, () => Promise<void>>;
   let sendRequest: sinon.SinonStub;
   let service: { initialize: (ctx: unknown) => void };
@@ -34,11 +38,19 @@ describe("ReplService", () => {
       EventEmitter: FakeEmitter,
       window: {
         activeTextEditor: {
-          document: { getText: () => "1 + 1", lineAt: () => ({ text: "1 + 1" }) },
+          document: {
+            getText: () => "1 + 1",
+            lineAt: () => ({ text: "1 + 1" }),
+          },
           selection: { active: { line: 0 } },
         },
         createTerminal: ({ pty }: { pty: Pty }) => {
-          const t = { pty, dispose: sinon.stub(), written: [] as string[], show: () => {} };
+          const t = {
+            pty,
+            dispose: sinon.stub(),
+            written: [] as string[],
+            show: () => {},
+          };
           // VS Code ignores writes fired before Pseudoterminal.open.
           let opened = false;
           const open = pty.open.bind(pty);
