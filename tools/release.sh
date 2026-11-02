@@ -10,7 +10,7 @@ NC='\033[0m' # No Color
 
 # Default values
 DIST_DIR="dist"
-BUILD_DIR="groovy-lsp/build/libs"
+BUILD_DIR="gls/build/libs"
 EXTENSION_DIR="editors/code"
 DRY_RUN=false
 VERSION=""
@@ -119,7 +119,7 @@ cmd_build() {
     # Ensure dependencies are installed
     if [[ ! -d "node_modules" ]]; then
         log_info "Installing extension dependencies..."
-        npm ci
+        pnpm install --frozen-lockfile
     fi
 
     if [[ "${DRY_RUN}" = true ]]; then
@@ -144,10 +144,10 @@ cmd_build() {
         
         # Stamp version without creating a git commit/tag
         # We use --allow-same-version in case we are rebuilding same version
-        npm version "${VERSION_NO_V}" --no-git-tag-version --allow-same-version
+        node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.version = process.argv[1]; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "${VERSION_NO_V}"
         
         # Package
-        npm run package
+        pnpm run package
         
         # Restore original package.json (trap will handle this, but manual is fine too)
         # We explicitly call it here to clear the trap if successful
