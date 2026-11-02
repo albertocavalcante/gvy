@@ -940,6 +940,9 @@
     "vscode-languageclient": "^11.0.0",
     "vscode-languageserver-protocol": "^3.18.5"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/albertocavalcante/gvy.git",
