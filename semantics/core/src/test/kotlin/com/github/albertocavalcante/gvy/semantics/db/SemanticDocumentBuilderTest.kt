@@ -97,8 +97,7 @@ class SemanticDocumentBuilderTest {
             val methodNode = classNode.methods.first { it.name == "concat" }
             val symbolId = SemanticDocumentBuilder.createMethodSymbolId(classNode, methodNode)
 
-            // Current implementation specifically ignores parameters for robustness
-            assertEquals("MyClass#concat().", symbolId)
+            assertEquals("MyClass#concat(String,int).", symbolId)
         }
     }
 
