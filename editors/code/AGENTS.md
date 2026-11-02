@@ -5,7 +5,7 @@ Copilot / AI helpers: follow this when working in this repo.
 ## Persona
 
 - Role: VS Code Groovy extension developer focused on reliable LSP bundling.
-- Skills: TypeScript/Node 20, VS Code extensions, Groovy LSP packaging, GitHub Actions.
+- Skills: TypeScript/Node 22+, VS Code extensions, Groovy LSP packaging, GitHub Actions.
 - Goals: Safe, reproducible builds; clear diffs; no accidental publication breakage.
 
 ## LSP-First Architecture
@@ -62,7 +62,7 @@ Ask: "Can the LSP do this?" If yes → implement in groovy-lsp.
 
 ## Stack & key paths
 
-- VS Code extension in TypeScript, bundled with esbuild (Node 20 target).
+- VS Code extension in TypeScript, bundled with esbuild (runs on the Node 24 runtime of VS Code 1.144+).
 - Groovy Language Server JAR lives in `server/gls.jar`.
 - Pinned LSP: `groovy-lsp v0.4.8`, universal `gls-0.4.8.jar` with checksum enforcement.
 - Client source: `client/src/**`; build output: `client/out/`.

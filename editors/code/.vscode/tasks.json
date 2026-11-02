@@ -3,7 +3,7 @@
   "tasks": [
     {
       "label": "watch",
-      "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
+      "dependsOn": ["pnpm: watch:tsc", "pnpm: watch:esbuild"],
       "presentation": {
         "reveal": "never"
       },
@@ -13,38 +13,45 @@
       }
     },
     {
-      "type": "npm",
-      "script": "watch:esbuild",
+      "label": "pnpm: watch:esbuild",
+      "type": "shell",
+      "command": "pnpm run watch:esbuild",
       "group": "build",
       "problemMatcher": "$esbuild-watch",
       "isBackground": true,
-      "label": "npm: watch:esbuild",
       "presentation": {
         "group": "watch",
         "reveal": "never"
       }
     },
     {
-      "type": "npm",
-      "script": "watch:tsc",
+      "label": "pnpm: watch:tsc",
+      "type": "shell",
+      "command": "pnpm run watch:tsc",
       "group": "build",
       "problemMatcher": "$tsc-watch",
       "isBackground": true,
-      "label": "npm: watch:tsc",
       "presentation": {
         "group": "watch",
         "reveal": "never"
       }
     },
     {
-      "type": "npm",
-      "script": "compile",
+      "label": "pnpm: compile",
+      "type": "shell",
+      "command": "pnpm run compile",
       "group": "build",
-      "label": "npm: compile",
       "presentation": {
         "reveal": "always",
         "panel": "new"
       }
+    },
+    {
+      "label": "pnpm: compile:tests",
+      "type": "shell",
+      "command": "pnpm run compile && pnpm run compile:tests",
+      "group": "build",
+      "problemMatcher": "$tsc"
     }
   ]
 }
