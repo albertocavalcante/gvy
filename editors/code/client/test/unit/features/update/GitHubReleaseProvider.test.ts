@@ -111,7 +111,8 @@ describe("GitHubReleaseProvider", () => {
       assert.isTrue(fetchStub.calledOnce);
       const [url] = fetchStub.firstCall.args;
       assert.include(url, "api.github.com");
-      assert.include(url, "GroovyLanguageServer/groovy-lsp");
+      // The server JAR is released from the gvy repository.
+      assert.include(url, "repos/albertocavalcante/gvy/");
       assert.include(url, "releases/latest");
     });
 
