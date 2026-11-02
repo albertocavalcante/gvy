@@ -109,7 +109,9 @@ core.workflow(
             verify_no_match = True,
         ),
         core.verify_match(
-            regex = ',\\s*[}\\]]',
+            # Only a comma that ends a line: string values such as "^[0-9,]+$"
+            # may legitimately contain ",]".
+            regex = ',[ \\t]*\\n\\s*[}\\]]',
             paths = glob(["package.json"]),
             verify_no_match = True,
         ),
