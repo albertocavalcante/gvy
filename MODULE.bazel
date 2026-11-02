@@ -328,7 +328,7 @@ maven.artifact(
 maven.artifact(
     artifact = "CodeNarc",
     group = "org.codenarc",
-    version = "3.7.0-groovy-4.0",
+    version = "3.7.0",
     exclusions = [
         "org.apache.groovy:groovy",
         "org.apache.groovy:groovy-ant",
