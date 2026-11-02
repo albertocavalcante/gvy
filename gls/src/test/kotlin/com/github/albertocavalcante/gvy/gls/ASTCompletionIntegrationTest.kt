@@ -46,7 +46,7 @@ class ASTCompletionIntegrationTest {
     }
 
     @Test
-    fun `completion should include AST symbols from current file`() = runBlocking {
+    fun `completion should include AST symbols from current file`(): Unit = runBlocking {
         val content = createCalculatorClass()
         val uri = "file:///Calculator.groovy"
 
@@ -75,7 +75,7 @@ class ASTCompletionIntegrationTest {
     }
 
     @Test
-    fun `completion should work with multiple classes in same file`() = runBlocking {
+    fun `completion should work with multiple classes in same file`(): Unit = runBlocking {
         val content = createGeometryClasses()
         val uri = "file:///Geometry.groovy"
 
@@ -93,7 +93,7 @@ class ASTCompletionIntegrationTest {
     }
 
     @Test
-    fun `diagnostics should be published for syntax errors with correct positions`() = runBlocking {
+    fun `diagnostics should be published for syntax errors with correct positions`(): Unit = runBlocking {
         val contentWithError = """
             class BrokenClass {
                 void badMethod( {  // Missing closing parenthesis

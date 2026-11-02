@@ -38,7 +38,7 @@ class ConstructorCallHoverStrategyTest {
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
     @Test
-    fun `hover on simple constructor call`() = runTest {
+    fun `hover on simple constructor call`(): Unit = runTest {
         val groovyCode = """
             class Person {
                 String name
@@ -67,7 +67,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on constructor call with parameters`() = runTest {
+    fun `hover on constructor call with parameters`(): Unit = runTest {
         val groovyCode = """
             class Book {
                 String title
@@ -102,7 +102,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on constructor call with named arguments`() = runTest {
+    fun `hover on constructor call with named arguments`(): Unit = runTest {
         val groovyCode = """
             class Config {
                 String host
@@ -131,7 +131,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on JDK class constructor call`() = runTest {
+    fun `hover on JDK class constructor call`(): Unit = runTest {
         val groovyCode = """
             def list = new ArrayList<String>()
             def map = new HashMap<String, Integer>()
@@ -168,7 +168,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on constructor call with generics`() = runTest {
+    fun `hover on constructor call with generics`(): Unit = runTest {
         val groovyCode = """
             class Container<T> {
                 T value
@@ -200,7 +200,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on nested class constructor call`() = runTest {
+    fun `hover on nested class constructor call`(): Unit = runTest {
         val groovyCode = """
             class Outer {
                 class Inner {
@@ -230,7 +230,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on constructor call with default parameters`() = runTest {
+    fun `hover on constructor call with default parameters`(): Unit = runTest {
         val groovyCode = """
             class Person {
                 String name
@@ -277,7 +277,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on constructor call in expression`() = runTest {
+    fun `hover on constructor call in expression`(): Unit = runTest {
         val groovyCode = """
             class Point {
                 int x
@@ -305,7 +305,7 @@ class ConstructorCallHoverStrategyTest {
     }
 
     @Test
-    fun `hover on anonymous inner class constructor`() = runTest {
+    fun `hover on anonymous inner class constructor`(): Unit = runTest {
         val groovyCode = """
             abstract class Base {
                 abstract String getValue()

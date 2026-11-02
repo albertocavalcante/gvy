@@ -45,7 +45,7 @@ class HoverProviderTest {
     private val hoverProvider = HoverProvider(compilationService, documentProvider, contentGenerator)
 
     @Test
-    fun `provideHover returns hover for method declaration`() = runTest {
+    fun `provideHover returns hover for method declaration`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 public String greetUser(String name, int age = 25) {
@@ -73,7 +73,7 @@ class HoverProviderTest {
     }
 
     @Test
-    fun `provideHover returns hover for class declaration`() = runTest {
+    fun `provideHover returns hover for class declaration`(): Unit = runTest {
         val groovyCode = """
             package com.example
 
@@ -108,7 +108,7 @@ class HoverProviderTest {
     }
 
     @Test
-    fun `provideHover returns hover for field declaration`() = runTest {
+    fun `provideHover returns hover for field declaration`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 private static final String CONSTANT = "value"
@@ -136,7 +136,7 @@ class HoverProviderTest {
     }
 
     @Test
-    fun `provideHover returns null for position without hoverable content`() = runTest {
+    fun `provideHover returns null for position without hoverable content`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -156,14 +156,14 @@ class HoverProviderTest {
     }
 
     @Test
-    fun `provideHover returns null for invalid URI`() = runTest {
+    fun `provideHover returns null for invalid URI`(): Unit = runTest {
         // Test with URI that doesn't exist in compilation service
         val hover = hoverProvider.provideHover("file:///nonexistent.groovy", Position(0, 0))
         assertNull(hover)
     }
 
     @Test
-    fun `provideHover handles position outside file bounds`() = runTest {
+    fun `provideHover handles position outside file bounds`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {}
@@ -179,7 +179,7 @@ class HoverProviderTest {
     }
 
     @Test
-    fun `provideHover handles method with parameters and return type`() = runTest {
+    fun `provideHover handles method with parameters and return type`(): Unit = runTest {
         val groovyCode = """
             class MathUtils {
                 /**
@@ -213,7 +213,7 @@ class HoverProviderTest {
     }
 
     @Test
-    fun `provideHover includes GroovyDoc documentation in response`() = runTest {
+    fun `provideHover includes GroovyDoc documentation in response`(): Unit = runTest {
         val groovyCode = """
 class Calculator {
     /**
@@ -270,7 +270,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover shows contextual information for methods`() = runTest {
+    fun `provideHover shows contextual information for methods`(): Unit = runTest {
         val groovyCode = """
             abstract class BaseClass {
                 abstract def abstractMethod()
@@ -304,7 +304,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover handles variable references and definitions`() = runTest {
+    fun `provideHover handles variable references and definitions`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -337,7 +337,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover shows proper information for string literals`() = runTest {
+    fun `provideHover shows proper information for string literals`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def hello() {
@@ -371,7 +371,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover shows proper information for method calls`() = runTest {
+    fun `provideHover shows proper information for method calls`(): Unit = runTest {
         // TODO: Enable this test once HoverProvider correctly resolves method calls instead of BlockStatement
         /*
         val groovyCode = """
@@ -408,7 +408,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover shows proper information for variable declarations`() = runTest {
+    fun `provideHover shows proper information for variable declarations`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def method() {
@@ -453,7 +453,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover distinguishes method calls from string literals`() = runTest {
+    fun `provideHover distinguishes method calls from string literals`(): Unit = runTest {
         // TODO: Enable this test once HoverProvider correctly resolves method calls instead of BlockStatement
         /*
         val groovyCode = """
@@ -497,7 +497,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover shows proper context for script methods`() = runTest {
+    fun `provideHover shows proper context for script methods`(): Unit = runTest {
         val groovyCode = """
             def hello() {
                 return "Hello, World!"
@@ -523,7 +523,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover works for method parameters`() = runTest {
+    fun `provideHover works for method parameters`(): Unit = runTest {
         val groovyCode = """
             class TestClass {
                 def greet(String name, int age = 25) {
@@ -559,7 +559,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover handles compilation errors gracefully`() = runTest {
+    fun `provideHover handles compilation errors gracefully`(): Unit = runTest {
         val invalidGroovyCode = """
             class TestClass {
                 def method( // Invalid syntax - missing closing parenthesis
@@ -584,7 +584,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover returns hover for closure expression`() = runTest {
+    fun `provideHover returns hover for closure expression`(): Unit = runTest {
         val groovyCode = """
         def list = [1, 2, 3]
         list.each { item ->
@@ -613,7 +613,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover returns hover for method with closure argument`() = runTest {
+    fun `provideHover returns hover for method with closure argument`(): Unit = runTest {
         val groovyCode = """
         def list = [1, 2, 3]
         list.withRun { item ->
@@ -632,7 +632,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover returns hover for import statement`() = runTest {
+    fun `provideHover returns hover for import statement`(): Unit = runTest {
         val groovyCode = """
         import java.util.List
         import java.util.Date as JDate
@@ -682,7 +682,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover returns hover for package declaration`() = runTest {
+    fun `provideHover returns hover for package declaration`(): Unit = runTest {
         val groovyCode = """
         package com.example.test
 
@@ -702,7 +702,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover returns hover for closure expressions`() = runTest {
+    fun `provideHover returns hover for closure expressions`(): Unit = runTest {
         val groovyCode = """
         def closure = { String name, int age ->
             println "Name: ${'$'}name, Age: ${'$'}age"
@@ -735,7 +735,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover returns hover for GString expressions`() = runTest {
+    fun `provideHover returns hover for GString expressions`(): Unit = runTest {
         val groovyCode = """
         def name = "Alice"
         def age = 30
@@ -784,7 +784,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover handles enhanced method call with closures`() = runTest {
+    fun `provideHover handles enhanced method call with closures`(): Unit = runTest {
         val groovyCode = """
         def numbers = [1, 2, 3, 4, 5]
         numbers.findAll { it > 3 }.each { println it }
@@ -803,7 +803,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover returns method call details instead of literal metadata`() = runTest {
+    fun `provideHover returns method call details instead of literal metadata`(): Unit = runTest {
         // TODO: Enable this test once HoverProvider correctly resolves method calls instead of BlockStatement
         /*
         val groovyCode = """
@@ -837,7 +837,7 @@ class Calculator {
     // ========== External Java Class Documentation Tests ==========
 
     @Test
-    fun `hover on import statement shows external class documentation`() = runTest {
+    fun `hover on import statement shows external class documentation`(): Unit = runTest {
         // Create a mock SourceNavigator that returns documentation for SimpleDateFormat
         val mockSourceNavigator = mockk<SourceNavigator>()
 
@@ -899,7 +899,7 @@ class Calculator {
     }
 
     @Test
-    fun `hover on JDK class in code shows documentation when sourceNavigator is provided`() = runTest {
+    fun `hover on JDK class in code shows documentation when sourceNavigator is provided`(): Unit = runTest {
         // Create a mock SourceNavigator that returns documentation for ArrayList
         val mockSourceNavigator = mockk<SourceNavigator>()
 
@@ -957,7 +957,7 @@ class Calculator {
     }
 
     @Test
-    fun `provideHover falls back to next strategy when first returns null`() = runTest {
+    fun `provideHover falls back to next strategy when first returns null`(): Unit = runTest {
         // This test verifies the critical fallback behavior:
         // When JenkinsStepHoverStrategy (first for MethodCallExpression) returns null
         // because the file is not a Jenkins file, the hover should fall back to

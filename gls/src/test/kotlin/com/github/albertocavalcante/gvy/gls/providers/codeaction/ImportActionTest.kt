@@ -115,7 +115,7 @@ class ImportActionTest {
     }
 
     @Test
-    fun `creates import action when symbol found in workspace`() = runBlocking {
+    fun `creates import action when symbol found in workspace`(): Unit = runBlocking {
         // 1. Setup: Create a class in the workspace
         val libUri = URI.create("file:///src/com/example/Lib.groovy")
         val libContent = """
@@ -142,7 +142,7 @@ class ImportActionTest {
     }
 
     @Test
-    fun `finds import insertion point after package declaration`() = runBlocking {
+    fun `finds import insertion point after package declaration`(): Unit = runBlocking {
         // Setup symbol
         val libUri = URI.create("file:///src/com/example/Target.groovy")
         compilationService.compile(libUri, "package com.example; class Target {}")
@@ -171,7 +171,7 @@ class ImportActionTest {
     }
 
     @Test
-    fun `finds import insertion point after existing imports`() = runBlocking {
+    fun `finds import insertion point after existing imports`(): Unit = runBlocking {
         // Setup symbol
         val libUri = URI.create("file:///src/com/example/Target.groovy")
         compilationService.compile(libUri, "package com.example; class Target {}")
@@ -201,7 +201,7 @@ class ImportActionTest {
     }
 
     @Test
-    fun `handles content with no package declaration`() = runBlocking {
+    fun `handles content with no package declaration`(): Unit = runBlocking {
         // Setup symbol
         val libUri = URI.create("file:///src/com/example/Target.groovy")
         compilationService.compile(libUri, "package com.example; class Target {}")

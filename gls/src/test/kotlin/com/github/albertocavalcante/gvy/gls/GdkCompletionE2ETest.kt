@@ -37,7 +37,7 @@ class GdkCompletionE2ETest {
     }
 
     @Test
-    fun `test GDK completion via LSP`() = runBlocking {
+    fun `test GDK completion via LSP`(): Unit = runBlocking {
         // Open a document with incomplete code
         val uri = "file:///test/GdkTest.groovy"
         val text = """
@@ -75,7 +75,7 @@ class GdkCompletionE2ETest {
     }
 
     @Test
-    fun `test Type Parameter completion via LSP`() = runBlocking {
+    fun `test Type Parameter completion via LSP`(): Unit = runBlocking {
         // Open a document with incomplete generic type
         val uri = "file:///test/TypeParamTest.groovy"
         val text = """

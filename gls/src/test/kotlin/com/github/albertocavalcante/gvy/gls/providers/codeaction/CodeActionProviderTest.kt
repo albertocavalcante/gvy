@@ -40,7 +40,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides no actions when document not found`() = runBlocking {
+    fun `provides no actions when document not found`(): Unit = runBlocking {
         val params = createCodeActionParams(emptyList())
 
         val actions = provider.provideCodeActions(params)
@@ -49,7 +49,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides formatting action when document needs formatting`() = runBlocking {
+    fun `provides formatting action when document needs formatting`(): Unit = runBlocking {
         val content = "class Test{def x=1}"
         documentProvider.put(testUri, content)
 
@@ -68,7 +68,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides no formatting action when document already formatted`() = runBlocking {
+    fun `provides no formatting action when document already formatted`(): Unit = runBlocking {
         val content = "def x = 1\n"
         documentProvider.put(testUri, content)
 
@@ -82,7 +82,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides no import action for missing symbol with no candidates`() = runBlocking {
+    fun `provides no import action for missing symbol with no candidates`(): Unit = runBlocking {
         val content = "def x = UnknownClass.doSomething()"
         documentProvider.put(testUri, content)
 
@@ -101,7 +101,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides no import action for non-import-related diagnostics`() = runBlocking {
+    fun `provides no import action for non-import-related diagnostics`(): Unit = runBlocking {
         val content = "def x = 1 + 'string'"
         documentProvider.put(testUri, content)
 
@@ -120,7 +120,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides no lint fix actions for unknown CodeNarc issues`() = runBlocking {
+    fun `provides no lint fix actions for unknown CodeNarc issues`(): Unit = runBlocking {
         val content = "class Test { }"
         documentProvider.put(testUri, content)
 
@@ -141,7 +141,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `handles multiple diagnostics correctly`() = runBlocking {
+    fun `handles multiple diagnostics correctly`(): Unit = runBlocking {
         val content = "def x=1\ndef y=2"
         documentProvider.put(testUri, content)
 
@@ -166,7 +166,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `handles empty diagnostics list`() = runBlocking {
+    fun `handles empty diagnostics list`(): Unit = runBlocking {
         val content = "def x = 1"
         documentProvider.put(testUri, content)
 
@@ -185,7 +185,7 @@ class CodeActionProviderTest {
     // ============================================================================
 
     @Test
-    fun `provides lint fix action for TrailingWhitespace diagnostic`() = runBlocking {
+    fun `provides lint fix action for TrailingWhitespace diagnostic`(): Unit = runBlocking {
         val content = "def x = 1   \n"
         documentProvider.put(testUri, content)
 
@@ -209,7 +209,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides lint fix action for UnnecessarySemicolon diagnostic`() = runBlocking {
+    fun `provides lint fix action for UnnecessarySemicolon diagnostic`(): Unit = runBlocking {
         val content = "def x = 1;\n"
         documentProvider.put(testUri, content)
 
@@ -231,7 +231,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides lint fix action for UnusedImport diagnostic`() = runBlocking {
+    fun `provides lint fix action for UnusedImport diagnostic`(): Unit = runBlocking {
         val content = "import java.util.List\nclass Test {}\n"
         documentProvider.put(testUri, content)
 
@@ -253,7 +253,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides lint fix action for UnnecessaryPublicModifier diagnostic`() = runBlocking {
+    fun `provides lint fix action for UnnecessaryPublicModifier diagnostic`(): Unit = runBlocking {
         val content = "public class Test {}\n"
         documentProvider.put(testUri, content)
 
@@ -275,7 +275,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides lint fix action for UnnecessaryGetter diagnostic`() = runBlocking {
+    fun `provides lint fix action for UnnecessaryGetter diagnostic`(): Unit = runBlocking {
         val content = "obj.getName()\n"
         documentProvider.put(testUri, content)
 
@@ -297,7 +297,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `provides multiple lint fix actions for multiple CodeNarc diagnostics`() = runBlocking {
+    fun `provides multiple lint fix actions for multiple CodeNarc diagnostics`(): Unit = runBlocking {
         val content = "def x = 1   \ndef y = 2;\n"
         documentProvider.put(testUri, content)
 
@@ -329,7 +329,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `lint fix action edit targets correct URI`() = runBlocking {
+    fun `lint fix action edit targets correct URI`(): Unit = runBlocking {
         val content = "def x = 1   \n"
         documentProvider.put(testUri, content)
 
@@ -354,7 +354,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `lint fix action contains original diagnostic`() = runBlocking {
+    fun `lint fix action contains original diagnostic`(): Unit = runBlocking {
         val content = "def x = 1   \n"
         documentProvider.put(testUri, content)
 
@@ -380,7 +380,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `does not provide lint fix action for non-CodeNarc diagnostic with same rule name`() = runBlocking {
+    fun `does not provide lint fix action for non-CodeNarc diagnostic with same rule name`(): Unit = runBlocking {
         val content = "def x = 1   \n"
         documentProvider.put(testUri, content)
 
@@ -405,7 +405,7 @@ class CodeActionProviderTest {
     // ============================================================================
 
     @Test
-    fun `provides lint fix action for UnnecessaryGString diagnostic`() = runBlocking {
+    fun `provides lint fix action for UnnecessaryGString diagnostic`(): Unit = runBlocking {
         // Position verified by Python: "hello" at 8-15
         val content = "def s = \"hello\"\n"
         documentProvider.put(testUri, content)
@@ -430,7 +430,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `UnnecessaryGString fix action produces correct text edit`() = runBlocking {
+    fun `UnnecessaryGString fix action produces correct text edit`(): Unit = runBlocking {
         // Position verified by Python: "hello" at 8-15
         val content = "def s = \"hello\"\n"
         documentProvider.put(testUri, content)
@@ -465,7 +465,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `UnnecessaryGString fix handles long string from screenshot`() = runBlocking {
+    fun `UnnecessaryGString fix handles long string from screenshot`(): Unit = runBlocking {
         // This reproduces the exact case from the user's screenshot
         // Position verified by Python: "myCustomDynamicPropertyValue" at 15-45
         val content = "        return \"myCustomDynamicPropertyValue\"\n"
@@ -493,7 +493,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `UnnecessaryGString fix does not apply for strings containing single quotes`() = runBlocking {
+    fun `UnnecessaryGString fix does not apply for strings containing single quotes`(): Unit = runBlocking {
         // Strings containing single quotes should not be converted
         // Position verified by Python: "it's" at 8-14
         val content = "def s = \"it's\"\n"
@@ -517,7 +517,7 @@ class CodeActionProviderTest {
     }
 
     @Test
-    fun `UnnecessaryGString fix converts empty string`() = runBlocking {
+    fun `UnnecessaryGString fix converts empty string`(): Unit = runBlocking {
         // Position verified by Python: "" at 8-10
         val content = "def s = \"\"\n"
         documentProvider.put(testUri, content)

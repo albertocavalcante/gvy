@@ -33,7 +33,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class BuildServerConnectionTest {
 
     @Test
-    fun `workspaceBuildTargets returns successful result`() = runTest {
+    fun `workspaceBuildTargets returns successful result`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val expectedResult = WorkspaceBuildTargetsResult(emptyList())
         every { mockServer.workspaceBuildTargets() } returns CompletableFuture.completedFuture(expectedResult)
@@ -48,7 +48,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `workspaceBuildTargets handles timeout`() = runTest {
+    fun `workspaceBuildTargets handles timeout`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val neverCompletes = CompletableFuture<WorkspaceBuildTargetsResult>()
         every { mockServer.workspaceBuildTargets() } returns neverCompletes
@@ -65,7 +65,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `workspaceBuildTargets handles server exception`() = runTest {
+    fun `workspaceBuildTargets handles server exception`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val exception = RuntimeException("Server error")
         every { mockServer.workspaceBuildTargets() } returns CompletableFuture.failedFuture(exception)
@@ -81,7 +81,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetSources returns successful result`() = runTest {
+    fun `buildTargetSources returns successful result`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = SourcesParams(listOf(targetId))
@@ -98,7 +98,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetCompile succeeds when capability is supported`() = runTest {
+    fun `buildTargetCompile succeeds when capability is supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = CompileParams(listOf(targetId))
@@ -119,7 +119,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetCompile fails when capability not supported`() = runTest {
+    fun `buildTargetCompile fails when capability not supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>(relaxed = true)
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = CompileParams(listOf(targetId))
@@ -136,7 +136,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetTest succeeds when capability is supported`() = runTest {
+    fun `buildTargetTest succeeds when capability is supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = TestParams(listOf(targetId))
@@ -156,7 +156,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetTest fails when capability not supported`() = runTest {
+    fun `buildTargetTest fails when capability not supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>(relaxed = true)
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = TestParams(listOf(targetId))
@@ -173,7 +173,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetDependencyModules succeeds when capability is supported`() = runTest {
+    fun `buildTargetDependencyModules succeeds when capability is supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = DependencyModulesParams(listOf(targetId))
@@ -195,7 +195,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetDependencyModules fails when capability not supported`() = runTest {
+    fun `buildTargetDependencyModules fails when capability not supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>(relaxed = true)
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = DependencyModulesParams(listOf(targetId))
@@ -211,7 +211,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetDependencySources succeeds when capability is supported`() = runTest {
+    fun `buildTargetDependencySources succeeds when capability is supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>()
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = DependencySourcesParams(listOf(targetId))
@@ -233,7 +233,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `buildTargetDependencySources fails when capability not supported`() = runTest {
+    fun `buildTargetDependencySources fails when capability not supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>(relaxed = true)
         val targetId = BuildTargetIdentifier("file:///workspace/module")
         val params = DependencySourcesParams(listOf(targetId))
@@ -249,7 +249,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `withCapability executes action when capability is supported`() = runTest {
+    fun `withCapability executes action when capability is supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>(relaxed = true)
         val serverCaps = BuildServerCapabilities().apply {
             compileProvider = CompileProvider(listOf("groovy"))
@@ -272,7 +272,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `withCapability uses fallback when capability not supported`() = runTest {
+    fun `withCapability uses fallback when capability not supported`(): Unit = runTest {
         val mockServer = mockk<BuildServer>(relaxed = true)
         val serverCaps = BuildServerCapabilities() // No compile provider
         val capabilities = BspCapabilities(serverCaps)
@@ -340,7 +340,7 @@ class BuildServerConnectionTest {
     }
 
     @Test
-    fun `operations fail after connection is closed`() = runTest {
+    fun `operations fail after connection is closed`(): Unit = runTest {
         val mockServer = mockk<BuildServer>(relaxed = true)
         val capabilities = BspCapabilities(BuildServerCapabilities())
         val connection = BuildServerConnection(mockServer, capabilities)

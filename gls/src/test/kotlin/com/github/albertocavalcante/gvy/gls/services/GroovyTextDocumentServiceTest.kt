@@ -17,7 +17,7 @@ import kotlin.test.assertTrue
 class GroovyTextDocumentServiceTest {
 
     @Test
-    fun `test definition returns empty list when compilation fails or is missing`() = runBlocking {
+    fun `test definition returns empty list when compilation fails or is missing`(): Unit = runBlocking {
         // Mock dependencies
         val compilationService = mockk<GroovyCompilationService>(relaxed = true)
         val workspaceManager = mockk<WorkspaceManager>(relaxed = true)

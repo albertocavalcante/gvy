@@ -136,7 +136,7 @@ class ImportCompletionStrategyTest {
     }
 
     @Test
-    fun `handles workspace classes with static members`() = runBlocking {
+    fun `handles workspace classes with static members`(): Unit = runBlocking {
         // First, compile the workspace class in a separate file
         val workspaceClassUri = URI.create("file:///MyUtils.groovy")
         val workspaceCode = """
@@ -241,7 +241,7 @@ class ImportCompletionStrategyTest {
     }
 
     @Test
-    fun `handles workspace static properties`() = runBlocking {
+    fun `handles workspace static properties`(): Unit = runBlocking {
         // First, compile the workspace class in a separate file
         val workspaceClassUri = URI.create("file:///Config.groovy")
         val workspaceCode = """

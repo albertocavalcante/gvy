@@ -23,7 +23,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find interface implementation - single class`() = runTest {
+    fun `test find interface implementation - single class`(): Unit = runTest {
         // Arrange
         val content = """
             interface Shape {
@@ -58,7 +58,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find interface implementation - multiple classes`() = runTest {
+    fun `test find interface implementation - multiple classes`(): Unit = runTest {
         // Arrange
         val content = """
             interface Shape {
@@ -94,7 +94,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find method implementation in interface`() = runTest {
+    fun `test find method implementation in interface`(): Unit = runTest {
         // Arrange
         val content = """
             interface Shape {
@@ -128,7 +128,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find abstract method implementation`() = runTest {
+    fun `test find abstract method implementation`(): Unit = runTest {
         // Arrange
         val content = """
             abstract class Animal {
@@ -161,7 +161,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test concrete class has no implementations`() = runTest {
+    fun `test concrete class has no implementations`(): Unit = runTest {
         // Arrange
         val content = """
             class ConcreteClass {
@@ -185,7 +185,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test concrete method has no implementations`() = runTest {
+    fun `test concrete method has no implementations`(): Unit = runTest {
         // Arrange
         val content = """
             class ConcreteClass {
@@ -209,7 +209,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test exclude abstract classes from implementations`() = runTest {
+    fun `test exclude abstract classes from implementations`(): Unit = runTest {
         // Arrange
         val content = """
             interface Shape {
@@ -244,7 +244,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test method signature matching with parameters`() = runTest {
+    fun `test method signature matching with parameters`(): Unit = runTest {
         // Arrange
         val content = """
             interface Calculator {
@@ -274,7 +274,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test no implementations for interface without implementations`() = runTest {
+    fun `test no implementations for interface without implementations`(): Unit = runTest {
         // Arrange
         val content = """
             interface Unused {
@@ -298,7 +298,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test implementations with invalid URI`() = runTest {
+    fun `test implementations with invalid URI`(): Unit = runTest {
         // Act - Try to find implementations with invalid URI
         val implementations = implementationProvider.provideImplementations(
             "invalid-uri",
@@ -310,7 +310,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test implementations without compilation`() = runTest {
+    fun `test implementations without compilation`(): Unit = runTest {
         // Act - Try to find implementations for a file that hasn't been compiled
         val implementations = implementationProvider.provideImplementations(
             "file:///unknown.groovy",
@@ -322,7 +322,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test implementations at position with no symbol`() = runTest {
+    fun `test implementations at position with no symbol`(): Unit = runTest {
         // Arrange
         val content = """
             interface Shape {
@@ -349,7 +349,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test interface with multiple methods - each method finds its implementation`() = runTest {
+    fun `test interface with multiple methods - each method finds its implementation`(): Unit = runTest {
         // Arrange
         val content = """
             interface Shape {
@@ -389,7 +389,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find implementation across multiple files`() = runTest {
+    fun `test find implementation across multiple files`(): Unit = runTest {
         // Arrange - Create interface in one file
         val interfaceUri = URI.create("file:///interface.groovy")
         val interfaceContent = """
@@ -429,7 +429,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test method signature matching with FQN vs simple name types`() = runTest {
+    fun `test method signature matching with FQN vs simple name types`(): Unit = runTest {
         // Arrange - Interface uses FQN, implementation uses simple name
         val content = """
             interface Processor {
@@ -459,7 +459,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find transitive interface implementation`() = runTest {
+    fun `test find transitive interface implementation`(): Unit = runTest {
         // Arrange: B extends A, C implements B -> find C when looking for A
         val content = """
             interface A { def methodA() }
@@ -485,7 +485,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find superclass interface implementation`() = runTest {
+    fun `test find superclass interface implementation`(): Unit = runTest {
         // Arrange: Shape implements Drawable, Circle extends Shape -> find Circle for Drawable
         val content = """
             interface Drawable { def draw() }
@@ -513,7 +513,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find abstract class implementation`() = runTest {
+    fun `test find abstract class implementation`(): Unit = runTest {
         // Arrange: Animal (abstract) <- Dog (concrete)
         val content = """
             abstract class Animal {
@@ -539,7 +539,7 @@ class ImplementationProviderTest {
     }
 
     @Test
-    fun `test find implementation across packages with imports`() = runTest {
+    fun `test find implementation across packages with imports`(): Unit = runTest {
         // Arrange: Interface and implementation in separate files but same default package
         // (avoids import resolution issues when compiling separately)
         val interfaceUri = URI.create("file:///src/Repository.groovy")

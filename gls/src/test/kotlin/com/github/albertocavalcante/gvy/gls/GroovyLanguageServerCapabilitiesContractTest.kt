@@ -27,7 +27,7 @@ class GroovyLanguageServerCapabilitiesContractTest {
     }
 
     @Test
-    fun `server capabilities align with supported features`() = runBlocking {
+    fun `server capabilities align with supported features`(): Unit = runBlocking {
         val workspaceRoot = Files.createTempDirectory("groovy-lsp-contract")
         val params = InitializeParams().apply {
             processId = 42

@@ -41,7 +41,7 @@ class CrossFileDefinitionTest {
     }
 
     @Test
-    fun `findNodeAt should return ConstructorCallExpression not ClassNode for new Calculator`() = runTest {
+    fun `findNodeAt should return ConstructorCallExpression not ClassNode for new Calculator`(): Unit = runTest {
         // Arrange - Main.groovy with constructor call to Calculator (defined elsewhere)
         val mainUri = URI.create("file:///test/Main.groovy")
         val mainContent = """

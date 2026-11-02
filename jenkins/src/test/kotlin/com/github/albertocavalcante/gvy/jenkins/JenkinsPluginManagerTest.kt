@@ -18,7 +18,7 @@ class JenkinsPluginManagerTest {
     lateinit var tempDir: Path
 
     @Test
-    fun `registerPluginJar adds jar to cache and resolves steps`() = runBlocking {
+    fun `registerPluginJar adds jar to cache and resolves steps`(): Unit = runBlocking {
         val mockExtractor = io.mockk.mockk<JenkinsPluginMetadataExtractor>()
         val manager = JenkinsPluginManager(metadataExtractor = mockExtractor)
         val jarPath = tempDir.resolve("test-plugin.jar")
@@ -43,7 +43,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `resolveStepMetadata returns bundled step for known step`() = runBlocking {
+    fun `resolveStepMetadata returns bundled step for known step`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val step = manager.resolveStepMetadata("sh")
@@ -53,7 +53,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `resolveStepMetadata returns null for unknown step`() = runBlocking {
+    fun `resolveStepMetadata returns null for unknown step`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val step = manager.resolveStepMetadata("nonExistentStep12345")
@@ -62,7 +62,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `resolveStepMetadata resolves echo step`() = runBlocking {
+    fun `resolveStepMetadata resolves echo step`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val step = manager.resolveStepMetadata("echo")
@@ -72,7 +72,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `resolveStepMetadata resolves stage step`() = runBlocking {
+    fun `resolveStepMetadata resolves stage step`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val step = manager.resolveStepMetadata("stage")
@@ -82,7 +82,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `getAllKnownSteps returns non-empty list`() = runBlocking {
+    fun `getAllKnownSteps returns non-empty list`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val steps = manager.getAllKnownSteps()
@@ -92,7 +92,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `getAllKnownSteps includes common pipeline steps`() = runBlocking {
+    fun `getAllKnownSteps includes common pipeline steps`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val steps = manager.getAllKnownSteps()
@@ -103,7 +103,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `resolveStepMetadata resolves node step`() = runBlocking {
+    fun `resolveStepMetadata resolves node step`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val step = manager.resolveStepMetadata("node")
@@ -124,7 +124,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `resolveStepMetadata empty string returns null`() = runBlocking {
+    fun `resolveStepMetadata empty string returns null`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val step = manager.resolveStepMetadata("")
@@ -133,7 +133,7 @@ class JenkinsPluginManagerTest {
     }
 
     @Test
-    fun `multiple calls return consistent results`() = runBlocking {
+    fun `multiple calls return consistent results`(): Unit = runBlocking {
         val manager = JenkinsPluginManager()
 
         val first = manager.resolveStepMetadata("git")

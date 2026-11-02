@@ -36,7 +36,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test local variable definition`() = runBlocking {
+    fun `test local variable definition`(): Unit = runBlocking {
         // Arrange
         val content = """
             def localVar = "test"
@@ -66,7 +66,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test method definition`() = runBlocking {
+    fun `test method definition`(): Unit = runBlocking {
         // Arrange
         val content = """
             def testMethod() {
@@ -93,7 +93,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test method name navigation specifically`() = runBlocking {
+    fun `test method name navigation specifically`(): Unit = runBlocking {
         // Feedback from Cursor/PR: String literal check breaks method name navigation
         // In foo.bar(), 'bar' is a ConstantExpression with string "bar"
 
@@ -115,7 +115,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test class definition`() = runBlocking {
+    fun `test class definition`(): Unit = runBlocking {
         // Arrange
         val content = """
             class TestClass {
@@ -140,7 +140,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test no definition found`() = runBlocking {
+    fun `test no definition found`(): Unit = runBlocking {
         // Arrange
         val content = """
             def localVar = "test"
@@ -162,7 +162,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test definition with invalid uri`() = runBlocking {
+    fun `test definition with invalid uri`(): Unit = runBlocking {
         // Act - try to find definition with invalid URI
         val definitions = definitionProvider.provideDefinitions("invalid-uri", Position(0, 0)).toList()
 
@@ -173,7 +173,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test definition without compilation`() = runBlocking {
+    fun `test definition without compilation`(): Unit = runBlocking {
         // Act - try to find definition without compiling first
         val definitions = definitionProvider.provideDefinitions("file:///unknown.groovy", Position(0, 0)).toList()
 
@@ -184,7 +184,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test field access definition`() = runBlocking {
+    fun `test field access definition`(): Unit = runBlocking {
         // Arrange
         val content = """
             class TestClass {
@@ -214,7 +214,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `test cross-file constructor call definition`() = runBlocking {
+    fun `test cross-file constructor call definition`(): Unit = runBlocking {
         // Arrange - Calculator class in one file
         val calculatorUri = URI.create("file:///Calculator.groovy")
         val calculatorContent = """
@@ -278,7 +278,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `computeImportSelectionRange highlights only symbol name in regular import`() = runBlocking {
+    fun `computeImportSelectionRange highlights only symbol name in regular import`(): Unit = runBlocking {
         // Test that import selection range correctly highlights ONLY the imported symbol
         val content = """
             import java.util.ArrayList
@@ -315,7 +315,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `computeImportSelectionRange handles duplicate symbol names correctly`() = runBlocking {
+    fun `computeImportSelectionRange handles duplicate symbol names correctly`(): Unit = runBlocking {
         // Test case where the symbol name appears twice in the import path
         val content = """
             import com.Foo.Bar.Bar
@@ -351,7 +351,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `computeImportSelectionRange handles static import member correctly`() = runBlocking {
+    fun `computeImportSelectionRange handles static import member correctly`(): Unit = runBlocking {
         // Test static imports where we import a specific member
         val content = """
             import static java.lang.Math.PI
@@ -387,7 +387,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `computeImportSelectionRange handles import with alias correctly`() = runBlocking {
+    fun `computeImportSelectionRange handles import with alias correctly`(): Unit = runBlocking {
         // Test imports with aliases (Groovy supports "import X as Y")
         val content = """
             import java.util.ArrayList as AL
@@ -419,7 +419,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `computeImportSelectionRange with very long import path`() = runBlocking {
+    fun `computeImportSelectionRange with very long import path`(): Unit = runBlocking {
         // Test with a long import path where the offset calculation bug is more obvious
         val content = """
             import com.example.verylongpackagename.anotherlongpart.Utils
@@ -456,7 +456,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `originSelectionRange for MethodCallExpression highlights only method name`() = runBlocking {
+    fun `originSelectionRange for MethodCallExpression highlights only method name`(): Unit = runBlocking {
         // Test that clicking on a method call highlights ONLY the method name, not the entire expression
         val content = """
             class Helper {
@@ -498,7 +498,7 @@ class DefinitionProviderTest {
     }
 
     @Test
-    fun `originSelectionRange for PropertyExpression highlights only property name`() = runBlocking {
+    fun `originSelectionRange for PropertyExpression highlights only property name`(): Unit = runBlocking {
         // Test that clicking on a property access highlights ONLY the property name
         // Use a class with a field that the resolver can find
         val content = """

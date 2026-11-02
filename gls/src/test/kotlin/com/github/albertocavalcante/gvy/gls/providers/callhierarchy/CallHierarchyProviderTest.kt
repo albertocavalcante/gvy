@@ -27,7 +27,7 @@ class CallHierarchyProviderTest {
     }
 
     @Test
-    fun `test prepare call hierarchy on method definition`() = runTest {
+    fun `test prepare call hierarchy on method definition`(): Unit = runTest {
         // Arrange
         val content = """
             def targetMethod() {}
@@ -50,7 +50,7 @@ class CallHierarchyProviderTest {
     }
 
     @Test
-    fun `test prepare call hierarchy on method call`() = runTest {
+    fun `test prepare call hierarchy on method call`(): Unit = runTest {
         // Arrange
         val content = """
             def targetMethod() {}
@@ -73,7 +73,7 @@ class CallHierarchyProviderTest {
     }
 
     @Test
-    fun `test incoming calls - simple direct call`() = runTest {
+    fun `test incoming calls - simple direct call`(): Unit = runTest {
         // Arrange
         val content = """
             def target() {}
@@ -97,7 +97,7 @@ class CallHierarchyProviderTest {
     }
 
     @Test
-    fun `test incoming calls - call via closures`() = runTest {
+    fun `test incoming calls - call via closures`(): Unit = runTest {
         // Arrange
         val content = """
             def target() {}
@@ -123,7 +123,7 @@ class CallHierarchyProviderTest {
     }
 
     @Test
-    fun `test outgoing calls - static method and constructor`() = runTest {
+    fun `test outgoing calls - static method and constructor`(): Unit = runTest {
         // Arrange
         val content = """
             class Other {
@@ -152,7 +152,7 @@ class CallHierarchyProviderTest {
     }
 
     @Test
-    fun `test outgoing calls - multiple calls to same method`() = runTest {
+    fun `test outgoing calls - multiple calls to same method`(): Unit = runTest {
         // Arrange
         val content = """
             def target() {}
@@ -178,7 +178,7 @@ class CallHierarchyProviderTest {
     }
 
     @Test
-    fun `test outgoing calls - simple direct call`() = runTest {
+    fun `test outgoing calls - simple direct call`(): Unit = runTest {
         // Arrange
         val content = """
             def target() {}

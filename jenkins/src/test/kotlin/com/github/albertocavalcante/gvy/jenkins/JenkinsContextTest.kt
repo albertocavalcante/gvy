@@ -156,7 +156,7 @@ class JenkinsContextTest {
     }
 
     @Test
-    fun `should include registered plugin jars in classpath`() = runBlocking {
+    fun `should include registered plugin jars in classpath`(): Unit = runBlocking {
         val pluginJar = tempDir.resolve("plugin.jar")
         Files.createFile(pluginJar)
 

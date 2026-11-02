@@ -180,7 +180,7 @@ class JdkSourceResolverTest {
 
         @Test
         @EnabledIf("hasSrcZip")
-        fun `resolveJdkSource returns line number for JDK class`() = runBlocking {
+        fun `resolveJdkSource returns line number for JDK class`(): Unit = runBlocking {
             val jrtUri = URI.create("jrt:/java.base/java/util/Date.class")
 
             val result = resolver.resolveJdkSource(jrtUri, "java.util.Date")
@@ -200,7 +200,7 @@ class JdkSourceResolverTest {
 
         @Test
         @EnabledIf("hasSrcZip")
-        fun `resolveJdkSource returns documentation for JDK class`() = runBlocking {
+        fun `resolveJdkSource returns documentation for JDK class`(): Unit = runBlocking {
             val jrtUri = URI.create("jrt:/java.base/java/text/SimpleDateFormat.class")
 
             val result = resolver.resolveJdkSource(jrtUri, "java.text.SimpleDateFormat")

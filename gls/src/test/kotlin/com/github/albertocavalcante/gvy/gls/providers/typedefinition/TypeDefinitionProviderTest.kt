@@ -48,7 +48,7 @@ class TypeDefinitionProviderTest {
     }
 
     @Test
-    fun `provideTypeDefinition returns empty list when no compilation context`() = runTest {
+    fun `provideTypeDefinition returns empty list when no compilation context`(): Unit = runTest {
         // Given
         val params = TypeDefinitionParams().apply {
             textDocument = TextDocumentIdentifier(testUri.toString())

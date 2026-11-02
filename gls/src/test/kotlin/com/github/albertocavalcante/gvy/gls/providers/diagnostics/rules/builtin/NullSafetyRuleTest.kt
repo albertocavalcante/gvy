@@ -26,7 +26,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should detect unsafe method chaining`() = runBlocking {
+    fun `should detect unsafe method chaining`(): Unit = runBlocking {
         val code = """
             def result = list.find { it.name == 'test' }.getValue()
         """.trimIndent()
@@ -40,7 +40,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should detect unsafe property access after method call`() = runBlocking {
+    fun `should detect unsafe property access after method call`(): Unit = runBlocking {
         val code = """
             def name = user.findAll { it.active }.name
         """.trimIndent()
@@ -52,7 +52,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should not flag code already using null-safe operator`() = runBlocking {
+    fun `should not flag code already using null-safe operator`(): Unit = runBlocking {
         val code = """
             def result = list.find { it.name == 'test' }?.getValue()
         """.trimIndent()
@@ -64,7 +64,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should not flag safe patterns`() = runBlocking {
+    fun `should not flag safe patterns`(): Unit = runBlocking {
         val code = """
             def value = myObject.getValue()
             def simple = x.y
@@ -77,7 +77,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should detect multiple unsafe patterns in same file`() = runBlocking {
+    fun `should detect multiple unsafe patterns in same file`(): Unit = runBlocking {
         val code = """
             def a = list.find { it.x }.value
             def b = items.collect { it }.first
@@ -91,7 +91,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should not flag patterns in strings`() = runBlocking {
+    fun `should not flag patterns in strings`(): Unit = runBlocking {
         val code = """
             def message = "list.find { it }.getValue()"
         """.trimIndent()
@@ -103,7 +103,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should detect unsafe access after escaped backslash in string`() = runBlocking {
+    fun `should detect unsafe access after escaped backslash in string`(): Unit = runBlocking {
         val code = """
             def message = "test\\\\", def value = list.find { it }.name
         """.trimIndent()
@@ -115,7 +115,7 @@ class NullSafetyRuleTest {
     }
 
     @Test
-    fun `should not flag patterns in comments`() = runBlocking {
+    fun `should not flag patterns in comments`(): Unit = runBlocking {
         val code = """
             // This is unsafe: list.find { it }.getValue()
             def safe = getSafeValue()

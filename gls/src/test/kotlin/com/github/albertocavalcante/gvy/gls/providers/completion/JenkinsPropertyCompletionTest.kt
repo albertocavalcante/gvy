@@ -69,7 +69,7 @@ class JenkinsPropertyCompletionTest {
     }
 
     @Test
-    fun `env dot should provide BUILD_ID completion in Jenkinsfile`() = runTest {
+    fun `env dot should provide BUILD_ID completion in Jenkinsfile`(): Unit = runTest {
         // Create a Jenkinsfile with simple property access
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
@@ -97,7 +97,7 @@ class JenkinsPropertyCompletionTest {
     }
 
     @Test
-    fun `currentBuild dot should provide result completion in Jenkinsfile`() = runTest {
+    fun `currentBuild dot should provide result completion in Jenkinsfile`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         val code = """
             def x = currentBuild.
@@ -124,7 +124,7 @@ class JenkinsPropertyCompletionTest {
     }
 
     @Test
-    fun `env dot should NOT provide Jenkins properties in regular Groovy file`() = runTest {
+    fun `env dot should NOT provide Jenkins properties in regular Groovy file`(): Unit = runTest {
         val groovyFile = tempDir.resolve("Script.groovy")
         Files.writeString(groovyFile, "def env = [:]; env.")
 
@@ -149,7 +149,7 @@ class JenkinsPropertyCompletionTest {
     }
 
     @Test
-    fun `unknown qualifier should still get normal method completions`() = runTest {
+    fun `unknown qualifier should still get normal method completions`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         Files.writeString(jenkinsfile, "def myList = []; myList.")
 
@@ -174,7 +174,7 @@ class JenkinsPropertyCompletionTest {
     }
 
     @Test
-    fun `shadowed env variable should NOT provide Jenkins properties`() = runTest {
+    fun `shadowed env variable should NOT provide Jenkins properties`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         // Define a local variable named 'env' that shadows the global one
         val code = """
@@ -204,7 +204,7 @@ class JenkinsPropertyCompletionTest {
     }
 
     @Test
-    fun `shadowed currentBuild variable should NOT provide Jenkins properties`() = runTest {
+    fun `shadowed currentBuild variable should NOT provide Jenkins properties`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         // Define a local Map variable named 'currentBuild' that shadows the global one
         val code = """
@@ -239,7 +239,7 @@ class JenkinsPropertyCompletionTest {
     }
 
     @Test
-    fun `shadowed params variable should NOT provide Jenkins properties`() = runTest {
+    fun `shadowed params variable should NOT provide Jenkins properties`(): Unit = runTest {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")
         // Define a local Integer variable named 'params' that shadows the global one
         val code = """

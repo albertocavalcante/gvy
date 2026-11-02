@@ -30,7 +30,7 @@ class SignatureHelpReceiverTypeTest {
     }
 
     @Test
-    fun `resolves String receiver type for length method`() = runTest {
+    fun `resolves String receiver type for length method`(): Unit = runTest {
         val uri = URI.create("file:///StringReceiverTest.groovy")
         val source = """
             class StringTest {
@@ -55,7 +55,7 @@ class SignatureHelpReceiverTypeTest {
     }
 
     @Test
-    fun `resolves ArrayList receiver type for add method`() = runTest {
+    fun `resolves ArrayList receiver type for add method`(): Unit = runTest {
         val uri = URI.create("file:///ArrayListReceiverTest.groovy")
         val source = """
             import java.util.ArrayList
@@ -81,7 +81,7 @@ class SignatureHelpReceiverTypeTest {
     }
 
     @Test
-    fun `infers type from variable initializer for def variables`() = runTest {
+    fun `infers type from variable initializer for def variables`(): Unit = runTest {
         val uri = URI.create("file:///DefVariableInference.groovy")
         val source = """
             class DefTest {
@@ -106,7 +106,7 @@ class SignatureHelpReceiverTypeTest {
     }
 
     @Test
-    fun `resolves receiver type for chained expressions`() = runTest {
+    fun `resolves receiver type for chained expressions`(): Unit = runTest {
         val uri = URI.create("file:///ChainedExpression.groovy")
         val source = """
             class Chain {
@@ -125,7 +125,7 @@ class SignatureHelpReceiverTypeTest {
     }
 
     @Test
-    fun `handles primitive wrapper types correctly`() = runTest {
+    fun `handles primitive wrapper types correctly`(): Unit = runTest {
         val uri = URI.create("file:///PrimitiveWrapper.groovy")
         val source = """
             class PrimitiveTest {
@@ -149,7 +149,7 @@ class SignatureHelpReceiverTypeTest {
     }
 
     @Test
-    fun `falls back to Object for unresolvable types`() = runTest {
+    fun `falls back to Object for unresolvable types`(): Unit = runTest {
         val uri = URI.create("file:///FallbackToObject.groovy")
         val source = """
             class FallbackTest {

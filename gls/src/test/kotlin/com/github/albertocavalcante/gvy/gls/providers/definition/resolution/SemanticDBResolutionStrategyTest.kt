@@ -41,7 +41,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should resolve cross-file method definition`() = runBlocking {
+    fun `should resolve cross-file method definition`(): Unit = runBlocking {
         // Given: Target class with a method
         val targetDoc = SemanticDocument(
             uri = targetUri,
@@ -106,7 +106,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should resolve cross-file field definition`() = runBlocking {
+    fun `should resolve cross-file field definition`(): Unit = runBlocking {
         // Given: Target class with a field
         val targetDoc = SemanticDocument(
             uri = targetUri,
@@ -171,7 +171,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should return notApplicable when document not in SemanticDB`() = runBlocking {
+    fun `should return notApplicable when document not in SemanticDB`(): Unit = runBlocking {
         // Given: No document in SemanticDB for the source URI
         val context = ResolutionContext(
             targetNode = createDummyClassNode(),
@@ -191,7 +191,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should return notApplicable when no occurrence at position`() = runBlocking {
+    fun `should return notApplicable when no occurrence at position`(): Unit = runBlocking {
         // Given: Document exists but no occurrence at the cursor position
         val sourceDoc = SemanticDocument(
             uri = sourceUri,
@@ -224,7 +224,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should skip SemanticDB for import nodes`() = runBlocking {
+    fun `should skip SemanticDB for import nodes`(): Unit = runBlocking {
         val targetDoc = SemanticDocument(
             uri = targetUri,
             symbols = listOf(
@@ -276,7 +276,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should return notFound when symbol not in workspace index`() = runBlocking {
+    fun `should return notFound when symbol not in workspace index`(): Unit = runBlocking {
         // Given: Occurrence exists but symbol not defined anywhere
         val sourceDoc = SemanticDocument(
             uri = sourceUri,
@@ -312,7 +312,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should handle same-file resolution`() = runBlocking {
+    fun `should handle same-file resolution`(): Unit = runBlocking {
         // Given: Both definition and reference in same file
         val sourceDoc = SemanticDocument(
             uri = sourceUri,
@@ -369,7 +369,7 @@ class SemanticDBResolutionStrategyTest {
     }
 
     @Test
-    fun `should resolve most specific occurrence when ranges overlap`() = runBlocking {
+    fun `should resolve most specific occurrence when ranges overlap`(): Unit = runBlocking {
         // Given: Target class (Calculator)
         val targetDoc = SemanticDocument(
             uri = targetUri,

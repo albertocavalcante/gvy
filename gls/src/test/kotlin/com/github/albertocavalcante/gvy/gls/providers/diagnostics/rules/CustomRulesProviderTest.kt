@@ -22,7 +22,7 @@ import kotlin.test.assertTrue
 class CustomRulesProviderTest {
 
     @Test
-    fun `should emit diagnostics from all rules`() = runBlocking {
+    fun `should emit diagnostics from all rules`(): Unit = runBlocking {
         val rule1 = createMockRule("rule-1", listOf(createDiagnostic("Rule 1 violation")))
         val rule2 = createMockRule("rule-2", listOf(createDiagnostic("Rule 2 violation")))
 
@@ -40,7 +40,7 @@ class CustomRulesProviderTest {
     }
 
     @Test
-    fun `should skip disabled rules`() = runBlocking {
+    fun `should skip disabled rules`(): Unit = runBlocking {
         val enabledRule = createMockRule("enabled", listOf(createDiagnostic("Enabled")), enabled = true)
         val disabledRule = createMockRule("disabled", listOf(createDiagnostic("Disabled")), enabled = true)
 
@@ -58,7 +58,7 @@ class CustomRulesProviderTest {
     }
 
     @Test
-    fun `should allow explicitly enabled rules`() = runBlocking {
+    fun `should allow explicitly enabled rules`(): Unit = runBlocking {
         val enabledRule = createMockRule("enabled", listOf(createDiagnostic("Enabled")), enabled = true)
         val disabledByDefaultRule = createMockRule("opt-in", listOf(createDiagnostic("Opt in")), enabled = false)
 
@@ -76,7 +76,7 @@ class CustomRulesProviderTest {
     }
 
     @Test
-    fun `should handle rule exceptions gracefully`() = runBlocking {
+    fun `should handle rule exceptions gracefully`(): Unit = runBlocking {
         val goodRule = createMockRule("good", listOf(createDiagnostic("Good rule")))
         val badRule = object : AbstractDiagnosticRule() {
             override val id = "bad"
@@ -100,7 +100,7 @@ class CustomRulesProviderTest {
     }
 
     @Test
-    fun `should rethrow cancellation from rules`() = runBlocking {
+    fun `should rethrow cancellation from rules`(): Unit = runBlocking {
         val cancellingRule = object : DiagnosticRule {
             override val id = "cancelled"
             override val description = "Cancelled rule"
@@ -125,7 +125,7 @@ class CustomRulesProviderTest {
     }
 
     @Test
-    fun `should create context with AST access`() = runBlocking {
+    fun `should create context with AST access`(): Unit = runBlocking {
         val mockAst = mockk<ASTNode>()
         val compilationService = mockk<GroovyCompilationService>()
         every { compilationService.getAst(any()) } returns mockAst
@@ -152,7 +152,7 @@ class CustomRulesProviderTest {
     }
 
     @Test
-    fun `should detect errors in context`() = runBlocking {
+    fun `should detect errors in context`(): Unit = runBlocking {
         val errorDiagnostic = Diagnostic(
             Range(Position(0, 0), Position(0, 1)),
             "Error",

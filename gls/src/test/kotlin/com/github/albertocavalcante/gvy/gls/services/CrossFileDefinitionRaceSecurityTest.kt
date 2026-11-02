@@ -74,7 +74,7 @@ class CrossFileDefinitionRaceSecurityTest {
      */
     /*
     @Test
-    fun `should not loop infinitely when symbol storage always returns null`() = runTest {
+    fun `should not loop infinitely when symbol storage always returns null`(): Unit = runTest {
         // This test exposes the infinite loop bug when getSymbolStorage always returns null
         // but compile() succeeds, causing compiledAny to be true in every iteration
 
@@ -141,7 +141,7 @@ class CrossFileDefinitionRaceSecurityTest {
      * Without MAX_TIMEOUT_MS safeguard, this test will TIMEOUT.
      */
     @Test
-    fun `should timeout when waiting for diagnostic jobs that never complete`() = runTest {
+    fun `should timeout when waiting for diagnostic jobs that never complete`(): Unit = runTest {
         // This test exposes the timeout vulnerability when joinAll() blocks forever
 
         // Strategy: Open file and immediately request definition before diagnostics job completes
@@ -183,7 +183,7 @@ class CrossFileDefinitionRaceSecurityTest {
      * Without proper cycle detection, this test will TIMEOUT.
      */
     @Test
-    fun `should handle circular dependencies without infinite loop`() = runTest {
+    fun `should handle circular dependencies without infinite loop`(): Unit = runTest {
         // File A references B, File B references A
         val fileAUri = "file:///test/ClassA.groovy"
         val fileAContent = """
@@ -230,7 +230,7 @@ class CrossFileDefinitionRaceSecurityTest {
      * Without backpressure, this test may TIMEOUT or OOM.
      */
     @Test
-    fun `should handle large workspace without excessive delay`() = runTest {
+    fun `should handle large workspace without excessive delay`(): Unit = runTest {
         // Open 50 files (reduced from 100 for test speed, but still stress test)
         repeat(50) { i ->
             val uri = "file:///test/LargeFile$i.groovy"
@@ -270,7 +270,7 @@ class CrossFileDefinitionRaceSecurityTest {
      * Without proper handling, getAllUris() can keep growing, preventing convergence.
      */
     @Test
-    fun `should handle files opened during compilation loop`() = runTest {
+    fun `should handle files opened during compilation loop`(): Unit = runTest {
         // Open initial file
         val initialUri = "file:///test/Initial.groovy"
         service.didOpen(
@@ -326,7 +326,7 @@ class CrossFileDefinitionRaceSecurityTest {
      */
     /*
     @Test
-    fun `should not loop infinitely when compilation throws exceptions`() = runTest {
+    fun `should not loop infinitely when compilation throws exceptions`(): Unit = runTest {
         // Create a mock service that always throws on compile
         val mockCompilationService = object : GroovyCompilationService() {
             private var exceptionCount = 0
@@ -389,7 +389,7 @@ class CrossFileDefinitionRaceSecurityTest {
      * This test monitors that the loop doesn't run hundreds of times.
      */
     @Test
-    fun `should not exceed reasonable iteration count`() = runTest {
+    fun `should not exceed reasonable iteration count`(): Unit = runTest {
         // This is a meta-test to ensure MAX_ITERATIONS is working
         // We open a few files and verify definition completes quickly
 
