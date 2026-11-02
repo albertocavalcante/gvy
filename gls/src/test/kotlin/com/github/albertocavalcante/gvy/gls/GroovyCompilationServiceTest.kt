@@ -302,6 +302,43 @@ class GroovyCompilationServiceTest {
         assertEquals(content, result.sourceText, "Source text should be preserved in cached result")
     }
 
+    @Test
+    fun `ensureCompiled compiles an open document that is not on disk`(): Unit = runBlocking {
+        // didOpen stores the buffer and compiles it in a background job. A request that arrives
+        // before that job starts finds no cache and no active compilation, and an untitled or
+        // unsaved buffer has nothing on disk, so it must compile the open buffer itself.
+        val documents = com.github.albertocavalcante.gvy.gls.services.DocumentProvider()
+        val service = GroovyCompilationService(documentProvider = documents)
+        val content = "class OpenOnly { String value }"
+        val uri = URI.create("file:///not/on/disk/OpenOnly.groovy")
+        documents.put(uri, content)
+
+        val result = service.ensureCompiled(uri)
+
+        assertNotNull(result, "an open document must compile without a prior didOpen compilation")
+        assertEquals(content, result.sourceText)
+        assertNotNull(service.getAstModel(uri), "the AST model must be available afterwards")
+    }
+
+    @Test
+    fun `ensureCompiled prefers the open buffer over stale content on disk`(): Unit = runBlocking {
+        val documents = com.github.albertocavalcante.gvy.gls.services.DocumentProvider()
+        val service = GroovyCompilationService(documentProvider = documents)
+        val file = kotlin.io.path.createTempFile("Edited", ".groovy")
+        try {
+            java.nio.file.Files.writeString(file, "class Edited { }")
+            val unsaved = "class Edited { String unsavedField }"
+            documents.put(file.toUri(), unsaved)
+
+            val result = service.ensureCompiled(file.toUri())
+
+            assertNotNull(result)
+            assertEquals(unsaved, result.sourceText, "the unsaved buffer, not the file on disk, must be compiled")
+        } finally {
+            java.nio.file.Files.deleteIfExists(file)
+        }
+    }
+
     // ========================================================================
     // Tests for Fix #1: Shared SemanticDB instance
     // ========================================================================
