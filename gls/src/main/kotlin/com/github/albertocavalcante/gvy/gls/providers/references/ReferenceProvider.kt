@@ -7,6 +7,8 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.utils.declaredName
+import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.channels.ProducerScope
@@ -351,7 +353,7 @@ class ReferenceProvider(
         }
 
         if (params.includeDeclaration || !isPartOfDeclaration) {
-            emitUniqueLocation(params.node, params.visitor, params.emittedLocations)
+            emitUniqueLocation(params.node, params.definition.declaredName(), params.visitor, params.emittedLocations)
         }
     }
 
@@ -414,14 +416,34 @@ class ReferenceProvider(
      */
     private suspend fun ProducerScope<Location>.emitUniqueLocation(
         node: ASTNode,
+        name: String?,
         visitor: GroovyAstModel,
         seen: MutableSet<String>,
     ) {
-        val location = node.toLspLocation(visitor) ?: return
+        val location = node.nameLocation(name, visitor) ?: return
         val key = "${location.uri}:${location.range.start.line}:${location.range.start.character}"
         if (seen.add(key)) {
             send(location)
         }
+    }
+
+    /**
+     * The location of the identifier [name] in this node, not the whole node: a method declaration
+     * would otherwise cover its body, and a call its receiver and arguments. Call and property names
+     * have their own AST nodes; elsewhere the name is found in the compiled source text. Null when
+     * the node does not contain the name, so such a node is never reported.
+     */
+    private fun ASTNode.nameLocation(name: String?, visitor: GroovyAstModel): Location? {
+        val nodeLocation = toLspLocation(visitor) ?: return null
+        if (name == null) return nodeLocation
+        val nameNode = when (this) {
+            is MethodCallExpression -> method
+            is PropertyExpression -> property
+            else -> null
+        }
+        val searchIn = nameNode?.toLspLocation(visitor)?.range ?: nodeLocation.range
+        val text = compilationService.getCompiledContent(URI.create(nodeLocation.uri)) ?: return nodeLocation
+        return firstNameOccurrence(text, searchIn, name)?.let { Location(nodeLocation.uri, it) }
     }
 
     /**

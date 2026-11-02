@@ -115,6 +115,27 @@ class RenameProviderTest {
     }
 
     @Test
+    fun `renaming a method leaves same-named calls on other types alone`(): Unit = runBlocking {
+        val content = """
+            class Service {
+                void size() {}
+                void run() {
+                    size()
+                    [1, 2].size()
+                    "abc".size()
+                }
+            }
+        """.trimIndent()
+
+        val result = renameAndApply(content, Position(1, 10), "count")
+
+        assertEquals(
+            content.replaceFirst("void size()", "void count()").replaceFirst("        size()", "        count()"),
+            result,
+        )
+    }
+
+    @Test
     fun `renaming a class from its declaration changes only the name and its uses`(): Unit = runBlocking {
         val content = """
             class Service {

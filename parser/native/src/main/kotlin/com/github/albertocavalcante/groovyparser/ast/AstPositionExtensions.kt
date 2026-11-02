@@ -2,6 +2,7 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.FieldNode
@@ -185,7 +186,22 @@ private fun resolveMethodDefinition(
     symbolTable: SymbolTable,
     visitor: GroovyAstModel,
 ): ASTNode? = visitor.getUri(call)?.let { uri ->
-    symbolTable.registry.findMethodDeclarations(uri, call.method.text).firstOrNull()
+    symbolTable.registry.findMethodDeclarations(uri, call.method.text).firstOrNull { call.mayCall(it) }
+}
+
+/**
+ * False when this call cannot reach [method]: its receiver has a known static type that is not the
+ * method's class or a subclass (`"x".size()` does not call a `size()` declared in this file).
+ * Implicit-this, `this`/`super`, and dynamically typed receivers (`def x`) may reach it.
+ */
+private fun MethodCallExpression.mayCall(method: MethodNode): Boolean {
+    if (isImplicitThis) return true
+    val receiver = objectExpression
+    if (receiver is VariableExpression && (receiver.isThisExpression || receiver.isSuperExpression)) return true
+    val type = receiver.type ?: return true
+    val owner = method.declaringClass ?: return true
+    return ClassHelper.isDynamicTyped(type) || type == ClassHelper.OBJECT_TYPE ||
+        type.name == owner.name || type.isDerivedFrom(owner)
 }
 
 /**
