@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.1](https://github.com/albertocavalcante/gvy/compare/v0.5.0...v0.5.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **bazel:** put the runtime jars Gradle gets transitively on test classpaths ([#1092](https://github.com/albertocavalcante/gvy/issues/1092)) ([2becf58](https://github.com/albertocavalcante/gvy/commit/2becf58a8c8a89944eb272347ae6281e34ce7f82))
+* **release:** build release artifacts from gls/ with pnpm ([#1091](https://github.com/albertocavalcante/gvy/issues/1091)) ([ff5161d](https://github.com/albertocavalcante/gvy/commit/ff5161dd821f9b2eda80847e7d3149c79a6f6c95))
+
 ## [0.5.0](https://github.com/albertocavalcante/gvy/compare/v0.4.8...v0.5.0) (2026-11-02)
 
 
