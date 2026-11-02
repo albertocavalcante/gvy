@@ -7,8 +7,20 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    paths:
+      - 'editors/**'
+      - '**/*.ts'
+      - '**/*.js'
+      - '**/*.mjs'
+      - '**/*.cjs'
+      - '.github/workflows/codeql.yml'
   schedule:
     - cron: "0 6 * * 1" # Weekly on Monday at 06:00 UTC
+
+concurrency:
+  # Cancel superseded runs on PRs; never cancel runs on main.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   analyze:

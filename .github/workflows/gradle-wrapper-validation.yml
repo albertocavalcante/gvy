@@ -4,9 +4,19 @@ name: Gradle Wrapper Validation
 on:
   pull_request:
     branches: [main]
+    paths:
+      - 'gradle/wrapper/**'
+      - 'gradlew'
+      - 'gradlew.bat'
+      - '.github/workflows/gradle-wrapper-validation.yml'
 
 permissions:
   contents: read
+
+concurrency:
+  # Cancel superseded runs on PRs; never cancel runs on main.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validate:
