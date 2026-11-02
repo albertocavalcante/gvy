@@ -56,8 +56,8 @@ on:
     secrets:
       CLAUDE_CODE_OAUTH_TOKEN:
         required: true
-      GITHUB_TOKEN:
-        required: false
+      # GITHUB_TOKEN is reserved: it is always available to called workflows and
+      # must not be declared here (declaring it makes the workflow file invalid).
 
 jobs:
   claude:
