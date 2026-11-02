@@ -1,4 +1,5 @@
 import * as assert from "assert";
+import * as path from "path";
 import proxyquire from "proxyquire";
 
 class ShellExecution {
@@ -40,6 +41,12 @@ function load(existing: string[]) {
   return { mod, folder };
 }
 
+// The wrapper the provider looks for on the platform running the tests.
+const WRAPPER =
+  process.platform === "win32"
+    ? path.win32.join("/w", "gradlew.bat")
+    : "/w/gradlew";
+
 describe("GradleTaskProvider", () => {
   const service = {
     getTasks: async () => [
@@ -48,9 +55,9 @@ describe("GradleTaskProvider", () => {
   };
 
   it("runs the project's Gradle wrapper in the folder when there is one", async () => {
-    const { mod } = load(["/w/gradlew"]);
+    const { mod } = load([WRAPPER]);
     const [task] = await new mod.GradleTaskProvider(service).provideTasks();
-    assert.strictEqual(task.execution.command, "/w/gradlew");
+    assert.strictEqual(task.execution.command, WRAPPER);
     assert.deepStrictEqual(task.execution.args, ["test"]);
     assert.strictEqual(task.execution.options?.cwd, "/w");
   });
@@ -62,7 +69,7 @@ describe("GradleTaskProvider", () => {
   });
 
   it("resolves a task from tasks.json with the wrapper and folder cwd", () => {
-    const { mod, folder } = load(["/w/gradlew"]);
+    const { mod, folder } = load([WRAPPER]);
     const resolved = new mod.GradleTaskProvider(service).resolveTask(
       new Task(
         { type: "groovy-gradle", task: "build" },
@@ -72,14 +79,14 @@ describe("GradleTaskProvider", () => {
         new ShellExecution("", []),
       ),
     );
-    assert.strictEqual(resolved.execution.command, "/w/gradlew");
+    assert.strictEqual(resolved.execution.command, WRAPPER);
     assert.strictEqual(resolved.execution.options?.cwd, "/w");
   });
 });
 
 describe("GradleTaskProvider task type and subprojects", () => {
   const resolve = (definition: Record<string, string>) => {
-    const { mod, folder } = load(["/w/gradlew"]);
+    const { mod, folder } = load([WRAPPER]);
     return new mod.GradleTaskProvider({ getTasks: async () => [] }).resolveTask(
       new Task(
         definition as { type: string; task: string },

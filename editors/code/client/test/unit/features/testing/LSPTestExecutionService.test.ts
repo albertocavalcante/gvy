@@ -80,6 +80,10 @@ interface PathMock {
   delimiter: string;
 }
 
+// On Windows, wrapper launchers run through cmd with every argument quoted.
+const unquoted = (args: string[]) =>
+  args.map((arg) => arg.replace(/^"|"$/gu, ""));
+
 describe("LSPTestExecutionService", () => {
   let LSPTestExecutionService: LSPTestExecutionServiceType;
   let service: LSPTestExecutionServiceInstance;
@@ -330,7 +334,7 @@ describe("LSPTestExecutionService", () => {
       const spawnArgs = cpMock.spawn.getCall(0).args;
       const args = spawnArgs[1];
       assert.ok(
-        args.includes("jacocoTestReport"),
+        unquoted(args).includes("jacocoTestReport"),
         "Should append jacocoTestReport for Gradle",
       );
     });
@@ -555,7 +559,7 @@ describe("LSPTestExecutionService", () => {
 
         if (testCase.expectGradle) {
           assert.ok(
-            args.includes("jacocoTestReport"),
+            unquoted(args).includes("jacocoTestReport"),
             `Should detect Gradle for ${testCase.executable}`,
           );
         } else if (testCase.expectMaven) {
@@ -691,11 +695,11 @@ describe("LSPTestExecutionService", () => {
       const spawnArgs = cpMock.spawn.getCall(0).args;
       const args = spawnArgs[1];
       assert.ok(
-        !args.includes("jacocoTestReport"),
+        !unquoted(args).includes("jacocoTestReport"),
         "Should not append jacocoTestReport for regular test run",
       );
       assert.ok(
-        !args.includes("jacoco:report"),
+        !unquoted(args).includes("jacoco:report"),
         "Should not append jacoco:report for regular test run",
       );
     });
