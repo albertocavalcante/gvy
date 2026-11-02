@@ -497,11 +497,10 @@ internal object InlayHintsTypes {
     ): Int {
         var score = 0
         argumentTypes.forEachIndexed { index, argType ->
-            if (isUnknownType(argType)) {
-                return@forEachIndexed
-            }
+            // Skip null or unknown types
+            val nonNullArgType = argType?.takeUnless { isUnknownType(it) } ?: return@forEachIndexed
             val paramType = candidate.parameterTypes.getOrNull(index) ?: return -1
-            val matchScore = matchScore(paramType, argType!!, compilationService)
+            val matchScore = matchScore(paramType, nonNullArgType, compilationService)
             if (matchScore < 0) {
                 return -1
             }
