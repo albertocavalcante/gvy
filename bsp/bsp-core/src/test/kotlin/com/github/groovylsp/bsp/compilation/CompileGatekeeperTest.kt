@@ -9,7 +9,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Disabled
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import java.util.concurrent.atomic.AtomicInteger
@@ -181,7 +180,6 @@ class CompileGatekeeperTest {
     }
 
     @Test
-    @Disabled("#1079: late joiners miss events broadcast before they joined (no replay)")
     fun `broadcastEvent notifies all observers`(): Unit = runBlocking {
         val inputs = createInputs(setOf("target1"), 1)
         val startSignal = CompletableDeferred<Unit>()
@@ -228,6 +226,51 @@ class CompileGatekeeperTest {
             CompilationEvent.Started(taskId),
             CompilationEvent.Finished(taskId, ch.epfl.scala.bsp4j.StatusCode.OK),
         )
+        assertThat(events2).containsExactly(
+            CompilationEvent.Started(taskId),
+            CompilationEvent.Finished(taskId, ch.epfl.scala.bsp4j.StatusCode.OK),
+        )
+    }
+
+    @Test
+    fun `late subscriber receives events from before and after it joined exactly once in order`(): Unit = runBlocking {
+        val inputs = createInputs(setOf("target1"), 1)
+        val taskId = ch.epfl.scala.bsp4j.TaskId("test-task")
+        val joined = CompletableDeferred<Unit>()
+        val events2 = mutableListOf<CompilationEvent>()
+
+        val first = async {
+            CompileGatekeeper.compileWithDeduplication(
+                inputs = inputs,
+                compile = {
+                    CompileGatekeeper.broadcastEvent(inputs, CompilationEvent.Started(taskId))
+                    joined.await()
+                    CompileGatekeeper.broadcastEvent(
+                        inputs,
+                        CompilationEvent.Finished(taskId, ch.epfl.scala.bsp4j.StatusCode.OK),
+                    )
+                    createSuccessResult()
+                },
+                onEvent = {},
+            )
+        }
+
+        delay(50)
+
+        val second = async {
+            CompileGatekeeper.compileWithDeduplication(
+                inputs = inputs,
+                compile = { createSuccessResult() }, // Should NOT be called
+                onEvent = {
+                    events2.add(it)
+                    if (it is CompilationEvent.Started) joined.complete(Unit)
+                },
+            )
+        }
+
+        first.await()
+        second.await()
+
         assertThat(events2).containsExactly(
             CompilationEvent.Started(taskId),
             CompilationEvent.Finished(taskId, ch.epfl.scala.bsp4j.StatusCode.OK),

@@ -5,14 +5,15 @@ import ch.epfl.scala.bsp4j.CompileResult
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CompletableDeferred
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * Prevents duplicate compilation requests using Bloop's deduplication pattern.
  *
  * When multiple clients request compilation of the same targets with identical
  * inputs (sources + classpath), only one compilation runs while others subscribe
- * to its events and await the same result.
+ * to its events and await the same result. A subscriber that joins late first
+ * receives every event broadcast so far, so it sees the same task start/finish
+ * pairs as the client that started the compilation.
  *
  * Thread-safe for concurrent access.
  */
@@ -35,21 +36,58 @@ object CompileGatekeeper {
     }
 
     /**
+     * Events kept per running compilation for late subscribers. A compilation that
+     * broadcasts more stops recording (and logs it); late subscribers then miss the
+     * later events, as they all did before replay existed.
+     */
+    internal const val MAX_REPLAYED_EVENTS = 10_000
+
+    /**
      * Active compilation state shared between subscribers.
      *
+     * [history] and [observers] change only under [lock], so a subscriber's replay
+     * and its registration happen at one point in the event stream: it receives
+     * every event exactly once, in broadcast order.
+     *
      * @property deferred Completes with the compilation result when done
-     * @property observers Thread-safe list of callbacks invoked for each compilation event
      */
-    data class RunningCompilation(
-        val deferred: CompletableDeferred<CompileResult>,
-        val observers: CopyOnWriteArrayList<(CompilationEvent) -> Unit>,
-    )
+    class RunningCompilation(val deferred: CompletableDeferred<CompileResult>) {
+        private val lock = Any()
+        private val history = ArrayList<CompilationEvent>()
+        private val observers = ArrayList<(CompilationEvent) -> Unit>()
+        private var historyFull = false
+
+        /** Replays every event so far to [observer], then registers it for the rest. */
+        fun subscribe(observer: (CompilationEvent) -> Unit) = synchronized(lock) {
+            history.forEach { deliver(observer, it) }
+            observers += observer
+        }
+
+        fun broadcast(event: CompilationEvent) = synchronized(lock) {
+            if (history.size < MAX_REPLAYED_EVENTS) {
+                history += event
+            } else if (!historyFull) {
+                historyFull = true
+                logger.warn { "Over $MAX_REPLAYED_EVENTS events; late subscribers miss the rest" }
+            }
+            observers.forEach { deliver(it, event) }
+        }
+
+        private fun deliver(observer: (CompilationEvent) -> Unit, event: CompilationEvent) {
+            @Suppress("TooGenericExceptionCaught") // Observers can fail in unpredictable ways, must not crash broadcast
+            try {
+                observer(event)
+            } catch (e: Exception) {
+                logger.error(e) { "Observer failed to handle event: $event" }
+            }
+        }
+    }
 
     /**
      * Compiles with deduplication - joins existing compilation if in progress.
      *
      * If an identical compilation is already running:
-     * 1. Subscribes [onEvent] to receive all compilation events
+     * 1. Subscribes [onEvent], replaying the events broadcast so far
      * 2. Awaits the existing compilation's result
      * 3. Returns the shared result
      *
@@ -71,18 +109,16 @@ object CompileGatekeeper {
     ): CompileResult {
         // Atomically check-and-register to prevent race condition
         // computeIfAbsent ensures only one thread creates the RunningCompilation
+        var created = false
         val running = runningCompilations.computeIfAbsent(inputs) {
             logger.debug { "Starting new compilation: $inputs" }
-            val deferred = CompletableDeferred<CompileResult>()
-            val observers = CopyOnWriteArrayList<(CompilationEvent) -> Unit>()
-            observers.add(onEvent)
-            RunningCompilation(deferred, observers)
+            created = true
+            RunningCompilation(CompletableDeferred())
         }
+        running.subscribe(onEvent)
 
-        // If we joined an existing compilation, add our observer
-        if (!running.observers.contains(onEvent)) {
+        if (!created) {
             logger.debug { "Joining existing compilation: $inputs" }
-            running.observers.add(onEvent)
             return running.deferred.await()
         }
 
@@ -107,23 +143,15 @@ object CompileGatekeeper {
      * Broadcasts a compilation event to all observers of the given inputs.
      *
      * Used by the compilation implementation to notify subscribers of
-     * progress, diagnostics, etc. Safe to call even if no compilation
-     * is registered (no-op in that case).
+     * progress, diagnostics, etc. The event is also kept for subscribers that
+     * join later. Safe to call even if no compilation is registered (no-op in
+     * that case).
      *
      * @param inputs Compilation identifier
      * @param event Event to broadcast
      */
     fun broadcastEvent(inputs: UniqueCompileInputs, event: CompilationEvent) {
-        val running = runningCompilations[inputs] ?: return
-        // NOTE: CopyOnWriteArrayList allows safe concurrent iteration
-        running.observers.forEach { observer ->
-            @Suppress("TooGenericExceptionCaught") // Observers can fail in unpredictable ways, must not crash broadcast
-            try {
-                observer(event)
-            } catch (e: Exception) {
-                logger.error(e) { "Observer failed to handle event: $event" }
-            }
-        }
+        runningCompilations[inputs]?.broadcast(event)
     }
 
     /**
