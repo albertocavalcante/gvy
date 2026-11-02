@@ -353,7 +353,12 @@ class ProjectStartupManager(
                         logger.warn { "Cannot send completion showMessage - client is null" }
                     }
 
-                    workspaceIndexer.startIndexing(context.client, context.onStatusUpdate, strategyInitJobs)
+                    workspaceIndexer.startIndexing(
+                        context.client,
+                        context.onStatusUpdate,
+                        strategyInitJobs,
+                        context.config,
+                    )
                 }
             }
         }

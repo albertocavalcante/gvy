@@ -134,7 +134,7 @@ class LspCommand : CliktCommand(name = "lsp") {
             try {
                 socket.use {
                     try {
-                        startServer(it.getInputStream(), it.getOutputStream())
+                        startServer(it.getInputStream(), it.getOutputStream(), exitJvmOnExit = false)
                     } catch (e: IOException) {
                         logger.error(e) { "Error handling client connection" }
                     }
@@ -145,8 +145,9 @@ class LspCommand : CliktCommand(name = "lsp") {
         }
     }
 
-    private fun startServer(input: InputStream, output: OutputStream) {
-        val server = GroovyLanguageServer()
+    private fun startServer(input: InputStream, output: OutputStream, exitJvmOnExit: Boolean = true) {
+        // In socket mode one JVM serves many clients, so a client's `exit` must not end the process.
+        val server = if (exitJvmOnExit) GroovyLanguageServer() else GroovyLanguageServer(exitProcess = {})
         val launcher = Launcher.Builder<GroovyLanguageClient>()
             .setLocalService(server)
             .setRemoteInterface(GroovyLanguageClient::class.java)

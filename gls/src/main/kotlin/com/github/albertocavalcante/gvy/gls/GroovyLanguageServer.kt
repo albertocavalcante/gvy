@@ -71,10 +71,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
 private const val GRADLE_POOL_SHUTDOWN_TIMEOUT_SECONDS = 15L
+private const val PARENT_EXIT_SHUTDOWN_TIMEOUT_SECONDS = 20L
 
 class GroovyLanguageServer(
     private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     private val dispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val processLiveness: ProcessLiveness = SystemProcessLiveness,
+    private val exitProcess: (Int) -> Unit = { kotlin.system.exitProcess(it) },
 ) : LanguageServer,
     LanguageClientAware {
 
@@ -88,6 +91,27 @@ class GroovyLanguageServer(
     private var groovyClient: GroovyLanguageClient? = null
 
     private val coroutineScope = CoroutineScope(dispatcher + SupervisorJob())
+
+    // Exits the server when the editor process dies, so the JVM is not orphaned.
+    // The callback runs on its own daemon thread: a parent that is already dead completes the
+    // watch immediately, and that must not block `initialize` while shutdown runs.
+    private val parentWatchdog = ParentProcessWatchdog(processLiveness) {
+        Thread({ handleParentExit() }, "gls-parent-exit").apply { isDaemon = true }.start()
+    }
+
+    /** True once the client has requested `shutdown` (or the parent died and we shut down). */
+    @Volatile
+    internal var shutdownRequested = false
+        private set
+
+    private fun handleParentExit() {
+        // shutdown() is idempotent, so a prior client-requested shutdown is not repeated.
+        // LSP convention: exit code 0 only if shutdown was requested before exit.
+        val clean = shutdownRequested
+        runCatching { shutdown().get(PARENT_EXIT_SHUTDOWN_TIMEOUT_SECONDS, TimeUnit.SECONDS) }
+            .onFailure { logger.warn(it) { "Shutdown after parent exit did not complete cleanly" } }
+        exitProcess(if (clean) 0 else 1)
+    }
 
     // Shared Services
     private val documentProvider = DocumentProvider()
@@ -203,6 +227,7 @@ class GroovyLanguageServer(
         logger.info { "Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}" }
 
         savedInitParams = params
+        parentWatchdog.watch(params.processId)
         clientCapabilities = params.capabilities
 
         val linkSupport = params.capabilities?.textDocument?.definition?.linkSupport == true
@@ -264,7 +289,17 @@ class GroovyLanguageServer(
         )
     }
 
-    override fun shutdown(): CompletableFuture<Any> = CompletableFuture.supplyAsync {
+    override fun shutdown(): CompletableFuture<Any> {
+        shutdownRequested = true
+        return shutdownFuture
+    }
+
+    // Created at most once, so repeated shutdown requests (client plus watchdog) share one run.
+    private val shutdownFuture: CompletableFuture<Any> by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        CompletableFuture.supplyAsync { doShutdown() }
+    }
+
+    private fun doShutdown(): Any {
         logger.info { "Shutting down Groovy Language Server..." }
         try {
             startupManager.shutdown()
@@ -285,11 +320,13 @@ class GroovyLanguageServer(
         } catch (e: Exception) {
             logger.warn(e) { "Error during shutdown" }
         }
-        Any()
+        return Any()
     }
 
+    /** LSP: the server process exits with 0 if `shutdown` was requested first, otherwise 1. */
     override fun exit() {
         logger.info { "Exiting Groovy Language Server" }
+        exitProcess(if (shutdownRequested) 0 else 1)
     }
 
     override fun getTextDocumentService(): TextDocumentService = textDocumentService

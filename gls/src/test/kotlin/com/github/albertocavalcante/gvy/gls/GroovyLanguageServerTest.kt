@@ -35,7 +35,8 @@ class GroovyLanguageServerTest {
     fun `test server initialization`() {
         runBlocking {
             val params = InitializeParams().apply {
-                processId = 1234
+                // No parent pid: a real watchdog on a made-up pid could kill the test JVM
+                processId = null
                 workspaceFolders = listOf(WorkspaceFolder("file:///test/project", "test"))
                 capabilities = ClientCapabilities()
                 clientInfo = ClientInfo("Test Client", "1.0.0")

@@ -30,7 +30,8 @@ class GroovyLanguageServerCapabilitiesContractTest {
     fun `server capabilities align with supported features`(): Unit = runBlocking {
         val workspaceRoot = Files.createTempDirectory("groovy-lsp-contract")
         val params = InitializeParams().apply {
-            processId = 42
+            // No parent pid: a real watchdog on a made-up pid could kill the test JVM
+            processId = null
             workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "contract"))
             capabilities = ClientCapabilities()
             clientInfo = ClientInfo("ContractTestClient", "1.0.0")
