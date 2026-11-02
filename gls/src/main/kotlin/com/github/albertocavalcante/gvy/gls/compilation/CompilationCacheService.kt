@@ -11,10 +11,14 @@ import java.util.concurrent.ConcurrentHashMap
  * This service wraps the CompilationCache and provides additional functionality
  * for tracking ongoing compilation jobs to enable async coordination and job reuse.
  *
- * Thread-safe: Uses ConcurrentHashMap for all state management.
+ * Thread-safe: the bounded CompilationCache is internally synchronized and job tracking uses ConcurrentHashMap.
+ * Cached results are LRU-bounded (open documents are never evicted); see [CompilationCache].
  */
-class CompilationCacheService {
-    private val cache = CompilationCache()
+class CompilationCacheService(
+    maxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
+    isOpen: (URI) -> Boolean = { false },
+) {
+    private val cache = CompilationCache(maxEntries, isOpen)
     private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
 
     /**
@@ -148,4 +152,7 @@ class CompilationCacheService {
      * @return Set of URIs that have cached results
      */
     fun getCachedUris(): Set<URI> = cache.keys()
+
+    /** Changes the maximum number of cached results (open documents are exempt from eviction). */
+    fun resize(maxEntries: Int) = cache.resize(maxEntries)
 }

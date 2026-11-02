@@ -266,6 +266,19 @@ class ServerConfigurationDefaultsTest {
     }
 
     @Test
+    fun `compilation cache size defaults to 300 and is configurable`() {
+        assertEquals(300, ServerConfiguration().compilationCacheMaxEntries)
+        val parsed = ServerConfiguration.fromMap(mapOf("groovy.compilation.cacheMaxEntries" to 42))
+        assertEquals(42, parsed.compilationCacheMaxEntries)
+    }
+
+    @Test
+    fun `compilation cache size below one is clamped`() {
+        val parsed = ServerConfiguration.fromMap(mapOf("groovy.compilation.cacheMaxEntries" to 0))
+        assertEquals(1, parsed.compilationCacheMaxEntries)
+    }
+
+    @Test
     fun `toString contains key configuration values`() {
         val config = ServerConfiguration()
         val str = config.toString()

@@ -166,6 +166,7 @@ class ProjectStartupManager(
         // Apply engine configuration
         val engineConfig = EngineConfiguration(type = config.parserEngine)
         compilationService.updateEngineConfiguration(engineConfig)
+        compilationService.updateCompilationCacheLimit(config.compilationCacheMaxEntries)
 
         if (initParams == null) {
             logger.warn { "No saved initialization parameters - skipping dependency resolution" }

@@ -31,6 +31,7 @@ class GroovyCompilationService(
     documentProvider: DocumentProvider? = null,
     sourceNavigator: SourceNavigator? = null,
     engineConfig: EngineConfiguration = EngineConfiguration(),
+    compilationCacheMaxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
 ) {
     private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
@@ -41,7 +42,10 @@ class GroovyCompilationService(
     )
 
     // Specialized services
-    private val cacheService = CompilationCacheService()
+    private val cacheService = CompilationCacheService(
+        maxEntries = compilationCacheMaxEntries,
+        isOpen = { uri -> documentProvider?.get(uri) != null },
+    )
     val workspaceManager = WorkspaceManager()
     private val symbolIndexer = SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager)
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager)
@@ -184,6 +188,9 @@ class GroovyCompilationService(
     }
 
     fun getCacheStatistics() = cacheService.getStatistics()
+
+    /** Applies a new compilation cache cap; closed files beyond it are evicted and recompiled on demand. */
+    fun updateCompilationCacheLimit(maxEntries: Int) = cacheService.resize(maxEntries)
 
     fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
         val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)

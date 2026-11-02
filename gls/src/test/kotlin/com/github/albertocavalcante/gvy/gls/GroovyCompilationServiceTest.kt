@@ -321,6 +321,56 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
+    fun `cache is bounded and an evicted file recompiles transparently`(): Unit = runBlocking {
+        val service = GroovyCompilationService(compilationCacheMaxEntries = 2)
+        val dir = kotlin.io.path.createTempDirectory("bounded-cache")
+        try {
+            val uris = (1..3).map { n ->
+                val file = dir.resolve("Bounded$n.groovy")
+                java.nio.file.Files.writeString(file, "class Bounded$n { String value }")
+                file.toUri()
+            }
+
+            uris.forEach { assertNotNull(service.ensureCompiled(it)) }
+
+            val cached = service.compilationCacheService.getCachedUris()
+            assertEquals(2, cached.size, "cache must stay at its cap")
+            assertFalse(uris[0] in cached, "least recently used file is evicted")
+            assertNull(service.getParseResult(uris[0]))
+
+            val again = service.ensureCompiled(uris[0])
+            assertNotNull(again, "an evicted file recompiles on next use")
+            assertEquals("class Bounded1 { String value }", again.sourceText)
+            assertNotNull(service.getAstModel(uris[0]))
+            assertEquals(2, service.compilationCacheService.getCachedUris().size)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `open documents stay cached while closed files are evicted`(): Unit = runBlocking {
+        val documents = com.github.albertocavalcante.gvy.gls.services.DocumentProvider()
+        val service = GroovyCompilationService(documentProvider = documents, compilationCacheMaxEntries = 2)
+        val openUri = URI.create("file:///not/on/disk/Open.groovy")
+        documents.put(openUri, "class Open {}")
+        service.compile(openUri, "class Open {}")
+
+        val dir = kotlin.io.path.createTempDirectory("bounded-cache-open")
+        try {
+            (1..4).forEach { n ->
+                val file = dir.resolve("Other$n.groovy")
+                java.nio.file.Files.writeString(file, "class Other$n {}")
+                service.ensureCompiled(file.toUri())
+            }
+            assertNotNull(service.getParseResult(openUri), "open document must never be evicted")
+            assertTrue(service.compilationCacheService.getCachedUris().size <= 2)
+        } finally {
+            dir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
     fun `ensureCompiled prefers the open buffer over stale content on disk`(): Unit = runBlocking {
         val documents = com.github.albertocavalcante.gvy.gls.services.DocumentProvider()
         val service = GroovyCompilationService(documentProvider = documents)

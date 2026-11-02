@@ -16,6 +16,14 @@ data class ServerConfiguration(
     val incrementalThreshold: Int = 50,
     val maxWorkspaceFiles: Int = 500,
     val maxNumberOfProblems: Int = 100,
+
+    /**
+     * Maximum number of compiled files kept in the in-memory compilation cache. Open documents are
+     * always kept; beyond this cap the least recently used closed files are evicted and simply
+     * recompiled on next use. Default 300 covers a working set of open files plus recently navigated
+     * ones while keeping a large workspace from retaining every AST ever compiled.
+     */
+    val compilationCacheMaxEntries: Int = DEFAULT_COMPILATION_CACHE_MAX_ENTRIES,
     val javaHome: String? = null,
     val groovyLanguageVersion: String? = null,
     val logLevel: LogLevel = LogLevel.INFO,
@@ -101,6 +109,8 @@ data class ServerConfiguration(
     }
 
     companion object {
+        const val DEFAULT_COMPILATION_CACHE_MAX_ENTRIES = 300
+
         private val logger = KotlinLogging.logger {}
 
         /**
@@ -120,6 +130,10 @@ data class ServerConfiguration(
                     incrementalThreshold = (map["groovy.compilation.incrementalThreshold"] as? Number)?.toInt() ?: 50,
                     maxWorkspaceFiles = (map["groovy.compilation.maxWorkspaceFiles"] as? Number)?.toInt() ?: 500,
                     maxNumberOfProblems = (map["groovy.server.maxNumberOfProblems"] as? Number)?.toInt() ?: 100,
+                    compilationCacheMaxEntries = (
+                        (map["groovy.compilation.cacheMaxEntries"] as? Number)?.toInt()
+                            ?: DEFAULT_COMPILATION_CACHE_MAX_ENTRIES
+                        ).coerceAtLeast(1),
                     javaHome = map["groovy.java.home"] as? String,
                     groovyLanguageVersion = map["groovy.language.version"] as? String,
                     logLevel = parseLogLevel(map),
