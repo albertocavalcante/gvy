@@ -5,15 +5,25 @@ name: Release Please
     - main
   workflow_dispatch: null
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 jobs:
   release-please:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      # Lets the job request a GitHub Actions OIDC token, which Octo STS exchanges for a short-lived
+      # installation token under .github/chainguard/release-please.sts.yaml.
+      id-token: write
     steps:
+    - uses: octo-sts/action@f603d3be9d8dd9871a265776e625a27b00effe05 # v1.1.1
+      id: octo-sts
+      with:
+        scope: albertocavalcante/gvy
+        identity: release-please
+    # An installation token (unlike GITHUB_TOKEN) makes the release PR run CI and the v* tag run release.yml.
     - uses: googleapis/release-please-action@64d83e95d898ede84e4555719aba555c3244d469
       with:
-        token: "${{ secrets.RELEASE_PLEASE_TOKEN }}"
+        token: ${{ steps.octo-sts.outputs.token }}
         config-file: tools/release-please/config.json
         manifest-file: tools/release-please/manifest.json
