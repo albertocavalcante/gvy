@@ -2,6 +2,7 @@ import * as assert from "assert";
 import {
   buildProcessInvocation,
   buildToolOf,
+  killProcessTree,
   withJavaHome,
 } from "../../../../src/features/testing/processInvocation";
 
@@ -134,6 +135,29 @@ describe("processInvocation", () => {
     it("creates PATH when none is set", () => {
       const env = withJavaHome({}, "/opt/jdk", "linux");
       assert.strictEqual(env.PATH, "/opt/jdk/bin");
+    });
+  });
+
+  describe("killProcessTree", () => {
+    it("kills the whole cmd.exe tree on Windows", () => {
+      const calls: unknown[][] = [];
+      const proc = { pid: 42, kill: () => calls.push(["kill"]) };
+      killProcessTree(proc, "win32", (...args: unknown[]) => {
+        calls.push(args);
+      });
+      assert.deepStrictEqual(calls, [["taskkill", ["/pid", "42", "/T", "/F"]]]);
+    });
+
+    it("signals the process directly on POSIX", () => {
+      const calls: string[] = [];
+      killProcessTree(
+        { pid: 42, kill: () => calls.push("kill") },
+        "linux",
+        () => {
+          calls.push("spawn");
+        },
+      );
+      assert.deepStrictEqual(calls, ["kill"]);
     });
   });
 });

@@ -8,6 +8,7 @@ import { resolveTestTarget, selectRunItems } from "./testTarget";
 import {
   buildProcessInvocation,
   buildToolOf,
+  killProcessTree,
   ProcessInvocation,
   withJavaHome,
 } from "./processInvocation";
@@ -530,7 +531,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       // Cancellation
       const cancelSubscriptions = tokens.map((t) =>
         t.onCancellationRequested(() => {
-          proc.kill();
+          killProcessTree(proc);
           this.logger.appendLine("Test run cancelled.");
         }),
       );

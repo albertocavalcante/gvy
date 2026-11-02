@@ -1,4 +1,5 @@
 import * as path from "path";
+import { spawn } from "child_process";
 
 export interface ProcessInvocation {
   executable: string;
@@ -79,4 +80,22 @@ export function withJavaHome(
     JAVA_HOME: javaHome,
     [pathKey]: current ? `${bin}${p.delimiter}${current}` : bin,
   };
+}
+
+/**
+ * Stops a build started by buildProcessInvocation. On Windows the child is
+ * cmd.exe running a .bat/.cmd launcher, and killing cmd.exe leaves the
+ * wrapper's JVM running, so the whole tree is terminated with taskkill.
+ */
+export function killProcessTree(
+  proc: { pid?: number; kill: () => unknown },
+  platform: NodeJS.Platform = process.platform,
+  spawnFn: (command: string, args: string[]) => unknown = (command, args) =>
+    spawn(command, args, { stdio: "ignore" }).on("error", () => {}),
+): void {
+  if (platform === "win32" && proc.pid !== undefined) {
+    spawnFn("taskkill", ["/pid", String(proc.pid), "/T", "/F"]);
+  } else {
+    proc.kill();
+  }
 }
