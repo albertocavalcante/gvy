@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.config
 
 import com.github.albertocavalcante.gvy.build.GradleBuildStrategy
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationCache
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.DiagnosticAnalysisType
 import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
@@ -109,7 +110,7 @@ data class ServerConfiguration(
     }
 
     companion object {
-        const val DEFAULT_COMPILATION_CACHE_MAX_ENTRIES = 300
+        const val DEFAULT_COMPILATION_CACHE_MAX_ENTRIES = CompilationCache.DEFAULT_MAX_ENTRIES
 
         private val logger = KotlinLogging.logger {}
 

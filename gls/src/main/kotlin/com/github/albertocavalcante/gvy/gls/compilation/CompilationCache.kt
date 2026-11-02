@@ -90,7 +90,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     fun resize(newMaxEntries: Int) {
         synchronized(entries) {
             maxEntries = newMaxEntries.coerceAtLeast(1)
-            evictOverflow()
+            evictOverflow(keep = null)
         }
     }
 
@@ -105,17 +105,24 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     private fun store(uri: URI, entry: CacheEntry) {
         synchronized(entries) {
             entries[uri] = entry
-            evictOverflow()
+            // Never evict what was just stored: callers read it back right away (e.g. go-to-definition
+            // compiles a closed file, then fetches its AST), and when open documents fill the cap the
+            // new entry would otherwise be the only candidate.
+            evictOverflow(keep = uri)
         }
     }
 
-    /** Must be called holding the monitor. Evicts closed entries, least recently used first. */
-    private fun evictOverflow() {
+    /**
+     * Must be called holding the monitor. Evicts closed entries other than [keep], least recently used
+     * first. The cap is soft: open documents and [keep] are never evicted, even if they exceed it.
+     */
+    private fun evictOverflow(keep: URI?) {
         if (entries.size <= maxEntries) return
-        val it = entries.keys.iterator()
-        while (entries.size > maxEntries && it.hasNext()) {
-            if (!isOpen(it.next())) {
-                it.remove()
+        val candidates = entries.keys.iterator()
+        while (entries.size > maxEntries && candidates.hasNext()) {
+            val uri = candidates.next()
+            if (uri != keep && !isOpen(uri)) {
+                candidates.remove()
                 evictions++
             }
         }

@@ -109,4 +109,30 @@ class CompilationCacheEvictionTest {
         assertTrue(failures.isEmpty(), "unexpected failures: $failures")
         assertTrue(cache.keys().size <= 50, "cache exceeded its cap: ${cache.keys().size}")
     }
+
+    @Test
+    fun `an entry just stored survives even when open documents fill the cap`() {
+        // Go-to-definition compiles a closed file and reads its AST back at once; with open documents
+        // at the cap, the new entry was the only eviction candidate and vanished on insert.
+        val open = setOf(uri(1), uri(2))
+        val cache = CompilationCache(maxEntries = 2, isOpen = { it in open })
+        cache.putN(1)
+        cache.putN(2)
+
+        cache.putN(3)
+
+        assertNotNull(cache.get(uri(3), "c3", "fp"), "the closed file just compiled must be readable")
+        assertNotNull(cache.get(uri(1)))
+        assertNotNull(cache.get(uri(2)))
+    }
+
+    @Test
+    fun `shrinking the cap evicts least recently used closed entries at once`() {
+        val cache = CompilationCache(maxEntries = 5)
+        (1..5).forEach { cache.putN(it) }
+
+        cache.resize(2)
+
+        assertEquals(setOf(uri(4), uri(5)), cache.keys())
+    }
 }

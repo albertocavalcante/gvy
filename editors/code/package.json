@@ -639,7 +639,7 @@
           "description": "Maximum number of files to compile in workspace mode. Larger projects automatically use single-file mode."
         },
         "groovy.compilation.cacheMaxEntries": {
-          "type": "number",
+          "type": "integer",
           "default": 300,
           "minimum": 1,
           "description": "Maximum number of compiled files kept in memory. Open documents are always kept; the least recently used closed files beyond this are evicted and recompiled on next use."
