@@ -59,7 +59,8 @@ class GroovyLanguageServerFeatureMatrixTest {
         server.connect(client)
 
         val initParams = InitializeParams().apply {
-            processId = 99
+            // No parent pid: a real watchdog on a made-up pid could kill the test JVM
+            processId = null
             workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "feature-matrix"))
         }
 
