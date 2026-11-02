@@ -2,8 +2,8 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -220,13 +220,6 @@ class WorkspaceManager {
                 logger.warn(throwable) { "Failed to convert path to URI: $path" }
                 null
             }
-    }
-
-    private fun rethrowIfCancellationOrError(throwable: Throwable) {
-        when (throwable) {
-            is CancellationException -> throw throwable
-            is Error -> throw throwable
-        }
     }
 
     /**
