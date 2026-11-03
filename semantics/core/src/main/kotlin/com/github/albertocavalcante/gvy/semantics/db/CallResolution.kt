@@ -215,7 +215,10 @@ internal class CallResolver(
 
     private fun declaresAccessor(type: ClassNode, name: String): Boolean {
         val accessors = name.replaceFirstChar(Char::uppercaseChar).let { setOf("get$it", "is$it") }
-        return type.methods.any { it.parameters.isEmpty() && it.name in accessors }
+        // Callable without arguments: no parameters, or defaults for all (Groovy adds that overload later).
+        return type.methods.any { method ->
+            method.name in accessors && method.parameters.all { it.hasInitialExpression() }
+        }
     }
 
     private fun declaresStatic(type: ClassNode, name: String): Boolean =

@@ -111,6 +111,22 @@ class PropertyAttributionTest : SymbolIdTestSupport() {
     }
 
     @Test
+    @DisplayName("a getter whose parameters all have defaults answers the read too")
+    fun getterWithDefaultParametersAnswersTheRead() {
+        // Groovy adds the no-argument overload later (CLASS_GENERATION); at runtime p.name is 'getter'.
+        val doc = build(
+            """
+            class P {
+                String name = 'field'
+                String getName(String x = '') { 'getter' }
+            }
+            class U { def run(P p) { p.name } }
+            """,
+        )
+        assertEquals(emptyList<String>(), doc.propertyRefs("name"))
+    }
+
+    @Test
     @DisplayName("a class reference reads only static properties")
     fun classReferenceToInstancePropertyIsNotAttributed() {
         val doc = build("class P {\n    int age\n    static int count\n    def run() { [P.age, P.count] }\n}")
