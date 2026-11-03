@@ -86,6 +86,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                     performCompilation(uri, content, compilePhase, configFingerprint = configFingerprint)
                 } else {
                     logger.debug { "Using cached parse result for: $uri" }
+                    // The symbol index may be absent or older than this result (e.g. after invalidation).
+                    symbolIndexer.ensureIndexed(uri, content) { cachedResult.astModel }
                     resultMapper.map(cachedResult, content)
                 }
             } else {
@@ -143,7 +145,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             cacheService.putCached(uri, content, parseResult, fingerprint)
 
             // Index symbols
-            symbolIndexer.getSymbolIndex(uri) { parseResult.astModel }
+            symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
 
             // Build semantic document for cross-file resolution
             buildSemanticDocument(uri, ast)

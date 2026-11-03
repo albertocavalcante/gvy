@@ -48,7 +48,7 @@ class GroovyCompilationService(
     )
     val workspaceManager = WorkspaceManager()
     private val symbolIndexer = SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager)
-    private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager)
+    private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
     val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
     val gdkProvider = GroovyGdkProvider(classpathService)

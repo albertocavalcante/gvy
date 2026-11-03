@@ -1,9 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
-import com.github.albertocavalcante.gvy.gls.cache.LRUCache
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -14,31 +14,32 @@ import kotlinx.coroutines.launch
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.security.MessageDigest
+import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Service for indexing Groovy source files to extract symbols for resolution.
  *
- * This service manages two separate symbol index caches:
- * - symbolStorageCache: LRU cache for recently accessed files (max 100 entries)
- * - workspaceSymbolIndex: Persistent index for all workspace files
+ * Holds one [SymbolIndex] per file, stamped with a hash of the content it was built from. A caller that
+ * has the current content ([ensureIndexed], [indexFile]) therefore never gets an index of older content,
+ * and every compile - including a compile cache hit - can restore an index that is missing.
  *
- * The service supports both single-file indexing and batch workspace indexing
- * with progress reporting.
+ * The map is deliberately unbounded: it is the workspace-wide symbol index, so evicting a file would
+ * silently drop it from workspace symbols, completion and navigation. Entries leave through [invalidate],
+ * [clear], or when [indexFile] finds the file gone.
  *
- * Thread-safe: Uses LRUCache with ReentrantReadWriteLock and ConcurrentHashMap.
+ * Thread-safe: backed by a ConcurrentHashMap.
  *
  * @param ioDispatcher Coroutine dispatcher for IO-bound operations
  * @param workerSessionManager Manager for parser worker sessions
  * @param workspaceManager Workspace configuration and classpath provider
- * @param maxCacheSize Maximum size of the LRU cache (default: 100)
  */
 class SymbolIndexingService(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
-    private val maxCacheSize: Int = 100,
 ) {
     companion object {
         /**
@@ -48,88 +49,60 @@ class SymbolIndexingService(
         private const val INDEXING_BATCH_SIZE = 10
     }
 
+    /** An index together with the hash of the content it was built from. */
+    private class Entry(val contentHash: String, val index: SymbolIndex)
+
     private val logger = KotlinLogging.logger {}
-    private val symbolStorageCache = LRUCache<URI, SymbolIndex>(maxSize = maxCacheSize)
-    private val workspaceSymbolIndex = ConcurrentHashMap<URI, SymbolIndex>()
+    private val entries = ConcurrentHashMap<URI, Entry>()
+
+    /** Gets the stored symbol index for a file, or null if none has been built. */
+    fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index
 
     /**
-     * Gets the symbol index for a single file.
-     * Checks cache first, builds from AST model if needed.
-     *
-     * @param uri The URI of the file
-     * @param astModelProvider Optional provider for AST model if file is already parsed
-     * @return SymbolIndex if available, null otherwise
+     * Builds and stores the index for [content], replacing whatever was there.
+     * Used when a fresh compile result is at hand.
      */
-    fun getSymbolIndex(
-        uri: URI,
-        astModelProvider: (() -> com.github.albertocavalcante.groovyparser.ast.GroovyAstModel?)? = null,
-    ): SymbolIndex? {
-        // Build from AST model if provided (always updates cache)
-        if (astModelProvider != null) {
-            val astModel = astModelProvider.invoke() ?: return null
-            val storage = SymbolIndex().buildFromVisitor(astModel)
-            symbolStorageCache.put(uri, storage)
-            workspaceSymbolIndex[uri] = storage
-            return storage
-        }
+    fun indexCompiled(uri: URI, content: String, astModel: GroovyAstModel): SymbolIndex =
+        store(uri, hash(content), astModel)
 
-        // Check cache for stored results
-        return symbolStorageCache.get(uri)
+    /**
+     * Returns the index for [content], building it from [astModelProvider] only when the stored one was built
+     * from different content (or is missing). Cheap on the compile-cache-hit path.
+     */
+    fun ensureIndexed(uri: URI, content: String, astModelProvider: () -> GroovyAstModel?): SymbolIndex? {
+        val contentHash = hash(content)
+        entries[uri]?.takeIf { it.contentHash == contentHash }?.let { return it.index }
+        val astModel = astModelProvider() ?: return null
+        return store(uri, contentHash, astModel)
     }
 
     /**
-     * Gets all symbol indices from both caches.
-     * Workspace index entries take precedence over LRU cache in case of conflicts.
-     * Returns map in deterministic order (sorted by URI).
+     * Gets all symbol indices, in deterministic order (sorted by URI).
      *
      * @return Map of URI to SymbolIndex for all indexed files
      */
-    fun getAllSymbolIndices(): Map<URI, SymbolIndex> {
-        val cacheSnapshot = symbolStorageCache.snapshot()
-        val workspaceSnapshot = workspaceSymbolIndex.entries.associate { (uri, index) -> uri to index }
-        val allStorages = LinkedHashMap<URI, SymbolIndex>()
-
-        // Add entries in sorted order for deterministic iteration
-        (cacheSnapshot.keys + workspaceSnapshot.keys).sorted().forEach { uri ->
-            val workspaceIndex = workspaceSnapshot[uri]
-            val cacheIndex = cacheSnapshot[uri]
-
-            if (workspaceIndex != null && cacheIndex != null && workspaceIndex !== cacheIndex) {
-                logger.warn {
-                    "Duplicate SymbolIndex for $uri found in cache and workspace index. Using workspace index value."
-                }
-            }
-
-            allStorages[uri] = workspaceIndex ?: (cacheIndex ?: error("URI $uri not found in either cache"))
-        }
-
-        return allStorages
-    }
+    fun getAllSymbolIndices(): Map<URI, SymbolIndex> = entries.entries.sortedBy { it.key }
+        .associateTo(LinkedHashMap()) { it.key to it.value.index }
 
     /**
      * Indexes a single workspace file for symbol resolution.
      * Lightweight operation that parses and builds SymbolIndex without full compilation.
+     * Re-indexes when the file's content changed since it was last indexed, and drops the entry
+     * when the file no longer exists.
      *
      * @param uri The URI of the file to index
      * @return SymbolIndex if indexing succeeded, null otherwise
      */
     suspend fun indexFile(uri: URI): SymbolIndex? {
-        // Check if already indexed first
-        symbolStorageCache.get(uri)?.let {
-            logger.debug { "File already indexed: $uri" }
-            return it
-        }
-
         val path = parseUriToPath(uri) ?: return null
 
-        return when {
-            !Files.exists(path) || !Files.isRegularFile(path) -> {
-                logger.debug { "File does not exist or is not a regular file: $uri" }
-                null
-            }
-
-            else -> performIndexing(uri, path)
+        if (!Files.isRegularFile(path)) {
+            logger.debug { "File does not exist or is not a regular file: $uri" }
+            entries.remove(uri)
+            return null
         }
+
+        return performIndexing(uri, path)
     }
 
     /**
@@ -167,14 +140,12 @@ class SymbolIndexingService(
     }
 
     /**
-     * Invalidates cached symbol index for a specific URI.
-     * Removes from both LRU cache and workspace index.
+     * Invalidates the stored symbol index for a specific URI.
      *
      * @param uri The URI to invalidate
      */
     fun invalidate(uri: URI) {
-        symbolStorageCache.remove(uri)
-        workspaceSymbolIndex.remove(uri)
+        entries.remove(uri)
     }
 
     /**
@@ -182,13 +153,22 @@ class SymbolIndexingService(
      * Used when workspace configuration changes significantly.
      */
     fun clear() {
-        symbolStorageCache.clear()
-        workspaceSymbolIndex.clear()
+        entries.clear()
     }
 
     // Private helper methods
 
     private fun parseUriToPath(uri: URI): Path? = UriPathConverter.toPath(uri)
+
+    private fun store(uri: URI, contentHash: String, astModel: GroovyAstModel): SymbolIndex {
+        val index = SymbolIndex().buildFromVisitor(astModel)
+        entries[uri] = Entry(contentHash, index)
+        return index
+    }
+
+    private fun hash(content: String): String = HexFormat.of().formatHex(
+        MessageDigest.getInstance("SHA-256").digest(content.toByteArray()),
+    )
 
     /**
      * Performs the actual indexing of a file.
@@ -197,6 +177,11 @@ class SymbolIndexingService(
     @Suppress("TooGenericExceptionCaught") // NOTE: Various exceptions possible (IOException, ParseException, etc.)
     private suspend fun performIndexing(uri: URI, path: Path): SymbolIndex? = try {
         val content = Files.readString(path)
+        val contentHash = hash(content)
+        entries[uri]?.takeIf { it.contentHash == contentHash }?.let {
+            logger.debug { "File already indexed: $uri" }
+            return it.index
+        }
 
         // Parse the source code for indexing
         // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
@@ -212,10 +197,7 @@ class SymbolIndexingService(
             ),
         )
 
-        val astModel = parseResult.astModel
-        val index = SymbolIndex().buildFromVisitor(astModel)
-        symbolStorageCache.put(uri, index)
-        workspaceSymbolIndex[uri] = index
+        val index = store(uri, contentHash, parseResult.astModel)
         logger.debug { "Indexed workspace file: $uri" }
         index
     } catch (e: Exception) {
