@@ -42,12 +42,10 @@ class GroovyCompilationService(
     )
 
     // Specialized services
-    private val cacheService = CompilationCacheService(
-        maxEntries = compilationCacheMaxEntries,
-        isOpen = { uri -> documentProvider?.get(uri) != null },
-    )
+    private val isOpen: (URI) -> Boolean = { uri -> documentProvider?.get(uri) != null }
+    private val cacheService = CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen)
     val workspaceManager = WorkspaceManager()
-    private val symbolIndexer = SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager)
+    private val symbolIndexer = SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager, isOpen)
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
     val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
@@ -71,5 +72,21 @@ class SymbolIndexStalenessTest {
         assertNotNull(index, "outline index present after cache hit")
         assertTrue("Outlined" in index.getSymbols(uri).map { it.name })
         assertEquals(151, service.getAllSymbolStorages().size)
+    }
+
+    @Test
+    fun `a disk change to an open file keeps the symbols of the editor buffer`(): Unit = runBlocking {
+        val file = tempDir.resolve("Open.groovy")
+        Files.writeString(file, "class Saved {}")
+        val uri = file.toUri()
+        val documents = DocumentProvider().apply { put(uri, "class Unsaved {}") }
+        val withBuffers = GroovyCompilationService(documentProvider = documents)
+        withBuffers.compile(uri, "class Unsaved {}")
+
+        // A file watcher reports the save of another version; the buffer is still what the user sees.
+        withBuffers.symbolIndexingService.indexFile(uri)
+
+        val names = withBuffers.getAllSymbolStorages()[uri]?.getSymbols(uri)?.map { it.name }.orEmpty()
+        assertEquals(listOf("Unsaved"), names.filter { it == "Unsaved" || it == "Saved" })
     }
 }

@@ -40,6 +40,8 @@ class SymbolIndexingService(
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
+    /** Whether [uri] is open in the editor: its buffer, indexed by the compile path, wins over the disk. */
+    private val isOpen: (URI) -> Boolean = { false },
 ) {
     companion object {
         /**
@@ -94,6 +96,9 @@ class SymbolIndexingService(
      * @return SymbolIndex if indexing succeeded, null otherwise
      */
     suspend fun indexFile(uri: URI): SymbolIndex? {
+        // An open file is indexed from its buffer when it compiles; a save or watcher event must not
+        // replace that with the disk copy the user is not looking at.
+        if (isOpen(uri)) return entries[uri]?.index
         val path = parseUriToPath(uri) ?: return null
 
         if (!Files.isRegularFile(path)) {
