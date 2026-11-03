@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -26,6 +28,14 @@ class SemanticDocumentBuilderTest {
         sourceUnit.completePhase()
         sourceUnit.convert()
         return sourceUnit.ast
+    }
+
+    /** The module of [code] after the compiler resolved its types (CANONICALIZATION), as production indexes. */
+    private fun resolvedModule(code: String): ModuleNode {
+        val unit = CompilationUnit(CompilerConfiguration())
+        unit.addSource("Test.groovy", code)
+        unit.compile(Phases.CANONICALIZATION)
+        return unit.ast.modules.single()
     }
 
     private fun buildDocument(code: String): SemanticDocument {
@@ -97,8 +107,7 @@ class SemanticDocumentBuilderTest {
             val methodNode = classNode.methods.first { it.name == "concat" }
             val symbolId = SemanticDocumentBuilder.createMethodSymbolId(classNode, methodNode)
 
-            // Current implementation specifically ignores parameters for robustness
-            assertEquals("MyClass#concat().", symbolId)
+            assertEquals("MyClass#concat(String,int).", symbolId)
         }
     }
 
@@ -504,10 +513,10 @@ class SemanticDocumentBuilderTest {
         }
 
         @Test
-        fun `method call on typed variable uses declared type for symbol ID`() {
-            // When we have "Calculator calc = new Calculator()", the declared type is Calculator.
-            // When calling calc.add(), the symbol should be "Calculator#add()", not "Main#add()".
-            // This is critical for cross-file go-to-definition to work correctly.
+        fun `method call on a type from another file is not attributed`() {
+            // The callee's overloads are not visible, and an id built from the static argument types can
+            // equal the real id of a different overload (Groovy dispatches on runtime types), so the call
+            // yields no occurrence. It must in particular never be credited to Main.
             val code = """
                 class Main {
                     void run() {
@@ -520,22 +529,15 @@ class SemanticDocumentBuilderTest {
             val doc = buildDocument(code)
 
             val calls = doc.findOccurrencesByRole(OccurrenceRole.CALL)
-
-            // Find the method call for 'add'
-            val addCall = calls.firstOrNull { it.symbol.contains("add") }
-            assertNotNull(addCall, "Should find 'add' method call occurrence")
-
-            // CRITICAL: The symbol should reference Calculator, not Main
-            assertTrue(
-                addCall!!.symbol.contains("Calculator"),
-                "Method call symbol should reference the declared type Calculator, not Main. Got: ${addCall.symbol}",
-            )
+            assertTrue(calls.none { it.symbol.contains("add") }, "Got: ${calls.map { it.symbol }}")
         }
 
         @Test
         fun `property access on typed variable uses declared type for symbol ID`() {
-            // Similar to method calls: calc.value should reference Calculator#value.
+            // Similar to method calls: calc.value should reference Calculator#value. The type must be one
+            // the compiler resolved, so Calculator is declared in the source and the AST is resolved.
             val code = """
+                class Calculator { int value }
                 class Main {
                     void run() {
                         Calculator calc = new Calculator()
@@ -544,7 +546,7 @@ class SemanticDocumentBuilderTest {
                 }
             """.trimIndent()
 
-            val doc = buildDocument(code)
+            val doc = SemanticDocumentBuilder(resolvedModule(code), testUri).build()
 
             val refs = doc.findOccurrencesByRole(OccurrenceRole.REFERENCE)
 

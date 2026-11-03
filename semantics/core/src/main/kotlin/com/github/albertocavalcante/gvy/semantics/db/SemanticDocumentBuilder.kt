@@ -9,12 +9,16 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
-import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.CatchStatement
+import org.codehaus.groovy.ast.stmt.ForStatement
 import org.codehaus.groovy.control.SourceUnit
 import java.net.URI
 
@@ -282,96 +286,150 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
     }
 
     /**
-     * Visitor for extracting occurrences (references, calls, etc.)
-     * Tracks local variable types to correctly attribute method/property accesses to external types.
+     * Visitor for extracting occurrences (references, calls, etc.).
+     *
+     * Keeps a stack of lexical scopes so a use of `x` binds to the innermost parameter or local
+     * named `x` (and gets that declaration's unique id) before falling back to a field of the class.
+     * The scopes also carry the declared or inferred type used to attribute calls to a receiver.
      */
     private inner class OccurrenceVisitor(private val currentClass: ClassNode) : ClassCodeVisitorSupport() {
 
-        // Track variable names to their declared types (e.g., "calc" -> Calculator ClassNode)
-        private val localVariableTypes = mutableMapOf<String, ClassNode>()
+        private val scopes = ArrayDeque<MutableMap<String, LocalBinding>>()
+
+        private val resolver = CallResolver(moduleNode, currentClass, ::lookup)
+
+        // Inside a closure an implicit-this call may be dispatched to the closure's delegate.
+        private var closureDepth = 0
+
+        // In a static method `this` is the Class object.
+        private var staticContext = false
+
+        // Id prefix of the method (or initializer) whose body is being visited; scopes locals.
+        private var scopeOwnerId: String = "${createClassSymbolId(currentClass)}{init}."
 
         override fun getSourceUnit(): SourceUnit? = null
 
-        override fun visitMethod(node: MethodNode) {
-            // New scope for each method
-            localVariableTypes.clear()
-            // Track parameters as local variables
-            node.parameters?.forEach { param ->
-                if (param.type != null) {
-                    localVariableTypes[param.name] = param.type
+        private inline fun scoped(body: () -> Unit) {
+            scopes.addLast(HashMap())
+            try {
+                body()
+            } finally {
+                scopes.removeLast()
+            }
+        }
+
+        private fun lookup(name: String): LocalBinding? = scopes.asReversed().firstNotNullOfOrNull { it[name] }
+
+        private fun declaresMember(owner: ClassNode, name: String): Boolean =
+            owner.getDeclaredField(name) != null || owner.getProperty(name) != null
+
+        /** Declare a local variable or parameter: bind the name and index it as a VARIABLE symbol. */
+        private fun declareLocal(name: String, node: Any, type: ClassNode?) {
+            val scope = scopes.lastOrNull() ?: return
+            val range = nodeToRange(node) ?: return
+            val id = createLocalSymbolId(scopeOwnerId, name, range)
+            scope[name] = LocalBinding(id, TypeSignatures.knownTypeOrNull(type))
+            symbols.add(SymbolInfo(id, SymbolKind.VARIABLE, range, name, scopeOwnerId))
+            occurrences.add(SymbolOccurrence(id, range, OccurrenceRole.DEFINITION))
+        }
+
+        override fun visitConstructorOrMethod(node: MethodNode, isConstructor: Boolean) {
+            val savedOwner = scopeOwnerId
+            val savedStatic = staticContext
+            scopeOwnerId = createMethodSymbolId(currentClass, node)
+            staticContext = node.isStatic
+            scoped {
+                node.parameters?.forEach { param ->
+                    scopes.last()[param.name] = LocalBinding(
+                        createParameterSymbolId(currentClass, node, param),
+                        TypeSignatures.knownTypeOrNull(param.type),
+                    )
+                }
+                super.visitConstructorOrMethod(node, isConstructor)
+            }
+            scopeOwnerId = savedOwner
+            staticContext = savedStatic
+        }
+
+        override fun visitField(node: FieldNode) {
+            // A static field's initializer runs in a static context, where `this` is the Class object.
+            val saved = staticContext
+            staticContext = node.isStatic
+            try {
+                super.visitField(node)
+            } finally {
+                staticContext = saved
+            }
+        }
+
+        override fun visitBlockStatement(block: BlockStatement) = scoped { super.visitBlockStatement(block) }
+
+        override fun visitClosureExpression(expression: ClosureExpression) = scoped {
+            closureDepth++
+            try {
+                visitClosureBody(expression)
+            } finally {
+                closureDepth--
+            }
+        }
+
+        private fun visitClosureBody(expression: ClosureExpression) {
+            if (expression.isParameterSpecified) {
+                expression.parameters.forEach { declareLocal(it.name, it, it.type) }
+            } else {
+                // The implicit `it`: bound so uses do not fall through to a field named `it`.
+                nodeToRange(expression)?.let { range ->
+                    scopes.last()["it"] = LocalBinding(createLocalSymbolId(scopeOwnerId, "it", range), null)
                 }
             }
-            super.visitMethod(node)
+            super.visitClosureExpression(expression)
+        }
+
+        override fun visitForLoop(forLoop: ForStatement) = scoped {
+            if (forLoop.variable != ForStatement.FOR_LOOP_DUMMY) {
+                declareLocal(forLoop.variable.name, forLoop.variable, forLoop.variable.type)
+            }
+            super.visitForLoop(forLoop)
+        }
+
+        override fun visitCatchStatement(statement: CatchStatement) = scoped {
+            declareLocal(statement.variable.name, statement.variable, statement.variable.type)
+            super.visitCatchStatement(statement)
         }
 
         override fun visitDeclarationExpression(expression: DeclarationExpression) {
-            // Track the declared type of local variables
-            // For "Calculator calc = new Calculator()", store "calc" -> Calculator type
-            val varExpr = expression.variableExpression
-            val declaredType = varExpr.type
-            // Only track if the declared type is meaningful (not Object)
-            if (declaredType.name != "java.lang.Object" && declaredType.name != "Object") {
-                localVariableTypes[varExpr.name] = declaredType
+            // The initializer is evaluated before the new name comes into scope.
+            expression.rightExpression.visit(this)
+            when (val left = expression.leftExpression) {
+                is VariableExpression ->
+                    declareLocal(
+                        left.name,
+                        left,
+                        TypeSignatures.knownTypeOrNull(left.type) ?: resolver.inferType(expression),
+                    )
+                is TupleExpression ->
+                    left.expressions.filterIsInstance<VariableExpression>()
+                        .forEach { declareLocal(it.name, it, it.type) }
+                else -> left.visit(this)
             }
-            super.visitDeclarationExpression(expression)
-        }
-
-        private fun resolveTypeName(type: ClassNode): String {
-            // If already fully qualified (contains dots), just use it
-            if (type.name.contains(".")) {
-                return type.name.replace('.', '/')
-            }
-
-            // Try redirect (might point to FQN)
-            if (type.redirect() != type && type.redirect().name.contains(".")) {
-                return type.redirect().name.replace('.', '/')
-            }
-
-            // Fallback: prepend current package if available
-            val packageName = moduleNode.packageName
-            if (!packageName.isNullOrEmpty()) {
-                val pkgPath = packageName.replace('.', '/')
-                return if (pkgPath.endsWith("/")) {
-                    "${pkgPath}${type.name}"
-                } else {
-                    "$pkgPath/${type.name}"
-                }
-            }
-
-            return type.name
         }
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
-            val range = nodeToRange(call) ?: return super.visitMethodCallExpression(call)
-
-            // Resolve the receiver type to get the correct owner class
-            // For "calc.add()", use Calculator (from localVariableTypes) not Main
-            val receiverType = resolveReceiverNode(call.objectExpression)
-            val methodName = call.methodAsString
-            val ownerName = if (receiverType != null) {
-                resolveTypeName(receiverType)
-            } else {
-                resolveTypeName(currentClass)
+            val range = nodeToRange(call)
+            val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it, insideClosure = closureDepth > 0) }
+            if (range != null && symbolId != null) {
+                occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
             }
-            // Use just the method name + empty parens for now, matching indexing logic
-            val symbolId = "$ownerName#$methodName()."
-
-            occurrences.add(
-                SymbolOccurrence(
-                    symbol = symbolId,
-                    range = range,
-                    role = OccurrenceRole.CALL,
-                ),
-            )
-
             super.visitMethodCallExpression(call)
         }
 
         override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
-            val range = nodeToRange(call) ?: return super.visitConstructorCallExpression(call)
+            val range = nodeToRange(call)
+            // Only a class the compiler resolved: a bare name would be guessed into this package.
+            if (range == null || !resolver.isResolved(call.type)) return super.visitConstructorCallExpression(call)
 
             // Create symbol ID for constructor call
-            val typeName = resolveTypeName(call.type)
+            val typeName = resolver.resolveTypeName(call.type)
             // Use class symbol ID to resolve to the class definition
             // TODO: Support precise constructor resolution with parameters
             val symbolId = "$typeName#"
@@ -388,71 +446,28 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitVariableExpression(expression: VariableExpression) {
-            val range = nodeToRange(expression) ?: return super.visitVariableExpression(expression)
-
-            // Variable reference
-            // Use resolveTypeName for consistency, though currentClass.name is usually FQN
-            val className = resolveTypeName(currentClass)
-            val symbolId = "$className#${expression.name}."
-
-            occurrences.add(
-                SymbolOccurrence(
-                    symbol = symbolId,
-                    range = range,
-                    role = OccurrenceRole.REFERENCE,
-                ),
-            )
-
+            val range = nodeToRange(expression)
+            if (range != null && !expression.isThisExpression && !expression.isSuperExpression) {
+                // A parameter or local shadows a field of the same name. Otherwise only a field or property
+                // the class declares, and not inside a closure, whose delegate may resolve the name first.
+                val symbolId = lookup(expression.name)?.id
+                    ?: "${resolver.resolveTypeName(currentClass)}#${expression.name}.".takeIf {
+                        closureDepth == 0 && declaresMember(currentClass, expression.name)
+                    }
+                symbolId?.let { occurrences.add(SymbolOccurrence(it, range, OccurrenceRole.REFERENCE)) }
+            }
             super.visitVariableExpression(expression)
         }
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
-            val range = nodeToRange(expression) ?: return super.visitPropertyExpression(expression)
-
-            // Resolve the receiver type for property access
-            // For "calc.value", use Calculator (from localVariableTypes) not Main
-            val receiverType = resolveReceiverNode(expression.objectExpression)
-            val propertyName = expression.propertyAsString
-            val ownerName = if (receiverType != null) {
-                resolveTypeName(receiverType)
-            } else {
-                resolveTypeName(currentClass)
+            val range = nodeToRange(expression)
+            val symbolId = expression.propertyAsString?.let {
+                resolver.resolveProperty(expression.objectExpression, it, staticContext, expression.isSpreadSafe)
             }
-            val symbolId = "$ownerName#$propertyName."
-
-            occurrences.add(
-                SymbolOccurrence(
-                    symbol = symbolId,
-                    range = range,
-                    role = OccurrenceRole.REFERENCE,
-                ),
-            )
-
+            if (range != null && symbolId != null) {
+                occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
+            }
             super.visitPropertyExpression(expression)
-        }
-
-        /**
-         * Resolve the type of the receiver expression.
-         * Uses local variable type tracking from DeclarationExpressions.
-         * Returns the ClassNode, or null to use current class as fallback.
-         */
-        private fun resolveReceiverNode(receiver: Expression): ClassNode? {
-            // Check if the receiver is a variable with a tracked declared type
-            if (receiver is VariableExpression) {
-                localVariableTypes[receiver.name]?.let { return it }
-            }
-
-            // Fallback to expression type (usually Object for unresolved)
-            val exprType = receiver.type
-            return when {
-                exprType == null -> null
-                exprType.name == "java.lang.Object" -> null
-                exprType.name == "Object" -> null
-                exprType.name.contains("$") -> null // Synthetic
-                exprType.name == currentClass.name -> null // Same class, use default
-                exprType.name.isNotEmpty() -> exprType
-                else -> null
-            }
         }
     }
 
@@ -504,26 +519,32 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         /**
          * Create unique symbol ID for a method.
-         * Format: "com/example/MyClass#myMethod()." for no-param methods
-         * Format: "com/example/MyClass#myMethod(int,String)." for parameterized methods
+         *
+         * Format: "com/example/MyClass#myMethod()." for no-param methods and
+         * "com/example/MyClass#myMethod(String,int)." otherwise. Parameter types are erased and
+         * written as simple names, so overloads get distinct ids while the id stays the same
+         * whether or not the compiler has qualified the type names yet.
          */
         fun createMethodSymbolId(owner: ClassNode?, method: MethodNode): String {
             val ownerPrefix = owner?.let { createClassSymbolId(it) } ?: ""
-            // Simplify symbol ID by ignoring parameters to allow easier matching from call sites
-            // usage: Calculator#add().
-            // TODO(#703): Support precise method overloading resolution
-            //   See: https://github.com/albertocavalcante/gvy/issues/703
-            return "${ownerPrefix}${method.name}()."
+            return "${ownerPrefix}${method.name}(${TypeSignatures.parameterList(method.parameters)})."
         }
 
         /**
          * Create unique symbol ID for a parameter.
-         * Format: "com/example/MyClass#myMethod(int,String).param"
+         * Format: "com/example/MyClass#myMethod(int,String).(param)"
          */
-        fun createParameterSymbolId(owner: ClassNode?, method: MethodNode, parameter: Parameter): String {
-            val methodId = createMethodSymbolId(owner, method)
-            return "${methodId}${parameter.name}"
-        }
+        fun createParameterSymbolId(owner: ClassNode?, method: MethodNode, parameter: Parameter): String =
+            "${createMethodSymbolId(owner, method)}(${parameter.name})"
+
+        /**
+         * Create unique symbol ID for a local variable or closure/loop/catch parameter.
+         * Format: "com/example/MyClass#myMethod(int).name@line:column", where line and column
+         * are the 0-indexed start of the declaration. Unique per declaration, never equal to a
+         * field id, and the same for the same declaration in identical content.
+         */
+        fun createLocalSymbolId(scopeOwnerId: String, name: String, declaration: Range): String =
+            "$scopeOwnerId$name@${declaration.startLine}:${declaration.startColumn}"
 
         /**
          * Create symbol ID for import.

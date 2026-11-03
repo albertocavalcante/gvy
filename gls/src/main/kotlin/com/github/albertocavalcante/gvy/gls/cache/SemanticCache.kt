@@ -61,6 +61,7 @@ class SemanticCache(private val cacheDir: Path) {
         try {
             val cacheFile = getCacheFile(uri)
             val cached = CachedSemanticDocument(
+                formatVersion = FORMAT_VERSION,
                 uri = uri.toString(),
                 sourceHash = sourceHash,
                 symbols = document.symbols.map { it.toSerialized() },
@@ -99,6 +100,11 @@ class SemanticCache(private val cacheDir: Path) {
             val jsonString = cacheFile.readText()
             val cached = json.decodeFromString<CachedSemanticDocument>(jsonString)
 
+            if (cached.formatVersion != FORMAT_VERSION) {
+                logger.debug { "Cache invalid for $uri (format ${cached.formatVersion}, want $FORMAT_VERSION)" }
+                return@withContext null
+            }
+
             // Validate source hash
             if (cached.sourceHash != sourceHash) {
                 logger.debug { "Cache invalid for $uri (hash mismatch)" }
@@ -133,7 +139,7 @@ class SemanticCache(private val cacheDir: Path) {
 
             val jsonString = cacheFile.readText()
             val cached = json.decodeFromString<CachedSemanticDocument>(jsonString)
-            cached.sourceHash == sourceHash
+            cached.formatVersion == FORMAT_VERSION && cached.sourceHash == sourceHash
         } catch (e: Exception) {
             logger.debug { "Cache validation failed for $uri: ${e.message}" }
             false
@@ -185,6 +191,15 @@ class SemanticCache(private val cacheDir: Path) {
 
     companion object {
         /**
+         * Version of the symbol-id scheme stored in cache files. Bump it whenever the ids written by
+         * SemanticDocumentBuilder change: files with another version are ignored, never read with stale ids.
+         *
+         * 0 (the field is absent): ids without parameter types, locals sharing the field format.
+         * 1: erased parameter types in method ids, unique `name@line:col` local ids, `(p)` parameter ids.
+         */
+        const val FORMAT_VERSION = 1
+
+        /**
          * Hash source content to detect changes.
          */
         fun hashSource(content: String): String = sha256(content)
@@ -196,6 +211,7 @@ class SemanticCache(private val cacheDir: Path) {
  */
 @Serializable
 private data class CachedSemanticDocument(
+    val formatVersion: Int = 0,
     val uri: String,
     val sourceHash: String,
     val symbols: List<SerializedSymbolInfo>,
