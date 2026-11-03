@@ -7,8 +7,10 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -16,6 +18,7 @@ import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.RangeExpression
 import org.codehaus.groovy.ast.expr.SpreadExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
@@ -196,7 +199,8 @@ internal class CallResolver(
         val type = (receiverType(receiver) ?: literalType(receiver))?.takeIf(::isResolved)
         val classes = type?.let(hierarchies::of)?.classes
         return !call.isImplicitThis && name in GroovyDispatch.delegateNeutralMethods &&
-            classes != null && classes.none { it.getDeclaredMethods(name).isNotEmpty() }
+            classes != null && classes.none { it.getDeclaredMethods(name).isNotEmpty() } &&
+            RuntimeReceivers.cannotOverride(type, receiver, name, moduleNode.unit?.classes.orEmpty())
     }
 
     private fun choose(hierarchy: TypeHierarchies.Hierarchy, name: String, arity: Int): CallOutcome {
@@ -287,6 +291,26 @@ internal class CallResolver(
         val member = currentClass.getField(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
         return TypeSignatures.knownTypeOrNull(member)
     }
+}
+
+/**
+ * Whether the object a call reaches at runtime cannot override [name] with a method of its own (one that
+ * could set its closure's delegate). The declared type is not the runtime type: a `Base b` may hold a
+ * subclass. Certain when the runtime class is known (a literal, `new X()`, a final class), or when the
+ * declared type is a JDK or source type and no class of the compilation unit assignable to it declares
+ * [name]. A third-party type stays uncertain, as its subclasses may come from anywhere.
+ */
+internal object RuntimeReceivers {
+    fun cannotOverride(type: ClassNode, receiver: Expression, name: String, unitClasses: List<ClassNode>): Boolean {
+        val exact = literalType(receiver) != null ||
+            (receiver is ConstructorCallExpression && !receiver.isUsingAnonymousInnerClass) ||
+            java.lang.reflect.Modifier.isFinal(type.modifiers)
+        if (exact) return true
+        val visible = type.isPrimaryClassNode || type.name.startsWith("java.")
+        return visible && unitClasses.none { it.isSubtypeOf(type) && it.getDeclaredMethods(name).isNotEmpty() }
+    }
+
+    private fun ClassNode.isSubtypeOf(type: ClassNode) = isDerivedFrom(type) || implementsInterface(type)
 }
 
 /** The runtime class of a literal, or null: only literals whose JDK/Groovy class is certain. */
@@ -441,6 +465,38 @@ internal object GroovyDispatch {
         "count", "sum", "inject", "groupBy", "countBy", "sort", "toSorted", "min", "max",
         "unique", "toUnique", "split", "takeWhile", "dropWhile", "times", "upto", "downto", "step", "eachLine",
     )
+
+    /** Names through which a closure body can change where its own names resolve. */
+    private val closureReshapingNames = setOf(
+        "delegate", "resolveStrategy", "directive", "setDelegate", "setResolveStrategy", "setDirective", "rehydrate",
+    )
+
+    /**
+     * Whether [closure]'s body mentions its delegate or resolve strategy (`delegate = x`,
+     * `resolveStrategy = Closure.DELEGATE_ONLY`, `rehydrate(...)`): it may then resolve names elsewhere
+     * however it was called. Matched by name anywhere in the body, nested closures included.
+     */
+    fun reshapesItself(closure: ClosureExpression): Boolean {
+        var found = false
+        closure.code?.visit(
+            object : CodeVisitorSupport() {
+                override fun visitVariableExpression(expression: VariableExpression) {
+                    found = found || expression.name in closureReshapingNames
+                }
+
+                override fun visitPropertyExpression(expression: PropertyExpression) {
+                    found = found || expression.propertyAsString in closureReshapingNames
+                    super.visitPropertyExpression(expression)
+                }
+
+                override fun visitMethodCallExpression(call: MethodCallExpression) {
+                    found = found || call.methodAsString in closureReshapingNames
+                    super.visitMethodCallExpression(call)
+                }
+            },
+        )
+        return found
+    }
 
     /** Methods and properties a closure answers itself, before its owner: `call`, `curry`, `delegate`... */
     val closureMemberNames: Set<String> by lazy {

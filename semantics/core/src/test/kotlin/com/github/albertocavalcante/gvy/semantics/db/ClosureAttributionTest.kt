@@ -115,4 +115,43 @@ class ClosureAttributionTest : SymbolIdTestSupport() {
         assertTrue(doc.references("C#owner.").isEmpty())
         assertTrue(doc.calls("curry").isEmpty())
     }
+
+    @Test
+    @DisplayName("a subtype in the unit overriding each may set a delegate, so a closure on its supertype is opaque")
+    fun subtypeOverridingEachMakesSupertypeReceiversOpaque() {
+        val doc = build(
+            """
+            class Other { String name; def helper() {} }
+            class Base implements Iterable { Iterator iterator() { [1].iterator() } }
+            class Sub extends Base {
+                def each(Closure c) { c.resolveStrategy = Closure.DELEGATE_FIRST; c.delegate = new Other(); c(1) }
+            }
+            class C {
+                String name
+                def helper() {}
+                def viaBase(Base b) { b.each { name; helper() } }
+                def viaIterable(Iterable o) { o.each { name } }
+            }
+            """,
+        )
+        assertEquals(emptyList<SymbolOccurrence>(), doc.references("C#name.") + doc.calls("helper"))
+    }
+
+    @Test
+    @DisplayName("a closure that sets its own delegate or resolve strategy is opaque")
+    fun closureChangingItsOwnResolutionIsOpaque() {
+        val doc = build(
+            """
+            class Other { def helper() {} }
+            class C {
+                String name
+                def helper() {}
+                def run(List xs) {
+                    xs.each { resolveStrategy = Closure.DELEGATE_ONLY; delegate = new Other(); helper(); name }
+                }
+            }
+            """,
+        )
+        assertEquals(emptyList<SymbolOccurrence>(), doc.references("C#name.") + doc.calls("helper"))
+    }
 }

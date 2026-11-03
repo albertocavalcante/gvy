@@ -430,7 +430,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
             }
             if (resolver.isDelegateNeutralCall(call)) {
-                (call.arguments as? TupleExpression)?.expressions?.filterIsInstanceTo(transparentClosures)
+                (call.arguments as? TupleExpression)?.expressions.orEmpty()
+                    .filterIsInstance<ClosureExpression>()
+                    .filterNotTo(transparentClosures, GroovyDispatch::reshapesItself)
             }
             super.visitMethodCallExpression(call)
         }
