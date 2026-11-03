@@ -196,8 +196,9 @@ class SemanticCache(private val cacheDir: Path) {
          *
          * 0 (the field is absent): ids without parameter types, locals sharing the field format.
          * 1: erased parameter types in method ids, unique `name@line:col` local ids, `(p)` parameter ids.
+         * 2: occurrence and symbol ranges are half-open LSP ranges (1 was one column too wide).
          */
-        const val FORMAT_VERSION = 1
+        const val FORMAT_VERSION = 2
 
         /**
          * Hash source content to detect changes.

@@ -250,6 +250,20 @@ class SemanticCacheTest {
         assertFalse(cache.isValid(uri, "hash"))
     }
 
+    @Test
+    fun `documents cached with the previous wide ranges are ignored`(): Unit = runTest {
+        cache = SemanticCache(tempDir)
+        val uri = URI.create("file:///test/Wide.groovy")
+        cache.save(uri, createTestDocument(uri), "hash")
+
+        // Version 1 wrote ranges one column too wide.
+        val file = tempDir.toFile().listFiles { f -> f.extension == "json" }!!.single()
+        file.writeText(file.readText().replace(Regex("\"formatVersion\":\\d+,"), "\"formatVersion\":1,"))
+
+        assertNull(cache.load(uri, "hash"), "wide ranges must not be served")
+        assertFalse(cache.isValid(uri, "hash"))
+    }
+
     private fun createTestDocument(uri: URI): SemanticDocument {
         val symbols = listOf(
             SymbolInfo(
