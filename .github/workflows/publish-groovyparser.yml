@@ -59,7 +59,7 @@ jobs:
 
       - name: Build and test
         run: |
-          ./gradlew :groovyparser-core:build :groovyparser-core:test \
+          ./gradlew :parser:core:build :parser:core:test \
             --parallel --build-cache --stacktrace
 
       - name: Upload build artifacts
@@ -67,7 +67,7 @@ jobs:
         with:
           name: groovyparser-core-artifacts
           path: |
-            groovyparser-core/build/libs/*.jar
+            parser/core/build/libs/*.jar
           retention-days: 7
 
   publish:
@@ -97,12 +97,12 @@ jobs:
 
       - name: Publish to GitHub Packages
         run: |
-          ./gradlew :groovyparser-core:publish \
+          ./gradlew :parser:core:publish \
             -Pversion=${{ needs.build.outputs.version }} \
             --stacktrace
         env:
-          GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ORG_GRADLE_PROJECT_GitHubPackagesUsername: ${{ github.actor }}
+          ORG_GRADLE_PROJECT_GitHubPackagesPassword: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish summary
         run: |
