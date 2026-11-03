@@ -1,5 +1,11 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.gvy.common.ast.stubSourceName
+import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
@@ -73,7 +79,6 @@ open class CallAttributionTest : SymbolIdTestSupport() {
             deploy("prod")
             """,
         )
-        if (phase == Phases.CONVERSION) return // the Script supertype is only a name until resolution
         assertEquals(listOf(doc.def("Test", "deploy(String)")), doc.calls("deploy").map { it.symbol })
     }
 
@@ -211,101 +216,68 @@ open class CallAttributionTest : SymbolIdTestSupport() {
     }
 
     @Test
-    @DisplayName(
-        "after a CONVERSION fallback, a same-package or imported name still resolves to its source class in the unit",
-    )
-    fun conversionFallbackResolvesNamesThroughTheUnit() {
-        // A Spock spec whose Specification is not on the classpath only reaches CONVERSION, where
-        // HelloService is a bare name; its source class is still in the compilation unit.
-        val unit = CompilationUnit(CompilerConfiguration())
-        unit.addSource("HelloService.groovy", "package com.example\nclass HelloService { String sayHello() { 'hi' } }")
-        unit.addSource("Other.groovy", "package other\nclass Helper { void help() {} }")
-        val specSource = """
-            package com.example
-            import other.Helper
-            class Spec {
-                void run() {
-                    HelloService s = new HelloService(); s.sayHello()
-                    Helper h = new Helper(); h.help()
+    @DisplayName("a stubbed supertype leaves the rest of the unit resolved: other classes still attribute")
+    fun stubbedSupertypeDoesNotHideOtherClasses() {
+        val docs = stubbedDocs(
+            "HelloService.groovy" to "package com.example\nclass HelloService { String sayHello() { 'hi' } }",
+            "Spec.groovy" to """
+                package com.example
+                import spock.lang.Specification
+                class Spec extends Specification {
+                    void run() { HelloService s = new HelloService(); s.sayHello() }
                 }
-            }
-        """.trimIndent()
-        unit.addSource("Spec.groovy", specSource)
-        unit.compile(Phases.CONVERSION)
-        val docs = unit.ast.modules.associate { it.description to SemanticDocumentBuilder(it, uri).build() }
-
-        val spec = docs.getValue("Spec.groovy")
-        val sayHello = docs.getValue("HelloService.groovy").def("HelloService", "sayHello()")
-        assertEquals(listOf(sayHello), spec.calls("sayHello").map { it.symbol })
-        assertEquals(
-            listOf(docs.getValue("Other.groovy").def("Helper", "help()")),
-            spec.calls("help").map {
-                it.symbol
-            },
+            """.trimIndent(),
         )
+        val sayHello = docs.getValue("HelloService.groovy").def("HelloService", "sayHello()")
+        assertEquals(listOf(sayHello), docs.getValue("Spec.groovy").calls("sayHello").map { it.symbol })
     }
 
     @Test
-    @DisplayName("after a CONVERSION fallback, a single-type import wins over a same-named class of the package")
-    fun importShadowsSamePackageClassAfterFallback() {
-        val unit = CompilationUnit(CompilerConfiguration())
-        unit.addSource("LocalHelper.groovy", "package com.example\nclass Helper { void help() {} }")
-        unit.addSource("OtherHelper.groovy", "package other\nclass Helper { void help() {} }")
-        val user = """
-            package com.example
-            import other.Helper
-            class User {
-                void run() { Helper h = new Helper(); h.help() }
-            }
-        """.trimIndent()
-        unit.addSource("User.groovy", user)
-        unit.compile(Phases.CONVERSION)
-        val docs = unit.ast.modules.associate { it.description to SemanticDocumentBuilder(it, uri).build() }
+    @DisplayName("a call through a stubbed supertype is unresolved: the stub may declare another overload")
+    fun stubInHierarchyMakesHierarchyUnknown() {
+        val spec = stubbedModules(
+            "Spec.groovy" to """
+                import spock.lang.Specification
+                class Spec extends Specification {
+                    void helper() {}
+                    void run() { helper() }
+                }
+            """.trimIndent(),
+        ).single()
+        val doc = SemanticDocumentBuilder(spec, uri).build()
+        assertTrue(doc.calls("helper").isEmpty(), "got: ${doc.calls("helper")}")
 
-        val imported = docs.getValue("OtherHelper.groovy").def("Helper", "help()")
-        assertTrue(imported.startsWith("other/"), imported)
-        assertEquals(listOf(imported), docs.getValue("User.groovy").calls("help").map { it.symbol })
+        val specClass = spec.classes.single { it.name == "Spec" }
+        val body = specClass.getMethods("run").single().code as BlockStatement
+        val call = (body.statements.single() as ExpressionStatement).expression as MethodCallExpression
+        val outcome = CallResolver(spec, specClass) { null }.resolve(call, "helper")
+        assertEquals(CallOutcome.Unresolved(CallOutcome.Reason.UNKNOWN_HIERARCHY), outcome)
     }
 
     @Test
-    @DisplayName("after a CONVERSION fallback, a nested class's simple name is not taken for a top-level class")
-    fun nestedClassShadowsTopLevelAfterFallback() {
-        val docs = conversionDocs(
+    @DisplayName("a member class shadows a same-named top-level class, as Groovy resolves it")
+    fun nestedClassShadowsTopLevel() {
+        val docs = stubbedDocs(
             "Inner.groovy" to "package com.example\nclass Inner { void foo() {} }",
             "Outer.groovy" to """
                 package com.example
                 class Outer {
-                    static class Inner { void foo() {} }
+                    static class Inner { void foo() {}; static void bar() {} }
                     Inner field
-                    void run() { field.foo() }
+                    void run() { field.foo(); Inner.bar() }
                 }
             """.trimIndent(),
         )
-        assertEquals(emptyList<String>(), docs.getValue("Outer.groovy").calls("foo").map { it.symbol })
+        val outer = docs.getValue("Outer.groovy")
+        // Member classes are not symbols of their own yet, so the ids are spelled out.
+        assertEquals(listOf("com/example/Outer\$Inner#foo()."), outer.calls("foo").map { it.symbol })
+        assertEquals(listOf("com/example/Outer\$Inner#bar()."), outer.calls("bar").map { it.symbol })
     }
 
     @Test
-    @DisplayName("after a CONVERSION fallback, a bare name means this package's class, not the default package's")
-    fun defaultPackageClassDoesNotShadowPackageClassAfterFallback() {
-        val docs = conversionDocs(
-            "DefaultHelper.groovy" to "class Helper { void help() {} }",
-            "PackageHelper.groovy" to "package com.example\nclass Helper { void help() {} }",
-            "User.groovy" to """
-                package com.example
-                class User {
-                    void run() { Helper h = new Helper(); h.help() }
-                }
-            """.trimIndent(),
-        )
-        val packaged = docs.getValue("PackageHelper.groovy").def("Helper", "help()")
-        assertTrue(packaged.startsWith("com/example/"), packaged)
-        assertEquals(listOf(packaged), docs.getValue("User.groovy").calls("help").map { it.symbol })
-    }
-
-    @Test
-    @DisplayName("after a CONVERSION fallback, a type variable is not taken for a same-named class")
-    fun typeVariableIsNotAClassAfterFallback() {
-        val docs = conversionDocs(
+    @DisplayName("a type variable is not taken for a same-named class")
+    fun typeVariableIsNotAClass() {
+        val docs = stubbedDocs(
             "Node.groovy" to "package com.example\nclass Node { void visit() {} }",
             "Tree.groovy" to """
                 package com.example
@@ -318,13 +290,35 @@ open class CallAttributionTest : SymbolIdTestSupport() {
         assertEquals(emptyList<String>(), docs.getValue("Tree.groovy").calls("visit").map { it.symbol })
     }
 
-    /** Documents of [sources] compiled together to CONVERSION only, as after a resolution fallback. */
-    private fun conversionDocs(vararg sources: Pair<String, String>): Map<String, SemanticDocument> {
-        val unit = CompilationUnit(CompilerConfiguration())
-        sources.forEach { (name, code) -> unit.addSource(name, code) }
-        unit.compile(Phases.CONVERSION)
-        return unit.ast.modules.associate { it.description to SemanticDocumentBuilder(it, uri).build() }
+    @Test
+    @DisplayName("a member class inherited from a classpath superclass wins over a same-package class")
+    fun inheritedMemberClassWinsOverSamePackageClass() {
+        val docs = stubbedDocs(
+            "SimpleEntry.groovy" to "package com.example\nclass SimpleEntry { void foo() {} }",
+            "M.groovy" to """
+                package com.example
+                abstract class M extends java.util.AbstractMap {
+                    SimpleEntry entry
+                    void run() { entry.foo() }
+                }
+            """.trimIndent(),
+        )
+        val wrong = docs.getValue("SimpleEntry.groovy").def("SimpleEntry", "foo()")
+        val calls = docs.getValue("M.groovy").calls("foo")
+        assertTrue(calls.none { it.symbol == wrong }, "got: $calls")
     }
+
+    /** The modules of [sources] compiled to CANONICALIZATION with an empty stub for `spock.lang.Specification`. */
+    private fun stubbedModules(vararg sources: Pair<String, String>): List<ModuleNode> {
+        val unit = CompilationUnit(CompilerConfiguration())
+        unit.addSource(stubSourceName("spock.lang.Specification"), "package spock.lang\nclass Specification {}")
+        sources.forEach { (name, code) -> unit.addSource(name, code) }
+        unit.compile(Phases.CANONICALIZATION)
+        return unit.ast.modules.filterNot { isStubSourceName(it.description) }
+    }
+
+    private fun stubbedDocs(vararg sources: Pair<String, String>): Map<String, SemanticDocument> =
+        stubbedModules(*sources).associate { it.description to SemanticDocumentBuilder(it, uri).build() }
 
     @Test
     @DisplayName("a call on a class from another file is not attributed")

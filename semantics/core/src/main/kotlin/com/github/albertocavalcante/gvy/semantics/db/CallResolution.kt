@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.gvy.semantics.db.CallOutcome.Reason
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -71,7 +72,7 @@ internal class CallResolver(
     private val currentClass: ClassNode,
     private val lookup: (String) -> LocalBinding?,
 ) {
-    private val hierarchies = TypeHierarchies(moduleNode)
+    private val hierarchies = TypeHierarchies()
 
     fun resolveTypeName(type: ClassNode): String {
         // If already fully qualified (contains dots), just use it
@@ -110,11 +111,11 @@ internal class CallResolver(
      * 1. The receiver has a declared or inferred type (`this`, `super`, a class name, a typed
      *    variable, field, or `new X()`); an untyped receiver is never attributed.
      * 2. Every class and interface of the receiver's hierarchy (the superclass chain first, then
-     *    interfaces and traits, cycles guarded) is visible in this compilation: declared in this
-     *    module, or in another source file the compiler resolved to its source class (a workspace
-     *    unit compiled with all workspace sources). So no unseen supertype can declare another
-     *    candidate. A supertype that is only a name (another file that is not part of the
-     *    compilation) or a classpath class makes the call unresolved.
+     *    interfaces and traits, cycles guarded) is one the compiler resolved, see
+     *    [TypeHierarchies.compilerResolved]: a source class of this compilation unit or a classpath
+     *    class. So no unseen supertype can declare another candidate. A type the compiler left as a
+     *    bare name (an AST that stopped before resolution), or one it replaced with a stub, makes the
+     *    call unresolved. This indexer never looks a type name up itself.
      * 3. Exactly one method of that name has an arity that can take the call (default parameters
      *    count as a `min..max` range, a varargs last parameter takes any count of at least
      *    `params - 1`). The call is unresolved if any argument is a spread, as its arity is unknown.
@@ -179,14 +180,11 @@ internal class CallResolver(
     fun receiverType(receiver: Expression): ClassNode? = when {
         receiver is VariableExpression && receiver.isThisExpression -> currentClass
         receiver is ClassExpression -> receiver.type
-        // Before name resolution `A.foo()` has a bare name for `A`; a class of this file wins over no binding.
-        receiver is VariableExpression && lookup(receiver.name) == null && !hasMember(receiver.name) ->
-            moduleNode.classes.firstOrNull { it.name == receiver.name || it.nameWithoutPackage == receiver.name }
-                ?: staticTypeOf(receiver)
         else -> staticTypeOf(receiver)
     }
 
-    private fun hasMember(name: String) = currentClass.getField(name) != null || currentClass.getProperty(name) != null
+    /** Whether the compiler resolved [type] to a real class, see [TypeHierarchies.compilerResolved]. */
+    fun isResolved(type: ClassNode): Boolean = hierarchies.compilerResolved(type) != null
 
     private fun argumentExpressions(arguments: Expression): List<Expression> =
         if (arguments is TupleExpression) arguments.expressions else listOf(arguments)
@@ -213,19 +211,13 @@ internal class CallResolver(
  * and the methods a call can reach through them. A hierarchy is only returned when every class in
  * it is known, so no unseen supertype can declare another candidate.
  */
-internal class TypeHierarchies(private val moduleNode: ModuleNode) {
+internal class TypeHierarchies {
     /**
      * A class's methods in [of] order, with overridden and implemented ones merged away;
      * [hasClasspathType] when a compiled (JDK or library) class is part of it.
      */
     class Hierarchy(val methods: List<MethodNode>, val hasClasspathType: Boolean)
 
-    /**
-     * Collects the methods of [start], its superclass chain and then its interfaces. Returns null
-     * unless every class involved is visible, see [localClass]: before resolution a supertype's
-     * ClassNode is an empty stub, so it is looked up in the module by name. `java.lang.Object` is the one
-     * exception, as its methods are known.
-     */
     // Built once per class per document: a JDK receiver type has a deep hierarchy and is called often.
     private val cache = HashMap<String, Hierarchy?>()
 
@@ -266,8 +258,8 @@ internal class TypeHierarchies(private val moduleNode: ModuleNode) {
         return interfaces
     }
 
-    /** A class whose methods are all known and reached normally, or null (see [localClass], [GroovyDispatch]). */
-    private fun knownClass(type: ClassNode): ClassNode? = localClass(type)?.takeUnless(GroovyDispatch::isDynamic)
+    /** A class whose methods are all known and reached normally, or null (see [compilerResolved], [GroovyDispatch]). */
+    private fun knownClass(type: ClassNode): ClassNode? = compilerResolved(type)?.takeUnless(GroovyDispatch::isDynamic)
 
     /** Candidate methods: the chain's (nearest override wins) plus Object's, then interface and trait methods. */
     private fun methodsOf(chain: List<ClassNode>, interfaces: List<ClassNode>): List<MethodNode> {
@@ -293,62 +285,20 @@ internal class TypeHierarchies(private val moduleNode: ModuleNode) {
         if (type.isPrimaryClassNode) type.methods.filter { it.lineNumber > 0 } else type.methods
 
     /**
-     * The class [type] names, or null when it is not fully known. Known means: in this module; a class
-     * of another file the compiler resolved to its source ClassNode (a workspace unit compiled to
-     * SEMANTIC_ANALYSIS does so for every source in the unit); a compiled classpath class, such as a
-     * script's `groovy.lang.Script`, whose methods all come from its bytecode; or a name-only
-     * placeholder that names a source class of the same compilation unit (see [unitClassNamed]).
+     * The class the compiler resolved [type] to, or null. This indexer never resolves a type name
+     * itself: a name is known only when Groovy's own resolution bound it to a source class of the
+     * compilation unit (a primary ClassNode) or to a compiled classpath class, and that class is not
+     * a synthetic stub standing in for a class that could not be found (its methods are unknown).
+     * `java.lang.Object` needs no resolution, as its methods are known.
      */
-    private fun localClass(type: ClassNode): ClassNode? {
-        val bare = !type.name.contains('.')
-        if (bare && type.name in shadowingNames) return null
-        return moduleNode.classes.firstOrNull { it.name == type.name || (bare && it.nameWithoutPackage == type.name) }
-            ?: type.redirect().takeIf { it.isPrimaryClassNode || it.isResolved }
-            ?: unitClassNamed(type.name)
+    fun compilerResolved(type: ClassNode): ClassNode? {
+        val target = type.redirect()
+        val resolved = target.isPrimaryClassNode || target.isResolved
+        return target.takeIf { resolved && !isStub(it) }
     }
 
-    /**
-     * Bare names that may not mean a top-level class: simple names of nested classes, which Groovy
-     * resolves before the package, and type variables of this file's classes and methods, which are
-     * not yet marked as such before resolution. A bare type with one of these names stays unknown.
-     */
-    private val shadowingNames: Set<String> by lazy {
-        val classes = moduleNode.classes + moduleNode.unit?.classes.orEmpty()
-        buildSet {
-            classes.forEach { cls ->
-                if (cls.name.contains('$')) add(cls.name.substringAfterLast('$'))
-            }
-            moduleNode.classes.forEach { cls ->
-                cls.genericsTypes?.forEach { add(it.name) }
-                (cls.methods + cls.declaredConstructors).forEach { method ->
-                    method.genericsTypes?.forEach { add(it.name) }
-                }
-            }
-        }
-    }
-
-    /**
-     * A source class of this compilation unit that a name written in this file refers to, resolved the
-     * way the compiler would before giving up: a single-type import, then this file's package (or
-     * the default package, for a file in it); a qualified name as written. A compile that fell back
-     * to CONVERSION (a supertype missing from the classpath, say) leaves types as such names although
-     * their source classes are in the unit. Star imports and anything else ambiguous are not
-     * tried, so the result is never a guess.
-     */
-    private fun unitClassNamed(name: String): ClassNode? {
-        val unit = moduleNode.unit ?: return null
-        val candidates = if (name.contains('.')) {
-            listOf(name)
-        } else {
-            // A single-type import shadows a same-named class of this package, as in Java; a bare name
-            // in a packaged file never means a default-package class.
-            listOfNotNull(
-                moduleNode.imports.firstOrNull { it.alias == name }?.type?.name,
-                (moduleNode.packageName ?: "") + name,
-            )
-        }
-        return candidates.firstNotNullOfOrNull { unit.getClass(it) }?.takeIf { it.isPrimaryClassNode }
-    }
+    /** A stub's source unit is named for it; a classpath class has no module. */
+    private fun isStub(type: ClassNode): Boolean = isStubSourceName(type.module?.context?.name)
 }
 
 /**
@@ -370,7 +320,8 @@ internal object GroovyDispatch {
                 prop.field?.annotations?.any { it.classNode.nameWithoutPackage == "Delegate" } ==
                     true
             }
-        val dispatching = type.methods.any { it.name in dispatchMethods } ||
+        // Only methods written in the source: Groovy adds a methodMissing to every member class.
+        val dispatching = type.methods.any { it.name in dispatchMethods && it.lineNumber > 0 } ||
             type.interfaces.any {
                 it.name == "groovy.lang.GroovyInterceptable" ||
                     it.nameWithoutPackage == "GroovyInterceptable"

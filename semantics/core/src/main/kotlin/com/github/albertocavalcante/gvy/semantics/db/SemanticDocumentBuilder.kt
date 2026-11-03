@@ -436,9 +436,10 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
             val range = nodeToRange(expression)
-            val receiver = resolver.receiverType(expression.objectExpression)
+            // Only a type the compiler resolved names a class; a bare or stubbed name is not attributed.
+            val receiver = resolver.receiverType(expression.objectExpression)?.takeIf(resolver::isResolved)
             val propertyName = expression.propertyAsString
-            // Without a known receiver type the property is not attributed to any class.
+            // Without a resolved receiver type the property is not attributed to any class.
             if (range != null && receiver != null && propertyName != null) {
                 occurrences.add(
                     SymbolOccurrence(

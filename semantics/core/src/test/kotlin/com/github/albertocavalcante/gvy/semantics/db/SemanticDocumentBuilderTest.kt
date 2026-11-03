@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
+import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -26,6 +28,14 @@ class SemanticDocumentBuilderTest {
         sourceUnit.completePhase()
         sourceUnit.convert()
         return sourceUnit.ast
+    }
+
+    /** The module of [code] after the compiler resolved its types (CANONICALIZATION), as production indexes. */
+    private fun resolvedModule(code: String): ModuleNode {
+        val unit = CompilationUnit(CompilerConfiguration())
+        unit.addSource("Test.groovy", code)
+        unit.compile(Phases.CANONICALIZATION)
+        return unit.ast.modules.single()
     }
 
     private fun buildDocument(code: String): SemanticDocument {
@@ -524,8 +534,10 @@ class SemanticDocumentBuilderTest {
 
         @Test
         fun `property access on typed variable uses declared type for symbol ID`() {
-            // Similar to method calls: calc.value should reference Calculator#value.
+            // Similar to method calls: calc.value should reference Calculator#value. The type must be one
+            // the compiler resolved, so Calculator is declared in the source and the AST is resolved.
             val code = """
+                class Calculator { int value }
                 class Main {
                     void run() {
                         Calculator calc = new Calculator()
@@ -534,7 +546,7 @@ class SemanticDocumentBuilderTest {
                 }
             """.trimIndent()
 
-            val doc = buildDocument(code)
+            val doc = SemanticDocumentBuilder(resolvedModule(code), testUri).build()
 
             val refs = doc.findOccurrencesByRole(OccurrenceRole.REFERENCE)
 
