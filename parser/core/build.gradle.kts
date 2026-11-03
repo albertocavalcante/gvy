@@ -98,10 +98,10 @@ publishing {
         maven {
             name = "GitHubPackages"
             url = uri("https://maven.pkg.github.com/$repoPath")
-            credentials {
-                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String?
-                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String?
-            }
+            // Read lazily from the GitHubPackagesUsername / GitHubPackagesPassword Gradle properties (CI:
+            // ORG_GRADLE_PROJECT_GitHubPackages*), so no environment variable becomes a configuration
+            // cache input: GITHUB_ACTOR used to change between CI runs and void the cache every time.
+            credentials(PasswordCredentials::class)
         }
     }
 }
