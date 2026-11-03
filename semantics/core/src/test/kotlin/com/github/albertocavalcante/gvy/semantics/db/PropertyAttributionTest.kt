@@ -75,6 +75,48 @@ class PropertyAttributionTest : SymbolIdTestSupport() {
         )
     }
 
+    @Test
+    @DisplayName("a spread read on a collection reads each element, not the collection's property")
+    fun spreadReadOnCollectionIsNotTheCollectionsProperty() {
+        val doc = build(
+            """
+            class P { String name }
+            class Team extends ArrayList<P> {
+                String name
+                def run(Team t) { t*.name }
+            }
+            """,
+        )
+        assertEquals(emptyList<String>(), doc.propertyRefs("name"))
+    }
+
+    @Test
+    @DisplayName("a getter at or below the declaring class answers the read, so the field is not credited")
+    fun getterAnswersInsteadOfTheField() {
+        val doc = build(
+            """
+            class Base { protected String name; protected boolean flag }
+            class Sub extends Base {
+                String getName() { 'getter' }
+                boolean isFlag() { true }
+            }
+            class A {
+                private String x
+                String getX() { 'x' }
+            }
+            class U { def run(Sub s, A a) { [s.name, s.flag, a.x] } }
+            """,
+        )
+        assertEquals(emptyList<String>(), doc.propertyRefs("name") + doc.propertyRefs("flag") + doc.propertyRefs("x"))
+    }
+
+    @Test
+    @DisplayName("a class reference reads only static properties")
+    fun classReferenceToInstancePropertyIsNotAttributed() {
+        val doc = build("class P {\n    int age\n    static int count\n    def run() { [P.age, P.count] }\n}")
+        assertEquals(listOf("P#count."), doc.propertyRefs("age") + doc.propertyRefs("count"))
+    }
+
     private fun SemanticDocument.propertyRefs(name: String) = occurrences
         .filter { it.role == OccurrenceRole.REFERENCE && it.symbol.endsWith("#$name.") }
         .map { it.symbol }

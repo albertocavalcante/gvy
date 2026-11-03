@@ -351,6 +351,17 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             staticContext = savedStatic
         }
 
+        override fun visitField(node: FieldNode) {
+            // A static field's initializer runs in a static context, where `this` is the Class object.
+            val saved = staticContext
+            staticContext = node.isStatic
+            try {
+                super.visitField(node)
+            } finally {
+                staticContext = saved
+            }
+        }
+
         override fun visitBlockStatement(block: BlockStatement) = scoped { super.visitBlockStatement(block) }
 
         override fun visitClosureExpression(expression: ClosureExpression) = scoped {
@@ -451,7 +462,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitPropertyExpression(expression: PropertyExpression) {
             val range = nodeToRange(expression)
             val symbolId = expression.propertyAsString?.let {
-                resolver.resolveProperty(expression.objectExpression, it, staticContext)
+                resolver.resolveProperty(expression.objectExpression, it, staticContext, expression.isSpreadSafe)
             }
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))

@@ -186,20 +186,40 @@ internal class CallResolver(
     /**
      * The id of the field or property that `receiver.name` reads, or null when the read may reach
      * something else: a `java.lang.Class` property of a class reference (also `this` in a static
-     * method), a Map key, a `getProperty` or `propertyMissing` override, a hierarchy that is not fully
-     * known, or a declaration outside the source. An inherited property is credited to the class
-     * that declares it.
+     * context), an instance property of a class reference, a spread read (`list*.name` reads each
+     * element), a Map key, a `getProperty` or `propertyMissing` override, a getter that answers
+     * instead of the field, a hierarchy that is not fully known, or a declaration outside the source.
+     * An inherited property is credited to the class that declares it.
      */
-    fun resolveProperty(receiver: Expression, name: String, staticContext: Boolean): String? {
+    fun resolveProperty(receiver: Expression, name: String, staticContext: Boolean, spread: Boolean): String? {
         val classReference = receiver is ClassExpression ||
             (staticContext && receiver is VariableExpression && receiver.isThisExpression)
-        if (classReference && name in GroovyDispatch.classPropertyNames) return null
         val classes = receiverType(receiver)?.let(hierarchies::compilerResolved)?.let(hierarchies::of)?.classes
-        val declaring = classes?.takeUnless { it.any(GroovyDispatch::interceptsProperties) }
-            ?.firstOrNull { it.getDeclaredField(name) != null || it.getProperty(name) != null }
-        val sourceClass = declaring?.takeIf { it.isPrimaryClassNode } ?: return null
-        return "${SemanticDocumentBuilder.createClassSymbolId(sourceClass)}$name."
+        val declaring = classes?.takeUnless { spread || (classReference && name in GroovyDispatch.classPropertyNames) }
+            ?.let { propertyDeclaration(it, name) }
+            ?.takeUnless { classReference && !declaresStatic(it, name) }
+        return declaring?.let { "${SemanticDocumentBuilder.createClassSymbolId(it)}$name." }
     }
+
+    /**
+     * The source class of [classes] (a receiver's hierarchy, nearest first) declaring the field or
+     * property [name], or null when the hierarchy handles reads itself or a getter at or below that
+     * class answers the read instead (`getName()`, `isFlag()`, the nearest override winning).
+     */
+    private fun propertyDeclaration(classes: List<ClassNode>, name: String): ClassNode? {
+        if (classes.any(GroovyDispatch::interceptsProperties)) return null
+        val index = classes.indexOfFirst { it.getDeclaredField(name) != null || it.getProperty(name) != null }
+        val declaring = classes.getOrNull(index)?.takeIf { it.isPrimaryClassNode }
+        return declaring?.takeUnless { classes.take(index + 1).any { declaresAccessor(it, name) } }
+    }
+
+    private fun declaresAccessor(type: ClassNode, name: String): Boolean {
+        val accessors = name.replaceFirstChar(Char::uppercaseChar).let { setOf("get$it", "is$it") }
+        return type.methods.any { it.parameters.isEmpty() && it.name in accessors }
+    }
+
+    private fun declaresStatic(type: ClassNode, name: String): Boolean =
+        type.getDeclaredField(name)?.isStatic == true || type.getProperty(name)?.isStatic == true
 
     /** Whether the compiler resolved [type] to a real class, see [TypeHierarchies.compilerResolved]. */
     fun isResolved(type: ClassNode): Boolean = hierarchies.compilerResolved(type) != null
