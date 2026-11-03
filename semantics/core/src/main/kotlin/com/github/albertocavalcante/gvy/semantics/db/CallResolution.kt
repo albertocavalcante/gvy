@@ -183,6 +183,24 @@ internal class CallResolver(
         else -> staticTypeOf(receiver)
     }
 
+    /**
+     * The id of the field or property that `receiver.name` reads, or null when the read may reach
+     * something else: a `java.lang.Class` property of a class reference (also `this` in a static
+     * method), a Map key, a `getProperty` or `propertyMissing` override, a hierarchy that is not fully
+     * known, or a declaration outside the source. An inherited property is credited to the class
+     * that declares it.
+     */
+    fun resolveProperty(receiver: Expression, name: String, staticContext: Boolean): String? {
+        val classReference = receiver is ClassExpression ||
+            (staticContext && receiver is VariableExpression && receiver.isThisExpression)
+        if (classReference && name in GroovyDispatch.classPropertyNames) return null
+        val classes = receiverType(receiver)?.let(hierarchies::compilerResolved)?.let(hierarchies::of)?.classes
+        val declaring = classes?.takeUnless { it.any(GroovyDispatch::interceptsProperties) }
+            ?.firstOrNull { it.getDeclaredField(name) != null || it.getProperty(name) != null }
+        val sourceClass = declaring?.takeIf { it.isPrimaryClassNode } ?: return null
+        return "${SemanticDocumentBuilder.createClassSymbolId(sourceClass)}$name."
+    }
+
     /** Whether the compiler resolved [type] to a real class, see [TypeHierarchies.compilerResolved]. */
     fun isResolved(type: ClassNode): Boolean = hierarchies.compilerResolved(type) != null
 
@@ -216,7 +234,7 @@ internal class TypeHierarchies {
      * A class's methods in [of] order, with overridden and implemented ones merged away;
      * [hasClasspathType] when a compiled (JDK or library) class is part of it.
      */
-    class Hierarchy(val methods: List<MethodNode>, val hasClasspathType: Boolean)
+    class Hierarchy(val methods: List<MethodNode>, val hasClasspathType: Boolean, val classes: List<ClassNode>)
 
     // Built once per class per document: a JDK receiver type has a deep hierarchy and is called often.
     private val cache = HashMap<String, Hierarchy?>()
@@ -228,7 +246,8 @@ internal class TypeHierarchies {
         val seen = HashSet<String>()
         val chain = superclassChain(start, seen) ?: return null
         val interfaces = interfacesOf(chain, seen) ?: return null
-        return Hierarchy(methodsOf(chain, interfaces), (chain + interfaces).any { !it.isPrimaryClassNode })
+        val classes = chain + interfaces
+        return Hierarchy(methodsOf(chain, interfaces), classes.any { !it.isPrimaryClassNode }, classes)
     }
 
     /** [start] and its superclasses up to Object, or null if one is not known (see [knownClass]). */
@@ -332,6 +351,14 @@ internal object GroovyDispatch {
 
     /** Names of `java.lang.Class` methods. */
     val classMethodNames: Set<String> by lazy { Class::class.java.methods.mapTo(HashSet()) { it.name } }
+
+    /** A class whose property reads Groovy routes elsewhere: a Map (keys), or one handling them itself. */
+    fun interceptsProperties(type: ClassNode): Boolean =
+        type.name == MAP || type.implementsInterface(ClassHelper.MAP_TYPE) ||
+            type.methods.any { it.name in propertyDispatchMethods }
+
+    private val propertyDispatchMethods = setOf("getProperty", "propertyMissing")
+    private const val MAP = "java.util.Map"
 
     /** Properties of `java.lang.Class` (`name`, `simpleName`...), which `Person.name` reads on a class reference. */
     val classPropertyNames: Set<String> by lazy {

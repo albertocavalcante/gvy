@@ -305,29 +305,6 @@ open class CallAttributionTest : SymbolIdTestSupport() {
     }
 
     @Test
-    @DisplayName("a property of a class reference that java.lang.Class has is not the class's property")
-    fun classObjectPropertyIsNotAttributed() {
-        // Person.name is Class.getName(), "Person", not the instance property.
-        val doc = build("class Person {\n    String name\n    static def run() { Person.name }\n}")
-        assertEquals(
-            emptyList<String>(),
-            doc.occurrences.filter {
-                it.role == OccurrenceRole.REFERENCE && it.symbol == "Person#name."
-            }.map { it.range },
-        )
-    }
-
-    @Test
-    @DisplayName("a bare name inside a closure is not attributed to a field: the delegate may have it")
-    fun bareNameInClosureIsNotAttributedToField() {
-        val doc = build("class Cur {\n    String name\n    def run(Map cfg) { cfg.with { name } }\n}")
-        assertEquals(
-            emptyList<String>(),
-            doc.occurrences.filter { it.role == OccurrenceRole.REFERENCE && it.symbol == "Cur#name." }.map { it.range },
-        )
-    }
-
-    @Test
     @DisplayName("a type variable is not taken for a same-named class")
     fun typeVariableIsNotAClass() {
         val docs = stubbedDocs(

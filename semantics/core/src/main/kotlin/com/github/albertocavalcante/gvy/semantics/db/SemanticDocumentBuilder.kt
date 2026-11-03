@@ -9,7 +9,6 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
-import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -302,6 +301,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         // Inside a closure an implicit-this call may be dispatched to the closure's delegate.
         private var closureDepth = 0
 
+        // In a static method `this` is the Class object.
+        private var staticContext = false
+
         // Id prefix of the method (or initializer) whose body is being visited; scopes locals.
         private var scopeOwnerId: String = "${createClassSymbolId(currentClass)}{init}."
 
@@ -333,7 +335,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun visitConstructorOrMethod(node: MethodNode, isConstructor: Boolean) {
             val savedOwner = scopeOwnerId
+            val savedStatic = staticContext
             scopeOwnerId = createMethodSymbolId(currentClass, node)
+            staticContext = node.isStatic
             scoped {
                 node.parameters?.forEach { param ->
                     scopes.last()[param.name] = LocalBinding(
@@ -344,6 +348,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 super.visitConstructorOrMethod(node, isConstructor)
             }
             scopeOwnerId = savedOwner
+            staticContext = savedStatic
         }
 
         override fun visitBlockStatement(block: BlockStatement) = scoped { super.visitBlockStatement(block) }
@@ -445,23 +450,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
             val range = nodeToRange(expression)
-            // Only a type the compiler resolved names a class; a bare or stubbed name is not attributed.
-            val receiver = resolver.receiverType(expression.objectExpression)?.takeIf(resolver::isResolved)
-                ?.takeUnless {
-                    // `Person.name` reads java.lang.Class.getName(), not Person's property.
-                    expression.objectExpression is ClassExpression &&
-                        expression.propertyAsString in GroovyDispatch.classPropertyNames
-                }
-            val propertyName = expression.propertyAsString
-            // Without a resolved receiver type the property is not attributed to any class.
-            if (range != null && receiver != null && propertyName != null) {
-                occurrences.add(
-                    SymbolOccurrence(
-                        "${resolver.resolveTypeName(receiver)}#$propertyName.",
-                        range,
-                        OccurrenceRole.REFERENCE,
-                    ),
-                )
+            val symbolId = expression.propertyAsString?.let {
+                resolver.resolveProperty(expression.objectExpression, it, staticContext)
+            }
+            if (range != null && symbolId != null) {
+                occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
             }
             super.visitPropertyExpression(expression)
         }
