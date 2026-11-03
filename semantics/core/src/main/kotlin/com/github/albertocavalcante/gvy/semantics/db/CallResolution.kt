@@ -4,15 +4,22 @@ import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.gvy.semantics.db.CallOutcome.Reason
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.expr.RangeExpression
 import org.codehaus.groovy.ast.expr.SpreadExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -42,6 +49,26 @@ internal object TypeSignatures {
 }
 
 private const val OBJECT = "java.lang.Object"
+
+/** Where a call or name sits relative to closures, which decides whether a delegate may answer it first. */
+internal enum class ClosureScope {
+    /** Not inside a closure. */
+    NONE,
+
+    /** Only inside closures that [GroovyDispatch.delegateNeutralMethods] pass through: names resolve as outside. */
+    TRANSPARENT,
+
+    /** Inside a closure whose delegate may be set or may answer first (`with {}`, DSL builders, steps). */
+    OPAQUE,
+    ;
+
+    /** Whether the closure may answer the bare [name] (a call or a read) before the enclosing class does. */
+    fun delegateMayAnswer(name: String): Boolean = when (this) {
+        NONE -> false
+        TRANSPARENT -> name in GroovyDispatch.closureMemberNames
+        OPAQUE -> true
+    }
+}
 
 /** Whether a method can be invoked with a given number of arguments, by declaration alone. */
 internal object Arity {
@@ -131,19 +158,20 @@ internal class CallResolver(
      * an id built from static argument types can equal the real id of a different overload, since
      * the runtime type of an argument may differ from its declared type.
      */
-    fun resolveCall(call: MethodCallExpression, name: String, insideClosure: Boolean = false): String? =
-        (resolve(call, name, insideClosure) as? CallOutcome.Resolved)?.symbolId
+    fun resolveCall(call: MethodCallExpression, name: String, closure: ClosureScope = ClosureScope.NONE): String? =
+        (resolve(call, name, closure) as? CallOutcome.Resolved)?.symbolId
 
     /** Like [resolveCall], but says why a call was not attributed. */
-    fun resolve(call: MethodCallExpression, name: String, insideClosure: Boolean = false): CallOutcome {
+    fun resolve(call: MethodCallExpression, name: String, closure: ClosureScope = ClosureScope.NONE): CallOutcome {
         val receiver = call.objectExpression
         val arguments = argumentExpressions(call.arguments)
         val start = startClass(receiver)
         val hierarchy = start?.let(hierarchies::of)
         return when {
             // A closure resolves implicit-this calls through its delegate first in many cases (`with {}`,
-            // DSL builders, @DelegatesTo), so the enclosing class is not known to be the target.
-            insideClosure && call.isImplicitThis -> CallOutcome.Unresolved(Reason.CLOSURE_DELEGATE)
+            // DSL builders, @DelegatesTo), so the enclosing class is not known to be the target. A closure
+            // answers its own methods (`call`, `curry`...) before anything else, transparent or not.
+            call.isImplicitThis && closure.delegateMayAnswer(name) -> CallOutcome.Unresolved(Reason.CLOSURE_DELEGATE)
             // `Person.getName()` calls java.lang.Class.getName(), not a Person method.
             receiver is ClassExpression && name in GroovyDispatch.classMethodNames ->
                 CallOutcome.Unresolved(Reason.CLASS_OBJECT_METHOD)
@@ -155,6 +183,24 @@ internal class CallResolver(
             GroovyDispatch.isGdkName(name, hierarchy.hasClasspathType) -> CallOutcome.Unresolved(Reason.GDK_METHOD)
             else -> choose(hierarchy, name, arguments.size)
         }
+    }
+
+    /**
+     * Whether [call] is certainly a GDK iteration method that runs its closure arguments as they are, so a
+     * bare name in them resolves as outside the closure (see [GroovyDispatch.delegateNeutralMethods]):
+     * an explicit receiver of known type (compiler-resolved, or a list, map, integer range, string or
+     * number literal), no class of its hierarchy declaring a method of that name (a user's own
+     * `each(Closure)` may set a delegate), and a hierarchy that is fully known and not dynamic.
+     * An implicit-this receiver is never certain: the class or an enclosing delegate may define the method.
+     */
+    fun isDelegateNeutralCall(call: MethodCallExpression): Boolean {
+        val name = call.methodAsString ?: return false
+        val receiver = call.objectExpression
+        val type = (receiverType(receiver) ?: literalType(receiver))?.takeIf(::isResolved)
+        val classes = type?.let(hierarchies::of)?.classes
+        return !call.isImplicitThis && name in GroovyDispatch.delegateNeutralMethods &&
+            classes != null && classes.none { it.getDeclaredMethods(name).isNotEmpty() } &&
+            RuntimeReceivers.cannotOverride(type, receiver, name, moduleNode.unit?.classes.orEmpty())
     }
 
     private fun choose(hierarchy: TypeHierarchies.Hierarchy, name: String, arity: Int): CallOutcome {
@@ -245,6 +291,45 @@ internal class CallResolver(
         val member = currentClass.getField(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
         return TypeSignatures.knownTypeOrNull(member)
     }
+}
+
+/**
+ * Whether the object a call reaches at runtime cannot override [name] with a method of its own (one that
+ * could set its closure's delegate). The declared type is not the runtime type: a `Base b` may hold a
+ * subclass. Certain when the runtime class is known (a literal, `new X()`, a final class), or when the
+ * declared type is a JDK or source type and no class of the compilation unit assignable to it declares
+ * [name] or dispatches dynamically (methodMissing, invokeMethod, GroovyInterceptable). A third-party type
+ * stays uncertain, as its subclasses may come from anywhere.
+ *
+ * Like every id here, this holds for the runtime types the visible source declarations allow: classpath
+ * classes count by their declared members, and metaprogramming the source does not show (a jar class
+ * implementing List, a `metaClass` assignment made elsewhere) is outside what an index can know.
+ */
+internal object RuntimeReceivers {
+    fun cannotOverride(type: ClassNode, receiver: Expression, name: String, unitClasses: List<ClassNode>): Boolean {
+        val exact = literalType(receiver) != null ||
+            (receiver is ConstructorCallExpression && !receiver.isUsingAnonymousInnerClass) ||
+            java.lang.reflect.Modifier.isFinal(type.modifiers)
+        if (exact) return true
+        val visible = type.isPrimaryClassNode || type.name.startsWith("java.")
+        return visible && unitClasses.none {
+            it.isSubtypeOf(type) && (it.getDeclaredMethods(name).isNotEmpty() || GroovyDispatch.isDynamic(it))
+        }
+    }
+
+    private fun ClassNode.isSubtypeOf(type: ClassNode) = isDerivedFrom(type) || implementsInterface(type)
+}
+
+/** The runtime class of a literal, or null: only literals whose JDK/Groovy class is certain. */
+private fun literalType(expression: Expression): ClassNode? = when (expression) {
+    is ListExpression -> ClassHelper.make(ArrayList::class.java)
+    is MapExpression -> ClassHelper.make(LinkedHashMap::class.java)
+    is RangeExpression -> ClassHelper.make(groovy.lang.IntRange::class.java).takeIf {
+        listOf(expression.from, expression.to).all { (it as? ConstantExpression)?.value is Int }
+    }
+    is ConstantExpression -> expression.value.takeIf { it is String || it is Number }
+        ?.let { ClassHelper.make(it.javaClass) }
+    else -> null
 }
 
 /**
@@ -370,6 +455,73 @@ internal object GroovyDispatch {
                     it.nameWithoutPackage == "GroovyInterceptable"
             }
         return annotated || dispatching
+    }
+
+    /**
+     * GDK methods that call their closure arguments with plain `Closure.call`, never touching the
+     * closure's delegate or resolve strategy, so a name inside keeps resolving as outside the closure.
+     * Verified against the Groovy 4.0.28 sources of DefaultGroovyMethods, StringGroovyMethods and
+     * IOGroovyMethods: every overload of these names only iterates, filters, folds or counts and calls
+     * the closure (directly or through a BooleanClosureWrapper / comparator wrapper). The only GDK
+     * methods setting a delegate are `with` and `tap` (and the ExpandoMetaClass definers), deliberately
+     * absent, as are `use`, `identity`, `evaluate` and anything unverified.
+     */
+    val delegateNeutralMethods = setOf(
+        "each", "eachWithIndex", "reverseEach", "collect", "collectMany", "collectEntries",
+        "find", "findAll", "findResult", "findResults", "findIndexOf", "any", "every",
+        "count", "sum", "inject", "groupBy", "countBy", "sort", "toSorted", "min", "max",
+        "unique", "toUnique", "split", "takeWhile", "dropWhile", "times", "upto", "downto", "step", "eachLine",
+    )
+
+    /** Names through which a closure body can change where its own names resolve. */
+    private val closureReshapingNames = setOf(
+        "delegate",
+        "resolveStrategy",
+        "directive",
+        "setDelegate",
+        "setResolveStrategy",
+        "setDirective",
+        "rehydrate",
+        // Reflective routes to the same: setProperty('delegate', x), invokeMethod('setDelegate', x).
+        "setProperty",
+        "invokeMethod",
+        "metaClass",
+        "setMetaClass",
+    )
+
+    /**
+     * Whether [closure]'s body mentions its delegate or resolve strategy (`delegate = x`,
+     * `resolveStrategy = Closure.DELEGATE_ONLY`, `rehydrate(...)`): it may then resolve names elsewhere
+     * however it was called. Matched by name anywhere in the body, nested closures included.
+     */
+    fun reshapesItself(closure: ClosureExpression): Boolean {
+        var found = false
+        closure.code?.visit(
+            object : CodeVisitorSupport() {
+                override fun visitVariableExpression(expression: VariableExpression) {
+                    found = found || expression.name in closureReshapingNames
+                }
+
+                override fun visitPropertyExpression(expression: PropertyExpression) {
+                    found = found || expression.propertyAsString in closureReshapingNames
+                    super.visitPropertyExpression(expression)
+                }
+
+                override fun visitMethodCallExpression(call: MethodCallExpression) {
+                    found = found || call.methodAsString in closureReshapingNames
+                    super.visitMethodCallExpression(call)
+                }
+            },
+        )
+        return found
+    }
+
+    /** Methods and properties a closure answers itself, before its owner: `call`, `curry`, `delegate`... */
+    val closureMemberNames: Set<String> by lazy {
+        groovy.lang.Closure::class.java.methods.flatMapTo(HashSet()) { method ->
+            val property = method.name.replace(Regex("^(get|set|is)(?=[A-Z])"), "")
+            listOf(method.name, property.replaceFirstChar(Char::lowercaseChar))
+        }
     }
 
     /** Names of `java.lang.Class` methods. */

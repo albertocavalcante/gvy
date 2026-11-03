@@ -298,8 +298,17 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         private val resolver = CallResolver(moduleNode, currentClass, ::lookup)
 
-        // Inside a closure an implicit-this call may be dispatched to the closure's delegate.
-        private var closureDepth = 0
+        // Enclosing closures, innermost last; true when the closure is an argument of a delegate-neutral GDK call.
+        private val closures = ArrayDeque<Boolean>()
+
+        private val transparentClosures = HashSet<ClosureExpression>()
+
+        // Inside an opaque closure a name may be answered by the closure's delegate instead.
+        private val closureScope: ClosureScope get() = when {
+            closures.isEmpty() -> ClosureScope.NONE
+            closures.all { it } -> ClosureScope.TRANSPARENT
+            else -> ClosureScope.OPAQUE
+        }
 
         // In a static method `this` is the Class object.
         private var staticContext = false
@@ -365,11 +374,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitBlockStatement(block: BlockStatement) = scoped { super.visitBlockStatement(block) }
 
         override fun visitClosureExpression(expression: ClosureExpression) = scoped {
-            closureDepth++
+            closures.addLast(expression in transparentClosures)
             try {
                 visitClosureBody(expression)
             } finally {
-                closureDepth--
+                closures.removeLast()
             }
         }
 
@@ -416,9 +425,14 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             val range = nodeToRange(call)
-            val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it, insideClosure = closureDepth > 0) }
+            val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it, closureScope) }
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
+            }
+            if (resolver.isDelegateNeutralCall(call)) {
+                (call.arguments as? TupleExpression)?.expressions.orEmpty()
+                    .filterIsInstance<ClosureExpression>()
+                    .filterNotTo(transparentClosures, GroovyDispatch::reshapesItself)
             }
             super.visitMethodCallExpression(call)
         }
@@ -449,10 +463,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(expression)
             if (range != null && !expression.isThisExpression && !expression.isSuperExpression) {
                 // A parameter or local shadows a field of the same name. Otherwise only a field or property
-                // the class declares, and not inside a closure, whose delegate may resolve the name first.
+                // the class declares, and not inside an opaque closure, whose delegate may resolve the name first.
                 val symbolId = lookup(expression.name)?.id
                     ?: "${resolver.resolveTypeName(currentClass)}#${expression.name}.".takeIf {
-                        closureDepth == 0 && declaresMember(currentClass, expression.name)
+                        declaresMember(currentClass, expression.name) &&
+                            !closureScope.delegateMayAnswer(expression.name)
                     }
                 symbolId?.let { occurrences.add(SymbolOccurrence(it, range, OccurrenceRole.REFERENCE)) }
             }
