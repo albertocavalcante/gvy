@@ -27,7 +27,7 @@ internal class MissingClassStubs {
 
     private enum class Kind(val keyword: String) { CLASS("class"), INTERFACE("interface"), ANNOTATION("@interface") }
 
-    private class Stub(val fqn: String, var kind: Kind = Kind.CLASS, var typeParameters: Int = 0) {
+    private data class Stub(val fqn: String, val kind: Kind = Kind.CLASS, val typeParameters: Int = 0) {
         fun source(): String {
             val pkg = fqn.substringBeforeLast('.', "")
             val params = (0 until typeParameters).joinToString(",", "<", ">") { "T$it" }.takeIf { typeParameters > 0 }
@@ -42,17 +42,19 @@ internal class MissingClassStubs {
     val names: List<String> get() = stubs.keys.toList()
 
     /**
-     * Learns from the errors of [unit] (any source of it): stubs each class reported unresolved, and
-     * corrects the kind of those already stubbed. Returns whether the stubs changed.
+     * Learns from the errors of [unit]: stubs each class reported unresolved, and corrects the kind of
+     * those already stubbed. Returns whether the stubs changed. A bare name is only stubbed for an error
+     * of [ownSource]: placed in the package, a stub for another file's miss (a forgotten import, say)
+     * would beat this file's working star import of the real class, as Groovy tries the package first.
      */
-    fun learnFrom(unit: CompilationUnit): Boolean {
+    fun learnFrom(unit: CompilationUnit, ownSource: String): Boolean {
         val causes = unit.errorCollector.errors.orEmpty().mapNotNull { (it as? SyntaxErrorMessage)?.cause }
         if (causes.isEmpty()) return false
         val existing = declaredClasses(unit)
         val packages = packagesBySource(unit)
         var changed = false
         for (cause in causes) {
-            changed = (stubUnresolved(cause, existing, packages) || correctKind(cause)) || changed
+            changed = (stubUnresolved(cause, ownSource, existing, packages) || correctKind(cause)) || changed
             if (stubs.size >= MAX_STUBS) break
         }
         return changed
@@ -72,40 +74,43 @@ internal class MissingClassStubs {
         }
     }
 
-    private fun stubUnresolved(cause: SyntaxException, existing: Set<String>, packages: Map<String, String>): Boolean {
-        val match = UNRESOLVED.find(cause.originalMessage.orEmpty()) ?: return false
+    private fun stubUnresolved(
+        cause: SyntaxException,
+        ownSource: String,
+        existing: Set<String>,
+        packages: Map<String, String>,
+    ): Boolean {
+        val match = UNRESOLVED.find(cause.originalMessage.orEmpty())?.takeIf { stubs.size < MAX_STUBS } ?: return false
         val name = match.groupValues[1]
-        if (!isStubbable(name)) return false
-        val fqn = if ('.' in name) name else packages[cause.sourceLocator].orEmpty() + name
-        if (fqn in existing || fqn in stubs) return false
-        val kind = if (match.groupValues[2].isNotEmpty()) Kind.ANNOTATION else Kind.CLASS
-        stubs[fqn] = Stub(fqn, kind)
+        val fqn = when {
+            !isStubbable(name) -> null
+            '.' in name -> name
+            cause.sourceLocator == ownSource -> packages[cause.sourceLocator].orEmpty() + name
+            else -> null
+        }?.takeUnless { it in existing || it in stubs } ?: return false
+        stubs[fqn] = Stub(fqn, if (match.groupValues[2].isNotEmpty()) Kind.ANNOTATION else Kind.CLASS)
         return true
     }
 
+    /** An error [pattern] naming a stub (in group [fqnGroup]) that must be reshaped. */
+    private class Correction(val pattern: Regex, val fqnGroup: Int, val reshape: (Stub, MatchResult) -> Stub)
+
+    /** Applies the first of [CORRECTIONS] that matches [cause]; returns whether a stub changed. */
     private fun correctKind(cause: SyntaxException): Boolean {
         val message = cause.originalMessage.orEmpty()
-        val interfaceOf = MUST_BE_INTERFACE.find(message)
-        val notAnnotation = NOT_AN_ANNOTATION.find(message)
-        val noParameters = TAKES_NO_PARAMETERS.find(message)
-        return when {
-            interfaceOf != null -> setKind(interfaceOf.groupValues[1], Kind.INTERFACE)
-            notAnnotation != null -> setKind(notAnnotation.groupValues[1], Kind.ANNOTATION)
-            noParameters != null -> setTypeParameters(noParameters.groupValues[2], noParameters.groupValues[1].toInt())
-            else -> false
+        for (correction in CORRECTIONS) {
+            val match = correction.pattern.find(message) ?: continue
+            return update(match.groupValues[correction.fqnGroup]) { correction.reshape(it, match) }
         }
+        return false
     }
 
-    private fun setKind(fqn: String, kind: Kind): Boolean {
-        val stub = stubs[fqn]?.takeIf { it.kind != kind } ?: return false
-        stub.kind = kind
-        return true
-    }
-
-    private fun setTypeParameters(fqn: String, count: Int): Boolean {
-        val stub = stubs[fqn]?.takeIf { it.typeParameters != count } ?: return false
-        stub.typeParameters = count
-        return true
+    /** Replaces the stub for [fqn] with [change] of it; returns whether that changed anything. */
+    private fun update(fqn: String, change: (Stub) -> Stub): Boolean {
+        val stub = stubs[fqn] ?: return false
+        val changed = change(stub)
+        stubs[fqn] = changed
+        return changed != stub
     }
 
     private fun declaredClasses(unit: CompilationUnit): Set<String> =
@@ -129,7 +134,7 @@ internal class MissingClassStubs {
             val stubs = MissingClassStubs()
             var result = first
             repeat(MAX_ROUNDS) {
-                if (stubs.learnFrom(result.compilationUnit)) result = compile(request, stubs)
+                if (stubs.learnFrom(result.compilationUnit, request.sourceUnitName)) result = compile(request, stubs)
             }
             if (stubs.names.isEmpty()) return first
 
@@ -160,6 +165,15 @@ internal class MissingClassStubs {
         /** `The class X<String> (supplied with N type parameters) refers to the class X which takes no parameters`. */
         internal val TAKES_NO_PARAMETERS =
             Regex("""supplied with (\d+) type parameters?\) refers to the class (\S+) which takes no parameters""")
+
+        /** Groovy errors that say a stub has the wrong shape, in the order they are tried. */
+        private val CORRECTIONS = listOf(
+            Correction(MUST_BE_INTERFACE, fqnGroup = 1) { stub, _ -> stub.copy(kind = Kind.INTERFACE) },
+            Correction(NOT_AN_ANNOTATION, fqnGroup = 1) { stub, _ -> stub.copy(kind = Kind.ANNOTATION) },
+            Correction(TAKES_NO_PARAMETERS, fqnGroup = 2) { stub, match ->
+                stub.copy(typeParameters = match.groupValues[1].toInt())
+            },
+        )
 
         private val IDENTIFIER = Regex("""[\p{L}_][\p{L}\p{N}_]*""")
 

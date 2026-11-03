@@ -122,16 +122,40 @@ class GroovyParserStubTest {
     fun `a nested class wins over a top level class of the same name once the superclass is stubbed`() {
         val outer = workspaceFile(
             "Outer.groovy",
-            "package com.example\nclass Outer extends Missing { static class Inner {}\n Inner field }",
+            """
+                package com.example
+                import com.missing.Missing
+                class Outer extends Missing { static class Inner {}
+                    Inner field }
+            """.trimIndent(),
         )
         val inner = workspaceFile("Inner.groovy", "package com.example\nclass Inner {}")
 
         val result = parse("package com.example\nclass Uses { Outer o }", outer, inner)
-        assertEquals(listOf("com.example.Missing"), result.outcome.stubbedClasses)
+        assertEquals(listOf("com.missing.Missing"), result.outcome.stubbedClasses)
 
         val module = result.compilationUnit.ast.modules.single { it.classes.any { c -> c.name == "com.example.Outer" } }
         val field = module.classes.first { it.name == "com.example.Outer" }.getField("field")
         assertEquals("com.example.Outer\$Inner", field.type.name)
+    }
+
+    @Test
+    fun `another file's bare missing name is not stubbed over a class this file imports`() {
+        // B forgot its import; a stub p.TimeUnit would beat A's star import, as the package comes first.
+        val other = workspaceFile("B.groovy", "package p\nclass B { TimeUnit u }")
+
+        val result = parse("package p\nimport java.util.concurrent.*\nclass A { TimeUnit t }", other)
+
+        assertEquals("java.util.concurrent.TimeUnit", result.fieldType("p.A", "t"))
+        assertEquals(emptyList(), result.outcome.stubbedClasses)
+    }
+
+    @Test
+    fun `a bare missing name in this file is stubbed in its package`() {
+        val result = parse("package p\nclass A extends Missing { String s }")
+
+        assertEquals(listOf("p.Missing"), result.outcome.stubbedClasses)
+        assertEquals("java.lang.String", result.fieldType("p.A", "s"))
     }
 
     @Test
