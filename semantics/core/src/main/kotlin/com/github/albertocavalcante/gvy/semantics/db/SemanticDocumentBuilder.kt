@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
@@ -333,7 +334,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             owner.getDeclaredField(name) != null || owner.getProperty(name) != null
 
         /** Declare a local variable or parameter: bind the name and index it as a VARIABLE symbol. */
-        private fun declareLocal(name: String, node: Any, type: ClassNode?) {
+        private fun declareLocal(name: String, node: ASTNode, type: ClassNode?) {
             val scope = scopes.lastOrNull() ?: return
             val range = nodeToRange(node) ?: return
             val id = createLocalSymbolId(scopeOwnerId, name, range)
@@ -493,17 +494,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
      * character, so the LSP exclusive end is `lastColumnNumber - 1`. This is the same conversion as the
      * parser module's `ASTNode.safeRange`. Nodes without positions, or that would be empty, give null.
      */
-    private fun nodeToRange(node: Any): Range? = try {
-        val lineStart = node.positionOf("getLineNumber")
-        val columnStart = node.positionOf("getColumnNumber")
-        val lineEnd = node.positionOf("getLastLineNumber") ?: lineStart
-        val columnEnd = node.positionOf("getLastColumnNumber") ?: columnStart
-        groovyToLspRange(lineStart ?: 0, columnStart ?: 0, lineEnd ?: 0, columnEnd ?: 0)
-    } catch (e: Exception) {
-        null
-    }
-
-    private fun Any.positionOf(getter: String): Int? = javaClass.getMethod(getter).invoke(this) as? Int
+    private fun nodeToRange(node: ASTNode): Range? =
+        groovyToLspRange(node.lineNumber, node.columnNumber, node.lastLineNumber, node.lastColumnNumber)
 
     companion object {
         /**
