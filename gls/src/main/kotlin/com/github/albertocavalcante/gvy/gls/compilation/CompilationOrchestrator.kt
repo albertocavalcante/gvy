@@ -23,6 +23,7 @@ import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 private const val RETRY_DELAY_MS = 50L
 
@@ -59,6 +60,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val dependencyGraph = dependencies.dependencyGraph
 
     private val logger = KotlinLogging.logger {}
+
+    /** The content hash whose degradation was last logged, per file. */
+    private val loggedDegradations = ConcurrentHashMap<URI, Int>()
 
     /**
      * Compiles Groovy source code and returns the result.
@@ -128,6 +132,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             ),
         )
 
+        logIfDegraded(uri, content, parseResult)
+
         val ast = parseResult.ast
 
         if (ast != null) {
@@ -143,6 +149,21 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         }
 
         return resultMapper.map(parseResult, content)
+    }
+
+    /**
+     * Says at INFO why a file compiled without its types. Once per (uri, content hash), so recompiling
+     * unchanged content (cache misses after a config change, on-demand compiles) does not repeat it.
+     */
+    private fun logIfDegraded(uri: URI, content: String, parseResult: ParseResult) {
+        val outcome = parseResult.outcome
+        if (!outcome.isDegraded) {
+            loggedDegradations.remove(uri)
+            return
+        }
+        if (loggedDegradations.put(uri, content.hashCode()) != content.hashCode()) {
+            logger.info { outcome.describe(uri.toString()) }
+        }
     }
 
     /**
