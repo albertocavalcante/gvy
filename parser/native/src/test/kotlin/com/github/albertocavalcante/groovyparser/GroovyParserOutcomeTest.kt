@@ -44,6 +44,25 @@ class GroovyParserOutcomeTest {
     }
 
     @Test
+    fun `a broken buffer and its broken disk copy are excluded once, as one source`() {
+        val onDisk = tempDir.resolve("Foo.groovy").also {
+            it.toFile().writeText("class Foo extends com.missing.Saved {}")
+        }
+
+        val outcome = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///w/Uses.groovy"),
+                content = "class Uses {}",
+                workspaceSources = listOf(onDisk),
+                openSources = mapOf(onDisk.toUri() to "class Foo extends com.missing.Unsaved {}"),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        ).outcome
+
+        assertEquals(1, outcome.excludedSources.size, "got: ${outcome.excludedSources}")
+    }
+
+    @Test
     fun `a compile that fails on a source outside the unit reports the fallback to conversion`() {
         // The broken class lives only in a source root, so it cannot be excluded; its error is not this
         // file's, so the compile fails without an error to show and is retried where no type resolves.

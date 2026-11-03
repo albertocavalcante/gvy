@@ -49,7 +49,7 @@ class CompilationDegradationDiagnosticTest {
         assertEquals(0, diagnostic.range.start.line)
         assertEquals(0, diagnostic.range.start.character)
         assertEquals(
-            "Types are not resolved in this file: compilation fell back to CONVERSION because " +
+            "Types are not resolved in this file: its last compile fell back to CONVERSION because " +
                 "Base.groovy: unable to resolve class com.missing.Base",
             diagnostic.message,
         )

@@ -43,7 +43,8 @@ fun ParseOutcome.describe(file: String): String = buildString {
 fun ParseOutcome.toDegradationDiagnostic(): Diagnostic? {
     if (!typesUnresolved) return null
     val message = buildString {
-        append("Types are not resolved in this file: compilation fell back to ${phaseName(achievedPhase)}")
+        // Worded as of the last compile of this file: a cached result outlives a fix in another file.
+        append("Types are not resolved in this file: its last compile fell back to ${phaseName(achievedPhase)}")
         fallbackReason?.let { append(" because $it") }
         if (excludedSources.isNotEmpty()) {
             append(". Excluded from this compile because they fail to compile: ")

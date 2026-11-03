@@ -39,6 +39,8 @@ import kotlin.io.path.isRegularFile
 private const val AST_TRANSFORMATION_SERVICE_FILE =
     "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
 private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
+private const val UNATTRIBUTED_ERROR_REASON =
+    "an open buffer was dropped because the compile failed with an error no source could be blamed for"
 private const val SCRIPT_FALLBACK_REASON =
     "a class was compiled as a Script because its superclass could not be resolved"
 
@@ -46,7 +48,7 @@ private const val SCRIPT_FALLBACK_REASON =
 private fun firstErrorMessage(result: ParseResult): String? {
     val cause = (result.compilationUnit.errorCollector.errors.orEmpty().firstOrNull() as? SyntaxErrorMessage)?.cause
     return if (cause != null) {
-        "${cause.sourceLocator?.substringAfterLast('/')}: ${cause.originalMessage}"
+        listOfNotNull(cause.sourceLocator?.substringAfterLast('/'), cause.originalMessage).joinToString(": ")
     } else {
         result.diagnostics.firstOrNull { it.severity == ParserSeverity.ERROR }?.message
     }
@@ -151,7 +153,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             }
             if (failing.unattributed && request.openSources.isNotEmpty()) {
                 logger.debug { "Unattributed compile errors for ${request.uri}; compiling without open buffers" }
-                return parse(request.copy(openSources = emptyMap()), excluded)
+                val dropped = request.openSources.keys.map { ExcludedSource(it.toString(), UNATTRIBUTED_ERROR_REASON) }
+                return parse(request.copy(openSources = emptyMap()), excluded + dropped)
             }
         }
 
@@ -194,8 +197,10 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                 request.sourceUnitName -> Unit // this file's own error
                 else -> {
                     val key = locatorPath(locator)
-                    val source = openByKey[key]?.also { open += it }?.toString()
-                        ?: workspaceByKey[key]?.also { workspace.add(it) }?.toString()
+                    // A buffer and its disk copy are one source: both leave the unit, under one reason.
+                    val buffer = openByKey[key]?.also { open += it }
+                    val disk = workspaceByKey[key]?.also { workspace.add(it) }
+                    val source = buffer?.toString() ?: disk?.toString()
                     if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause?.originalMessage ?: ""))
                 }
             }
