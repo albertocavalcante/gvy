@@ -320,8 +320,9 @@ internal object GroovyDispatch {
                 prop.field?.annotations?.any { it.classNode.nameWithoutPackage == "Delegate" } ==
                     true
             }
-        // Only methods written in the source: Groovy adds a methodMissing to every member class.
-        val dispatching = type.methods.any { it.name in dispatchMethods && it.lineNumber > 0 } ||
+        // Generated ones count too: Groovy gives every member class a methodMissing that forwards an
+        // unmatched call to the outer class, and a trait from a jar weaves its methodMissing in.
+        val dispatching = type.methods.any { it.name in dispatchMethods } ||
             type.interfaces.any {
                 it.name == "groovy.lang.GroovyInterceptable" ||
                     it.nameWithoutPackage == "GroovyInterceptable"
@@ -331,6 +332,15 @@ internal object GroovyDispatch {
 
     /** Names of `java.lang.Class` methods. */
     val classMethodNames: Set<String> by lazy { Class::class.java.methods.mapTo(HashSet()) { it.name } }
+
+    /** Properties of `java.lang.Class` (`name`, `simpleName`...), which `Person.name` reads on a class reference. */
+    val classPropertyNames: Set<String> by lazy {
+        Class::class.java.methods.filter { it.parameterCount == 0 }.mapNotNullTo(HashSet()) { method ->
+            val name = method.name
+            val prefix = listOf("get", "is").firstOrNull { name.startsWith(it) && name.length > it.length }
+            prefix?.let { name.removePrefix(it).replaceFirstChar(Char::lowercaseChar) }
+        }
+    }
 
     private class GdkNames(val anyObject: Set<String>, val all: Set<String>)
 

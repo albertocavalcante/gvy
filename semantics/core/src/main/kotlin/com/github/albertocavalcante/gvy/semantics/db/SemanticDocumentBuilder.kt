@@ -9,6 +9,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -317,6 +318,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         private fun lookup(name: String): LocalBinding? = scopes.asReversed().firstNotNullOfOrNull { it[name] }
 
+        private fun declaresMember(owner: ClassNode, name: String): Boolean =
+            owner.getDeclaredField(name) != null || owner.getProperty(name) != null
+
         /** Declare a local variable or parameter: bind the name and index it as a VARIABLE symbol. */
         private fun declareLocal(name: String, node: Any, type: ClassNode?) {
             val scope = scopes.lastOrNull() ?: return
@@ -404,7 +408,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
-            val range = nodeToRange(call) ?: return super.visitConstructorCallExpression(call)
+            val range = nodeToRange(call)
+            // Only a class the compiler resolved: a bare name would be guessed into this package.
+            if (range == null || !resolver.isResolved(call.type)) return super.visitConstructorCallExpression(call)
 
             // Create symbol ID for constructor call
             val typeName = resolver.resolveTypeName(call.type)
@@ -426,10 +432,13 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitVariableExpression(expression: VariableExpression) {
             val range = nodeToRange(expression)
             if (range != null && !expression.isThisExpression && !expression.isSuperExpression) {
-                // A parameter or local shadows a field of the same name.
+                // A parameter or local shadows a field of the same name. Otherwise only a field or property
+                // the class declares, and not inside a closure, whose delegate may resolve the name first.
                 val symbolId = lookup(expression.name)?.id
-                    ?: "${resolver.resolveTypeName(currentClass)}#${expression.name}."
-                occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
+                    ?: "${resolver.resolveTypeName(currentClass)}#${expression.name}.".takeIf {
+                        closureDepth == 0 && declaresMember(currentClass, expression.name)
+                    }
+                symbolId?.let { occurrences.add(SymbolOccurrence(it, range, OccurrenceRole.REFERENCE)) }
             }
             super.visitVariableExpression(expression)
         }
@@ -438,6 +447,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(expression)
             // Only a type the compiler resolved names a class; a bare or stubbed name is not attributed.
             val receiver = resolver.receiverType(expression.objectExpression)?.takeIf(resolver::isResolved)
+                ?.takeUnless {
+                    // `Person.name` reads java.lang.Class.getName(), not Person's property.
+                    expression.objectExpression is ClassExpression &&
+                        expression.propertyAsString in GroovyDispatch.classPropertyNames
+                }
             val propertyName = expression.propertyAsString
             // Without a resolved receiver type the property is not attributed to any class.
             if (range != null && receiver != null && propertyName != null) {

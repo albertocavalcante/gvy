@@ -269,9 +269,62 @@ open class CallAttributionTest : SymbolIdTestSupport() {
             """.trimIndent(),
         )
         val outer = docs.getValue("Outer.groovy")
-        // Member classes are not symbols of their own yet, so the ids are spelled out.
-        assertEquals(listOf("com/example/Outer\$Inner#foo()."), outer.calls("foo").map { it.symbol })
-        assertEquals(listOf("com/example/Outer\$Inner#bar()."), outer.calls("bar").map { it.symbol })
+        // A member class forwards unmatched calls to its outer class, so its calls stay unresolved; the
+        // point is that none is credited to the top-level Inner.
+        val topLevel = docs.getValue("Inner.groovy").def("Inner", "foo()")
+        val calls = outer.calls("foo") + outer.calls("bar")
+        assertTrue(calls.none { it.symbol == topLevel }, "got: $calls")
+    }
+
+    @Test
+    @DisplayName("a call in a member class is unresolved: an unmatched call goes to the outer class")
+    fun memberClassCallMayReachOuterClass() {
+        // At runtime this returns "outer:s": Inner.foo(int) cannot take a String, so Groovy's generated
+        // methodMissing forwards the call to Outer. Arity alone would credit Inner#foo(int).
+        val doc = build(
+            """
+            class Outer {
+                def foo(String s) { "outer:${'$'}s" }
+                class Inner { def foo(int i) { "inner" } }
+                def run() { new Inner().foo("s") }
+            }
+            """,
+        )
+        assertEquals(emptyList<String>(), doc.calls("foo").map { it.symbol })
+    }
+
+    @Test
+    @DisplayName("a constructor call is attributed only when the compiler resolved its class")
+    fun constructorOfUnresolvedClassIsNotAttributed() {
+        // At CONVERSION `Thing` is a bare name: guessing this package would give com/example/Thing#.
+        val doc = build(
+            "package com.example\nimport x.Thing\nclass A { void run() { new Thing() } }",
+            at = Phases.CONVERSION,
+        )
+        assertEquals(emptyList<String>(), doc.occurrences.filter { it.symbol.endsWith("Thing#") }.map { it.symbol })
+    }
+
+    @Test
+    @DisplayName("a property of a class reference that java.lang.Class has is not the class's property")
+    fun classObjectPropertyIsNotAttributed() {
+        // Person.name is Class.getName(), "Person", not the instance property.
+        val doc = build("class Person {\n    String name\n    static def run() { Person.name }\n}")
+        assertEquals(
+            emptyList<String>(),
+            doc.occurrences.filter {
+                it.role == OccurrenceRole.REFERENCE && it.symbol == "Person#name."
+            }.map { it.range },
+        )
+    }
+
+    @Test
+    @DisplayName("a bare name inside a closure is not attributed to a field: the delegate may have it")
+    fun bareNameInClosureIsNotAttributedToField() {
+        val doc = build("class Cur {\n    String name\n    def run(Map cfg) { cfg.with { name } }\n}")
+        assertEquals(
+            emptyList<String>(),
+            doc.occurrences.filter { it.role == OccurrenceRole.REFERENCE && it.symbol == "Cur#name." }.map { it.range },
+        )
     }
 
     @Test
