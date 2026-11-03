@@ -23,6 +23,16 @@ on:
         required: false
         type: boolean
         default: false
+      coverage:
+        description: Generate coverage reports (always on for pushes to main)
+        required: false
+        type: boolean
+        default: false
+      sonar:
+        description: Upload coverage and analysis to SonarCloud (needs coverage and the SONAR_TOKEN secret)
+        required: false
+        type: boolean
+        default: false
       test_log_level:
         description: 'Gradle log level for test tasks'
         required: false
@@ -347,6 +357,10 @@ jobs:
           - os: ubuntu-24.04
             java: 21
     env:
+      # Coverage reports: every push to main, and on demand (Run workflow → coverage).
+      COVERAGE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.coverage == 'true' }}
+      # SonarCloud is opt-in: repository variable SONAR_ENABLED=true, or Run workflow → sonar.
+      SONAR: ${{ vars.SONAR_ENABLED == 'true' || github.event.inputs.sonar == 'true' }}
       HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
     steps:
       - name: Checkout code
@@ -457,15 +471,15 @@ jobs:
           fi
           ./gradlew "${args[@]}"
 
-      # Coverage reports and SonarCloud on main only (nothing on a PR reads them), from this job's own
-      # test outputs: a separate job reran the whole build (282 tasks) to get them. Reports run in their
-      # own invocation to avoid the Kover hang with --parallel (Kotlin/kotlinx-kover#509).
+      # Coverage reports (see COVERAGE above) come from this job's own test outputs: a separate job reran
+      # the whole build (282 tasks) to get them. Their own invocation avoids the Kover hang with --parallel
+      # (Kotlin/kotlinx-kover#509). SonarCloud only uploads when opted in (see SONAR above).
       - name: Generate Coverage Reports
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17
+        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
         run: ./gradlew koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace
 
       - name: Upload Coverage Reports
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17
+        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: coverage-reports
@@ -475,7 +489,7 @@ jobs:
       # SonarCloud is advisory: it must never fail CI (auth or otherwise). See PR description.
       - name: SonarCloud Analysis
         id: sonar
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.HAS_SONAR_TOKEN == 'true'
+        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.SONAR == 'true' && env.HAS_SONAR_TOKEN == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -499,11 +513,11 @@ jobs:
           echo "### ⚠️ ${msg}" >> "$GITHUB_STEP_SUMMARY"
           exit 0
 
-      - name: SonarCloud skipped (no token)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.HAS_SONAR_TOKEN != 'true'
+      - name: SonarCloud enabled without a token
+        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.SONAR == 'true' && env.HAS_SONAR_TOKEN != 'true'
         run: |
-          echo "::notice title=SonarCloud::SONAR_TOKEN not set; SonarCloud analysis skipped."
-          echo "### ℹ️ SonarCloud skipped: SONAR_TOKEN not set" >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=SonarCloud::SonarCloud is enabled but the SONAR_TOKEN secret is not set; skipped."
+          echo "### ⚠️ SonarCloud enabled but SONAR_TOKEN is not set: skipped" >> "$GITHUB_STEP_SUMMARY"
 
       # Build shadowJar for verification (E2E tests run in parallel job)
       - name: Build Shadow JAR
