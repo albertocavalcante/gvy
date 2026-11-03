@@ -439,20 +439,14 @@ jobs:
       # 1. Self-documentation - CI intent is clear without checking gradle.properties
       # 2. Defense in depth - CI works even if gradle.properties changes
 
-      # Phase 1: Compile (lint runs in separate parallel job)
-      - name: Compile
+      # Compile and unit tests in one invocation, so Gradle tests a module while still compiling the
+      # modules that depend on it (two steps put a full barrier in between). classes and testClasses
+      # keep compiling modules without tests. Lint runs in a separate parallel job; unit tests
+      # generate the coverage data (.ic files).
+      - name: Compile and Run Unit Tests
+        timeout-minutes: 25
         run: |
-          args=(classes testClasses --parallel --build-cache --stacktrace)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          ./gradlew "${args[@]}"
-
-      # Phase 2: Unit Tests (generates coverage data in .ic files)
-      - name: Run Unit Tests
-        timeout-minutes: 20
-        run: |
-          args=(test --parallel --build-cache --stacktrace)
+          args=(classes testClasses test --parallel --build-cache --stacktrace)
           if [[ -n "${TEST_LOG_FLAG}" ]]; then
             args+=("${TEST_LOG_FLAG}")
           fi
