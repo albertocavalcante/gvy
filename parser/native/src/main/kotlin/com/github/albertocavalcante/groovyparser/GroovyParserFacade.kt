@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
+import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.nativeapi.ExcludedSource
 import com.github.albertocavalcante.nativeapi.Fallback
 import com.github.albertocavalcante.nativeapi.ParseMode
@@ -38,6 +39,13 @@ import kotlin.io.path.isRegularFile
  */
 private const val AST_TRANSFORMATION_SERVICE_FILE =
     "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
+
+/**
+ * Global transformations never run, even when the LSP's own classloader can see them (Spock on the
+ * classpath of a test run): Spock's rewrites feature methods and drops the block labels the LSP reads,
+ * and it would key off a stubbed `spock.lang.Specification` just as off the real one.
+ */
+private val ALWAYS_DISABLED_TRANSFORMS = setOf("org.spockframework.compiler.SpockTransform")
 private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
 private const val UNATTRIBUTED_ERROR_REASON =
     "an open buffer was dropped because the compile failed with an error no source could be blamed for"
@@ -130,12 +138,13 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
     /** [excluded] accumulates the sources set aside by the recursive recompiles so far. */
     private fun parse(request: ParseRequest, excluded: List<ExcludedSource>): ParseResult {
-        val result = parseInternal(request)
+        val result = MissingClassStubs.compile(request, ::parseInternal)
 
         // Other sources in the unit (open buffers mid-edit, or a broken file on disk, e.g. one extending
         // a class that is not on the classpath) fail the whole compilation unit. That would cost this
         // file its AST, or its type resolution via the CONVERSION retry below, and show their error
-        // here. Compile again without the sources that failed. A failure that cannot be attributed to
+        // here. Classes that merely cannot be resolved never get here: they are stubbed above. Compile
+        // again without the sources that failed. A failure that cannot be attributed to
         // a source drops the open buffers (most likely mid-edit) and otherwise falls through.
         if (request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty()) {
             val failing = failingOtherSources(request, result)
@@ -333,7 +342,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         return hasFallbackError
     }
 
-    private fun parseInternal(request: ParseRequest): ParseResult {
+    private fun parseInternal(request: ParseRequest, stubs: MissingClassStubs? = null): ParseResult {
         // Before any work: building the configuration below opens every classpath jar.
         request.checkCancelled()
 
@@ -352,6 +361,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         compilationUnit.addSource(sourceUnit)
 
         addWorkspaceSources(compilationUnit, request, config, classLoader)
+        stubs?.addTo(compilationUnit, config, classLoader)
 
         // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
         // phase. Its progress callback runs after each phase instead; throwing from it aborts the compile.
@@ -457,9 +467,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             // Scan and disable external AST transformations to prevent classloader conflicts
             val externalTransforms = scanForAstTransformations(classpath)
             if (externalTransforms.isNotEmpty()) {
-                disabledGlobalASTTransformations = externalTransforms
                 logger.info { "Disabled ${externalTransforms.size} AST transformations from project classpath" }
             }
+            disabledGlobalASTTransformations = externalTransforms + ALWAYS_DISABLED_TRANSFORMS
         }
 
     /**
@@ -588,17 +598,18 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
      * @return The module matching the requested source, or first module as fallback
      */
     private fun extractAst(compilationUnit: CompilationUnit, sourceUnitName: String): ModuleNode? = try {
-        val ast = compilationUnit.ast
-        if (ast?.modules?.isNotEmpty() == true) {
+        // Stubs are not the user's code: they are never the module returned.
+        val modules = compilationUnit.ast?.modules.orEmpty().filterNot { isStubSourceName(it.context?.name) }
+        if (modules.isNotEmpty()) {
             // Deterministic module selection: find the module matching the requested source
-            ast.modules.find { module ->
+            modules.find { module ->
                 module.context?.name == sourceUnitName
             } ?: run {
                 // Fallback to first module if no match (e.g., if source was parsed with different name)
                 logger.debug {
-                    "Requested source '$sourceUnitName' not found in ${ast.modules.size} modules, using first"
+                    "Requested source '$sourceUnitName' not found in ${modules.size} modules, using first"
                 }
-                ast.modules.first()
+                modules.first()
             }
         } else {
             logger.debug { "No modules available in compilation unit" }
