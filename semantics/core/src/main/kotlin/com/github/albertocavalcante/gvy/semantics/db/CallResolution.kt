@@ -299,26 +299,53 @@ internal class TypeHierarchies(private val moduleNode: ModuleNode) {
      * script's `groovy.lang.Script`, whose methods all come from its bytecode; or a name-only
      * placeholder that names a source class of the same compilation unit (see [unitClassNamed]).
      */
-    private fun localClass(type: ClassNode): ClassNode? = moduleNode.classes.firstOrNull {
-        it.name == type.name || (!type.name.contains('.') && it.nameWithoutPackage == type.name)
-    } ?: type.redirect().takeIf { it.isPrimaryClassNode || it.isResolved } ?: unitClassNamed(type.name)
+    private fun localClass(type: ClassNode): ClassNode? {
+        val bare = !type.name.contains('.')
+        if (bare && type.name in shadowingNames) return null
+        return moduleNode.classes.firstOrNull { it.name == type.name || (bare && it.nameWithoutPackage == type.name) }
+            ?: type.redirect().takeIf { it.isPrimaryClassNode || it.isResolved }
+            ?: unitClassNamed(type.name)
+    }
+
+    /**
+     * Bare names that may not mean a top-level class: simple names of nested classes, which Groovy
+     * resolves before the package, and type variables of this file's classes and methods, which are
+     * not yet marked as such before resolution. A bare type with one of these names stays unknown.
+     */
+    private val shadowingNames: Set<String> by lazy {
+        val classes = moduleNode.classes + moduleNode.unit?.classes.orEmpty()
+        buildSet {
+            classes.forEach { cls ->
+                if (cls.name.contains('$')) add(cls.name.substringAfterLast('$'))
+            }
+            moduleNode.classes.forEach { cls ->
+                cls.genericsTypes?.forEach { add(it.name) }
+                (cls.methods + cls.declaredConstructors).forEach { method ->
+                    method.genericsTypes?.forEach { add(it.name) }
+                }
+            }
+        }
+    }
 
     /**
      * A source class of this compilation unit that a name written in this file refers to, resolved the
-     * way the compiler would before giving up: the name as written, then a single-type import, then
-     * this file's package. A compile that fell back to CONVERSION (a supertype missing from the classpath,
-     * say) leaves types as such names although their source classes are in the unit. Star imports
-     * and anything else ambiguous are not tried, so the result is never a guess.
+     * way the compiler would before giving up: a single-type import, then this file's package (or
+     * the default package, for a file in it); a qualified name as written. A compile that fell back
+     * to CONVERSION (a supertype missing from the classpath, say) leaves types as such names although
+     * their source classes are in the unit. Star imports and anything else ambiguous are not
+     * tried, so the result is never a guess.
      */
     private fun unitClassNamed(name: String): ClassNode? {
         val unit = moduleNode.unit ?: return null
-        val candidates = buildList {
-            add(name)
-            if (!name.contains('.')) {
-                // A single-type import shadows a same-named class of this package, as in Java.
-                moduleNode.imports.firstOrNull { it.alias == name }?.let { add(it.type.name) }
-                moduleNode.packageName?.let { add(it + name) }
-            }
+        val candidates = if (name.contains('.')) {
+            listOf(name)
+        } else {
+            // A single-type import shadows a same-named class of this package, as in Java; a bare name
+            // in a packaged file never means a default-package class.
+            listOfNotNull(
+                moduleNode.imports.firstOrNull { it.alias == name }?.type?.name,
+                (moduleNode.packageName ?: "") + name,
+            )
         }
         return candidates.firstNotNullOfOrNull { unit.getClass(it) }?.takeIf { it.isPrimaryClassNode }
     }

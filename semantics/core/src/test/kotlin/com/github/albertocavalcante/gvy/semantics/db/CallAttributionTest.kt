@@ -268,6 +268,65 @@ open class CallAttributionTest : SymbolIdTestSupport() {
     }
 
     @Test
+    @DisplayName("after a CONVERSION fallback, a nested class's simple name is not taken for a top-level class")
+    fun nestedClassShadowsTopLevelAfterFallback() {
+        val docs = conversionDocs(
+            "Inner.groovy" to "package com.example\nclass Inner { void foo() {} }",
+            "Outer.groovy" to """
+                package com.example
+                class Outer {
+                    static class Inner { void foo() {} }
+                    Inner field
+                    void run() { field.foo() }
+                }
+            """.trimIndent(),
+        )
+        assertEquals(emptyList<String>(), docs.getValue("Outer.groovy").calls("foo").map { it.symbol })
+    }
+
+    @Test
+    @DisplayName("after a CONVERSION fallback, a bare name means this package's class, not the default package's")
+    fun defaultPackageClassDoesNotShadowPackageClassAfterFallback() {
+        val docs = conversionDocs(
+            "DefaultHelper.groovy" to "class Helper { void help() {} }",
+            "PackageHelper.groovy" to "package com.example\nclass Helper { void help() {} }",
+            "User.groovy" to """
+                package com.example
+                class User {
+                    void run() { Helper h = new Helper(); h.help() }
+                }
+            """.trimIndent(),
+        )
+        val packaged = docs.getValue("PackageHelper.groovy").def("Helper", "help()")
+        assertTrue(packaged.startsWith("com/example/"), packaged)
+        assertEquals(listOf(packaged), docs.getValue("User.groovy").calls("help").map { it.symbol })
+    }
+
+    @Test
+    @DisplayName("after a CONVERSION fallback, a type variable is not taken for a same-named class")
+    fun typeVariableIsNotAClassAfterFallback() {
+        val docs = conversionDocs(
+            "Node.groovy" to "package com.example\nclass Node { void visit() {} }",
+            "Tree.groovy" to """
+                package com.example
+                class Tree<Node> {
+                    Node root
+                    void run() { root.visit() }
+                }
+            """.trimIndent(),
+        )
+        assertEquals(emptyList<String>(), docs.getValue("Tree.groovy").calls("visit").map { it.symbol })
+    }
+
+    /** Documents of [sources] compiled together to CONVERSION only, as after a resolution fallback. */
+    private fun conversionDocs(vararg sources: Pair<String, String>): Map<String, SemanticDocument> {
+        val unit = CompilationUnit(CompilerConfiguration())
+        sources.forEach { (name, code) -> unit.addSource(name, code) }
+        unit.compile(Phases.CONVERSION)
+        return unit.ast.modules.associate { it.description to SemanticDocumentBuilder(it, uri).build() }
+    }
+
+    @Test
     @DisplayName("a call on a class from another file is not attributed")
     fun externalReceiverIsUnresolved() {
         val doc = build(
