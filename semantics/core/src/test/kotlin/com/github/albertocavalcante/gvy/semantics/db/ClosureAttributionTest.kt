@@ -154,4 +154,39 @@ class ClosureAttributionTest : SymbolIdTestSupport() {
         )
         assertEquals(emptyList<SymbolOccurrence>(), doc.references("C#name.") + doc.calls("helper"))
     }
+
+    @Test
+    @DisplayName("a dispatching subtype in the unit may intercept each, so a closure on its supertype is opaque")
+    fun interceptingSubtypeMakesSupertypeReceiversOpaque() {
+        val doc = build(
+            """
+            class Other { String name }
+            class X implements Iterable, GroovyInterceptable {
+                Iterator iterator() { [1].iterator() }
+                def invokeMethod(String n, args) { Closure c = args[0]; c.delegate = new Other(); c(1) }
+            }
+            class C {
+                String name
+                def run(Iterable o) { o.each { name } }
+            }
+            """,
+        )
+        assertEquals(emptyList<SymbolOccurrence>(), doc.references("C#name."))
+    }
+
+    @Test
+    @DisplayName("a closure reaching its delegate through setProperty or invokeMethod is opaque")
+    fun closureReshapingItselfReflectivelyIsOpaque() {
+        val doc = build(
+            """
+            class Other { String name }
+            class C {
+                String name
+                def a(List xs) { xs.each { setProperty('delegate', new Other()); name } }
+                def b(List xs) { xs.each { invokeMethod('setDelegate', new Other()); name } }
+            }
+            """,
+        )
+        assertEquals(emptyList<SymbolOccurrence>(), doc.references("C#name."))
+    }
 }

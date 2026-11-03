@@ -298,7 +298,12 @@ internal class CallResolver(
  * could set its closure's delegate). The declared type is not the runtime type: a `Base b` may hold a
  * subclass. Certain when the runtime class is known (a literal, `new X()`, a final class), or when the
  * declared type is a JDK or source type and no class of the compilation unit assignable to it declares
- * [name]. A third-party type stays uncertain, as its subclasses may come from anywhere.
+ * [name] or dispatches dynamically (methodMissing, invokeMethod, GroovyInterceptable). A third-party type
+ * stays uncertain, as its subclasses may come from anywhere.
+ *
+ * Like every id here, this holds for the runtime types the visible source declarations allow: classpath
+ * classes count by their declared members, and metaprogramming the source does not show (a jar class
+ * implementing List, a `metaClass` assignment made elsewhere) is outside what an index can know.
  */
 internal object RuntimeReceivers {
     fun cannotOverride(type: ClassNode, receiver: Expression, name: String, unitClasses: List<ClassNode>): Boolean {
@@ -307,7 +312,9 @@ internal object RuntimeReceivers {
             java.lang.reflect.Modifier.isFinal(type.modifiers)
         if (exact) return true
         val visible = type.isPrimaryClassNode || type.name.startsWith("java.")
-        return visible && unitClasses.none { it.isSubtypeOf(type) && it.getDeclaredMethods(name).isNotEmpty() }
+        return visible && unitClasses.none {
+            it.isSubtypeOf(type) && (it.getDeclaredMethods(name).isNotEmpty() || GroovyDispatch.isDynamic(it))
+        }
     }
 
     private fun ClassNode.isSubtypeOf(type: ClassNode) = isDerivedFrom(type) || implementsInterface(type)
@@ -475,6 +482,11 @@ internal object GroovyDispatch {
         "setResolveStrategy",
         "setDirective",
         "rehydrate",
+        // Reflective routes to the same: setProperty('delegate', x), invokeMethod('setDelegate', x).
+        "setProperty",
+        "invokeMethod",
+        "metaClass",
+        "setMetaClass",
     )
 
     /**
