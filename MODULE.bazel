@@ -117,14 +117,14 @@ maven.install(
         "org.jetbrains.kotlin:kotlin-test-junit5:2.3.0",
 
         # Groovy
-        "org.apache.groovy:groovy:4.0.29",
-        "org.apache.groovy:groovy-ant:4.0.29",
+        "org.apache.groovy:groovy:4.0.33",
+        "org.apache.groovy:groovy-ant:4.0.33",
         # groovy-console excluded: pulls swing dependencies not needed for LSP server
-        "org.apache.groovy:groovy-json:4.0.29",
-        "org.apache.groovy:groovy-groovydoc:4.0.29",
-        "org.apache.groovy:groovy-macro:4.0.29",
-        "org.apache.groovy:groovy-templates:4.0.29",
-        "org.apache.groovy:groovy-xml:4.0.29",
+        "org.apache.groovy:groovy-json:4.0.33",
+        "org.apache.groovy:groovy-groovydoc:4.0.33",
+        "org.apache.groovy:groovy-macro:4.0.33",
+        "org.apache.groovy:groovy-templates:4.0.33",
+        "org.apache.groovy:groovy-xml:4.0.33",
 
         # Grape/Grab dependency resolution
         "org.apache.ivy:ivy:2.5.3",
