@@ -346,6 +346,8 @@ jobs:
         exclude:
           - os: ubuntu-24.04
             java: 21
+    env:
+      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -442,7 +444,7 @@ jobs:
       # Compile and unit tests in one invocation, so Gradle tests a module while still compiling the
       # modules that depend on it (two steps put a full barrier in between). classes and testClasses
       # keep compiling modules without tests. Lint runs in a separate parallel job; unit tests
-      # generate the coverage data (.ic files).
+      # also feed the coverage reports below.
       - name: Compile and Run Unit Tests
         timeout-minutes: 25
         run: |
@@ -455,14 +457,53 @@ jobs:
           fi
           ./gradlew "${args[@]}"
 
-      # Upload coverage data for parallel coverage job
-      - name: Upload Coverage Data
+      # Coverage reports and SonarCloud on main only (nothing on a PR reads them), from this job's own
+      # test outputs: a separate job reran the whole build (282 tasks) to get them. Reports run in their
+      # own invocation to avoid the Kover hang with --parallel (Kotlin/kotlinx-kover#509).
+      - name: Generate Coverage Reports
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17
+        run: ./gradlew koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace
+
+      - name: Upload Coverage Reports
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
-          name: coverage-data-${{ matrix.os }}-java${{ matrix.java }}
-          path: '**/build/kover/**/*.ic'
-          if-no-files-found: ignore
-          retention-days: 1
+          name: coverage-reports
+          path: '**/build/reports/kover/'
+          retention-days: 7
+
+      # SonarCloud is advisory: it must never fail CI (auth or otherwise). See PR description.
+      - name: SonarCloud Analysis
+        id: sonar
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.HAS_SONAR_TOKEN == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          set +e
+          args=(sonar --info -Dsonar.qualitygate.wait=false)
+          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then args+=("${GRADLE_SCAN_FLAG}"); fi
+          ./gradlew "${args[@]}" 2>&1 | tee sonar.log
+          rc=${PIPESTATUS[0]}
+          set -e
+          if [[ $rc -eq 0 ]]; then
+            echo "### ✅ SonarCloud analysis uploaded" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if grep -qiE 'HTTP (401|403)|Unauthorized|Forbidden|sonar\.token|Not authorized' sonar.log; then
+            msg="SonarCloud AUTH failure (exit $rc): rotate SONAR_TOKEN or check sonar.projectKey. Analysis skipped; CI continues."
+          else
+            msg="SonarCloud analysis failed (exit $rc): non-blocking, see step log."
+          fi
+          echo "::warning title=SonarCloud::${msg}"
+          echo "### ⚠️ ${msg}" >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+
+      - name: SonarCloud skipped (no token)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.HAS_SONAR_TOKEN != 'true'
+        run: |
+          echo "::notice title=SonarCloud::SONAR_TOKEN not set; SonarCloud analysis skipped."
+          echo "### ℹ️ SonarCloud skipped: SONAR_TOKEN not set" >> "$GITHUB_STEP_SUMMARY"
 
       # Build shadowJar for verification (E2E tests run in parallel job)
       - name: Build Shadow JAR
@@ -539,108 +580,7 @@ jobs:
           path: ${{ steps.resolve-jar.outputs.jar_path }}
           retention-days: 7
 
-  # Coverage reports run in parallel with E2E tests (both need build to complete)
-  coverage:
-    name: Coverage Report
-    needs: build
-    if: |
-      always() &&
-      needs.build.result == 'success'
-    # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
-    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    env:
-      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
-          persist-credentials: false
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Download Coverage Data
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          pattern: coverage-data-*
-          merge-multiple: true
-          path: .
-
-      - name: Set Gradle flags
-        shell: bash
-        run: |
-          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
-            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
-          else
-            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
-          fi
-
-      # Generate coverage reports (reads .ic files from downloaded artifacts)
-      # NOTE: Split from test task to avoid Kover hang bug when running in same invocation
-      # with --parallel. See: https://github.com/Kotlin/kotlinx-kover/issues/509
-      - name: Generate Coverage Reports
-        run: |
-          args=(koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          ./gradlew "${args[@]}"
-
-      - name: Upload Coverage Reports
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: coverage-reports
-          path: '**/build/reports/kover/'
-          retention-days: 7
-
-      # SonarCloud (needs coverage reports)
-      # SonarCloud is advisory: it must never fail CI (auth or otherwise). See PR description.
-      - name: SonarCloud Analysis
-        id: sonar
-        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository)) && env.HAS_SONAR_TOKEN == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          set +e
-          args=(sonar --info -Dsonar.qualitygate.wait=false)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then args+=("${GRADLE_SCAN_FLAG}"); fi
-          ./gradlew "${args[@]}" 2>&1 | tee sonar.log
-          rc=${PIPESTATUS[0]}
-          set -e
-          if [[ $rc -eq 0 ]]; then
-            echo "### ✅ SonarCloud analysis uploaded" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if grep -qiE 'HTTP (401|403)|Unauthorized|Forbidden|sonar\.token|Not authorized' sonar.log; then
-            msg="SonarCloud AUTH failure (exit $rc): rotate SONAR_TOKEN or check sonar.projectKey. Analysis skipped; CI continues."
-          else
-            msg="SonarCloud analysis failed (exit $rc): non-blocking, see step log."
-          fi
-          echo "::warning title=SonarCloud::${msg}"
-          echo "### ⚠️ ${msg}" >> "$GITHUB_STEP_SUMMARY"
-          exit 0
-
-      - name: SonarCloud skipped (no token)
-        if: ((github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && github.event.pull_request.head.repo.full_name == github.repository)) && env.HAS_SONAR_TOKEN != 'true'
-        run: |
-          echo "::notice title=SonarCloud::SONAR_TOKEN not set; SonarCloud analysis skipped."
-          echo "### ℹ️ SonarCloud skipped: SONAR_TOKEN not set" >> "$GITHUB_STEP_SUMMARY"
-
-  # E2E tests run in parallel with coverage (both need build to complete)
+  # E2E tests run in parallel with the build
   e2e-test:
     name: E2E Tests (shard ${{ matrix.shard }})
     # Runs alongside the build, not after it: this job builds what it needs itself (Gradle
