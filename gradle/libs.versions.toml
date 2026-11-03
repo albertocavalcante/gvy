@@ -11,7 +11,7 @@ gradleVersions = "0.53.0"
 wire = "5.5.0"
 compose = "1.10.0"
 
-groovy = "4.0.29"
+groovy = "4.0.33"
 ivy = "2.5.3"
 lsp4j = "0.24.0"
 codenarc = "3.7.0-groovy-4.0"
