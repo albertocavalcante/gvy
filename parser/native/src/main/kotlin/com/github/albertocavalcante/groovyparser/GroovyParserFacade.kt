@@ -5,7 +5,10 @@ import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
+import com.github.albertocavalcante.nativeapi.ExcludedSource
+import com.github.albertocavalcante.nativeapi.Fallback
 import com.github.albertocavalcante.nativeapi.ParseMode
+import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
@@ -36,6 +39,20 @@ import kotlin.io.path.isRegularFile
 private const val AST_TRANSFORMATION_SERVICE_FILE =
     "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
 private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
+private const val UNATTRIBUTED_ERROR_REASON =
+    "an open buffer was dropped because the compile failed with an error no source could be blamed for"
+private const val SCRIPT_FALLBACK_REASON =
+    "a class was compiled as a Script because its superclass could not be resolved"
+
+/** The first compile error, naming the file it came from (the error may not be this file's). */
+private fun firstErrorMessage(result: ParseResult): String? {
+    val cause = (result.compilationUnit.errorCollector.errors.orEmpty().firstOrNull() as? SyntaxErrorMessage)?.cause
+    return if (cause != null) {
+        listOfNotNull(cause.sourceLocator?.substringAfterLast('/'), cause.originalMessage).joinToString(": ")
+    } else {
+        result.diagnostics.firstOrNull { it.severity == ParserSeverity.ERROR }?.message
+    }
+}
 
 /**
  * A GroovyClassLoader that filters out AST transformation service discovery.
@@ -106,8 +123,13 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
      * If compilation fails at a phase later than CONVERSION and produces a "Script fallback"
      * (where the class extends groovy.lang.Script due to unresolved superclass), this method
      * automatically retries at CONVERSION phase to preserve the original class structure.
+     *
+     * Neither the exclusion of failing sources nor the retry is silent: [ParseResult.outcome] records them.
      */
-    fun parse(request: ParseRequest): ParseResult {
+    fun parse(request: ParseRequest): ParseResult = parse(request, excluded = emptyList())
+
+    /** [excluded] accumulates the sources set aside by the recursive recompiles so far. */
+    private fun parse(request: ParseRequest, excluded: List<ExcludedSource>): ParseResult {
         val result = parseInternal(request)
 
         // Other sources in the unit (open buffers mid-edit, or a broken file on disk, e.g. one extending
@@ -126,22 +148,33 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                         workspaceSources = request.workspaceSources.filterNot { it in newlyFailing },
                         excludedSources = request.excludedSources + newlyFailing,
                     ),
+                    excluded + failing.excludedSources(),
                 )
             }
             if (failing.unattributed && request.openSources.isNotEmpty()) {
                 logger.debug { "Unattributed compile errors for ${request.uri}; compiling without open buffers" }
-                return parse(request.copy(openSources = emptyMap()))
+                val dropped = request.openSources.keys.map { ExcludedSource(it.toString(), UNATTRIBUTED_ERROR_REASON) }
+                return parse(request.copy(openSources = emptyMap()), excluded + dropped)
             }
         }
 
-        return retryAtEarlierPhaseIfNeeded(request, result)
+        val final = retryAtEarlierPhaseIfNeeded(request, result)
+        return final.copy(outcome = final.outcome.copy(excludedSources = excluded))
     }
 
     /**
      * Other sources of the compilation unit whose errors failed it, and whether some error could not be
      * attributed to any source (non-syntax errors, which Groovy does not attribute to a file).
      */
-    private data class FailingSources(val open: Set<URI>, val workspace: Set<Path>, val unattributed: Boolean)
+    private data class FailingSources(
+        val open: Set<URI>,
+        val workspace: Set<Path>,
+        val unattributed: Boolean,
+        /** The first error of each failing source, keyed by its URI or path as a string. */
+        val reasons: Map<String, String>,
+    ) {
+        fun excludedSources(): List<ExcludedSource> = reasons.map { (source, reason) -> ExcludedSource(source, reason) }
+    }
 
     /**
      * Attributes [result]'s errors to the open buffers and workspace files that caused them. Locators
@@ -154,20 +187,25 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val workspaceByKey = request.workspaceSources.associateBy { it.toAbsolutePath().normalize() }
         val open = mutableSetOf<URI>()
         val workspace = mutableSetOf<Path>()
+        val reasons = linkedMapOf<String, String>()
         var unattributed = false
         for (message in errors) {
-            val locator = (message as? SyntaxErrorMessage)?.cause?.sourceLocator
+            val cause = (message as? SyntaxErrorMessage)?.cause
+            val locator = cause?.sourceLocator
             when (locator) {
                 null -> unattributed = true
                 request.sourceUnitName -> Unit // this file's own error
                 else -> {
                     val key = locatorPath(locator)
-                    openByKey[key]?.let { open += it }
-                    workspaceByKey[key]?.let { workspace.add(it) }
+                    // A buffer and its disk copy are one source: both leave the unit, under one reason.
+                    val buffer = openByKey[key]?.also { open += it }
+                    val disk = workspaceByKey[key]?.also { workspace.add(it) }
+                    val source = buffer?.toString() ?: disk?.toString()
+                    if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause?.originalMessage ?: ""))
                 }
             }
         }
-        return FailingSources(open, workspace, unattributed)
+        return FailingSources(open, workspace, unattributed, reasons)
     }
 
     /** A source unit name as a normalized path: a plain path, or a `file:` URL for loader-found sources. */
@@ -186,18 +224,23 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     }
 
     private fun retryAtEarlierPhaseIfNeeded(request: ParseRequest, result: ParseResult): ParseResult {
-        // Check if we should retry at an earlier phase
-        if (shouldRetryAtConversion(request, result)) {
-            logger.info { "Detected Script fallback for ${request.uri}, retrying at CONVERSION phase" }
-            return parseInternal(request.copy(compilePhase = Phases.CONVERSION))
+        val fallback = when {
+            shouldRetryAtConversion(request, result) -> Fallback.SCRIPT_FALLBACK
+            shouldRetryOnCompilationFailure(request, result) -> Fallback.COMPILATION_FAILED
+            else -> return result
         }
+        logger.info { "Detected $fallback for ${request.uri}, retrying at CONVERSION phase" }
 
-        if (shouldRetryOnCompilationFailure(request, result)) {
-            logger.info { "Detected compilation failure for ${request.uri}, retrying at CONVERSION phase" }
-            return parseInternal(request.copy(compilePhase = Phases.CONVERSION))
-        }
-
-        return result
+        val retried = parseInternal(request.copy(compilePhase = Phases.CONVERSION))
+        val reason = firstErrorMessage(result) ?: SCRIPT_FALLBACK_REASON
+        return retried.copy(
+            outcome = retried.outcome.copy(
+                requestedPhase = request.compilePhase,
+                achievedPhase = Phases.CONVERSION,
+                fallback = fallback,
+                fallbackReason = ParseOutcome.truncate(reason),
+            ),
+        )
     }
 
     /**
@@ -369,6 +412,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             symbolTable = symbolTable,
             astModel = astModel,
             tokenIndex = tokenIndex,
+            outcome = ParseOutcome(requestedPhase = request.compilePhase),
         )
     }
 

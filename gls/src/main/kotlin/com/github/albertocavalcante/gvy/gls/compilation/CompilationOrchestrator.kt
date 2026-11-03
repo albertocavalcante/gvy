@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseMode
+import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -23,6 +24,7 @@ import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 private const val RETRY_DELAY_MS = 50L
 
@@ -59,6 +61,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val dependencyGraph = dependencies.dependencyGraph
 
     private val logger = KotlinLogging.logger {}
+
+    /** The content hash whose degradation was last logged, per file. */
+    private val loggedDegradations = ConcurrentHashMap<URI, ParseOutcome>()
 
     /**
      * Compiles Groovy source code and returns the result.
@@ -128,6 +133,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             ),
         )
 
+        logIfDegraded(uri, parseResult)
+
         val ast = parseResult.ast
 
         if (ast != null) {
@@ -143,6 +150,21 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         }
 
         return resultMapper.map(parseResult, content)
+    }
+
+    /**
+     * Says at INFO why a file compiled without its types. Once per (uri, outcome): typing in a degraded
+     * file does not repeat it, a different cause logs again, and a clean compile resets it.
+     */
+    private fun logIfDegraded(uri: URI, parseResult: ParseResult) {
+        val outcome = parseResult.outcome
+        if (!outcome.isDegraded) {
+            loggedDegradations.remove(uri)
+            return
+        }
+        if (loggedDegradations.put(uri, outcome) != outcome) {
+            logger.info { outcome.describe(uri.toString()) }
+        }
     }
 
     /**

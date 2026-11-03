@@ -24,6 +24,8 @@ data class ParseResult(
      * is not available or not required by the caller.
      */
     val tokenIndex: com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex? = null,
+    /** What the parser gave up to produce this result; undegraded unless stated otherwise. */
+    val outcome: ParseOutcome = ParseOutcome(),
 ) {
     val isSuccessful: Boolean = diagnostics.none { it.severity == ParserSeverity.ERROR }
 }

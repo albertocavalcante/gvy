@@ -14,7 +14,7 @@ class CompilationResultMapper {
      * Maps a ParseResult into a CompilationResult.
      */
     fun map(parseResult: ParseResult, content: String): CompilationResult {
-        val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
+        val diagnostics = diagnosticsOf(parseResult)
         val ast = parseResult.ast
 
         return if (ast != null) {
@@ -31,7 +31,11 @@ class CompilationResultMapper {
      */
     fun mapFromCache(parseResult: ParseResult, content: String): CompilationResult? {
         val ast = parseResult.ast ?: return null
-        val diagnostics = parseResult.diagnostics.map { it.toLspDiagnostic() }
+        val diagnostics = diagnosticsOf(parseResult)
         return CompilationResult(parseResult.isSuccessful, ast, diagnostics, content)
     }
+
+    /** The parser's diagnostics, plus the notice that types are unresolved when the parse degraded. */
+    private fun diagnosticsOf(parseResult: ParseResult) = parseResult.diagnostics.map { it.toLspDiagnostic() } +
+        listOfNotNull(parseResult.outcome.toDegradationDiagnostic())
 }
