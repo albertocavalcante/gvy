@@ -190,7 +190,7 @@ maven.install(
         "org.assertj:assertj-core:3.27.7",
         "io.mockk:mockk:1.14.11",
         "io.mockk:mockk-jvm:1.14.11",
-        "org.spockframework:spock-core:2.3-groovy-4.0",
+        "org.spockframework:spock-core:2.5-groovy-4.0",
         "com.jayway.jsonpath:json-path:2.10.0",
         "net.jqwik:jqwik:1.9.3",
 
