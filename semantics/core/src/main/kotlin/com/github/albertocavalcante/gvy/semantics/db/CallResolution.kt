@@ -4,10 +4,10 @@ import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.gvy.semantics.db.CallOutcome.Reason
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
-import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.expr.CastExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -468,7 +468,13 @@ internal object GroovyDispatch {
 
     /** Names through which a closure body can change where its own names resolve. */
     private val closureReshapingNames = setOf(
-        "delegate", "resolveStrategy", "directive", "setDelegate", "setResolveStrategy", "setDirective", "rehydrate",
+        "delegate",
+        "resolveStrategy",
+        "directive",
+        "setDelegate",
+        "setResolveStrategy",
+        "setDirective",
+        "rehydrate",
     )
 
     /**
