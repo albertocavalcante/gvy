@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.semantics.db.CallOutcome.Reason
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
@@ -70,6 +71,8 @@ internal class CallResolver(
     private val currentClass: ClassNode,
     private val lookup: (String) -> LocalBinding?,
 ) {
+    private val hierarchies = TypeHierarchies(moduleNode)
+
     fun resolveTypeName(type: ClassNode): String {
         // If already fully qualified (contains dots), just use it
         if (type.name.contains(".")) {
@@ -127,22 +130,41 @@ internal class CallResolver(
      * an id built from static argument types can equal the real id of a different overload, since
      * the runtime type of an argument may differ from its declared type.
      */
-    fun resolveCall(call: MethodCallExpression, name: String, insideClosure: Boolean = false): String? {
-        // A closure resolves implicit-this calls through its delegate first in many cases (`with {}`,
-        // DSL builders, @DelegatesTo), so the enclosing class is not known to be the target.
-        if (insideClosure && call.isImplicitThis) return null
+    fun resolveCall(call: MethodCallExpression, name: String, insideClosure: Boolean = false): String? =
+        (resolve(call, name, insideClosure) as? CallOutcome.Resolved)?.symbolId
+
+    /** Like [resolveCall], but says why a call was not attributed. */
+    fun resolve(call: MethodCallExpression, name: String, insideClosure: Boolean = false): CallOutcome {
         val receiver = call.objectExpression
-        // `Person.getName()` calls java.lang.Class.getName(), not a Person method.
-        if (receiver is ClassExpression && name in GroovyDispatch.classMethodNames) return null
-        val start = startClass(receiver) ?: return null
-        val args = argumentExpressions(call.arguments)
-        if (args.any { it is SpreadExpression }) return null
-        val hierarchy = hierarchyOf(start) ?: return null
-        // Methods Groovy adds to every object (or to JDK types in the hierarchy) are candidates the
-        // class's own declarations do not show: `repo.find { }` calls the GDK find(Closure).
-        if (GroovyDispatch.isGdkName(name, hierarchy.hasClasspathType)) return null
-        val method = hierarchy.methods.filter { it.name == name && Arity.accepts(it, args.size) }.singleOrNull()
-        return method?.let { SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it) }
+        val arguments = argumentExpressions(call.arguments)
+        val start = startClass(receiver)
+        val hierarchy = start?.let(hierarchies::of)
+        return when {
+            // A closure resolves implicit-this calls through its delegate first in many cases (`with {}`,
+            // DSL builders, @DelegatesTo), so the enclosing class is not known to be the target.
+            insideClosure && call.isImplicitThis -> CallOutcome.Unresolved(Reason.CLOSURE_DELEGATE)
+            // `Person.getName()` calls java.lang.Class.getName(), not a Person method.
+            receiver is ClassExpression && name in GroovyDispatch.classMethodNames ->
+                CallOutcome.Unresolved(Reason.CLASS_OBJECT_METHOD)
+            start == null -> CallOutcome.Unresolved(Reason.UNTYPED_RECEIVER)
+            arguments.any { it is SpreadExpression } -> CallOutcome.Unresolved(Reason.SPREAD_ARGUMENT)
+            hierarchy == null -> CallOutcome.Unresolved(Reason.UNKNOWN_HIERARCHY)
+            // Methods Groovy adds to every object (or to JDK types in the hierarchy) are candidates the
+            // class's own declarations do not show: `repo.find { }` calls the GDK find(Closure).
+            GroovyDispatch.isGdkName(name, hierarchy.hasClasspathType) -> CallOutcome.Unresolved(Reason.GDK_METHOD)
+            else -> choose(hierarchy, name, arguments.size)
+        }
+    }
+
+    private fun choose(hierarchy: TypeHierarchies.Hierarchy, name: String, arity: Int): CallOutcome {
+        val candidates = hierarchy.methods.filter { it.name == name && Arity.accepts(it, arity) }
+        return when (candidates.size) {
+            0 -> CallOutcome.Unresolved(Reason.NO_CANDIDATE)
+            1 -> candidates.single().let {
+                CallOutcome.Resolved(SemanticDocumentBuilder.createMethodSymbolId(it.declaringClass, it))
+            }
+            else -> CallOutcome.Unresolved(Reason.AMBIGUOUS)
+        }
     }
 
     /** The class whose hierarchy is searched: the superclass for `super`, else the receiver's class. */
@@ -152,77 +174,6 @@ internal class CallResolver(
         } else {
             receiverType(receiver)
         }
-
-    /**
-     * A class's methods in [hierarchyOf] order, with overridden and implemented ones merged away;
-     * [hasClasspathType] when a compiled (JDK or library) class is part of it.
-     */
-    private class Hierarchy(val methods: List<MethodNode>, val hasClasspathType: Boolean)
-
-    /**
-     * Collects the methods of [start], its superclass chain and then its interfaces. Returns null
-     * unless every class involved is visible, see [localClass]: before resolution a supertype's
-     * ClassNode is an empty stub, so it is looked up in the module by name. `java.lang.Object` is the one
-     * exception, as its methods are known.
-     */
-    // Built once per class per document: a JDK receiver type has a deep hierarchy and is called often.
-    private val hierarchies = HashMap<String, Hierarchy?>()
-
-    private fun hierarchyOf(start: ClassNode): Hierarchy? = hierarchies.getOrPut(start.name) { buildHierarchy(start) }
-
-    private fun buildHierarchy(start: ClassNode): Hierarchy? {
-        val seen = HashSet<String>()
-        val chain = ArrayList<ClassNode>()
-        var node: ClassNode? = start
-        while (node != null && node.name != OBJECT) {
-            if (!seen.add(node.name)) break
-            val local = localClass(node) ?: return null
-            if (GroovyDispatch.isDynamic(local)) return null
-            chain += local
-            node = local.unresolvedSuperClass
-        }
-        if (chain.isEmpty()) return null
-        val interfaces = ArrayList<ClassNode>()
-        val pending = ArrayDeque<ClassNode>()
-        chain.forEach { pending.addAll(it.unresolvedInterfaces) }
-        while (pending.isNotEmpty()) {
-            val next = pending.removeFirst()
-            if (!seen.add(next.name)) continue
-            val local = localClass(next) ?: return null
-            if (GroovyDispatch.isDynamic(local)) return null
-            interfaces += local
-            pending.addAll(local.unresolvedInterfaces)
-        }
-        val classMethods = (chain.flatMap(::declared) + ClassHelper.OBJECT_TYPE.methods)
-            .distinctBy { it.name + "(" + TypeSignatures.parameterList(it.parameters) + ")" }
-        val implemented = classMethods.map { it.name to TypeSignatures.parameterList(it.parameters) }.toSet()
-        // A trait method is woven into the implementing class, so it overrides the superclass's: never merged.
-        val inherited = interfaces.flatMap { type ->
-            declared(type).filterNot {
-                !Traits.isTrait(type) && it.isAbstract &&
-                    (it.name to TypeSignatures.parameterList(it.parameters)) in implemented
-            }
-        }
-        return Hierarchy(classMethods + inherited, (chain + interfaces).any { !it.isPrimaryClassNode })
-    }
-
-    /**
-     * The methods [type] declares. For a source class only those written in the source (ones a transform
-     * added, trait forwarders say, have no position); for a compiled classpath class all of them, so an
-     * inherited `ArrayList.add(E)` still makes a local `add(String)` ambiguous.
-     */
-    private fun declared(type: ClassNode): List<MethodNode> =
-        if (type.isPrimaryClassNode) type.methods.filter { it.lineNumber > 0 } else type.methods
-
-    /**
-     * The class [type] names, or null when it is not fully known (a name-only stub). Known means: in
-     * this module; a class of another file the compiler resolved to its source ClassNode (a workspace
-     * unit compiled to SEMANTIC_ANALYSIS does so for every source in the unit); or a compiled classpath
-     * class, such as a script's `groovy.lang.Script`, whose methods all come from its bytecode.
-     */
-    private fun localClass(type: ClassNode): ClassNode? = moduleNode.classes.firstOrNull {
-        it.name == type.name || (!type.name.contains('.') && it.nameWithoutPackage == type.name)
-    } ?: type.redirect().takeIf { it.isPrimaryClassNode || it.isResolved }
 
     /** The class a member access is made on, or null when the receiver has no known static type. */
     fun receiverType(receiver: Expression): ClassNode? = when {
@@ -258,6 +209,122 @@ internal class CallResolver(
 }
 
 /**
+ * The class hierarchies of one document's receiver types: superclass chain, interfaces and traits,
+ * and the methods a call can reach through them. A hierarchy is only returned when every class in
+ * it is known, so no unseen supertype can declare another candidate.
+ */
+internal class TypeHierarchies(private val moduleNode: ModuleNode) {
+    /**
+     * A class's methods in [of] order, with overridden and implemented ones merged away;
+     * [hasClasspathType] when a compiled (JDK or library) class is part of it.
+     */
+    class Hierarchy(val methods: List<MethodNode>, val hasClasspathType: Boolean)
+
+    /**
+     * Collects the methods of [start], its superclass chain and then its interfaces. Returns null
+     * unless every class involved is visible, see [localClass]: before resolution a supertype's
+     * ClassNode is an empty stub, so it is looked up in the module by name. `java.lang.Object` is the one
+     * exception, as its methods are known.
+     */
+    // Built once per class per document: a JDK receiver type has a deep hierarchy and is called often.
+    private val cache = HashMap<String, Hierarchy?>()
+
+    /** The methods reachable on [start], or null unless every class in its hierarchy is known. */
+    fun of(start: ClassNode): Hierarchy? = cache.getOrPut(start.name) { buildHierarchy(start) }
+
+    private fun buildHierarchy(start: ClassNode): Hierarchy? {
+        val seen = HashSet<String>()
+        val chain = superclassChain(start, seen) ?: return null
+        val interfaces = interfacesOf(chain, seen) ?: return null
+        return Hierarchy(methodsOf(chain, interfaces), (chain + interfaces).any { !it.isPrimaryClassNode })
+    }
+
+    /** [start] and its superclasses up to Object, or null if one is not known (see [knownClass]). */
+    private fun superclassChain(start: ClassNode, seen: MutableSet<String>): List<ClassNode>? {
+        val chain = ArrayList<ClassNode>()
+        var node: ClassNode? = start
+        while (node != null && node.name != OBJECT && seen.add(node.name)) {
+            val known = knownClass(node) ?: return null
+            chain += known
+            node = known.unresolvedSuperClass
+        }
+        return chain.takeIf { it.isNotEmpty() }
+    }
+
+    /** Every interface and trait of [chain], transitively, or null if one is not known. */
+    private fun interfacesOf(chain: List<ClassNode>, seen: MutableSet<String>): List<ClassNode>? {
+        val interfaces = ArrayList<ClassNode>()
+        val pending = ArrayDeque(chain.flatMap { it.unresolvedInterfaces.toList() })
+        while (pending.isNotEmpty()) {
+            val next = pending.removeFirst()
+            if (seen.add(next.name)) {
+                val known = knownClass(next) ?: return null
+                interfaces += known
+                pending.addAll(known.unresolvedInterfaces)
+            }
+        }
+        return interfaces
+    }
+
+    /** A class whose methods are all known and reached normally, or null (see [localClass], [GroovyDispatch]). */
+    private fun knownClass(type: ClassNode): ClassNode? = localClass(type)?.takeUnless(GroovyDispatch::isDynamic)
+
+    /** Candidate methods: the chain's (nearest override wins) plus Object's, then interface and trait methods. */
+    private fun methodsOf(chain: List<ClassNode>, interfaces: List<ClassNode>): List<MethodNode> {
+        val classMethods = (chain.flatMap(::declared) + ClassHelper.OBJECT_TYPE.methods)
+            .distinctBy { it.name + "(" + TypeSignatures.parameterList(it.parameters) + ")" }
+        val implemented = classMethods.map { it.name to TypeSignatures.parameterList(it.parameters) }.toSet()
+        // A trait method is woven into the implementing class, so it overrides the superclass's: never merged.
+        val inherited = interfaces.flatMap { type ->
+            declared(type).filterNot {
+                !Traits.isTrait(type) && it.isAbstract &&
+                    (it.name to TypeSignatures.parameterList(it.parameters)) in implemented
+            }
+        }
+        return classMethods + inherited
+    }
+
+    /**
+     * The methods [type] declares. For a source class only those written in the source (ones a transform
+     * added, trait forwarders say, have no position); for a compiled classpath class all of them, so an
+     * inherited `ArrayList.add(E)` still makes a local `add(String)` ambiguous.
+     */
+    private fun declared(type: ClassNode): List<MethodNode> =
+        if (type.isPrimaryClassNode) type.methods.filter { it.lineNumber > 0 } else type.methods
+
+    /**
+     * The class [type] names, or null when it is not fully known. Known means: in this module; a class
+     * of another file the compiler resolved to its source ClassNode (a workspace unit compiled to
+     * SEMANTIC_ANALYSIS does so for every source in the unit); a compiled classpath class, such as a
+     * script's `groovy.lang.Script`, whose methods all come from its bytecode; or a name-only
+     * placeholder that names a source class of the same compilation unit (see [unitClassNamed]).
+     */
+    private fun localClass(type: ClassNode): ClassNode? = moduleNode.classes.firstOrNull {
+        it.name == type.name || (!type.name.contains('.') && it.nameWithoutPackage == type.name)
+    } ?: type.redirect().takeIf { it.isPrimaryClassNode || it.isResolved } ?: unitClassNamed(type.name)
+
+    /**
+     * A source class of this compilation unit that a name written in this file refers to, resolved the
+     * way the compiler would before giving up: the name as written, then a single-type import, then
+     * this file's package. A compile that fell back to CONVERSION (a supertype missing from the classpath,
+     * say) leaves types as such names although their source classes are in the unit. Star imports
+     * and anything else ambiguous are not tried, so the result is never a guess.
+     */
+    private fun unitClassNamed(name: String): ClassNode? {
+        val unit = moduleNode.unit ?: return null
+        val candidates = buildList {
+            add(name)
+            if (!name.contains('.')) {
+                // A single-type import shadows a same-named class of this package, as in Java.
+                moduleNode.imports.firstOrNull { it.alias == name }?.let { add(it.type.name) }
+                moduleNode.packageName?.let { add(it + name) }
+            }
+        }
+        return candidates.firstNotNullOfOrNull { unit.getClass(it) }?.takeIf { it.isPrimaryClassNode }
+    }
+}
+
+/**
  * Ways Groovy reaches a method that a class's declared methods do not show. A hierarchy that uses
  * them is treated as unknown, so its calls stay unresolved rather than risk the wrong id.
  */
@@ -272,9 +339,15 @@ internal object GroovyDispatch {
         if (!type.isPrimaryClassNode) return false
         val annotated = type.annotations.any { it.classNode.nameWithoutPackage in methodAddingAnnotations } ||
             type.fields.any { field -> field.annotations.any { it.classNode.nameWithoutPackage == "Delegate" } } ||
-            type.properties.any { prop -> prop.field?.annotations?.any { it.classNode.nameWithoutPackage == "Delegate" } == true }
+            type.properties.any { prop ->
+                prop.field?.annotations?.any { it.classNode.nameWithoutPackage == "Delegate" } ==
+                    true
+            }
         val dispatching = type.methods.any { it.name in dispatchMethods } ||
-            type.interfaces.any { it.name == "groovy.lang.GroovyInterceptable" || it.nameWithoutPackage == "GroovyInterceptable" }
+            type.interfaces.any {
+                it.name == "groovy.lang.GroovyInterceptable" ||
+                    it.nameWithoutPackage == "GroovyInterceptable"
+            }
         return annotated || dispatching
     }
 
@@ -303,4 +376,37 @@ internal object GroovyDispatch {
      */
     fun isGdkName(name: String, hasClasspathType: Boolean): Boolean =
         name in gdk.anyObject || (hasClasspathType && name in gdk.all)
+}
+
+/** The result of attributing a call: the method's symbol id, or why the call stays unresolved. */
+sealed interface CallOutcome {
+    data class Resolved(val symbolId: String) : CallOutcome
+
+    data class Unresolved(val reason: Reason) : CallOutcome
+
+    enum class Reason {
+        /** An implicit-this call inside a closure, which its delegate may receive. */
+        CLOSURE_DELEGATE,
+
+        /** A java.lang.Class method called on a class reference. */
+        CLASS_OBJECT_METHOD,
+
+        /** The receiver has no known static type. */
+        UNTYPED_RECEIVER,
+
+        /** A spread argument makes the arity unknown. */
+        SPREAD_ARGUMENT,
+
+        /** A class in the hierarchy is not known, or dispatches dynamically. */
+        UNKNOWN_HIERARCHY,
+
+        /** A GDK method of that name may be the target. */
+        GDK_METHOD,
+
+        /** No method of that name and arity. */
+        NO_CANDIDATE,
+
+        /** More than one method of that name and arity. */
+        AMBIGUOUS,
+    }
 }
