@@ -76,4 +76,14 @@ class CompilationDegradationDiagnosticTest {
 
         assertTrue(mapper.map(result, content).diagnostics.isEmpty())
     }
+
+    @Test
+    fun `stubbed classes degrade the outcome and are named in the log line but add no diagnostic`() {
+        val stubbed = listOf("spock.lang.Specification")
+        val result = parsed().let { it.copy(outcome = it.outcome.copy(stubbedClasses = stubbed)) }
+
+        assertTrue(result.outcome.isDegraded)
+        assertTrue(result.outcome.describe("A.groovy").contains("spock.lang.Specification"))
+        assertTrue(mapper.map(result, content).diagnostics.isEmpty())
+    }
 }

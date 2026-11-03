@@ -27,12 +27,15 @@ private fun phaseName(phase: Int) = PHASE_NAMES[phase] ?: phase.toString()
 
 private fun fileName(source: String) = source.trimEnd('/').substringAfterLast('/')
 
-/** One line for the log: the file, requested vs achieved phase, the reason, and the excluded sources. */
+/** One line for the log: the file, requested vs achieved phase, the reason, the excluded and stubbed classes. */
 fun ParseOutcome.describe(file: String): String = buildString {
     append("Degraded compile of $file: requested ${phaseName(requestedPhase)}, achieved ${phaseName(achievedPhase)}")
     fallback?.let { append(", fallback $it (${fallbackReason.orEmpty()})") }
     if (excludedSources.isNotEmpty()) {
         append(", excluded ").append(excludedSources.joinToString { "${it.source} (${it.reason})" })
+    }
+    if (stubbedClasses.isNotEmpty()) {
+        append(", stubbed unresolved classes ").append(stubbedClasses.joinToString())
     }
 }
 

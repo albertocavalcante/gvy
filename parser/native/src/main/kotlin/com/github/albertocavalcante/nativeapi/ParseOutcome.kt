@@ -25,12 +25,15 @@ data class ParseOutcome(
     val fallback: Fallback? = null,
     /** The error that triggered [fallback], truncated. */
     val fallbackReason: String? = null,
+    /** Fully qualified names of the classes that could not be resolved and were compiled as empty stubs. */
+    val stubbedClasses: List<String> = emptyList(),
 ) {
     /** True when the result lacks the type resolution that was asked for. */
     val typesUnresolved: Boolean get() = achievedPhase < requestedPhase
 
     /** True when anything was given up to produce the result. */
-    val isDegraded: Boolean get() = typesUnresolved || fallback != null || excludedSources.isNotEmpty()
+    val isDegraded: Boolean get() = typesUnresolved || fallback != null || excludedSources.isNotEmpty() ||
+        stubbedClasses.isNotEmpty()
 
     companion object {
         const val MAX_REASON_LENGTH = 200
