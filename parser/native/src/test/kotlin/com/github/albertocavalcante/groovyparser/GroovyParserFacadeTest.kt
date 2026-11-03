@@ -242,6 +242,32 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `a broken workspace file does not cost other files their type resolution`() {
+        // A workspace file extending a class that is not on the classpath fails the whole unit, which
+        // used to send every file back to CONVERSION, where no type is resolved.
+        val broken = tempDir.resolve("Broken.groovy").also {
+            it.toFile().writeText("class Broken extends com.missing.Base {}")
+        }
+        val helper = tempDir.resolve("Helper.groovy").also { it.toFile().writeText("class Helper {}") }
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///w/Uses.groovy"),
+                content = "class Uses { Helper ref = new Helper() }",
+                workspaceSources = listOf(broken, helper),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        )
+
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
+        val field = result.ast?.classes?.single { it.nameWithoutPackage == "Uses" }?.getField("ref")
+        assertTrue(
+            field?.type?.redirect()?.isPrimaryClassNode == true,
+            "Helper should resolve to its source class, not stay a CONVERSION placeholder",
+        )
+    }
+
+    @Test
     fun `parse returns ast for requested source when workspace sources are present`() {
         val extraSource = tempDir.resolve("Aardvark.groovy").toFile()
         extraSource.writeText(

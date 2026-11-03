@@ -110,17 +110,23 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     fun parse(request: ParseRequest): ParseResult {
         val result = parseInternal(request)
 
-        // Other open buffers are usually mid-edit. Their errors fail the whole compilation unit,
-        // which would cost this file its AST (or its type resolution, via the CONVERSION retry
-        // below) and show their error here. Compile again without the buffers that failed, or
-        // without any buffers if a failure cannot be attributed to one.
-        if (request.openSources.isNotEmpty()) {
-            val failing = failingOpenSources(request, result)
-            if (failing != null && failing.isNotEmpty()) {
-                logger.debug { "Open buffers with errors excluded from compiling ${request.uri}: $failing" }
-                return parse(request.copy(openSources = request.openSources.filterKeys { it !in failing }))
+        // Other sources in the unit (open buffers mid-edit, or a broken file on disk, e.g. one extending
+        // a class that is not on the classpath) fail the whole compilation unit. That would cost this
+        // file its AST, or its type resolution via the CONVERSION retry below, and show their error
+        // here. Compile again without the sources that failed. A failure that cannot be attributed to
+        // a source drops the open buffers (most likely mid-edit) and otherwise falls through.
+        if (request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty()) {
+            val failing = failingOtherSources(request, result)
+            if (failing != null && !failing.isEmpty()) {
+                logger.debug { "Sources with errors excluded from compiling ${request.uri}: $failing" }
+                return parse(
+                    request.copy(
+                        openSources = request.openSources.filterKeys { it !in failing.open },
+                        workspaceSources = request.workspaceSources.filterNot { it in failing.workspace },
+                    ),
+                )
             }
-            if (failing == null) {
+            if (failing == null && request.openSources.isNotEmpty()) {
                 logger.debug { "Unattributed compile errors for ${request.uri}; compiling without open buffers" }
                 return parse(request.copy(openSources = emptyMap()))
             }
@@ -129,24 +135,33 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         return retryAtEarlierPhaseIfNeeded(request, result)
     }
 
+    /** Other sources of the compilation unit whose errors failed it. */
+    private data class FailingSources(val open: Set<URI>, val workspace: Set<Path>) {
+        fun isEmpty() = open.isEmpty() && workspace.isEmpty()
+    }
+
     /**
-     * The open buffers whose errors appear in [result], or null when an error comes from a source
-     * that cannot be identified (any non-syntax error, which Groovy does not attribute to a file).
+     * The open buffers and workspace files whose errors appear in [result], or null when an error comes
+     * from a source that cannot be identified (any non-syntax error, which Groovy does not attribute to
+     * a file). Workspace files are added by path, so their source units are named after it.
      */
-    private fun failingOpenSources(request: ParseRequest, result: ParseResult): Set<URI>? {
+    private fun failingOtherSources(request: ParseRequest, result: ParseResult): FailingSources? {
         val errors = result.compilationUnit.errorCollector.errors.orEmpty()
-        val byName = request.openSources.keys.associateBy { it.path ?: it.toString() }
-        val failing = mutableSetOf<URI>()
+        val openByName = request.openSources.keys.associateBy { it.path ?: it.toString() }
+        val workspaceByName = request.workspaceSources.associateBy { it.toFile().path }
+        val open = mutableSetOf<URI>()
+        val workspace = mutableSetOf<Path>()
         for (message in errors) {
             val locator = (message as? SyntaxErrorMessage)?.cause?.sourceLocator
             when {
                 locator == request.sourceUnitName -> Unit // this file's own error
-                locator != null && locator in byName -> failing += byName.getValue(locator)
-                locator != null -> Unit // a workspace source on disk; unchanged behaviour
+                locator != null && locator in openByName -> open += openByName.getValue(locator)
+                locator != null && locator in workspaceByName -> workspace.add(workspaceByName.getValue(locator))
+                locator != null -> Unit // a source this request did not add
                 else -> return null
             }
         }
-        return failing
+        return FailingSources(open, workspace)
     }
 
     private fun retryAtEarlierPhaseIfNeeded(request: ParseRequest, result: ParseResult): ParseResult {
