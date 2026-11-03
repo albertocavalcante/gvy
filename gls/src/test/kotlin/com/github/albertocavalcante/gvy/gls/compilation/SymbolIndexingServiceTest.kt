@@ -52,6 +52,26 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
+    fun `a file opened while its disk copy is parsed keeps the buffer index`(): Unit = runBlocking {
+        val file = tempDir.resolve("race.groovy").apply {
+            createFile()
+            writeText("class Disk {}")
+        }
+        val uri = file.toUri()
+        var open = false
+        val racing = SymbolIndexingService(testDispatcher, workerSessionManager, workspaceManager) { open }
+        val bufferIndex = racing.indexCompiled(uri, "class Buffer {}", mockk(relaxed = true))
+        coEvery { workerSessionManager.parse(any<ParseRequest>()) } answers {
+            open = true // the user opens the file mid-parse
+            createMockParseResult()
+        }
+
+        racing.indexFile(uri)
+
+        assertSame(bufferIndex, racing.getSymbolIndex(uri))
+    }
+
+    @Test
     fun `getSymbolIndex returns null when nothing is indexed`() {
         val uri = URI.create("file:///test.groovy")
 

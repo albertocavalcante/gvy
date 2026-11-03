@@ -34,6 +34,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
+import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -319,6 +320,8 @@ class GroovyTextDocumentService(
         logger.info { "Document closed: ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
         documentProvider.remove(uri)
+        // The buffer may have differed from the disk ("Don't save"): the index follows the disk again.
+        coroutineScope.launch { compilationService.symbolIndexingService.refreshAfterClose(uri) }
 
         // Cancel and remove any running diagnostics for this file
         diagnosticsOrchestrator.cancelAndRemove(uri)

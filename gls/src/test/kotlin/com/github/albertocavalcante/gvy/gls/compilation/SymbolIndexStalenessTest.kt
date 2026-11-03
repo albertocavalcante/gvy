@@ -89,4 +89,31 @@ class SymbolIndexStalenessTest {
         val names = withBuffers.getAllSymbolStorages()[uri]?.getSymbols(uri)?.map { it.name }.orEmpty()
         assertEquals(listOf("Unsaved"), names.filter { it == "Unsaved" || it == "Saved" })
     }
+
+    @Test
+    fun `closing a file without saving brings back the symbols of its disk copy`(): Unit = runBlocking {
+        val file = tempDir.resolve("Closed.groovy")
+        Files.writeString(file, "class Foo {}")
+        val uri = file.toUri()
+        val documents = DocumentProvider().apply { put(uri, "class Bar {}") }
+        val withBuffers = GroovyCompilationService(documentProvider = documents)
+        withBuffers.compile(uri, "class Bar {}")
+
+        documents.remove(uri) // closed with "Don't save"
+        withBuffers.symbolIndexingService.refreshAfterClose(uri)
+
+        val names = withBuffers.getAllSymbolStorages()[uri]?.getSymbols(uri)?.map { it.name }.orEmpty()
+        assertTrue("Foo" in names && "Bar" !in names, "got: $names")
+    }
+
+    @Test
+    fun `a closed untitled buffer leaves the index`(): Unit = runBlocking {
+        val uri = URI.create("untitled:Untitled-1")
+        service.compile(uri, "class Scratch {}")
+        assertNotNull(service.getSymbolStorage(uri))
+
+        service.symbolIndexingService.refreshAfterClose(uri)
+
+        assertNull(service.getSymbolStorage(uri))
+    }
 }

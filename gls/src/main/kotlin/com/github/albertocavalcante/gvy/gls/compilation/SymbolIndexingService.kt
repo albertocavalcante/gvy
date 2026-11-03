@@ -157,6 +157,15 @@ class SymbolIndexingService(
      * Clears all symbol indices.
      * Used when workspace configuration changes significantly.
      */
+
+    /**
+     * After [uri] is closed its disk copy is what the workspace holds again: re-index from disk (a no-op
+     * when the buffer matched it), or drop the entry of a buffer that has no file (`untitled:`).
+     */
+    suspend fun refreshAfterClose(uri: URI) {
+        if (parseUriToPath(uri) == null) entries.remove(uri) else indexFile(uri)
+    }
+
     fun clear() {
         entries.clear()
     }
@@ -202,9 +211,12 @@ class SymbolIndexingService(
             ),
         )
 
-        val index = store(uri, contentHash, parseResult.astModel)
-        logger.debug { "Indexed workspace file: $uri" }
-        index
+        // Opened while it was parsed: the compile path has indexed the buffer, which wins over this disk copy.
+        if (isOpen(uri)) {
+            entries[uri]?.index
+        } else {
+            store(uri, contentHash, parseResult.astModel).also { logger.debug { "Indexed workspace file: $uri" } }
+        }
     } catch (e: Exception) {
         logger.warn(e) { "Failed to index workspace file: $uri" }
         null
