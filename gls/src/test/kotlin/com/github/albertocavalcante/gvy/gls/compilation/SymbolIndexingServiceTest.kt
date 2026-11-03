@@ -20,7 +20,9 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -46,12 +48,31 @@ class SymbolIndexingServiceTest {
             ioDispatcher = testDispatcher,
             workerSessionManager = workerSessionManager,
             workspaceManager = workspaceManager,
-            maxCacheSize = 10,
         )
     }
 
     @Test
-    fun `getSymbolIndex returns null when no cache and no provider`() {
+    fun `a file opened while its disk copy is parsed keeps the buffer index`(): Unit = runBlocking {
+        val file = tempDir.resolve("race.groovy").apply {
+            createFile()
+            writeText("class Disk {}")
+        }
+        val uri = file.toUri()
+        var open = false
+        val racing = SymbolIndexingService(testDispatcher, workerSessionManager, workspaceManager) { open }
+        val bufferIndex = racing.indexCompiled(uri, "class Buffer {}", mockk(relaxed = true))
+        coEvery { workerSessionManager.parse(any<ParseRequest>()) } answers {
+            open = true // the user opens the file mid-parse
+            createMockParseResult()
+        }
+
+        racing.indexFile(uri)
+
+        assertSame(bufferIndex, racing.getSymbolIndex(uri))
+    }
+
+    @Test
+    fun `getSymbolIndex returns null when nothing is indexed`() {
         val uri = URI.create("file:///test.groovy")
 
         val result = indexingService.getSymbolIndex(uri)
@@ -81,13 +102,18 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `getSymbolIndex builds from AST model provider if provided`() {
+    fun `ensureIndexed builds once per content and rebuilds when content changes`() {
         val uri = URI.create("file:///test.groovy")
         val astModel = mockk<GroovyAstModel>(relaxed = true)
 
-        val result = indexingService.getSymbolIndex(uri) { astModel }
+        val first = indexingService.ensureIndexed(uri, "class A {}") { astModel }
+        val again = indexingService.ensureIndexed(uri, "class A {}") { error("must not rebuild") }
+        val changed = indexingService.ensureIndexed(uri, "class B {}") { astModel }
 
-        assertNotNull(result)
+        assertNotNull(first)
+        assertSame(first, again)
+        assertNotSame(first, changed)
+        assertSame(changed, indexingService.getSymbolIndex(uri))
     }
 
     @Test
@@ -146,7 +172,7 @@ class SymbolIndexingServiceTest {
 
         assertNotNull(result1)
         assertNotNull(result2)
-        // Should return same instance from cache on second call
+        assertSame(result1, result2)
     }
 
     @Test
@@ -222,7 +248,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `getAllSymbolIndices merges cache and workspace index`(): Unit = runBlocking {
+    fun `getAllSymbolIndices merges disk-indexed and compile-indexed files`(): Unit = runBlocking {
         val file1 = tempDir.resolve("test1.groovy").apply {
             createFile()
             writeText("class Test1 {}")
@@ -235,12 +261,12 @@ class SymbolIndexingServiceTest {
         val parseResult = createMockParseResult()
         coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns parseResult
 
-        // Index file1 (goes to both caches)
+        // Index file1
         indexingService.indexFile(file1.toUri())
 
-        // Get symbol index for file2 via provider (goes to LRU cache only)
+        // Index file2 from a compile result rather than from disk
         val astModel = mockk<GroovyAstModel>(relaxed = true)
-        indexingService.getSymbolIndex(file2.toUri()) { astModel }
+        indexingService.indexCompiled(file2.toUri(), "class Test2 {}", astModel)
 
         val allIndices = indexingService.getAllSymbolIndices()
 
@@ -250,7 +276,7 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
-    fun `invalidate removes from both caches`(): Unit = runBlocking {
+    fun `invalidate removes the entry`(): Unit = runBlocking {
         val file = tempDir.resolve("test.groovy").apply {
             createFile()
             writeText("class Test {}")
@@ -289,30 +315,6 @@ class SymbolIndexingServiceTest {
 
         val allIndices = indexingService.getAllSymbolIndices()
         assertEquals(0, allIndices.size)
-    }
-
-    @Test
-    fun `LRU eviction works when cache exceeds maxSize`(): Unit = runBlocking {
-        val parseResult = createMockParseResult()
-        coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns parseResult
-
-        // Create 15 files (maxSize is 10)
-        val files = (1..15).map { i ->
-            tempDir.resolve("test$i.groovy").apply {
-                createFile()
-                writeText("class Test$i {}")
-            }
-        }
-
-        // Index all files
-        files.forEach { file ->
-            indexingService.indexFile(file.toUri())
-        }
-
-        // First 5 files should be evicted from LRU cache
-        // But all should still be in workspace index
-        val allIndices = indexingService.getAllSymbolIndices()
-        assertEquals(15, allIndices.size)
     }
 
     // Helper methods

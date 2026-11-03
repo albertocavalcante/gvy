@@ -7,6 +7,7 @@ import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -31,17 +32,20 @@ class ParseResultAccessorTest {
     private lateinit var cacheService: CompilationCacheService
     private lateinit var workerSessionManager: WorkerSessionManager
     private lateinit var workspaceManager: WorkspaceManager
+    private lateinit var symbolIndexer: SymbolIndexingService
 
     @BeforeTest
     fun setup() {
         cacheService = mockk(relaxed = true)
         workerSessionManager = mockk(relaxed = true)
         workspaceManager = mockk(relaxed = true)
+        symbolIndexer = mockk(relaxed = true)
 
         accessor = ParseResultAccessor(
             cacheService = cacheService,
             workerSessionManager = workerSessionManager,
             workspaceManager = workspaceManager,
+            symbolIndexer = symbolIndexer,
         )
     }
 
@@ -285,6 +289,34 @@ class ParseResultAccessorTest {
 
         assertNotNull(result)
         assertEquals(freshResult, result)
+    }
+
+    @Test
+    fun `getValidParseResult re-caches with the fingerprint and refreshes the symbol index`(): Unit = runBlocking {
+        val file = tempDir.resolve("Fingerprinted.groovy").apply {
+            createFile()
+            writeText("class Fingerprinted {}")
+        }
+        val uri = file.toUri()
+
+        val scriptSuperClass = mockk<ClassNode>(relaxed = true)
+        every { scriptSuperClass.name } returns "groovy.lang.Script"
+        val scriptClass = mockk<ClassNode>(relaxed = true)
+        every { scriptClass.name } returns "Fingerprinted"
+        every { scriptClass.superClass } returns scriptSuperClass
+        val cachedModuleNode = mockk<ModuleNode>(relaxed = true)
+        every { cachedModuleNode.classes } returns listOf(scriptClass)
+        every { cacheService.getCached(uri) } returns createMockParseResult(ast = cachedModuleNode)
+
+        val freshResult = createMockParseResult(ast = mockk<ModuleNode>(relaxed = true))
+        coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns freshResult
+        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getConfigurationFingerprint() } returns "fp-1"
+
+        accessor.getValidParseResult(uri)
+
+        verify { cacheService.putCached(uri, "class Fingerprinted {}", freshResult, "fp-1") }
+        verify { symbolIndexer.indexCompiled(uri, "class Fingerprinted {}", freshResult.astModel) }
     }
 
     @Test

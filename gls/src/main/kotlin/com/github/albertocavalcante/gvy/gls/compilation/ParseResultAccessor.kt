@@ -29,11 +29,13 @@ private const val CONTENT_PREVIEW_LENGTH = 100
  * @param cacheService Service managing compilation result caching
  * @param workerSessionManager Manager for parser worker sessions (needed for re-compilation)
  * @param workspaceManager Workspace configuration provider (needed for re-compilation)
+ * @param symbolIndexer Symbol index kept in step with any result this accessor re-caches
  */
 class ParseResultAccessor(
     private val cacheService: CompilationCacheService,
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
+    private val symbolIndexer: SymbolIndexingService,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -165,9 +167,10 @@ class ParseResultAccessor(
                 ),
             )
 
-            // Update cache with correct result if parse succeeded
+            // Replace the cached result and its symbol index together, under the current configuration
             if (parseResult.ast != null) {
-                cacheService.putCached(uri, content, parseResult)
+                cacheService.putCached(uri, content, parseResult, workspaceManager.getConfigurationFingerprint())
+                symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
             }
             logger.info {
                 "Re-parsed $uri at CONVERSION: classes=${
