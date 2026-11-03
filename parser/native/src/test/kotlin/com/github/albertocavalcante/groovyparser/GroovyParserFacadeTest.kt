@@ -268,6 +268,32 @@ class GroovyParserFacadeTest {
     }
 
     @Test
+    fun `an excluded broken file is not pulled back in through the source roots`() {
+        // Production also puts the workspace source dirs on the class loader. A remaining source that
+        // names the broken class made Groovy load the broken file from there again, under a file: URL
+        // name, failing the unit once more.
+        val broken = tempDir.resolve("Broken.groovy").also {
+            it.toFile().writeText("class Broken extends com.missing.Base {}")
+        }
+        val other = tempDir.resolve("Other.groovy").also { it.toFile().writeText("class Other { Broken b }") }
+        val helper = tempDir.resolve("Helper.groovy").also { it.toFile().writeText("class Helper {}") }
+
+        val result = parser.parse(
+            ParseRequest(
+                uri = URI.create("file:///w/Uses.groovy"),
+                content = "class Uses { Helper ref = new Helper() }",
+                sourceRoots = listOf(tempDir),
+                workspaceSources = listOf(broken, other, helper),
+                compilePhase = Phases.CANONICALIZATION,
+            ),
+        )
+
+        assertEquals(emptyList(), result.diagnostics.map { it.message })
+        val field = result.ast?.classes?.single { it.nameWithoutPackage == "Uses" }?.getField("ref")
+        assertTrue(field?.type?.redirect()?.isPrimaryClassNode == true, "Helper should resolve to its source class")
+    }
+
+    @Test
     fun `parse returns ast for requested source when workspace sources are present`() {
         val extraSource = tempDir.resolve("Aardvark.groovy").toFile()
         extraSource.writeText(

@@ -47,6 +47,12 @@ data class ParseRequest(
      * file in [workspaceSources]. Ignored in [ParseMode.MINIMAL], like [workspaceSources].
      */
     val openSources: Map<URI, String> = emptyMap(),
+    /**
+     * Source files left out of this compile because they failed it. They are not compiled, and the
+     * class loader does not load them from [sourceRoots] either, so a class they declare is simply
+     * unresolved instead of failing the whole compilation unit again.
+     */
+    val excludedSources: Set<Path> = emptySet(),
     val locatorCandidates: Set<String> = emptySet(),
     /**
      * Groovy compilation phase to compile to.
