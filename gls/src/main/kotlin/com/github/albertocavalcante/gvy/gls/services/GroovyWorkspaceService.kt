@@ -151,6 +151,7 @@ class GroovyWorkspaceService(
             logger.info { "Indexing ${toIndex.size} changed source files" }
             coroutineScope.launch {
                 symbolIndexer.indexAllWorkspaceSources(toIndex)
+                toIndex.forEach { compilationService.refreshSemanticFromDisk(it) }
             }
         }
     }
@@ -208,6 +209,10 @@ class GroovyWorkspaceService(
             logger.info { "Worker changed; reindexing ${sourceUris.size} workspace sources" }
             coroutineScope.launch {
                 symbolIndexer.indexAllWorkspaceSources(sourceUris)
+                // The worker change cleared the semantic index; rebuild it unless the workspace is too large.
+                if (!config.isWorkspaceTooLarge(sourceUris.size)) {
+                    compilationService.getWorkspaceCompiler().compileWorkspace()
+                }
             }
         }
     }

@@ -321,7 +321,10 @@ class GroovyTextDocumentService(
         val uri = URI.create(params.textDocument.uri)
         documentProvider.remove(uri)
         // The buffer may have differed from the disk ("Don't save"): the index follows the disk again.
-        coroutineScope.launch { compilationService.symbolIndexingService.refreshAfterClose(uri) }
+        coroutineScope.launch {
+            compilationService.symbolIndexingService.refreshAfterClose(uri)
+            compilationService.refreshSemanticFromDisk(uri)
+        }
 
         // Cancel and remove any running diagnostics for this file
         diagnosticsOrchestrator.cancelAndRemove(uri)
