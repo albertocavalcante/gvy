@@ -18,12 +18,28 @@ class SemanticIndexerTest {
     private val index = WorkspaceSymbolIndex(GroovySemanticDB())
     private val parser = GroovyParserFacade()
     private var open = false
-    private val indexer = SemanticIndexer(index) { open }
+    private val indexer = SemanticIndexer(index, isOpen = { open })
 
     private fun parse(content: String): ModuleNode =
         checkNotNull(parser.parse(ParseRequest(uri = uri, content = content, compilePhase = Phases.CONVERSION)).ast)
 
     private fun names() = index.getDocument(uri)?.symbols?.map { it.name }.orEmpty()
+
+    @Test
+    fun `a document that fails to build for new content drops the stale one`() {
+        var fail = false
+        val failing = SemanticIndexer(index, build = { ast, u ->
+            check(!fail) { "builder bug" }
+            com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
+        })
+        failing.update(uri, "class Old {}", parse("class Old {}"), typesUnresolved = false)
+        assertNotNull(index.getDocument(uri))
+
+        fail = true
+        failing.update(uri, "class New {}", parse("class New {}"), typesUnresolved = false)
+
+        assertNull(index.getDocument(uri))
+    }
 
     @Test
     fun `a degraded parse of identical content keeps the resolved document`() {

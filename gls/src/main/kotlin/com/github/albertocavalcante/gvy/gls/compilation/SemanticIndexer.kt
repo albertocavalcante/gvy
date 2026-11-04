@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
@@ -22,7 +23,13 @@ internal fun contentHash(content: String): String =
  * - a degraded parse (types unresolved) of content that already has a resolved document is ignored;
  * - a document from disk never replaces the one built from an open editor buffer ([isOpen]).
  */
-class SemanticIndexer(private val index: WorkspaceSymbolIndex, private val isOpen: (URI) -> Boolean = { false }) {
+class SemanticIndexer(
+    private val index: WorkspaceSymbolIndex,
+    private val isOpen: (URI) -> Boolean = { false },
+    private val build: (ModuleNode, URI) -> SemanticDocument = { ast, uri ->
+        SemanticDocumentBuilder(ast, uri).build()
+    },
+) {
     private class Entry(val contentHash: String, val resolved: Boolean)
 
     private val logger = KotlinLogging.logger {}
@@ -40,11 +47,13 @@ class SemanticIndexer(private val index: WorkspaceSymbolIndex, private val isOpe
                 !fromBuffer && isOpen(uri) -> existing
                 existing != null && existing.contentHash == hash && (existing.resolved || typesUnresolved) -> existing
                 else -> try {
-                    index.updateDocument(uri, SemanticDocumentBuilder(ast, uri).build())
+                    index.updateDocument(uri, build(ast, uri))
                     Entry(hash, resolved = !typesUnresolved)
                 } catch (e: Exception) {
-                    logger.warn { "Failed to build semantic document for $uri: ${e.message}" }
-                    existing
+                    // The stored document describes other content now: no document beats a stale one.
+                    logger.warn(e) { "Failed to build semantic document for $uri; dropped its stale one" }
+                    index.removeDocument(uri)
+                    null
                 }
             }
         }
