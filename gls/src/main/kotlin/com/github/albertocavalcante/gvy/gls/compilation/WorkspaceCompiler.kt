@@ -1,22 +1,19 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
-import com.github.albertocavalcante.gvy.gls.cache.SemanticCache
+import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
-import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.io.path.extension
 import kotlin.io.path.readText
 
 /**
@@ -45,21 +42,17 @@ data class WorkspaceCompilationResult(
  * The compiler uses the SEMANTIC_ANALYSIS phase (instead of just CANONICALIZATION) to achieve
  * full type resolution, accepting slower startup time for accuracy.
  *
- * Phase 7 enhancements:
- * - Optional SemanticCache for persistent caching of compilation results
- * - Parallel compilation using proper Dispatchers.Default for CPU-bound work
- * - Cache validation based on source content hashing
+ * Files compile in parallel on Dispatchers.Default, and every successful compile feeds the shared
+ * [SemanticIndexer], so cross-file references cover files that were never opened.
  *
  * @param workerSessionManager The worker session manager for executing compilation
  * @param workspaceManager The workspace manager providing workspace sources and configuration
- * @param semanticDb The shared semantic database for symbol storage (must be the same instance used by providers)
- * @param semanticCache Optional semantic cache for persistent storage (improves startup time)
+ * @param semanticIndexer The shared owner of the workspace semantic index
  */
 class WorkspaceCompiler(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
-    private val semanticDb: GroovySemanticDB,
-    @Suppress("unused") private val semanticCache: SemanticCache? = null,
+    private val semanticIndexer: SemanticIndexer,
     val dependencyGraph: DependencyGraph = DependencyGraph(),
 ) {
     private val logger = KotlinLogging.logger {}
@@ -70,29 +63,9 @@ class WorkspaceCompiler(
      */
     private val moduleCache = mutableMapOf<URI, ModuleNode>()
 
-    /**
-     * Lazy-initialized incremental compiler for dependency-aware compilation.
-     * Uses the shared semanticDb to ensure symbol visibility across all components.
-     */
-    private val incrementalCompiler: IncrementalCompiler by lazy {
-        IncrementalCompiler(
-            workspaceCompiler = this,
-            dependencyGraph = dependencyGraph,
-            semanticDb = semanticDb,
-        )
-    }
-
-    /**
-     * Whether initial compilation has been performed.
-     * Thread-safe using AtomicBoolean to prevent race conditions.
-     */
-    private val initialCompilationDone = AtomicBoolean(false)
-
-    /**
-     * Mutex to ensure only one thread performs initial compilation.
-     * Other threads will wait for the initial compilation to complete.
-     */
-    private val initialCompilationMutex = Mutex()
+    // Set once the eager workspace compile has run: from then on every workspace source has a document.
+    @Volatile
+    private var workspaceCompiled = false
 
     /**
      * Compiles all workspace files together for full cross-file semantic resolution.
@@ -124,6 +97,7 @@ class WorkspaceCompiler(
 
         // Compile all files together
         val result = compileFiles(workspaceSources)
+        workspaceCompiled = true
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info {
@@ -135,39 +109,39 @@ class WorkspaceCompiler(
     }
 
     /**
-     * Incrementally compiles only the changed files and files that depend on them.
+     * Re-derives the semantic documents of [uris] from the files on disk (after a watcher event, or once
+     * the editor buffer a file followed is closed).
      *
-     * Uses dependency tracking to determine which files need recompilation.
-     * On first call, performs a full workspace compilation to build the dependency graph.
-     *
-     * @param changedUris Set of URIs that have changed
-     * @return WorkspaceCompilationResult with updated compilation state
+     * A file that is gone, unreadable, not a `.groovy` source, or never existed (`untitled:`) loses its
+     * document. An open file keeps following its buffer, and one whose document already matches the disk
+     * is skipped. Each compile includes every workspace source, so many changed files (a branch switch)
+     * get one workspace compile instead of one each. Without the eager workspace compile (the workspace is
+     * over the configured size limit) only files that already have a document are refreshed.
      */
-    suspend fun incrementalCompile(changedUris: Set<URI>): WorkspaceCompilationResult {
-        logger.info { "Incremental compile requested for ${changedUris.size} files" }
-
-        // On first incremental compile, do initial compilation to build dependency graph
-        // Use mutex to ensure only one thread performs initial compilation while others wait
-        if (!initialCompilationDone.get()) {
-            initialCompilationMutex.withLock {
-                // Double-check inside the lock to avoid redundant compilation
-                if (initialCompilationDone.compareAndSet(false, true)) {
-                    logger.info { "First incremental compile - performing initial compilation" }
-                    val result = incrementalCompiler.initialCompile()
-                    return result
-                }
+    suspend fun refreshFromDisk(uris: Collection<URI>) = withContext(Dispatchers.IO) {
+        val stale = uris.filter(::needsRefresh)
+        when {
+            stale.isEmpty() -> Unit
+            workspaceCompiled && stale.size > BATCH_REFRESH_LIMIT -> compileWorkspace()
+            else -> stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
+                compileFileWithWorkspaceContext(
+                    checkNotNull(UriPathConverter.toPath(uri)),
+                    workspaceManager.getWorkspaceSources(),
+                    workspaceManager.getDependencyClasspath(),
+                    workspaceManager.getSourceRoots(),
+                )
             }
         }
+    }
 
-        // Perform incremental compilation using dependency tracking
-        val incrementalResult = incrementalCompiler.compile(changedUris)
-
-        // Convert to WorkspaceCompilationResult
-        return WorkspaceCompilationResult(
-            modules = incrementalResult.modules,
-            errors = incrementalResult.errors,
-            success = incrementalResult.success,
-        )
+    /** Whether [uri]'s document must be rebuilt from disk; drops it when there is no source file to build from. */
+    private fun needsRefresh(uri: URI): Boolean {
+        if (semanticIndexer.followsBuffer(uri)) return false
+        val path = UriPathConverter.toPath(uri)?.takeIf { it.extension.equals("groovy", ignoreCase = true) }
+        // Read once: the file may vanish between a check and the read (a checkout in progress).
+        val content = path?.let { runCatching { it.readText() }.getOrNull() }
+        if (content == null) semanticIndexer.remove(uri)
+        return content != null && !semanticIndexer.isCurrent(uri, content)
     }
 
     /**
@@ -264,6 +238,13 @@ class WorkspaceCompiler(
             val module = parseResult.ast
             if (module != null) {
                 logger.debug { "Successfully compiled: $uri" }
+                semanticIndexer.update(
+                    uri,
+                    content,
+                    module,
+                    parseResult.outcome.achievedPhase,
+                    fromBuffer = false,
+                )
                 FileCompilationResult.Success(uri, module)
             } else {
                 val errorMessage = if (parseResult.diagnostics.isNotEmpty()) {
@@ -315,5 +296,10 @@ class WorkspaceCompiler(
     private sealed class FileCompilationResult {
         data class Success(val uri: URI, val module: ModuleNode) : FileCompilationResult()
         data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
+    }
+
+    private companion object {
+        /** Changed files beyond which one workspace compile is cheaper than compiling each against it. */
+        const val BATCH_REFRESH_LIMIT = 8
     }
 }

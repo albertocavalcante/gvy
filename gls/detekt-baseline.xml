@@ -105,14 +105,12 @@
     <ID>TooGenericExceptionCaught:GroovyTextDocumentService.kt$GroovyTextDocumentService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:GroovyWorkspaceService.kt$GroovyWorkspaceService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:HoverProvider.kt$HoverProvider$e: Exception</ID>
-    <ID>TooGenericExceptionCaught:IncrementalCompiler.kt$IncrementalCompiler$e: Exception</ID>
     <ID>TooGenericExceptionCaught:JavaSourceInspector.kt$JavaSourceInspector$e: Exception</ID>
     <ID>TooGenericExceptionCaught:JdkSourceResolver.kt$JdkSourceResolver$e: Exception</ID>
     <ID>TooGenericExceptionCaught:JenkinsSemanticTokenProvider.kt$JenkinsSemanticTokenProvider$e: Exception</ID>
     <ID>TooGenericExceptionCaught:MethodCallMetadataResolver.kt$MethodCallMetadataResolver$e: Exception</ID>
     <ID>TooGenericExceptionCaught:MethodResolutionStrategy.kt$MethodResolutionStrategy$e: Exception</ID>
     <ID>TooGenericExceptionCaught:ReferenceProvider.kt$ReferenceProvider$e: Exception</ID>
-    <ID>TooGenericExceptionCaught:SemanticCache.kt$SemanticCache$e: Exception</ID>
     <ID>TooGenericExceptionCaught:SourceJarExtractor.kt$SourceJarExtractor$e: Exception</ID>
     <ID>TooGenericExceptionCaught:SourceNavigationService.kt$SourceNavigationService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:WorkspaceCompiler.kt$WorkspaceCompiler$e: Exception</ID>

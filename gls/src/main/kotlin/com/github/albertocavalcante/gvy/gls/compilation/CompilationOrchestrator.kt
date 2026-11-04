@@ -2,8 +2,6 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
-import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
-import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import com.github.albertocavalcante.nativeapi.ParseRequest
@@ -19,7 +17,6 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import java.net.URI
 import java.nio.file.Files
@@ -41,7 +38,7 @@ data class CompilationOrchestratorDependencies(
     val resultMapper: CompilationResultMapper,
     val ioDispatcher: CoroutineDispatcher,
     val errorHandler: CompilationErrorHandler,
-    val semanticDb: GroovySemanticDB? = null,
+    val semanticIndexer: SemanticIndexer? = null,
     val dependencyGraph: DependencyGraph? = null,
     /** Open editor buffers; [CompilationOrchestrator.ensureCompiled] compiles these before falling back to disk. */
     val documentProvider: DocumentProvider? = null,
@@ -57,7 +54,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val documentProvider = dependencies.documentProvider
     private val ioDispatcher = dependencies.ioDispatcher
     private val errorHandler = dependencies.errorHandler
-    private val semanticDb = dependencies.semanticDb
+    private val semanticIndexer = dependencies.semanticIndexer
     private val dependencyGraph = dependencies.dependencyGraph
 
     private val logger = KotlinLogging.logger {}
@@ -88,6 +85,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                     logger.debug { "Using cached parse result for: $uri" }
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
                     symbolIndexer.ensureIndexed(uri, content) { cachedResult.astModel }
+                    cachedResult.ast?.let {
+                        semanticIndexer?.update(uri, content, it, cachedResult.outcome.achievedPhase)
+                    }
                     resultMapper.map(cachedResult, content)
                 }
             } else {
@@ -147,8 +147,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // Index symbols
             symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
 
-            // Build semantic document for cross-file resolution
-            buildSemanticDocument(uri, ast)
+            // Semantic document for cross-file resolution
+            semanticIndexer?.update(uri, content, ast, parseResult.outcome.achievedPhase)
         }
 
         return resultMapper.map(parseResult, content)
@@ -328,22 +328,5 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             candidates += path.toAbsolutePath().toString()
         }
         return candidates
-    }
-
-    /**
-     * Builds a semantic document from the AST and updates the SemanticDB.
-     * This enables cross-file symbol resolution via SemanticDBResolutionStrategy.
-     */
-    @Suppress("TooGenericExceptionCaught")
-    private fun buildSemanticDocument(uri: URI, ast: ModuleNode) {
-        val db = semanticDb ?: return
-        try {
-            val builder = SemanticDocumentBuilder(ast, uri)
-            val semanticDoc = builder.build()
-            db.updateDocument(uri, semanticDoc)
-            logger.trace { "Built semantic document for $uri with ${semanticDoc.symbols.size} symbols" }
-        } catch (e: Exception) {
-            logger.warn { "Failed to build semantic document for $uri: ${e.message}" }
-        }
     }
 }

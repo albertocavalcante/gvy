@@ -14,8 +14,6 @@ import kotlinx.coroutines.launch
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.MessageDigest
-import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -180,9 +178,7 @@ class SymbolIndexingService(
         return index
     }
 
-    private fun hash(content: String): String = HexFormat.of().formatHex(
-        MessageDigest.getInstance("SHA-256").digest(content.toByteArray()),
-    )
+    private fun hash(content: String): String = contentHash(content)
 
     /**
      * Performs the actual indexing of a file.

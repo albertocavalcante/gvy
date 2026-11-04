@@ -55,13 +55,14 @@ class GroovyCompilationService(
     // These must be created before WorkspaceCompiler to ensure the same instance is shared
     private val semanticDb = GroovySemanticDB()
     private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb)
+    private val semanticIndexer = SemanticIndexer(workspaceSymbolIndex, isOpen)
 
     // Shared dependency graph for bounded workspace selection (Issue #743)
     private val dependencyGraph = DependencyGraph()
     private val workspaceCompiler = WorkspaceCompiler(
         workerSessionManager,
         workspaceManager,
-        semanticDb,
+        semanticIndexer,
         dependencyGraph = dependencyGraph,
     )
 
@@ -88,7 +89,7 @@ class GroovyCompilationService(
             resultMapper = resultMapper,
             ioDispatcher = ioDispatcher,
             errorHandler = errorHandler,
-            semanticDb = semanticDb,
+            semanticIndexer = semanticIndexer,
             dependencyGraph = dependencyGraph,
             documentProvider = documentProvider,
         ),
@@ -176,14 +177,22 @@ class GroovyCompilationService(
     fun clearCaches() {
         cacheService.clear()
         symbolIndexer.clear()
+        semanticIndexer.clear()
         invalidateClassLoader()
     }
 
     fun invalidateCache(uri: URI) {
         cacheService.invalidate(uri)
         symbolIndexer.invalidate(uri)
+        semanticIndexer.remove(uri)
         logger.debug { "Invalidated cache for: $uri" }
     }
+
+    /**
+     * Re-derives the semantic document of [uri] from disk: after its buffer was closed, or after the file
+     * changed. Drops it when there is no file (an `untitled:` buffer). An open buffer's document is kept.
+     */
+    suspend fun refreshSemanticFromDisk(uris: Collection<URI>) = workspaceCompiler.refreshFromDisk(uris)
 
     fun getCacheStatistics() = cacheService.getStatistics()
 
