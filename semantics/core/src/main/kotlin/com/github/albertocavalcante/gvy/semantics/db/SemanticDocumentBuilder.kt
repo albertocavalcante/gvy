@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
@@ -333,7 +334,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             owner.getDeclaredField(name) != null || owner.getProperty(name) != null
 
         /** Declare a local variable or parameter: bind the name and index it as a VARIABLE symbol. */
-        private fun declareLocal(name: String, node: Any, type: ClassNode?) {
+        private fun declareLocal(name: String, node: ASTNode, type: ClassNode?) {
             val scope = scopes.lastOrNull() ?: return
             val range = nodeToRange(node) ?: return
             val id = createLocalSymbolId(scopeOwnerId, name, range)
@@ -487,31 +488,26 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
     }
 
     /**
-     * Convert AST node to Range (0-indexed)
+     * Convert an AST node to a half-open, 0-indexed (LSP) [Range].
+     *
+     * Groovy lines and columns are 1-based and `lastColumnNumber` is the column just past the node's last
+     * character, so the LSP exclusive end is `lastColumnNumber - 1`. This is the same conversion as the
+     * parser module's `ASTNode.safeRange`. Nodes without positions, or that would be empty, give null.
      */
-    private fun nodeToRange(node: Any): Range? {
-        return try {
-            // Use reflection to get line and column info from ASTNode
-            val lineStart = node.javaClass.getMethod("getLineNumber").invoke(node) as? Int ?: return null
-            val columnStart = node.javaClass.getMethod("getColumnNumber").invoke(node) as? Int ?: return null
-            val lineEnd = node.javaClass.getMethod("getLastLineNumber").invoke(node) as? Int ?: lineStart
-            val columnEnd = node.javaClass.getMethod("getLastColumnNumber").invoke(node) as? Int ?: columnStart
-
-            // Convert to 0-indexed (Groovy uses 1-indexed)
-            if (lineStart <= 0 || columnStart <= 0) return null
-
-            Range(
-                startLine = lineStart - 1,
-                startColumn = columnStart - 1,
-                endLine = lineEnd - 1,
-                endColumn = columnEnd,
-            )
-        } catch (e: Exception) {
-            null
-        }
-    }
+    private fun nodeToRange(node: ASTNode): Range? =
+        groovyToLspRange(node.lineNumber, node.columnNumber, node.lastLineNumber, node.lastColumnNumber)
 
     companion object {
+        /**
+         * Groovy's 1-based (line, column, lastLine, lastColumn-exclusive) as an LSP range, or null when
+         * the position is unset (<= 0) or the range would be empty or inverted.
+         */
+        internal fun groovyToLspRange(line: Int, column: Int, lastLine: Int, lastColumn: Int): Range? {
+            val valid = line > 0 && column > 0 && lastLine >= line && lastColumn > 0
+            val nonEmpty = lastLine > line || lastColumn > column
+            return if (valid && nonEmpty) Range(line - 1, column - 1, lastLine - 1, lastColumn - 1) else null
+        }
+
         /**
          * Create unique symbol ID for a class following SemanticDB convention.
          * Format: "com/example/MyClass#"
