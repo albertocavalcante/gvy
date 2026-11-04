@@ -419,9 +419,8 @@ class GroovyCompilationServiceTest {
     }
 
     @Test
-    fun `symbols indexed by IncrementalCompiler should be visible to queries`(): Unit = runBlocking {
-        // This test ensures that when WorkspaceCompiler's IncrementalCompiler indexes symbols,
-        // they are stored in a SemanticDB that is accessible to other components
+    fun `symbols from the semantic indexer are visible to queries`(): Unit = runBlocking {
+        // Documents the SemanticIndexer stores land in the SemanticDB other components read
         val content1 = """
             class FirstClass {
                 String name

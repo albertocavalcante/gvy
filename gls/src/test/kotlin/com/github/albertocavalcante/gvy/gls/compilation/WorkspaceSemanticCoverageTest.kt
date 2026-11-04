@@ -97,7 +97,7 @@ class WorkspaceSemanticCoverageTest {
         service.compile(b, buffer)
         documents.remove(b)
 
-        service.refreshSemanticFromDisk(b)
+        service.refreshSemanticFromDisk(listOf(b))
 
         val names = checkNotNull(index.getDocument(b)).symbols.map { it.name }
         assertEquals(true, "run" in names && "fromBuffer" !in names, "disk symbols restored: $names")
@@ -112,8 +112,35 @@ class WorkspaceSemanticCoverageTest {
         assertNotNull(index.getDocument(untitled))
         documents.remove(untitled)
 
-        service.refreshSemanticFromDisk(untitled)
+        service.refreshSemanticFromDisk(listOf(untitled))
 
         assertNull(index.getDocument(untitled))
+    }
+
+    @Test
+    fun `a file changed on disk with nothing open gets a new document`(): Unit = runBlocking {
+        val (a, b) = workspaceWithCaller()
+        service.getWorkspaceCompiler().compileWorkspace()
+        val id = greetId(a)
+        assertTrue(b.toString() in referencingFiles(id))
+
+        Files.writeString(Path.of(b), "class B {\n    def run() { 'no call' }\n}\n")
+        service.refreshSemanticFromDisk(listOf(b))
+
+        assertTrue(b.toString() !in referencingFiles(id), "the removed call is gone")
+    }
+
+    @Test
+    fun `a file that vanishes mid-batch is dropped without stopping the others`(): Unit = runBlocking {
+        val (a, b) = workspaceWithCaller()
+        service.getWorkspaceCompiler().compileWorkspace()
+        val id = greetId(a)
+        Files.delete(Path.of(a))
+        Files.writeString(Path.of(b), "class B {\n    def run() { 'no call' }\n}\n")
+
+        service.refreshSemanticFromDisk(listOf(a, b))
+
+        assertNull(index.getDocument(a))
+        assertTrue(b.toString() !in referencingFiles(id), "B was still refreshed")
     }
 }

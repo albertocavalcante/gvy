@@ -12,7 +12,6 @@ import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.extension
 import kotlin.io.path.readText
@@ -64,6 +63,10 @@ class WorkspaceCompiler(
      */
     private val moduleCache = mutableMapOf<URI, ModuleNode>()
 
+    // Set once the eager workspace compile has run: from then on every workspace source has a document.
+    @Volatile
+    private var workspaceCompiled = false
+
     /**
      * Compiles all workspace files together for full cross-file semantic resolution.
      *
@@ -94,6 +97,7 @@ class WorkspaceCompiler(
 
         // Compile all files together
         val result = compileFiles(workspaceSources)
+        workspaceCompiled = true
 
         val elapsed = System.currentTimeMillis() - startTime
         logger.info {
@@ -105,22 +109,39 @@ class WorkspaceCompiler(
     }
 
     /**
-     * Re-derives the semantic document of [uri] from the file on disk, after the editor buffer it followed
-     * was closed. Drops it when the file is gone, is not a workspace `.groovy` source, or never existed
-     * (`untitled:`), and does nothing when the stored document already matches the disk.
+     * Re-derives the semantic documents of [uris] from the files on disk (after a watcher event, or once
+     * the editor buffer a file followed is closed).
+     *
+     * A file that is gone, unreadable, not a `.groovy` source, or never existed (`untitled:`) loses its
+     * document. An open file keeps following its buffer, and one whose document already matches the disk
+     * is skipped. Each compile includes every workspace source, so many changed files (a branch switch)
+     * get one workspace compile instead of one each. Without the eager workspace compile (the workspace is
+     * over the configured size limit) only files that already have a document are refreshed.
      */
-    suspend fun refreshFromDisk(uri: URI) = withContext(Dispatchers.IO) {
-        val path = UriPathConverter.toPath(uri)
-        if (path == null || !path.extension.equals("groovy", ignoreCase = true) || !Files.isRegularFile(path)) {
-            semanticIndexer.remove(uri)
-        } else if (!semanticIndexer.isCurrent(uri, path.readText())) {
-            compileFileWithWorkspaceContext(
-                path,
-                workspaceManager.getWorkspaceSources(),
-                workspaceManager.getDependencyClasspath(),
-                workspaceManager.getSourceRoots(),
-            )
+    suspend fun refreshFromDisk(uris: Collection<URI>) = withContext(Dispatchers.IO) {
+        val stale = uris.filter(::needsRefresh)
+        when {
+            stale.isEmpty() -> Unit
+            workspaceCompiled && stale.size > BATCH_REFRESH_LIMIT -> compileWorkspace()
+            else -> stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
+                compileFileWithWorkspaceContext(
+                    checkNotNull(UriPathConverter.toPath(uri)),
+                    workspaceManager.getWorkspaceSources(),
+                    workspaceManager.getDependencyClasspath(),
+                    workspaceManager.getSourceRoots(),
+                )
+            }
         }
+    }
+
+    /** Whether [uri]'s document must be rebuilt from disk; drops it when there is no source file to build from. */
+    private fun needsRefresh(uri: URI): Boolean {
+        if (semanticIndexer.followsBuffer(uri)) return false
+        val path = UriPathConverter.toPath(uri)?.takeIf { it.extension.equals("groovy", ignoreCase = true) }
+        // Read once: the file may vanish between a check and the read (a checkout in progress).
+        val content = path?.let { runCatching { it.readText() }.getOrNull() }
+        if (content == null) semanticIndexer.remove(uri)
+        return content != null && !semanticIndexer.isCurrent(uri, content)
     }
 
     /**
@@ -221,7 +242,7 @@ class WorkspaceCompiler(
                     uri,
                     content,
                     module,
-                    parseResult.outcome.typesUnresolved,
+                    parseResult.outcome.achievedPhase,
                     fromBuffer = false,
                 )
                 FileCompilationResult.Success(uri, module)
@@ -275,5 +296,10 @@ class WorkspaceCompiler(
     private sealed class FileCompilationResult {
         data class Success(val uri: URI, val module: ModuleNode) : FileCompilationResult()
         data class Failure(val errors: List<CompilationError>) : FileCompilationResult()
+    }
+
+    private companion object {
+        /** Changed files beyond which one workspace compile is cheaper than compiling each against it. */
+        const val BATCH_REFRESH_LIMIT = 8
     }
 }

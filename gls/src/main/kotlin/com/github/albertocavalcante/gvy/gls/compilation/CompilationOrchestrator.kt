@@ -86,7 +86,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
                     symbolIndexer.ensureIndexed(uri, content) { cachedResult.astModel }
                     cachedResult.ast?.let {
-                        semanticIndexer?.update(uri, content, it, cachedResult.outcome.typesUnresolved)
+                        semanticIndexer?.update(uri, content, it, cachedResult.outcome.achievedPhase)
                     }
                     resultMapper.map(cachedResult, content)
                 }
@@ -148,7 +148,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
 
             // Semantic document for cross-file resolution
-            semanticIndexer?.update(uri, content, ast, parseResult.outcome.typesUnresolved)
+            semanticIndexer?.update(uri, content, ast, parseResult.outcome.achievedPhase)
         }
 
         return resultMapper.map(parseResult, content)

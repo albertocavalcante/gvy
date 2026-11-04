@@ -151,7 +151,7 @@ class GroovyWorkspaceService(
             logger.info { "Indexing ${toIndex.size} changed source files" }
             coroutineScope.launch {
                 symbolIndexer.indexAllWorkspaceSources(toIndex)
-                toIndex.forEach { compilationService.refreshSemanticFromDisk(it) }
+                compilationService.refreshSemanticFromDisk(toIndex)
             }
         }
     }

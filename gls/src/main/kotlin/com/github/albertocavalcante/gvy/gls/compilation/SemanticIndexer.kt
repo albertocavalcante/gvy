@@ -18,9 +18,10 @@ internal fun contentHash(content: String): String =
  * The one owner of the workspace semantic index: every compile that yields a module AST for a file
  * reports it here, and cache invalidation and deletes remove entries here.
  *
- * Each file keeps the content hash and resolution quality of its document, so:
+ * Each file keeps the content hash and the compile phase its document was built at, so:
  * - a document built from different content replaces the stored one (stale is worse than degraded);
- * - a degraded parse (types unresolved) of content that already has a resolved document is ignored;
+ * - for the same content, only a document from a later phase replaces it: a degraded parse never
+ *   displaces a resolved one, and which of two compiles of the same text lands first does not matter;
  * - a document from disk never replaces the one built from an open editor buffer ([isOpen]).
  */
 class SemanticIndexer(
@@ -30,25 +31,25 @@ class SemanticIndexer(
         SemanticDocumentBuilder(ast, uri).build()
     },
 ) {
-    private class Entry(val contentHash: String, val resolved: Boolean)
+    private class Entry(val contentHash: String, val phase: Int)
 
     private val logger = KotlinLogging.logger {}
     private val entries = ConcurrentHashMap<URI, Entry>()
 
     /**
-     * Stores the semantic document of [ast], compiled from [content] ([fromBuffer]: the text of an editor
-     * buffer rather than the file on disk).
+     * Stores the semantic document of [ast], compiled from [content] to [phase] (the phase the compile
+     * reached; [fromBuffer]: the text of an editor buffer rather than the file on disk).
      */
     @Suppress("TooGenericExceptionCaught") // a failing builder must not fail the compile that produced the AST
-    fun update(uri: URI, content: String, ast: ModuleNode, typesUnresolved: Boolean, fromBuffer: Boolean = true) {
+    fun update(uri: URI, content: String, ast: ModuleNode, phase: Int, fromBuffer: Boolean = true) {
         val hash = contentHash(content)
         entries.compute(uri) { _, existing ->
             when {
                 !fromBuffer && isOpen(uri) -> existing
-                existing != null && existing.contentHash == hash && (existing.resolved || typesUnresolved) -> existing
+                existing != null && existing.contentHash == hash && existing.phase >= phase -> existing
                 else -> try {
                     index.updateDocument(uri, build(ast, uri))
-                    Entry(hash, resolved = !typesUnresolved)
+                    Entry(hash, phase)
                 } catch (e: Exception) {
                     // The stored document describes other content now: no document beats a stale one.
                     logger.warn(e) { "Failed to build semantic document for $uri; dropped its stale one" }
@@ -58,6 +59,12 @@ class SemanticIndexer(
             }
         }
     }
+
+    /** Whether [uri] follows an open editor buffer, which a document from disk must not replace. */
+    fun followsBuffer(uri: URI): Boolean = isOpen(uri)
+
+    /** Whether a document is stored for [uri]. */
+    operator fun contains(uri: URI): Boolean = entries.containsKey(uri)
 
     /** Whether the stored document was built from exactly [content]. */
     fun isCurrent(uri: URI, content: String): Boolean = entries[uri]?.contentHash == contentHash(content)

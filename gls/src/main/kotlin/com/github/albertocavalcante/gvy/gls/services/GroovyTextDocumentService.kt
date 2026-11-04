@@ -323,7 +323,7 @@ class GroovyTextDocumentService(
         // The buffer may have differed from the disk ("Don't save"): the index follows the disk again.
         coroutineScope.launch {
             compilationService.symbolIndexingService.refreshAfterClose(uri)
-            compilationService.refreshSemanticFromDisk(uri)
+            compilationService.refreshSemanticFromDisk(listOf(uri))
         }
 
         // Cancel and remove any running diagnostics for this file

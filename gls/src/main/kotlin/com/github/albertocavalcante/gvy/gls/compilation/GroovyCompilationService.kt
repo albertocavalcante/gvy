@@ -192,7 +192,7 @@ class GroovyCompilationService(
      * Re-derives the semantic document of [uri] from disk: after its buffer was closed, or after the file
      * changed. Drops it when there is no file (an `untitled:` buffer). An open buffer's document is kept.
      */
-    suspend fun refreshSemanticFromDisk(uri: URI) = workspaceCompiler.refreshFromDisk(uri)
+    suspend fun refreshSemanticFromDisk(uris: Collection<URI>) = workspaceCompiler.refreshFromDisk(uris)
 
     fun getCacheStatistics() = cacheService.getStatistics()
 
