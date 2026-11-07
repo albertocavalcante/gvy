@@ -31,6 +31,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
@@ -522,21 +523,14 @@ class GroovyTextDocumentService(
         }
 
         try {
-            val renameProvider = RenameProvider(compilationService) { uri ->
-                documentProvider.get(uri)
-                    ?: if (uri.scheme ==
-                        "file"
-                    ) {
-                        runCatching { java.nio.file.Files.readString(java.nio.file.Path.of(uri)) }.getOrNull()
-                    } else {
-                        null
-                    }
-            }
+            val renameProvider = RenameProvider(compilationService, documentProvider)
             renameProvider.provideRename(
                 params.textDocument.uri,
                 params.position,
                 params.newName,
             )
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: ResponseErrorException) {
             logger.error { "Rename failed: ${e.message}" }
             throw e

@@ -2,11 +2,13 @@ package com.github.albertocavalcante.gvy.gls.providers.references
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
@@ -86,7 +88,7 @@ class ReferenceProvider(
                         context.visitor,
                         context.symbolTable,
                         includeDeclaration,
-                        emittedLocations,
+                        ReferenceScanState(emittedLocations),
                     )
                 }
             }
@@ -104,6 +106,24 @@ class ReferenceProvider(
         } catch (e: Exception) {
             logger.error(e) { "Unexpected error finding references" }
         }
+    }
+
+    /** Rename must reuse its definition's parse result and propagate scan failures without partial edits. */
+    internal fun provideRenameReferences(
+        uri: URI,
+        definition: ASTNode,
+        compiled: CompiledDocumentSnapshot,
+    ): Flow<Location> = channelFlow {
+        findReferences(
+            definition,
+            compiled.parseResult.astModel,
+            compiled.parseResult.symbolTable,
+            includeDeclaration = true,
+            state = ReferenceScanState(
+                mutableSetOf(),
+                capturedSources = mapOf(uri to TextIndex(compiled.sourceText)),
+            ),
+        )
     }
 
     /**
@@ -201,9 +221,17 @@ class ReferenceProvider(
         val visitor: GroovyAstModel,
         val symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
         val includeDeclaration: Boolean,
-        val emittedLocations: MutableSet<String>,
-        val textIndexes: MutableMap<String, TextIndex?>,
+        val state: ReferenceScanState,
     )
+
+    private class ReferenceScanState(
+        val emittedLocations: MutableSet<String>,
+        val textIndexes: MutableMap<String, TextIndex?> = HashMap(),
+        val capturedSources: Map<URI, TextIndex>? = null,
+    ) {
+        val requireCapturedSource: Boolean get() = capturedSources != null
+        val parameterRanges = HashMap<URI, ParameterSourceRanges>()
+    }
 
     /**
      * Create reference context from URI and position.
@@ -300,9 +328,8 @@ class ReferenceProvider(
         visitor: GroovyAstModel,
         symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
         includeDeclaration: Boolean,
-        emittedLocations: MutableSet<String>,
+        state: ReferenceScanState,
     ) {
-        val textIndexes = HashMap<String, TextIndex?>()
         visitor.getAllNodes()
             .filter { it.hasValidPosition() }
             .forEach { node ->
@@ -312,8 +339,7 @@ class ReferenceProvider(
                     visitor = visitor,
                     symbolTable = symbolTable,
                     includeDeclaration = includeDeclaration,
-                    emittedLocations = emittedLocations,
-                    textIndexes = textIndexes,
+                    state = state,
                 )
                 processNode(params)
             }
@@ -343,9 +369,9 @@ class ReferenceProvider(
         val isMatchingDefinition = when (nodeDefinition) {
             null -> false
             params.definition -> true
-            // Robust fallback for Parameters
+            // A held parse preserves declaration identity; name/type equality cannot establish lexical ownership.
             is Parameter -> {
-                if (params.definition is Parameter) {
+                if (params.definition is Parameter && !params.state.requireCapturedSource) {
                     areParametersEqual(nodeDefinition, params.definition)
                 } else {
                     false
@@ -375,8 +401,7 @@ class ReferenceProvider(
                 params.node,
                 params.definition.declaredName(),
                 params.visitor,
-                params.emittedLocations,
-                params.textIndexes,
+                params.state,
             )
         }
     }
@@ -443,12 +468,11 @@ class ReferenceProvider(
         node: ASTNode,
         name: String?,
         visitor: GroovyAstModel,
-        seen: MutableSet<String>,
-        textIndexes: MutableMap<String, TextIndex?>,
+        state: ReferenceScanState,
     ) {
-        val location = node.nameLocation(name, visitor, textIndexes) ?: return
+        val location = node.nameLocation(name, visitor, state) ?: return
         val key = "${location.uri}:${location.range.start.line}:${location.range.start.character}"
-        if (seen.add(key)) {
+        if (state.emittedLocations.add(key)) {
             send(location)
         }
     }
@@ -459,23 +483,49 @@ class ReferenceProvider(
      * have their own AST nodes; elsewhere the name is found in the compiled source text. Null when
      * the node does not contain the name, so such a node is never reported.
      */
-    private fun ASTNode.nameLocation(
-        name: String?,
-        visitor: GroovyAstModel,
-        textIndexes: MutableMap<String, TextIndex?>,
-    ): Location? {
-        val nodeLocation = toLspLocation(visitor) ?: return null
+    private fun ASTNode.nameLocation(name: String?, visitor: GroovyAstModel, state: ReferenceScanState): Location? {
+        val nodeLocation = toLspLocation(visitor)
+        check(nodeLocation != null || !state.requireCapturedSource) { "Missing rename reference location" }
+        if (nodeLocation == null) return null
         if (name == null) return nodeLocation
         val nameNode = when (this) {
             is MethodCallExpression -> method
             is PropertyExpression -> property
             else -> null
         }
-        val searchIn = nameNode?.toLspLocation(visitor)?.range ?: nodeLocation.range
-        val index = textIndexes.getOrPut(nodeLocation.uri) {
-            compilationService.getCompiledContent(URI.create(nodeLocation.uri))?.let(::TextIndex)
-        } ?: return nodeLocation
-        return firstNameOccurrence(index, searchIn, name)?.let { Location(nodeLocation.uri, it) }
+        val namedLocation = nameNode?.toLspLocation(visitor)
+        check(nameNode == null || namedLocation != null || !state.requireCapturedSource) {
+            "Missing rename member location"
+        }
+        val searchIn = namedLocation?.range ?: nodeLocation.range
+        val captured = state.capturedSources
+        val index = if (captured != null) {
+            checkNotNull(captured[URI.create(nodeLocation.uri)]) { "No captured rename source for ${nodeLocation.uri}" }
+        } else {
+            state.textIndexes.getOrPut(nodeLocation.uri) {
+                compilationService.getCompiledContent(URI.create(nodeLocation.uri))?.let(::TextIndex)
+            }
+        }
+        return if (index == null) {
+            nodeLocation
+        } else {
+            val range = identifierRange(name, index, searchIn, state, URI.create(nodeLocation.uri))
+            check(range != null || !state.requireCapturedSource) { "Missing rename identifier in captured source" }
+            range?.let { Location(nodeLocation.uri, it) }
+        }
+    }
+
+    private fun ASTNode.identifierRange(
+        name: String,
+        index: TextIndex,
+        searchIn: Range,
+        state: ReferenceScanState,
+        uri: URI,
+    ): Range? {
+        if (this !is Parameter || !state.requireCapturedSource) return firstNameOccurrence(index, searchIn, name)
+        val ranges = state.parameterRanges.getOrPut(uri) { ParameterSourceRanges(index.text.lines()) }
+        val span = ranges.name(this) ?: return null
+        return Range(Position(span.line, span.start), Position(span.line, span.start + span.length))
     }
 
     /**

@@ -45,11 +45,36 @@ steps:
   - assert:
       source: renameResult
       checks:
+        - jsonPath: $.documentChanges[0].textDocument.version
+          expect:
+            type: EQUALS
+            value: 1
+            message: "Rename must preserve the open document version used for its ranges"
         - jsonPath: $.documentChanges[0].edits
           expect:
             type: SIZE
             value: 3
             message: "Should return 3 text edits for renamed variable (decl + 2 usages)"
+        - jsonPath: $.documentChanges
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $.documentChanges[0].edits[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - range:
+                  start: { line: 0, character: 4 }
+                  end: { line: 0, character: 14 }
+                newText: renamedVariable
+              - range:
+                  start: { line: 1, character: 8 }
+                  end: { line: 1, character: 18 }
+                newText: renamedVariable
+              - range:
+                  start: { line: 2, character: 13 }
+                  end: { line: 2, character: 23 }
+                newText: renamedVariable
 
   - shutdown: {}
   - exit: {}
