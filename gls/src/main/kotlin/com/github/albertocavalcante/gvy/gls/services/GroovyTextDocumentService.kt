@@ -295,7 +295,7 @@ class GroovyTextDocumentService(
         logger.info { "Document opened: ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
         val content = params.textDocument.text
-        documentProvider.put(uri, content)
+        documentProvider.put(uri, content, params.textDocument.version)
 
         diagnosticsOrchestrator.trigger(uri, content)
     }
@@ -303,16 +303,20 @@ class GroovyTextDocumentService(
     override fun didChange(params: DidChangeTextDocumentParams) {
         logger.debug { "Document changed: ${params.textDocument.uri}" }
 
-        // For full sync, we get the entire document content
-        if (params.contentChanges.isNotEmpty()) {
-            val newContent = params.contentChanges.first().text
-            val uri = URI.create(params.textDocument.uri)
-            documentProvider.put(uri, newContent)
+        // We advertise full synchronization: a ranged change must never replace the whole buffer.
+        if (params.contentChanges.any { it.range != null }) {
+            logger.warn { "Ignoring ranged change for full-sync document: ${params.textDocument.uri}" }
+            return
+        }
+        val version = params.textDocument.version ?: return
+        val uri = URI.create(params.textDocument.uri)
+        val snapshot = documentProvider.update(uri, params.contentChanges.lastOrNull()?.text, version) ?: return
 
+        if (params.contentChanges.isNotEmpty()) {
             // Invalidate documentation cache for this document
             DocumentationProvider.invalidateDocument(uri)
 
-            diagnosticsOrchestrator.trigger(uri, newContent, debounce = true)
+            diagnosticsOrchestrator.trigger(uri, snapshot.content, debounce = true)
         }
     }
 
