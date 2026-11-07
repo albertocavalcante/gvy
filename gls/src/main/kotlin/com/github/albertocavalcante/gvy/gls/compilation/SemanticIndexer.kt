@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -95,7 +96,12 @@ class SemanticIndexer(
                 !fromBuffer && isOpen(uri) -> existing
                 existing != null && existing.contentHash == hash && existing.phase >= phase -> existing
                 else -> try {
-                    index.updateDocument(uri, build(ast, uri), sourceText = content)
+                    index.updateDocument(
+                        uri,
+                        build(ast, uri),
+                        sourceText = content,
+                        implementations = ImplementationFacts.build(ast),
+                    )
                     Entry(hash, phase)
                 } catch (e: Exception) {
                     // The stored document describes other content now: no document beats a stale one.

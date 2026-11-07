@@ -17,7 +17,11 @@ import kotlin.concurrent.write
 class GroovySemanticDB {
     private val lock = ReentrantReadWriteLock()
 
-    private class StoredDocument(val document: SemanticDocument, val sourceText: String?)
+    private class StoredDocument(
+        val document: SemanticDocument,
+        val sourceText: String?,
+        val implementations: ImplementationFacts.Snapshot,
+    )
 
     private val documents = HashMap<URI, StoredDocument>()
 
@@ -40,14 +44,24 @@ class GroovySemanticDB {
     fun updateDocument(uri: URI, doc: SemanticDocument) = updateDocument(uri, doc, sourceText = null)
 
     /** Stores source text with the document so readers never combine ranges and text from different versions. */
-    fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) {
+    fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) =
+        updateDocument(uri, doc, sourceText, ImplementationFacts.Snapshot())
+
+    /** Hierarchy facts and ranges belong to the same compilation as [doc] and [sourceText]. */
+    fun updateDocument(
+        uri: URI,
+        doc: SemanticDocument,
+        sourceText: String?,
+        implementations: ImplementationFacts.Snapshot,
+    ) {
         val snapshot = doc.copy(
             symbols = Collections.unmodifiableList(doc.symbols.toList()),
             occurrences = Collections.unmodifiableList(doc.occurrences.toList()),
         )
+        val facts = ImplementationFacts.freeze(implementations)
         lock.write {
-            documents.put(uri, StoredDocument(snapshot, sourceText))?.let { removeFromIndexes(uri, it.document) }
-            addToIndexes(uri, snapshot)
+            documents.put(uri, StoredDocument(snapshot, sourceText, facts))?.let { removeFromIndexes(uri, it.document) }
+            addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex)
         }
     }
 
@@ -62,6 +76,20 @@ class GroovySemanticDB {
      * Get all documents
      */
     fun getAllDocuments(): Map<URI, SemanticDocument> = lock.read { documents.mapValues { it.value.document } }
+
+    /** One coherent read; a later replacement or invalidation cannot change a captured query. */
+    val implementationSnapshot: Map<URI, ImplementationDocument> get() = lock.read {
+        Collections.unmodifiableMap(
+            documents.toSortedMap().mapValues { (_, stored) ->
+                ImplementationDocument(
+                    stored.document,
+                    stored.sourceText,
+                    stored.implementations.classes,
+                    stored.implementations.hierarchy,
+                )
+            },
+        )
+    }
 
     /**
      * Find symbol definition by ID.
@@ -142,12 +170,6 @@ class GroovySemanticDB {
     }
 
     // Callers hold the write lock.
-    private fun addToIndexes(uri: URI, doc: SemanticDocument) {
-        doc.symbols.groupBy { it.symbol }.forEach { (id, symbols) -> symbolIndex.put(id, uri, symbols) }
-        doc.occurrences.groupBy { it.symbol }.forEach { (id, occurrences) -> occurrenceIndex.put(id, uri, occurrences) }
-    }
-
-    // Callers hold the write lock.
     private fun removeFromIndexes(uri: URI, doc: SemanticDocument) {
         doc.symbols.forEach { symbolIndex.remove(it.symbol, uri) }
         doc.occurrences.forEach { occurrenceIndex.remove(it.symbol, uri) }
@@ -192,3 +214,14 @@ data class SemanticDBStatistics(
     val symbolsByKind: Map<SymbolKind, Int>,
     val occurrencesByRole: Map<OccurrenceRole, Int>,
 )
+
+// Caller holds the database's write lock; both indexes change with the stored document.
+private fun addToIndexes(
+    uri: URI,
+    doc: SemanticDocument,
+    symbolIndex: SymbolIndex<SymbolInfo>,
+    occurrenceIndex: SymbolIndex<SymbolOccurrence>,
+) {
+    doc.symbols.groupBy { it.symbol }.forEach { (id, symbols) -> symbolIndex.put(id, uri, symbols) }
+    doc.occurrences.groupBy { it.symbol }.forEach { (id, occurrences) -> occurrenceIndex.put(id, uri, occurrences) }
+}

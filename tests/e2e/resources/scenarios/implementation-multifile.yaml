@@ -1,11 +1,7 @@
 name: implementation-multifile
 description: >
-  DISABLED: Test for multi-file implementation discovery and edge cases.
-  This test validates that implementation discovery works across multiple files
-  and handles package-qualified names correctly.
-
-  This test should already work with current implementation but needs validation.
-  Enable once ready to verify cross-file behavior.
+  Implementation discovery across multiple files, including interface methods
+  and identically named interfaces in different packages.
 
 workspace:
   fixture: empty-workspace
@@ -284,15 +280,9 @@ steps:
 # 7. Groovy traits (similar to interfaces with default implementations)
 #
 # ============================================================================
-# Notes on Current Implementation:
+# Query contract:
 # ============================================================================
 #
-# The current implementation uses:
-# - compilationService.getAllSymbolStorages() to iterate all files
-# - Fully qualified name (FQN) comparison to match interfaces/classes
-#
-# This should already support multi-file scenarios, but needs explicit
-# E2E validation to ensure:
-# - Symbol tables are populated across all files
-# - Compilation service maintains all symbol storages
-# - Cross-file references are resolved correctly
+# Navigation reads qualified hierarchy facts and locations from one semantic
+# snapshot. Unit coverage separately exercises unopened files, AST eviction,
+# in-flight invalidation, buffer ranges and deletion.

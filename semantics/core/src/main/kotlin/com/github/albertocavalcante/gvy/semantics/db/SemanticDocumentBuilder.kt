@@ -6,6 +6,7 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.ImportNode
+import org.codehaus.groovy.ast.InnerClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
@@ -82,6 +83,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 role = OccurrenceRole.IMPORT,
             ),
         )
+        importTypeOccurrence(importNode, range)?.let(occurrences::add)
     }
 
     /**
@@ -109,6 +111,13 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 role = OccurrenceRole.IMPORT,
             ),
         )
+        importTypeOccurrence(importNode, range)?.let(occurrences::add)
+    }
+
+    private fun importTypeOccurrence(importNode: ImportNode, range: Range): SymbolOccurrence? {
+        val type = importNode.type ?: return null
+        val resolved = TypeHierarchies().compilerResolved(type) ?: return null
+        return SymbolOccurrence(createClassSymbolId(resolved), nodeToRange(type) ?: range, OccurrenceRole.TYPE_REF)
     }
 
     /**
@@ -116,7 +125,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
      */
     private fun extractClass(classNode: ClassNode) {
         // Skip synthetic/generated classes
-        if (classNode.isSynthetic || classNode.name.contains("$")) {
+        if (classNode.isSynthetic || classNode is InnerClassNode && classNode.isAnonymous) {
             return
         }
 
@@ -147,6 +156,16 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 role = OccurrenceRole.DEFINITION,
             ),
         )
+
+        (listOfNotNull(classNode.unresolvedSuperClass) + classNode.unresolvedInterfaces).forEach { type ->
+            val resolved = TypeHierarchies().compilerResolved(type)
+            val referenceRange = nodeToRange(type)
+            if (resolved != null && referenceRange != null) {
+                occurrences.add(
+                    SymbolOccurrence(createClassSymbolId(resolved), referenceRange, OccurrenceRole.TYPE_REF),
+                )
+            }
+        }
 
         // Extract fields
         classNode.fields.forEach { fieldNode ->

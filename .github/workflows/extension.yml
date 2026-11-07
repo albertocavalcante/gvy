@@ -136,6 +136,14 @@ jobs:
           export DISPLAY=:99
           pnpm run test:all
 
+      - name: Upload failed editor logs
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: editor-logs-linux
+          path: editors/code/.vscode-test/user-data/logs
+          retention-days: 1
+
       - name: Check bundle size
         run: |
           if [ -f "client/out/extension.js" ]; then
@@ -222,6 +230,14 @@ jobs:
           GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
         run: pnpm run test:all
         working-directory: editors/code
+
+      - name: Upload failed editor logs
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: editor-logs-${{ matrix.os }}
+          path: editors/code/.vscode-test/user-data/logs
+          retention-days: 1
 
   package:
     name: Package VSIX
@@ -322,6 +338,14 @@ jobs:
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
           export DISPLAY=:99
           pnpm exec vscode-test --grep "Implementation navigation" --fail-zero --forbid-pending
+
+      - name: Upload failed editor logs
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: editor-logs-package
+          path: editors/code/.vscode-test/user-data/logs
+          retention-days: 1
 
       - name: Upload VSIX
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
