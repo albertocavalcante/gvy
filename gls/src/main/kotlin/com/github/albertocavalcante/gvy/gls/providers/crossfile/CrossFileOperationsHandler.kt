@@ -15,15 +15,23 @@ import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvid
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.future.await
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
+
+private const val MAX_IMPLEMENTATION_SNAPSHOT_ATTEMPTS = 3
 
 /**
  * Handles cross-file LSP operations (definition, references, implementation).
@@ -183,24 +191,54 @@ class CrossFileOperationsHandler(
         val documentUri = URI.create(uri)
 
         return runSuspendCatching {
-            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
-            // Fixes #749: Race condition where target file may not be indexed yet
-            ensureAllOpenDocumentsCompiled()
-
-            ensureCompiledOrCompileNow(documentUri)
+            val snapshot = acquireImplementationSnapshot(documentUri)
                 ?: run {
                     logger.warn { "Document $documentUri not compiled, cannot provide implementations" }
                     return@runSuspendCatching Either.forLeft<List<Location>, List<LocationLink>>(emptyList())
                 }
 
-            implementationProvider.provideImplementations(uri, position)
+            implementationProvider.provideImplementations(documentUri, position, snapshot)
                 .toList()
                 .also { logger.debug { "Found ${it.size} implementations" } }
                 .let { Either.forLeft<List<Location>, List<LocationLink>>(it) }
         }.getOrElse { e ->
+            if (e is ResponseErrorException) throw e
             logException(e, "finding implementations")
             Either.forLeft(emptyList())
         }
+    }
+
+    private suspend fun acquireImplementationSnapshot(uri: URI): Map<URI, ImplementationDocument>? {
+        repeat(MAX_IMPLEMENTATION_SNAPSHOT_ATTEMPTS) {
+            currentCoroutineContext().ensureActive()
+            val generation = compilationService.beginImplementationQuery()
+            ensureAllOpenDocumentsCompiled()
+            val origin = ensureCompiledOrCompileNow(uri) ?: return null
+            val snapshot = compilationService.captureImplementationSnapshot(generation) ?: return@repeat
+            val required = documentProvider.snapshot().toMutableMap()
+            origin.sourceText?.let { required.putIfAbsent(uri, it) }
+            val missing = required.filter { (document, text) ->
+                snapshot[document]?.sourceText != text
+            }
+            if (missing.isEmpty()) return snapshot
+            // An old compile can restore AST/symbol caches after its semantic publication was invalidated.
+            // Cache-hit compilation republishes missing facts; an unrelated malformed buffer may still have none.
+            missing.forEach { (document, text) -> compilationService.compile(document, text) }
+            compilationService.captureImplementationSnapshot(generation)?.let { repaired ->
+                // Failed parsing can leave the prior document in the database; never navigate its stale text.
+                return repaired.filter { (document, facts) ->
+                    document !in required || facts.sourceText == required[document]
+                }
+            }
+        }
+        // Retry only after an observed invalidation, never because a valid query has no implementations.
+        throw ResponseErrorException(
+            ResponseError(
+                ResponseErrorCode.ContentModified,
+                "Workspace changed during implementation acquisition",
+                null,
+            ),
+        )
     }
 
     /**

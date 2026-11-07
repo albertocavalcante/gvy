@@ -56,6 +56,7 @@ class GroovyCompilationService(
     private val semanticDb = GroovySemanticDB()
     private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb)
     private val semanticIndexer = SemanticIndexer(workspaceSymbolIndex, isOpen)
+    private val semanticSnapshotGuard = SemanticSnapshotGuard { workspaceSymbolIndex.implementationSnapshot }
 
     // Shared dependency graph for bounded workspace selection (Issue #743)
     private val dependencyGraph = DependencyGraph()
@@ -158,6 +159,11 @@ class GroovyCompilationService(
      */
     fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex
 
+    internal fun beginImplementationQuery(): SemanticSnapshotGuard.Generation = semanticSnapshotGuard.begin()
+
+    internal fun captureImplementationSnapshot(generation: SemanticSnapshotGuard.Generation) =
+        semanticSnapshotGuard.capture(generation)
+
     fun findClasspathClass(className: String): URI? {
         val classLoader = engineManager.getOrCreateClassLoader()
         val resourceName = className.replace('.', '/') + ".class"
@@ -174,14 +180,14 @@ class GroovyCompilationService(
     // Workspace and Cache API
     // ==========================================================================
 
-    fun clearCaches() {
+    fun clearCaches() = semanticSnapshotGuard.invalidate {
         cacheService.clear()
         symbolIndexer.clear()
         semanticIndexer.clear()
         invalidateClassLoader()
     }
 
-    fun invalidateCache(uri: URI) {
+    fun invalidateCache(uri: URI) = semanticSnapshotGuard.invalidate {
         cacheService.invalidate(uri)
         symbolIndexer.invalidate(uri)
         semanticIndexer.remove(uri)
