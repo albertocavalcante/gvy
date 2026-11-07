@@ -84,7 +84,8 @@ When a new stable LSP version is released:
    GLS_USE_PINNED=true pnpm run prepare-server
    ```
 
-Note: Users get the **latest release by default**. The pinned version serves as:
+Preparation defaults to the pinned release. Set `GLS_CHANNEL=release` to select the latest stable release or
+`GLS_LOCAL_JAR` to select a local JAR. The pinned version serves as:
 
 - Fallback for network issues (with `GLS_ALLOW_PINNED_FALLBACK=true`)
 - Explicit stability option (with `GLS_USE_PINNED=true`)
@@ -209,7 +210,28 @@ Our automated pipeline includes:
 
 We use automated tests to ensure the quality of the extension.
 
-**Running All Tests** To run both unit and integration tests:
+**Running All Tests** Build and prepare the server from the current checkout before running editor tests. From the
+repository root:
+
+```bash
+./gradlew :gls:stageEditorServer
+cd editors/code
+gvy_test_jar="$(pwd)/../../gls/build/editor-server/gls.jar"
+GLS_LOCAL_JAR="$gvy_test_jar" FORCE_DOWNLOAD=true pnpm install --frozen-lockfile
+GVY_TEST_SERVER_JAR="$gvy_test_jar" pnpm run test:all
+```
+
+The editor suite checks that the bundled JAR has the same SHA-256 as this candidate and invokes VS Code's built-in
+implementation provider. `GVY_TEST_SERVER_JAR` accepts an explicit candidate path; otherwise tests use the staged path
+in this checkout. Rebuild and prepare the JAR after backend changes. Extension CI builds it once and uses that artifact
+for Linux, macOS, Windows, and VSIX packaging whenever code changes.
+
+CI also unpacks the VSIX and runs the implementation tests against its packaged bundle and JAR before uploading it. To
+select an unpacked package locally, set `GVY_TEST_EXTENSION_ROOT` to its `extension` directory and run
+`pnpm exec vscode-test --grep "Implementation navigation" --fail-zero --forbid-pending` with the candidate JAR
+configured.
+
+After preparing the current server, run both suites with:
 
 ```bash
 pnpm run test:all

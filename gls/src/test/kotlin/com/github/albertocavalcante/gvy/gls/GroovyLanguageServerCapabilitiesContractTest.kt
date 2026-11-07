@@ -51,6 +51,7 @@ class GroovyLanguageServerCapabilitiesContractTest {
         assertNotNull(capabilities.completionProvider)
         assertTrue(capabilities.hoverProvider?.left == true)
         assertTrue(capabilities.definitionProvider?.left == true)
+        assertTrue(capabilities.implementationProvider?.left == true, "Implementation navigation must be advertised.")
         assertTrue(capabilities.referencesProvider?.left == true)
         assertTrue(capabilities.documentSymbolProvider?.left == true)
         assertTrue(capabilities.workspaceSymbolProvider?.left == true)
