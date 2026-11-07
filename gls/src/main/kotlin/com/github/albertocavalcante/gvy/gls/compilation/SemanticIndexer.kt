@@ -48,7 +48,7 @@ class SemanticIndexer(
                 !fromBuffer && isOpen(uri) -> existing
                 existing != null && existing.contentHash == hash && existing.phase >= phase -> existing
                 else -> try {
-                    index.updateDocument(uri, build(ast, uri))
+                    index.updateDocument(uri, build(ast, uri), sourceText = content)
                     Entry(hash, phase)
                 } catch (e: Exception) {
                     // The stored document describes other content now: no document beats a stale one.

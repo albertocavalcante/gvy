@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.indexing
 
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.IndexedOccurrence
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
@@ -70,6 +71,9 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
             Location(uri.toString(), rangeToLspRange(occurrence.range))
         }
     }
+
+    /** Reference occurrences with the exact source text used to build their ranges. */
+    fun findReferenceSnapshots(symbolId: String): List<IndexedOccurrence> = semanticDb.findOccurrenceSnapshots(symbolId)
 
     /**
      * Get the superclass of a class.
@@ -262,9 +266,13 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      *
      * @param uri The document URI
      * @param doc The semantic document
+     * Use the source-text overload to support precise workspace reference locations.
      */
-    fun updateDocument(uri: URI, doc: SemanticDocument) {
-        semanticDb.updateDocument(uri, doc)
+    fun updateDocument(uri: URI, doc: SemanticDocument) = updateDocument(uri, doc, sourceText = null)
+
+    /** Stores the exact text represented by the semantic document's ranges. */
+    fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) {
+        semanticDb.updateDocument(uri, doc, sourceText)
 
         // Clear caches for updated classes
         doc.symbols.filter { it.kind == SymbolKind.CLASS || it.kind == SymbolKind.INTERFACE }

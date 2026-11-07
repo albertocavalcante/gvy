@@ -1,0 +1,65 @@
+name: references-unopened
+description: References include a caller that has never been opened in the editor.
+workspace:
+  fixture: references-unopened
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 60000
+  - openDocument:
+      path: src/A.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class A {
+            String greet() { 'hi' }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}src/A.groovy"
+      timeoutMs: 30000
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/A.groovy"
+        position: { line: 1, character: 12 }
+        context:
+          includeDeclaration: false
+      saveAs: references
+  - assert:
+      source: references
+      checks:
+        - jsonPath: $
+          expect:
+            type: SIZE
+            value: 1
+        - jsonPath: $[0].uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}src/B.groovy"
+        - jsonPath: $[0].range.start
+          expect:
+            type: EQUALS
+            value: { line: 2, character: 16 }
+        - jsonPath: $[0].range.end
+          expect:
+            type: EQUALS
+            value: { line: 2, character: 21 }
+  - shutdown: {}
+  - exit: {}

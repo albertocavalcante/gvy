@@ -32,6 +32,7 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import java.net.URI
 
 /**
@@ -144,38 +145,31 @@ class ReferenceProvider(
             logger.debug { "Found occurrence for symbol ${occurrence.symbol} with role ${occurrence.role}" }
 
             val symbol = index.findSymbol(occurrence.symbol)
-            if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER) {
-                logger.debug { "Not searching the workspace for local ${occurrence.symbol}" }
+            val name = symbolName ?: symbol?.name
+            if (symbol?.kind == SymbolKind.VARIABLE || symbol?.kind == SymbolKind.PARAMETER || name == null) {
+                logger.debug { "Not searching the workspace for local or unnamed ${occurrence.symbol}" }
                 return
             }
-            val name = symbolName ?: symbol?.name
             val textIndexes = HashMap<String, TextIndex?>()
 
             // Find all references across workspace
-            val locations = index.findReferences(occurrence.symbol)
-            logger.debug { "Found ${locations.size} workspace references for ${occurrence.symbol}" }
+            val references = index.findReferenceSnapshots(occurrence.symbol)
+            logger.debug { "Found ${references.size} workspace references for ${occurrence.symbol}" }
 
-            locations.forEach { location ->
+            references.forEach { reference ->
                 // Filter out definitions if includeDeclaration is false
-                if (!includeDeclaration) {
-                    // Check if this location is a definition
-                    val targetDoc = index.getDocument(URI.create(location.uri))
-                    val targetOccurrence = targetDoc?.occurrences?.find { occ ->
-                        occ.symbol == occurrence.symbol &&
-                            occ.range.startLine == location.range.start.line &&
-                            occ.range.startColumn == location.range.start.character
-                    }
+                if (!includeDeclaration && reference.occurrence.role == OccurrenceRole.DEFINITION) return@forEach
 
-                    if (targetOccurrence?.role == OccurrenceRole.DEFINITION) {
-                        logger.debug {
-                            "Skipping definition occurrence at ${location.uri}:${location.range.start.line}"
-                        }
-                        return@forEach
-                    }
-                }
-
-                // Index ranges cover whole nodes; report the identifier, and skip nodes without it.
-                val named = location.narrowedTo(name, textIndexes) ?: return@forEach
+                // Never interpret an indexed range using a different AST-cache entry or a fresh disk read.
+                val uri = reference.uri.toString()
+                val text = textIndexes.getOrPut(uri) { reference.sourceText?.let(::TextIndex) } ?: return@forEach
+                val indexedRange = reference.occurrence.range
+                val range = Range(
+                    Position(indexedRange.startLine, indexedRange.startColumn),
+                    Position(indexedRange.endLine, indexedRange.endColumn),
+                )
+                val identifier = firstNameOccurrence(text, range, name) ?: return@forEach
+                val named = Location(uri, identifier)
 
                 // Emit with deduplication
                 val key = "${named.uri}:${named.range.start.line}:${named.range.start.character}"
@@ -457,19 +451,6 @@ class ReferenceProvider(
         if (seen.add(key)) {
             send(location)
         }
-    }
-
-    /**
-     * This location narrowed to [name] in its file's compiled text. Null when the name, the text
-     * (a file the index still lists but that is no longer compiled, e.g. deleted), or the name
-     * inside the range is missing: an index range is a whole node and is never reported as is.
-     */
-    private fun Location.narrowedTo(name: String?, textIndexes: MutableMap<String, TextIndex?>): Location? {
-        if (name == null) return null
-        val index = textIndexes.getOrPut(uri) {
-            compilationService.getCompiledContent(URI.create(uri))?.let(::TextIndex)
-        } ?: return null
-        return firstNameOccurrence(index, range, name)?.let { Location(uri, it) }
     }
 
     /**
