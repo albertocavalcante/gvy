@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.5.5](https://github.com/albertocavalcante/gvy/compare/v0.5.4...v0.5.5) (2026-11-07)
+
+
+### Features
+
+* make silent compile degradation visible ([#1143](https://github.com/albertocavalcante/gvy/issues/1143)) ([0fbc8d3](https://github.com/albertocavalcante/gvy/commit/0fbc8d3a0f5908f8c66273383d3e0e0661d45ecd))
+* **parser:** stub missing classes so Groovy resolves everything else ([#1146](https://github.com/albertocavalcante/gvy/issues/1146)) ([0dfae21](https://github.com/albertocavalcante/gvy/commit/0dfae21bd88cef207720d1d05ca6e02a0c2667da))
+* **semantics:** attribute names inside closures passed to delegate-neutral GDK calls ([#1152](https://github.com/albertocavalcante/gvy/issues/1152)) ([b73e1d6](https://github.com/albertocavalcante/gvy/commit/b73e1d631bfddfb948f2db5994de0030e83b126a))
+
+
+### Bug Fixes
+
+* **deps:** update dependency com.github.javaparser:javaparser-core to v3.28.2 ([#1127](https://github.com/albertocavalcante/gvy/issues/1127)) ([c563ac7](https://github.com/albertocavalcante/gvy/commit/c563ac7cde5c663218d89eff120c8a67848c8f4c))
+* **deps:** update dependency io.github.classgraph:classgraph to v4.8.199 ([#1128](https://github.com/albertocavalcante/gvy/issues/1128)) ([4b28832](https://github.com/albertocavalcante/gvy/commit/4b28832df3116eea27d74c1a6f75eea474e7a08b))
+* **deps:** update dependency io.mockk:mockk to v1.14.11 ([#1133](https://github.com/albertocavalcante/gvy/issues/1133)) ([da33e7c](https://github.com/albertocavalcante/gvy/commit/da33e7c0c09eaac120fc6012ceb40d9090761b2c))
+* **deps:** update dependency org.assertj:assertj-core to v3.27.7 ([#1134](https://github.com/albertocavalcante/gvy/issues/1134)) ([7609fe3](https://github.com/albertocavalcante/gvy/commit/7609fe3e996ce0f01b6a117ac3abd29475921c90))
+* **deps:** update dependency org.slf4j:slf4j-api to v2.0.20 ([#1135](https://github.com/albertocavalcante/gvy/issues/1135)) ([ca118dd](https://github.com/albertocavalcante/gvy/commit/ca118dd06209f392a6b598c1d637c8634bce18dc))
+* **deps:** update groovy monorepo to v4.0.33 ([#1136](https://github.com/albertocavalcante/gvy/issues/1136)) ([896c044](https://github.com/albertocavalcante/gvy/commit/896c0442301ac497527c8c8136d612b47e471d26))
+* **deps:** update wire to v5.5.1 ([#1138](https://github.com/albertocavalcante/gvy/issues/1138)) ([f706b66](https://github.com/albertocavalcante/gvy/commit/f706b66850b2d7557017f55652acc4dffdd0b640))
+* **gls:** index every workspace file semantically, and keep the index current ([#1155](https://github.com/albertocavalcante/gvy/issues/1155)) ([ba88cbf](https://github.com/albertocavalcante/gvy/commit/ba88cbfbfa62faf038775cda408811295c98e4d2))
+* **gls:** keep the symbol index in step with file content ([#1153](https://github.com/albertocavalcante/gvy/issues/1153)) ([362d85f](https://github.com/albertocavalcante/gvy/commit/362d85f11c482a1dfb6017bf38a88d79987ba44e))
+* **lsp:** apply live settings and preserve Windows URIs ([#1156](https://github.com/albertocavalcante/gvy/issues/1156)) ([a77d27c](https://github.com/albertocavalcante/gvy/commit/a77d27cabab4e75d9405d68fcf4b9eb1897450f3))
+* **lsp:** preserve exact references without AST caches ([#1157](https://github.com/albertocavalcante/gvy/issues/1157)) ([e7535bb](https://github.com/albertocavalcante/gvy/commit/e7535bb5e6d0f33a975f76d7ef8cfcc2249ee83d))
+* **lsp:** retain client versions and reject stale changes ([#1158](https://github.com/albertocavalcante/gvy/issues/1158)) ([fa6d967](https://github.com/albertocavalcante/gvy/commit/fa6d967581a39746c56a5a1b3bff7e57d2b0459d))
+* **parser:** keep a broken workspace file from costing every file its types ([#1140](https://github.com/albertocavalcante/gvy/issues/1140)) ([b5b1149](https://github.com/albertocavalcante/gvy/commit/b5b1149b0b86b18202e6dc156510a172ad186d51))
+* **semantics:** give every symbol a distinct id and attribute only certain references ([#1130](https://github.com/albertocavalcante/gvy/issues/1130)) ([b63b783](https://github.com/albertocavalcante/gvy/commit/b63b7834369b9324f5b03b2264e3aabc7f36dfcb))
+* **semantics:** make SemanticDB ranges half-open LSP ranges ([#1154](https://github.com/albertocavalcante/gvy/issues/1154)) ([f46f371](https://github.com/albertocavalcante/gvy/commit/f46f371e6f7c97890090b8888b0ada40858e0838))
+
+
+### Performance Improvements
+
+* **gls:** bound the compilation cache with LRU eviction ([#1125](https://github.com/albertocavalcante/gvy/issues/1125)) ([ce8ce12](https://github.com/albertocavalcante/gvy/commit/ce8ce12abedd67cb758c1ec58149825e60013e83))
+
 ## [0.5.4](https://github.com/albertocavalcante/gvy/compare/v0.5.3...v0.5.4) (2026-11-02)
 
 
