@@ -16,6 +16,7 @@ import {
 import { setClient, getStatusBarManager } from "../ui/statusBar";
 import { getConfiguration } from "../configuration/settings";
 import { buildJavaArgs } from "./launchArgs";
+import { toProtocolUri } from "./uri";
 import { ServerResolver } from "../services/ServerResolver";
 
 /**
@@ -391,14 +392,7 @@ function createClientOptions(
     traceOutputChannel: getTraceOutputChannel(),
     // URI converters for Windows compatibility
     uriConverters: {
-      code2Protocol: (value) => {
-        if (/^win32/.test(process.platform)) {
-          // Drive letters on Windows are encoded with %3A instead of :
-          // but Java doesn't treat them the same
-          return value.toString().replace("%3A", ":");
-        }
-        return value.toString();
-      },
+      code2Protocol: (value) => toProtocolUri(value.toString()),
       protocol2Code: (value) => vscode.Uri.parse(value),
     },
   };
