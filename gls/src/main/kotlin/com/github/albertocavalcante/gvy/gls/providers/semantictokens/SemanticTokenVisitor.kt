@@ -33,6 +33,7 @@ import java.lang.reflect.Modifier
  */
 @Suppress("TooManyFunctions")
 class SemanticTokenVisitor(private val sourceLines: List<String>) {
+    private val parameterRanges by lazy { SemanticParameterRanges(sourceLines) }
 
     /**
      * Type alias for semantic tokens.
@@ -287,6 +288,30 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
         }
 
         val modifiers = TokenModifierResolver.getModifiersForParameterDeclaration()
+
+        if (sourceLines.isNotEmpty()) {
+            parameterRanges.name(param)?.let {
+                tokens.add(
+                    SemanticToken(it.line, it.start, it.length, TokenTypeResolver.TokenTypes.PARAMETER, modifiers),
+                )
+            }
+            if (param.type.name != "java.lang.Object") {
+                parameterRanges.type(param)?.let {
+                    tokens.add(
+                        SemanticToken(
+                            it.line,
+                            it.start,
+                            it.length,
+                            TokenTypeResolver.getTokenTypeForClassNode(
+                                generateSequence(param.type) { type -> type.componentType }.last(),
+                            ),
+                            0,
+                        ),
+                    )
+                }
+            }
+            return
+        }
 
         addTokenForNode(param, param.name.length, TokenTypeResolver.TokenTypes.PARAMETER, modifiers, tokens)
 

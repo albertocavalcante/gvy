@@ -141,4 +141,102 @@ suite("Implementation navigation with the current server", () => {
       "default T echo(T value)",
     );
   });
+
+  test("Semantic tokens keep parameter names and types in separate exact spans", async () => {
+    const legend =
+      await vscode.commands.executeCommand<vscode.SemanticTokensLegend>(
+        "vscode.provideDocumentSemanticTokensLegend",
+        document.uri,
+      );
+    const result = await vscode.commands.executeCommand<vscode.SemanticTokens>(
+      "vscode.provideDocumentSemanticTokens",
+      document.uri,
+    );
+    assert.ok(legend, "The server must provide a semantic token legend");
+    assert.ok(result, "The server must provide semantic tokens");
+    assert.strictEqual(result.data.length % 5, 0);
+    const tokens: Array<{
+      line: number;
+      start: number;
+      length: number;
+      type: string;
+      modifiers: number;
+    }> = [];
+    let line = 0;
+    let start = 0;
+    for (let offset = 0; offset < result.data.length; offset += 5) {
+      const deltaLine = result.data[offset];
+      line += deltaLine;
+      start = (deltaLine === 0 ? start : 0) + result.data[offset + 1];
+      tokens.push({
+        line,
+        start,
+        length: result.data[offset + 2],
+        type: legend.tokenTypes[result.data[offset + 3]],
+        modifiers: result.data[offset + 4],
+      });
+    }
+    const declarationIndex = legend.tokenModifiers.indexOf("declaration");
+    const definitionIndex = legend.tokenModifiers.indexOf("definition");
+    assert.ok(declarationIndex >= 0);
+    assert.ok(definitionIndex >= 0);
+    for (const declaration of [
+      "String convert(String value)",
+      "Integer convert(Integer value)",
+      "java.util.Date convert(java.util.Date value)",
+    ]) {
+      const declarationOffset = document.getText().indexOf(declaration);
+      assert.ok(declarationOffset >= 0);
+      const parameter = document.positionAt(
+        declarationOffset + declaration.indexOf("value"),
+      );
+      const typeEnd = declaration.lastIndexOf(" value");
+      const typeName = declaration
+        .slice(declaration.indexOf("(") + 1, typeEnd)
+        .split(".")
+        .pop()!;
+      const type = document.positionAt(
+        declarationOffset + typeEnd - typeName.length,
+      );
+      const at = (position: vscode.Position) =>
+        tokens.filter(
+          (token) =>
+            token.line === position.line && token.start === position.character,
+        );
+      assert.deepStrictEqual(
+        at(parameter),
+        [
+          {
+            line: parameter.line,
+            start: parameter.character,
+            length: "value".length,
+            type: "parameter",
+            modifiers: (1 << declarationIndex) | (1 << definitionIndex),
+          },
+        ],
+        `Parameter declaration in ${declaration}`,
+      );
+      assert.deepStrictEqual(
+        at(type),
+        [
+          {
+            line: type.line,
+            start: type.character,
+            length: typeName.length,
+            type: "class",
+            modifiers: 0,
+          },
+        ],
+        `Parameter type in ${declaration}`,
+      );
+      const onLine = tokens.filter((token) => token.line === parameter.line);
+      for (let index = 1; index < onLine.length; index++) {
+        assert.ok(
+          onLine[index - 1].start + onLine[index - 1].length <=
+            onLine[index].start,
+          `Overlapping semantic tokens in ${declaration}: ${JSON.stringify(onLine)}`,
+        );
+      }
+    }
+  });
 });

@@ -58,10 +58,21 @@ fun firstNameOccurrence(index: TextIndex, range: Range, name: String): Range? {
     return findName(index, range, name, skipLiterals = true) ?: findName(index, range, name, skipLiterals = false)
 }
 
-private fun findName(index: TextIndex, range: Range, name: String, skipLiterals: Boolean): Range? {
+/** Last whole identifier, ignoring comments and quoted strings without a plain-text fallback. */
+internal fun lastNameOccurrence(index: TextIndex, range: Range, name: String): Range? =
+    if (name.isEmpty()) null else findName(index, range, name, skipLiterals = true, last = true)
+
+private fun findName(
+    index: TextIndex,
+    range: Range,
+    name: String,
+    skipLiterals: Boolean,
+    last: Boolean = false,
+): Range? {
     val text = index.text
     val end = index.offsetOf(range.end)
     var at = index.offsetOf(range.start)
+    var found: Range? = null
     while (at < end) {
         val skipTo = if (skipLiterals) skipLiteralOrComment(text, at) else at
         if (skipTo > at) {
@@ -69,12 +80,14 @@ private fun findName(index: TextIndex, range: Range, name: String, skipLiterals:
         } else if (text.startsWith(name, at) && at + name.length <= end &&
             isWordBoundary(text, at - 1) && isWordBoundary(text, at + name.length)
         ) {
-            return Range(index.positionOf(at), index.positionOf(at + name.length))
+            found = Range(index.positionOf(at), index.positionOf(at + name.length))
+            if (!last) return found
+            at += name.length
         } else {
             at++
         }
     }
-    return null
+    return found
 }
 
 /** If a string literal or comment starts at [at], the offset just past it; otherwise [at]. */
