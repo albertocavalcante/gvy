@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.indexing
 
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.IndexedOccurrence
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
@@ -74,6 +76,9 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
 
     /** Reference occurrences with the exact source text used to build their ranges. */
     fun findReferenceSnapshots(symbolId: String): List<IndexedOccurrence> = semanticDb.findOccurrenceSnapshots(symbolId)
+
+    /** Hierarchy, source and semantic ranges from one atomic database read. */
+    val implementationSnapshot: Map<URI, ImplementationDocument> get() = semanticDb.implementationSnapshot
 
     /**
      * Get the superclass of a class.
@@ -271,8 +276,17 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
     fun updateDocument(uri: URI, doc: SemanticDocument) = updateDocument(uri, doc, sourceText = null)
 
     /** Stores the exact text represented by the semantic document's ranges. */
-    fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) {
-        semanticDb.updateDocument(uri, doc, sourceText)
+    fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) =
+        updateDocument(uri, doc, sourceText, ImplementationFacts.empty)
+
+    /** Updates hierarchy facts atomically with their semantic document and compiled source. */
+    fun updateDocument(
+        uri: URI,
+        doc: SemanticDocument,
+        sourceText: String?,
+        implementations: ImplementationFacts.Snapshot,
+    ) {
+        semanticDb.updateDocument(uri, doc, sourceText, implementations)
 
         // Clear caches for updated classes
         doc.symbols.filter { it.kind == SymbolKind.CLASS || it.kind == SymbolKind.INTERFACE }
@@ -374,12 +388,12 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
         // Add 1 for the last parameter (no trailing comma)
         return count + 1
     }
-
-    /**
-     * Convert a semantic Range to an LSP Range.
-     */
-    private fun rangeToLspRange(range: com.github.albertocavalcante.gvy.semantics.db.Range): Range = Range(
-        Position(range.startLine, range.startColumn),
-        Position(range.endLine, range.endColumn),
-    )
 }
+
+/**
+ * Convert a semantic Range to an LSP Range.
+ */
+private fun rangeToLspRange(range: com.github.albertocavalcante.gvy.semantics.db.Range): Range = Range(
+    Position(range.startLine, range.startColumn),
+    Position(range.endLine, range.endColumn),
+)
