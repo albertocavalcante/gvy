@@ -1,0 +1,97 @@
+name: implementation-generics
+description: Generic method implementation signatures specialize across source files without conflating overloads.
+
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect:
+            type: EQUALS
+            value: ok
+        - jsonPath: $.quiescent
+          expect:
+            type: EQUALS
+            value: true
+      timeoutMs: 60000
+
+  - openDocument:
+      path: src/contracts/Converter.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package contracts
+        interface Converter<T> {
+            T convert(T value)
+        }
+
+  - openDocument:
+      path: src/impls/Converters.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        package impls
+        import contracts.Converter
+        interface Child<U> extends Converter<U> {}
+        class Strings implements Child<String> {
+            String convert(String value) { value }
+        }
+        class Dates implements Converter<java.util.Date> {
+            java.sql.Date convert(java.sql.Date value) { value }
+            java.util.Date convert(java.util.Date value) { value }
+        }
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
+
+  - request:
+      method: textDocument/implementation
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/contracts/Converter.groovy"
+        position:
+          line: 2
+          character: 6
+      saveAs: specialized
+
+  - assert:
+      source: specialized
+      checks:
+        - jsonPath: $.items
+          expect:
+            type: SIZE
+            value: 2
+        - jsonPath: $.items[*]
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/impls/Converters.groovy"
+              range:
+                start:
+                  line: 4
+                  character: 4
+        - jsonPath: $.items[*]
+          expect:
+            type: CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/impls/Converters.groovy"
+              range:
+                start:
+                  line: 8
+                  character: 4
+        - jsonPath: $.items[*]
+          expect:
+            type: NOT_CONTAINS
+            value:
+              uri: "{{workspace.uri}}src/impls/Converters.groovy"
+              range:
+                start:
+                  line: 7
+
+  - shutdown: {}
+  - exit: {}

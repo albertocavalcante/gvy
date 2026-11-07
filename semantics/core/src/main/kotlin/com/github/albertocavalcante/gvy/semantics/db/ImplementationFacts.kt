@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ClassExpression
@@ -18,6 +19,15 @@ internal data class ImplementationType(
     val superclass: String?,
     val interfaces: List<String>,
     val methods: List<ImplementationMethod>,
+    val parameterDefaults: Map<String, String> = emptyMap(),
+    val parentArguments: Map<String, List<ImplementationTypeReference>> = emptyMap(),
+)
+
+/** A class-scoped variable or qualified erased type; array rank remains separate from its element type. */
+internal data class ImplementationTypeReference(
+    val name: String,
+    val dimensions: Int = 0,
+    val isVariable: Boolean = false,
 )
 
 /** Qualified, erased parameter types distinguish packages; classpath declarations have no source range. */
@@ -30,6 +40,7 @@ internal data class ImplementationMethod(
     val isStatic: Boolean,
     val isPrivate: Boolean,
     val bridgeOwner: String? = null,
+    val parameterReferences: List<ImplementationTypeReference> = emptyList(),
 )
 
 /** Semantic metadata, source and hierarchy captured in one database read. */
@@ -80,9 +91,18 @@ object ImplementationFacts {
             snapshot.hierarchy.mapValues { (_, type) ->
                 type.copy(
                     interfaces = Collections.unmodifiableList(type.interfaces.toList()),
+                    parameterDefaults = Collections.unmodifiableMap(type.parameterDefaults.toMap()),
+                    parentArguments = Collections.unmodifiableMap(
+                        type.parentArguments.mapValues { (_, arguments) ->
+                            Collections.unmodifiableList(arguments.toList())
+                        },
+                    ),
                     methods = Collections.unmodifiableList(
                         type.methods.map { method ->
-                            method.copy(parameterTypes = Collections.unmodifiableList(method.parameterTypes.toList()))
+                            method.copy(
+                                parameterTypes = Collections.unmodifiableList(method.parameterTypes.toList()),
+                                parameterReferences = Collections.unmodifiableList(method.parameterReferences.toList()),
+                            )
                         },
                     ),
                 )
@@ -95,10 +115,17 @@ object ImplementationFacts {
         isAbstract = isAbstract,
         superclass = unresolvedSuperClass?.symbol(),
         interfaces = unresolvedInterfaces.map { it.symbol() },
+        parameterDefaults = genericsTypes.orEmpty().associate { it.name to qualifiedType(it.type) },
+        parentArguments = (listOfNotNull(unresolvedSuperClass) + unresolvedInterfaces).mapNotNull { parent ->
+            parent.genericsTypes?.map { reference(it.type, classVariables()) }?.let { parent.symbol() to it }
+        }.toMap(),
         methods = methods.filter { it.declaringClass == this && !it.isSynthetic }.map { method ->
             val range = if (isPrimaryClassNode) method.range() else null
             val bridgeOwner = method.getAnnotations(Traits.TRAITBRIDGE_CLASSNODE).firstOrNull()
                 ?.getMember("traitClass")?.let { it as? ClassExpression }?.type?.symbol()
+            val methodBounds = method.genericsTypes.orEmpty().associate {
+                it.name to (it.upperBounds?.firstOrNull() ?: ClassHelper.OBJECT_TYPE)
+            }
             // Other generated declarations have no navigable range, but still mask inherited methods.
             ImplementationMethod(
                 symbol = SemanticDocumentBuilder.createMethodSymbolId(this, method),
@@ -109,9 +136,41 @@ object ImplementationFacts {
                 isStatic = method.isStatic,
                 isPrivate = method.isPrivate,
                 bridgeOwner = bridgeOwner,
+                parameterReferences = method.parameters.map {
+                    reference(it.type, classVariables(), methodBounds)
+                }.takeIf { parameters -> parameters.any { it.isVariable } }.orEmpty(),
             )
         },
     )
+
+    private fun ClassNode.classVariables(): Set<String> = genericsTypes.orEmpty().map { it.name }.toSet()
+
+    private fun reference(
+        type: ClassNode,
+        variables: Set<String>,
+        methodBounds: Map<String, ClassNode> = emptyMap(),
+    ): ImplementationTypeReference {
+        var element = type
+        var rank = 0
+        val visited = mutableSetOf<String>()
+        while (true) {
+            element = when {
+                element.isArray -> {
+                    rank++
+                    element.componentType
+                }
+                element.isGenericsPlaceHolder && element.unresolvedName in methodBounds &&
+                    visited.add(element.unresolvedName) -> methodBounds.getValue(element.unresolvedName)
+                else -> break
+            }
+        }
+        val variable = element.isGenericsPlaceHolder && element.unresolvedName in variables
+        return ImplementationTypeReference(
+            if (variable) element.unresolvedName else qualifiedType(element),
+            rank,
+            variable,
+        )
+    }
 
     private fun qualifiedType(node: ClassNode): String = when {
         node.isArray -> qualifiedType(node.componentType) + "[]"

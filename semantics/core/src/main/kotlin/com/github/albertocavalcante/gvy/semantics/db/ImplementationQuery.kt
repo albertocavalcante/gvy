@@ -9,6 +9,7 @@ object ImplementationQuery {
 
     internal class Work {
         var superclassSteps: Long = 0
+        var bindingEdges: Long = 0
     }
 
     internal fun measuredFind(
@@ -79,9 +80,19 @@ object ImplementationQuery {
         }
 
         private fun methodImplementations(target: MethodDefinition): List<ImplementationLocation> {
+            val candidates = concreteDescendants(target.owner)
+            val related = traverse(candidates.map { it.declaration.symbol }) { hierarchy[it]?.parents().orEmpty() }
+            val generic = related.any { owner ->
+                hierarchy[owner]?.methods.orEmpty().any {
+                    it.name == target.method.name && it.parameterReferences.isNotEmpty()
+                }
+            }
             val resolved = mutableMapOf<String, MethodDefinition?>()
-            return concreteDescendants(target.owner).mapNotNull { candidate ->
-                cachedMethod(candidate.declaration.symbol, target.method, resolved)?.let { method ->
+            val erased = MethodSignature(target)
+            return candidates.mapNotNull { candidate ->
+                val symbol = candidate.declaration.symbol
+                val implementation = cachedMethod(symbol, erased, resolved, target.takeIf { generic })
+                implementation?.let { method ->
                     val uri = definitions[method.owner]?.singleOrNull()?.uri
                     val range = method.method.range
                     if (uri != null && range != null) ImplementationLocation(uri, range) else null
@@ -92,8 +103,9 @@ object ImplementationQuery {
         /** A class with no matching declaration or newly implemented interface inherits the parent's exact answer. */
         private fun cachedMethod(
             symbol: String,
-            target: ImplementationMethod,
+            target: MethodSignature,
             resolved: MutableMap<String, MethodDefinition?>,
+            generic: MethodDefinition? = null,
         ): MethodDefinition? {
             val inherited = mutableListOf<String>()
             val visited = mutableSetOf<String>()
@@ -101,18 +113,35 @@ object ImplementationQuery {
             while (current !in resolved && visited.add(current)) {
                 val type = hierarchy[current]
                 val parent = type?.superclass
-                if (parent != null && type.interfaces.isEmpty() && matchingMethods(current, target).isEmpty()) {
+                val unchanged = if (generic == null) {
+                    matchingMethods(current, target).isEmpty()
+                } else {
+                    inheritsGenericAnswer(type, parent, generic.method.name)
+                }
+                if (parent != null && type.interfaces.isEmpty() && unchanged) {
                     if (work != null) work.superclassSteps++
                     inherited.add(current)
                     current = parent
                 } else {
-                    resolved[current] = implementationMethod(current, target)
+                    val signature = generic?.let {
+                        val bindings = ImplementationBindings(hierarchy, current) {
+                            if (work != null) work.bindingEdges++
+                        }
+                        MethodSignature(it, bindings)
+                    } ?: target
+                    resolved[current] = implementationMethod(current, signature)
                 }
             }
             val result = resolved[current]
             inherited.forEach { resolved[it] = result }
             return result
         }
+
+        /** These edges add neither substitutions nor dispatch candidates, so the parent's viewpoint is identical. */
+        private fun inheritsGenericAnswer(type: ImplementationType?, parent: String?, name: String): Boolean =
+            type != null && type.parameterDefaults.isEmpty() &&
+                hierarchy[parent]?.parameterDefaults?.isEmpty() == true &&
+                type.parentArguments[parent].isNullOrEmpty() && type.methods.none { it.name == name }
 
         private fun concreteDescendants(symbol: String): List<ClassDefinition> {
             val reachable = traverse(children[symbol].orEmpty()) { children[it].orEmpty() } - symbol
@@ -123,7 +152,7 @@ object ImplementationQuery {
             }
         }
 
-        private fun implementationMethod(symbol: String, target: ImplementationMethod): MethodDefinition? {
+        private fun implementationMethod(symbol: String, target: MethodSignature): MethodDefinition? {
             val chain = traverse(listOf(symbol)) {
                 if (work != null) work.superclassSteps++
                 listOfNotNull(hierarchy[it]?.superclass)
@@ -138,7 +167,7 @@ object ImplementationQuery {
             }
         }
 
-        private fun interfaceDefault(chain: Set<String>, target: ImplementationMethod): MethodDefinition? {
+        private fun interfaceDefault(chain: Set<String>, target: MethodSignature): MethodDefinition? {
             val interfaces = traverse(chain.flatMap { hierarchy[it]?.interfaces.orEmpty() }) {
                 hierarchy[it]?.interfaces.orEmpty()
             }
@@ -152,7 +181,7 @@ object ImplementationQuery {
         }
 
         /** Groovy records the selected trait on its generated forwarder, so navigation need not guess trait order. */
-        private fun followBridge(declaration: MethodDefinition, target: ImplementationMethod): MethodDefinition? {
+        private fun followBridge(declaration: MethodDefinition, target: MethodSignature): MethodDefinition? {
             var current = declaration
             val visited = mutableSetOf<String>()
             while (current.method.bridgeOwner != null && visited.add(current.owner)) {
@@ -162,12 +191,24 @@ object ImplementationQuery {
             return current.takeIf { it.method.bridgeOwner == null && it.method.isConcrete() }
         }
 
-        private fun matchingMethods(owner: String, target: ImplementationMethod): List<MethodDefinition> =
-            hierarchy[owner]?.methods.orEmpty().filter {
-                it.name == target.name &&
-                    it.parameterTypes == target.parameterTypes
-            }
+        private fun matchingMethods(owner: String, target: MethodSignature): List<MethodDefinition> =
+            hierarchy[owner]?.methods.orEmpty().filter { target.matches(owner, it) }
                 .map { MethodDefinition(owner, it) }
+    }
+
+    /** Each generic comparison uses the same concrete class context on both sides. */
+    private class MethodSignature(
+        private val target: MethodDefinition,
+        private val bindings: ImplementationBindings? = null,
+    ) {
+        private val parameters = bindings?.parameters(target.owner, target.method)
+
+        fun matches(owner: String, method: ImplementationMethod): Boolean = method.name == target.method.name &&
+            if (bindings == null) {
+                method.parameterTypes == target.method.parameterTypes
+            } else {
+                parameters != null && bindings.parameters(owner, method) == parameters
+            }
     }
 
     private fun ImplementationType.parents(): List<String> = listOfNotNull(superclass) + interfaces

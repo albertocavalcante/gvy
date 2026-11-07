@@ -107,4 +107,38 @@ suite("Implementation navigation with the current server", () => {
   test("Unrelated concrete class is not an implementation target", async () => {
     assert.deepStrictEqual(await implementations("UnrelatedEditorGreeter"), []);
   });
+
+  test("Generic method navigation specializes each implementation and excludes the wrong overload", async () => {
+    const locations = await implementations("convert(T value)");
+    const targets = [
+      "String convert(String value)",
+      "Integer convert(Integer value)",
+      "java.util.Date convert(java.util.Date value)",
+    ];
+    assert.strictEqual(locations.length, targets.length);
+    for (const location of locations) {
+      assert.strictEqual(
+        realpathSync(location.uri.fsPath),
+        realpathSync(document.uri.fsPath),
+      );
+    }
+    const expectedLines = targets.map((target) => {
+      const offset = document.getText().indexOf(target);
+      assert.ok(offset >= 0, `Missing fixture target ${target}`);
+      return document.positionAt(offset).line;
+    });
+    assert.deepStrictEqual(
+      locations
+        .map((location) => location.range.start.line)
+        .sort((a, b) => a - b),
+      expectedLines.sort((a, b) => a - b),
+    );
+  });
+
+  test("Generic default method navigation retains the inherited implementation", async () => {
+    assertTarget(
+      await implementations("echo(T value)"),
+      "default T echo(T value)",
+    );
+  });
 });
