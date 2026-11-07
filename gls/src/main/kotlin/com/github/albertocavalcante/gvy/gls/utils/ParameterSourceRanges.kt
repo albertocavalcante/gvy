@@ -1,14 +1,12 @@
-package com.github.albertocavalcante.gvy.gls.providers.semantictokens
+package com.github.albertocavalcante.gvy.gls.utils
 
-import com.github.albertocavalcante.gvy.gls.utils.TextIndex
-import com.github.albertocavalcante.gvy.gls.utils.lastNameOccurrence
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.Parameter
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 
 /** Resolves parameter spellings from bounded source fragments, not the whole declaration's AST start. */
-internal class SemanticParameterRanges(private val lines: List<String>) {
+internal class ParameterSourceRanges(private val lines: List<String>) {
     data class Span(val line: Int, val start: Int, val length: Int)
 
     private val order = compareBy<Position> { it.line }.thenBy { it.character }

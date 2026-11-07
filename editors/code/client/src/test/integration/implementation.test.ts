@@ -239,4 +239,59 @@ suite("Implementation navigation with the current server", () => {
       }
     }
   });
+
+  test("Rename applies exact parameter edits through the current server", async () => {
+    await vscode.window.showTextDocument(document);
+    const original = document.getText();
+    const declaration = "String convert(String value) { value }";
+    const offset = original.indexOf(declaration);
+    assert.ok(offset >= 0);
+    const parameterOffset = offset + declaration.indexOf("value");
+    const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+      "vscode.executeDocumentRenameProvider",
+      document.uri,
+      document.positionAt(parameterOffset),
+      "convertedValue",
+    );
+    assert.ok(edit, "The server must return a rename edit");
+    const entries = edit.entries();
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(
+      realpathSync(entries[0][0].fsPath),
+      realpathSync(document.uri.fsPath),
+    );
+    const edits = entries[0][1];
+    assert.deepStrictEqual(
+      edits
+        .map((entry) => document.offsetAt(entry.range.start))
+        .sort((a, b) => a - b),
+      [parameterOffset, offset + declaration.lastIndexOf("value")],
+    );
+    for (const entry of edits) {
+      assert.strictEqual(document.getText(entry.range), "value");
+      assert.strictEqual(entry.newText, "convertedValue");
+    }
+    try {
+      assert.ok(await vscode.workspace.applyEdit(edit));
+      assert.strictEqual(
+        document.getText(),
+        original.replace(
+          declaration,
+          declaration.replace(/\bvalue\b/g, "convertedValue"),
+        ),
+      );
+    } finally {
+      const restore = new vscode.WorkspaceEdit();
+      restore.replace(
+        document.uri,
+        new vscode.Range(
+          document.positionAt(0),
+          document.positionAt(document.getText().length),
+        ),
+        original,
+      );
+      assert.ok(await vscode.workspace.applyEdit(restore));
+      assert.strictEqual(document.getText(), original);
+    }
+  });
 });

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
+import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
@@ -33,7 +34,7 @@ import java.lang.reflect.Modifier
  */
 @Suppress("TooManyFunctions")
 class SemanticTokenVisitor(private val sourceLines: List<String>) {
-    private val parameterRanges by lazy { SemanticParameterRanges(sourceLines) }
+    private val parameterRanges by lazy { ParameterSourceRanges(sourceLines) }
 
     /**
      * Type alias for semantic tokens.

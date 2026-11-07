@@ -236,6 +236,10 @@ class GroovyCompilationService(
     /** The source text the cached AST for [uri] was compiled from, so AST positions index into it. */
     fun getCompiledContent(uri: URI): String? = cacheService.getCachedWithContent(uri)?.first
 
+    /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
+    internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
+        cacheService.getCachedWithContent(uri)?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)
     fun getTokenIndex(uri: URI) = parseAccessor.getTokenIndex(uri)

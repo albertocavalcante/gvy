@@ -1,14 +1,18 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.toList
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -29,13 +33,31 @@ import java.nio.file.Paths
 
 /**
  * Provider for rename refactoring operations.
- * Supports renaming variables, methods, properties, and classes across the workspace.
+ * Renames variables, methods, properties, and classes from a captured document compilation.
+ * Workspace-wide rename stays disabled until indexed symbol identities distinguish ambiguous bindings.
  */
-class RenameProvider(
+class RenameProvider private constructor(
     private val compilationService: GroovyCompilationService,
-    /** Current text of a document (open buffer, else file on disk); null if unavailable. */
-    private val documentText: (URI) -> String? = ::readFromDisk,
+    private val documentSource: RenameDocumentSource,
 ) {
+    /** Current text of a document (open buffer, else file on disk); null if unavailable. */
+    constructor(
+        compilationService: GroovyCompilationService,
+        documentText: (URI) -> String? = ::readFromDisk,
+    ) : this(
+        compilationService,
+        RenameDocumentSource {
+            documentText(it)?.let { text -> DocumentSnapshot(text, null) }
+        },
+    )
+
+    internal constructor(compilationService: GroovyCompilationService, documents: DocumentProvider) : this(
+        compilationService,
+        RenameDocumentSource { uri ->
+            documents.getSnapshot(uri) ?: readFromDisk(uri)?.let { DocumentSnapshot(it, null) }
+        },
+    )
+
     private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
 
@@ -59,7 +81,7 @@ class RenameProvider(
      * @param newName The new name for the symbol
      * @return WorkspaceEdit containing all required changes, or throws ResponseError
      */
-    @Suppress("ThrowsCount", "TooGenericExceptionCaught")
+    @Suppress("ThrowsCount")
     suspend fun provideRename(uri: String, position: Position, newName: String): WorkspaceEdit {
         logger.debug { "Rename requested for $uri at ${position.line}:${position.character} to '$newName'" }
 
@@ -68,19 +90,20 @@ class RenameProvider(
 
         val documentUri = URI.create(uri)
         val groovyPosition = position.toGroovyPosition()
+        val sources = RenameSourceSnapshots(documentSource)
+        val original = sources.capture(documentUri)
 
         // Ensure document is compiled before accessing AST
         // NOTE: This awaits any active compilation to complete, preventing race conditions
         // where rename is called before compilation finishes populating the cache
         compilationService.ensureCompiled(documentUri)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Document not compiled: $uri")
+        val compiled = compilationService.getCompiledSnapshot(documentUri) ?: sources.changed(documentUri)
+        if (compiled.sourceText != original.content) sources.changed(documentUri)
 
         // Get the node at the position (now guaranteed to be in cache)
-        val visitor = compilationService.getAstModel(documentUri)
-            ?: throw createError(ResponseErrorCode.InvalidRequest, "No AST visitor available for $uri")
-
-        val symbolTable = compilationService.getSymbolTable(documentUri)
-            ?: throw createError(ResponseErrorCode.InvalidRequest, "No symbol table available for $uri")
+        val visitor = compiled.parseResult.astModel
+        val symbolTable = compiled.parseResult.symbolTable
 
         val targetNode = visitor.getNodeAt(documentUri, groovyPosition)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "No symbol found at position")
@@ -109,7 +132,7 @@ class RenameProvider(
         }
 
         // Collect all references including declaration
-        val locations = referenceProvider.provideReferences(uri, position, includeDeclaration = true).toList()
+        val locations = collectReferences(documentUri, definition, compiled, sources)
 
         if (locations.isEmpty()) {
             throw createError(ResponseErrorCode.InvalidRequest, "No references found for symbol")
@@ -125,19 +148,36 @@ class RenameProvider(
 
         // References carry whole AST node ranges (a declaration's range is the whole declaration,
         // and enclosing nodes can be reported too). Narrow each one to the old name so a rename can
-        // never replace anything but the identifier, and drop locations that do not contain it.
-        val nameLocations = narrowToName(workspaceLocations, oldName, definitionLocation)
+        // never replace anything but the identifier. Unverifiable occurrences reject the whole edit.
+        val nameLocations = narrowToName(workspaceLocations, oldName, definitionLocation, sources)
         if (nameLocations.isEmpty()) {
             throw createError(ResponseErrorCode.InvalidRequest, "No occurrences of '$oldName' found to rename")
         }
 
-        // Build workspace edit
+        sources.validate()
+
+        // Build workspace edit using the versions captured with the text used for every range.
         return buildWorkspaceEdit(
             definition,
             newName,
             nameLocations,
             definitionLocation,
+            sources,
         )
+    }
+
+    private suspend fun collectReferences(
+        uri: URI,
+        definition: ASTNode,
+        compiled: CompiledDocumentSnapshot,
+        sources: RenameSourceSnapshots,
+    ): List<Location> = try {
+        referenceProvider.provideRenameReferences(uri, definition, compiled).toList()
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: IllegalStateException) {
+        logger.warn(e) { "Cannot finish rename reference scan for $uri" }
+        sources.changed(uri)
     }
 
     /**
@@ -185,20 +225,24 @@ class RenameProvider(
      * location is an enclosing node, not a reference, and is dropped: narrowing it could land on a
      * different symbol with the same name. The rest are narrowed to their whole-word occurrence.
      */
-    private fun narrowToName(locations: List<Location>, name: String, definition: Location): List<Location> =
-        locations.groupBy { it.uri }.flatMap { (uri, locs) ->
-            val text = runCatching { documentText(URI.create(uri)) }.getOrNull()
-            if (text == null) {
-                logger.warn { "Cannot read $uri; skipping ${locs.size} rename location(s) there" }
-                return@flatMap emptyList()
-            }
-            val index = TextIndex(text)
-            locs.filter { loc ->
-                loc.isSameAs(definition) ||
-                    locs.none { other -> other !== loc && loc.range.strictlyContains(other.range) }
-            }.mapNotNull { loc -> firstNameOccurrence(index, loc.range, name)?.let { Location(uri, it) } }
-                .distinctBy { it.range.start.line to it.range.start.character }
+    private fun narrowToName(
+        locations: List<Location>,
+        name: String,
+        definition: Location,
+        sources: RenameSourceSnapshots,
+    ): List<Location> = locations.groupBy { it.uri }.flatMap { (uri, locs) ->
+        val documentUri = URI.create(uri)
+        val text = sources.capture(documentUri).content
+        val index = TextIndex(text)
+        locs.filter { loc ->
+            loc.isSameAs(definition) ||
+                locs.none { other -> other !== loc && loc.range.strictlyContains(other.range) }
+        }.map { loc ->
+            val range = firstNameOccurrence(index, loc.range, name) ?: sources.changed(documentUri)
+            Location(uri, range)
         }
+            .distinctBy { it.range.start.line to it.range.start.character }
+    }
 
     private fun Location.isSameAs(other: Location) = uri == other.uri && range == other.range
 
@@ -210,6 +254,7 @@ class RenameProvider(
         newName: String,
         locations: List<Location>,
         definitionLocation: Location,
+        sources: RenameSourceSnapshots,
     ): WorkspaceEdit {
         val documentChanges = mutableListOf<Either<TextDocumentEdit, ResourceOperation>>()
 
@@ -223,7 +268,7 @@ class RenameProvider(
             }
 
             val textDocumentEdit = TextDocumentEdit(
-                VersionedTextDocumentIdentifier(uri, null),
+                VersionedTextDocumentIdentifier(uri, sources.capture(URI.create(uri)).version),
                 textEdits,
             )
             documentChanges.add(Either.forLeft(textDocumentEdit))
