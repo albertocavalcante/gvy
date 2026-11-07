@@ -65,6 +65,12 @@ describe("configuration/settings", () => {
     assert.ok(settings.canBeAppliedDynamically(event));
   });
 
+  it("pushes compilation cache limit changes without a restart", () => {
+    const event = changeOf("groovy.compilation.cacheMaxEntries");
+    assert.ok(!settings.requiresServerRestart(event));
+    assert.ok(settings.canBeAppliedDynamically(event));
+  });
+
   it("does not bother the server with client-only settings", () => {
     const event = changeOf("groovy.statusBar.show");
     assert.ok(!settings.requiresServerRestart(event));

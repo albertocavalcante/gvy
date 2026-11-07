@@ -12,6 +12,8 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerFeature
 import com.github.albertocavalcante.gvy.gls.worker.WorkerRouter
 import com.github.albertocavalcante.gvy.gls.worker.WorkerRouterFactory
 import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
+import com.google.gson.Gson
+import com.google.gson.JsonObject
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -55,12 +57,11 @@ class GroovyWorkspaceService(
     override fun didChangeConfiguration(params: DidChangeConfigurationParams) {
         logger.info { "Configuration changed, updating Jenkins context if applicable" }
 
-        // Parse new configuration
-        val settings = params.settings
-
         @Suppress("UNCHECKED_CAST")
         val settingsMap = when (val settings = params.settings) {
             is Map<*, *> -> settings as? Map<String, Any>
+            // LSP4J represents Object-typed notification payloads as JSON, unlike direct callers.
+            is JsonObject -> Gson().fromJson(settings, Map::class.java) as Map<String, Any>
             else -> null
         }
 
