@@ -74,6 +74,7 @@ export const SERVER_DYNAMIC_SETTINGS: readonly string[] = [
   "format.enable",
   "compilation.incrementalThreshold",
   "compilation.maxWorkspaceFiles",
+  "compilation.cacheMaxEntries",
   "codenarc.enabled",
   "codenarc.propertiesFile",
   "codenarc.autoDetect",

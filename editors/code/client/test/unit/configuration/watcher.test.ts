@@ -8,11 +8,13 @@ describe("configuration/watcher", () => {
     { isRunning: () => boolean; sendNotification: sinon.SinonStub } | undefined;
   let showInformationMessage: sinon.SinonStub;
   let restartClient: sinon.SinonStub;
+  let serverSettings: Record<string, unknown>;
 
   beforeEach(() => {
     showInformationMessage = sinon.stub().resolves(undefined);
     restartClient = sinon.stub().resolves();
     client = undefined;
+    serverSettings = { "groovy.codenarc.enabled": false };
     const { setupConfigurationWatcher } = proxyquire.noCallThru()(
       "../../../src/configuration/watcher",
       {
@@ -29,7 +31,7 @@ describe("configuration/watcher", () => {
         "../server/client": {
           restartClient,
           getClient: () => client,
-          buildServerSettingsMap: () => ({ "groovy.codenarc.enabled": false }),
+          buildServerSettingsMap: () => serverSettings,
         },
       },
     );
@@ -57,6 +59,24 @@ describe("configuration/watcher", () => {
     };
     await listener(change("groovy.codenarc.enabled"));
     assert.ok(client.sendNotification.calledOnce);
+  });
+
+  it("sends the current compilation cache limit to a running server", async () => {
+    serverSettings = { "groovy.compilation.cacheMaxEntries": 42 };
+    client = {
+      isRunning: () => true,
+      sendNotification: sinon.stub().resolves(),
+    };
+
+    await listener(change("groovy.compilation.cacheMaxEntries"));
+
+    sinon.assert.calledOnceWithExactly(
+      client.sendNotification,
+      "workspace/didChangeConfiguration",
+      { settings: serverSettings },
+    );
+    sinon.assert.notCalled(showInformationMessage);
+    sinon.assert.notCalled(restartClient);
   });
 
   it("offers a restart when the engine setting changes", async () => {
