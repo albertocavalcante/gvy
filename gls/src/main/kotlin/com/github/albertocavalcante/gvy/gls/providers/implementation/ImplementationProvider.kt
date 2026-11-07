@@ -26,6 +26,15 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
             return emptyFlow()
         }
         val snapshot = compilationService.getWorkspaceSymbolIndex()?.implementationSnapshot.orEmpty()
+        return provideImplementations(origin, position, snapshot)
+    }
+
+    internal fun provideImplementations(
+        origin: URI,
+        position: Position,
+        snapshot: Map<URI, ImplementationDocument>,
+    ): Flow<Location> {
+        if (position.line < 0 || position.character < 0) return emptyFlow()
         val occurrence = snapshot[origin]?.let { targetAt(it, position) }
         val locations = occurrence?.let { ImplementationQuery.find(snapshot, origin, it) }.orEmpty()
         return locations.map { Location(it.uri.toString(), it.range.toLsp()) }.asFlow()
