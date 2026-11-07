@@ -21,7 +21,7 @@ import java.net.URI
 
 /**
  * Documents built from real compiled sources, not hand-written ranges: what the index reports and what
- * the cursor matches is exactly the node's text, with no extra column.
+ * the cursor matches is exactly the member identifier, with no extra column.
  */
 class SemanticDBExactRangeTest {
 
@@ -55,23 +55,29 @@ class SemanticDBExactRangeTest {
     }
 
     @Test
-    fun `references report the exact call range`() {
+    fun `references report the exact method identifier range`() {
         val symbol = index.getDocument(sourceUri)!!.occurrences.single {
             it.range.startLine == 1 && it.role == OccurrenceRole.CALL
         }.symbol
         val call = index.findReferences(symbol).single { it.uri == sourceUri.toString() }
-        assertEquals(Range(org.eclipse.lsp4j.Position(1, 0), org.eclipse.lsp4j.Position(1, 15)), call.range)
+        assertEquals(Range(org.eclipse.lsp4j.Position(1, 2), org.eclipse.lsp4j.Position(1, 13)), call.range)
     }
 
     @Test
-    fun `definition resolves on the last character of the call`() {
-        val result = resolveAt(1, 14)
+    fun `definition resolves on the last character of the method identifier`() {
+        val result = resolveAt(1, 12)
         val binary = assertInstanceOf(DefinitionResolver.DefinitionResult.Binary::class.java, result.getOrNull())
         assertEquals(targetUri.toString(), binary.uri.toString())
         assertEquals(
             Range(org.eclipse.lsp4j.Position(1, 4), org.eclipse.lsp4j.Position(1, 27)),
             binary.range,
         )
+    }
+
+    @Test
+    fun `definition does not resolve the method on its parentheses`() {
+        assertTrue(resolveAt(1, 13).isLeft(), "opening parenthesis is past the identifier's exclusive end")
+        assertTrue(resolveAt(1, 14).isLeft(), "closing parenthesis is not the method identifier")
     }
 
     @Test

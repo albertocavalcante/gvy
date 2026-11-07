@@ -7,7 +7,8 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 
 /**
- * Ranges are LSP ranges: 0-indexed and half-open, so the text they cover is exactly the node's text.
+ * Ranges are LSP ranges: 0-indexed and half-open. Member occurrences cover their identifier node;
+ * declaration symbols retain the whole declaration range.
  * Groovy's `lastColumnNumber` is 1-based and one past the last character; the end column is that minus 1.
  */
 class RangeConversionTest : SymbolIdTestSupport() {
@@ -42,27 +43,27 @@ class RangeConversionTest : SymbolIdTestSupport() {
     private val doc = build(source)
 
     @Test
-    @DisplayName("a method call covers exactly the call text")
+    @DisplayName("a method call occurrence covers exactly the method identifier")
     fun methodCall() {
         val call = doc.calls("bar").first { it.range.startLine == 5 }
-        assertEquals(Range(5, 0, 5, 13), call.range)
-        assertEquals("foo.bar(1, 2)", call.range.text())
+        assertEquals(Range(5, 4, 5, 7), call.range)
+        assertEquals("bar", call.range.text())
     }
 
     @Test
-    @DisplayName("a multi-line call ends right after its closing parenthesis")
+    @DisplayName("a multi-line call occurrence excludes the receiver and arguments")
     fun multiLineCall() {
         val call = doc.calls("bar").first { it.range.startLine == 7 }
-        assertEquals(Range(7, 0, 10, 1), call.range)
-        assertEquals("foo.bar(\n    1,\n    2\n)", call.range.text())
+        assertEquals(Range(7, 4, 7, 7), call.range)
+        assertEquals("bar", call.range.text())
     }
 
     @Test
-    @DisplayName("a property access covers exactly the access text")
+    @DisplayName("a property occurrence covers exactly the property identifier")
     fun propertyAccess() {
         val access = doc.occurrences.single { it.range.startLine == 6 && it.symbol.contains("name") }
-        assertEquals(Range(6, 0, 6, 8), access.range)
-        assertEquals("foo.name", access.range.text())
+        assertEquals(Range(6, 4, 6, 8), access.range)
+        assertEquals("name", access.range.text())
     }
 
     @Test

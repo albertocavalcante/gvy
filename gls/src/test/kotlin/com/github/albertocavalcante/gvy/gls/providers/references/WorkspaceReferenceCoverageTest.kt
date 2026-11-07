@@ -36,6 +36,40 @@ class WorkspaceReferenceCoverageTest {
     }
 
     @Test
+    fun `indexed method calls select the member when receiver has the same name`(): Unit = runBlocking {
+        val (service, declaration, caller) = createWorkspace()
+        Files.writeString(declaration, "class A {\n    String greet(A value) { 'hi' }\n}\n")
+        Files.writeString(caller, "class B {\n    String run(A greet) {\n        greet.greet(greet)\n    }\n}\n")
+        service.getWorkspaceCompiler().compileWorkspace()
+
+        val references = ReferenceProvider(service, service.getWorkspaceSymbolIndex())
+            .provideReferences(declaration.toUri().toString(), Position(1, 12), includeDeclaration = false)
+            .toList()
+
+        assertEquals(
+            listOf(Location(caller.toUri().toString(), Range(Position(2, 14), Position(2, 19)))),
+            references,
+        )
+    }
+
+    @Test
+    fun `indexed properties select the member when receiver has the same name`(): Unit = runBlocking {
+        val (service, declaration, caller) = createWorkspace()
+        Files.writeString(declaration, "class A {\n    String greet\n}\n")
+        Files.writeString(caller, "class B {\n    String run(A greet) {\n        greet.greet\n    }\n}\n")
+        service.getWorkspaceCompiler().compileWorkspace()
+
+        val references = ReferenceProvider(service, service.getWorkspaceSymbolIndex())
+            .provideReferences(declaration.toUri().toString(), Position(1, 12), includeDeclaration = false)
+            .toList()
+
+        assertEquals(
+            listOf(Location(caller.toUri().toString(), Range(Position(2, 14), Position(2, 19)))),
+            references,
+        )
+    }
+
+    @Test
     fun `evicting per-file ASTs does not lose workspace references`(): Unit = runBlocking {
         val (service, declaration, caller) = createWorkspace(cacheLimit = 1)
         service.compile(declaration.toUri(), Files.readString(declaration))

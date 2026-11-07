@@ -70,7 +70,7 @@ steps:
 
   # TEST: Click on HelloService in "new HelloService(...)"
   # Line 7: "            HelloService service = new HelloService("World")"
-  #                                                ^-- char 40 is on 'H' of HelloService
+  # Character 40 is inside HelloService in the constructor call.
   - request:
       method: textDocument/definition
       params:
@@ -99,7 +99,7 @@ steps:
 
   # TEST: Click on sayHello method call
   # Line 9: "            String result = service.sayHello()"
-  #                                              ^-- char 44 is on 's' of sayHello
+  # Character 36 is the first 's' of sayHello; characters 44/45 are its parentheses.
   - request:
       method: textDocument/definition
       params:
@@ -107,7 +107,7 @@ steps:
           uri: "{{workspace.uri}}src/test/groovy/com/example/HelloServiceSpec.groovy"
         position:
           line: 9
-          character: 44
+          character: 36
       saveAs: methodResult
 
   - assert:

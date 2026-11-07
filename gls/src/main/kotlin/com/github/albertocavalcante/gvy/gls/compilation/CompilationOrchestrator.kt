@@ -62,10 +62,24 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     /** The content hash whose degradation was last logged, per file. */
     private val loggedDegradations = ConcurrentHashMap<URI, ParseOutcome>()
 
+    private data class CompilationInput(
+        val uri: URI,
+        val content: String,
+        val publication: SemanticIndexer.Publication?,
+    )
+
     /**
      * Compiles Groovy source code and returns the result.
      */
-    suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult {
+    suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult =
+        semanticIndexer?.begin(uri).use { compile(uri, content, compilePhase, it) }
+
+    private suspend fun compile(
+        uri: URI,
+        content: String,
+        compilePhase: Int,
+        publication: SemanticIndexer.Publication?,
+    ): CompilationResult {
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
 
         return runCatching {
@@ -80,18 +94,28 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
                 if (isSuspiciousScriptNode) {
                     logger.info { "Cached result has suspicious Script node for $uri, re-compiling" }
-                    performCompilation(uri, content, compilePhase, configFingerprint = configFingerprint)
+                    performCompilation(
+                        CompilationInput(uri, content, publication),
+                        compilePhase,
+                        configFingerprint = configFingerprint,
+                    )
                 } else {
                     logger.debug { "Using cached parse result for: $uri" }
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
                     symbolIndexer.ensureIndexed(uri, content) { cachedResult.astModel }
                     cachedResult.ast?.let {
-                        semanticIndexer?.update(uri, content, it, cachedResult.outcome.achievedPhase)
+                        publication?.let { token ->
+                            semanticIndexer?.publish(token, content, it, cachedResult.outcome.achievedPhase)
+                        }
                     }
                     resultMapper.map(cachedResult, content)
                 }
             } else {
-                performCompilation(uri, content, compilePhase, configFingerprint = configFingerprint)
+                performCompilation(
+                    CompilationInput(uri, content, publication),
+                    compilePhase,
+                    configFingerprint = configFingerprint,
+                )
             }
         }.getOrElse { throwable ->
             when (throwable) {
@@ -103,12 +127,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     }
 
     private suspend fun performCompilation(
-        uri: URI,
-        content: String,
+        input: CompilationInput,
         compilePhase: Int = Phases.CANONICALIZATION,
         parseMode: ParseMode = ParseMode.WORKSPACE,
         configFingerprint: String? = null,
     ): CompilationResult {
+        val (uri, content, publication) = input
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Get file-specific classpath
@@ -148,7 +172,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
 
             // Semantic document for cross-file resolution
-            semanticIndexer?.update(uri, content, ast, parseResult.outcome.achievedPhase)
+            publication?.let { semanticIndexer?.publish(it, content, ast, parseResult.outcome.achievedPhase) }
         }
 
         return resultMapper.map(parseResult, content)
@@ -214,13 +238,15 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             }
         }
 
+        val publication = semanticIndexer?.begin(uri)
         val deferred = scope.async(ioDispatcher) {
             try {
-                compile(uri, content)
+                compile(uri, content, Phases.CANONICALIZATION, publication)
             } finally {
                 cacheService.removeCompilation(uri)
             }
         }
+        deferred.invokeOnCompletion { publication?.close() }
 
         cacheService.trackCompilation(uri, deferred)
         return deferred
@@ -274,17 +300,23 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val path = runCatching { Path.of(uri) }.getOrNull()
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
             logger.debug { "Compiling from disk on-demand: $uri" }
-            return try {
-                val content = withContext(ioDispatcher) {
-                    Files.readString(path)
+            return semanticIndexer?.begin(uri).use { publication ->
+                try {
+                    val content = withContext(ioDispatcher) {
+                        Files.readString(path)
+                    }
+                    // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
+                    performCompilation(
+                        CompilationInput(uri, content, publication),
+                        parseMode = ParseMode.MINIMAL,
+                        configFingerprint = configFingerprint,
+                    )
+                } catch (e: CancellationException) {
+                    throw e // the request was cancelled; not a failure to compile
+                } catch (e: Exception) {
+                    logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
+                    null
                 }
-                // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
-                performCompilation(uri, content, parseMode = ParseMode.MINIMAL, configFingerprint = configFingerprint)
-            } catch (e: CancellationException) {
-                throw e // the request was cancelled; not a failure to compile
-            } catch (e: Exception) {
-                logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
-                null
             }
         }
 

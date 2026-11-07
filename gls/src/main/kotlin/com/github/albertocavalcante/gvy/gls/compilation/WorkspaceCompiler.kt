@@ -212,6 +212,7 @@ class WorkspaceCompiler(
         sourceRoots: List<Path>,
     ): FileCompilationResult {
         val uri = sourcePath.toUri()
+        val publication = semanticIndexer.begin(uri)
 
         return try {
             // Read file content
@@ -238,8 +239,8 @@ class WorkspaceCompiler(
             val module = parseResult.ast
             if (module != null) {
                 logger.debug { "Successfully compiled: $uri" }
-                semanticIndexer.update(
-                    uri,
+                semanticIndexer.publish(
+                    publication,
                     content,
                     module,
                     parseResult.outcome.achievedPhase,
@@ -274,6 +275,8 @@ class WorkspaceCompiler(
                     ),
                 ),
             )
+        } finally {
+            publication.close()
         }
     }
 
