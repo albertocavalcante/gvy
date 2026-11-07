@@ -36,6 +36,11 @@ object ServerCapabilitiesFactory {
             // Definition support
             definitionProvider = Either.forLeft(true)
 
+            // Implementation navigation uses the existing implementation handler.
+            // TODO(#413): Search workspace facts independently of AST caches and distinguish qualified names.
+            //   See: https://github.com/albertocavalcante/gvy/issues/413
+            implementationProvider = Either.forLeft(true)
+
             // Document symbols
             documentSymbolProvider = Either.forLeft(true)
 

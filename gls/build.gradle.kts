@@ -546,6 +546,15 @@ tasks.register("printVersion") {
 
 val shadowJarTask = tasks.named<com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar>("shadowJar")
 
+tasks.register<Copy>("stageEditorServer") {
+    group = "distribution"
+    description = "Stage the current server at a stable path for editor integration tests and packaging."
+    dependsOn(shadowJarTask)
+    from(shadowJarTask.flatMap { it.archiveFile })
+    into(layout.buildDirectory.dir("editor-server"))
+    rename { "gls.jar" }
+}
+
 tasks.register<ReportJarCompositionTask>("reportShadowJarComposition") {
     group = "reporting"
     description = "Report size breakdown of the shaded gls uber jar."

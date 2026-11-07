@@ -9,6 +9,8 @@ export default defineConfig([
   {
     label: "integrationTests",
     files: "client/out/test/integration/**/*.test.js",
+    // Packaged tests load the unpacked VSIX while fixtures stay in this workspace.
+    extensionDevelopmentPath: process.env.GVY_TEST_EXTENSION_ROOT,
     // Without an installed binary, download the engines.vscode floor so the
     // tests exercise the oldest VS Code the manifest accepts. Bump together
     // with engines.vscode. (@vscode/test-electron >=3.1 resolves the macOS
