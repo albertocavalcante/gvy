@@ -40,12 +40,22 @@ class ImplementationSnapshotTest {
     fun `writer and reader collection mutations cannot change published hierarchy facts`() {
         val db = GroovySemanticDB()
         val parameters = mutableListOf("first.Value")
-        val methods = mutableListOf(method(parameters))
+        val references = mutableListOf(ImplementationTypeReference("T", isVariable = true))
+        val defaults = mutableMapOf("T" to "first.Value")
+        val arguments = mutableListOf(ImplementationTypeReference("T", isVariable = true))
+        val parentArguments = mutableMapOf("Base#" to arguments)
+        val methods = mutableListOf(method(parameters).copy(parameterReferences = references))
         val parents = mutableListOf("Base#")
         val types = mutableListOf(ImplementationClass("Contract#", range))
-        val graph = mutableMapOf("Contract#" to ImplementationType(true, true, null, parents, methods))
+        val graph = mutableMapOf(
+            "Contract#" to ImplementationType(true, true, null, parents, methods, defaults, parentArguments),
+        )
         db.updateDocument(uri, document(), "source", ImplementationFacts.Snapshot(types, graph))
         parameters[0] = "other.Value"
+        references.clear()
+        defaults.clear()
+        arguments.clear()
+        parentArguments.clear()
         parents.clear()
         methods.clear()
         types.clear()
@@ -55,6 +65,12 @@ class ImplementationSnapshotTest {
         val stored = snapshot.getValue(uri).hierarchy.getValue("Contract#")
         assertEquals(listOf("first.Value"), stored.methods.single().parameterTypes)
         assertEquals(listOf("Base#"), stored.interfaces)
+        assertEquals(mapOf("T" to "first.Value"), stored.parameterDefaults)
+        assertEquals(
+            listOf(ImplementationTypeReference("T", isVariable = true)),
+            stored.methods.single().parameterReferences,
+        )
+        assertEquals(stored.methods.single().parameterReferences, stored.parentArguments.getValue("Base#"))
         assertFailsWith<UnsupportedOperationException> { (snapshot as MutableMap).clear() }
         assertFailsWith<UnsupportedOperationException> { (snapshot.getValue(uri).classes as MutableList).clear() }
         assertFailsWith<UnsupportedOperationException> { (snapshot.getValue(uri).hierarchy as MutableMap).clear() }
@@ -62,6 +78,14 @@ class ImplementationSnapshotTest {
         assertFailsWith<UnsupportedOperationException> { (stored.interfaces as MutableList).clear() }
         assertFailsWith<UnsupportedOperationException> {
             (stored.methods.single().parameterTypes as MutableList).clear()
+        }
+        assertFailsWith<UnsupportedOperationException> { (stored.parameterDefaults as MutableMap).clear() }
+        assertFailsWith<UnsupportedOperationException> { (stored.parentArguments as MutableMap).clear() }
+        assertFailsWith<UnsupportedOperationException> {
+            (stored.parentArguments.getValue("Base#") as MutableList).clear()
+        }
+        assertFailsWith<UnsupportedOperationException> {
+            (stored.methods.single().parameterReferences as MutableList).clear()
         }
     }
 

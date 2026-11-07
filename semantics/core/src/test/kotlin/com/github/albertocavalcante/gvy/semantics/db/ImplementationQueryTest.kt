@@ -73,6 +73,106 @@ class ImplementationQueryTest {
     }
 
     @Test
+    fun `unchanged concrete generic chains share bindings and implementation lookup`() {
+        val count = 10000
+        val generic = target.copy(
+            parameterTypes = listOf("java.lang.Object"),
+            parameterReferences = listOf(ImplementationTypeReference("T", isVariable = true)),
+        )
+        val hierarchy = linkedMapOf(
+            "I#" to ImplementationType(
+                true,
+                true,
+                null,
+                emptyList(),
+                listOf(generic),
+                parameterDefaults = mapOf("T" to "java.lang.Object"),
+            ),
+        )
+        repeat(count) { index ->
+            hierarchy["C$index#"] = ImplementationType(
+                false,
+                false,
+                if (index == 0) null else "C${index - 1}#",
+                if (index == 0) listOf("I#") else emptyList(),
+                if (index == 0) {
+                    listOf(
+                        target.copy(
+                            parameterTypes = listOf("java.lang.String"),
+                            range = implementationRange,
+                            isAbstract = false,
+                        ),
+                    )
+                } else {
+                    emptyList()
+                },
+                parentArguments = if (index == 0) {
+                    mapOf("I#" to listOf(ImplementationTypeReference("java.lang.String")))
+                } else {
+                    emptyMap()
+                },
+            )
+        }
+        val document = ImplementationDocument(
+            SemanticDocument(uri, emptyList(), emptyList()),
+            "source",
+            hierarchy.keys.reversed().map { ImplementationClass(it, targetRange) },
+            hierarchy,
+        )
+
+        val (locations, work) = ImplementationQuery.measuredFind(mapOf(uri to document), uri, occurrence)
+
+        println(
+            "implementation/generic-chain classes=$count " +
+                "superclassSteps=${work.superclassSteps} bindingEdges=${work.bindingEdges}",
+        )
+        assertEquals(listOf(ImplementationLocation(uri, implementationRange)), locations)
+        assertTrue(
+            work.superclassSteps + work.bindingEdges <= count * 3L,
+            "Superclass=${work.superclassSteps}, bindings=${work.bindingEdges}",
+        )
+    }
+
+    @Test
+    fun `malformed arguments on a nongeneric parent cannot bypass unknown bindings`() {
+        val generic = target.copy(
+            parameterTypes = listOf("java.lang.Object"),
+            parameterReferences = listOf(ImplementationTypeReference("T", isVariable = true)),
+        )
+        val string = ImplementationTypeReference("java.lang.String")
+        val hierarchy = mapOf(
+            "I#" to ImplementationType(
+                true,
+                true,
+                null,
+                emptyList(),
+                listOf(generic),
+                parameterDefaults = mapOf("T" to "java.lang.Object"),
+            ),
+            "Base#" to ImplementationType(
+                false,
+                true,
+                null,
+                listOf("I#"),
+                listOf(
+                    target.copy(parameterTypes = listOf(string.name), range = implementationRange, isAbstract = false),
+                ),
+                parentArguments = mapOf("I#" to listOf(string)),
+            ),
+            "Child#" to ImplementationType(
+                false,
+                false,
+                "Base#",
+                emptyList(),
+                emptyList(),
+                parentArguments = mapOf("Base#" to listOf(string)),
+            ),
+        )
+
+        assertEquals(emptyList(), query(hierarchy))
+    }
+
+    @Test
     fun `cyclic incomplete hierarchies terminate without inventing implementations`() {
         val hierarchy = mapOf(
             "I#" to ImplementationType(true, true, null, emptyList(), listOf(target)),
