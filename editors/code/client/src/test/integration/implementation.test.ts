@@ -10,6 +10,8 @@ suite("Implementation navigation with the current server", () => {
     this.timeout(60000);
     const extension = vscode.extensions.getExtension("albertocavalcante.gvy");
     assert.ok(extension, "Groovy extension must be installed");
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace, "Editor tests require the source fixture workspace");
     const packagedRoot = process.env.GVY_TEST_EXTENSION_ROOT;
     if (packagedRoot) {
       assert.strictEqual(
@@ -20,9 +22,9 @@ suite("Implementation navigation with the current server", () => {
     }
 
     const candidate =
-      process.env.GVY_TEST_SERVER_JAR ??
+      process.env.GVY_TEST_SERVER_JAR ||
       vscode.Uri.joinPath(
-        extension.extensionUri,
+        workspace.uri,
         "../../gls/build/editor-server/gls.jar",
       ).fsPath;
     assert.ok(
@@ -42,8 +44,6 @@ suite("Implementation navigation with the current server", () => {
     );
 
     await extension.activate();
-    const workspace = vscode.workspace.workspaceFolders?.[0];
-    assert.ok(workspace, "Editor tests require the source fixture workspace");
     document = await vscode.workspace.openTextDocument(
       vscode.Uri.joinPath(
         workspace.uri,
