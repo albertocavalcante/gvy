@@ -5,6 +5,8 @@ import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
+import io.mockk.coEvery
+import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import java.net.URI
 import java.nio.file.Files
@@ -44,6 +46,47 @@ class WorkspaceCompilerTest {
     @AfterTest
     fun cleanup() {
         tempDir.toFile().deleteRecursively()
+    }
+
+    @Test
+    fun `deletion during parsing cannot restore semantic records`(): Unit = runTest {
+        val file = Files.createDirectories(tempDir.resolve("src")).resolve("Deleted.groovy")
+        file.writeText("class Deleted { void greet() {} }")
+        workspaceManager.initializeWorkspace(tempDir)
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            Files.delete(file)
+            indexer.remove(file.toUri())
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, workspaceManager, indexer)
+
+        compiler.compileWorkspace()
+
+        assertNull(index.getDocument(file.toUri()), "in-flight results must not resurrect deleted records")
+    }
+
+    @Test
+    fun `cache clear during parsing cannot restore semantic records`(): Unit = runTest {
+        val file = Files.createDirectories(tempDir.resolve("src")).resolve("Cleared.groovy")
+        file.writeText("class Cleared { void greet() {} }")
+        workspaceManager.initializeWorkspace(tempDir)
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        val indexer = SemanticIndexer(index)
+        val worker = mockk<WorkerSessionManager>()
+        coEvery { worker.parse(any()) } coAnswers {
+            val result = parser.parse(firstArg())
+            indexer.clear()
+            result
+        }
+        val compiler = WorkspaceCompiler(worker, workspaceManager, indexer)
+
+        compiler.compileWorkspace()
+
+        assertNull(index.getDocument(file.toUri()), "in-flight results must not undo cache invalidation")
     }
 
     @Test

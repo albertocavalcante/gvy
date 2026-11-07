@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import java.net.URI
+import java.util.Collections
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -11,13 +12,14 @@ import kotlin.concurrent.write
  *
  * Thread safety: one read-write lock guards the documents and both indexes together, so a writer
  * replaces a document and its index entries atomically and a reader never sees them out of step.
- * Lookups return fresh lists, so nothing handed to a caller aliases internal state.
+ * Lookups return detached result collections and read-only document lists.
  */
 class GroovySemanticDB {
     private val lock = ReentrantReadWriteLock()
 
-    // URI -> SemanticDocument
-    private val documents = HashMap<URI, SemanticDocument>()
+    private class StoredDocument(val document: SemanticDocument, val sourceText: String?)
+
+    private val documents = HashMap<URI, StoredDocument>()
 
     // symbolId -> definitions, grouped by file in the order the files were stored
     private val symbolIndex = SymbolIndex<SymbolInfo>()
@@ -28,16 +30,24 @@ class GroovySemanticDB {
     /**
      * Get semantic document for a URI
      */
-    fun getDocument(uri: URI): SemanticDocument? = lock.read { documents[uri] }
+    fun getDocument(uri: URI): SemanticDocument? = lock.read { documents[uri]?.document }
 
     /**
      * Update/store semantic document for a URI.
      * Replaces the previous document and its index entries atomically.
+     * Use the source-text overload for queries that need precise identifier ranges.
      */
-    fun updateDocument(uri: URI, doc: SemanticDocument) {
+    fun updateDocument(uri: URI, doc: SemanticDocument) = updateDocument(uri, doc, sourceText = null)
+
+    /** Stores source text with the document so readers never combine ranges and text from different versions. */
+    fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) {
+        val snapshot = doc.copy(
+            symbols = Collections.unmodifiableList(doc.symbols.toList()),
+            occurrences = Collections.unmodifiableList(doc.occurrences.toList()),
+        )
         lock.write {
-            documents.put(uri, doc)?.let { removeFromIndexes(uri, it) }
-            addToIndexes(uri, doc)
+            documents.put(uri, StoredDocument(snapshot, sourceText))?.let { removeFromIndexes(uri, it.document) }
+            addToIndexes(uri, snapshot)
         }
     }
 
@@ -45,13 +55,13 @@ class GroovySemanticDB {
      * Remove document when file is deleted
      */
     fun removeDocument(uri: URI) {
-        lock.write { documents.remove(uri)?.let { removeFromIndexes(uri, it) } }
+        lock.write { documents.remove(uri)?.let { removeFromIndexes(uri, it.document) } }
     }
 
     /**
      * Get all documents
      */
-    fun getAllDocuments(): Map<URI, SemanticDocument> = lock.read { documents.toMap() }
+    fun getAllDocuments(): Map<URI, SemanticDocument> = lock.read { documents.mapValues { it.value.document } }
 
     /**
      * Find symbol definition by ID.
@@ -70,6 +80,13 @@ class GroovySemanticDB {
      */
     fun findAllOccurrences(symbolId: String): List<Pair<URI, SymbolOccurrence>> =
         lock.read { occurrenceIndex.all(symbolId) }
+
+    /** Returns ranges and text from the same stored document, even if it is replaced after this query. */
+    fun findOccurrenceSnapshots(symbolId: String): List<IndexedOccurrence> = lock.read {
+        occurrenceIndex.all(symbolId).map { (uri, occurrence) ->
+            IndexedOccurrence(uri, occurrence, checkNotNull(documents[uri]).sourceText)
+        }
+    }
 
     /**
      * Find all symbols in a file by kind
@@ -110,7 +127,7 @@ class GroovySemanticDB {
      * Get statistics about the database
      */
     fun getStatistics(): SemanticDBStatistics {
-        val allDocuments = lock.read { documents.values.toList() }
+        val allDocuments = lock.read { documents.values.map { it.document } }
         return SemanticDBStatistics(
             documentCount = allDocuments.size,
             totalSymbols = allDocuments.sumOf { it.symbols.size },

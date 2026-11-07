@@ -11,12 +11,14 @@ import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.db.SymbolOccurrence
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
+import org.eclipse.lsp4j.Range as LspRange
 
 /**
  * Tests for cross-file reference finding using WorkspaceSymbolIndex.
@@ -106,8 +108,8 @@ class CrossFileReferenceProviderTest {
         )
 
         // Update workspace index
-        workspaceIndex.updateDocument(defUri, defDoc)
-        workspaceIndex.updateDocument(refUri, refDoc)
+        workspaceIndex.updateDocument(defUri, defDoc, sourceText = defContent)
+        workspaceIndex.updateDocument(refUri, refDoc, sourceText = refContent)
 
         // Act - Find references from the definition location
         val references = referenceProvider.provideReferences(
@@ -187,8 +189,8 @@ class CrossFileReferenceProviderTest {
             ),
         )
 
-        workspaceIndex.updateDocument(defUri, defDoc)
-        workspaceIndex.updateDocument(refUri, refDoc)
+        workspaceIndex.updateDocument(defUri, defDoc, sourceText = defContent)
+        workspaceIndex.updateDocument(refUri, refDoc, sourceText = refContent)
 
         // Act - Find references from the field definition
         val references = referenceProvider.provideReferences(
@@ -266,8 +268,8 @@ class CrossFileReferenceProviderTest {
             ),
         )
 
-        workspaceIndex.updateDocument(defUri, defDoc)
-        workspaceIndex.updateDocument(refUri, refDoc)
+        workspaceIndex.updateDocument(defUri, defDoc, sourceText = defContent)
+        workspaceIndex.updateDocument(refUri, refDoc, sourceText = refContent)
 
         // Act - Find references from the class definition
         val references = referenceProvider.provideReferences(
@@ -330,8 +332,8 @@ class CrossFileReferenceProviderTest {
             ),
         )
 
-        workspaceIndex.updateDocument(defUri, defDoc)
-        workspaceIndex.updateDocument(refUri, refDoc)
+        workspaceIndex.updateDocument(defUri, defDoc, sourceText = defContent)
+        workspaceIndex.updateDocument(refUri, refDoc, sourceText = refContent)
 
         // Act - Find references WITHOUT declaration
         val references = referenceProvider.provideReferences(
@@ -356,67 +358,50 @@ class CrossFileReferenceProviderTest {
 
     @Test
     fun `test deduplication between AST and workspace index results`(): Unit = runTest {
-        // Arrange - Create a file with both AST analysis and SemanticDB index
         val uri = URI.create("file:///SameFile.groovy")
-
         val content = """
-            def localVar = "test"
-            println localVar
-            def result = localVar + " suffix"
+            class SameFile {
+                def work() {}
+                def run() {
+                    work()
+                    work()
+                }
+            }
         """.trimIndent()
-
         compilationService.compile(uri, content)
-
-        // Create semantic document with same references that AST will find
-        val varSymbolId = "localVar."
-
+        val symbolId = "SameFile#work()."
+        val definition = Range(1, 8, 1, 12)
+        val calls = listOf(Range(3, 8, 3, 12), Range(4, 8, 4, 12))
         val doc = SemanticDocument(
-            uri = uri,
-            symbols = listOf(
-                SymbolInfo(
-                    symbol = varSymbolId,
-                    kind = SymbolKind.VARIABLE,
-                    range = Range(0, 4, 0, 12),
-                    name = "localVar",
-                    owner = null,
-                ),
-            ),
-            occurrences = listOf(
-                SymbolOccurrence(
-                    symbol = varSymbolId,
-                    range = Range(0, 4, 0, 12),
-                    role = OccurrenceRole.DEFINITION,
-                ),
-                SymbolOccurrence(
-                    symbol = varSymbolId,
-                    range = Range(1, 8, 1, 16),
-                    role = OccurrenceRole.REFERENCE,
-                ),
-                SymbolOccurrence(
-                    symbol = varSymbolId,
-                    range = Range(2, 13, 2, 21),
-                    role = OccurrenceRole.REFERENCE,
-                ),
-            ),
+            uri,
+            listOf(SymbolInfo(symbolId, SymbolKind.METHOD, definition, "work", "SameFile#")),
+            listOf(SymbolOccurrence(symbolId, definition, OccurrenceRole.DEFINITION)) +
+                calls.map { SymbolOccurrence(symbolId, it, OccurrenceRole.CALL) },
         )
-
-        workspaceIndex.updateDocument(uri, doc)
-
-        // Act - Find references (both AST and workspace index will contribute)
-        val references = referenceProvider.provideReferences(
+        workspaceIndex.updateDocument(uri, doc, sourceText = content)
+        val expected = listOf(definition) + calls
+        val locations = expected.map { range ->
+            Location(
+                uri.toString(),
+                LspRange(Position(range.startLine, range.startColumn), Position(range.endLine, range.endColumn)),
+            )
+        }
+        val fromAst = ReferenceProvider(compilationService).provideReferences(
             uri.toString(),
-            Position(0, 6), // in "localVar" declaration
+            Position(1, 9),
+            includeDeclaration = true,
+        ).toList()
+        assertEquals(locations.toSet(), fromAst.toSet(), "the AST path supplies the same three occurrences")
+        assertEquals(locations.toSet(), workspaceIndex.findReferences(symbolId).toSet())
+
+        val combined = referenceProvider.provideReferences(
+            uri.toString(),
+            Position(1, 9),
             includeDeclaration = true,
         ).toList()
 
-        // Assert - Should deduplicate, so we get exactly 3 locations (not 6)
-        assertEquals(3, references.size, "Should deduplicate same locations from AST and workspace index")
-
-        // Verify no duplicate locations
-        val locationKeys = references.map { loc ->
-            "${loc.uri}:${loc.range.start.line}:${loc.range.start.character}"
-        }
-        assertEquals(locationKeys.size, locationKeys.toSet().size, "All locations should be unique")
+        assertEquals(locations.toSet(), combined.toSet())
+        assertEquals(3, combined.size, "AST and workspace locations must be deduplicated")
     }
 
     @Test
@@ -471,7 +456,7 @@ class CrossFileReferenceProviderTest {
             occurrences = emptyList(), // No occurrences for localVar
         )
 
-        workspaceIndex.updateDocument(uri, doc)
+        workspaceIndex.updateDocument(uri, doc, sourceText = content)
 
         // Act - Try to find references at a position that has no occurrence in SemanticDB
         val references = referenceProvider.provideReferences(
@@ -507,14 +492,14 @@ class CrossFileReferenceProviderTest {
                 SymbolInfo(
                     symbol = "TestClass#",
                     kind = SymbolKind.CLASS,
-                    range = Range(1, 6, 1, 15),
+                    range = Range(0, 6, 0, 15),
                     name = "TestClass",
                     owner = null,
                 ),
                 SymbolInfo(
                     symbol = methodSymbolId,
                     kind = SymbolKind.METHOD,
-                    range = Range(2, 8, 2, 16),
+                    range = Range(1, 8, 1, 16),
                     name = "myMethod",
                     owner = "TestClass#",
                 ),
@@ -522,29 +507,29 @@ class CrossFileReferenceProviderTest {
             occurrences = listOf(
                 SymbolOccurrence(
                     symbol = methodSymbolId,
-                    range = Range(2, 8, 2, 16), // "myMethod" at line 2
+                    range = Range(1, 8, 1, 16),
                     role = OccurrenceRole.DEFINITION,
                 ),
             ),
         )
 
-        workspaceIndex.updateDocument(uri, doc)
+        workspaceIndex.updateDocument(uri, doc, sourceText = content)
 
         // Act - Find references at different positions within the method name range
         val referencesAtStart = referenceProvider.provideReferences(
             uri.toString(),
-            Position(2, 8), // Start of "myMethod"
+            Position(1, 8), // Start of "myMethod"
             includeDeclaration = true,
         ).toList()
 
         val referencesAtMiddle = referenceProvider.provideReferences(
             uri.toString(),
-            Position(2, 12), // Middle of "myMethod"
+            Position(1, 12), // Middle of "myMethod"
             includeDeclaration = true,
         ).toList()
 
-        // Assert - Both positions should find the same symbol
-        assertTrue(referencesAtStart.isNotEmpty(), "Should find references at range start")
-        assertTrue(referencesAtMiddle.isNotEmpty(), "Should find references at range middle")
+        val expected = listOf(Location(uri.toString(), LspRange(Position(1, 8), Position(1, 16))))
+        assertEquals(expected, referencesAtStart)
+        assertEquals(expected, referencesAtMiddle)
     }
 }

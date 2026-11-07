@@ -425,7 +425,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitMethodCallExpression(call: MethodCallExpression) {
-            val range = nodeToRange(call)
+            // Receiver and arguments may contain the same name; only the member is this occurrence.
+            val range = nodeToRange(call.method)
             val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it, closureScope) }
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
@@ -476,7 +477,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
-            val range = nodeToRange(expression)
+            val range = nodeToRange(expression.property)
             val symbolId = expression.propertyAsString?.let {
                 resolver.resolveProperty(expression.objectExpression, it, staticContext, expression.isSpreadSafe)
             }

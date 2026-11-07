@@ -61,6 +61,12 @@ data class SymbolInfo(
 data class SymbolOccurrence(val symbol: String, val range: Range, val role: OccurrenceRole)
 
 /**
+ * An occurrence and its source text captured together under the database's read lock.
+ * [sourceText] is null for documents stored through the metadata-only update overload.
+ */
+data class IndexedOccurrence(val uri: URI, val occurrence: SymbolOccurrence, val sourceText: String?)
+
+/**
  * Symbol kinds following LSP SymbolKind convention
  */
 enum class SymbolKind {
