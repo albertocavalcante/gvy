@@ -1,7 +1,8 @@
-import org.gradle.api.tasks.compile.GroovyCompile
-import org.gradle.language.base.plugins.LifecycleBasePlugin
-import org.gradle.api.tasks.testing.Test
 import org.gradle.api.artifacts.VersionCatalogsExtension
+import org.gradle.api.tasks.compile.GroovyCompile
+import org.gradle.api.tasks.testing.Test
+import org.gradle.jvm.toolchain.JavaLanguageVersion
+import org.gradle.jvm.toolchain.JavaToolchainService
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -37,6 +38,20 @@ version =
     }
 
 extra["baseVersion"] = baseVersion
+
+val testJavaVersion = providers.gradleProperty("testJavaVersion").orElse("17").map { JavaLanguageVersion.of(it) }
+val testJavaLauncher = extensions.getByType<JavaToolchainService>().launcherFor {
+    languageVersion.set(testJavaVersion)
+}
+
+tasks.named<Test>("test") {
+    javaLauncher.set(testJavaLauncher)
+    dependsOn(
+        subprojects.map { project ->
+            project.tasks.withType<Test>().matching { it.name == "test" || it.name == "jvmTest" }
+        },
+    )
+}
 
 subprojects {
     apply(plugin = "com.autonomousapps.dependency-analysis")
@@ -113,6 +128,8 @@ subprojects {
         val ktlintVersion = "1.7.1"
         kotlin {
             target("**/*.kt")
+            // TODO(#1167): Include Kotlin source packages named build in formatting.
+            //   See: https://github.com/albertocavalcante/gvy/issues/1167
             targetExclude("**/build/**/*.kt")
             ktlint(ktlintVersion)
                 .editorConfigOverride(
@@ -220,6 +237,7 @@ subprojects {
     // Otherwise, use parallel execution and generous memory locally
     afterEvaluate {
         tasks.withType<Test>().configureEach {
+            javaLauncher.set(testJavaLauncher)
             if (System.getenv("GITHUB_ACTIONS") == "true") {
                 // Hosted runners have 4 vCPUs and 16 GB; two 1 GB test JVMs fit. Forks are separate
                 // JVMs, so they share no static state.
@@ -231,7 +249,7 @@ subprojects {
                 maxParallelForks = (Runtime.getRuntime().availableProcessors() / 2).coerceAtLeast(1)
                 minHeapSize = "512m"
                 maxHeapSize = "4g"
-                
+
                 // Improve console output
                 testLogging {
                     events("passed", "skipped", "failed")
@@ -239,7 +257,7 @@ subprojects {
                     exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
                 }
             }
-            
+
             // Shared JVM args for better test performance
             jvmArgs("-XX:+UseG1GC", "-XX:MaxMetaspaceSize=512m")
 
@@ -293,7 +311,7 @@ tasks.register("quality") {
 tasks.register<Exec>("installLefthook") {
     description = "Install Git hooks using Lefthook"
     group = "help"
-    
+
     // Use layout to get project directory in a configuration-cache friendly way
     val projectDir = layout.projectDirectory
     onlyIf("Git repository must exist") {
@@ -308,4 +326,3 @@ tasks.register<Exec>("installLefthook") {
 // Ensure hooks are installed when building or checking
 tasks.named("build") { dependsOn("installLefthook") }
 tasks.named("check") { dependsOn("installLefthook") }
-

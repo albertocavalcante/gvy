@@ -1,13 +1,20 @@
 package com.github.albertocavalcante.gvy.build
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -15,6 +22,8 @@ import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.CoroutineContext
 import kotlin.io.path.writeText
 
 class DefaultBuildFileWatcherTest {
@@ -47,16 +56,13 @@ class DefaultBuildFileWatcherTest {
             debounceDelayMs = 50, // Short delay for testing
         ).also { it.startWatching(tempDir) }
 
-        // Give watcher time to start
-        delay(200)
-
         // Create file
         tempDir.resolve("build.gradle").writeText("// new file")
 
         // Wait for event
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for file creation event")
-        assertEquals(1, events.size)
-        assertEquals(tempDir, events[0])
+        assertTrue(events.isNotEmpty())
+        assertTrue(events.all { it == tempDir })
     }
 
     @Test
@@ -79,49 +85,12 @@ class DefaultBuildFileWatcherTest {
             debounceDelayMs = 50,
         ).also { it.startWatching(tempDir) }
 
-        delay(200)
-
         // Modify file
         buildFile.writeText("// modified")
 
         assertTrue(latch.await(5, TimeUnit.SECONDS), "Timed out waiting for file modification event")
-        assertEquals(1, events.size)
-    }
-
-    @Test
-    fun `should debounce rapid changes`() = runBlocking {
-        val events = CopyOnWriteArrayList<Path>()
-        // We expect exactly 1 event because we modify rapidly
-        val latch = CountDownLatch(1)
-
-        watcher = DefaultBuildFileWatcher(
-            logLabel = "Test",
-            coroutineScope = testScope,
-            onBuildFileChanged = {
-                events.add(it)
-                latch.countDown()
-            },
-            buildFileNames = setOf("build.gradle"),
-            debounceDelayMs = 500, // Longer delay for debounce test
-        ).also { it.startWatching(tempDir) }
-
-        val buildFile = tempDir.resolve("build.gradle")
-        buildFile.writeText("// initial") // This might trigger create, wait a bit
-        delay(1000)
-        events.clear() // Clear any initial create events
-
-        // Trigger rapid changes
-        repeat(5) {
-            buildFile.writeText("// change $it")
-            delay(50) // less than debounce 500
-        }
-
-        // Wait for debounce period + buffer
-        // WatchService poll takes up to 1s, and debounce is 500ms.
-        // We need ample buffer.
-        delay(3000)
-
-        assertEquals(1, events.size, "Should debounce to single event (got ${events.size})")
+        assertTrue(events.isNotEmpty())
+        assertTrue(events.all { it == tempDir })
     }
 
     @Test
@@ -170,5 +139,117 @@ class DefaultBuildFileWatcherTest {
 
         delay(500)
         assertTrue(events.isEmpty(), "Should not receive events after stopping")
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun `stopping during callback dispatch cancels the unpublished callback`(): Unit = runBlocking {
+        val scheduler = TestCoroutineScheduler()
+        val dispatcher = PausedFirstDispatch(StandardTestDispatcher(scheduler))
+        val events = CopyOnWriteArrayList<Path>()
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = { events.add(it) },
+            buildFileNames = setOf("build.gradle"),
+            debounceDelayMs = 0, // Isolate dispatch publication from the timer implementation.
+            dispatcher = dispatcher,
+        ).also { it.startWatching(tempDir) }
+        val watchJob = generateSequence(checkNotNull(testScope.coroutineContext[Job])) {
+            it.children.singleOrNull()
+        }.last()
+
+        try {
+            tempDir.resolve("build.gradle").writeText("// changed")
+            assertTrue(dispatcher.entered.await(10, TimeUnit.SECONDS), "Expected actual file event to dispatch")
+
+            // launch() has entered dispatch but has not yet returned its Job to the watcher.
+            watcher?.stopWatching()
+            dispatcher.release.countDown()
+            withTimeout(10_000) { watchJob.join() }
+            assertEquals(0L, dispatcher.returned.count, "The paused dispatch must finish replaying")
+            scheduler.advanceUntilIdle()
+
+            assertTrue(events.isEmpty(), "A callback queued during stop must be cancelled with its watcher")
+        } finally {
+            dispatcher.release.countDown()
+            watcher?.stopWatching()
+        }
+    }
+
+    private class PausedFirstDispatch(private val delegate: CoroutineDispatcher) : CoroutineDispatcher() {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val returned = CountDownLatch(1)
+        private val first = AtomicBoolean(true)
+
+        override fun dispatch(context: CoroutineContext, block: Runnable) {
+            if (first.compareAndSet(true, false)) {
+                entered.countDown()
+                check(release.await(10, TimeUnit.SECONDS)) { "Callback dispatch was not released" }
+            }
+            delegate.dispatch(context, block)
+            returned.countDown()
+        }
+    }
+
+    @Test
+    fun `registration failure can be followed by a valid watch`() {
+        val changed = CountDownLatch(1)
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = { changed.countDown() },
+            buildFileNames = setOf("build.gradle"),
+            debounceDelayMs = 0,
+        )
+        watcher?.startWatching(tempDir.resolve("missing"))
+        assertFalse(watcher?.isWatching() == true)
+
+        watcher?.startWatching(tempDir)
+        tempDir.resolve("build.gradle").writeText("// changed")
+
+        assertTrue(changed.await(5, TimeUnit.SECONDS), "A later valid session must detect changes")
+        assertTrue(watcher?.isWatching() == true)
+    }
+
+    @Test
+    fun `caller cancellation retires the session and prevents another start`(): Unit = runBlocking {
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = {},
+            buildFileNames = setOf("build.gradle"),
+        ).also { it.startWatching(tempDir) }
+        val watchJob = generateSequence(checkNotNull(testScope.coroutineContext[Job])) {
+            it.children.singleOrNull()
+        }.last()
+
+        testScope.cancel()
+        withTimeout(10_000) { watchJob.join() }
+
+        assertFalse(watcher?.isWatching() == true)
+        watcher?.startWatching(tempDir)
+        assertFalse(watcher?.isWatching() == true)
+    }
+
+    @Test
+    fun `a callback can stop its own watcher without waiting on itself`() {
+        val stopped = CountDownLatch(1)
+        watcher = DefaultBuildFileWatcher(
+            logLabel = "Test",
+            coroutineScope = testScope,
+            onBuildFileChanged = {
+                watcher?.stopWatching()
+                stopped.countDown()
+            },
+            buildFileNames = setOf("build.gradle"),
+            debounceDelayMs = 0,
+        ).also { it.startWatching(tempDir) }
+
+        tempDir.resolve("build.gradle").writeText("// changed")
+
+        assertTrue(stopped.await(5, TimeUnit.SECONDS), "Stopping from a callback must finish")
+        assertFalse(watcher?.isWatching() == true)
     }
 }

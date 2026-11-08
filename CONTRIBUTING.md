@@ -31,6 +31,16 @@ Thanks for your interest in contributing!
 ./gradlew test
 ```
 
+The root `test` task includes JVM unit tests and KMP JVM tests. Run the protocol suite with `./gradlew :tests:e2eTest`.
+
+Tests use Java 17 by default. Override the test runtime for an additional compatibility check:
+
+```bash
+./gradlew test -PtestJavaVersion=21
+```
+
+Changing the test runtime leaves compilation toolchains and the Java 17 bytecode target unchanged.
+
 ## Pull Request Guidelines
 
 - Include tests for new functionality
