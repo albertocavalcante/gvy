@@ -1,3 +1,4 @@
+import com.diffplug.gradle.spotless.SpotlessTask
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.api.tasks.testing.Test
@@ -124,13 +125,17 @@ subprojects {
         }
     }
 
+    val generatedKotlin = rootProject.files(
+        rootProject.allprojects.map { owner ->
+            fileTree(owner.layout.buildDirectory) { include("**/*.kt") }
+        },
+    )
     spotless {
         val ktlintVersion = "1.7.1"
         kotlin {
             target("**/*.kt")
-            // TODO(#1167): Include Kotlin source packages named build in formatting.
-            //   See: https://github.com/albertocavalcante/gvy/issues/1167
-            targetExclude("**/build/**/*.kt")
+            // Parent projects also target child sources. Exclude every actual Gradle output tree.
+            targetExclude(generatedKotlin)
             ktlint(ktlintVersion)
                 .editorConfigOverride(
                     mapOf(
@@ -284,10 +289,78 @@ tasks.named("sonar") {
 }
 
 // Root level convenience tasks that trigger subprojects
+data class KotlinFormattingTargetCase(
+    val name: String,
+    val sources: Set<File>,
+    val generated: File,
+    val targets: FileCollection,
+)
+
+val verifyKotlinFormattingTargets = tasks.register("verifyKotlinFormattingTargets") {
+    description = "Verify Kotlin source layouts are formatted while generated output is excluded"
+    group = "verification"
+    val cases = mapOf(
+        ":build-tool" to listOf(
+            "src/main/kotlin/com/github/albertocavalcante/gvy/build/BuildToolManager.kt",
+            "src/test/kotlin/com/github/albertocavalcante/gvy/build/GradleBuildStrategyTest.kt",
+        ),
+        ":common" to listOf("src/main/kotlin/com/github/albertocavalcante/gvy/common/text/TextIndex.kt"),
+        ":viz:ast-model" to listOf(
+            "src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
+        ),
+        ":parser" to listOf(
+            "native/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParserFacade.kt",
+        ),
+        ":semantics" to listOf(
+            "native/src/main/kotlin/com/github/albertocavalcante/gvy/semantics/native/NativeScope.kt",
+        ),
+        ":viz" to listOf(
+            "ast-model/src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
+        ),
+        ":tests" to listOf(
+            "e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/JsonBridge.kt",
+            "lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt",
+        ),
+    ).flatMap { (path, sources) ->
+        val owner = project(path)
+        val targets = owner.tasks.named<SpotlessTask>("spotlessKotlin").get().target
+        rootProject.allprojects
+            .filter { it.projectDir.toPath().startsWith(owner.projectDir.toPath()) }
+            .map { outputOwner ->
+                KotlinFormattingTargetCase(
+                    "$path -> ${outputOwner.path}",
+                    sources.map { owner.file(it) }.toSet(),
+                    outputOwner.layout.buildDirectory.file("format-target-probe/Generated.kt").get().asFile,
+                    targets,
+                )
+            }
+    }
+    doLast {
+        for (case in cases) {
+            check(case.sources.all { it.isFile }) { "Missing formatter regression source for ${case.name}" }
+            check(!case.generated.exists()) { "Refusing to overwrite formatter probe ${case.generated}" }
+            case.generated.parentFile.mkdirs()
+            try {
+                case.generated.writeText("val generated=1\n")
+                val targets = case.targets.files
+                check(targets.containsAll(case.sources)) { "Formatter excludes tracked sources for ${case.name}" }
+                check(case.generated !in targets) { "Formatter includes generated output for ${case.name}" }
+            } finally {
+                check(case.generated.delete() || !case.generated.exists()) {
+                    "Could not remove formatter probe ${case.generated}"
+                }
+                case.generated.parentFile.delete()
+            }
+        }
+        logger.lifecycle("Verified Kotlin formatter source and generated-output targets for ${cases.size} layouts")
+    }
+}
+
 tasks.register("lint") {
     description = "Run all linting tasks"
     group = "verification"
     dependsOn(subprojects.map { it.tasks.named("lint") })
+    dependsOn(verifyKotlinFormattingTargets)
 }
 
 tasks.register("lintFix") {
