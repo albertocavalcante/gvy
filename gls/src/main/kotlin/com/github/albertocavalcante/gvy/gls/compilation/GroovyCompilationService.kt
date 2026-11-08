@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageSession
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
+import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEngine
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
@@ -120,6 +121,16 @@ class GroovyCompilationService(
         val cached = cacheService.getCachedWithContent(uri) ?: return null
         val (content, _) = cached
         return engineManager.activeEngine.createSession(uri, content)
+    }
+
+    /** Retains a request's source and native parse together, independently of later cache changes. */
+    internal fun getHoverSession(uri: URI, snapshot: CompiledDocumentSnapshot): LanguageSession {
+        val engine = engineManager.activeEngine
+        return if (engine is NativeLanguageEngine) {
+            engine.createHoverSession(snapshot.parseResult, uri.toString(), snapshot.sourceText)
+        } else {
+            engine.createSession(uri, snapshot.sourceText)
+        }
     }
 
     fun updateGroovyVersion(info: GroovyVersionInfo) = engineManager.updateGroovyVersion(info)

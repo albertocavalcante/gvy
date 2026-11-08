@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.engine.impl.native.features
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContentGenerator
@@ -21,10 +22,9 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.HoverProvider as Del
  * Native hover provider that delegates to the existing HoverProvider implementation.
  * This ensures all existing hover logic (including Jenkins-specific handling) continues to work.
  *
- * @param parseResult The parse result for this session (reserved for future direct AST usage)
+ * @param parseResult The parse result retained with the session's source for snapshot-aware requests
  */
 class NativeHoverProvider(
-    @Suppress("UNUSED_PARAMETER") // TODO: Use parseResult directly instead of delegating
     private val parseResult: ParseResult,
     compilationService: GroovyCompilationService,
     documentProvider: DocumentProvider,
@@ -54,8 +54,20 @@ class NativeHoverProvider(
         sourceNavigator,
     )
 
-    override suspend fun getHover(params: HoverParams): Hover = runCatching {
-        delegate.provideHover(params.textDocument.uri, params.position) ?: emptyHover()
+    internal fun forSource(source: String): HoverProvider = object : HoverProvider {
+        override suspend fun getHover(params: HoverParams): Hover =
+            provideHover(params, CompiledDocumentSnapshot(source, parseResult))
+    }
+
+    override suspend fun getHover(params: HoverParams): Hover = provideHover(params, null)
+
+    private suspend fun provideHover(params: HoverParams, snapshot: CompiledDocumentSnapshot?): Hover = runCatching {
+        val result = if (snapshot == null) {
+            delegate.provideHover(params.textDocument.uri, params.position)
+        } else {
+            delegate.provideHover(params.textDocument.uri, params.position, snapshot)
+        }
+        result ?: emptyHover()
     }
         .onFailure { throwable ->
             when (throwable) {

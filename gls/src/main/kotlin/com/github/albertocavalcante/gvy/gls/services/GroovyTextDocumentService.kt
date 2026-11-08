@@ -21,6 +21,7 @@ import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.CustomRu
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.builtin.BuiltinRules
 import com.github.albertocavalcante.gvy.gls.providers.folding.FoldingRangeProvider
 import com.github.albertocavalcante.gvy.gls.providers.highlight.DocumentHighlightProvider
+import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.gvy.gls.providers.rename.RenameProvider
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
@@ -70,8 +71,6 @@ import org.eclipse.lsp4j.InlayHint
 import org.eclipse.lsp4j.InlayHintParams
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
-import org.eclipse.lsp4j.MarkupContent
-import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior
 import org.eclipse.lsp4j.PrepareRenameParams
 import org.eclipse.lsp4j.PrepareRenameResult
@@ -400,39 +399,12 @@ class GroovyTextDocumentService(
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =
         CompletableFuture.completedFuture(unresolved)
 
-    override fun hover(params: HoverParams): CompletableFuture<Hover> = coroutineScope.future {
-        logger.debug {
-            "Hover requested for ${params.textDocument.uri} at " +
-                "${params.position.line}:${params.position.character}"
-        }
-
-        val uri = URI.create(params.textDocument.uri)
-
-        // Ensure AST is prepared (compiles if needed)
-        // This is still needed because getSession expects cached result
-        ensureAstPrepared(uri)
-
-        val session = compilationService.getSession(uri)
-        session?.features?.hoverProvider?.getHover(params) ?: Hover().apply {
-            contents = Either.forRight(
-                MarkupContent().apply {
-                    kind = MarkupKind.MARKDOWN
-                    value = "_No information available (Not Compiled)_"
-                },
-            )
-        }
+    private val hoverRequestHandler by lazy {
+        HoverRequestHandler(compilationService, documentProvider)
     }
 
-    private suspend fun ensureAstPrepared(documentUri: URI) {
-        val hasAst = compilationService.getAst(documentUri) != null
-        if (hasAst) return
-
-        val content = documentProvider.get(documentUri) ?: return
-        runCatching {
-            compilationService.compile(documentUri, content)
-        }.onFailure { error ->
-            logger.debug(error) { "GroovyTextDocumentService: failed to compile $documentUri before hover" }
-        }
+    override fun hover(params: HoverParams): CompletableFuture<Hover> = coroutineScope.future {
+        hoverRequestHandler.getHover(params)
     }
 
     override fun definition(params: DefinitionParams): CompletableFuture<Either<List<Location>, List<LocationLink>>> =
