@@ -77,8 +77,7 @@ class GradleBuildTool(
     override fun createWatcher(
         coroutineScope: kotlinx.coroutines.CoroutineScope,
         onChange: (java.nio.file.Path) -> Unit,
-    ): com.github.albertocavalcante.gvy.build.BuildToolFileWatcher =
-        GradleBuildFileWatcher(coroutineScope, onChange)
+    ): com.github.albertocavalcante.gvy.build.BuildToolFileWatcher = GradleBuildFileWatcher(coroutineScope, onChange)
 
     override fun getTestCommand(workspaceRoot: Path, suite: String, test: String?, debug: Boolean): TestCommand {
         val testFilter = if (test != null) "$suite.$test" else suite

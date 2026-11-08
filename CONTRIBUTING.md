@@ -46,6 +46,10 @@ compatibility check; it does not validate the minimum Java 17 runtime:
 
 Changing the test runtime leaves compilation toolchains and the Java 17 bytecode target unchanged.
 
+Run `./gradlew lint` for Detekt, Spotless and the formatter target regression. To check only target selection, run
+`./gradlew verifyKotlinFormattingTargets`. It checks tracked source layouts and briefly creates generated Kotlin probes
+under each selected project's build directory, then removes them. Existing probe files cause the check to fail.
+
 ## Pull Request Guidelines
 
 - Include tests for new functionality

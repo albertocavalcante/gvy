@@ -29,8 +29,7 @@ class MavenBuildTool : BuildTool {
     override fun createWatcher(
         coroutineScope: kotlinx.coroutines.CoroutineScope,
         onChange: (Path) -> Unit,
-    ): com.github.albertocavalcante.gvy.build.BuildToolFileWatcher =
-        MavenBuildFileWatcher(coroutineScope, onChange)
+    ): com.github.albertocavalcante.gvy.build.BuildToolFileWatcher = MavenBuildFileWatcher(coroutineScope, onChange)
 
     private val dependencyResolver = MavenDependencyResolver()
 
