@@ -201,7 +201,9 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         // position info that overlaps with the parameter name (lastColumnNumber includes trailing whitespace).
         // This causes position-based queries to return the type ClassNode instead of the Parameter when
         // hovering on the parameter NAME. The Parameter node itself provides sufficient info for hover/definition.
-        track(parameter) {}
+        track(parameter) {
+            parameter.initialExpression?.visit(codeVisitor)
+        }
     }
 
     private fun visitAnnotation(annotation: AnnotationNode) {
