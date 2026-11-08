@@ -22,7 +22,7 @@ class NativeParserProviderTest {
     fun `provider has correct capabilities`() {
         assertTrue(provider.capabilities.supportsErrorRecovery)
         assertFalse(provider.capabilities.supportsCommentPreservation)
-        assertTrue(provider.capabilities.supportsSymbolResolution)
+        assertFalse(provider.capabilities.supportsSymbolResolution)
         assertFalse(provider.capabilities.supportsRefactoring)
     }
 
@@ -34,6 +34,19 @@ class NativeParserProviderTest {
         assertTrue(unit.isSuccessful)
         assertEquals(source, unit.source)
         assertTrue(unit.diagnostics().isEmpty())
+    }
+
+    @Test
+    fun `symbol resolution capability matches the public type lookup contract`() {
+        val unit = provider.parse("class Foo { String name }")
+        val field = unit.symbols().single { it.name == "name" }
+        val type = unit.typeAt(field.range.start)
+
+        assertEquals(
+            type != null,
+            provider.capabilities.supportsSymbolResolution,
+            "Advertised symbol resolution must be available through ParseUnit.typeAt",
+        )
     }
 
     @Test

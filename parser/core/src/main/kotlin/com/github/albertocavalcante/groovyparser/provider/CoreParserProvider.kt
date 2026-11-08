@@ -16,7 +16,8 @@ class CoreParserProvider(
     override val capabilities: ParserCapabilities = ParserCapabilities(
         supportsErrorRecovery = true,
         supportsCommentPreservation = true,
-        supportsSymbolResolution = true,
+        // The public ParseUnit.typeAt adapter is not wired to the core symbol resolver.
+        supportsSymbolResolution = false,
         supportsRefactoring = false,
     )
 

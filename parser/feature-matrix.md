@@ -13,7 +13,8 @@ Legend: yes, no, partial, not documented
 | Position-based node lookup              | yes                          | partial (positions only)           | `parser/README.md`                                                                    |
 | Comment preservation                    | not documented               | yes                                | `parser/README.md`                                                                    |
 | Visitor APIs                            | custom recursive visitor     | yes (VoidVisitor/GroovyVisitor)    | `parser/README.md`                                                                    |
-| Symbol resolution                       | partial (local symbol table) | yes (symbol resolver, type solver) | `parser/README.md`, `kb/ARCHITECTURE.md`                                              |
+| Internal symbol resolution              | partial (local symbol table) | yes (symbol resolver, type solver) | `parser/README.md`, `kb/ARCHITECTURE.md`                                              |
+| Public `ParseUnit.typeAt`               | no                           | no                                 | Both public adapters return `null` and advertise `supportsSymbolResolution = false`   |
 | Jenkins CPS analysis                    | not documented               | yes                                | `parser/README.md`                                                                    |
 | Groovy macro support                    | yes                          | not documented                     | `parser/README.md`                                                                    |
 | Multi-version Groovy support            | not documented               | yes (2.4–5.x)                      | `parser/README.md`                                                                    |
@@ -23,3 +24,7 @@ Legend: yes, no, partial, not documented
 
 If you rely on a "not documented" or "partial" row, confirm the capability in code and update this matrix with a
 concrete reference.
+
+The internal symbol tables, resolver, and type solver are separate from the public adapter APIs. Their existence does
+not imply that the public `ParserProvider` adapter supports type lookup; consumers must check its advertised
+capabilities.

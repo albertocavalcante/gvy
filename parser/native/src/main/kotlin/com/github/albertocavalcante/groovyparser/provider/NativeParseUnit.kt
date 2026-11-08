@@ -101,7 +101,8 @@ class NativeParseUnit(override val source: String, override val path: Path?, pri
     }
 
     override fun typeAt(position: Position): TypeInfo? {
-        // TODO(#552): Implement type resolution using SymbolTable
+        // Internal native resolution is not exposed by this public adapter yet.
+        // NativeParserProvider advertises this limitation through supportsSymbolResolution.
         return null
     }
 

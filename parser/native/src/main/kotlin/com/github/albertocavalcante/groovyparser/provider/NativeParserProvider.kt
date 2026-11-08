@@ -14,7 +14,8 @@ class NativeParserProvider(private val facade: GroovyParserFacade = GroovyParser
     override val capabilities: ParserCapabilities = ParserCapabilities(
         supportsErrorRecovery = true,
         supportsCommentPreservation = false,
-        supportsSymbolResolution = true,
+        // The public ParseUnit.typeAt adapter is not wired to the native symbol table.
+        supportsSymbolResolution = false,
         supportsRefactoring = false,
     )
 
