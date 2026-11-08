@@ -16,12 +16,16 @@ import io.mockk.verify
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
@@ -46,6 +50,71 @@ class DiagnosticsOrchestratorTest {
     @AfterEach
     fun cleanup() {
         unmockkAll()
+    }
+
+    @Test
+    fun `problem limit bounds both parser and merged diagnostic publications`(): Unit = runTest {
+        val compilation = mockk<GroovyCompilationService>()
+        val diagnostics = mockk<DiagnosticsService>()
+        val client = mockk<LanguageClient>(relaxed = true)
+        val parser =
+            listOf(Diagnostic().apply { message = "syntax one" }, Diagnostic().apply { message = "syntax two" })
+        val extra = listOf(Diagnostic().apply { message = "lint one" })
+        val result = mockk<CompilationResult>()
+        every { result.diagnostics } returns parser
+        coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
+        coEvery { diagnostics.getDiagnostics(any(), any()) } returns extra
+        val publications = mutableListOf<PublishDiagnosticsParams>()
+        every { client.publishDiagnostics(capture(publications)) } just Runs
+        val orchestrator = DiagnosticsOrchestrator(
+            this,
+            compilation,
+            diagnostics,
+            DocumentProvider(),
+            ServerConfiguration(maxNumberOfProblems = 1),
+            { client },
+        )
+
+        orchestrator.trigger(testUri, testContent)
+        orchestrator.awaitDiagnostics(testUri)
+
+        assertEquals(2, publications.size)
+        assertTrue(publications.all { it.diagnostics.size == 1 })
+        assertEquals("syntax one", publications.last().diagnostics.single().message)
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `settings refresh prevents an old provider from publishing after replacement`(): Unit = runTest {
+        val compilation = mockk<GroovyCompilationService>()
+        val oldService = mockk<DiagnosticsService>()
+        val newService = mockk<DiagnosticsService>()
+        val client = mockk<LanguageClient>(relaxed = true)
+        val result = mockk<CompilationResult>()
+        every { result.diagnostics } returns emptyList()
+        coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
+        val release = CompletableDeferred<Unit>()
+        coEvery { oldService.getDiagnostics(any(), any()) } coAnswers {
+            withContext(NonCancellable) { release.await() }
+            listOf(Diagnostic().apply { message = "obsolete" })
+        }
+        coEvery { newService.getDiagnostics(any(), any()) } returns listOf(Diagnostic().apply { message = "current" })
+        val publications = mutableListOf<PublishDiagnosticsParams>()
+        every { client.publishDiagnostics(capture(publications)) } just Runs
+        val documents = DocumentProvider().apply { put(testUri, testContent, 1) }
+        val orchestrator =
+            DiagnosticsOrchestrator(this, compilation, oldService, documents, ServerConfiguration(), { client })
+        orchestrator.trigger(testUri, testContent)
+        runCurrent()
+        assertEquals(1, publications.size)
+
+        orchestrator.updateConfiguration(ServerConfiguration(maxNumberOfProblems = 1), newService)
+        runCurrent()
+        release.complete(Unit)
+        advanceUntilIdle()
+
+        assertEquals("current", publications.last().diagnostics.single().message)
+        assertTrue(publications.none { publication -> publication.diagnostics.any { it.message == "obsolete" } })
     }
 
     // ==================== Test: trigger cancels existing job ====================

@@ -6,7 +6,6 @@ import com.github.albertocavalcante.groovyparser.ast.isHoverable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.documentation.DocExtractor
@@ -73,36 +72,28 @@ class HoverProvider(
     private val documentationProvider = DocumentationProvider
         .getInstance(documentProvider)
 
-    // Create mode resolver lazily
-    // Note: Uses AUTO mode since we don't have direct access to ServerConfiguration from compilation service
-    // AUTO mode will auto-detect based on JenkinsCapabilities, which is the desired behavior
-    private val modeResolver: ModeResolver by lazy {
-        ModeResolver(
-            configuredMode = GroovyMode.AUTO,
-            jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities(),
-        )
-    }
-
     // Strategies for handling different node types (order matters - more specific first)
-    private val strategies: List<HoverStrategy> by lazy {
-        val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
-        listOfNotNull(
-            // Jenkins step hover has high priority for method calls in Jenkins files
-            jenkinsCapabilities?.let { JenkinsStepHoverStrategy(it, modeResolver) },
-            MethodDeclarationHoverStrategy(),
-            ClassDeclarationHoverStrategy(),
-            FieldDeclarationHoverStrategy(),
-            ImportHoverStrategy(),
-            DeclarationExpressionHoverStrategy(),
-            VariableExpressionHoverStrategy(),
-            MethodCallHoverStrategy(),
-            ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
-            PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
-            ClosureHoverStrategy(), // Phase 4: Closure expressions
-            LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
-            GenericHoverStrategy(), // Fallback - must be last
-        )
-    }
+    private val strategies: List<HoverStrategy>
+        get() {
+            val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+            val modeResolver = ModeResolver.fromConfig(compilationService.serverConfiguration, jenkinsCapabilities)
+            return listOfNotNull(
+                // Jenkins step hover has high priority for method calls in Jenkins files
+                jenkinsCapabilities?.let { JenkinsStepHoverStrategy(it, modeResolver) },
+                MethodDeclarationHoverStrategy(),
+                ClassDeclarationHoverStrategy(),
+                FieldDeclarationHoverStrategy(),
+                ImportHoverStrategy(),
+                DeclarationExpressionHoverStrategy(),
+                VariableExpressionHoverStrategy(),
+                MethodCallHoverStrategy(),
+                ConstructorCallHoverStrategy(), // Phase 4: Constructor calls
+                PropertyExpressionHoverStrategy(), // Phase 4: Property access (object.property)
+                ClosureHoverStrategy(), // Phase 4: Closure expressions
+                LiteralHoverStrategy(), // Phase 4: Literals (strings, numbers, lists, maps)
+                GenericHoverStrategy(), // Fallback - must be last
+            )
+        }
 
     /**
      * Provide hover information for the symbol at the given position.

@@ -1,0 +1,58 @@
+name: configuration-diagnostics
+description: Initialization and live JSON-RPC settings control diagnostic providers and problem limits.
+workspace:
+  fixture: hover-basic
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.diagnostics.providers.disabled: [parser, codenarc, custom-rules, unused-imports]
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 30000
+  - openDocument:
+      path: Broken.groovy
+      languageId: groovy
+      version: 1
+      text: "class Broken { void method( { }"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: Broken.groovy }
+        - jsonPath: $.diagnostics
+          expect: { type: SIZE, value: 0 }
+      timeoutMs: 30000
+  - notification:
+      method: workspace/didChangeConfiguration
+      params:
+        settings:
+          groovy.diagnostics.providers.disabled: [codenarc, custom-rules, unused-imports]
+          groovy.server.maxNumberOfProblems: 1
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: Broken.groovy }
+        - jsonPath: $.diagnostics
+          expect: { type: SIZE, value: 1 }
+      timeoutMs: 30000
+  - notification:
+      method: workspace/didChangeConfiguration
+      params:
+        settings:
+          groovy.diagnostics.providers.disabled: [codenarc, custom-rules, unused-imports]
+          groovy.server.maxNumberOfProblems: 0
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: Broken.groovy }
+        - jsonPath: $.diagnostics
+          expect: { type: SIZE, value: 0 }
+      timeoutMs: 30000
+  - shutdown: {}
+  - exit: {}

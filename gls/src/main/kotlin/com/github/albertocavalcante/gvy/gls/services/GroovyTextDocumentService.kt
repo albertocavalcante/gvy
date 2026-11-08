@@ -111,7 +111,12 @@ class GroovyTextDocumentService(
     options: GroovyTextDocumentServiceOptions = GroovyTextDocumentServiceOptions(),
 ) : TextDocumentService {
 
-    private val serverConfiguration: ServerConfiguration = options.serverConfiguration
+    @Volatile
+    private var serverConfiguration: ServerConfiguration = options.serverConfiguration
+
+    init {
+        compilationService.updateServerConfiguration(options.serverConfiguration)
+    }
     private val client: () -> LanguageClient? = options.client
     private val documentProvider: DocumentProvider = options.documentProvider
     private val formatter: Formatter = options.formatter
@@ -127,21 +132,28 @@ class GroovyTextDocumentService(
         logger.info { "Definition link support set to $supported" }
     }
 
-    // Initialize diagnostics service with provider-based architecture
-    private val diagnosticsService by lazy {
-        createDiagnosticsService()
-    }
-
-    // Diagnostics orchestrator - manages diagnostic jobs and publication
-    private val diagnosticsOrchestrator by lazy {
+    // Initialization and configuration changes share this monitor so a newly initialized
+    // orchestrator cannot retain a configuration superseded while it was being constructed.
+    private val diagnosticsOrchestratorDelegate = lazy(this) {
+        val configuration = serverConfiguration
         DiagnosticsOrchestrator(
             coroutineScope = coroutineScope,
             compilationService = compilationService,
-            diagnosticsService = diagnosticsService,
+            diagnosticsService = createDiagnosticsService(configuration),
             documentProvider = documentProvider,
-            serverConfiguration = serverConfiguration,
+            serverConfiguration = configuration,
             client = client,
         )
+    }
+    private val diagnosticsOrchestrator by diagnosticsOrchestratorDelegate
+
+    @Synchronized
+    fun updateConfiguration(configuration: ServerConfiguration) {
+        serverConfiguration = configuration
+        compilationService.updateServerConfiguration(configuration)
+        if (diagnosticsOrchestratorDelegate.isInitialized()) {
+            diagnosticsOrchestrator.updateConfiguration(configuration, createDiagnosticsService(configuration))
+        }
     }
 
     /**
@@ -149,7 +161,7 @@ class GroovyTextDocumentService(
      *
      * NOTE: This factory pattern allows for easy testing and future extension.
      */
-    private fun createDiagnosticsService(): DiagnosticsService {
+    private fun createDiagnosticsService(serverConfiguration: ServerConfiguration): DiagnosticsService {
         val workspaceRoot = compilationService.workspaceManager.getWorkspaceRoot()
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
@@ -356,15 +368,17 @@ class GroovyTextDocumentService(
      * Public method to get diagnostics for a file, useful for CLI "check" command.
      */
     suspend fun diagnose(uri: URI, content: String): List<Diagnostic> {
-        // Compile the document and return diagnostics (does not publish them)
+        // One immutable configuration applies throughout this request.
+        val configuration = serverConfiguration
+        val diagnosticsService = createDiagnosticsService(configuration)
         val result = compilationService.compile(uri, content)
-        val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+        val parserEnabled = configuration.diagnosticConfig.isProviderEnabled(
             "parser",
             enabledByDefault = true,
         )
         val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
         val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
-        return parserDiagnostics + extraDiagnostics
+        return (parserDiagnostics + extraDiagnostics).take(configuration.maxNumberOfProblems.coerceAtLeast(0))
     }
 
     fun refreshOpenDocuments() {
