@@ -235,7 +235,9 @@ class GroovyLanguageServer(
 
         savedInitOptionsMap = parseInitOptions(params.initializationOptions)
 
-        val initializeResult = ServerCapabilitiesFactory.createInitializeResult()
+        val initializeResult = ServerCapabilitiesFactory.createInitializeResult(
+            prepareRenameSupport = params.capabilities?.textDocument?.rename?.prepareSupport == true,
+        )
 
         logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)

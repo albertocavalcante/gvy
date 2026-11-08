@@ -72,7 +72,11 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
+import org.eclipse.lsp4j.PrepareRenameDefaultBehavior
+import org.eclipse.lsp4j.PrepareRenameParams
+import org.eclipse.lsp4j.PrepareRenameResult
 import org.eclipse.lsp4j.PublishDiagnosticsParams
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.RenameParams
 import org.eclipse.lsp4j.SemanticTokens
@@ -85,6 +89,7 @@ import org.eclipse.lsp4j.TypeDefinitionParams
 import org.eclipse.lsp4j.WorkspaceEdit
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.Either3
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
@@ -514,6 +519,14 @@ class GroovyTextDocumentService(
         coroutineScope.future {
             formattingService.format(params)
         }
+
+    override fun prepareRename(
+        params: PrepareRenameParams,
+    ): CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>?> = coroutineScope.future {
+        RenameProvider(compilationService, documentProvider)
+            .providePrepareRename(params.textDocument.uri, params.position)
+            ?.let { Either3.forSecond<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>(it) }
+    }
 
     @Suppress("TooGenericExceptionCaught")
     override fun rename(params: RenameParams): CompletableFuture<WorkspaceEdit> = coroutineScope.future {

@@ -21,6 +21,7 @@ import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.PrepareRenameResult
 import org.eclipse.lsp4j.RenameFile
 import org.eclipse.lsp4j.ResourceOperation
 import org.eclipse.lsp4j.TextDocumentEdit
@@ -84,15 +85,63 @@ class RenameProvider private constructor(
      * @param newName The new name for the symbol
      * @return WorkspaceEdit containing all required changes, or throws ResponseError
      */
-    @Suppress("ThrowsCount")
     suspend fun provideRename(uri: String, position: Position, newName: String): WorkspaceEdit {
         logger.debug { "Rename requested for $uri at ${position.line}:${position.character} to '$newName'" }
 
         // Validate the new name
         validateNewName(newName)
 
-        val documentUri = URI.create(uri)
         val sources = RenameSourceSnapshots(documentSource)
+        val target = captureTarget(uri, position, sources)
+        if (target.oldName == newName) {
+            throw createError(ResponseErrorCode.InvalidRequest, "New name is the same as the current name")
+        }
+        val nameLocations = collectNameLocations(target, sources)
+        sources.validate()
+        return buildWorkspaceEdit(target.definition, newName, nameLocations, target.definitionLocation, sources)
+    }
+
+    /** Preparation proves eligibility against held source without constructing or applying edits. */
+    suspend fun providePrepareRename(uri: String, position: Position): PrepareRenameResult? = try {
+        val sources = RenameSourceSnapshots(documentSource)
+        val target = captureTarget(uri, position, sources)
+        val location = collectNameLocations(target, sources).firstOrNull {
+            URI.create(it.uri) == target.documentUri && it.range.start <= position && position < it.range.end
+        }
+        if (location == null) {
+            null
+        } else {
+            sources.validate()
+            PrepareRenameResult(location.range, target.oldName)
+        }
+    } catch (e: ResponseErrorException) {
+        when (e.responseError.code) {
+            ResponseErrorCode.InvalidParams.value,
+            ResponseErrorCode.InvalidRequest.value,
+            ResponseErrorCode.ContentModified.value,
+            -> null
+            else -> throw e
+        }
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+
+    private data class RenameTarget(
+        val documentUri: URI,
+        val compiled: CompiledDocumentSnapshot,
+        val parameterOrigins: ParameterOrigins,
+        val definition: ASTNode,
+        val definitionLocation: Location,
+        val oldName: String,
+    )
+
+    @Suppress("ThrowsCount") // Each invalid protocol target reports a specific validation error.
+    private suspend fun captureTarget(
+        uri: String,
+        position: Position,
+        sources: RenameSourceSnapshots,
+    ): RenameTarget {
+        val documentUri = URI.create(uri)
         val original = sources.capture(documentUri)
         val groovyPosition = TextIndex(original.content).codePointPosition(position)?.toGroovyPosition()
             ?: throw createError(ResponseErrorCode.InvalidParams, "Rename position is outside the document")
@@ -124,12 +173,18 @@ class RenameProvider private constructor(
         val oldName = definition.declaredName()
             ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not determine symbol name")
 
-        if (oldName == newName) {
-            throw createError(ResponseErrorCode.InvalidRequest, "New name is the same as the current name")
-        }
+        return RenameTarget(documentUri, compiled, parameterOrigins, definition, definitionLocation, oldName)
+    }
 
+    private suspend fun collectNameLocations(target: RenameTarget, sources: RenameSourceSnapshots): List<Location> {
         // Collect all references including declaration
-        val locations = collectReferences(documentUri, definition, compiled, sources, parameterOrigins)
+        val locations = collectReferences(
+            target.documentUri,
+            target.definition,
+            target.compiled,
+            sources,
+            target.parameterOrigins,
+        )
 
         if (locations.isEmpty()) {
             throw createError(ResponseErrorCode.InvalidRequest, "No references found for symbol")
@@ -146,21 +201,11 @@ class RenameProvider private constructor(
         // References carry whole AST node ranges (a declaration's range is the whole declaration,
         // and enclosing nodes can be reported too). Narrow each one to the old name so a rename can
         // never replace anything but the identifier. Unverifiable occurrences reject the whole edit.
-        val nameLocations = narrowToName(workspaceLocations, oldName, definitionLocation, sources)
+        val nameLocations = narrowToName(workspaceLocations, target.oldName, target.definitionLocation, sources)
         if (nameLocations.isEmpty()) {
-            throw createError(ResponseErrorCode.InvalidRequest, "No occurrences of '$oldName' found to rename")
+            throw createError(ResponseErrorCode.InvalidRequest, "No occurrences of '${target.oldName}' found to rename")
         }
-
-        sources.validate()
-
-        // Build workspace edit using the versions captured with the text used for every range.
-        return buildWorkspaceEdit(
-            definition,
-            newName,
-            nameLocations,
-            definitionLocation,
-            sources,
-        )
+        return nameLocations
     }
 
     private suspend fun requireSemanticCompilation(

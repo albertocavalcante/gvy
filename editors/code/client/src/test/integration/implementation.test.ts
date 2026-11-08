@@ -380,6 +380,56 @@ suite("Implementation navigation with the current server", () => {
     ]);
   });
 
+  test("Prepare Rename proves exact bindings and rejects comment text without edits", async () => {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace);
+    const preparedDocument = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(
+        workspace.uri,
+        "client/src/test/fixtures/PrepareRename.groovy",
+      ),
+    );
+    await vscode.window.showTextDocument(preparedDocument);
+    const source = preparedDocument.getText();
+    const version = preparedDocument.version;
+    for (const declaration of [
+      "def call(value, copy = value) { value }",
+      "String memo(String value) { value }",
+    ]) {
+      const offset =
+        source.indexOf(declaration) + declaration.lastIndexOf("value");
+      assert.ok(source.includes(declaration));
+      const prepared = await vscode.commands.executeCommand<{
+        range: vscode.Range;
+        placeholder: string;
+      }>(
+        "vscode.prepareRename",
+        preparedDocument.uri,
+        preparedDocument.positionAt(offset + 1),
+      );
+      assert.ok(prepared);
+      assert.strictEqual(prepared.placeholder, "value");
+      assert.deepStrictEqual(
+        [
+          preparedDocument.offsetAt(prepared.range.start),
+          preparedDocument.offsetAt(prepared.range.end),
+        ],
+        [offset, offset + "value".length],
+      );
+    }
+    await assert.rejects(
+      async () =>
+        vscode.commands.executeCommand(
+          "vscode.prepareRename",
+          preparedDocument.uri,
+          preparedDocument.positionAt(source.indexOf("/* value */") + 3),
+        ),
+      /rename/i,
+    );
+    assert.strictEqual(preparedDocument.getText(), source);
+    assert.strictEqual(preparedDocument.version, version);
+  });
+
   test("Rename applies exact parameter edits through the current server", async () => {
     await vscode.window.showTextDocument(document);
     const original = document.getText();
