@@ -33,7 +33,12 @@ Thanks for your interest in contributing!
 
 The root `test` task includes JVM unit tests and KMP JVM tests. Run the protocol suite with `./gradlew :tests:e2eTest`.
 
-Tests use Java 17 by default. Override the test runtime for an additional compatibility check:
+Tests use Java 17 by default, so Gradle needs a Java 17 toolchain. It can use a locally installed JDK or download one
+through the configured Foojay resolver when provisioning is available. If provisioning is unavailable, install JDK 17
+locally.
+
+If only JDK 21 is available, select it explicitly with the following command. This also provides an additional
+compatibility check; it does not validate the minimum Java 17 runtime:
 
 ```bash
 ./gradlew test -PtestJavaVersion=21
