@@ -4,3 +4,4 @@ self-hosted-runner:
     - magalu
     - local-macos
     - groovy-lsp
+    - air-gvy

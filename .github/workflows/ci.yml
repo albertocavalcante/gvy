@@ -102,7 +102,7 @@ concurrency:
 
 jobs:
   check-paths:
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && 'air-gvy' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -110,7 +110,7 @@ jobs:
       # The release PR is main's code (CI already ran on main) plus version bumps and the changelog.
       run_main_ci: ${{ startsWith(github.head_ref, 'release-please--') && 'false' || steps.filter.outputs.run_main_ci }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
           persist-credentials: false
@@ -183,7 +183,7 @@ jobs:
 
   check-runner:
     name: Check Runner Availability
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'push' && 'air-gvy' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -196,7 +196,7 @@ jobs:
       provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
     steps:
       - name: Checkout (for local action)
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           sparse-checkout: .github/actions
           persist-credentials: false
@@ -299,13 +299,13 @@ jobs:
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
         (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
       )
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && 'air-gvy' || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -351,11 +351,14 @@ jobs:
         #   - github-hosted: GitHub-hosted (Ubuntu is now the default for PRs and main, macOS remains as an additional check)
         # NOTE: macOS is retained for compatibility, but Ubuntu is the more stable default
         # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event_name == 'pull_request' && format('["{0}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04') || format('["{0}", "{1}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04', (vars.CI_PRIMARY_OS == 'macos-15') && 'ubuntu-24.04' || 'macos-15')) ) }}
+        os: ${{ fromJSON( github.event_name == 'pull_request' && format('["{0}"]', vars.CI_PRIMARY_OS == 'macos-15' && 'macos-15' || 'ubuntu-24.04') || (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || format('["{0}", "{1}"]', (vars.CI_PRIMARY_OS != 'air-gvy' && vars.CI_PRIMARY_OS || 'ubuntu-24.04'), (vars.CI_PRIMARY_OS == 'macos-15') && 'ubuntu-24.04' || 'macos-15') ) }}
         java: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos' || github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
         exclude:
           - os: ubuntu-24.04
             java: 21
+        # Only trusted main pushes may use the public repository's runmux pool.
+        # Keep all existing native x86-64 and macOS matrix cells.
+        include: ${{ fromJSON(github.event_name == 'push' && '[{"os":"air-gvy","java":17}]' || '[]') }}
     env:
       # Coverage reports: every push to main, and on demand (Run workflow → coverage).
       COVERAGE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.coverage == 'true' }}
@@ -364,7 +367,7 @@ jobs:
       HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           # Shallow clone for PRs (faster), deep clone for main (SonarCloud needs history)
           fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
@@ -610,15 +613,14 @@ jobs:
       matrix:
         # Scenarios run one at a time in a single JVM; split them by a stable hash of their name.
         shard: [0, 1, 2]
-    # Run on PRIMARY_OS only - E2E tests are platform-independent LSP protocol tests
-    # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
-    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
+    # Public pull requests stay on GitHub-hosted runners. Only main pushes use runmux.
+    runs-on: ${{ github.event_name == 'push' && 'air-gvy' || github.event_name == 'pull_request' && 'ubuntu-24.04' || (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS != 'air-gvy' && vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 1
           persist-credentials: false
@@ -735,100 +737,70 @@ jobs:
 
   validate:
     name: Validation Check
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && 'air-gvy' || 'ubuntu-latest' }}
     timeout-minutes: 5
     permissions:
       contents: read
     # Coverage is advisory (reports + SonarCloud, which already tolerates failure): it starts only
     # after the build and took 2-5 min on top of it, so the required check no longer waits for it.
-    needs: [lint, build, e2e-test, check-runner, check-paths]
+    needs: [lint, build, e2e-test, smoke-test, check-runner, check-paths]
     if: always()
     steps:
       - name: Check build status
         run: |
+          PATHS_RESULT="${{ needs.check-paths.result }}"
+          RUNNER_RESULT="${{ needs.check-runner.result }}"
           LINT_RESULT="${{ needs.lint.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
           E2E_RESULT="${{ needs.e2e-test.result }}"
+          SMOKE_RESULT="${{ needs.smoke-test.result }}"
           PROVISIONING="${{ needs.check-runner.outputs.provisioning_triggered }}"
           RUN_MAIN_CI="${{ needs.check-paths.outputs.run_main_ci }}"
+          EVENT_NAME="${{ github.event_name }}"
 
-          echo "Lint result: $LINT_RESULT"
-          echo "Build result: $BUILD_RESULT"
-          echo "E2E result: $E2E_RESULT"
-          echo "Provisioning triggered: $PROVISIONING"
-          echo "Run main CI: $RUN_MAIN_CI"
+          echo "Path check: $PATHS_RESULT; runner check: $RUNNER_RESULT"
+          echo "Lint: $LINT_RESULT; build: $BUILD_RESULT; E2E: $E2E_RESULT; smoke: $SMOKE_RESULT"
+          echo "Provisioning: $PROVISIONING; run main CI: $RUN_MAIN_CI"
 
-          # If paths filter determined no CI needed, skipped build is OK
-          if [[ "$RUN_MAIN_CI" != "true" && "$BUILD_RESULT" == "skipped" ]]; then
-            echo "ℹ️ Build skipped - no relevant code changes detected"
-            echo "   Only documentation or config files were modified"
-            exit 0
-          fi
-
-          # If provisioning was triggered, build is expected to be skipped
-          if [[ "$PROVISIONING" == "true" && "$BUILD_RESULT" == "skipped" ]]; then
-            echo "ℹ️ Build skipped - runner provisioning in progress"
-            echo "   CI will resume automatically after provisioning completes"
-            exit 0
-          fi
-
-          # For workflow_run events, check-runner is skipped so we can't check provisioning_triggered
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            if [[ "$BUILD_RESULT" != "success" ]] || [[ "$LINT_RESULT" != "success" ]] || \
-               [[ "$E2E_RESULT" != "success" ]]; then
-              echo "❌ One or more jobs failed after provisioning"
-              exit 1
-            fi
-            echo "✅ All checks passed!"
-            exit 0
-          fi
-
-          # Normal case: all jobs must succeed (or be skipped appropriately)
-          FAILED=false
-          CANCELLED=false
-
-          check_job_result() {
-            local job_name="$1"
-            local result="$2"
-            if [[ "$result" == "cancelled" ]]; then
-              CANCELLED=true
-              return
-            fi
-            if [[ "$result" != "success" ]] && [[ "$result" != "skipped" ]]; then
-              echo "❌ $job_name failed"
-              FAILED=true
-            fi
-          }
-
-          check_job_result "Lint" "$LINT_RESULT"
-          check_job_result "Build" "$BUILD_RESULT"
-          check_job_result "E2E" "$E2E_RESULT"
-
-          if [[ "$CANCELLED" == "true" ]]; then
-            echo "⚠️ One or more jobs were cancelled"
-            echo "   This is expected when a newer commit is pushed to the same PR"
-            if [[ "$FAILED" == "true" ]]; then
-              echo "   However, other jobs still failed"
-              exit 1
-            fi
-            exit 0
-          fi
-
-          if [[ "$FAILED" == "true" ]]; then
+          if [[ "$PATHS_RESULT" != "success" ]]; then
+            echo "::error::Path selection did not succeed"
             exit 1
           fi
+          if [[ "$EVENT_NAME" != "workflow_dispatch" && "$EVENT_NAME" != "workflow_run" && \
+                "$RUN_MAIN_CI" == "false" && "$RUNNER_RESULT" == "skipped" && \
+                "$LINT_RESULT" == "skipped" && "$BUILD_RESULT" == "skipped" && \
+                "$E2E_RESULT" == "skipped" && "$SMOKE_RESULT" == "skipped" ]]; then
+            echo "Build skipped: no relevant code changes detected"
+            exit 0
+          fi
+          if [[ "$PROVISIONING" == "true" ]]; then
+            echo "::error::Runner provisioning is pending; CI has not passed"
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" != "workflow_run" && "$RUNNER_RESULT" != "success" ]]; then
+            echo "::error::Runner availability check did not succeed"
+            exit 1
+          fi
+          if [[ "$LINT_RESULT" != "success" || "$BUILD_RESULT" != "success" || "$E2E_RESULT" != "success" ]]; then
+            echo "::error::Required lint, build, or E2E jobs did not all succeed"
+            exit 1
+          fi
+          if [[ "$EVENT_NAME" == "push" && "$SMOKE_RESULT" != "success" ]]; then
+            echo "::error::Cross-platform smoke tests did not all succeed"
+            exit 1
+          fi
+          echo "All required checks passed"
 
-          echo "✅ All checks passed!"
   dependency-check:
     name: Check Dependencies
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ github.event_name == 'push' && 'air-gvy' || 'ubuntu-latest' }}
     timeout-minutes: 15
     permissions:
       contents: read
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
       - name: Set up JDK 17

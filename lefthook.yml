@@ -27,7 +27,7 @@ pre-commit:
       run: shellcheck --rcfile tools/lint/shellcheckrc {staged_files}
     workflow-lint:
       glob: '.github/workflows/*.{yml,yaml}'
-      run: ghalint -c tools/lint/ghalint.yaml run && actionlint {staged_files}
+      run: ghalint -c tools/lint/ghalint.yaml run && actionlint -config-file tools/lint/actionlint.yml {staged_files}
     markdown-lint:
       glob: '**/*.md'
       run: dprint check --config dprint.json {staged_files}
