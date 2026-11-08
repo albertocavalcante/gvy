@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
+import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.utils.ParameterOrigins
@@ -39,6 +40,8 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * Provider for finding references to symbols in Groovy code.
@@ -95,6 +98,12 @@ class ReferenceProvider(
                             emittedLocations,
                             capturedSources = mapOf(context.documentUri to context.source),
                             parameterOrigins = context.parameterOrigins,
+                            typeAliases = context.compiled.parseResult.ast?.imports.orEmpty()
+                                .filter {
+                                    definition is ClassNode &&
+                                        it.type?.redirect()?.name == definition.redirect().name
+                                }
+                                .mapNotNullTo(mutableSetOf()) { it.alias },
                         ),
                     )
                 }
@@ -124,6 +133,13 @@ class ReferenceProvider(
         compiled: CompiledDocumentSnapshot,
         parameterOrigins: ParameterOrigins,
     ): Flow<Location> = channelFlow {
+        val source = TextIndex(compiled.sourceText)
+        if (definition is ClassNode) {
+            val module = checkNotNull(compiled.parseResult.ast) { "No captured type import bindings for rename" }
+            check(!module.hasExplicitTypeAlias(definition, source)) {
+                "Cannot safely rename through an explicit import alias"
+            }
+        }
         findReferences(
             definition,
             compiled.parseResult.astModel,
@@ -131,7 +147,7 @@ class ReferenceProvider(
             includeDeclaration = true,
             state = ReferenceScanState(
                 mutableSetOf(),
-                capturedSources = mapOf(uri to TextIndex(compiled.sourceText)),
+                capturedSources = mapOf(uri to source),
                 parameterOrigins = parameterOrigins,
                 strict = true,
             ),
@@ -157,17 +173,25 @@ class ReferenceProvider(
     ) {
         try {
             // Get SemanticDocument for current file
-            val doc = index.getDocument(URI.create(uri))
-            if (doc == null) {
+            val origin = index.getDocumentSnapshot(URI.create(uri))
+            val originText = origin?.sourceText?.let(::TextIndex)
+            val cursor = originText?.codePointPosition(position)
+            if (origin == null || cursor == null) {
                 logger.debug { "No semantic document found for $uri" }
                 return
             }
 
             // The innermost occurrence at the cursor: a method's occurrence lies inside its class's,
             // and taking the first match returned the class (LSP uses 0-indexed positions).
-            val occurrence = doc.occurrences
-                .filter { occ -> occ.range.contains(position.line, position.character) }
-                .minWithOrNull(compareBy({ it.range.endLine - it.range.startLine }, { it.range.span() }))
+            val occurrence = origin.document.occurrences
+                .filter { occ -> occ.range.contains(cursor.line, cursor.character) }
+                .minWithOrNull(
+                    compareBy(
+                        { it.range.endLine - it.range.startLine },
+                        { it.range.span() },
+                        { if (it.role == OccurrenceRole.IMPORT) 1 else 0 },
+                    ),
+                )
 
             if (occurrence == null) {
                 logger.debug { "No occurrence found at ${position.line}:${position.character}" }
@@ -182,31 +206,15 @@ class ReferenceProvider(
                 logger.debug { "Not searching the workspace for local or unnamed ${occurrence.symbol}" }
                 return
             }
-            val textIndexes = HashMap<String, TextIndex?>()
-
-            // Find all references across workspace
-            val references = index.findReferenceSnapshots(occurrence.symbol)
-            logger.debug { "Found ${references.size} workspace references for ${occurrence.symbol}" }
-
-            references.forEach { reference ->
-                // Filter out definitions if includeDeclaration is false
-                if (!includeDeclaration && reference.occurrence.role == OccurrenceRole.DEFINITION) return@forEach
-
-                // Never interpret an indexed range using a different AST-cache entry or a fresh disk read.
-                val uri = reference.uri.toString()
-                val text = textIndexes.getOrPut(uri) { reference.sourceText?.let(::TextIndex) } ?: return@forEach
-                val indexedRange = reference.occurrence.range
-                val range = Range(
-                    Position(indexedRange.startLine, indexedRange.startColumn),
-                    Position(indexedRange.endLine, indexedRange.endColumn),
-                )
-                val identifier = firstNameOccurrence(text, range, name) ?: return@forEach
-                val named = Location(uri, identifier)
-
-                // Emit with deduplication
-                val key = "${named.uri}:${named.range.start.line}:${named.range.start.character}"
-                if (emittedLocations.add(key)) {
-                    send(named)
+            index.findReferenceDocuments(occurrence.symbol).forEach { (referenceUri, snapshot) ->
+                snapshot.referenceLocations(
+                    referenceUri,
+                    occurrence.symbol,
+                    name,
+                    includeDeclaration,
+                ).forEach { named ->
+                    val key = "${named.uri}:${named.range.start.line}:${named.range.start.character}"
+                    if (emittedLocations.add(key)) send(named)
                 }
             }
         } catch (e: Exception) {
@@ -246,8 +254,17 @@ class ReferenceProvider(
         val capturedSources: Map<URI, TextIndex>,
         val parameterOrigins: ParameterOrigins,
         val strict: Boolean = false,
+        val typeAliases: Set<String> = emptySet(),
     ) {
         val parameterRanges = HashMap<URI, ParameterSourceRanges>()
+        val classDeclarations: MutableSet<ClassNode> = Collections.newSetFromMap(IdentityHashMap())
+
+        fun typeReferenceNames(node: ASTNode, name: String, visitor: GroovyAstModel): Set<String>? {
+            val typeUse = node is ConstructorCallExpression || node is ClassExpression ||
+                node is ClassNode && node !in classDeclarations && visitor.getParent(node) !is ImportNode
+            if (!typeUse) return null
+            return if (strict) setOf(name) else typeAliases + name
+        }
     }
 
     /**
@@ -341,6 +358,7 @@ class ReferenceProvider(
         includeDeclaration: Boolean,
         state: ReferenceScanState,
     ) {
+        state.classDeclarations.addAll(visitor.getAllClassNodes())
         visitor.getAllNodes()
             .filter { it.hasValidPosition() }
             .forEach { node ->
@@ -401,7 +419,7 @@ class ReferenceProvider(
             return // Skip DeclarationExpression - we'll emit its VariableExpression separately
         }
 
-        val isPartOfDeclaration = params.node.isPartOfDeclaration(params.visitor)
+        val isPartOfDeclaration = params.node.isPartOfDeclaration(params.visitor, params.state)
         logger.debug {
             "Node ${params.node.javaClass.simpleName} at ${params.node.lineNumber}:${params.node.columnNumber} - " +
                 "isPartOfDeclaration: $isPartOfDeclaration, includeDeclaration: ${params.includeDeclaration}"
@@ -428,12 +446,12 @@ class ReferenceProvider(
     /**
      * Check if a node is part of a declaration.
      */
-    private fun ASTNode.isPartOfDeclaration(visitor: GroovyAstModel): Boolean = when (this) {
+    private fun ASTNode.isPartOfDeclaration(visitor: GroovyAstModel, state: ReferenceScanState): Boolean = when (this) {
         is Parameter -> true
         is MethodNode -> true
         is FieldNode -> true
         is PropertyNode -> true
-        is ClassNode -> true
+        is ClassNode -> this in state.classDeclarations
         is VariableExpression -> {
             val parent = visitor.getParent(this)
             val isDecl = parent is DeclarationExpression &&
@@ -510,11 +528,14 @@ class ReferenceProvider(
         val searchIn = referenceRange(nodeLocation, visitor, state)
         val index = state.capturedSources[URI.create(nodeLocation.uri)]
         check(index != null || !state.strict) { "No captured rename source for ${nodeLocation.uri}" }
-        // TODO(#1170): Resolve imported alias spellings in local and indexed reference scans.
-        //   See: https://github.com/albertocavalcante/gvy/issues/1170
         return index?.let { captured ->
             state.sourceRange(searchIn, captured)?.let { sourceRange ->
-                val range = identifierRange(name, captured, sourceRange, state, URI.create(nodeLocation.uri))
+                val typeNames = state.typeReferenceNames(this, name, visitor)
+                val range = if (typeNames != null) {
+                    typeReferenceRange(captured, sourceRange, typeNames)
+                } else {
+                    identifierRange(name, captured, sourceRange, state, URI.create(nodeLocation.uri))
+                }
                 check(range != null || !state.strict) { "Missing rename identifier in captured source" }
                 range?.let { Location(nodeLocation.uri, it) }
             }
@@ -527,6 +548,8 @@ class ReferenceProvider(
         state: ReferenceScanState,
     ): Range {
         val nameNode = when (this) {
+            is ConstructorCallExpression -> return type.toLspRange() ?: nodeLocation.range
+            is ClassExpression -> return type.toLspRange() ?: nodeLocation.range
             is MethodCallExpression -> method
             is PropertyExpression -> property
             else -> null

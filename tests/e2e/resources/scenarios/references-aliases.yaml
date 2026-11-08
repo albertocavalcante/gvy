@@ -1,0 +1,79 @@
+name: references-aliases
+description: Unopened aliases keep qualified ownership and UTF16 ranges from declaration and usage cursors.
+workspace:
+  fixture: references-aliases
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/alpha/Foo.groovy"
+        position: { line: 1, character: 7 }
+        context: { includeDeclaration: true }
+      saveAs: allReferences
+  - assert:
+      source: allReferences
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 4 }
+        - jsonPath: $[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - uri: "{{workspace.uri}}src/alpha/Foo.groovy"
+                range:
+                  start: { line: 1, character: 6 }
+                  end: { line: 1, character: 9 }
+              - uri: "{{workspace.uri}}src/use/Calls.groovy"
+                range:
+                  start: { line: 1, character: 13 }
+                  end: { line: 1, character: 16 }
+              - uri: "{{workspace.uri}}src/use/Calls.groovy"
+                range:
+                  start: { line: 4, character: 52 }
+                  end: { line: 4, character: 56 }
+              - uri: "{{workspace.uri}}src/use/Calls.groovy"
+                range:
+                  start: { line: 4, character: 77 }
+                  end: { line: 4, character: 81 }
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/use/Calls.groovy"
+        position: { line: 4, character: 53 }
+        context: { includeDeclaration: false }
+      saveAs: aliasUsages
+  - assert:
+      source: aliasUsages
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 3 }
+        - jsonPath: $[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - uri: "{{workspace.uri}}src/use/Calls.groovy"
+                range:
+                  start: { line: 1, character: 13 }
+                  end: { line: 1, character: 16 }
+              - uri: "{{workspace.uri}}src/use/Calls.groovy"
+                range:
+                  start: { line: 4, character: 52 }
+                  end: { line: 4, character: 56 }
+              - uri: "{{workspace.uri}}src/use/Calls.groovy"
+                range:
+                  start: { line: 4, character: 77 }
+                  end: { line: 4, character: 81 }
+  - shutdown: {}
+  - exit: {}

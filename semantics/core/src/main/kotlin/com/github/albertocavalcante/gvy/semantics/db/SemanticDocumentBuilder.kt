@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassNode
@@ -11,6 +12,7 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -143,7 +145,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 symbol = symbolId,
                 kind = kind,
                 range = range,
-                name = classNode.nameWithoutPackage,
+                name = classNode.sourceSimpleName(),
                 owner = null,
             ),
         )
@@ -312,6 +314,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
      * named `x` (and gets that declaration's unique id) before falling back to a field of the class.
      * The scopes also carry the declared or inferred type used to attribute calls to a receiver.
      */
+    @Suppress("TooManyFunctions") // Groovy's visitor contract requires one override per relevant syntax node.
     private inner class OccurrenceVisitor(private val currentClass: ClassNode) : ClassCodeVisitorSupport() {
 
         private val scopes = ArrayDeque<MutableMap<String, LocalBinding>>()
@@ -459,7 +462,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitConstructorCallExpression(call: ConstructorCallExpression) {
-            val range = nodeToRange(call)
+            // The call can contain other class names in its arguments, including the canonical
+            // name of an aliased constructor. Attribute only the compiler's type span.
+            val range = nodeToRange(call.type) ?: nodeToRange(call)
             // Only a class the compiler resolved: a bare name would be guessed into this package.
             if (range == null || !resolver.isResolved(call.type)) return super.visitConstructorCallExpression(call)
 
@@ -478,6 +483,16 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             )
 
             super.visitConstructorCallExpression(call)
+        }
+
+        override fun visitClassExpression(expression: ClassExpression) {
+            val range = nodeToRange(expression)
+            if (range != null && resolver.isResolved(expression.type)) {
+                occurrences.add(
+                    SymbolOccurrence("${resolver.resolveTypeName(expression.type)}#", range, OccurrenceRole.TYPE_REF),
+                )
+            }
+            super.visitClassExpression(expression)
         }
 
         override fun visitVariableExpression(expression: VariableExpression) {

@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.IndexedOccurrence
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocument
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentSnapshot
 import com.github.albertocavalcante.gvy.semantics.db.SymbolInfo
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
@@ -26,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap
  *
  * @property semanticDb The underlying semantic database storing per-file information
  */
+@Suppress("TooManyFunctions") // Index facade keeps lookup and publication APIs together.
 class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLookup {
 
     // Cache for class hierarchy information (will be populated when Phase 0 is extended)
@@ -40,6 +42,9 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      * @return The semantic document, or null if not found
      */
     fun getDocument(uri: URI): SemanticDocument? = semanticDb.getDocument(uri)
+
+    /** Import bindings, raw Groovy ranges and source text captured together. */
+    fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot? = semanticDb.getDocumentSnapshot(uri)
 
     /**
      * Find a symbol by its unique ID.
@@ -76,6 +81,10 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
 
     /** Reference occurrences with the exact source text used to build their ranges. */
     fun findReferenceSnapshots(symbolId: String): List<IndexedOccurrence> = semanticDb.findOccurrenceSnapshots(symbolId)
+
+    /** One snapshot per matching document; callers can reuse its source index for every occurrence. */
+    fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot> =
+        semanticDb.findReferenceDocuments(symbolId)
 
     /** Hierarchy, source and semantic ranges from one atomic database read. */
     val implementationSnapshot: Map<URI, ImplementationDocument> get() = semanticDb.implementationSnapshot

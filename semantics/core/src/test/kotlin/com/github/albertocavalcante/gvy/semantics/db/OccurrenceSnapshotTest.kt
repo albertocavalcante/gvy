@@ -4,6 +4,9 @@ import java.net.URI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class OccurrenceSnapshotTest {
@@ -69,5 +72,40 @@ class OccurrenceSnapshotTest {
         }
 
         assertEquals(1, database.findOccurrenceSnapshots(symbol).size)
+    }
+
+    @Test
+    fun `reference documents retain import bindings and text across replacement and removal`() {
+        val binding = SymbolInfo("import#A", SymbolKind.IMPORT, Range(0, 0, 0, 17), "OldAlias", null)
+        val old = document(4).copy(symbols = listOf(binding))
+        database.updateDocument(uri, old, "old greet()")
+        val origin = assertNotNull(database.getDocumentSnapshot(uri))
+        val captured = database.findReferenceDocuments(symbol).getValue(uri)
+        assertSame(origin.document, captured.document)
+
+        database.updateDocument(
+            uri,
+            document(13).copy(symbols = listOf(binding.copy(name = "NewAlias"))),
+            "a new prefix greet()",
+        )
+        val replacement = database.findReferenceDocuments(symbol).getValue(uri)
+        database.removeDocument(uri)
+
+        assertEquals("OldAlias", captured.document.symbols.single().name)
+        assertEquals("old greet()", captured.sourceText)
+        assertEquals(Range(0, 4, 0, 9), captured.document.occurrences.single().range)
+        assertEquals("NewAlias", replacement.document.symbols.single().name)
+        assertEquals("a new prefix greet()", replacement.sourceText)
+        assertEquals(Range(0, 13, 0, 18), replacement.document.occurrences.single().range)
+        assertNull(database.getDocumentSnapshot(uri))
+        assertTrue(database.findReferenceDocuments(symbol).isEmpty())
+    }
+
+    @Test
+    fun `metadata-only reference documents never invent source text`() {
+        database.updateDocument(uri, document(4))
+
+        assertNull(assertNotNull(database.getDocumentSnapshot(uri)).sourceText)
+        assertNull(database.findReferenceDocuments(symbol).getValue(uri).sourceText)
     }
 }
