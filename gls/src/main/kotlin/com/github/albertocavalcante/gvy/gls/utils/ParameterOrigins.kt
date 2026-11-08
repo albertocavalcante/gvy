@@ -4,13 +4,25 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import java.net.URI
+import java.util.Collections
 import java.util.IdentityHashMap
 
 /** Source ownership proof for compiler-cloned parameters within one held compilation. */
 internal class ParameterOrigins(private val model: GroovyAstModel, private val uri: URI) {
     private val methods by lazy { model.getAllClassNodes().flatMap { it.methods }.distinct() }
     private val origins = IdentityHashMap<Parameter, Parameter>()
+    private val implicitParameters by lazy {
+        Collections.newSetFromMap(IdentityHashMap<Parameter, Boolean>()).apply {
+            model.getAllNodes().filterIsInstance<ClosureExpression>()
+                .filter { it.hasSource() && model.getUri(it) == uri && !it.isParameterSpecified }
+                .forEach { closure ->
+                    val parameter = closure.variableScope?.getDeclaredVariable("it") as? Parameter
+                    if (parameter != null && !parameter.hasSource()) add(parameter)
+                }
+        }
+    }
 
     fun source(parameter: Parameter): Parameter = if (parameter.hasSource()) {
         parameter
@@ -18,8 +30,13 @@ internal class ParameterOrigins(private val model: GroovyAstModel, private val u
         origins.getOrPut(parameter) { recover(parameter) }
     }
 
-    fun matches(candidate: Parameter, target: Parameter): Boolean = candidate === target ||
-        (candidate.name == target.name && source(candidate) === target)
+    fun matches(candidate: Parameter, target: Parameter): Boolean = when {
+        candidate === target -> true
+        candidate.name != target.name -> false
+        // Declared scope identity proves this is a different lexical binding, not an unknown transform.
+        !candidate.hasSource() && candidate in implicitParameters -> false
+        else -> source(candidate) === target
+    }
 
     private fun recover(parameter: Parameter): Parameter {
         val helper = checkNotNull(methods.singleOrNull { method -> method.parameters.any { it === parameter } }) {

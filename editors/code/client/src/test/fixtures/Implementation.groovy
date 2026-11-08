@@ -45,3 +45,5 @@ class EditorRenameBindings {
 
     String untouched(String value) { value }
 }
+
+/* 😀😀😀😀😀😀😀😀😀😀😀😀 */ class EditorUnicodeCalls { def target() {}; /* 😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀 */ def caller() { target() }; def decoy() { other() }; def other() {} }

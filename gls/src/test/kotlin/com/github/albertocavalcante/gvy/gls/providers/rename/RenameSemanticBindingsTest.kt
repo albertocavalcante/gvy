@@ -33,6 +33,22 @@ class RenameSemanticBindingsTest {
     lateinit var workspace: Path
 
     @Test
+    fun `explicit it rename preserves earlier and nested implicit closure bindings`(): Unit = runBlocking {
+        supervisorScope {
+            for (declaration in listOf("String call(String it) { it }", "def chosen = { String it -> it }")) {
+                val source = "class Cases { def earlier = { [1].collect { it } }; $declaration }"
+                fixture(source).use { fixture ->
+                    fixture.assertRename(
+                        source.lastIndexOf("it"),
+                        "renamed",
+                        source.replace(declaration, declaration.replace(Regex("\\bit\\b"), "renamed")),
+                    )
+                }
+            }
+        }
+    }
+
+    @Test
     fun `parameter rename updates its default argument references`(): Unit = runBlocking {
         supervisorScope {
             val source = "class Defaults { def call(a, b = a) { a } }"

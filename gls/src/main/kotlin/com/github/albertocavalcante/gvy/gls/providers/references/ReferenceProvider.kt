@@ -510,6 +510,8 @@ class ReferenceProvider(
         val searchIn = referenceRange(nodeLocation, visitor, state)
         val index = state.capturedSources[URI.create(nodeLocation.uri)]
         check(index != null || !state.strict) { "No captured rename source for ${nodeLocation.uri}" }
+        // TODO(#1170): Resolve imported alias spellings in local and indexed reference scans.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1170
         return index?.let { captured ->
             state.sourceRange(searchIn, captured)?.let { sourceRange ->
                 val range = identifierRange(name, captured, sourceRange, state, URI.create(nodeLocation.uri))
@@ -535,14 +537,9 @@ class ReferenceProvider(
     }
 
     private fun ReferenceScanState.sourceRange(range: Range, index: TextIndex): Range? {
-        val start = index.utf16Position(range.start)
-        val end = index.utf16Position(range.end)
-        check(start != null && end != null || !strict) { "Invalid rename source range" }
-        return if (start == null || end == null) {
-            null
-        } else {
-            Range(start, end)
-        }
+        val converted = index.utf16Range(range)
+        check(converted != null || !strict) { "Invalid rename source range" }
+        return converted
     }
 
     private fun ASTNode.identifierRange(
