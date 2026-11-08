@@ -50,6 +50,12 @@ class TextIndex(val text: String) {
         return Position(codePoints.line, line.offsetByCodePoints(0, codePoints.character))
     }
 
+    internal fun utf16Range(codePoints: Range): Range? {
+        val start = utf16Position(codePoints.start) ?: return null
+        val end = utf16Position(codePoints.end) ?: return null
+        return Range(start, end)
+    }
+
     internal fun codePointPosition(utf16: Position): Position? {
         val line = lineText(utf16.line) ?: return null
         if (utf16.character !in 0..line.length) return null

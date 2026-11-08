@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.callhierarchy
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -94,6 +95,107 @@ class CallHierarchyProviderTest {
         // Assert
         assertEquals(1, incomingCalls.size)
         assertEquals("caller", incomingCalls[0].from.name)
+    }
+
+    @Test
+    fun `incoming calls preserve callers and UTF16 ranges after supplementary characters`(): Unit = runTest {
+        val uri = URI.create("file:///Calls.groovy")
+        for (comment in listOf("", "/* ${"😀".repeat(12)} */")) {
+            val source = "class Calls { def a() {}; def actual() { $comment a() }; def wrong() {} }"
+            compilationService.compile(uri, source)
+            val index = TextIndex(source)
+            val target = createItem("a", uri, index.positionOf(source.indexOf("a()")))
+
+            val incoming = callHierarchyProvider.incomingCalls(CallHierarchyIncomingCallsParams(target))
+
+            assertEquals(listOf("actual"), incoming.map { it.from.name })
+            val callOffset = source.lastIndexOf("a()")
+            assertEquals(
+                listOf(Range(index.positionOf(callOffset), index.positionOf(callOffset + 1))),
+                incoming.single().fromRanges,
+            )
+            assertEquals(
+                Range(
+                    index.positionOf(source.indexOf("def actual")),
+                    index.positionOf(source.indexOf("; def wrong")),
+                ),
+                incoming.single().from.range,
+            )
+        }
+    }
+
+    @Test
+    fun `prepared items retain UTF16 ranges and resolve incoming callers`(): Unit = runTest {
+        val uri = URI.create("file:///PreparedCalls.groovy")
+        for (prefix in listOf("", "/* ${"😀".repeat(12)} */ ")) {
+            val target = "def target() {}"
+            val caller = "def caller() { target() }"
+            val source = "${prefix}class Calls { $target; $caller }"
+            compilationService.compile(uri, source)
+            val index = TextIndex(source)
+            val prepared = callHierarchyProvider.prepareCallHierarchy(
+                CallHierarchyPrepareParams(
+                    TextDocumentIdentifier(uri.toString()),
+                    index.positionOf(source.indexOf("target")),
+                ),
+            ).single()
+
+            assertEquals("target", prepared.name)
+            val offset = source.indexOf(target)
+            val expectedRange = Range(index.positionOf(offset), index.positionOf(offset + target.length))
+            assertEquals(expectedRange, prepared.range)
+            assertEquals(expectedRange, prepared.selectionRange)
+            val incoming = callHierarchyProvider.incomingCalls(CallHierarchyIncomingCallsParams(prepared))
+            assertEquals(listOf("caller"), incoming.map { it.from.name })
+            val callOffset = source.lastIndexOf("target")
+            assertEquals(
+                listOf(Range(index.positionOf(callOffset), index.positionOf(callOffset + "target".length))),
+                incoming.single().fromRanges,
+            )
+        }
+    }
+
+    @Test
+    fun `incoming caller items can be used for outgoing calls after supplementary characters`(): Unit = runTest {
+        val uri = URI.create("file:///RoundTripCalls.groovy")
+        for (prefix in listOf("", "/* ${"😀".repeat(40)} */ ")) {
+            val source = "class Calls { def target() {}; ${prefix}def caller() { target() }; " +
+                "def decoy() { other() }; def other() {} }"
+            compilationService.compile(uri, source)
+            val index = TextIndex(source)
+            val target = createItem("target", uri, index.positionOf(source.indexOf("target")))
+            val incoming = callHierarchyProvider.incomingCalls(CallHierarchyIncomingCallsParams(target)).single()
+            assertEquals("caller", incoming.from.name)
+
+            val outgoing = callHierarchyProvider.outgoingCalls(CallHierarchyOutgoingCallsParams(incoming.from))
+
+            assertEquals(listOf("target"), outgoing.map { it.to.name })
+            val offset = source.lastIndexOf("target")
+            assertEquals(
+                listOf(Range(index.positionOf(offset), index.positionOf(offset + "target()".length))),
+                outgoing.single().fromRanges,
+            )
+        }
+    }
+
+    @Test
+    fun `outgoing callee items retain UTF16 ranges after supplementary characters`(): Unit = runTest {
+        val uri = URI.create("file:///CalleeCalls.groovy")
+        for (prefix in listOf("", "/* ${"😀".repeat(12)} */ ")) {
+            val target = "def target() {}"
+            val source = "class Calls { def caller() { target() }; $prefix$target }"
+            compilationService.compile(uri, source)
+            val index = TextIndex(source)
+            val caller = createItem("caller", uri, index.positionOf(source.indexOf("caller")))
+
+            val outgoing = callHierarchyProvider.outgoingCalls(CallHierarchyOutgoingCallsParams(caller)).single()
+
+            assertEquals("target", outgoing.to.name)
+            val offset = source.indexOf(target)
+            val expectedRange = Range(index.positionOf(offset), index.positionOf(offset + target.length))
+            assertEquals(expectedRange, outgoing.to.range)
+            assertEquals(expectedRange, outgoing.to.selectionRange)
+        }
     }
 
     @Test

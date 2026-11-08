@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
@@ -23,6 +24,7 @@ import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
+import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.SymbolKind
 import java.net.URI
 
@@ -30,21 +32,13 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
 
     fun prepareCallHierarchy(params: CallHierarchyPrepareParams): List<CallHierarchyItem> {
         val uri = URI.create(params.textDocument.uri)
-        val position = params.position.toGroovyPosition()
-
-        val visitor = compilationService.getAstModel(uri)
-        val symbolTable = compilationService.getSymbolTable(uri)
-        val node = visitor?.getNodeAt(uri, position)
-
-        if (visitor == null || symbolTable == null || node == null) {
-            return emptyList()
-        }
-
-        val definition = resolveDefinitionWithFallback(node, visitor, symbolTable)
+        val source = captureSource(uri) ?: return emptyList()
+        val node = source.index.codePointPosition(params.position)?.toGroovyPosition()
+            ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
+        val definition = resolveDefinitionWithFallback(node, source.visitor, source.symbolTable)
 
         return when (definition) {
-            is MethodNode -> listOf(createCallHierarchyItem(definition, uri))
-            is ClassNode -> listOf(createCallHierarchyItem(definition, uri)) // Constructors treated as class
+            is MethodNode, is ClassNode -> listOfNotNull(createCallHierarchyItem(definition, uri, source.index))
             else -> emptyList()
             // TODO: Handle fields/variables if Call Hierarchy supports them? Usually restricted to callables.
         }
@@ -103,29 +97,34 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         )
 
         val calls = mutableMapOf<String, CallHierarchyIncomingCall>()
+        val sources = mutableMapOf<URI, CallSource?>()
 
         references.collect { location ->
-            val refUri = URI.create(location.uri)
-            val refVisitor = compilationService.getAstModel(refUri) ?: return@collect
-            val refRange = location.range
-            val refPosition = refRange.start.toGroovyPosition()
-            val refNode = refVisitor.getNodeAt(refUri, refPosition) ?: return@collect
-
-            val enclosingNode = getEnclosingMethodOrClass(refNode, refVisitor)
-
-            if (enclosingNode != null) {
-                val key = "${location.uri}:${enclosingNode.lineNumber}:${enclosingNode.columnNumber}"
-
-                val existing = calls[key]
-                if (existing != null) {
-                    existing.fromRanges.add(location.range)
-                } else {
-                    val fromItem = createCallHierarchyItem(enclosingNode, refUri)
-                    calls[key] = CallHierarchyIncomingCall(fromItem, mutableListOf(location.range))
-                }
+            val fromItem = caller(location, sources) ?: return@collect
+            val key = "${fromItem.uri}:${fromItem.range.start.line}:${fromItem.range.start.character}"
+            val existing = calls[key]
+            if (existing != null) {
+                existing.fromRanges.add(location.range)
+            } else {
+                calls[key] = CallHierarchyIncomingCall(fromItem, mutableListOf(location.range))
             }
         }
         return calls.values.toList()
+    }
+
+    private data class CallSource(val visitor: GroovyAstModel, val symbolTable: SymbolTable, val index: TextIndex)
+
+    private fun captureSource(uri: URI): CallSource? = compilationService.getCompiledSnapshot(uri)?.let {
+        CallSource(it.parseResult.astModel, it.parseResult.symbolTable, TextIndex(it.sourceText))
+    }
+
+    private fun caller(location: Location, sources: MutableMap<URI, CallSource?>): CallHierarchyItem? {
+        val uri = URI.create(location.uri)
+        val source = sources.getOrPut(uri) { captureSource(uri) } ?: return null
+        val position = source.index.codePointPosition(location.range.start)?.toGroovyPosition() ?: return null
+        return source.visitor.getNodeAt(uri, position)
+            ?.let { getEnclosingMethodOrClass(it, source.visitor) }
+            ?.let { createCallHierarchyItem(it, uri, source.index) }
     }
 
     private fun getEnclosingMethodOrClass(node: ASTNode, visitor: GroovyAstModel): ASTNode? {
@@ -142,38 +141,29 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
 
     fun outgoingCalls(params: CallHierarchyOutgoingCallsParams): List<CallHierarchyOutgoingCall> {
         val uri = URI.create(params.item.uri)
-        val position = params.item.selectionRange.start.toGroovyPosition()
-
-        val visitor = compilationService.getAstModel(uri)
-        val symbolTable = compilationService.getSymbolTable(uri)
-        val node = visitor?.getNodeAt(uri, position)
-
-        if (visitor == null || symbolTable == null || node == null) {
-            return emptyList()
-        }
+        val source = captureSource(uri) ?: return emptyList()
+        val node = source.index.codePointPosition(params.item.selectionRange.start)?.toGroovyPosition()
+            ?.let { source.visitor.getNodeAt(uri, it) } ?: return emptyList()
 
         // Resolve to definition (should be MethodNode or ClassNode)
-        val definition = node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
-        if (definition !is MethodNode) {
-            return emptyList()
-        }
-
+        val definition = node.resolveToDefinition(source.visitor, source.symbolTable, strict = false) ?: node
         val callsMap = mutableMapOf<String, CallHierarchyOutgoingCall>()
-        val callVisitor = CallVisitor(visitor, symbolTable, uri, callsMap)
-        definition.code?.visit(callVisitor)
+        if (definition is MethodNode) {
+            val callVisitor = CallVisitor(source, uri, callsMap)
+            definition.code?.visit(callVisitor)
+        }
         return callsMap.values.toList()
     }
 
     private class CallVisitor(
-        private val astModel: GroovyAstModel,
-        private val symbolTable: SymbolTable,
+        private val source: CallSource,
         private val uri: URI,
         private val callsMap: MutableMap<String, CallHierarchyOutgoingCall>,
     ) : CodeVisitorSupport() {
 
         private fun addCall(call: Expression) {
-            val callee = call.resolveToDefinition(astModel, symbolTable, strict = false)
-            val range = call.toLspRange()
+            val callee = call.resolveToDefinition(source.visitor, source.symbolTable, strict = false)
+            val range = call.toLspRange()?.let(source.index::utf16Range)
             if (callee != null && range != null) {
                 // Use a stable key for the callee.
                 // TODO(#564): Include URI once cross-file resolution is supported.
@@ -183,7 +173,7 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
                 if (existing != null) {
                     existing.fromRanges.add(range)
                 } else {
-                    val calleeItem = createCallHierarchyItem(callee, uri)
+                    val calleeItem = createCallHierarchyItem(callee, uri, source.index) ?: return
                     callsMap[calleeKey] = CallHierarchyOutgoingCall(calleeItem, mutableListOf(range))
                 }
             }
@@ -206,11 +196,12 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
     }
 
     companion object {
-        private fun createCallHierarchyItem(node: ASTNode, uri: URI): CallHierarchyItem {
+        private fun createCallHierarchyItem(node: ASTNode, uri: URI, index: TextIndex): CallHierarchyItem? {
+            val raw = node.toLspRange() ?: return null
+            val nodeRange = index.utf16Range(raw) ?: return null
             val item = CallHierarchyItem()
             item.uri = uri.toString()
             // Set proper range from AST node
-            val nodeRange = node.toLspRange()
             item.range = nodeRange
             item.selectionRange = nodeRange
 

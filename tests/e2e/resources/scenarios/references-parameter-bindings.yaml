@@ -1,0 +1,80 @@
+name: references-parameter-bindings
+description: References preserve parameter scope and exact UTF16 ranges in default expressions.
+workspace:
+  fixture: definition-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: src/ReferenceBindings.groovy
+      languageId: groovy
+      version: 8
+      text: |
+        class Bindings {
+            /* 😀😀 */ def first(value, copy = value) { value }
+            def other(value) { value }
+        }
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ReferenceBindings.groovy"
+        position: { line: 1, character: 48 }
+        context: { includeDeclaration: true }
+      saveAs: withDeclaration
+  - assert:
+      source: withDeclaration
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 3 }
+        - jsonPath: $[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - uri: "{{workspace.uri}}src/ReferenceBindings.groovy"
+                range:
+                  start: { line: 1, character: 25 }
+                  end: { line: 1, character: 30 }
+              - uri: "{{workspace.uri}}src/ReferenceBindings.groovy"
+                range:
+                  start: { line: 1, character: 39 }
+                  end: { line: 1, character: 44 }
+              - uri: "{{workspace.uri}}src/ReferenceBindings.groovy"
+                range:
+                  start: { line: 1, character: 48 }
+                  end: { line: 1, character: 53 }
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ReferenceBindings.groovy"
+        position: { line: 1, character: 48 }
+        context: { includeDeclaration: false }
+      saveAs: usagesOnly
+  - assert:
+      source: usagesOnly
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 2 }
+        - jsonPath: $[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - uri: "{{workspace.uri}}src/ReferenceBindings.groovy"
+                range:
+                  start: { line: 1, character: 39 }
+                  end: { line: 1, character: 44 }
+              - uri: "{{workspace.uri}}src/ReferenceBindings.groovy"
+                range:
+                  start: { line: 1, character: 48 }
+                  end: { line: 1, character: 53 }
+  - shutdown: {}
+  - exit: {}

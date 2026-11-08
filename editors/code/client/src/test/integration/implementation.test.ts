@@ -240,6 +240,100 @@ suite("Implementation navigation with the current server", () => {
     }
   });
 
+  for (const declaration of [
+    "String convert(String value) { value }",
+    "def defaults(value, copy = value) { value }",
+    "String memoized(String value) { value }",
+  ]) {
+    test(`Find References isolates all bindings in ${declaration}`, async () => {
+      const offset = document.getText().indexOf(declaration);
+      assert.ok(offset >= 0);
+      const locations = await vscode.commands.executeCommand<vscode.Location[]>(
+        "vscode.executeReferenceProvider",
+        document.uri,
+        document.positionAt(offset + declaration.lastIndexOf("value")),
+      );
+      assert.ok(locations, "The server must return the parameter references");
+      for (const location of locations) {
+        assert.strictEqual(location.uri.toString(), document.uri.toString());
+        assert.strictEqual(document.getText(location.range), "value");
+      }
+      assert.deepStrictEqual(
+        locations
+          .map((location) => [
+            document.offsetAt(location.range.start),
+            document.offsetAt(location.range.end),
+          ])
+          .sort((left, right) => left[0] - right[0]),
+        [...declaration.matchAll(/\bvalue\b/g)].map((match) => [
+          offset + match.index!,
+          offset + match.index! + "value".length,
+        ]),
+      );
+    });
+  }
+
+  test("Call hierarchy round trips keep UTF16 caller and callee ranges", async () => {
+    const source = document.getText();
+    const targetDeclaration = "def target() {}";
+    const callerDeclaration = "def caller() { target() }";
+    const targetOffset = source.indexOf(targetDeclaration);
+    const callerOffset = source.indexOf(callerDeclaration);
+    assert.ok(targetOffset >= 0 && callerOffset >= 0);
+    const offsets = (range: vscode.Range) => [
+      document.offsetAt(range.start),
+      document.offsetAt(range.end),
+    ];
+    const prepared = await vscode.commands.executeCommand<
+      vscode.CallHierarchyItem[]
+    >(
+      "vscode.prepareCallHierarchy",
+      document.uri,
+      document.positionAt(targetOffset + "def ".length),
+    );
+    assert.ok(prepared);
+    assert.deepStrictEqual(
+      prepared.map((item) => item.name),
+      ["target"],
+    );
+    const targetRange = [targetOffset, targetOffset + targetDeclaration.length];
+    assert.deepStrictEqual(offsets(prepared[0].range), targetRange);
+    assert.deepStrictEqual(offsets(prepared[0].selectionRange), targetRange);
+    const incoming = await vscode.commands.executeCommand<
+      vscode.CallHierarchyIncomingCall[]
+    >("vscode.provideIncomingCalls", prepared[0]);
+    assert.ok(incoming);
+    assert.deepStrictEqual(
+      incoming.map((call) => call.from.name),
+      ["caller"],
+    );
+    assert.strictEqual(
+      incoming[0].from.uri.toString(),
+      document.uri.toString(),
+    );
+    assert.deepStrictEqual(offsets(incoming[0].from.range), [
+      callerOffset,
+      callerOffset + callerDeclaration.length,
+    ]);
+    const callOffset = source.indexOf("target()", callerOffset);
+    assert.deepStrictEqual(incoming[0].fromRanges.map(offsets), [
+      [callOffset, callOffset + "target".length],
+    ]);
+    const outgoing = await vscode.commands.executeCommand<
+      vscode.CallHierarchyOutgoingCall[]
+    >("vscode.provideOutgoingCalls", incoming[0].from);
+    assert.ok(outgoing);
+    assert.deepStrictEqual(
+      outgoing.map((call) => call.to.name),
+      ["target"],
+    );
+    assert.strictEqual(outgoing[0].to.uri.toString(), document.uri.toString());
+    assert.deepStrictEqual(offsets(outgoing[0].to.range), targetRange);
+    assert.deepStrictEqual(outgoing[0].fromRanges.map(offsets), [
+      [callOffset, callOffset + "target()".length],
+    ]);
+  });
+
   test("Rename applies exact parameter edits through the current server", async () => {
     await vscode.window.showTextDocument(document);
     const original = document.getText();

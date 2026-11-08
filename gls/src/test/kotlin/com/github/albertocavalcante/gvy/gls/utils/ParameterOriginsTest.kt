@@ -5,6 +5,7 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import java.net.URI
@@ -16,6 +17,33 @@ import kotlin.test.assertTrue
 
 class ParameterOriginsTest {
     private val uri = URI.create("file:///MemoCases.groovy")
+
+    @Test
+    fun `a source closure proves its own distinct implicit parameter identity`() {
+        val source = "class Cases { def earlier = { [1].collect { it } }; String call(String it) { it } }"
+        val parsed = GroovyParserFacade(javaClass.classLoader).parse(
+            ParseRequest(uri = uri, content = source, compilePhase = Phases.CANONICALIZATION),
+        )
+        val type = assertNotNull(parsed.ast).classes.single { it.name == "Cases" }
+        val target = type.getDeclaredMethods("call").single().parameters.single()
+        val closures = parsed.astModel.getAllNodes().filterIsInstance<ClosureExpression>()
+        val implicit = closures.map { assertNotNull(it.variableScope.getDeclaredVariable("it") as? Parameter) }
+        assertTrue(implicit.size >= 2)
+        assertTrue(implicit.distinct().size == implicit.size)
+        val origins = ParameterOrigins(parsed.astModel, uri)
+
+        implicit.forEach { assertFalse(origins.matches(it, target)) }
+    }
+
+    @Test
+    fun `an unowned it parameter is not assumed to be an implicit closure binding`(): Unit = fixture().run {
+        val unknown = Parameter(ClassHelper.OBJECT_TYPE, "it")
+        val target = Parameter(ClassHelper.OBJECT_TYPE, "it").apply {
+            setSourcePosition(original.parameters.single())
+        }
+
+        assertFailsWith<IllegalStateException> { origins.matches(unknown, target) }
+    }
 
     @Test
     fun `generated parameter ownership is anchored to its unique source method`(): Unit = fixture().run {
