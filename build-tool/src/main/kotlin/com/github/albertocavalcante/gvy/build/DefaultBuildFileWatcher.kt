@@ -6,7 +6,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.IOException
@@ -49,10 +50,19 @@ internal class DefaultBuildFileWatcher(
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : BuildToolFileWatcher {
     private val logger = KotlinLogging.logger {}
-    private var watchService: WatchService? = null
-    private var watchJob: Job? = null
-    private var debounceJob: Job? = null
-    private val watchKeys = ConcurrentHashMap<WatchKey, Path>()
+
+    @Volatile
+    private var session: WatchSession? = null
+
+    private class WatchSession(
+        val service: WatchService,
+        val scope: CoroutineScope,
+        val changes: BuildFileChangeDebouncer,
+        val keys: ConcurrentHashMap<WatchKey, Path>,
+    ) {
+        @Volatile
+        var job: Job? = null
+    }
 
     private sealed class PollResult {
         object Timeout : PollResult()
@@ -60,29 +70,22 @@ internal class DefaultBuildFileWatcher(
         data class Success(val watchKey: WatchKey) : PollResult()
     }
 
-    @Suppress("TooGenericExceptionCaught")
+    @Synchronized
     override fun startWatching(projectDir: Path) {
-        if (watchJob?.isActive == true) {
+        if (session?.job?.isActive == true) {
             logger.debug { "$logLabel build file watcher already active for project" }
             return
         }
 
+        stopWatching()
+        if (!coroutineScope.isActive) return
         try {
-            watchService = FileSystems.getDefault().newWatchService()
-
-            val watchKey = projectDir.register(
-                watchService,
-                StandardWatchEventKinds.ENTRY_MODIFY,
-                StandardWatchEventKinds.ENTRY_CREATE,
-                StandardWatchEventKinds.ENTRY_DELETE,
-            )
-            watchKeys[watchKey] = projectDir
-
+            val created = createSession(projectDir)
+            session = created
+            val job = created.scope.launch(Dispatchers.IO) { watchLoop(created) }
+            created.job = job
+            job.invokeOnCompletion { closeSession(created) }
             logger.info { "Started watching $logLabel build files in: $projectDir" }
-
-            watchJob = coroutineScope.launch(Dispatchers.IO) {
-                watchLoop()
-            }
         } catch (e: IOException) {
             logger.error(e) { "IO error starting $logLabel build file watcher" }
         } catch (e: UnsupportedOperationException) {
@@ -90,45 +93,62 @@ internal class DefaultBuildFileWatcher(
         }
     }
 
-    @Suppress("TooGenericExceptionCaught", "SwallowedException")
+    @Synchronized
     override fun stopWatching() {
+        val stopping = session ?: return
+        session = null
+        closeSession(stopping)
+        logger.info { "Stopped $logLabel build file watcher" }
+    }
+
+    private fun createSession(projectDir: Path): WatchSession {
+        val service = FileSystems.getDefault().newWatchService()
+        var handedOff = false
         try {
-            debounceJob?.cancel()
-            debounceJob = null
+            val key = projectDir.register(
+                service,
+                StandardWatchEventKinds.ENTRY_MODIFY,
+                StandardWatchEventKinds.ENTRY_CREATE,
+                StandardWatchEventKinds.ENTRY_DELETE,
+            )
+            val parentContext = coroutineScope.coroutineContext
+            val scope = CoroutineScope(parentContext + SupervisorJob(parentContext[Job]))
+            val changes = BuildFileChangeDebouncer(scope, dispatcher, debounceDelayMs, ::notifyBuildFileChanged)
+            return WatchSession(service, scope, changes, ConcurrentHashMap(mapOf(key to projectDir)))
+                .also { handedOff = true }
+        } finally {
+            if (!handedOff) closeService(service)
+        }
+    }
 
-            watchJob?.cancel()
-            watchJob = null
+    private fun closeSession(stopping: WatchSession) {
+        // The parent owns callbacks even before launch() returns their Job to the coordinator.
+        stopping.scope.cancel()
+        stopping.keys.keys.forEach { it.cancel() }
+        stopping.keys.clear()
+        closeService(stopping.service)
+    }
 
-            watchKeys.keys.forEach { key ->
-                key.cancel()
-            }
-            watchKeys.clear()
-
-            watchService?.close()
-            watchService = null
-
-            logger.info { "Stopped $logLabel build file watcher" }
+    private fun closeService(service: WatchService) {
+        try {
+            service.close()
         } catch (e: IOException) {
-            logger.warn(e) { "IO error stopping $logLabel build file watcher" }
-        } catch (e: ClosedWatchServiceException) {
-            // Already closed, ignore - this is expected when stopping an already-stopped watcher
+            logger.warn(e) { "IO error closing $logLabel build file watcher" }
         }
     }
 
     @Suppress("TooGenericExceptionCaught", "LoopWithTooManyJumpStatements")
-    private fun watchLoop() {
-        val watchService = this.watchService ?: return
-
+    private fun watchLoop(session: WatchSession) {
         try {
-            while (coroutineScope.isActive) {
-                val result = pollWatchKey(watchService)
-                val shouldContinue = handlePollResult(result)
+            while (session.scope.isActive) {
+                val result = pollWatchKey(session.service)
+                val shouldContinue = handlePollResult(result, session)
                 if (!shouldContinue) {
                     break
                 }
             }
         } catch (e: ClosedWatchServiceException) {
-            if (watchJob != null) {
+            if (session.scope.isActive) {
                 logger.warn(e) { "Watch service closed unexpectedly" }
                 throw e
             } else {
@@ -158,37 +178,37 @@ internal class DefaultBuildFileWatcher(
         watchKey.reset()
     }
 
-    private fun handlePollResult(result: PollResult): Boolean = when (result) {
+    private fun handlePollResult(result: PollResult, session: WatchSession): Boolean = when (result) {
         PollResult.Interrupted -> false
         PollResult.Timeout -> true
-        is PollResult.Success -> handleWatchKey(result.watchKey)
+        is PollResult.Success -> handleWatchKey(result.watchKey, session)
     }
 
-    private fun handleWatchKey(watchKey: WatchKey): Boolean {
-        val projectDir = watchKeys[watchKey]
+    private fun handleWatchKey(watchKey: WatchKey, session: WatchSession): Boolean {
+        val projectDir = session.keys[watchKey]
         if (projectDir == null) {
             handleUnknownWatchKey(watchKey)
             return true
         }
-        return processWatchKeyEvents(watchKey, projectDir)
+        return processWatchKeyEvents(watchKey, projectDir, session)
     }
 
-    private fun processWatchKeyEvents(watchKey: WatchKey, projectDir: Path): Boolean {
+    private fun processWatchKeyEvents(watchKey: WatchKey, projectDir: Path, session: WatchSession): Boolean {
         watchKey.pollEvents().forEach { event ->
-            processWatchEvent(event, projectDir)
+            processWatchEvent(event, projectDir, session)
         }
 
         val stillValid = watchKey.reset()
         if (!stillValid) {
             logger.warn { "Watch key no longer valid for: $projectDir" }
-            watchKeys.remove(watchKey)
+            session.keys.remove(watchKey)
         }
 
         return stillValid
     }
 
     @Suppress("TooGenericExceptionCaught")
-    private fun processWatchEvent(event: WatchEvent<*>, projectDir: Path) {
+    private fun processWatchEvent(event: WatchEvent<*>, projectDir: Path, session: WatchSession) {
         val kind = event.kind()
 
         if (kind == StandardWatchEventKinds.OVERFLOW) {
@@ -204,7 +224,7 @@ internal class DefaultBuildFileWatcher(
         }
 
         val fullPath = projectDir.resolve(filename)
-        handleBuildFileEvent(kind, fullPath, filenameStr, projectDir)
+        handleBuildFileEvent(kind, fullPath, filenameStr, projectDir, session)
     }
 
     /**
@@ -223,11 +243,17 @@ internal class DefaultBuildFileWatcher(
      * @param filenameStr The filename string for logging.
      * @param projectDir The project directory path.
      */
-    private fun handleBuildFileEvent(kind: WatchEvent.Kind<*>, fullPath: Path, filenameStr: String, projectDir: Path) {
+    private fun handleBuildFileEvent(
+        kind: WatchEvent.Kind<*>,
+        fullPath: Path,
+        filenameStr: String,
+        projectDir: Path,
+        session: WatchSession,
+    ) {
         when (kind) {
             StandardWatchEventKinds.ENTRY_CREATE,
             StandardWatchEventKinds.ENTRY_MODIFY,
-            -> handleBuildFileModification(fullPath, filenameStr, projectDir)
+            -> handleBuildFileModification(fullPath, filenameStr, projectDir, session)
 
             StandardWatchEventKinds.ENTRY_DELETE -> {
                 logger.info { "$logLabel build file deleted: $filenameStr" }
@@ -245,40 +271,36 @@ internal class DefaultBuildFileWatcher(
      * @param filenameStr The filename string for logging.
      * @param projectDir The project directory path.
      */
-    private fun handleBuildFileModification(fullPath: Path, filenameStr: String, projectDir: Path) {
+    private fun handleBuildFileModification(
+        fullPath: Path,
+        filenameStr: String,
+        projectDir: Path,
+        session: WatchSession,
+    ) {
         if (!fullPath.exists()) {
             return
         }
 
         logger.info { "$logLabel build file changed: $filenameStr" }
-        scheduleDebouncedCallback(projectDir, filenameStr)
+        session.changes.submit(projectDir, filenameStr)
     }
 
     /**
-     * Schedules a debounced callback to handle build file changes.
-     *
-     * Cancels any pending callback and schedules a new one after the configured delay.
-     * This prevents excessive callbacks when files are rapidly modified.
+     * Runs the consumer callback at the IO boundary while preserving cancellation.
      *
      * @param projectDir The project directory path to pass to the callback.
      * @param filenameStr The filename string for error logging.
      */
     @Suppress("TooGenericExceptionCaught")
-    private fun scheduleDebouncedCallback(projectDir: Path, filenameStr: String) {
-        debounceJob?.cancel()
-        debounceJob = coroutineScope.launch(dispatcher) {
-            if (debounceDelayMs > 0) {
-                delay(debounceDelayMs)
-            }
-            try {
-                onBuildFileChanged(projectDir)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                logger.error(e) { "$logLabel build file change handling failed for $filenameStr" }
-            }
+    private fun notifyBuildFileChanged(projectDir: Path, filenameStr: String) {
+        try {
+            onBuildFileChanged(projectDir)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            logger.error(e) { "$logLabel build file change handling failed for $filenameStr" }
         }
     }
 
-    override fun isWatching(): Boolean = watchJob?.isActive == true
+    override fun isWatching(): Boolean = session?.job?.isActive == true
 }
