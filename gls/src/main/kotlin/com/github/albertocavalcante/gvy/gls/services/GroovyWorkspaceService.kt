@@ -67,6 +67,7 @@ class GroovyWorkspaceService(
 
         if (settingsMap != null) {
             val newConfig = ServerConfiguration.fromMap(settingsMap)
+            textDocumentService?.updateConfiguration(newConfig)
 
             // Update configuration on all active strategies
             compilationService.workspaceManager.getStrategyRegistry()?.activeStrategies?.forEach { strategy ->

@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.project.DefaultProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.JenkinsProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
@@ -234,6 +235,7 @@ class GroovyLanguageServer(
         textDocumentService.updateDefinitionLinkSupport(linkSupport)
 
         savedInitOptionsMap = parseInitOptions(params.initializationOptions)
+        textDocumentService.updateConfiguration(ServerConfiguration.fromMap(savedInitOptionsMap))
 
         val initializeResult = ServerCapabilitiesFactory.createInitializeResult(
             prepareRenameSupport = params.capabilities?.textDocument?.rename?.prepareSupport == true,

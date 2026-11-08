@@ -200,11 +200,11 @@ object CompletionProvider {
         // Get Jenkins capabilities and create mode resolver
         val jenkinsCapabilities = ctx.compilationService.workspaceManager.getJenkinsCapabilities()
         val modeResolver = ModeResolver(
-            configuredMode = GroovyMode.AUTO, // TODO: Get from ServerConfiguration once available
+            configuredMode = ctx.compilationService.serverConfiguration.groovyMode,
             jenkinsCapabilities = jenkinsCapabilities,
         )
         val mode = modeResolver.resolveMode(ctx.uri)
-        val isJenkinsFile = jenkinsCapabilities?.isJenkinsFile(ctx.uri) ?: false
+        val isJenkinsFile = mode == GroovyMode.JENKINS
 
         // Handle import completions (early return)
         val importContext = CompletionContextDetector.detectImportCompletionContext(

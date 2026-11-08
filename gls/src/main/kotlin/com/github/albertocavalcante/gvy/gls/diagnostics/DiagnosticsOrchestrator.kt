@@ -38,13 +38,28 @@ const val DEFAULT_DIAGNOSTICS_DEBOUNCE_MS = 250L
 class DiagnosticsOrchestrator(
     private val coroutineScope: CoroutineScope,
     private val compilationService: GroovyCompilationService,
-    private val diagnosticsService: DiagnosticsService,
+    diagnosticsService: DiagnosticsService,
     private val documentProvider: DocumentProvider,
-    private val serverConfiguration: ServerConfiguration,
+    serverConfiguration: ServerConfiguration,
     private val client: () -> LanguageClient?,
     private val debounceMillis: Long = DEFAULT_DIAGNOSTICS_DEBOUNCE_MS,
 ) {
     private val logger = KotlinLogging.logger {}
+    private data class Runtime(val configuration: ServerConfiguration, val service: DiagnosticsService)
+
+    private val publicationLock = Any()
+
+    @Volatile
+    private var runtime = Runtime(serverConfiguration, diagnosticsService)
+
+    /** Replace provider configuration and cancel work computed under the previous settings. */
+    fun updateConfiguration(configuration: ServerConfiguration, service: DiagnosticsService) {
+        synchronized(publicationLock) {
+            runtime = Runtime(configuration, service)
+            diagnosticJobs.values.forEach { it.cancel() }
+        }
+        refreshAll()
+    }
 
     // Track active diagnostic jobs per URI to cancel stale ones (debouncing/throttling)
     // Internal for access by CompilationEnsurer
@@ -77,12 +92,13 @@ class DiagnosticsOrchestrator(
                     // A newer trigger cancels this job during the delay, before any expensive work starts.
                     if (debounce && debounceMillis > 0) delay(debounceMillis)
 
+                    val settings = runtime
                     // Use compileAsync for proper coordination
                     val result = compilationService.compileAsync(this, uri, content).await()
 
                     ensureActive() // Ensure job wasn't cancelled before publishing
 
-                    val parserEnabled = serverConfiguration.diagnosticConfig.isProviderEnabled(
+                    val parserEnabled = settings.configuration.diagnosticConfig.isProviderEnabled(
                         "parser",
                         enabledByDefault = true,
                     )
@@ -92,14 +108,14 @@ class DiagnosticsOrchestrator(
                     // NOTE: Tradeoff (See #564):
                     // This can result in two diagnostics publications (compile first, then provider merge),
                     // but avoids blocking syntax feedback on slow lint initialization.
-                    publishDiagnostics(uri.toString(), parserDiagnostics)
+                    publishDiagnostics(uri.toString(), parserDiagnostics, settings)
 
-                    val extraDiagnostics = diagnosticsService.getDiagnostics(uri, content)
+                    val extraDiagnostics = settings.service.getDiagnostics(uri, content)
                     val allDiagnostics = parserDiagnostics + extraDiagnostics
 
                     ensureActive()
                     if (extraDiagnostics.isNotEmpty()) {
-                        publishDiagnostics(uri.toString(), allDiagnostics)
+                        publishDiagnostics(uri.toString(), allDiagnostics, settings)
                     }
 
                     logger.debug { "Published ${allDiagnostics.size} diagnostics for $uri" }
@@ -168,14 +184,13 @@ class DiagnosticsOrchestrator(
      * @param uri The document URI as string
      * @param diagnostics The list of diagnostics to publish
      */
-    private fun publishDiagnostics(uri: String, diagnostics: List<org.eclipse.lsp4j.Diagnostic>) {
-        logger.debug { "Publishing ${diagnostics.size} diagnostics for $uri" }
-        client()?.publishDiagnostics(
-            PublishDiagnosticsParams().apply {
-                this.uri = uri
-                this.diagnostics = diagnostics
-            },
-        )
+    private fun publishDiagnostics(uri: String, diagnostics: List<org.eclipse.lsp4j.Diagnostic>, settings: Runtime) {
+        synchronized(publicationLock) {
+            if (runtime !== settings) return
+            val limited = diagnostics.take(settings.configuration.maxNumberOfProblems.coerceAtLeast(0))
+            logger.debug { "Publishing ${limited.size} diagnostics for $uri" }
+            client()?.publishDiagnostics(PublishDiagnosticsParams(uri, limited))
+        }
     }
 
     /**

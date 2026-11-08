@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageSession
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEngine
@@ -36,6 +37,16 @@ class GroovyCompilationService(
 ) {
     private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
+
+    @Volatile
+    var serverConfiguration: ServerConfiguration =
+        ServerConfiguration()
+        private set
+
+    internal fun updateServerConfiguration(configuration: ServerConfiguration) {
+        serverConfiguration = configuration
+    }
+
     private val parser = GroovyParserFacade(parentClassLoader)
     private val workerSessionManager = WorkerSessionManager(
         defaultSession = InProcessWorkerSession(parser),
