@@ -8,9 +8,13 @@ import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
 import com.github.albertocavalcante.gvy.build.maven.MavenFailureAnalyzer
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.nio.file.Path
@@ -20,43 +24,45 @@ private const val PROGRESS_CONNECTING = 25
 private const val PROGRESS_RESOLVING = 75
 private const val PROGRESS_COMPLETE = 100
 
-/**
- * Manages asynchronous dependency resolution to prevent blocking LSP initialization.
- * Allows for non-blocking dependency discovery with state tracking and callback support.
- */
+/** Asynchronous dependency resolution with retryable failures and publication fenced by attempt identity. */
 class DependencyManager(private val buildToolManager: BuildToolManager, private val scope: CoroutineScope) {
-    /**
-     * States of dependency resolution process.
-     */
     enum class State {
-        NOT_STARTED, // No resolution attempted yet
-        IN_PROGRESS, // Currently resolving dependencies
-        COMPLETED, // Successfully resolved dependencies
-        FAILED, // Resolution failed (will retry later)
+        NOT_STARTED,
+        IN_PROGRESS,
+        COMPLETED,
+        FAILED,
     }
 
-    private val logger = KotlinLogging.logger {}
+    private data class Request(
+        val workspaceRoot: Path,
+        val onProgress: ((Int, String) -> Unit)?,
+        val onComplete: (WorkspaceResolution) -> Unit,
+        val onError: ((Exception) -> Unit)?,
+    )
 
+    private data class Attempt(val generation: Long, val request: Request, val enableFileWatching: Boolean)
+
+    private val logger = KotlinLogging.logger {}
+    private val lock = Any()
     private val state = AtomicReference(State.NOT_STARTED)
     private val dependencies = AtomicReference<List<Path>>(emptyList())
     private val sourceDirs = AtomicReference<List<Path>>(emptyList())
+    private var generation = 0L
+    private var currentAttempt: Attempt? = null
     private var resolutionJob: Job? = null
+    private var buildFileWatcher: BuildToolFileWatcher? = null
+    private var watcherToken: Any? = null
+
+    @Volatile
     private var currentWorkspaceRoot: Path? = null
+
+    @Volatile
     private var currentBuildToolName: String? = null
 
-    // Build file watching
-    private var buildFileWatcher: BuildToolFileWatcher? = null
-
     /**
-     * Starts asynchronous dependency resolution for the given workspace.
-     *
-     * @param workspaceRoot The root directory of the workspace to resolve dependencies for
-     * @param onProgress Optional callback for progress updates (percentage, message)
-     * @param onComplete Callback invoked when resolution completes successfully
-     * @param onError Optional callback invoked if resolution fails
+     * Starts a new attempt after failure, or for a changed workspace.
+     * Duplicate active/successful requests are ignored.
      */
-    // FIXME: Replace with specific exception types (IOException, GradleConnectionException)
-    @Suppress("TooGenericExceptionCaught")
     fun startAsyncResolution(
         workspaceRoot: Path,
         onProgress: ((Int, String) -> Unit)? = null,
@@ -64,228 +70,186 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
         onError: ((Exception) -> Unit)? = null,
         enableFileWatching: Boolean = true,
     ) {
-        // TODO(#833): Allow retries after FAILED state instead of blocking indefinitely.
-        //   See: https://github.com/albertocavalcante/gvy/issues/833
-        // Only start if not already running or if workspace changed
-        if (state.compareAndSet(State.NOT_STARTED, State.IN_PROGRESS) ||
-            (currentWorkspaceRoot != workspaceRoot && state.get() != State.IN_PROGRESS)
-        ) {
-            currentWorkspaceRoot = workspaceRoot
-
-            // Cancel any existing job
+        synchronized(lock) {
+            if (currentWorkspaceRoot == workspaceRoot &&
+                state.get() in setOf(State.IN_PROGRESS, State.COMPLETED)
+            ) {
+                return
+            }
+            if (currentWorkspaceRoot != workspaceRoot) {
+                stopWatching()
+                dependencies.set(emptyList())
+                sourceDirs.set(emptyList())
+                currentBuildToolName = null
+            }
+            generation++
             resolutionJob?.cancel()
+            currentWorkspaceRoot = workspaceRoot
+            state.set(State.IN_PROGRESS)
+            val attempt =
+                Attempt(generation, Request(workspaceRoot, onProgress, onComplete, onError), enableFileWatching)
+            currentAttempt = attempt
+            // Register before starting, including when the caller uses an immediate dispatcher.
+            val job = scope.launch(Dispatchers.IO, start = CoroutineStart.LAZY) { resolve(attempt) }
+            resolutionJob = job
+            notifyCurrent(attempt) { onProgress?.invoke(0, "Starting dependency resolution...") }
+            job.start()
+        }
+    }
 
-            logger.info { "Starting async dependency resolution for: $workspaceRoot" }
-            onProgress?.invoke(0, "Starting dependency resolution...")
-
-            resolutionJob = scope.launch(Dispatchers.IO) {
-                var detectedBuildTool: BuildTool? = null
-                try {
-                    detectedBuildTool = buildToolManager.detectBuildTool(workspaceRoot)
-
-                    if (detectedBuildTool == null) {
-                        logger.info { "No supported build tool detected for: $workspaceRoot" }
-                        onProgress?.invoke(PROGRESS_COMPLETE, "No build tool detected")
-
-                        val emptyResolution = WorkspaceResolution(emptyList(), listOf(workspaceRoot))
-                        dependencies.set(emptyResolution.dependencies)
-                        sourceDirs.set(emptyResolution.sourceDirectories)
-                        state.set(State.COMPLETED)
-                        currentBuildToolName = null
-
-                        withContext(Dispatchers.Default) {
-                            onComplete(emptyResolution)
-                        }
-                        return@launch
-                    }
-
-                    currentBuildToolName = detectedBuildTool.name
-                    logger.info { "Detected build tool: ${detectedBuildTool.name}" }
-
-                    onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${detectedBuildTool.name}...")
-
-                    // Pass download progress through to resolver (e.g., Gradle distribution download)
-                    val resolution = detectedBuildTool.resolve(
-                        workspaceRoot = workspaceRoot,
-                        onProgress = { message ->
-                            // Forward download progress to the onProgress callback
-                            onProgress?.invoke(PROGRESS_CONNECTING, message)
-                        },
-                    )
-
-                    onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
-
-                    // Update atomic state
+    @Suppress("TooGenericExceptionCaught") // Build tool implementations expose failures as arbitrary exceptions.
+    private suspend fun resolve(attempt: Attempt) {
+        val request = attempt.request
+        var tool: BuildTool? = null
+        try {
+            checkCurrent(attempt)
+            tool = buildToolManager.detectBuildTool(request.workspaceRoot)
+            checkCurrent(attempt)
+            notifyCurrent(attempt) { currentBuildToolName = tool?.name }
+            // Install before resolving: an initially broken build must still be able to recover on an edit.
+            if (tool != null && attempt.enableFileWatching) startWatching(attempt, tool)
+            notifyCurrent(attempt) {
+                request.onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${tool?.name ?: "workspace"}...")
+            }
+            checkCurrent(attempt)
+            val resolution = tool?.resolve(request.workspaceRoot) { message ->
+                notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_CONNECTING, message) }
+            } ?: WorkspaceResolution(emptyList(), listOf(request.workspaceRoot))
+            checkCurrent(attempt)
+            notifyCurrent(attempt) {
+                if (resolution.isUsable) {
                     dependencies.set(resolution.dependencies)
                     sourceDirs.set(resolution.sourceDirectories)
-                    state.set(State.COMPLETED)
-
-                    onProgress?.invoke(PROGRESS_COMPLETE, "Dependencies resolved: ${resolution.dependencies.size} JARs")
-
-                    // Call completion callback on Default dispatcher
-                    withContext(Dispatchers.Default) {
-                        onComplete(resolution)
-                    }
-
-                    // Start build file watching if enabled
-                    if (enableFileWatching) {
-                        tryStartBuildFileWatching(detectedBuildTool, workspaceRoot, onProgress, onComplete, onError)
-                    }
-
-                    logger.info {
-                        "Async dependency resolution completed: ${resolution.dependencies.size} dependencies, " +
-                            "${resolution.sourceDirectories.size} source directories"
-                    }
-                } catch (e: Exception) {
-                    logger.error(e) { "Async dependency resolution failed for $workspaceRoot" }
-                    state.set(State.FAILED)
-
-                    withContext(Dispatchers.Default) {
-                        // Only classify build tool errors. For truly unexpected errors (like NPE during detection),
-                        // use the error callback
-                        if (detectedBuildTool != null) {
-                            // Classify the exception using the appropriate failure analyzer
-                            val classifiedStatus = when (detectedBuildTool) {
-                                is MavenBuildTool -> {
-                                    val mavenAnalyzer = MavenFailureAnalyzer()
-                                    mavenAnalyzer.classifyException(e, groovyVersion = null)
-                                }
-                                else -> {
-                                    // For Gradle and other build tools, use GradleFailureAnalyzer
-                                    val gradleAnalyzer = GradleFailureAnalyzer()
-                                    gradleAnalyzer.classifyException(e)
-                                }
-                            }
-
-                            // Create a WorkspaceResolution with the failed status
-                            val failedResolution = WorkspaceResolution(
-                                dependencies = emptyList(),
-                                sourceDirectories = emptyList(),
-                                status = classifiedStatus,
-                            )
-
-                            // Call onComplete with the failed resolution for classified build tool errors
-                            onComplete(failedResolution)
-                        } else {
-                            // For truly unexpected errors (e.g., NPE during build tool detection),
-                            // call onError if provided, otherwise log warning
-                            onError?.invoke(e) ?: run {
-                                logger.warn { "No error handler provided for dependency resolution failure" }
-                            }
-                        }
+                }
+                state.set(if (resolution.isUsable) State.COMPLETED else State.FAILED)
+                request.onProgress?.invoke(PROGRESS_RESOLVING, "Found ${resolution.dependencies.size} dependencies")
+                request.onProgress?.invoke(PROGRESS_COMPLETE, "Dependency resolution finished")
+            }
+            withContext(Dispatchers.Default) {
+                notifyCurrent(attempt) { request.onComplete(resolution) }
+            }
+        } catch (e: CancellationException) {
+            notifyCurrent(attempt) {
+                if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
+            }
+            throw e
+        } catch (e: Exception) {
+            notifyCurrent(attempt) {
+                logger.error(e) { "Dependency resolution failed for ${request.workspaceRoot}" }
+                state.set(State.FAILED)
+            }
+            withContext(Dispatchers.Default) {
+                notifyCurrent(attempt) {
+                    if (tool != null) {
+                        request.onComplete(classifyFailure(tool, e))
+                    } else {
+                        request.onError?.invoke(e)
+                            ?: logger.warn { "No error handler for dependency resolution failure" }
                     }
                 }
             }
-        } else {
-            logger.debug { "Dependency resolution already in progress or completed for: $workspaceRoot" }
+        } finally {
+            notifyCurrent(attempt) { resolutionJob = null }
         }
     }
 
-    /**
-     * Gets the currently resolved dependencies (may be empty if not ready).
-     */
+    private fun classifyFailure(tool: BuildTool, error: Exception): WorkspaceResolution {
+        val status = if (tool is MavenBuildTool) {
+            MavenFailureAnalyzer().classifyException(error, groovyVersion = null)
+        } else {
+            GradleFailureAnalyzer().classifyException(error)
+        }
+        return WorkspaceResolution(emptyList(), emptyList(), status)
+    }
+
+    private suspend fun checkCurrent(attempt: Attempt) {
+        currentCoroutineContext().ensureActive()
+        synchronized(lock) {
+            if (generation != attempt.generation) throw CancellationException("Dependency attempt superseded")
+        }
+    }
+
+    /** Keep the generation check and its effects atomic with cancellation/reset/new attempts. */
+    private fun notifyCurrent(attempt: Attempt, action: () -> Unit) {
+        synchronized(lock) {
+            if (generation == attempt.generation) action()
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught") // Watching failure should not prevent dependency resolution.
+    private fun startWatching(attempt: Attempt, tool: BuildTool) {
+        notifyCurrent(attempt) {
+            if (buildFileWatcher == null) {
+                val token = Any()
+                try {
+                    val watcher = tool.createWatcher(scope) { refreshFromWatcher(token) }
+                    buildFileWatcher = watcher
+                    watcherToken = token
+                    watcher?.startWatching(attempt.request.workspaceRoot)
+                } catch (e: CancellationException) {
+                    stopWatching()
+                    throw e
+                } catch (e: Exception) {
+                    stopWatching()
+                    logger.warn(e) { "Failed to watch build files" }
+                    attempt.request.onError?.invoke(e)
+                }
+            }
+        }
+    }
+
+    private fun refreshFromWatcher(token: Any) {
+        synchronized(lock) {
+            if (watcherToken !== token) return
+            val request = currentAttempt?.request ?: return
+            state.set(State.NOT_STARTED)
+            startAsyncResolution(
+                request.workspaceRoot,
+                request.onProgress,
+                request.onComplete,
+                request.onError,
+                enableFileWatching = false,
+            )
+        }
+    }
+
+    private fun stopWatching() {
+        watcherToken = null
+        buildFileWatcher?.stopWatching()
+        buildFileWatcher = null
+    }
+
     fun getCurrentDependencies(): List<Path> = dependencies.get()
-
     fun getCurrentSourceDirectories(): List<Path> = sourceDirs.get()
-
-    /**
-     * Gets the current state of dependency resolution.
-     */
     fun getState(): State = state.get()
-
-    /**
-     * Gets the workspace root currently being processed.
-     */
     fun getCurrentWorkspaceRoot(): Path? = currentWorkspaceRoot
-
-    /**
-     * Gets the name of the currently active build tool.
-     */
     fun getCurrentBuildToolName(): String? = currentBuildToolName
-
-    /**
-     * Checks if dependencies are ready for use.
-     */
     fun isDependenciesReady(): Boolean = state.get() == State.COMPLETED
 
-    /**
-     * Cancels any ongoing dependency resolution.
-     */
     fun cancel() {
-        resolutionJob?.cancel()
-        buildFileWatcher?.stopWatching()
-        if (state.get() == State.IN_PROGRESS) {
-            state.set(State.NOT_STARTED)
+        synchronized(lock) {
+            generation++
+            resolutionJob?.cancel()
+            resolutionJob = null
+            stopWatching()
+            if (state.get() == State.IN_PROGRESS) state.set(State.NOT_STARTED)
         }
-        logger.debug { "Dependency resolution cancelled" }
     }
 
-    /**
-     * Resets the dependency manager to allow fresh resolution.
-     * Useful when build files change or workspace is reloaded.
-     */
     fun reset() {
-        cancel()
-        dependencies.set(emptyList())
-        sourceDirs.set(emptyList())
-        state.set(State.NOT_STARTED)
-        currentWorkspaceRoot = null
-        currentBuildToolName = null
-        buildFileWatcher = null
-        logger.debug { "Dependency manager reset" }
-    }
-
-    /**
-     * Gets a summary of the current state for debugging/logging.
-     */
-    fun getStatusSummary(): String {
-        val currentState = state.get()
-        val depCount = dependencies.get().size
-        val sourceCount = sourceDirs.get().size
-        val workspace = currentWorkspaceRoot?.fileName ?: "none"
-        val tool = currentBuildToolName ?: "none"
-
-        return "DependencyManager[state=$currentState, tool=$tool, dependencies=$depCount, sources=$sourceCount, " +
-            "workspace=$workspace]"
-    }
-
-    private fun tryStartBuildFileWatching(
-        buildTool: BuildTool,
-        workspaceRoot: Path,
-        onProgress: ((Int, String) -> Unit)?,
-        onComplete: (WorkspaceResolution) -> Unit,
-        onError: ((Exception) -> Unit)?,
-    ) {
-        try {
-            buildFileWatcher = buildTool.createWatcher(
-                coroutineScope = scope,
-                onChange = { changedProjectDir ->
-                    logger.info { "Build file changed, refreshing dependencies for: $changedProjectDir" }
-                    onProgress?.invoke(0, "Build file changed, refreshing dependencies...")
-
-                    // Reset state to trigger fresh resolution
-                    state.set(State.NOT_STARTED)
-
-                    // Start fresh resolution
-                    startAsyncResolution(
-                        workspaceRoot = changedProjectDir,
-                        onProgress = onProgress,
-                        onComplete = onComplete,
-                        onError = onError,
-                        enableFileWatching = false, // Avoid recursive watching
-                    )
-                },
-            )
-
-            buildFileWatcher?.startWatching(workspaceRoot)
-            if (buildFileWatcher != null) {
-                logger.info { "Started build file watching for: $workspaceRoot using ${buildTool.name}" }
-            } else {
-                logger.info { "Build file watching not supported by ${buildTool.name}" }
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Failed to start build file watching" }
-            onError?.invoke(e)
+        synchronized(lock) {
+            cancel()
+            dependencies.set(emptyList())
+            sourceDirs.set(emptyList())
+            state.set(State.NOT_STARTED)
+            currentWorkspaceRoot = null
+            currentBuildToolName = null
+            currentAttempt = null
         }
     }
+
+    fun getStatusSummary(): String =
+        "DependencyManager[state=${state.get()}, tool=${currentBuildToolName ?: "none"}, " +
+            "dependencies=${dependencies.get().size}, sources=${sourceDirs.get().size}, " +
+            "workspace=${currentWorkspaceRoot?.fileName ?: "none"}]"
 }
