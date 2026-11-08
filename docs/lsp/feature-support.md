@@ -29,50 +29,49 @@ Legend:
 | `textDocument/didClose`          | yes     | Clears diagnostics                   |
 | `textDocument/willSave`          | no      |                                      |
 | `textDocument/willSaveWaitUntil` | no      |                                      |
-| `textDocument/didRename`         | no      |                                      |
 
 ## Language features
 
-| Method                                   | Support | Notes                                      |
-| ---------------------------------------- | ------- | ------------------------------------------ |
-| `textDocument/completion`                | yes     | Keywords + AST-based symbols               |
-| `completion/resolve`                     | no      |                                            |
-| `textDocument/hover`                     | yes     | Type info + documentation                  |
-| `textDocument/signatureHelp`             | yes     | Method parameter hints                     |
-| `textDocument/definition`                | yes     |                                            |
-| `textDocument/typeDefinition`            | yes     |                                            |
-| `textDocument/implementation`            | partial | Implemented; capability not advertised yet |
-| `textDocument/references`                | yes     |                                            |
-| `textDocument/documentSymbol`            | yes     |                                            |
-| `textDocument/documentHighlight`         | yes     |                                            |
-| `textDocument/rename`                    | yes     | No `prepareRename` support                 |
-| `textDocument/prepareRename`             | no      |                                            |
-| `textDocument/codeAction`                | yes     | Quick fixes + formatting                   |
-| `codeAction/resolve`                     | no      |                                            |
-| `textDocument/codeLens`                  | yes     | Test run/debug lenses                      |
-| `codeLens/resolve`                       | no      |                                            |
-| `textDocument/foldingRange`              | yes     |                                            |
-| `textDocument/formatting`                | yes     | OpenRewrite                                |
-| `textDocument/rangeFormatting`           | no      |                                            |
-| `textDocument/onTypeFormatting`          | no      |                                            |
-| `textDocument/semanticTokens/full`       | partial | Jenkins pipeline focus                     |
-| `textDocument/semanticTokens/range`      | no      |                                            |
-| `textDocument/semanticTokens/full/delta` | no      |                                            |
-| `textDocument/inlayHint`                 | no      |                                            |
-| `textDocument/inlineValue`               | no      |                                            |
-| `textDocument/selectionRange`            | no      |                                            |
-| `textDocument/documentLink`              | no      |                                            |
-| `textDocument/documentColor`             | no      |                                            |
-| `textDocument/colorPresentation`         | no      |                                            |
-| `textDocument/declaration`               | no      |                                            |
-| `textDocument/linkedEditingRange`        | no      |                                            |
-| `textDocument/moniker`                   | no      |                                            |
-| `textDocument/prepareCallHierarchy`      | no      |                                            |
-| `callHierarchy/incomingCalls`            | no      |                                            |
-| `callHierarchy/outgoingCalls`            | no      |                                            |
-| `textDocument/prepareTypeHierarchy`      | no      |                                            |
-| `typeHierarchy/supertypes`               | no      |                                            |
-| `typeHierarchy/subtypes`                 | no      |                                            |
+| Method                                   | Support | Notes                                            |
+| ---------------------------------------- | ------- | ------------------------------------------------ |
+| `textDocument/completion`                | yes     | Keywords + AST-based symbols                     |
+| `completion/resolve`                     | no      |                                                  |
+| `textDocument/hover`                     | yes     | Type info + documentation                        |
+| `textDocument/signatureHelp`             | yes     | Method parameter hints                           |
+| `textDocument/definition`                | yes     |                                                  |
+| `textDocument/typeDefinition`            | yes     |                                                  |
+| `textDocument/implementation`            | yes     | Advertised; captured workspace queries           |
+| `textDocument/references`                | yes     |                                                  |
+| `textDocument/documentSymbol`            | yes     |                                                  |
+| `textDocument/documentHighlight`         | yes     |                                                  |
+| `textDocument/rename`                    | yes     | Versioned edits; unproven targets rejected       |
+| `textDocument/prepareRename`             | yes     | Negotiated through client prepareSupport         |
+| `textDocument/codeAction`                | yes     | Quick fixes + formatting                         |
+| `codeAction/resolve`                     | no      |                                                  |
+| `textDocument/codeLens`                  | yes     | Test run/debug lenses                            |
+| `codeLens/resolve`                       | no      |                                                  |
+| `textDocument/foldingRange`              | yes     |                                                  |
+| `textDocument/formatting`                | yes     | OpenRewrite                                      |
+| `textDocument/rangeFormatting`           | no      |                                                  |
+| `textDocument/onTypeFormatting`          | no      |                                                  |
+| `textDocument/semanticTokens/full`       | partial | Jenkins pipeline focus                           |
+| `textDocument/semanticTokens/range`      | no      |                                                  |
+| `textDocument/semanticTokens/full/delta` | no      |                                                  |
+| `textDocument/inlayHint`                 | partial | Advertised; dynamic settings pending (#566)      |
+| `textDocument/inlineValue`               | no      |                                                  |
+| `textDocument/selectionRange`            | yes     | Captured source and nested structural selections |
+| `textDocument/documentLink`              | no      |                                                  |
+| `textDocument/documentColor`             | no      |                                                  |
+| `textDocument/colorPresentation`         | no      |                                                  |
+| `textDocument/declaration`               | no      |                                                  |
+| `textDocument/linkedEditingRange`        | no      |                                                  |
+| `textDocument/moniker`                   | no      |                                                  |
+| `textDocument/prepareCallHierarchy`      | yes     | Advertised; captured source ranges               |
+| `callHierarchy/incomingCalls`            | partial | Advertised; cross-file resolution limited        |
+| `callHierarchy/outgoingCalls`            | partial | Advertised; cross-file resolution limited        |
+| `textDocument/prepareTypeHierarchy`      | no      |                                                  |
+| `typeHierarchy/supertypes`               | no      |                                                  |
+| `typeHierarchy/subtypes`                 | no      |                                                  |
 
 ## Diagnostics
 
@@ -125,5 +124,10 @@ Legend:
 
 ## Capability alignment notes
 
-- `textDocument/implementation` is implemented but not yet advertised in server capabilities.
+- `textDocument/prepareRename` is advertised only when the client declares rename preparation support.
+- `textDocument/selectionRange` preserves request order, with identifier, structural, line and document selections.
+  Incomplete or stale AST data falls back to current text. A document change during a request returns `ContentModified`.
+  Character offsets beyond a line clamp to its end; negative positions and invalid lines return `InvalidParams`.
+  Requests support at most 1,024 positions and 64 nested ranges per position; larger batches return `InvalidParams`. The
+  outermost document range is retained when limiting depth. Unknown documents return null.
 - `workspace/executeCommand` is implemented for `groovy.version` only, but not advertised.

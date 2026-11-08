@@ -24,31 +24,28 @@ fun ASTNode.declaredName(): String? = when (this) {
 
 /** Line-start table for one text, built once and reused for many offset/position lookups. */
 class TextIndex(val text: String) {
-    private val lineStarts: IntArray = ArrayList<Int>().apply {
-        add(0)
-        text.forEachIndexed { i, c -> if (c == '\n') add(i + 1) }
-    }.toIntArray()
+    private val lineStarts = calculateLineStarts(includeCarriageReturns = true)
+    private val groovyLineStarts = calculateLineStarts(includeCarriageReturns = false)
 
     /** Offset of [p], clamped to the text. */
     fun offsetOf(p: Position): Int =
         if (p.line >= lineStarts.size) text.length else minOf(lineStarts[p.line] + p.character, text.length)
 
-    /** Position of [offset], found by binary search over the line starts. */
+    /** Position of [offset], found by binary search over the protocol line starts. */
     fun positionOf(offset: Int): Position {
-        var lo = 0
-        var hi = lineStarts.size - 1
-        while (lo < hi) {
-            val mid = (lo + hi + 1) ushr 1
-            if (lineStarts[mid] <= offset) lo = mid else hi = mid - 1
-        }
-        return Position(lo, offset - lineStarts[lo])
+        val line = lineAt(offset, lineStarts)
+        return Position(line, offset - lineStarts[line])
     }
 
-    /** Groovy lexer columns count code points; LSP columns count UTF-16 code units. */
+    /** Groovy counts code points and advances lines on LF; LSP uses UTF-16 and also recognizes bare CR. */
     internal fun utf16Position(codePoints: Position): Position? {
-        val line = lineText(codePoints.line) ?: return null
+        val start = groovyLineStarts.getOrNull(codePoints.line) ?: return null
+        val end = groovyLineStarts.getOrNull(codePoints.line + 1)?.minus(1) ?: text.length
+        val line = text.substring(start, end)
         if (codePoints.character !in 0..line.codePointCount(0, line.length)) return null
-        return Position(codePoints.line, line.offsetByCodePoints(0, codePoints.character))
+        val position = positionOf(start + line.offsetByCodePoints(0, codePoints.character))
+        val logical = lineText(position.line) ?: return null
+        return position.takeIf { it.character <= logical.length }
     }
 
     internal fun utf16Range(codePoints: Range): Range? {
@@ -60,13 +57,43 @@ class TextIndex(val text: String) {
     internal fun codePointPosition(utf16: Position): Position? {
         val line = lineText(utf16.line) ?: return null
         if (utf16.character !in 0..line.length) return null
-        return Position(utf16.line, line.codePointCount(0, utf16.character))
+        val offset = offsetOf(utf16)
+        val groovyLine = lineAt(offset, groovyLineStarts)
+        return Position(groovyLine, text.codePointCount(groovyLineStarts[groovyLine], offset))
     }
+
+    internal fun lineRange(line: Int): Range? =
+        lineText(line)?.let { Range(Position(line, 0), Position(line, it.length)) }
 
     private fun lineText(line: Int): String? {
         val start = lineStarts.getOrNull(line) ?: return null
         val end = lineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
         return text.substring(start, end).removeSuffix("\r")
+    }
+
+    private fun calculateLineStarts(includeCarriageReturns: Boolean): IntArray {
+        val starts = arrayListOf(0)
+        var at = 0
+        while (at < text.length) {
+            val char = text[at]
+            val crlf = char == '\r' && at + 1 < text.length && text[at + 1] == '\n'
+            if (char == '\n' || (includeCarriageReturns && char == '\r')) {
+                if (includeCarriageReturns && crlf) at++
+                starts += at + 1
+            }
+            at++
+        }
+        return starts.toIntArray()
+    }
+
+    private fun lineAt(offset: Int, starts: IntArray): Int {
+        var lo = 0
+        var hi = starts.size - 1
+        while (lo < hi) {
+            val mid = (lo + hi + 1) ushr 1
+            if (starts[mid] <= offset) lo = mid else hi = mid - 1
+        }
+        return lo
     }
 }
 

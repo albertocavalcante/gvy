@@ -71,6 +71,74 @@ suite("Implementation navigation with the current server", () => {
     );
   }
 
+  test("Smart selection preserves ordered nested source ranges without edits", async () => {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace);
+    const selection = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(
+        workspace.uri,
+        "client/src/test/fixtures/SelectionRanges.groovy",
+      ),
+    );
+    const editor = await vscode.window.showTextDocument(selection);
+    const source = selection.getText();
+    const version = selection.version;
+    const body = source.indexOf("value + 1");
+    const declaration = source.indexOf("value");
+    const offsets = [body, declaration];
+    const positions = [
+      ...offsets.map((offset) => selection.positionAt(offset + 1)),
+      selection.positionAt(source.length),
+    ];
+    const result = await vscode.commands.executeCommand<
+      vscode.SelectionRange[]
+    >("vscode.executeSelectionRangeProvider", selection.uri, positions);
+    assert.ok(result);
+    assert.strictEqual(result.length, positions.length);
+    const documentRange = new vscode.Range(
+      selection.positionAt(0),
+      selection.positionAt(source.length),
+    );
+    for (const [index, first] of result.entries()) {
+      const expected =
+        index < offsets.length
+          ? new vscode.Range(
+              selection.positionAt(offsets[index]),
+              selection.positionAt(offsets[index] + 5),
+            )
+          : new vscode.Range(positions[index], positions[index]);
+      assert.ok(first.range.isEqual(expected));
+      const ranges: vscode.Range[] = [];
+      let current: vscode.SelectionRange | undefined = first;
+      while (current) {
+        ranges.push(current.range);
+        assert.ok(
+          ranges.length <= 64,
+          "Selection parent depth must be bounded",
+        );
+        if (current.parent) {
+          assert.ok(current.parent.range.contains(current.range));
+          // VS Code merges the server response with its word provider and can repeat a parent.
+          // Direct protocol tests enforce strict growth in the server's own chain.
+        }
+        current = current.parent;
+      }
+      assert.ok(ranges[ranges.length - 1].isEqual(documentRange));
+      if (index === 0) {
+        assert.ok(
+          ranges.some((range) => selection.getText(range) === "value + 1"),
+        );
+      }
+    }
+    editor.selection = new vscode.Selection(positions[0], positions[0]);
+    await vscode.commands.executeCommand("editor.action.smartSelect.expand");
+    assert.strictEqual(selection.getText(editor.selection), "value");
+    await vscode.commands.executeCommand("editor.action.smartSelect.expand");
+    assert.strictEqual(selection.getText(editor.selection), "value + 1");
+    assert.strictEqual(selection.version, version);
+    assert.strictEqual(selection.getText(), source);
+  });
+
   test("Script class literals retain resolved nested class references", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
