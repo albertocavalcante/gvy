@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
 import com.github.albertocavalcante.groovyparser.internal.ParserDiagnosticConverter
+import com.github.albertocavalcante.groovyparser.internal.hasClassDeclaration
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.nativeapi.ExcludedSource
@@ -307,9 +308,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
         // Check if the source code actually contains a class declaration.
         // If it doesn't, this is an intentional script (not a class that got converted to Script).
-        val hasClassKeyword = request.content.contains(Regex("""\bclass\s+\w+"""))
-        if (shouldRetry && !hasClassKeyword) {
-            logger.debug { "shouldRetryAtConversion: false - intentional script (no class keyword)" }
+        if (shouldRetry && !hasClassDeclaration(request.content, request.checkCancelled)) {
+            logger.debug { "shouldRetryAtConversion: false - intentional script (no class declaration)" }
             shouldRetry = false
         }
 

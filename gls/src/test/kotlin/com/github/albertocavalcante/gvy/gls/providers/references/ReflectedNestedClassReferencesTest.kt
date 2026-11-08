@@ -16,11 +16,18 @@ import kotlin.test.assertTrue
 class ReflectedNestedClassReferencesTest {
     @Test
     fun `reflected nested class references retain source names`(): Unit = runBlocking {
-        val uri = URI.create("file:///refs/Reflected.groovy")
-        // TODO(#1171): Cover intentional scripts after fixing class-literal conversion fallback.
-        //   See: https://github.com/albertocavalcante/gvy/issues/1171
         val source = "import java.util.Map\nclass Reflected {\n" +
             "def first = java.util.Map.Entry.class\ndef second = Map.Entry.class\n}\n"
+        assertReferences(source)
+    }
+
+    @Test
+    fun `intentional script nested class references retain resolved names`(): Unit = runBlocking {
+        assertReferences("import java.util.Map\ndef first = java.util.Map.Entry.class\ndef second = Map.Entry.class\n")
+    }
+
+    private suspend fun assertReferences(source: String) {
+        val uri = URI.create("file:///refs/Reflected.groovy")
         val service = GroovyCompilationService()
         try {
             service.compile(uri, source)
