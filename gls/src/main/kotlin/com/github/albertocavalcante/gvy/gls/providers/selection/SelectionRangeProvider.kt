@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SelectionRange
@@ -49,15 +50,16 @@ internal class SelectionRangeProvider(
                 ?: fail(ResponseErrorCode.InvalidParams, "Selection line is outside the document")
             Position(position.line, minOf(position.character, line.end.character))
         }
-        compilation.ensureCompiled(uri) ?: compilation.compile(uri, original.content)
+        // Never publish document state from this read-only request, even while background compilation changes.
+        val cached = compilation.getCompiledSnapshot(uri)?.takeIf { it.sourceText == original.content }
+        requireCurrent(uri, original)
+        val parsed = cached?.parseResult ?: compilation.compileTransient(uri, original.content, Phases.CONVERSION)
         context.ensureActive()
         requireCurrent(uri, original)
-        val compiled = compilation.getCompiledSnapshot(uri)
-        // A stale or missing AST contributes no ranges; current text still supports safe minimal selections.
-        val model = compiled?.takeIf { it.sourceText == original.content }?.parseResult?.astModel
-        val structures = model?.getNodes(uri).orEmpty().mapNotNull { node ->
+        val model = parsed.astModel
+        val structures = model.getNodes(uri).mapNotNull { node ->
             context.ensureActive()
-            if (model?.getUri(node) != uri) return@mapNotNull null
+            if (model.getUri(node) != uri) return@mapNotNull null
             index.utf16Range(
                 Range(
                     Position(node.lineNumber - 1, node.columnNumber - 1),

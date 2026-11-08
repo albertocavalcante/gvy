@@ -10,7 +10,7 @@ internal class SelectionRangeBuilder(private val index: TextIndex, structures: L
     private val text = index.text
     private val document = Span(0, text.length)
     private val structuralSpans = structures.mapNotNull { range ->
-        if (index.codePointPosition(range.start) == null || index.codePointPosition(range.end) == null) {
+        if (!index.isValidPosition(range.start) || !index.isValidPosition(range.end)) {
             null
         } else {
             val start = index.offsetOf(range.start)
@@ -21,15 +21,19 @@ internal class SelectionRangeBuilder(private val index: TextIndex, structures: L
 
     fun build(positions: List<Position>, checkCancelled: () -> Unit): List<SelectionRange> = positions.map { position ->
         checkCancelled()
-        require(index.codePointPosition(position) != null) { "Position is outside the source" }
+        require(index.isValidPosition(position)) { "Position is outside the source" }
         val offset = index.offsetOf(position)
         val leaf = word(offset) ?: Span(offset, offset)
         val line = checkNotNull(index.lineRange(position.line))
-        val candidates = structuralSpans.asSequence()
-            .onEach { checkCancelled() }
-            .filter { it.contains(leaf) }
-            .plus(Span(index.offsetOf(line.start), index.offsetOf(line.end)))
-            .plus(document)
+        val structural = structuralSpans.filter {
+            checkCancelled()
+            it.contains(leaf)
+        }
+        val physicalLine = Span(index.offsetOf(line.start), index.offsetOf(line.end))
+        // A line ending in a comment must not block a crossing multiline call or statement.
+        val compatibleLine = structural.none { !it.contains(physicalLine) && !physicalLine.contains(it) }
+        val fallbacks = if (compatibleLine) listOf(physicalLine, document) else listOf(document)
+        val candidates = (structural + fallbacks)
             .sortedWith(compareBy<Span> { it.end - it.start }.thenBy { it.start })
         val chain = mutableListOf(leaf)
         for (candidate in candidates) {

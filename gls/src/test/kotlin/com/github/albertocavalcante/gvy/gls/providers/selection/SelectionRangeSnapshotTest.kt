@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SelectionRangeParams
@@ -52,10 +53,11 @@ class SelectionRangeSnapshotTest {
 
     @Test
     fun `version changes during compilation reject the selection`(): Unit = runBlocking {
-        val compiled = prepare()
-        coEvery { compilation.ensureCompiled(uri) } coAnswers {
+        documents.put(uri, source, 7)
+        val parsed = compilation.compileTransient(uri, source, Phases.CONVERSION)
+        coEvery { compilation.compileTransient(uri, source, any()) } coAnswers {
             documents.put(uri, source, 8)
-            compiled
+            parsed
         }
         assertEquals(ResponseErrorCode.ContentModified.value, failure().responseError.code)
     }
@@ -84,24 +86,26 @@ class SelectionRangeSnapshotTest {
 
     @Test
     fun `compilation cancellation propagates`(): Unit = runBlocking {
-        prepare()
-        coEvery { compilation.ensureCompiled(uri) } throws CancellationException("cancelled")
+        documents.put(uri, source, 7)
+        coEvery { compilation.compileTransient(uri, source, any()) } throws CancellationException("cancelled")
         assertThrows<CancellationException> { service.selectionRange(params()).get(5, TimeUnit.SECONDS) }
     }
 
     @Test
     fun `missing documents return null without compilation`() {
         assertNull(service.selectionRange(params()).get(5, TimeUnit.SECONDS))
+        coVerify(exactly = 0) { compilation.compileTransient(any(), any(), any()) }
         coVerify(exactly = 0) { compilation.ensureCompiled(any()) }
     }
 
     @Test
     fun `request positions are captured before suspension`(): Unit = runBlocking {
-        val compiled = prepare()
+        documents.put(uri, source, 7)
+        val parsed = compilation.compileTransient(uri, source, Phases.CONVERSION)
         val request = params()
-        coEvery { compilation.ensureCompiled(uri) } coAnswers {
+        coEvery { compilation.compileTransient(uri, source, any()) } coAnswers {
             request.positions.single().line = 1000
-            compiled
+            parsed
         }
         val selected = assertNotNull(service.selectionRange(request).get(5, TimeUnit.SECONDS)).single()
         assertEquals(1000, request.positions.single().line)

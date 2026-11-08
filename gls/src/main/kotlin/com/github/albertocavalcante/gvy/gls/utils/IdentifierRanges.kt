@@ -10,6 +10,7 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import java.util.concurrent.ConcurrentHashMap
 
 /** The name this node declares or refers to as a symbol; null for nodes that have none. */
 fun ASTNode.declaredName(): String? = when (this) {
@@ -26,6 +27,13 @@ fun ASTNode.declaredName(): String? = when (this) {
 class TextIndex(val text: String) {
     private val lineStarts = calculateLineStarts(includeCarriageReturns = true)
     private val groovyLineStarts = calculateLineStarts(includeCarriageReturns = false)
+    private val lineLengths = IntArray(lineStarts.size) { line ->
+        val start = lineStarts[line]
+        val beforeBreak = lineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
+        val end = if (beforeBreak > start && text[beforeBreak - 1] == '\r') beforeBreak - 1 else beforeBreak
+        end - start
+    }
+    private val groovyColumns = ConcurrentHashMap<Int, IntArray>()
 
     /** Offset of [p], clamped to the text. */
     fun offsetOf(p: Position): Int =
@@ -39,13 +47,9 @@ class TextIndex(val text: String) {
 
     /** Groovy counts code points and advances lines on LF; LSP uses UTF-16 and also recognizes bare CR. */
     internal fun utf16Position(codePoints: Position): Position? {
-        val start = groovyLineStarts.getOrNull(codePoints.line) ?: return null
-        val end = groovyLineStarts.getOrNull(codePoints.line + 1)?.minus(1) ?: text.length
-        val line = text.substring(start, end)
-        if (codePoints.character !in 0..line.codePointCount(0, line.length)) return null
-        val position = positionOf(start + line.offsetByCodePoints(0, codePoints.character))
-        val logical = lineText(position.line) ?: return null
-        return position.takeIf { it.character <= logical.length }
+        val column = groovyColumnOffsets(codePoints.line)?.getOrNull(codePoints.character) ?: return null
+        val position = positionOf(groovyLineStarts[codePoints.line] + column)
+        return position.takeIf { isValidPosition(it) }
     }
 
     internal fun utf16Range(codePoints: Range): Range? {
@@ -55,20 +59,41 @@ class TextIndex(val text: String) {
     }
 
     internal fun codePointPosition(utf16: Position): Position? {
-        val line = lineText(utf16.line) ?: return null
-        if (utf16.character !in 0..line.length) return null
+        if (!isValidPosition(utf16)) return null
         val offset = offsetOf(utf16)
-        val groovyLine = lineAt(offset, groovyLineStarts)
-        return Position(groovyLine, text.codePointCount(groovyLineStarts[groovyLine], offset))
+        val line = lineAt(offset, groovyLineStarts)
+        val start = groovyLineStarts[line]
+        val columns = groovyColumns[line]
+        val column = if (columns == null) {
+            // A single cursor lookup needs no full-line map allocation.
+            text.codePointCount(start, offset)
+        } else {
+            val found = columns.binarySearch(offset - start)
+            if (found >= 0) found else -found - 1
+        }
+        return Position(line, column)
     }
 
-    internal fun lineRange(line: Int): Range? =
-        lineText(line)?.let { Range(Position(line, 0), Position(line, it.length)) }
+    internal fun isValidPosition(position: Position): Boolean =
+        lineLengths.getOrNull(position.line)?.let { position.character in 0..it } ?: false
 
-    private fun lineText(line: Int): String? {
-        val start = lineStarts.getOrNull(line) ?: return null
-        val end = lineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
-        return text.substring(start, end).removeSuffix("\r")
+    internal fun lineRange(line: Int): Range? =
+        lineLengths.getOrNull(line)?.let { Range(Position(line, 0), Position(line, it)) }
+
+    private fun groovyColumnOffsets(line: Int): IntArray? {
+        val start = groovyLineStarts.getOrNull(line) ?: return null
+        return groovyColumns.computeIfAbsent(line) {
+            val end = groovyLineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
+            val columns = IntArray(text.codePointCount(start, end) + 1)
+            var at = start
+            var column = 0
+            while (at < end) {
+                columns[column++] = at - start
+                at += Character.charCount(text.codePointAt(at))
+            }
+            columns[column] = end - start
+            columns
+        }
     }
 
     private fun calculateLineStarts(includeCarriageReturns: Boolean): IntArray {
