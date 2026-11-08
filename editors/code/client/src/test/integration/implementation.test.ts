@@ -240,6 +240,39 @@ suite("Implementation navigation with the current server", () => {
     }
   });
 
+  for (const declaration of [
+    "String convert(String value) { value }",
+    "def defaults(value, copy = value) { value }",
+    "String memoized(String value) { value }",
+  ]) {
+    test(`Find References isolates all bindings in ${declaration}`, async () => {
+      const offset = document.getText().indexOf(declaration);
+      assert.ok(offset >= 0);
+      const locations = await vscode.commands.executeCommand<vscode.Location[]>(
+        "vscode.executeReferenceProvider",
+        document.uri,
+        document.positionAt(offset + declaration.lastIndexOf("value")),
+      );
+      assert.ok(locations, "The server must return the parameter references");
+      for (const location of locations) {
+        assert.strictEqual(location.uri.toString(), document.uri.toString());
+        assert.strictEqual(document.getText(location.range), "value");
+      }
+      assert.deepStrictEqual(
+        locations
+          .map((location) => [
+            document.offsetAt(location.range.start),
+            document.offsetAt(location.range.end),
+          ])
+          .sort((left, right) => left[0] - right[0]),
+        [...declaration.matchAll(/\bvalue\b/g)].map((match) => [
+          offset + match.index!,
+          offset + match.index! + "value".length,
+        ]),
+      );
+    });
+  }
+
   test("Rename applies exact parameter edits through the current server", async () => {
     await vscode.window.showTextDocument(document);
     const original = document.getText();

@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspRange
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
@@ -23,6 +24,8 @@ import org.eclipse.lsp4j.CallHierarchyItem
 import org.eclipse.lsp4j.CallHierarchyOutgoingCall
 import org.eclipse.lsp4j.CallHierarchyOutgoingCallsParams
 import org.eclipse.lsp4j.CallHierarchyPrepareParams
+import org.eclipse.lsp4j.Location
+import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.SymbolKind
 import java.net.URI
 
@@ -103,29 +106,45 @@ class CallHierarchyProvider(private val compilationService: GroovyCompilationSer
         )
 
         val calls = mutableMapOf<String, CallHierarchyIncomingCall>()
+        val sources = mutableMapOf<URI, CallSource?>()
 
         references.collect { location ->
-            val refUri = URI.create(location.uri)
-            val refVisitor = compilationService.getAstModel(refUri) ?: return@collect
-            val refRange = location.range
-            val refPosition = refRange.start.toGroovyPosition()
-            val refNode = refVisitor.getNodeAt(refUri, refPosition) ?: return@collect
-
-            val enclosingNode = getEnclosingMethodOrClass(refNode, refVisitor)
-
-            if (enclosingNode != null) {
-                val key = "${location.uri}:${enclosingNode.lineNumber}:${enclosingNode.columnNumber}"
-
-                val existing = calls[key]
-                if (existing != null) {
-                    existing.fromRanges.add(location.range)
-                } else {
-                    val fromItem = createCallHierarchyItem(enclosingNode, refUri)
-                    calls[key] = CallHierarchyIncomingCall(fromItem, mutableListOf(location.range))
-                }
+            val fromItem = caller(location, sources) ?: return@collect
+            val key = "${fromItem.uri}:${fromItem.range.start.line}:${fromItem.range.start.character}"
+            val existing = calls[key]
+            if (existing != null) {
+                existing.fromRanges.add(location.range)
+            } else {
+                calls[key] = CallHierarchyIncomingCall(fromItem, mutableListOf(location.range))
             }
         }
         return calls.values.toList()
+    }
+
+    private data class CallSource(val visitor: GroovyAstModel, val index: TextIndex)
+
+    private fun caller(location: Location, sources: MutableMap<URI, CallSource?>): CallHierarchyItem? {
+        val uri = URI.create(location.uri)
+        val source = sources.getOrPut(uri) {
+            compilationService.getCompiledSnapshot(uri)?.let {
+                CallSource(it.parseResult.astModel, TextIndex(it.sourceText))
+            }
+        } ?: return null
+        val position = source.index.codePointPosition(location.range.start)?.toGroovyPosition() ?: return null
+        return source.visitor.getNodeAt(uri, position)
+            ?.let { getEnclosingMethodOrClass(it, source.visitor) }
+            ?.let { callerItem(it, uri, source.index) }
+    }
+
+    private fun callerItem(node: ASTNode, uri: URI, index: TextIndex): CallHierarchyItem? {
+        val raw = node.toLspRange() ?: return null
+        val start = index.utf16Position(raw.start) ?: return null
+        return index.utf16Position(raw.end)?.let { end ->
+            createCallHierarchyItem(node, uri).apply {
+                range = Range(start, end)
+                selectionRange = range
+            }
+        }
     }
 
     private fun getEnclosingMethodOrClass(node: ASTNode, visitor: GroovyAstModel): ASTNode? {

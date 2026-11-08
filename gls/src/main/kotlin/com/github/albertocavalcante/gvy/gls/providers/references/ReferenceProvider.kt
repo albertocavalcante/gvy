@@ -13,9 +13,11 @@ import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.semantics.db.OccurrenceRole
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.ProducerScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
@@ -73,7 +75,7 @@ class ReferenceProvider(
 
         try {
             // First, try same-file AST-based reference finding
-            val context = createReferenceContext(uri, position.toGroovyPosition())
+            val context = createReferenceContext(uri, position)
             var symbolName: String? = null
             var isLocal = false
             if (context != null) {
@@ -89,7 +91,11 @@ class ReferenceProvider(
                         context.visitor,
                         context.symbolTable,
                         includeDeclaration,
-                        ReferenceScanState(emittedLocations),
+                        ReferenceScanState(
+                            emittedLocations,
+                            capturedSources = mapOf(context.documentUri to context.source),
+                            parameterOrigins = context.parameterOrigins,
+                        ),
                     )
                 }
             }
@@ -98,6 +104,8 @@ class ReferenceProvider(
             workspaceSymbolIndex?.takeUnless { isLocal }?.let { index ->
                 findWorkspaceReferences(uri, position, includeDeclaration, index, emittedLocations, symbolName)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: GroovyLspException) {
             logger.error(e) { "LSP error finding references" }
         } catch (e: IllegalArgumentException) {
@@ -125,6 +133,7 @@ class ReferenceProvider(
                 mutableSetOf(),
                 capturedSources = mapOf(uri to TextIndex(compiled.sourceText)),
                 parameterOrigins = parameterOrigins,
+                strict = true,
             ),
         )
     }
@@ -201,6 +210,7 @@ class ReferenceProvider(
                 }
             }
         } catch (e: Exception) {
+            rethrowIfCancellationOrError(e)
             logger.error(e) { "Error finding workspace references" }
         }
     }
@@ -210,10 +220,14 @@ class ReferenceProvider(
      */
     private data class ReferenceContext(
         val documentUri: URI,
-        val visitor: GroovyAstModel,
-        val symbolTable: com.github.albertocavalcante.groovyparser.ast.SymbolTable,
+        val compiled: CompiledDocumentSnapshot,
+        val source: TextIndex,
         val targetNode: ASTNode,
-    )
+    ) {
+        val visitor get() = compiled.parseResult.astModel
+        val symbolTable get() = compiled.parseResult.symbolTable
+        val parameterOrigins = ParameterOrigins(visitor, documentUri)
+    }
 
     /**
      * Parameters for processing a node reference.
@@ -229,43 +243,24 @@ class ReferenceProvider(
 
     private class ReferenceScanState(
         val emittedLocations: MutableSet<String>,
-        val textIndexes: MutableMap<String, TextIndex?> = HashMap(),
-        val capturedSources: Map<URI, TextIndex>? = null,
-        val parameterOrigins: ParameterOrigins? = null,
+        val capturedSources: Map<URI, TextIndex>,
+        val parameterOrigins: ParameterOrigins,
+        val strict: Boolean = false,
     ) {
-        val requireCapturedSource: Boolean get() = capturedSources != null
         val parameterRanges = HashMap<URI, ParameterSourceRanges>()
     }
 
     /**
      * Create reference context from URI and position.
      */
-    private fun createReferenceContext(
-        uri: String,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): ReferenceContext? =
-        createReferenceContextInternal(uri, position) ?: logAndReturnNull("No referenceable node found at position")
-
-    private fun createReferenceContextInternal(
-        uri: String,
-        position: com.github.albertocavalcante.groovyparser.ast.types.Position,
-    ): ReferenceContext? {
+    private fun createReferenceContext(uri: String, position: Position): ReferenceContext? {
         val documentUri = URI.create(uri)
-        return compilationService.getAstModel(documentUri)?.let { visitor ->
-            compilationService.getSymbolTable(documentUri)?.let { symbolTable ->
-                visitor.getNodeAt(documentUri, position)
-                    ?.takeIf { it.isReferenceableSymbol() }
-                    ?.let { ReferenceContext(documentUri, visitor, symbolTable, it) }
-            }
-        }
-    }
-
-    /**
-     * Helper to log debug message and return null.
-     */
-    private fun logAndReturnNull(message: String): ReferenceContext? {
-        logger.debug { message }
-        return null
+        val compiled = compilationService.getCompiledSnapshot(documentUri) ?: return null
+        val source = TextIndex(compiled.sourceText)
+        val groovyPosition = source.codePointPosition(position)?.toGroovyPosition() ?: return null
+        return compiled.parseResult.astModel.getNodeAt(documentUri, groovyPosition)
+            ?.takeIf { it.isReferenceableSymbol() }
+            ?.let { ReferenceContext(documentUri, compiled, source, it) }
     }
 
     /**
@@ -315,7 +310,19 @@ class ReferenceProvider(
             logger.debug { "Could not resolve definition for node" }
             return null
         }
-        return adjustedDefinition
+        return if (adjustedDefinition is Parameter) {
+            context.sourceParameterOrIdentity(adjustedDefinition)
+        } else {
+            adjustedDefinition
+        }
+    }
+
+    /** Public reads can follow a compiler-owned binding even when no source declaration can be proved. */
+    private fun ReferenceContext.sourceParameterOrIdentity(parameter: Parameter): Parameter = try {
+        parameterOrigins.source(parameter)
+    } catch (e: IllegalStateException) {
+        rethrowIfCancellationOrError(e)
+        parameter
     }
 
     /**
@@ -376,8 +383,7 @@ class ReferenceProvider(
             // A held parse preserves declaration identity; name/type equality cannot establish lexical ownership.
             is Parameter -> {
                 if (params.definition is Parameter) {
-                    params.state.parameterOrigins?.matches(nodeDefinition, params.definition)
-                        ?: areParametersEqual(nodeDefinition, params.definition)
+                    params.state.parametersMatch(nodeDefinition, params.definition)
                 } else {
                     false
                 }
@@ -409,6 +415,14 @@ class ReferenceProvider(
                 params.state,
             )
         }
+    }
+
+    private fun ReferenceScanState.parametersMatch(candidate: Parameter, target: Parameter): Boolean = try {
+        parameterOrigins.matches(candidate, target)
+    } catch (e: IllegalStateException) {
+        rethrowIfCancellationOrError(e)
+        if (strict) throw e
+        false
     }
 
     /**
@@ -490,44 +504,45 @@ class ReferenceProvider(
      */
     private fun ASTNode.nameLocation(name: String?, visitor: GroovyAstModel, state: ReferenceScanState): Location? {
         val nodeLocation = toLspLocation(visitor)
-        check(nodeLocation != null || !state.requireCapturedSource) { "Missing rename reference location" }
+        check(nodeLocation != null || !state.strict) { "Missing rename reference location" }
         if (nodeLocation == null) return null
         if (name == null) return nodeLocation
+        val searchIn = referenceRange(nodeLocation, visitor, state)
+        val index = state.capturedSources[URI.create(nodeLocation.uri)]
+        check(index != null || !state.strict) { "No captured rename source for ${nodeLocation.uri}" }
+        return index?.let { captured ->
+            state.sourceRange(searchIn, captured)?.let { sourceRange ->
+                val range = identifierRange(name, captured, sourceRange, state, URI.create(nodeLocation.uri))
+                check(range != null || !state.strict) { "Missing rename identifier in captured source" }
+                range?.let { Location(nodeLocation.uri, it) }
+            }
+        }
+    }
+
+    private fun ASTNode.referenceRange(
+        nodeLocation: Location,
+        visitor: GroovyAstModel,
+        state: ReferenceScanState,
+    ): Range {
         val nameNode = when (this) {
             is MethodCallExpression -> method
             is PropertyExpression -> property
             else -> null
         }
         val namedLocation = nameNode?.toLspLocation(visitor)
-        check(nameNode == null || namedLocation != null || !state.requireCapturedSource) {
-            "Missing rename member location"
-        }
-        val searchIn = namedLocation?.range ?: nodeLocation.range
-        val captured = state.capturedSources
-        val index = if (captured != null) {
-            checkNotNull(captured[URI.create(nodeLocation.uri)]) { "No captured rename source for ${nodeLocation.uri}" }
-        } else {
-            state.textIndexes.getOrPut(nodeLocation.uri) {
-                compilationService.getCompiledContent(URI.create(nodeLocation.uri))?.let(::TextIndex)
-            }
-        }
-        return if (index == null) {
-            nodeLocation
-        } else {
-            val sourceRange = state.sourceRange(searchIn, index)
-            val range = identifierRange(name, index, sourceRange, state, URI.create(nodeLocation.uri))
-            check(range != null || !state.requireCapturedSource) { "Missing rename identifier in captured source" }
-            range?.let { Location(nodeLocation.uri, it) }
-        }
+        check(nameNode == null || namedLocation != null || !state.strict) { "Missing rename member location" }
+        return namedLocation?.range ?: nodeLocation.range
     }
 
-    private fun ReferenceScanState.sourceRange(range: Range, index: TextIndex): Range = if (requireCapturedSource) {
-        Range(
-            checkNotNull(index.utf16Position(range.start)) { "Invalid rename source start" },
-            checkNotNull(index.utf16Position(range.end)) { "Invalid rename source end" },
-        )
-    } else {
-        range
+    private fun ReferenceScanState.sourceRange(range: Range, index: TextIndex): Range? {
+        val start = index.utf16Position(range.start)
+        val end = index.utf16Position(range.end)
+        check(start != null && end != null || !strict) { "Invalid rename source range" }
+        return if (start == null || end == null) {
+            null
+        } else {
+            Range(start, end)
+        }
     }
 
     private fun ASTNode.identifierRange(
@@ -537,30 +552,10 @@ class ReferenceProvider(
         state: ReferenceScanState,
         uri: URI,
     ): Range? {
-        if (this !is Parameter || !state.requireCapturedSource) return firstNameOccurrence(index, searchIn, name)
+        if (this !is Parameter) return firstNameOccurrence(index, searchIn, name)
         val ranges = state.parameterRanges.getOrPut(uri) { ParameterSourceRanges(index.text.lines()) }
         val span = ranges.name(this) ?: return null
         return Range(Position(span.line, span.start), Position(span.line, span.start + span.length))
-    }
-
-    /**
-     * Compare two Parameters for equality.
-     * Needed because Groovy AST nodes don't implement value equality for Parameter.
-     */
-    private fun areParametersEqual(p1: Parameter, p2: Parameter): Boolean {
-        // Simple but effective: name and type name must match
-        // We could also check location if available, but generated parameters might not have it
-        if (p1.name != p2.name) return false
-
-        val t1 = p1.type?.name
-        val t2 = p2.type?.name
-
-        if (t1 == t2) return true
-
-        // Handle fully qualified vs simple name mismatch (e.g. String vs java.lang.String)
-        val s1 = t1?.substringAfterLast('.')
-        val s2 = t2?.substringAfterLast('.')
-        return s1 == s2
     }
 }
 

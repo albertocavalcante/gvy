@@ -3,7 +3,9 @@ package com.github.albertocavalcante.gvy.gls.providers.references
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.test.runTest
+import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -20,6 +22,50 @@ class ReferenceProviderTest {
     fun setUp() {
         compilationService = GroovyCompilationService()
         referenceProvider = ReferenceProvider(compilationService)
+    }
+
+    @Test
+    fun `implicit closure parameter references retain their own identity`(): Unit = runTest {
+        val content = "def chosen = { it + it }\ndef other = { it }\n"
+        val uri = URI.create("file:///ImplicitClosureBindings.groovy")
+        compilationService.compile(uri, content)
+
+        for (includeDeclaration in listOf(true, false)) {
+            val references = referenceProvider.provideReferences(
+                uri.toString(),
+                Position(0, 15),
+                includeDeclaration,
+            ).toList()
+
+            assertEquals(
+                listOf(
+                    Location(uri.toString(), Range(Position(0, 15), Position(0, 17))),
+                    Location(uri.toString(), Range(Position(0, 20), Position(0, 22))),
+                ),
+                references.sortedBy { it.range.start.character },
+            )
+        }
+    }
+
+    @Test
+    fun `an earlier implicit closure parameter does not hide an explicit parameter binding`(): Unit = runTest {
+        val content = "def earlier = { it }\ndef chosen = { String it -> it }\n"
+        val uri = URI.create("file:///ClosureBindings.groovy")
+        compilationService.compile(uri, content)
+
+        val references = referenceProvider.provideReferences(
+            uri.toString(),
+            Position(1, 22),
+            includeDeclaration = true,
+        ).toList()
+
+        assertEquals(
+            listOf(
+                Location(uri.toString(), Range(Position(1, 22), Position(1, 24))),
+                Location(uri.toString(), Range(Position(1, 28), Position(1, 30))),
+            ),
+            references.sortedBy { it.range.start.character },
+        )
     }
 
     @Test

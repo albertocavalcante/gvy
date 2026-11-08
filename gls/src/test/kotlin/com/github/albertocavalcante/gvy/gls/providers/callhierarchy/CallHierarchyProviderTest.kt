@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.callhierarchy
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import kotlinx.coroutines.test.runTest
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -94,6 +95,33 @@ class CallHierarchyProviderTest {
         // Assert
         assertEquals(1, incomingCalls.size)
         assertEquals("caller", incomingCalls[0].from.name)
+    }
+
+    @Test
+    fun `incoming calls preserve callers and UTF16 ranges after supplementary characters`(): Unit = runTest {
+        val uri = URI.create("file:///Calls.groovy")
+        for (comment in listOf("", "/* ${"😀".repeat(12)} */")) {
+            val source = "class Calls { def a() {}; def actual() { $comment a() }; def wrong() {} }"
+            compilationService.compile(uri, source)
+            val index = TextIndex(source)
+            val target = createItem("a", uri, index.positionOf(source.indexOf("a()")))
+
+            val incoming = callHierarchyProvider.incomingCalls(CallHierarchyIncomingCallsParams(target))
+
+            assertEquals(listOf("actual"), incoming.map { it.from.name })
+            val callOffset = source.lastIndexOf("a()")
+            assertEquals(
+                listOf(Range(index.positionOf(callOffset), index.positionOf(callOffset + 1))),
+                incoming.single().fromRanges,
+            )
+            assertEquals(
+                Range(
+                    index.positionOf(source.indexOf("def actual")),
+                    index.positionOf(source.indexOf("; def wrong")),
+                ),
+                incoming.single().from.range,
+            )
+        }
     }
 
     @Test
