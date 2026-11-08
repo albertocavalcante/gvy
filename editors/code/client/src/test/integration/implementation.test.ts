@@ -71,6 +71,41 @@ suite("Implementation navigation with the current server", () => {
     );
   }
 
+  test("Script class literals retain resolved nested class references", async () => {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace);
+    const script = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(
+        workspace.uri,
+        "client/src/test/fixtures/ScriptClassLiterals.groovy",
+      ),
+    );
+    await vscode.window.showTextDocument(script);
+    const source = script.getText();
+    const offsets = [...source.matchAll(/\bEntry\b/g)].map(
+      (match) => match.index,
+    );
+    assert.strictEqual(offsets.length, 2);
+    for (const offset of offsets) {
+      const locations = await vscode.commands.executeCommand<vscode.Location[]>(
+        "vscode.executeReferenceProvider",
+        script.uri,
+        script.positionAt(offset + 1),
+      );
+      assert.ok(locations);
+      assert.deepStrictEqual(
+        locations
+          .map((location) => [
+            location.uri.toString(),
+            script.offsetAt(location.range.start),
+            script.offsetAt(location.range.end),
+          ])
+          .sort((left, right) => Number(left[1]) - Number(right[1])),
+        offsets.map((start) => [script.uri.toString(), start, start + 5]),
+      );
+    }
+  });
+
   test("Class references preserve imported aliases and UTF16 source ranges", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);

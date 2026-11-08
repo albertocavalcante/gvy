@@ -1,0 +1,50 @@
+name: references-script-class-literals
+description: Intentional scripts retain semantic references for nested class literals.
+workspace:
+  fixture: definition-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: src/ScriptClassLiterals.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        import java.util.Map
+        def first = java.util.Map.Entry.class
+        def second = Map.Entry.class
+  - request:
+      method: textDocument/references
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/ScriptClassLiterals.groovy"
+        position: { line: 1, character: 26 }
+        context: { includeDeclaration: true }
+      saveAs: references
+  - assert:
+      source: references
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 2 }
+        - jsonPath: $[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - uri: "{{workspace.uri}}src/ScriptClassLiterals.groovy"
+                range:
+                  start: { line: 1, character: 26 }
+                  end: { line: 1, character: 31 }
+              - uri: "{{workspace.uri}}src/ScriptClassLiterals.groovy"
+                range:
+                  start: { line: 2, character: 17 }
+                  end: { line: 2, character: 22 }
+  - shutdown: {}
+  - exit: {}
