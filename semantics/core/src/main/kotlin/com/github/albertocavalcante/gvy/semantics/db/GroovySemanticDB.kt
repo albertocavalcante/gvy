@@ -14,6 +14,7 @@ import kotlin.concurrent.write
  * replaces a document and its index entries atomically and a reader never sees them out of step.
  * Lookups return detached result collections and read-only document lists.
  */
+@Suppress("TooManyFunctions") // Publication and lookup APIs share one lock to preserve atomic document/index updates.
 class GroovySemanticDB {
     private val lock = ReentrantReadWriteLock()
 
@@ -35,6 +36,11 @@ class GroovySemanticDB {
      * Get semantic document for a URI
      */
     fun getDocument(uri: URI): SemanticDocument? = lock.read { documents[uri]?.document }
+
+    /** A later replacement cannot mix this document's import bindings with different source text. */
+    fun getDocumentSnapshot(uri: URI): SemanticDocumentSnapshot? = lock.read {
+        documents[uri]?.let { SemanticDocumentSnapshot(it.document, it.sourceText) }
+    }
 
     /**
      * Update/store semantic document for a URI.
@@ -113,6 +119,14 @@ class GroovySemanticDB {
     fun findOccurrenceSnapshots(symbolId: String): List<IndexedOccurrence> = lock.read {
         occurrenceIndex.all(symbolId).map { (uri, occurrence) ->
             IndexedOccurrence(uri, occurrence, checkNotNull(documents[uri]).sourceText)
+        }
+    }
+
+    /** Matching metadata and source for each file containing [symbolId], shared by all its occurrences. */
+    fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot> = lock.read {
+        occurrenceIndex.all(symbolId).map { it.first }.distinct().associateWith { uri ->
+            val stored = checkNotNull(documents[uri])
+            SemanticDocumentSnapshot(stored.document, stored.sourceText)
         }
     }
 

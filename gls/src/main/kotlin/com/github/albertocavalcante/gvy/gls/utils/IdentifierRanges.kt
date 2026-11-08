@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.utils
 
+import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -17,7 +18,7 @@ fun ASTNode.declaredName(): String? = when (this) {
     is MethodNode -> name
     is FieldNode -> name
     is PropertyNode -> name
-    is ClassNode -> nameWithoutPackage.substringAfterLast('$') // nested: Outer\$Inner -> Inner
+    is ClassNode -> sourceSimpleName()
     else -> null
 }
 

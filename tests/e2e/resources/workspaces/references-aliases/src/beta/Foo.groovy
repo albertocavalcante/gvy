@@ -1,0 +1,2 @@
+package beta
+class Foo {}

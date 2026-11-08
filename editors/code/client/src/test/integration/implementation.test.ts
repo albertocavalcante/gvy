@@ -71,6 +71,52 @@ suite("Implementation navigation with the current server", () => {
     );
   }
 
+  test("Class references preserve imported aliases and UTF16 source ranges", async () => {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace);
+    const aliases = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(
+        workspace.uri,
+        "client/src/test/fixtures/ImportedAliases.groovy",
+      ),
+    );
+    await vscode.window.showTextDocument(aliases);
+    const source = aliases.getText();
+    const declaration =
+      source.indexOf("class EditorAliasTarget") + "class ".length;
+    const usage = source.indexOf("new EditorAlias(") + "new ".length;
+    const spans: Array<[number, string]> = [
+      [source.indexOf("EditorAliasTarget"), "EditorAliasTarget"],
+      [declaration, "EditorAliasTarget"],
+      [usage, "EditorAlias"],
+      [source.indexOf("EditorAliasTarget.class"), "EditorAliasTarget"],
+      [source.lastIndexOf("new EditorAlias(") + "new ".length, "EditorAlias"],
+    ];
+    const expected = spans
+      .map(([offset, name]) => [offset, offset + name.length])
+      .sort((left, right) => left[0] - right[0]);
+    for (const offset of [declaration, usage]) {
+      const locations = await vscode.commands.executeCommand<vscode.Location[]>(
+        "vscode.executeReferenceProvider",
+        aliases.uri,
+        aliases.positionAt(offset + 1),
+      );
+      assert.ok(locations);
+      for (const location of locations) {
+        assert.strictEqual(location.uri.toString(), aliases.uri.toString());
+      }
+      assert.deepStrictEqual(
+        locations
+          .map((location) => [
+            aliases.offsetAt(location.range.start),
+            aliases.offsetAt(location.range.end),
+          ])
+          .sort((left, right) => left[0] - right[0]),
+        expected,
+      );
+    }
+  });
+
   function assertTarget(
     locations: Array<{ uri: vscode.Uri; range: vscode.Range }>,
     target: string,

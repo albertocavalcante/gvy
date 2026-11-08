@@ -66,6 +66,9 @@ data class SymbolOccurrence(val symbol: String, val range: Range, val role: Occu
  */
 data class IndexedOccurrence(val uri: URI, val occurrence: SymbolOccurrence, val sourceText: String?)
 
+/** Immutable semantic metadata and source captured from the same stored compilation. */
+data class SemanticDocumentSnapshot(val document: SemanticDocument, val sourceText: String?)
+
 /**
  * Symbol kinds following LSP SymbolKind convention
  */

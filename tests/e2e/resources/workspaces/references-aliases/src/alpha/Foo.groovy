@@ -1,0 +1,2 @@
+package alpha
+class Foo {}
