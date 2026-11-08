@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.providers.semantictokens.JenkinsSema
 import org.eclipse.lsp4j.CodeLensOptions
 import org.eclipse.lsp4j.CompletionOptions
 import org.eclipse.lsp4j.InitializeResult
+import org.eclipse.lsp4j.RenameOptions
 import org.eclipse.lsp4j.SemanticTokensLegend
 import org.eclipse.lsp4j.SemanticTokensWithRegistrationOptions
 import org.eclipse.lsp4j.ServerCapabilities
@@ -19,7 +20,8 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either
  */
 object ServerCapabilitiesFactory {
 
-    fun createInitializeResult(): InitializeResult {
+    @JvmOverloads
+    fun createInitializeResult(prepareRenameSupport: Boolean = false): InitializeResult {
         val capabilities = ServerCapabilities().apply {
             // Text synchronization
             textDocumentSync = Either.forLeft(TextDocumentSyncKind.Full)
@@ -65,7 +67,11 @@ object ServerCapabilitiesFactory {
             }
 
             // Rename support
-            renameProvider = Either.forLeft(true)
+            renameProvider = if (prepareRenameSupport) {
+                Either.forRight(RenameOptions().apply { prepareProvider = true })
+            } else {
+                Either.forLeft(true)
+            }
 
             // Code actions
             codeActionProvider = Either.forLeft(true)

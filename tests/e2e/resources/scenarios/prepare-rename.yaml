@@ -1,0 +1,108 @@
+name: prepare-rename
+description: Negotiated preparation returns exact source ranges and rejects nonidentifiers without editing.
+workspace:
+  fixture: definition-basic
+steps:
+  - request:
+      method: initialize
+      params:
+        processId: null
+        workspaceFolders:
+          - uri: "{{workspace.uri}}"
+            name: prepare-rename
+        capabilities:
+          textDocument:
+            rename:
+              prepareSupport: true
+      saveAs: initializedCapabilities
+  - assert:
+      source: initializedCapabilities
+      checks:
+        # The harness exposes the decoded SDK Either wrapper for initialize capabilities.
+        - jsonPath: $.capabilities.renameProvider.right.prepareProvider
+          expect: { type: EQUALS, value: true }
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: src/PrepareCases.groovy
+      languageId: groovy
+      version: 23
+      text: |
+        class PrepareCases {
+            /* 😀😀 */ def call(value, copy = value) { value }
+            @groovy.transform.Memoized
+            String memo(String value) { value }
+        }
+  - request:
+      method: textDocument/prepareRename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/PrepareCases.groovy"
+        position: { line: 1, character: 48 }
+      saveAs: defaultParameter
+  - assert:
+      source: defaultParameter
+      checks:
+        # The harness's decoded three-way SDK union retains one wrapper.
+        - jsonPath: $.left
+          expect:
+            type: EQUALS
+            value:
+              range:
+                start: { line: 1, character: 47 }
+                end: { line: 1, character: 52 }
+              placeholder: value
+  - request:
+      method: textDocument/prepareRename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/PrepareCases.groovy"
+        position: { line: 3, character: 33 }
+      saveAs: memoizedParameter
+  - assert:
+      source: memoizedParameter
+      checks:
+        - jsonPath: $.left
+          expect:
+            type: EQUALS
+            value:
+              range:
+                start: { line: 3, character: 32 }
+                end: { line: 3, character: 37 }
+              placeholder: value
+  - request:
+      method: textDocument/prepareRename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/PrepareCases.groovy"
+        position: { line: 0, character: 5 }
+      saveAs: whitespace
+  - assert:
+      source: whitespace
+      checks:
+        - jsonPath: $
+          expect: { type: NOT_EXISTS }
+  - request:
+      method: textDocument/rename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/PrepareCases.groovy"
+        position: { line: 1, character: 48 }
+        newName: renamedValue
+      saveAs: unchangedVersion
+  - assert:
+      source: unchangedVersion
+      checks:
+        - jsonPath: $.documentChanges[0].textDocument.version
+          expect: { type: EQUALS, value: 23 }
+        - jsonPath: $.documentChanges[0].edits
+          expect: { type: SIZE, value: 3 }
+  - shutdown: {}
+  - exit: {}

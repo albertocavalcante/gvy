@@ -1,0 +1,25 @@
+name: prepare-rename-legacy
+description: A client without prepare support retains the boolean rename capability.
+workspace:
+  fixture: definition-basic
+steps:
+  - request:
+      method: initialize
+      params:
+        processId: null
+        workspaceFolders:
+          - uri: "{{workspace.uri}}"
+            name: prepare-rename-legacy
+        capabilities:
+          textDocument:
+            rename:
+              prepareSupport: false
+      saveAs: initializedCapabilities
+  - assert:
+      source: initializedCapabilities
+      checks:
+        # The left SDK union variant is boolean rename support.
+        - jsonPath: $.capabilities.renameProvider.left
+          expect: { type: EQUALS, value: true }
+  - shutdown: {}
+  - exit: {}
