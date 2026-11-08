@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.providers.references.ReferenceProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import com.github.albertocavalcante.gvy.gls.utils.ParameterOrigins
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
@@ -16,6 +17,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.toList
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.RenameFile
@@ -89,28 +92,22 @@ class RenameProvider private constructor(
         validateNewName(newName)
 
         val documentUri = URI.create(uri)
-        val groovyPosition = position.toGroovyPosition()
         val sources = RenameSourceSnapshots(documentSource)
         val original = sources.capture(documentUri)
+        val groovyPosition = TextIndex(original.content).codePointPosition(position)?.toGroovyPosition()
+            ?: throw createError(ResponseErrorCode.InvalidParams, "Rename position is outside the document")
 
-        // Ensure document is compiled before accessing AST
-        // NOTE: This awaits any active compilation to complete, preventing race conditions
-        // where rename is called before compilation finishes populating the cache
-        compilationService.ensureCompiled(documentUri)
-            ?: throw createError(ResponseErrorCode.InvalidRequest, "Document not compiled: $uri")
-        val compiled = compilationService.getCompiledSnapshot(documentUri) ?: sources.changed(documentUri)
-        if (compiled.sourceText != original.content) sources.changed(documentUri)
+        val compiled = requireSemanticCompilation(documentUri, original, sources)
 
         // Get the node at the position (now guaranteed to be in cache)
         val visitor = compiled.parseResult.astModel
-        val symbolTable = compiled.parseResult.symbolTable
 
         val targetNode = visitor.getNodeAt(documentUri, groovyPosition)
             ?: throw createError(ResponseErrorCode.InvalidRequest, "No symbol found at position")
 
         // Resolve to definition
-        val definition = targetNode.resolveToDefinition(visitor, symbolTable, strict = false)
-            ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not resolve symbol to definition")
+        val parameterOrigins = ParameterOrigins(visitor, documentUri)
+        val definition = resolveDefinition(targetNode, compiled, parameterOrigins)
 
         // Check if definition is in workspace or dependency
         val definitionLocation = definition.toLspLocation(visitor)
@@ -132,7 +129,7 @@ class RenameProvider private constructor(
         }
 
         // Collect all references including declaration
-        val locations = collectReferences(documentUri, definition, compiled, sources)
+        val locations = collectReferences(documentUri, definition, compiled, sources, parameterOrigins)
 
         if (locations.isEmpty()) {
             throw createError(ResponseErrorCode.InvalidRequest, "No references found for symbol")
@@ -166,13 +163,50 @@ class RenameProvider private constructor(
         )
     }
 
+    private suspend fun requireSemanticCompilation(
+        uri: URI,
+        original: DocumentSnapshot,
+        sources: RenameSourceSnapshots,
+    ): CompiledDocumentSnapshot {
+        // Await active compilation, then hold the exact source/result pair for this request.
+        compilationService.ensureCompiled(uri)
+            ?: throw createError(ResponseErrorCode.InvalidRequest, "Document not compiled: $uri")
+        val compiled = compilationService.getCompiledSnapshot(uri) ?: sources.changed(uri)
+        if (compiled.sourceText != original.content) sources.changed(uri)
+        if (compiled.parseResult.outcome.achievedPhase < Phases.SEMANTIC_ANALYSIS) {
+            throw createError(ResponseErrorCode.InvalidRequest, "Rename requires completed semantic analysis")
+        }
+        return compiled
+    }
+
+    private fun resolveDefinition(
+        target: ASTNode,
+        compiled: CompiledDocumentSnapshot,
+        parameterOrigins: ParameterOrigins,
+    ): ASTNode {
+        val parsed = compiled.parseResult
+        val resolved = target.resolveToDefinition(parsed.astModel, parsed.symbolTable, strict = false)
+            ?: throw createError(ResponseErrorCode.InvalidRequest, "Could not resolve symbol to definition")
+        return if (resolved is Parameter) {
+            try {
+                parameterOrigins.source(resolved)
+            } catch (e: IllegalStateException) {
+                logger.warn(e) { "Cannot prove rename parameter ownership" }
+                throw createError(ResponseErrorCode.InvalidRequest, "Cannot prove parameter ownership")
+            }
+        } else {
+            resolved
+        }
+    }
+
     private suspend fun collectReferences(
         uri: URI,
         definition: ASTNode,
         compiled: CompiledDocumentSnapshot,
         sources: RenameSourceSnapshots,
+        parameterOrigins: ParameterOrigins,
     ): List<Location> = try {
-        referenceProvider.provideRenameReferences(uri, definition, compiled).toList()
+        referenceProvider.provideRenameReferences(uri, definition, compiled, parameterOrigins).toList()
     } catch (e: CancellationException) {
         throw e
     } catch (e: IllegalStateException) {

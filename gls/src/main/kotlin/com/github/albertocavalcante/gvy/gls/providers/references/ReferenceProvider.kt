@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.utils.ParameterOrigins
 import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
@@ -113,6 +114,7 @@ class ReferenceProvider(
         uri: URI,
         definition: ASTNode,
         compiled: CompiledDocumentSnapshot,
+        parameterOrigins: ParameterOrigins,
     ): Flow<Location> = channelFlow {
         findReferences(
             definition,
@@ -122,6 +124,7 @@ class ReferenceProvider(
             state = ReferenceScanState(
                 mutableSetOf(),
                 capturedSources = mapOf(uri to TextIndex(compiled.sourceText)),
+                parameterOrigins = parameterOrigins,
             ),
         )
     }
@@ -228,6 +231,7 @@ class ReferenceProvider(
         val emittedLocations: MutableSet<String>,
         val textIndexes: MutableMap<String, TextIndex?> = HashMap(),
         val capturedSources: Map<URI, TextIndex>? = null,
+        val parameterOrigins: ParameterOrigins? = null,
     ) {
         val requireCapturedSource: Boolean get() = capturedSources != null
         val parameterRanges = HashMap<URI, ParameterSourceRanges>()
@@ -371,8 +375,9 @@ class ReferenceProvider(
             params.definition -> true
             // A held parse preserves declaration identity; name/type equality cannot establish lexical ownership.
             is Parameter -> {
-                if (params.definition is Parameter && !params.state.requireCapturedSource) {
-                    areParametersEqual(nodeDefinition, params.definition)
+                if (params.definition is Parameter) {
+                    params.state.parameterOrigins?.matches(nodeDefinition, params.definition)
+                        ?: areParametersEqual(nodeDefinition, params.definition)
                 } else {
                     false
                 }
@@ -509,10 +514,20 @@ class ReferenceProvider(
         return if (index == null) {
             nodeLocation
         } else {
-            val range = identifierRange(name, index, searchIn, state, URI.create(nodeLocation.uri))
+            val sourceRange = state.sourceRange(searchIn, index)
+            val range = identifierRange(name, index, sourceRange, state, URI.create(nodeLocation.uri))
             check(range != null || !state.requireCapturedSource) { "Missing rename identifier in captured source" }
             range?.let { Location(nodeLocation.uri, it) }
         }
+    }
+
+    private fun ReferenceScanState.sourceRange(range: Range, index: TextIndex): Range = if (requireCapturedSource) {
+        Range(
+            checkNotNull(index.utf16Position(range.start)) { "Invalid rename source start" },
+            checkNotNull(index.utf16Position(range.end)) { "Invalid rename source end" },
+        )
+    } else {
+        range
     }
 
     private fun ASTNode.identifierRange(

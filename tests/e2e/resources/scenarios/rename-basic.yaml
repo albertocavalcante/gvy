@@ -76,5 +76,46 @@ steps:
                   end: { line: 2, character: 23 }
                 newText: renamedVariable
 
+  # Default expressions participate in semantic binding and must be edited too.
+  - openDocument:
+      path: src/DefaultBindings.groovy
+      languageId: groovy
+      version: 7
+      text: |
+        class DefaultBindings { def call(value, copy = value) { value } }
+  - request:
+      method: textDocument/rename
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/DefaultBindings.groovy"
+        position: { line: 0, character: 48 }
+        newName: renamed
+      saveAs: defaultRename
+  - assert:
+      source: defaultRename
+      checks:
+        - jsonPath: $.documentChanges
+          expect: { type: SIZE, value: 1 }
+        - jsonPath: $.documentChanges[0].textDocument.version
+          expect: { type: EQUALS, value: 7 }
+        - jsonPath: $.documentChanges[0].edits
+          expect: { type: SIZE, value: 3 }
+        - jsonPath: $.documentChanges[0].edits[*]
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - range:
+                  start: { line: 0, character: 33 }
+                  end: { line: 0, character: 38 }
+                newText: renamed
+              - range:
+                  start: { line: 0, character: 47 }
+                  end: { line: 0, character: 52 }
+                newText: renamed
+              - range:
+                  start: { line: 0, character: 56 }
+                  end: { line: 0, character: 61 }
+                newText: renamed
+
   - shutdown: {}
   - exit: {}

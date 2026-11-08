@@ -1,20 +1,40 @@
 package com.github.albertocavalcante.groovyparser.ast.visitor
 
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
+import org.codehaus.groovy.ast.Parameter
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BreakStatement
 import org.codehaus.groovy.ast.stmt.CaseStatement
 import org.codehaus.groovy.ast.stmt.DoWhileStatement
 import org.codehaus.groovy.ast.stmt.SwitchStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 class RecursiveAstVisitorTest {
 
     private val fixture = ParserTestFixture()
+
+    @Test
+    fun `default argument references retain their parameter parent and binding`() {
+        val source = "class Defaults { def call(a, b = a) { a } }"
+        val result = fixture.parse(source, compilePhase = Phases.SEMANTIC_ANALYSIS)
+        val model = result.astModel
+        val parameters = model.getAllNodes().filterIsInstance<Parameter>()
+        val first = parameters.single { it.name == "a" }
+        val second = parameters.single { it.name == "b" }
+        val reference = second.initialExpression as VariableExpression
+
+        assertTrue(model.getAllNodes().any { it === reference }, "Default expressions must be traversed")
+        assertSame(second, model.getParent(reference))
+        assertSame(first, reference.accessedVariable)
+        assertSame(reference, model.getNodeAt(java.net.URI.create("file:///Test.groovy"), 0, source.indexOf("= a") + 2))
+    }
 
     @Test
     fun `visit while loop`() {

@@ -294,4 +294,55 @@ suite("Implementation navigation with the current server", () => {
       assert.strictEqual(document.getText(), original);
     }
   });
+  for (const declaration of [
+    "def defaults(value, copy = value) { value }",
+    "String memoized(String value) { value }",
+  ]) {
+    test(`Rename from a body updates all bindings in ${declaration}`, async () => {
+      await vscode.window.showTextDocument(document);
+      const original = document.getText();
+      const offset = original.indexOf(declaration);
+      assert.ok(offset >= 0);
+      const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
+        "vscode.executeDocumentRenameProvider",
+        document.uri,
+        document.positionAt(offset + declaration.lastIndexOf("value")),
+        "renamedValue",
+      );
+      assert.ok(edit, "The server must return a complete rename edit");
+      const entries = edit.entries();
+      assert.strictEqual(entries.length, 1);
+      assert.strictEqual(entries[0][0].toString(), document.uri.toString());
+      assert.strictEqual(
+        entries[0][1].length,
+        (declaration.match(/\bvalue\b/g) || []).length,
+      );
+      for (const entry of entries[0][1]) {
+        assert.strictEqual(document.getText(entry.range), "value");
+        assert.strictEqual(entry.newText, "renamedValue");
+      }
+      try {
+        assert.ok(await vscode.workspace.applyEdit(edit));
+        assert.strictEqual(
+          document.getText(),
+          original.replace(
+            declaration,
+            declaration.replace(/\bvalue\b/g, "renamedValue"),
+          ),
+        );
+      } finally {
+        const restore = new vscode.WorkspaceEdit();
+        restore.replace(
+          document.uri,
+          new vscode.Range(
+            document.positionAt(0),
+            document.positionAt(document.getText().length),
+          ),
+          original,
+        );
+        assert.ok(await vscode.workspace.applyEdit(restore));
+        assert.strictEqual(document.getText(), original);
+      }
+    });
+  }
 });

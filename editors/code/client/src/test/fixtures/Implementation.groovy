@@ -36,3 +36,12 @@ interface EditorDefaultConverter<T> {
 }
 
 class EditorDefaultStringConverter implements EditorDefaultConverter<String> {}
+
+class EditorRenameBindings {
+    def defaults(value, copy = value) { value }
+
+    @groovy.transform.Memoized
+    String memoized(String value) { value }
+
+    String untouched(String value) { value }
+}

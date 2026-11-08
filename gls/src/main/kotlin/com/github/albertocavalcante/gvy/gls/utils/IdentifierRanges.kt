@@ -42,6 +42,25 @@ class TextIndex(val text: String) {
         }
         return Position(lo, offset - lineStarts[lo])
     }
+
+    /** Groovy lexer columns count code points; LSP columns count UTF-16 code units. */
+    internal fun utf16Position(codePoints: Position): Position? {
+        val line = lineText(codePoints.line) ?: return null
+        if (codePoints.character !in 0..line.codePointCount(0, line.length)) return null
+        return Position(codePoints.line, line.offsetByCodePoints(0, codePoints.character))
+    }
+
+    internal fun codePointPosition(utf16: Position): Position? {
+        val line = lineText(utf16.line) ?: return null
+        if (utf16.character !in 0..line.length) return null
+        return Position(utf16.line, line.codePointCount(0, utf16.character))
+    }
+
+    private fun lineText(line: Int): String? {
+        val start = lineStarts.getOrNull(line) ?: return null
+        val end = lineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
+        return text.substring(start, end).removeSuffix("\r")
+    }
 }
 
 /**
