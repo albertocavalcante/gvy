@@ -126,7 +126,8 @@ class CoreParseUnit(
     }
 
     override fun typeAt(position: Position): TypeInfo? {
-        // TODO(#552): Implement type resolution using GroovySymbolResolver
+        // Internal core resolution is not exposed by this public adapter yet.
+        // CoreParserProvider advertises this limitation through supportsSymbolResolution.
         return null
     }
 

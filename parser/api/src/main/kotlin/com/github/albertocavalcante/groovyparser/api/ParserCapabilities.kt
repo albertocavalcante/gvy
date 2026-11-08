@@ -18,7 +18,8 @@ data class ParserCapabilities(
     val supportsCommentPreservation: Boolean = false,
 
     /**
-     * Whether the parser can resolve symbols and types.
+     * Whether the public [ParseUnit.typeAt] adapter supports symbol and type resolution.
+     * Internal resolvers and declaration enumeration via [ParseUnit.symbols] do not establish this capability.
      */
     val supportsSymbolResolution: Boolean = false,
 
