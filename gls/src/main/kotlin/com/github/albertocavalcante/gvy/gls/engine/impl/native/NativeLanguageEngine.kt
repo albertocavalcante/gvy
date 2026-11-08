@@ -56,6 +56,24 @@ class NativeLanguageEngine(
         )
     }
 
+    /** Uses the held compiled facts only for a request that explicitly acquired a hover snapshot. */
+    internal fun createHoverSession(parseResult: ParseResult, uri: String, content: String): LanguageSession {
+        val session = createSession(parseResult, uri, content)
+        return object : LanguageSession {
+            override val result: ParseResultMetadata = session.result
+            override val features: FeatureSet by lazy {
+                object : FeatureSet by session.features {
+                    override val hoverProvider: HoverProvider = NativeHoverProvider(
+                        parseResult,
+                        compilationService,
+                        documentProvider,
+                        sourceNavigator,
+                    ).forSource(content)
+                }
+            }
+        }
+    }
+
     override fun createSession(uri: URI, content: String): LanguageSession {
         val parseResult = parserFacade.parse(ParseRequest(uri, content))
         return createSession(parseResult, uri.toString(), content)

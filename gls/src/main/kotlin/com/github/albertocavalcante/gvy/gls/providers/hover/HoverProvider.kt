@@ -4,10 +4,12 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.isHoverable
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
+import com.github.albertocavalcante.gvy.gls.documentation.DocExtractor
 import com.github.albertocavalcante.gvy.gls.documentation.DocFormatter
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
 import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
@@ -31,7 +33,9 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.PropertyE
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.VariableExpressionHoverStrategy
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
@@ -105,15 +109,24 @@ class HoverProvider(
      * Returns null if no hover information is available.
      */
     @Suppress("TooGenericExceptionCaught") // TODO: Review if catch-all is needed - currently serves as final fallback
-    suspend fun provideHover(uri: String, position: Position): Hover? = withContext(Dispatchers.Default) {
+    suspend fun provideHover(uri: String, position: Position): Hover? = provideHoverInternal(uri, position, null)
+
+    internal suspend fun provideHover(uri: String, position: Position, snapshot: CompiledDocumentSnapshot): Hover? =
+        provideHoverInternal(uri, position, snapshot)
+
+    private suspend fun provideHoverInternal(
+        uri: String,
+        position: Position,
+        snapshot: CompiledDocumentSnapshot?,
+    ): Hover? = withContext(Dispatchers.Default) {
         try {
             logger.debug { "Providing hover for $uri at ${position.line}:${position.character}" }
 
             val documentUri = URI.create(uri)
-            ensureAstPrepared(documentUri)
+            if (snapshot == null) ensureAstPrepared(documentUri)
             val groovyPosition = position.toGroovyPosition()
 
-            val hoverNode = resolveHoverNode(documentUri, groovyPosition) ?: return@withContext null
+            val hoverNode = resolveHoverNode(documentUri, groovyPosition, snapshot) ?: return@withContext null
 
             // Only provide hover for hoverable nodes
             if (!hoverNode.isHoverable()) {
@@ -121,7 +134,9 @@ class HoverProvider(
             }
 
             // Create hover using DSL with documentation
-            createHoverContent(hoverNode, documentUri)
+            createHoverContent(hoverNode, documentUri, snapshot)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: NodeNotFoundAtPositionException) {
             logger.debug { "No node found at position for hover: $e" }
             null
@@ -150,6 +165,7 @@ class HoverProvider(
             logger.error(e) { "I/O error providing hover for $uri at ${position.line}:${position.character}" }
             null
         } catch (e: Exception) {
+            rethrowIfCancellationOrError(e)
             logger.error(e) { "Unexpected error providing hover for $uri at ${position.line}:${position.character}" }
             null
         }
@@ -168,6 +184,7 @@ class HoverProvider(
         runCatching {
             compilationService.compile(documentUri, content)
         }.onFailure { error ->
+            rethrowIfCancellationOrError(error)
             logger.debug(error) { "HoverProvider: failed to compile $documentUri before hover" }
         }
     }
@@ -178,22 +195,23 @@ class HoverProvider(
     private fun resolveHoverNode(
         documentUri: URI,
         position: com.github.albertocavalcante.groovyparser.ast.types.Position,
+        snapshot: CompiledDocumentSnapshot?,
     ): ASTNode? {
-        val astVisitor = compilationService.getAstModel(documentUri)
-        val symbolTable = compilationService.getSymbolTable(documentUri)
+        val astVisitor = snapshot?.parseResult?.astModel ?: compilationService.getAstModel(documentUri)
+        val symbolTable = snapshot?.parseResult?.symbolTable ?: compilationService.getSymbolTable(documentUri)
 
         // 1. Find the node at position
         val nodeAtPosition = if (astVisitor != null) {
             astVisitor.getNodeAt(documentUri, position)
         } else {
-            val ast = compilationService.getAst(documentUri) as? ModuleNode
+            val ast = module(documentUri, snapshot)
             ast?.findNodeAt(position.line, position.character)
         } ?: return null
 
         // Special-case imports:
         // Even when the position query returns a ClassNode (e.g. hovering on `List` in `import java.util.List`),
         // it is more intuitive to show the import statement hover rather than the referenced class.
-        val importNodeAtLine = findImportNodeAtLine(documentUri, position.line)
+        val importNodeAtLine = findImportNodeAtLine(module(documentUri, snapshot), position.line)
         val importAwareNode = when {
             nodeAtPosition is ClassNode && importNodeAtLine != null -> importNodeAtLine
             else -> nodeAtPosition
@@ -207,11 +225,14 @@ class HoverProvider(
         }
 
         // 3. Fallback resolution
-        return resolveFallback(importAwareNode, documentUri)
+        return resolveFallback(importAwareNode, astVisitor)
     }
 
-    private fun findImportNodeAtLine(documentUri: URI, lspLine: Int): ImportNode? {
-        val module = compilationService.getAst(documentUri) as? ModuleNode ?: return null
+    private fun module(documentUri: URI, snapshot: CompiledDocumentSnapshot?): ModuleNode? =
+        if (snapshot != null) snapshot.parseResult.ast else compilationService.getAst(documentUri) as? ModuleNode
+
+    private fun findImportNodeAtLine(module: ModuleNode?, lspLine: Int): ImportNode? {
+        module ?: return null
         val groovyLine = lspLine + 1
 
         // NOTE: Heuristic / tradeoff:
@@ -269,9 +290,9 @@ class HoverProvider(
         return node
     }
 
-    private fun resolveFallback(node: ASTNode, documentUri: URI): ASTNode {
+    private fun resolveFallback(node: ASTNode, visitor: GroovyAstModel?): ASTNode {
         if (node is ConstantExpression) {
-            val parent = compilationService.getAstModel(documentUri)?.getParent(node)
+            val parent = visitor?.getParent(node)
             if (parent is MethodCallExpression && parent.method == node) {
                 return parent
             }
@@ -300,8 +321,12 @@ class HoverProvider(
     /**
      * Create hover content using the strategy pattern with documentation enhancement.
      */
-    private suspend fun createHoverContent(node: ASTNode, documentUri: URI): Hover? {
-        val module = compilationService.getAst(documentUri) as? ModuleNode
+    private suspend fun createHoverContent(
+        node: ASTNode,
+        documentUri: URI,
+        snapshot: CompiledDocumentSnapshot?,
+    ): Hover? {
+        val module = module(documentUri, snapshot)
         val context = HoverContext(
             moduleNode = module,
             contentGenerator = contentGenerator,
@@ -323,30 +348,16 @@ class HoverProvider(
 
         // Try to get documentation for the node
         var doc = try {
-            documentationProvider.getDocumentation(node, documentUri)
+            documentationFor(node, documentUri, snapshot)
         } catch (e: Exception) {
+            rethrowIfCancellationOrError(e)
             logger.debug(e) { "Failed to get documentation for node" }
             Documentation.EMPTY
         }
 
         // If standard doc is empty, try source navigation for binary classes
         // This handles both ClassNode and ImportNode (which wraps a class reference)
-        if (doc.isEmpty() && sourceNavigator != null) {
-            val className = extractClassNameForDocumentation(node)
-            if (className != null) {
-                val classpathUri = compilationService.findClasspathClass(className)
-                if (classpathUri != null) {
-                    try {
-                        val result = sourceNavigator.navigateToSource(classpathUri, className)
-                        if (result is SourceNavigator.SourceResult.SourceLocation && result.documentation != null) {
-                            doc = result.documentation
-                        }
-                    } catch (e: Exception) {
-                        logger.debug(e) { "Failed to get source documentation for $className" }
-                    }
-                }
-            }
-        }
+        if (doc.isEmpty()) doc = sourceDocumentation(node) ?: doc
 
         if (doc.isEmpty()) {
             return baseHover
@@ -354,6 +365,27 @@ class HoverProvider(
 
         // Enhance hover with documentation
         return enhanceHoverWithDocumentation(baseHover, doc)
+    }
+
+    private fun documentationFor(node: ASTNode, uri: URI, snapshot: CompiledDocumentSnapshot?): Documentation =
+        if (snapshot != null) {
+            DocExtractor.extractDocumentation(snapshot.sourceText, node)
+        } else {
+            documentationProvider.getDocumentation(node, uri)
+        }
+
+    private suspend fun sourceDocumentation(node: ASTNode): Documentation? {
+        val navigator = sourceNavigator ?: return null
+        val className = extractClassNameForDocumentation(node) ?: return null
+        val classpathUri = compilationService.findClasspathClass(className) ?: return null
+        return try {
+            (navigator.navigateToSource(classpathUri, className) as? SourceNavigator.SourceResult.SourceLocation)
+                ?.documentation
+        } catch (e: Exception) {
+            rethrowIfCancellationOrError(e)
+            logger.debug(e) { "Failed to get source documentation for $className" }
+            null
+        }
     }
 
     /**

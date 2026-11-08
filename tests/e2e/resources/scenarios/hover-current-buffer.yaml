@@ -1,0 +1,48 @@
+name: hover-current-buffer
+description: Hover follows accepted unsaved source instead of the earlier compiled method signature.
+workspace:
+  fixture: hover-basic
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 30000
+  - openDocument:
+      path: CurrentHover.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class CurrentHover { String value() { 'before' } }
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{workspace.uri}}CurrentHover.groovy" }
+        position: { line: 0, character: 29 }
+      saveAs: originalHover
+  - assert:
+      source: originalHover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "String value()" }
+  - changeDocument:
+      path: CurrentHover.groovy
+      version: 2
+      text: |
+        class CurrentHover { Integer value() { 42 } }
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{workspace.uri}}CurrentHover.groovy" }
+        position: { line: 0, character: 29 }
+      saveAs: currentHover
+  - assert:
+      source: currentHover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "Integer value()" }
+  - shutdown: {}
+  - exit: {}
