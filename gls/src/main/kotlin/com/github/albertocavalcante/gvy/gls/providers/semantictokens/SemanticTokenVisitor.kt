@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
 import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
+import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
@@ -16,6 +17,7 @@ import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.eclipse.lsp4j.Range
 import java.lang.reflect.Modifier
 
 /**
@@ -34,7 +36,18 @@ import java.lang.reflect.Modifier
  */
 @Suppress("TooManyFunctions")
 class SemanticTokenVisitor(private val sourceLines: List<String>) {
-    private val parameterRanges by lazy { ParameterSourceRanges(sourceLines) }
+    private var input: SemanticTokenInput? = null
+    internal constructor(input: SemanticTokenInput) : this(emptyList()) {
+        this.input = input
+    }
+
+    private val sourceRanges by lazy {
+        input?.sourceRanges
+            ?: sourceLines.takeIf { it.isNotEmpty() }?.let { SemanticSourceRanges(it.joinToString("\n")) }
+    }
+    private val parameterRanges by lazy {
+        sourceRanges?.let { ParameterSourceRanges(it.index) } ?: ParameterSourceRanges(sourceLines)
+    }
 
     /**
      * Type alias for semantic tokens.
@@ -59,7 +72,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
     /**
      * Visit a single import node and generate a semantic token.
      */
-    private fun visitImportNode(
+    internal fun visitImportNode(
         importNode: ImportNode,
         unusedImports: Set<ImportNode>,
         tokens: MutableList<SemanticToken>,
@@ -77,41 +90,48 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
 
         val modifiers = TokenModifierResolver.getModifiersForImport(importNode, unusedImports)
 
-        // Calculate position of the name to highlight in import statement
-        val className = importNode.className ?: return
-
-        // Account for "import " vs "import static " prefix
-        val importPrefixLength = if (importNode.isStatic) {
-            "import static ".length
-        } else {
-            "import ".length
-        }
-
-        val typeNameStart = if (importNode.isStatic) {
-            // For static imports: position after full class name plus separator dot
-            importPrefixLength + className.length + 1
-        } else if (importNode.alias != null) {
-            // For aliased imports: position after " as "
-            importPrefixLength + className.length + " as ".length
-        } else {
-            // For regular imports: position after last dot in className
-            val lastDotIndex = className.lastIndexOf('.')
-            if (lastDotIndex >= 0) {
-                importPrefixLength + lastDotIndex + 1
-            } else {
-                importPrefixLength
+        val source = sourceRanges
+        if (source != null) {
+            source.importName(importNode, typeName)?.let {
+                addRangeToken(it, TokenTypeResolver.TokenTypes.CLASS, modifiers, tokens)
             }
-        }
+        } else {
+            // Calculate position of the name to highlight in import statement
+            val className = importNode.className ?: return
 
-        tokens.add(
-            SemanticToken(
-                line = importNode.lineNumber - 1, // Convert to 0-based
-                startChar = (importNode.columnNumber - 1) + typeNameStart,
-                length = typeName.length,
-                tokenType = TokenTypeResolver.TokenTypes.CLASS,
-                tokenModifiers = modifiers,
-            ),
-        )
+            // Account for "import " vs "import static " prefix
+            val importPrefixLength = if (importNode.isStatic) {
+                "import static ".length
+            } else {
+                "import ".length
+            }
+
+            val typeNameStart = if (importNode.isStatic) {
+                // For static imports: position after full class name plus separator dot
+                importPrefixLength + className.length + 1
+            } else if (importNode.alias != null) {
+                // For aliased imports: position after " as "
+                importPrefixLength + className.length + " as ".length
+            } else {
+                // For regular imports: position after last dot in className
+                val lastDotIndex = className.lastIndexOf('.')
+                if (lastDotIndex >= 0) {
+                    importPrefixLength + lastDotIndex + 1
+                } else {
+                    importPrefixLength
+                }
+            }
+
+            tokens.add(
+                SemanticToken(
+                    line = importNode.lineNumber - 1, // Convert to 0-based
+                    startChar = (importNode.columnNumber - 1) + typeNameStart,
+                    length = typeName.length,
+                    tokenType = TokenTypeResolver.TokenTypes.CLASS,
+                    tokenModifiers = modifiers,
+                ),
+            )
+        }
     }
 
     /**
@@ -143,7 +163,14 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
         val tokenType = TokenTypeResolver.getTokenTypeForClassNode(classNode)
         val modifiers = TokenModifierResolver.getModifiersForClassDeclaration(classNode)
 
-        addTokenForNode(classNode, classNode.nameWithoutPackage.length, tokenType, modifiers, tokens)
+        val source = sourceRanges
+        if (source != null) {
+            source.declaration(classNode, classNode.sourceSimpleName())?.let {
+                addRangeToken(it, tokenType, modifiers, tokens)
+            }
+        } else {
+            addTokenForNode(classNode, classNode.nameWithoutPackage.length, tokenType, modifiers, tokens)
+        }
     }
 
     /**
@@ -208,12 +235,17 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
 
         val modifiers = TokenModifierResolver.getModifiersForMethodDeclaration(method)
 
-        // Calculate the actual method declaration line and offset
-        val (declLine, declCol) = getMethodDeclarationPosition(method)
+        val source = sourceRanges
+        if (source != null) {
+            source.methodName(method)?.let { addRangeToken(it, TokenTypeResolver.TokenTypes.METHOD, modifiers, tokens) }
+        } else {
+            // Calculate the actual method declaration line and offset
+            val (declLine, declCol) = getMethodDeclarationPosition(method)
 
-        // Calculate offset from declaration start to method name
-        val nameOffset = calculateMethodNameOffset(method)
-        addMethodToken(declLine, declCol, nameOffset, method.name.length, modifiers, tokens)
+            // Calculate offset from declaration start to method name
+            val nameOffset = calculateMethodNameOffset(method)
+            addMethodToken(declLine, declCol, nameOffset, method.name.length, modifiers, tokens)
+        }
 
         // Tokenize annotations
         tokenizeAnnotations(method.annotations, tokens)
@@ -288,9 +320,10 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
             return
         }
 
+        if (sourceRanges != null && sourceRanges?.range(param) == null) return
         val modifiers = TokenModifierResolver.getModifiersForParameterDeclaration()
 
-        if (sourceLines.isNotEmpty()) {
+        if (sourceRanges != null || sourceLines.isNotEmpty()) {
             parameterRanges.name(param)?.let {
                 tokens.add(
                     SemanticToken(it.line, it.start, it.length, TokenTypeResolver.TokenTypes.PARAMETER, modifiers),
@@ -393,14 +426,12 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
             if (classType != null) {
                 val className = classType.nameWithoutPackage
                 if (className.isNotEmpty() && receiver.lineNumber > 0 && receiver.columnNumber > 0) {
-                    tokens.add(
-                        SemanticToken(
-                            line = receiver.lineNumber - 1,
-                            startChar = receiver.columnNumber - 1,
-                            length = className.length,
-                            tokenType = TokenTypeResolver.getTokenTypeForClassNode(classType),
-                            tokenModifiers = 0,
-                        ),
+                    addTokenForNode(
+                        receiver,
+                        className.length,
+                        TokenTypeResolver.getTokenTypeForClassNode(classType),
+                        0,
+                        tokens,
                     )
                 }
             }
@@ -421,26 +452,13 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
             if (classType != null) {
                 val className = classType.nameWithoutPackage
                 if (className.isNotEmpty()) {
-                    tokens.add(
-                        SemanticToken(
-                            line = classExpr.lineNumber - 1,
-                            startChar = classExpr.columnNumber - 1,
-                            length = className.length,
-                            tokenType = TokenTypeResolver.TokenTypes.CLASS,
-                            tokenModifiers = 0,
-                        ),
-                    )
+                    addTokenForNode(classExpr, className.length, TokenTypeResolver.TokenTypes.CLASS, 0, tokens)
 
-                    // Also add a token for the '.class' keyword suffix
-                    val classKeywordLength = "class".length
-                    tokens.add(
-                        SemanticToken(
-                            line = classExpr.lineNumber - 1,
-                            startChar = classExpr.columnNumber - 1 + className.length + 1,
-                            length = classKeywordLength,
-                            tokenType = TokenTypeResolver.TokenTypes.KEYWORD,
-                            tokenModifiers = 0,
-                        ),
+                    addClassKeywordToken(
+                        classExpr,
+                        classExpr.lineNumber - 1,
+                        classExpr.columnNumber - 1 + className.length + 1,
+                        tokens,
                     )
                 }
             }
@@ -613,6 +631,11 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
         tokens: MutableList<SemanticToken>,
     ) {
         if (length <= 0) return
+        val source = sourceRanges
+        if (source != null) {
+            source.name(node)?.let { addRangeToken(it, tokenType, modifiers, tokens) }
+            return
+        }
         if (node.lineNumber > 0 && node.columnNumber > 0) {
             tokens.add(
                 SemanticToken(
@@ -623,6 +646,29 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
                     tokenModifiers = modifiers,
                 ),
             )
+        }
+    }
+
+    private fun addRangeToken(range: Range, type: Int, modifiers: Int, tokens: MutableList<SemanticToken>) {
+        if (range.start.line == range.end.line && range.end.character > range.start.character) {
+            tokens.add(
+                SemanticToken(
+                    range.start.line,
+                    range.start.character,
+                    range.end.character - range.start.character,
+                    type,
+                    modifiers,
+                ),
+            )
+        }
+    }
+
+    private fun addClassKeywordToken(node: ASTNode, line: Int, column: Int, tokens: MutableList<SemanticToken>) {
+        val source = sourceRanges
+        if (source != null) {
+            source.name(node, "class")?.let { addRangeToken(it, TokenTypeResolver.TokenTypes.KEYWORD, 0, tokens) }
+        } else {
+            tokens.add(SemanticToken(line, column, "class".length, TokenTypeResolver.TokenTypes.KEYWORD))
         }
     }
 
@@ -644,15 +690,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
                 }
 
                 if (length > 0) {
-                    tokens.add(
-                        SemanticToken(
-                            line = annotation.lineNumber - 1,
-                            startChar = annotation.columnNumber - 1,
-                            length = length,
-                            tokenType = TokenTypeResolver.TokenTypes.DECORATOR,
-                            tokenModifiers = 0,
-                        ),
-                    )
+                    addTokenForNode(annotation, length, TokenTypeResolver.TokenTypes.DECORATOR, 0, tokens)
                 }
             }
         }

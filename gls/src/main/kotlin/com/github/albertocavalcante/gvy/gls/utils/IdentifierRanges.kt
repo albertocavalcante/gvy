@@ -80,6 +80,14 @@ class TextIndex(val text: String) {
     internal fun lineRange(line: Int): Range? =
         lineLengths.getOrNull(line)?.let { Range(Position(line, 0), Position(line, it)) }
 
+    /** Absolute UTF-16 offset in Groovy's LF-only coordinate system, including line-break interiors. */
+    internal fun groovyOffset(position: Position): Int? {
+        val column = groovyColumnOffsets(position.line)?.getOrNull(position.character) ?: return null
+        return groovyLineStarts[position.line] + column
+    }
+
+    internal fun groovyLineStartOffset(line: Int): Int? = groovyLineStarts.getOrNull(line)
+
     private fun groovyColumnOffsets(line: Int): IntArray? {
         val start = groovyLineStarts.getOrNull(line) ?: return null
         return groovyColumns.computeIfAbsent(line) {
@@ -194,5 +202,12 @@ private fun skipString(text: String, at: Int, quote: Char): Int {
     return text.length
 }
 
-private fun isWordBoundary(text: String, index: Int): Boolean =
-    index !in text.indices || !Character.isJavaIdentifierPart(text[index])
+private fun isWordBoundary(text: String, index: Int): Boolean {
+    if (index !in text.indices) return true
+    val start = if (index > 0 && Character.isLowSurrogate(text[index]) && Character.isHighSurrogate(text[index - 1])) {
+        index - 1
+    } else {
+        index
+    }
+    return !Character.isJavaIdentifierPart(text.codePointAt(start))
+}
