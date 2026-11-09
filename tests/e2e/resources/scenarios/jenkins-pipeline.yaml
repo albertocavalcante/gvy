@@ -5,11 +5,10 @@ server:
 steps:
   - initialize:
       initializationOptions:
-        jenkins:
-          filePatterns: ["Jenkinsfile"]
-          sharedLibraries:
-            - name: "utils"
-              jar: "/tmp/utils.jar"
+        jenkins.filePatterns: ["Jenkinsfile"]
+        jenkins.sharedLibraries:
+          - name: "utils"
+            jar: "/tmp/utils.jar"
   - initialized: {}
   - openDocument:
       path: "Jenkinsfile"

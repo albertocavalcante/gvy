@@ -682,6 +682,9 @@
           },
           "default": [
             "Jenkinsfile",
+            "Jenkinsfile*",
+            "*.jenkinsfile",
+            "*.Jenkinsfile",
             "vars/*.groovy"
           ],
           "description": "File patterns to recognize as Jenkins Pipeline files"

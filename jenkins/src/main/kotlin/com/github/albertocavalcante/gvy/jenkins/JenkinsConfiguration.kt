@@ -9,7 +9,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
  * Configuration for Jenkins pipeline support.
  */
 data class JenkinsConfiguration(
-    val filePatterns: List<String> = listOf("Jenkinsfile", "vars/*.groovy"),
+    val filePatterns: List<String> = DEFAULT_FILE_PATTERNS,
     val sharedLibraries: List<SharedLibrary> = emptyList(),
     val gdslPaths: List<String> = emptyList(),
     val gdslExecutionEnabled: Boolean = false,
@@ -19,6 +19,20 @@ data class JenkinsConfiguration(
 ) {
     companion object {
         private val logger = KotlinLogging.logger {}
+
+        /**
+         * Files treated as Jenkins pipelines when `jenkins.filePatterns` is not set.
+         *
+         * Keep in sync with the `groovy.jenkins.filePatterns` default and the `jenkinsfile` language
+         * patterns in `editors/code/package.json`, so files the editor opens as Jenkinsfiles get Jenkins features.
+         */
+        val DEFAULT_FILE_PATTERNS: List<String> = listOf(
+            "Jenkinsfile",
+            "Jenkinsfile*",
+            "*.jenkinsfile",
+            "*.Jenkinsfile",
+            "vars/*.groovy",
+        )
 
         /**
          * Parses Jenkins configuration from a map.
@@ -42,7 +56,7 @@ data class JenkinsConfiguration(
         @Suppress("UNCHECKED_CAST")
         private fun parseFilePatterns(map: Map<String, Any>): List<String> {
             val patterns = map["jenkins.filePatterns"] as? List<*>
-            return patterns?.mapNotNull { it as? String } ?: listOf("Jenkinsfile")
+            return patterns?.mapNotNull { it as? String } ?: DEFAULT_FILE_PATTERNS
         }
 
         @Suppress("UNCHECKED_CAST")

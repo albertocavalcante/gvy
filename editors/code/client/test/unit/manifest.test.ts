@@ -56,4 +56,23 @@ describe("package.json manifest", () => {
     const types = manifest.devDependencies["@types/vscode"].replace(/^\^/, "");
     assert.strictEqual(manifest.engines.vscode, `^${types}`);
   });
+
+  it("treats every Jenkinsfile language file as a Jenkins file by default", () => {
+    const language = manifest.contributes.languages.find(
+      (l: { id: string }) => l.id === "jenkinsfile",
+    );
+    const defaults: string[] =
+      manifest.contributes.configuration.properties[
+        "groovy.jenkins.filePatterns"
+      ].default;
+    for (const pattern of [
+      ...(language.filenames ?? []),
+      ...(language.filenamePatterns ?? []),
+    ]) {
+      assert.ok(
+        defaults.includes(pattern),
+        `${pattern} opens as a Jenkinsfile but the server default omits it`,
+      );
+    }
+  });
 });

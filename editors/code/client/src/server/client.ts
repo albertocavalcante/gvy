@@ -301,10 +301,8 @@ export function buildServerSettingsMap(): Record<string, unknown> {
     ),
     "groovy.format.enable": config.get<boolean>("format.enable", true),
 
-    "jenkins.filePatterns": config.get<string[]>("jenkins.filePatterns", [
-      "Jenkinsfile",
-      "vars/*.groovy",
-    ]),
+    // VS Code supplies the manifest default; the server applies the same default if this is absent.
+    "jenkins.filePatterns": config.get<string[]>("jenkins.filePatterns"),
     "jenkins.sharedLibraries": config.get<JenkinsSharedLibrary[]>(
       "jenkins.sharedLibraries",
       [],
