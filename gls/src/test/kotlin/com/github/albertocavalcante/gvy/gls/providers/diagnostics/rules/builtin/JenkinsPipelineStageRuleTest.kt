@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.CustomRulesProvider
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
+import com.github.albertocavalcante.gvy.jenkins.JenkinsConfiguration
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Diagnostic
@@ -320,6 +321,28 @@ class JenkinsPipelineStageRuleTest {
         )
 
         assertEquals(1, diagnostics.size, diagnostics.messages().toString())
+    }
+
+    @Test
+    fun `configured file patterns apply without a Jenkins workspace`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Release') {
+                    }
+                }
+            }
+        """.trimIndent()
+        val configuration = ServerConfiguration(
+            jenkinsConfig = JenkinsConfiguration(filePatterns = listOf("pipelines/*.groovy")),
+        )
+
+        val matched = analyze(code, URI.create("file:///workspace/pipelines/release.groovy"), configuration)
+        val excluded = analyze(code, jenkinsfile, configuration)
+
+        assertEquals(1, matched.size, matched.messages().toString())
+        assertEquals(emptyList(), excluded.messages())
     }
 
     @Test
