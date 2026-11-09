@@ -70,7 +70,7 @@ class DiagnosticsOrchestratorTest {
             this,
             compilation,
             diagnostics,
-            DocumentProvider(),
+            openDocuments(),
             ServerConfiguration(maxNumberOfProblems = 1),
             { client },
         )
@@ -125,7 +125,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         val firstCompilation = CompletableDeferred<CompilationResult>()
@@ -145,8 +145,13 @@ class DiagnosticsOrchestratorTest {
         )
 
         // When: Trigger diagnostics twice for the same URI
+        documentProvider.put(testUri, "first content", 1)
         orchestrator.trigger(testUri, "first content")
         val firstJob = assertNotNull(orchestrator.getDiagnosticJob(testUri))
+        coVerify(timeout = 5_000, exactly = 1) {
+            compilationService.compileAsync(any(), testUri, "first content")
+        }
+        documentProvider.update(testUri, "second content", 2)
         orchestrator.trigger(testUri, "second content")
         val secondJob = assertNotNull(orchestrator.getDiagnosticJob(testUri))
 
@@ -174,7 +179,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         coEvery {
@@ -211,7 +216,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         val parserDiagnostic = createTestDiagnostic("Parser error", 1)
@@ -259,7 +264,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         val parserDiagnostic = createTestDiagnostic("Parser error", 1)
@@ -309,7 +314,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         coEvery {
@@ -350,7 +355,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         val result = createMockCompilationResult()
@@ -393,7 +398,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         // Create a deferred that will never complete
@@ -437,7 +442,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = DocumentProvider()
         val client = mockk<LanguageClient>()
 
         val uri1 = URI.create("file:///test/File1.groovy")
@@ -450,7 +455,7 @@ class DiagnosticsOrchestratorTest {
             uri2 to content2,
         )
 
-        every { documentProvider.snapshot() } returns snapshot
+        snapshot.forEach { (uri, content) -> documentProvider.put(uri, content, 1) }
 
         val result = createMockCompilationResult()
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
@@ -485,7 +490,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         val parserDiagnostic = createTestDiagnostic("Parser error", 1)
@@ -533,7 +538,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         val result = createMockCompilationResult()
@@ -588,7 +593,7 @@ class DiagnosticsOrchestratorTest {
         val scope = CoroutineScope(SupervisorJob())
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
-        val documentProvider = mockk<DocumentProvider>()
+        val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
 
         val parserDiagnostic = createTestDiagnostic("Parser error", 1)
@@ -621,6 +626,8 @@ class DiagnosticsOrchestratorTest {
     }
 
     // ==================== Test Helpers ====================
+
+    private fun openDocuments() = DocumentProvider().apply { put(testUri, testContent, 1) }
 
     private fun createTestDiagnostic(message: String, line: Int): Diagnostic = Diagnostic().apply {
         range = Range(Position(line, 0), Position(line, 10))

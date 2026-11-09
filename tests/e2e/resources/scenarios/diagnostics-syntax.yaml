@@ -25,6 +25,10 @@ steps:
         - jsonPath: $.diagnostics
           expect:
             type: NOT_EMPTY
+        - jsonPath: $.version
+          expect:
+            type: EQUALS
+            value: 1
   - assert:
       source: initialDiagnostics
       checks:
@@ -61,5 +65,9 @@ steps:
         - jsonPath: $.diagnostics
           expect:
             type: EMPTY
+        - jsonPath: $.version
+          expect:
+            type: EQUALS
+            value: 2
   - shutdown: {}
   - exit: {}

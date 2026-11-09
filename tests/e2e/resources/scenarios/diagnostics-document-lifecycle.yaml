@@ -1,0 +1,79 @@
+name: diagnostics-document-lifecycle
+description: Diagnostic versions follow accepted edits and restart after closing and reopening the same URI.
+workspace:
+  fixture: hover-basic
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.diagnostics.providers.disabled: [codenarc, custom-rules, unused-imports]
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 30000
+  - openDocument:
+      path: DiagnosticSnapshot.groovy
+      version: 7
+      text: "class DiagnosticSnapshot {"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: DiagnosticSnapshot.groovy }
+        - jsonPath: $.version
+          expect: { type: EQUALS, value: 7 }
+        - jsonPath: $.diagnostics
+          expect: { type: NOT_EMPTY }
+      timeoutMs: 30000
+  - changeDocument:
+      path: DiagnosticSnapshot.groovy
+      version: 9
+      text: "class DiagnosticSnapshot {}"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: DiagnosticSnapshot.groovy }
+        - jsonPath: $.version
+          expect: { type: EQUALS, value: 9 }
+        - jsonPath: $.diagnostics
+          expect: { type: EMPTY }
+      timeoutMs: 30000
+  - closeDocument:
+      path: DiagnosticSnapshot.groovy
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: DiagnosticSnapshot.groovy }
+        - jsonPath: $.diagnostics
+          expect: { type: EMPTY }
+      timeoutMs: 30000
+  - openDocument:
+      path: DiagnosticSnapshot.groovy
+      version: 7
+      text: "class DiagnosticSnapshot {"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: DiagnosticSnapshot.groovy }
+        - jsonPath: $.version
+          expect: { type: EQUALS, value: 7 }
+        - jsonPath: $.diagnostics
+          expect: { type: NOT_EMPTY }
+      timeoutMs: 30000
+  - closeDocument:
+      path: DiagnosticSnapshot.groovy
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: CONTAINS, value: DiagnosticSnapshot.groovy }
+        - jsonPath: $.diagnostics
+          expect: { type: EMPTY }
+      timeoutMs: 30000
+  - shutdown: {}
+  - exit: {}

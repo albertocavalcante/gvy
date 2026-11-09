@@ -1,9 +1,12 @@
 package com.github.albertocavalcante.gvy.gls.diagnostics
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
+import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -11,6 +14,7 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.PublishDiagnosticsParams
@@ -54,10 +58,12 @@ class DiagnosticsOrchestrator(
 
     /** Replace provider configuration and cancel work computed under the previous settings. */
     fun updateConfiguration(configuration: ServerConfiguration, service: DiagnosticsService) {
-        synchronized(publicationLock) {
+        val retiredJobs = synchronized(publicationLock) {
             runtime = Runtime(configuration, service)
-            diagnosticJobs.values.forEach { it.cancel() }
+            diagnosticJobs.values.toList()
         }
+        // Cancellation handlers may reenter document lifecycle operations. Never invoke them under a monitor.
+        retiredJobs.forEach { it.cancel() }
         refreshAll()
     }
 
@@ -82,19 +88,21 @@ class DiagnosticsOrchestrator(
      */
     @Suppress("TooGenericExceptionCaught")
     fun trigger(uri: URI, content: String, debounce: Boolean = false) {
+        val captured = documentProvider.getSnapshot(uri)?.takeIf { it.content == content } ?: return
         // Create the job lazily so it is registered (and any previous job cancelled) before it starts.
         // Otherwise a fast job could finish and run its cleanup before registration, leaving a
         // completed job in the map, and the new job could run while the old one is still active.
         val job = coroutineScope.launch(start = CoroutineStart.LAZY) {
-            val currentJob = coroutineContext[Job]
+            val currentJob = coroutineContext.job
             try {
                 runCatching {
                     // A newer trigger cancels this job during the delay, before any expensive work starts.
                     if (debounce && debounceMillis > 0) delay(debounceMillis)
+                    if (documentProvider.getSnapshot(uri) !== captured) return@runCatching
 
                     val settings = runtime
                     // Use compileAsync for proper coordination
-                    val result = compilationService.compileAsync(this, uri, content).await()
+                    val result = compileCurrent(this, uri, captured, currentJob, settings)
 
                     ensureActive() // Ensure job wasn't cancelled before publishing
 
@@ -108,14 +116,14 @@ class DiagnosticsOrchestrator(
                     // NOTE: Tradeoff (See #564):
                     // This can result in two diagnostics publications (compile first, then provider merge),
                     // but avoids blocking syntax feedback on slow lint initialization.
-                    publishDiagnostics(uri.toString(), parserDiagnostics, settings)
+                    if (!publishDiagnostics(uri, captured, currentJob, parserDiagnostics, settings)) return@runCatching
 
                     val extraDiagnostics = settings.service.getDiagnostics(uri, content)
                     val allDiagnostics = parserDiagnostics + extraDiagnostics
 
                     ensureActive()
                     if (extraDiagnostics.isNotEmpty()) {
-                        publishDiagnostics(uri.toString(), allDiagnostics, settings)
+                        publishDiagnostics(uri, captured, currentJob, allDiagnostics, settings)
                     }
 
                     logger.debug { "Published ${allDiagnostics.size} diagnostics for $uri" }
@@ -137,12 +145,40 @@ class DiagnosticsOrchestrator(
             }
         }
 
-        // Atomically cancel existing job and register new one, then start it
-        diagnosticJobs.compute(uri) { _, existingJob ->
-            existingJob?.cancel()
-            job
+        var previous: Job? = null
+        val registered = documentProvider.withCurrentSnapshot(uri, captured) {
+            previous = diagnosticJobs.put(uri, job)
         }
+        if (!registered) {
+            job.cancel()
+            return
+        }
+        previous?.cancel()
         job.start()
+    }
+
+    /** A shared compile may belong to another request; only a still-current waiter may retry it once. */
+    private suspend fun compileCurrent(
+        scope: CoroutineScope,
+        uri: URI,
+        captured: DocumentSnapshot,
+        owner: Job,
+        settings: Runtime,
+    ): CompilationResult {
+        try {
+            return compilationService.compileAsync(scope, uri, captured.content).await()
+        } catch (cancelled: CancellationException) {
+            // An external owner can cancel its Deferred without cancelling this diagnostics job.
+            // Own cancellation must propagate, and obsolete work must never be restarted.
+            scope.ensureActive()
+            if (documentProvider.getSnapshot(uri) !== captured || runtime !== settings ||
+                diagnosticJobs[uri] !== owner
+            ) {
+                throw cancelled
+            }
+            logger.debug { "Retrying current diagnostics after shared compilation was cancelled for $uri" }
+            return compilationService.compileAsync(scope, uri, captured.content).await()
+        }
     }
 
     /**
@@ -151,7 +187,35 @@ class DiagnosticsOrchestrator(
      * @param uri The document URI
      */
     fun cancelAndRemove(uri: URI) {
-        diagnosticJobs.remove(uri)?.cancel()
+        val retired = synchronized(publicationLock) { diagnosticJobs.remove(uri) }
+        retired?.cancel()
+    }
+
+    /** Close and clear the captured incarnation, with the same linearization boundary as publication. */
+    fun close(uri: URI) {
+        val captured = documentProvider.getIncarnation(uri) ?: return
+        var recipient: LanguageClient? = null
+        try {
+            recipient = client()
+        } finally {
+            // A failing client lookup must not leave the buffer open. A reentrant reopen must survive.
+            closeDocument(uri, captured, recipient)
+        }
+    }
+
+    private fun closeDocument(uri: URI, captured: DocumentIncarnation, recipient: LanguageClient?) {
+        var retired: Job? = null
+        try {
+            documentProvider.removeIfCurrent(uri, captured) {
+                // Lock order is document lifecycle -> publication; client lookup/cancellation are outside both.
+                synchronized(publicationLock) {
+                    retired = diagnosticJobs.remove(uri)
+                    recipient?.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), emptyList()))
+                }
+            }
+        } finally {
+            retired?.cancel()
+        }
     }
 
     /**
@@ -184,13 +248,26 @@ class DiagnosticsOrchestrator(
      * @param uri The document URI as string
      * @param diagnostics The list of diagnostics to publish
      */
-    private fun publishDiagnostics(uri: String, diagnostics: List<org.eclipse.lsp4j.Diagnostic>, settings: Runtime) {
-        synchronized(publicationLock) {
-            if (runtime !== settings) return
-            val limited = diagnostics.take(settings.configuration.maxNumberOfProblems.coerceAtLeast(0))
-            logger.debug { "Publishing ${limited.size} diagnostics for $uri" }
-            client()?.publishDiagnostics(PublishDiagnosticsParams(uri, limited))
+    private fun publishDiagnostics(
+        uri: URI,
+        captured: DocumentSnapshot,
+        owner: Job,
+        diagnostics: List<org.eclipse.lsp4j.Diagnostic>,
+        settings: Runtime,
+    ): Boolean {
+        // Resolving the client can reenter change/close/configuration handling; validate afterward.
+        val recipient = client() ?: return false
+        var published = false
+        documentProvider.withCurrentSnapshot(uri, captured) {
+            synchronized(publicationLock) {
+                if (runtime !== settings || !owner.isActive || diagnosticJobs[uri] !== owner) return@synchronized
+                val limited = diagnostics.take(settings.configuration.maxNumberOfProblems.coerceAtLeast(0))
+                logger.debug { "Publishing ${limited.size} diagnostics for $uri" }
+                recipient.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), limited, captured.version))
+                published = true
+            }
         }
+        return published
     }
 
     /**
