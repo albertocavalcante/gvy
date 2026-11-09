@@ -162,8 +162,12 @@ class ColdLocalCompletionTest {
         assertUnpublished()
         val overloads = items.filter { it.label == "choose" && it.kind == CompletionItemKind.Method }
         assertEquals(2, overloads.size, "Different qualified Date types are different signatures")
-        assertTrue(overloads.any { it.detail?.contains("java.util.Date") == true })
-        assertTrue(overloads.any { it.detail?.contains("java.sql.Date") == true })
+        assertEquals(listOf("String choose(Date value)"), overloads.map { it.detail }.distinct())
+        assertEquals(
+            setOf("Method: Greeter.choose(java.sql.Date)", "Method: Parent.choose(java.util.Date)"),
+            overloads.map { it.documentation.left }.toSet(),
+            "Documentation keeps the qualified identity that tells the overloads apart",
+        )
     }
 
     @Test
@@ -230,7 +234,11 @@ class ColdLocalCompletionTest {
         assertUnpublished()
         val grep = items.filter { it.label == "grep" && it.kind == CompletionItemKind.Method }
         assertEquals(2, grep.size, "Local Object grep must replace its extension counterpart, preserving noarg grep")
-        assertTrue(grep.any { it.detail == "Object grep(java.lang.Object)" })
+        assertTrue(
+            grep.any {
+                it.detail == "Object grep(Object filter)" && it.insertText == "grep(\${1:Object filter})"
+            },
+        )
         assertTrue(grep.any { it.insertText == "grep()" })
     }
 
@@ -242,9 +250,86 @@ class ColdLocalCompletionTest {
         assertTrue(items.any { it.label == "substring" && it.kind == CompletionItemKind.Method })
     }
 
-    private suspend fun complete(source: String): List<CompletionItem> {
-        val position = cursor(source)
-        return CompletionProvider.getContextualCompletions(
+    @Test
+    fun `explicit this offers enclosing class members with named parameters`(): Unit = runBlocking {
+        val source = "class Greeter { String greet(String n){n}; void m(){ this.gr } }"
+
+        val items = complete(source, Position(0, source.indexOf(" } }")))
+
+        assertUnpublished()
+        val greet = items.filter { it.label == "greet" && it.kind == CompletionItemKind.Method }
+        assertEquals(listOf("greet(\${1:String n})"), greet.map { it.insertText }, "found ${labels(items)}")
+        assertEquals("String greet(String n)", greet.single().detail)
+    }
+
+    @Test
+    fun `explicit this at script level offers script methods`(): Unit = runBlocking {
+        val items = complete("String greet(String n) { n }\nthis.gr")
+
+        val greet = items.filter { it.label == "greet" && it.kind == CompletionItemKind.Method }
+        assertEquals(listOf("greet(\${1:String n})"), greet.map { it.insertText }, "found ${labels(items)}")
+    }
+
+    @Test
+    fun `explicit super offers superclass members but not the subclass declarations`(): Unit = runBlocking {
+        val source = """
+            class Parent { String greet(String n) { n } }
+            class Greeter extends Parent { String own() { '' }; void m() { super.gr } }
+        """.trimIndent()
+        val lines = source.lines()
+
+        val items = complete(source, Position(1, lines[1].indexOf(" } }")))
+
+        assertUnpublished()
+        val greet = items.filter { it.label == "greet" && it.kind == CompletionItemKind.Method }
+        assertEquals(listOf("greet(\${1:String n})"), greet.map { it.insertText }, "found ${labels(items)}")
+        assertTrue(items.none { it.label == "own" }, "super must not offer the subclass's own members")
+    }
+
+    @Test
+    fun `local receiver displays simple parameter types with names`(): Unit = runBlocking {
+        val items = complete(memberSource)
+
+        val greet = items.single { it.label == "greet" && it.kind == CompletionItemKind.Method }
+        assertEquals("greet(\${1:String name})", greet.insertText)
+        assertEquals("String greet(String name)", greet.detail)
+        assertTrue(items.none { it.detail?.contains("java.lang.") == true }, "found ${labels(items)}")
+    }
+
+    @Test
+    fun `external receiver keeps base display and offers each overload once`(): Unit = runBlocking {
+        val items = complete("String value = 'text'\nvalue.sub")
+
+        val substring = items.filter { it.label == "substring" && it.kind == CompletionItemKind.Method }
+        assertEquals(
+            setOf("substring(\${1:int})", "substring(\${1:int}, \${2:int})"),
+            substring.map { it.insertText }.toSet(),
+        )
+        assertEquals(substring.size, substring.map { it.insertText }.distinct().size, "found ${labels(items)}")
+    }
+
+    @Test
+    fun `overloads differing only by qualified type both appear once with simple display`(): Unit = runBlocking {
+        val source = """
+            class Greeter {
+                String choose(java.util.Date value) { 'util' }
+                String choose(java.sql.Date value) { 'sql' }
+            }
+            new Greeter().ch
+        """.trimIndent()
+
+        val items = complete(source)
+
+        val choose = items.filter { it.label == "choose" && it.kind == CompletionItemKind.Method }
+        assertEquals(2, choose.size, "found ${labels(items)}")
+        assertTrue(choose.all { it.insertText == "choose(\${1:Date value})" })
+        assertTrue(choose.all { it.detail == "String choose(Date value)" })
+    }
+
+    private fun labels(items: List<CompletionItem>) = items.map { "${it.label}|${it.insertText}|${it.detail}" }
+
+    private suspend fun complete(source: String, position: Position = cursor(source)): List<CompletionItem> =
+        CompletionProvider.getContextualCompletions(
             uri = uri.toString(),
             line = position.line,
             character = position.character,
@@ -252,7 +337,6 @@ class ColdLocalCompletionTest {
             semanticResolver = resolver,
             content = source,
         )
-    }
 
     private fun cursor(source: String): Position {
         val lines = source.lines()

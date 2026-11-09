@@ -85,17 +85,20 @@ class GroovySemanticDB {
 
     /** One coherent read; a later replacement or invalidation cannot change a captured query. */
     val implementationSnapshot: Map<URI, ImplementationDocument> get() = lock.read {
-        Collections.unmodifiableMap(
-            documents.toSortedMap().mapValues { (_, stored) ->
-                ImplementationDocument(
-                    stored.document,
-                    stored.sourceText,
-                    stored.implementations.classes,
-                    stored.implementations.hierarchy,
-                )
-            },
-        )
+        Collections.unmodifiableMap(documents.toSortedMap().mapValues { (_, stored) -> stored.implementation() })
     }
+
+    /**
+     * The one stored document that defines [symbolId], read coherently with its symbols. Returns null
+     * when no file or more than one file defines it. Unlike [implementationSnapshot], this copies
+     * no other document, so per-keystroke callers can use it.
+     */
+    fun findImplementationDocument(symbolId: String): ImplementationDocument? = lock.read {
+        symbolIndex.files(symbolId).singleOrNull()?.let(documents::get)?.implementation()
+    }
+
+    private fun StoredDocument.implementation() =
+        ImplementationDocument(document, sourceText, implementations.classes, implementations.hierarchy)
 
     /**
      * Find symbol definition by ID.
@@ -211,6 +214,8 @@ private class SymbolIndex<T> {
     fun first(id: String): Pair<URI, T>? = bySymbol[id]?.entries?.firstOrNull()?.let { (uri, entries) ->
         uri to entries.first()
     }
+
+    fun files(id: String): Set<URI> = bySymbol[id]?.keys?.toSet().orEmpty()
 
     fun all(id: String): List<Pair<URI, T>> =
         bySymbol[id]?.flatMap { (uri, entries) -> entries.map { uri to it } } ?: emptyList()

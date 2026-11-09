@@ -4,10 +4,13 @@ import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class ImplementationMethodSignaturesTest {
     private val uri = URI.create("file:///Parent.groovy")
+    private val other = URI.create("file:///Other.groovy")
     private val range = Range(0, 0, 2, 1)
     private val owner = "Parent#"
     private val symbol = "Parent#choose(Date)."
@@ -53,6 +56,30 @@ class ImplementationMethodSignaturesTest {
 
         assertTrue(ImplementationMethodSignatures.parameterTypesBySymbol(document, owner).isEmpty())
     }
+
+    @Test
+    fun `single document lookup returns only the unambiguous defining document`() {
+        val db = GroovySemanticDB()
+        val parent = SymbolInfo(owner, SymbolKind.CLASS, range, "Parent", null)
+        val facts = ImplementationFacts.Snapshot(
+            listOf(ImplementationClass(owner, range)),
+            mapOf(owner to ImplementationType(false, false, null, emptyList(), listOf(method("java.util.Date")))),
+        )
+        db.updateDocument(uri, SemanticDocument(uri, listOf(parent), emptyList()), "source", facts)
+        db.updateDocument(other, SemanticDocument(other, emptyList(), emptyList()), "other", facts)
+
+        val found = assertNotNull(db.findImplementationDocument(owner))
+
+        assertEquals(uri, found.document.uri)
+        assertEquals(mapOf(symbol to listOf(listOf("java.util.Date"))), parameterTypes(found))
+        assertNull(db.findImplementationDocument("Missing#"))
+
+        db.updateDocument(other, SemanticDocument(other, listOf(parent), emptyList()), "other", facts)
+        assertNull(db.findImplementationDocument(owner), "A class defined in two files is ambiguous")
+    }
+
+    private fun parameterTypes(document: ImplementationDocument) =
+        ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
 
     private fun method(parameter: String): ImplementationMethod =
         ImplementationMethod(symbol, "choose", listOf(parameter), range, false, false, false)

@@ -5,12 +5,11 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
+import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider.ContextType
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportInfo
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportParser
-import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
-import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
@@ -21,7 +20,6 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
 
@@ -75,8 +73,11 @@ internal class MemberAccessCompletionStrategy(
         ctx: CompletionStrategyContext,
         metadata: MergedJenkinsMetadata?,
     ) {
-        val rawType = completionContext.qualifierType.substringBefore('<')
         val qualifierName = completionContext.qualifierName
+        val module = ctx.baseContext.moduleNode
+        val receiverType = module?.let { explicitReceiverType(qualifierName, it, ctx.baseContext) }
+            ?: completionContext.qualifierType
+        val rawType = receiverType.substringBefore('<')
 
         // Strategy 0: Map literal keys (check first - most specific)
         if (rawType.endsWith("Map") && qualifierName != null) {
@@ -90,46 +91,101 @@ internal class MemberAccessCompletionStrategy(
 
         if (globalVar != null && globalVar.properties.isNotEmpty()) {
             logger.debug { "Adding Jenkins properties for ${qualifierName ?: rawType}" }
-            addJenkinsGlobalVariablePropertyCompletions(globalVar)
+            with(JenkinsCompletionProvider) { addJenkinsPropertyCompletions(globalVar) }
             return
         }
 
         // Held declarations are authoritative for this buffer, including unsaved changes.
-        val local = LocalCompletionMembers(ctx.baseContext.moduleNode).lookup(rawType)
-        local?.let { addWorkspaceMembers(it.members, qualifiedParameters = true) }
-
-        // Query shared metadata only for types not represented by the held local module.
-        workspaceSymbolIndex?.let { index ->
-            val resolvedFqns = local?.externalTypes ?: resolveWorkspaceClassFqns(rawType, ctx)
-            addIndexedMembers(resolvedFqns, index, qualifiedParameters = local != null)
+        val local = LocalCompletionMembers(module).lookup(rawType)
+        if (local == null) {
+            addSharedMembers(rawType, ctx)
+            return
         }
 
-        // Strategy 3: GDK methods
-        logger.debug { "Adding GDK methods for $rawType" }
-        addGdkMethods(rawType, compilationService, qualifiedParameters = local != null)
-
-        // Strategy 4: Classpath methods
-        logger.debug { "Adding Classpath methods for $rawType" }
-        if (local == null) addClasspathMethods(rawType, compilationService)
-        local?.externalTypes?.forEach { addClasspathMethods(it, compilationService, qualifiedParameters = true) }
+        // Every method below carries an exact qualified signature, so overrides collapse across
+        // sources while overloads differing only by package stay separate under simple display names.
+        local.methods.forEach { addCandidate(it) }
+        addWorkspaceMembers(local.fields)
+        workspaceSymbolIndex?.let { index -> addExactIndexedMembers(local.externalTypes, index) }
+        addQualifiedGdkMethods(rawType)
+        local.externalTypes.forEach { addQualifiedClasspathMethods(it) }
     }
 
-    private fun CompletionsBuilder.addIndexedMembers(
-        classNames: List<String>,
-        index: WorkspaceSymbolIndex,
-        qualifiedParameters: Boolean,
-    ) {
-        // Symbols and qualified facts must come from the same captured publication.
-        val documents = if (qualifiedParameters) index.implementationSnapshot.values else emptyList()
+    /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
+    private fun CompletionsBuilder.addSharedMembers(rawType: String, ctx: CompletionStrategyContext) {
+        workspaceSymbolIndex?.let { index ->
+            val members = resolveWorkspaceClassFqns(rawType, ctx)
+                .flatMap { fqn -> index.getAllMembers(fqn.replace('.', '/'), includeInherited = true) }
+                .distinctBy { it.symbolId }
+            addWorkspaceMembers(members)
+        }
+
+        logger.debug { "Adding GDK methods for $rawType" }
+        addGdkMethods(rawType, compilationService)
+
+        logger.debug { "Adding Classpath methods for $rawType" }
+        addClasspathMethods(rawType, compilationService)
+    }
+
+    private fun CompletionsBuilder.addExactIndexedMembers(classNames: List<String>, index: WorkspaceSymbolIndex) {
         classNames.forEach { name ->
             val owner = "${name.replace('.', '/')}#"
-            val document = documents.singleOrNull { it.document.findSymbol(owner) != null }
-            val members = document?.document?.symbols?.filter {
-                it.owner == owner && it.kind in setOf(SymbolKind.METHOD, SymbolKind.FIELD, SymbolKind.PROPERTY)
-            }?.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }
-                ?: index.getAllMembers(name.replace('.', '/'), includeInherited = true)
-            val exact = document?.let { ImplementationMethodSignatures.parameterTypesBySymbol(it, owner) }.orEmpty()
-            addWorkspaceMembers(members.distinctBy { it.symbolId }, exactParameters = exact)
+            // Symbols and qualified facts come from the same captured document.
+            val document = index.findImplementationDocument(owner)
+            if (document == null) {
+                addWorkspaceMembers(index.getAllMembers(name.replace('.', '/'), includeInherited = true))
+                return@forEach
+            }
+            val exact = ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
+            val members = document.document.symbols.filter {
+                it.owner == owner && it.kind in INDEXED_MEMBER_KINDS
+            }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
+            addWorkspaceMembers(members.filter { it.kind != SymbolKind.METHOD })
+            members.filter { it.kind == SymbolKind.METHOD }.forEach { member ->
+                val alternatives = exact[member.symbolId] ?: listOf(member.signature.completionParameters())
+                alternatives.forEach { types ->
+                    addCandidate(
+                        MethodCandidate(
+                            name = member.name,
+                            returnType = member.type?.let { formatType(it) } ?: "def",
+                            parameters = types.map { CandidateParameter(it, simpleTypeName(it)) },
+                            doc = "Method: ${member.name}(${types.joinToString(", ")})",
+                        ),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun CompletionsBuilder.addQualifiedGdkMethods(className: String) {
+        val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
+        types.flatMap { compilationService.gdkProvider.getQualifiedMethodsForType(it) }.forEach { gdk ->
+            val method = gdk.display
+            addCandidate(
+                MethodCandidate(
+                    name = method.name,
+                    returnType = method.returnType,
+                    parameters = gdk.qualifiedParameters.zip(method.parameterTypes, ::CandidateParameter),
+                    doc = method.doc,
+                ),
+            )
+        }
+    }
+
+    private fun CompletionsBuilder.addQualifiedClasspathMethods(className: String) {
+        val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
+        types.forEach { type ->
+            val reflected = compilationService.classpathService.loadClass(type) ?: return@forEach
+            reflectedInstanceMethods(reflected).forEach { method ->
+                addCandidate(
+                    MethodCandidate(
+                        name = method.name,
+                        returnType = method.returnType.simpleName,
+                        parameters = method.parameterTypes.map { CandidateParameter(it.typeName, it.simpleName) },
+                        doc = "JDK/Classpath method from ${method.declaringClass.simpleName}",
+                    ),
+                )
+            }
         }
     }
 
@@ -154,7 +210,7 @@ internal class MemberAccessCompletionStrategy(
                 explicitImports = node.imports.mapNotNull { it.className }.toSet(),
                 starImports = node.starImports.mapNotNull { it.packageName }.toSet(),
             )
-        } ?: parseTextImportInfo(content)
+        } ?: TextImportParser.parse(content) // Best-effort, line-based fallback import parsing.
 
         importInfo.packageName?.takeIf { it.isNotBlank() }?.let { candidates.add("$it.$simpleName") }
         importInfo.explicitImports
@@ -187,12 +243,6 @@ internal class MemberAccessCompletionStrategy(
         }
         return matches.toList()
     }
-
-    /**
-     * Best-effort, line-based import parsing for fallback scenarios.
-     * Supports simple multi-line imports but does not handle full Groovy syntax.
-     */
-    private fun parseTextImportInfo(content: String): TextImportInfo = TextImportParser.parse(content)
 
     /**
      * Finds the enclosing block for the cursor position.
@@ -253,24 +303,11 @@ internal class MemberAccessCompletionStrategy(
     }
 
     /**
-     * Adds Jenkins global variable property completions.
-     */
-    private fun CompletionsBuilder.addJenkinsGlobalVariablePropertyCompletions(globalVar: MergedGlobalVariable) {
-        with(JenkinsCompletionProvider) {
-            addJenkinsPropertyCompletions(globalVar)
-        }
-    }
-
-    /**
      * Adds workspace members (fields, methods, properties) to completions.
      *
      * @param members List of member information from WorkspaceSymbolIndex
      */
-    private fun CompletionsBuilder.addWorkspaceMembers(
-        members: List<MemberInfo>,
-        qualifiedParameters: Boolean = false,
-        exactParameters: Map<String, List<List<String>>> = emptyMap(),
-    ) {
+    private fun CompletionsBuilder.addWorkspaceMembers(members: List<MemberInfo>) {
         members.forEach { member ->
             when (member.kind) {
                 SymbolKind.FIELD,
@@ -283,7 +320,14 @@ internal class MemberAccessCompletionStrategy(
                     )
                 }
 
-                SymbolKind.METHOD -> addWorkspaceMethod(member, qualifiedParameters, exactParameters[member.symbolId])
+                SymbolKind.METHOD -> {
+                    method(
+                        name = member.name,
+                        returnType = member.type?.let { formatType(it) } ?: "def",
+                        parameters = member.signature.completionParameters().map(::simpleTypeName),
+                        doc = "Method: ${member.name}${member.signature ?: "()"}",
+                    )
+                }
 
                 else -> {
                     /* Skip constructors and other kinds */
@@ -292,37 +336,27 @@ internal class MemberAccessCompletionStrategy(
         }
     }
 
-    private fun CompletionsBuilder.addWorkspaceMethod(
-        member: MemberInfo,
-        qualifiedParameters: Boolean,
-        exactParameters: List<List<String>>?,
-    ) {
-        val alternatives = exactParameters ?: listOf(member.signature.completionParameters(qualifiedParameters))
-        alternatives.forEach { parameters ->
-            method(
-                name = member.name,
-                returnType = member.type?.let { formatType(it) } ?: "def",
-                parameters = parameters,
-                doc = "Method: ${member.name}${member.signature ?: "()"}",
-            )
-        }
+    private fun CompletionsBuilder.addCandidate(candidate: MethodCandidate) {
+        method(
+            name = candidate.name,
+            returnType = candidate.returnType,
+            parameters = candidate.parameters.map { it.display },
+            doc = candidate.doc,
+            signature = candidate.parameters.joinToString(",") { it.identity },
+        )
     }
 
     /**
      * Add GDK (Groovy Development Kit) method completions for a given type.
      */
-    private fun CompletionsBuilder.addGdkMethods(
-        className: String,
-        compilationService: GroovyCompilationService,
-        qualifiedParameters: Boolean,
-    ) {
+    private fun CompletionsBuilder.addGdkMethods(className: String, compilationService: GroovyCompilationService) {
         val resolvedTypes = resolveDataTypes(className, compilationService)
         if (resolvedTypes.isEmpty()) {
             // Try original name as fallback
-            addGdkMethodsForSingleType(className, compilationService, this, qualifiedParameters)
+            addGdkMethodsForSingleType(className, compilationService, this)
         } else {
             resolvedTypes.forEach { type ->
-                addGdkMethodsForSingleType(type, compilationService, this, qualifiedParameters)
+                addGdkMethodsForSingleType(type, compilationService, this)
             }
         }
     }
@@ -331,13 +365,8 @@ internal class MemberAccessCompletionStrategy(
         className: String,
         compilationService: GroovyCompilationService,
         builder: CompletionsBuilder,
-        qualifiedParameters: Boolean,
     ) {
-        val gdkMethods = if (qualifiedParameters) {
-            compilationService.gdkProvider.getQualifiedMethodsForType(className)
-        } else {
-            compilationService.gdkProvider.getMethodsForType(className)
-        }
+        val gdkMethods = compilationService.gdkProvider.getMethodsForType(className)
 
         gdkMethods.forEach { gdkMethod ->
             builder.method(
@@ -355,14 +384,13 @@ internal class MemberAccessCompletionStrategy(
     private fun CompletionsBuilder.addClasspathMethods(
         className: String,
         compilationService: GroovyCompilationService,
-        qualifiedParameters: Boolean = false,
     ) {
         val resolvedTypes = resolveDataTypes(className, compilationService)
         if (resolvedTypes.isEmpty()) {
-            addClasspathMethodsForSingleType(className, compilationService, this, qualifiedParameters)
+            addClasspathMethodsForSingleType(className, compilationService, this)
         } else {
             resolvedTypes.forEach { type ->
-                addClasspathMethodsForSingleType(type, compilationService, this, qualifiedParameters)
+                addClasspathMethodsForSingleType(type, compilationService, this)
             }
         }
     }
@@ -371,13 +399,8 @@ internal class MemberAccessCompletionStrategy(
         className: String,
         compilationService: GroovyCompilationService,
         builder: CompletionsBuilder,
-        qualifiedParameters: Boolean,
     ) {
-        val classpathMethods = if (qualifiedParameters) {
-            qualifiedClasspathMethods(className, compilationService)
-        } else {
-            compilationService.classpathService.getMethods(className)
-        }
+        val classpathMethods = compilationService.classpathService.getMethods(className)
 
         classpathMethods.forEach { method ->
             // Only add public instance methods
@@ -389,36 +412,6 @@ internal class MemberAccessCompletionStrategy(
                     doc = method.doc,
                 )
             }
-        }
-    }
-
-    private fun qualifiedClasspathMethods(
-        className: String,
-        compilationService: GroovyCompilationService,
-    ): List<ReflectedMethod> {
-        val type = compilationService.classpathService.loadClass(className) ?: return emptyList()
-        return try {
-            type.methods.map { method ->
-                ReflectedMethod(
-                    method.name,
-                    method.returnType.simpleName,
-                    method.parameterTypes.map { it.typeName },
-                    method.parameters.map { it.name },
-                    java.lang.reflect.Modifier.isStatic(method.modifiers),
-                    java.lang.reflect.Modifier.isPublic(method.modifiers),
-                    "JDK/Classpath method from ${type.simpleName}",
-                    method.declaringClass.name,
-                )
-            }
-        } catch (error: NoClassDefFoundError) {
-            logger.debug(error) { "Incomplete classpath methods for $className" }
-            emptyList()
-        } catch (error: SecurityException) {
-            logger.debug(error) { "Cannot reflect completion methods for $className" }
-            emptyList()
-        } catch (error: java.lang.reflect.MalformedParametersException) {
-            logger.debug(error) { "Cannot read completion parameter metadata for $className" }
-            emptyList()
         }
     }
 
@@ -455,16 +448,13 @@ internal class MemberAccessCompletionStrategy(
 private fun formatType(type: SemanticType): String = SemanticTypeFormatter.formatForCompletion(type)
 
 /**
- * Parses a method signature into parameter strings for display.
- *
- * For now, this is a simple implementation that extracts parameter types from the signature.
- * Future enhancement: Parse the full signature with parameter names.
+ * Extracts the raw parameter types of a symbol signature, respecting generic brackets.
  *
  * @param signature The method signature
  *   (e.g., "com/example/MyClass#myMethod(String,int)." or "com/example/MyClass#myMethod(Map<String,String>).")
- * @return List of parameter strings (e.g., ["String", "int"] or ["Map<String,String>"])
+ * @return List of parameter types as written (e.g., ["String", "int"] or ["Map<String,String>"])
  */
-private fun String?.completionParameters(qualifiedParameters: Boolean): List<String> {
+private fun String?.completionParameters(): List<String> {
     val signature = this ?: return emptyList()
 
     val startIndex = signature.indexOf('(')
@@ -477,7 +467,7 @@ private fun String?.completionParameters(qualifiedParameters: Boolean): List<Str
     val params = signature.substring(startIndex + 1, endIndex).trim()
 
     // Split by comma while respecting angle brackets for generics
-    return parseParametersWithGenerics(params, qualifiedParameters)
+    return parseParametersWithGenerics(params)
 }
 
 /**
@@ -485,14 +475,14 @@ private fun String?.completionParameters(qualifiedParameters: Boolean): List<Str
  *
  * This helper extracts the complex bracket-tracking logic from completionParameters.
  */
-private fun parseParametersWithGenerics(params: String, qualifiedParameters: Boolean): List<String> {
+private fun parseParametersWithGenerics(params: String): List<String> {
     val result = mutableListOf<String>()
     val currentParam = StringBuilder()
     var bracketDepth = 0
     var invalidBrackets = false
 
     fun addCurrentParam() {
-        result.add(completionParameterType(currentParam.toString(), qualifiedParameters))
+        result.add(currentParam.toString().trim())
         currentParam.clear()
     }
 
@@ -526,9 +516,7 @@ private fun parseParametersWithGenerics(params: String, qualifiedParameters: Boo
 
     // If brackets are unbalanced, fall back to simple comma-based parsing
     if (invalidBrackets || bracketDepth != 0) {
-        return params.split(',')
-            .map { completionParameterType(it, qualifiedParameters) }
-            .filter { it.isNotEmpty() }
+        return params.split(',').map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     // Add the last parameter
@@ -539,22 +527,76 @@ private fun parseParametersWithGenerics(params: String, qualifiedParameters: Boo
     return result
 }
 
-private fun completionParameterType(type: String, qualified: Boolean): String {
-    val trimmed = type.trim()
-    return if (qualified) trimmed else trimmed.substringAfterLast('/').substringAfterLast('.')
+private val QUALIFIED_NAME = Regex("""(?:[\w$]+[./])+([\w$]+)""")
+
+/** `java.util.Map<java.lang.String,int[]>` becomes `Map<String,int[]>`; `java.util.Map$Entry` becomes `Entry`. */
+private fun simpleTypeName(type: String): String =
+    QUALIFIED_NAME.replace(type.trim()) { it.groupValues[1].substringAfterLast('$') }
+
+private val reflectionLogger = KotlinLogging.logger {}
+
+private fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Method> = try {
+    type.methods.filter {
+        java.lang.reflect.Modifier.isPublic(it.modifiers) && !java.lang.reflect.Modifier.isStatic(it.modifiers)
+    }
+} catch (error: NoClassDefFoundError) {
+    reflectionLogger.debug(error) { "Incomplete classpath methods for ${type.name}" }
+    emptyList()
+} catch (error: SecurityException) {
+    reflectionLogger.debug(error) { "Cannot reflect completion methods for ${type.name}" }
+    emptyList()
+}
+
+private val INDEXED_MEMBER_KINDS = setOf(SymbolKind.METHOD, SymbolKind.FIELD, SymbolKind.PROPERTY)
+
+/** A method suggestion with display parameters and an exact, qualified de-duplication identity. */
+private data class MethodCandidate(
+    val name: String,
+    val returnType: String,
+    val parameters: List<CandidateParameter>,
+    val doc: String?,
+)
+
+/** [identity] is the qualified erased type; [display] is what the user sees and inserts. */
+private data class CandidateParameter(val identity: String, val display: String)
+
+/**
+ * `this` and `super` name the class enclosing the cursor, or the script class at top level.
+ * Returns null for any other qualifier or when the receiver cannot be determined.
+ */
+private fun explicitReceiverType(qualifierName: String?, module: ModuleNode, context: CompletionContext): String? {
+    if (qualifierName != THIS && qualifierName != SUPER) return null
+    val line = context.line + 1
+    val column = context.character + 1
+    val enclosing = module.classes.filter { it.contains(line, column) }
+        .maxWithOrNull(compareBy<ClassNode>({ it.lineNumber }, { it.columnNumber }))
+        ?: module.classes.firstOrNull { it.isScript }
+        ?: return null
+    return if (qualifierName == THIS) enclosing.name else enclosing.superClass?.name
+}
+
+private const val THIS = "this"
+private const val SUPER = "super"
+
+private fun ASTNode.contains(line: Int, column: Int): Boolean {
+    if (lineNumber <= 0 || lastLineNumber <= 0) return false
+    val afterStart = line > lineNumber || (line == lineNumber && column >= columnNumber)
+    val beforeEnd = line < lastLineNumber || (line == lastLineNumber && column <= lastColumnNumber)
+    return afterStart && beforeEnd
 }
 
 /** A request-local member view; it never writes shared semantic metadata. */
 private class LocalCompletionMembers(module: ModuleNode?) {
     private val classes = module?.classes.orEmpty().associateBy { it.name }
 
-    data class Result(val members: List<MemberInfo>, val externalTypes: List<String>)
+    data class Result(val methods: List<MethodCandidate>, val fields: List<MemberInfo>, val externalTypes: List<String>)
 
     fun lookup(type: String): Result? {
         val first = heldClass(type) ?: return null
         val pending = ArrayDeque<ClassNode>().apply { add(first) }
         val visited = mutableSetOf<String>()
-        val members = linkedMapOf<String, MemberInfo>()
+        val methods = linkedMapOf<String, MethodCandidate>()
+        val fields = linkedMapOf<String, MemberInfo>()
         val external = linkedSetOf<String>()
         while (pending.isNotEmpty()) {
             val next = pending.removeFirst()
@@ -563,29 +605,33 @@ private class LocalCompletionMembers(module: ModuleNode?) {
             if (held == null) {
                 external.add(next.name)
             } else {
-                ownMembers(held, held !== first).forEach { (identity, member) ->
-                    members.putIfAbsent(identity, member)
-                }
+                val inherited = held !== first
+                ownMethods(held, inherited).forEach { (identity, method) -> methods.putIfAbsent(identity, method) }
+                ownFields(held, inherited).forEach { (identity, field) -> fields.putIfAbsent(identity, field) }
                 // The class chain precedes interface declarations, even at a greater depth.
                 held.interfaces.forEach(pending::addLast)
                 held.superClass?.let(pending::addFirst)
             }
         }
-        return Result(members.values.toList(), external.toList())
+        return Result(methods.values.toList(), fields.values.toList(), external.toList())
     }
 
-    private fun ownMembers(node: ClassNode, inherited: Boolean): List<Pair<String, MemberInfo>> {
-        val owner = node.name.replace('.', '/')
-        val methods = node.methods.filter { hasSource(it) && (!inherited || !it.isPrivate) }.map { method ->
-            val identity = methodIdentity(method)
-            identity to MemberInfo(
-                method.name,
-                SymbolKind.METHOD,
-                SemanticType.Known(typeName(method.returnType)),
-                "$owner#$identity.",
-                "$owner#$identity.",
+    private fun ownMethods(node: ClassNode, inherited: Boolean): List<Pair<String, MethodCandidate>> =
+        node.methods.filter { hasSource(it) && (!inherited || !it.isPrivate) }.map { method ->
+            val parameters = method.parameters.map {
+                CandidateParameter(typeName(it.type), "${it.type.nameWithoutPackage} ${it.name}")
+            }
+            val identity = "${method.name}(${parameters.joinToString(",") { it.identity }})"
+            identity to MethodCandidate(
+                name = method.name,
+                returnType = method.returnType.nameWithoutPackage,
+                parameters = parameters,
+                doc = "Method: ${node.nameWithoutPackage}.$identity",
             )
         }
+
+    private fun ownFields(node: ClassNode, inherited: Boolean): List<Pair<String, MemberInfo>> {
+        val owner = node.name.replace('.', '/')
         val fields = node.fields.filter {
             hasSource(it) && (!inherited || !it.isPrivate)
         }.map {
@@ -608,11 +654,8 @@ private class LocalCompletionMembers(module: ModuleNode?) {
                 "$owner#${it.name}.",
             )
         }
-        return methods + fields + properties
+        return fields + properties
     }
-
-    private fun methodIdentity(method: MethodNode): String =
-        "${method.name}(${method.parameters.joinToString(",") { typeName(it.type) }})"
 
     private fun heldClass(type: String): ClassNode? =
         classes[type] ?: classes.values.singleOrNull { it.nameWithoutPackage == type }

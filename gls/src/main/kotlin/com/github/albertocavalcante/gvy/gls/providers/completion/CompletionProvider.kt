@@ -98,6 +98,8 @@ object CompletionProvider {
             } else {
                 null
             }
+            // Each transient compile is a full parse; stop between them once the request is cancelled.
+            context.ensureActive()
             val result1 = constructorCopy?.let { compilationService.compileTransient(uriObj, it) }
                 ?.takeIf { it.ast != null } ?: parsed
             val ast1 = result1.ast
@@ -107,6 +109,7 @@ object CompletionProvider {
             // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
             // but "class Foo { BrazilWorldCup2026 }" is not.
             if (isClean && !result1.isSuccessful) {
+                context.ensureActive()
                 val content2 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)
                 val ast2 = result2.ast

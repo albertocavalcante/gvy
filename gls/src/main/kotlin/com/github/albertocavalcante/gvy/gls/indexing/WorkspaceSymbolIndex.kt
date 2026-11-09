@@ -89,6 +89,10 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
     /** Hierarchy, source and semantic ranges from one atomic database read. */
     val implementationSnapshot: Map<URI, ImplementationDocument> get() = semanticDb.implementationSnapshot
 
+    /** The single indexed document defining [symbolId], without copying the rest of the workspace. */
+    fun findImplementationDocument(symbolId: String): ImplementationDocument? =
+        semanticDb.findImplementationDocument(symbolId)
+
     /**
      * Get the superclass of a class.
      *
