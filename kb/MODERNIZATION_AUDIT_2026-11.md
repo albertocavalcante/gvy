@@ -6,6 +6,7 @@ Server, grounded in a read-only review of every main-source module.
 | Field              | Value                                                              |
 | ------------------ | ------------------------------------------------------------------ |
 | Repository         | albertocavalcante/gvy                                              |
+| Language / runtime | Kotlin 2.3.0, JVM 17 target, LSP 3.17 (lsp4j 0.24)                 |
 | Audited head       | `d6f5ca66` (main, 2026-11-09)                                      |
 | Scope: main Kotlin | 95.4K LOC / 38 modules                                             |
 | Scope: tests       | 115.8K LOC / 4,571 tests                                           |
