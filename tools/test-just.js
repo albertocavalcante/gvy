@@ -148,3 +148,26 @@ test(
     assert.ok(!JSON.stringify(recorded[1].args).includes("--offline"));
   },
 );
+
+test("Git checkout keeps the Justfile LF even with autocrlf enabled", () => {
+  fs.copyFileSync(
+    path.join(__dirname, "..", ".gitattributes"),
+    path.join(project, ".gitattributes"),
+  );
+  const git = (/** @type {string[]} */ args) => {
+    const result = spawnSync(
+      "git",
+      ["-c", "core.autocrlf=true", "-c", "core.attributesfile=", ...args],
+      { cwd: project, encoding: "utf8" },
+    );
+    assert.equal(result.status, 0, result.stderr);
+  };
+  git(["init", "--quiet"]);
+  git(["add", ".gitattributes", "Justfile"]);
+  fs.unlinkSync(path.join(project, "Justfile"));
+  git(["checkout-index", "--force", "--", "Justfile"]);
+  assert.ok(
+    !fs.readFileSync(path.join(project, "Justfile"), "utf8").includes("\r\n"),
+    "Justfile checkout must retain LF for the formatter",
+  );
+});
