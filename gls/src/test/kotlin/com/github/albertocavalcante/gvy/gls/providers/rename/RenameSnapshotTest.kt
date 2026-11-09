@@ -34,6 +34,7 @@ import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @Execution(ExecutionMode.SAME_THREAD)
@@ -92,7 +93,7 @@ class RenameSnapshotTest {
         supervisorScope {
             fixture().use { fixture ->
                 coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                    callOriginal().also {
+                    fixture.acquireCompilation().also {
                         fixture.documents.put(fixture.uri, fixture.source, 42)
                     }
                 }
@@ -179,7 +180,7 @@ class RenameSnapshotTest {
             var scanning = false
             try {
                 coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                    callOriginal().also {
+                    fixture.acquireCompilation().also {
                         val visitor = assertNotNull(fixture.compilation.getAstModel(fixture.uri))
                         val nodes = visitor.getAllNodes()
                         val variables = nodes.filterIsInstance<VariableExpression>()
@@ -270,7 +271,7 @@ class RenameSnapshotTest {
                 var evicted = false
                 try {
                     coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                        callOriginal().also {
+                        fixture.acquireCompilation().also {
                             val visitor = assertNotNull(fixture.compilation.getAstModel(fixture.uri))
                             instrumented = visitor
                             mockkObject(visitor)
@@ -348,7 +349,7 @@ class RenameSnapshotTest {
         val uri = workspace.resolve(filename).toUri()
         Files.writeString(Path.of(uri), source)
         val documents = DocumentProvider().apply { put(uri, source, 41) }
-        val compilation = spyk(GroovyCompilationService(documentProvider = documents))
+        val compilation = GroovyCompilationService(documentProvider = documents)
         compilation.workspaceManager.initializeWorkspace(workspace)
         val result = compilation.compile(uri, source)
         assertTrue(result.isSuccess, result.diagnostics.toString())
@@ -359,8 +360,18 @@ class RenameSnapshotTest {
         val uri: URI,
         val source: String,
         val documents: DocumentProvider,
-        val compilation: GroovyCompilationService,
+        private val actual: GroovyCompilationService,
     ) : AutoCloseable {
+        val compilation = spyk(actual)
+
+        init {
+            assertSame(actual.compilationCacheService, compilation.compilationCacheService)
+            assertSame(actual.symbolIndexingService, compilation.symbolIndexingService)
+        }
+
+        // Delegate normally so the post-acquisition mutation runs after an actual suspension.
+        suspend fun acquireCompilation() = actual.ensureCompiled(uri)
+
         fun params() = RenameParams(TextDocumentIdentifier(uri.toString()), Position(0, 6), "sum")
 
         fun endpoint(scope: CoroutineScope) = GroovyTextDocumentService(
