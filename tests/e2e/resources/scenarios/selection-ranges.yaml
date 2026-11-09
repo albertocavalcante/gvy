@@ -1,0 +1,108 @@
+name: selection-ranges
+description: Smart selection preserves batch order and nested source ranges through the protocol.
+workspace:
+  fixture: definition-basic
+steps:
+  - request:
+      method: initialize
+      params:
+        processId: null
+        workspaceFolders:
+          - uri: "{{workspace.uri}}"
+            name: selection-ranges
+        capabilities: {}
+      saveAs: initializedCapabilities
+  - assert:
+      source: initializedCapabilities
+      checks:
+        # The harness exposes the decoded SDK Either wrapper for capabilities.
+        - jsonPath: $.capabilities.selectionRangeProvider.left
+          expect: { type: EQUALS, value: true }
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: src/SelectionExample.groovy
+      languageId: groovy
+      version: 7
+      text: |
+        class SelectionExample {
+            def next(value) {
+                return value + 1
+            }
+        }
+  - request:
+      method: textDocument/selectionRange
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/SelectionExample.groovy"
+        positions:
+          - { line: 2, character: 16 }
+          - { line: 1, character: 14 }
+          - { line: 5, character: 0 }
+      saveAs: selections
+  - assert:
+      source: selections
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 3 }
+        - jsonPath: $[0].range
+          expect:
+            type: EQUALS
+            value:
+              start: { line: 2, character: 15 }
+              end: { line: 2, character: 20 }
+        - jsonPath: $[1].range
+          expect:
+            type: EQUALS
+            value:
+              start: { line: 1, character: 13 }
+              end: { line: 1, character: 18 }
+        - jsonPath: $[2].range
+          expect:
+            type: EQUALS
+            value:
+              start: { line: 5, character: 0 }
+              end: { line: 5, character: 0 }
+        - jsonPath: $[0]..range
+          expect:
+            type: CONTAINS_ALL
+            values:
+              - start: { line: 2, character: 15 }
+                end: { line: 2, character: 24 }
+              - start: { line: 0, character: 0 }
+                end: { line: 5, character: 0 }
+  - request:
+      method: textDocument/selectionRange
+      params:
+        textDocument:
+          uri: "{{workspace.uri}}src/SelectionExample.groovy"
+        positions:
+          - { line: 2, character: 1000 }
+          - { line: 5, character: 1000 }
+      saveAs: clampedSelections
+  - assert:
+      source: clampedSelections
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 2 }
+        - jsonPath: $[0].range
+          expect:
+            type: EQUALS
+            value:
+              start: { line: 2, character: 24 }
+              end: { line: 2, character: 24 }
+        - jsonPath: $[1].range
+          expect:
+            type: EQUALS
+            value:
+              start: { line: 5, character: 0 }
+              end: { line: 5, character: 0 }
+  - shutdown: {}
+  - exit: {}

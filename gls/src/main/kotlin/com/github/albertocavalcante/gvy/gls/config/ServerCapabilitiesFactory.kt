@@ -84,6 +84,9 @@ object ServerCapabilitiesFactory {
                 resolveProvider = false
             }
 
+            // Smart selection uses captured source and nested structural ranges.
+            selectionRangeProvider = Either.forLeft(true)
+
             // Folding range support
             foldingRangeProvider = Either.forLeft(true)
 

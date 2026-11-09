@@ -24,6 +24,7 @@ import com.github.albertocavalcante.gvy.gls.providers.highlight.DocumentHighligh
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.gvy.gls.providers.rename.RenameProvider
+import com.github.albertocavalcante.gvy.gls.providers.selection.SelectionRangeProvider
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.gvy.gls.providers.symbols.toDocumentSymbol
 import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
@@ -78,6 +79,8 @@ import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.RenameParams
+import org.eclipse.lsp4j.SelectionRange
+import org.eclipse.lsp4j.SelectionRangeParams
 import org.eclipse.lsp4j.SemanticTokens
 import org.eclipse.lsp4j.SemanticTokensParams
 import org.eclipse.lsp4j.SignatureHelp
@@ -227,6 +230,10 @@ class GroovyTextDocumentService(
 
     private val documentHighlightProvider by lazy {
         DocumentHighlightProvider(compilationService)
+    }
+
+    private val selectionRangeProvider by lazy {
+        SelectionRangeProvider(compilationService, documentProvider)
     }
 
     private val foldingRangeProvider by lazy {
@@ -576,6 +583,9 @@ class GroovyTextDocumentService(
 
         testCodeLensProvider.provideCodeLenses(uri)
     }
+
+    override fun selectionRange(params: SelectionRangeParams): CompletableFuture<List<SelectionRange>?> =
+        coroutineScope.future { selectionRangeProvider.provide(params) }
 
     override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> =
         coroutineScope.future {

@@ -34,41 +34,58 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
         position: Position,
         snapshot: Map<URI, ImplementationDocument>,
     ): Flow<Location> {
-        if (position.line < 0 || position.character < 0) return emptyFlow()
-        val occurrence = snapshot[origin]?.let { targetAt(it, position) }
+        val document = snapshot[origin] ?: return emptyFlow()
+        val indices = mutableMapOf<URI, TextIndex>()
+        val occurrence = indexFor(origin, snapshot, indices)?.let { targetAt(document, position, it) }
         val locations = occurrence?.let { ImplementationQuery.find(snapshot, origin, it) }.orEmpty()
-        return locations.map { Location(it.uri.toString(), it.range.toLsp()) }.asFlow()
+        return locations.mapNotNull { location ->
+            val target = indexFor(location.uri, snapshot, indices) ?: return@mapNotNull null
+            val range = target.utf16Range(location.range.toCodePointRange()) ?: return@mapNotNull null
+            Location(location.uri.toString(), range)
+        }.asFlow()
     }
 
-    private fun targetAt(document: ImplementationDocument, position: Position): SymbolOccurrence? =
-        document.document.occurrences.filter {
-            it.role != OccurrenceRole.IMPORT && it.range.contains(position.line, position.character)
+    private fun indexFor(
+        uri: URI,
+        snapshot: Map<URI, ImplementationDocument>,
+        indices: MutableMap<URI, TextIndex>,
+    ): TextIndex? = indices[uri] ?: snapshot[uri]?.sourceText?.let { text ->
+        TextIndex(text).also { indices[uri] = it }
+    }
+
+    private fun targetAt(document: ImplementationDocument, position: Position, index: TextIndex): SymbolOccurrence? {
+        val line = index.lineRange(position.line) ?: return null
+        val protocol = Position(position.line, minOf(position.character, line.end.character))
+        val groovy = index.codePointPosition(protocol) ?: return null
+        return document.document.occurrences.filter {
+            it.role != OccurrenceRole.IMPORT && it.range.contains(groovy.line, groovy.character)
         }
             .minWithOrNull(
                 compareBy({ it.range.endLine - it.range.startLine }, {
-                    it.range.endColumn -
-                        it.range.startColumn
+                    it.range.endColumn - it.range.startColumn
                 }),
             )
             ?.takeIf {
                 when (it.role) {
-                    OccurrenceRole.DEFINITION -> declarationContains(document, it, position)
-                    OccurrenceRole.TYPE_REF -> importReferenceContains(document, it, position)
+                    OccurrenceRole.DEFINITION -> declarationContains(document, it, protocol, index)
+                    OccurrenceRole.TYPE_REF -> importReferenceContains(document, it, protocol, index)
                     else -> true
                 }
             }
+    }
 
     // Definitions cover whole AST nodes; a cursor in a body/comment must not select its enclosing declaration.
     private fun declarationContains(
         document: ImplementationDocument,
         occurrence: SymbolOccurrence,
         position: Position,
+        index: TextIndex,
     ): Boolean {
         val symbol = document.document.symbols.firstOrNull {
             it.symbol == occurrence.symbol && it.range == occurrence.range
         } ?: return false
-        val text = document.sourceText ?: return false
-        val name = firstNameOccurrence(TextIndex(text), occurrence.range.toLsp(), symbol.name.substringAfterLast('$'))
+        val range = index.utf16Range(occurrence.range.toCodePointRange()) ?: return false
+        val name = firstNameOccurrence(index, range, symbol.name.substringAfterLast('$'))
         return name != null && name.contains(position)
     }
 
@@ -76,17 +93,18 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
         document: ImplementationDocument,
         occurrence: SymbolOccurrence,
         position: Position,
+        index: TextIndex,
     ): Boolean {
         val imported =
             document.document.symbols.firstOrNull { it.kind == SymbolKind.IMPORT && it.range == occurrence.range }
                 ?: return true
-        val text = document.sourceText ?: return false
+        val range = index.utf16Range(occurrence.range.toCodePointRange()) ?: return false
         val name = occurrence.symbol.substringAfterLast('/').removeSuffix("#").substringAfterLast('$')
         // A normal import aliases its type; a static import aliases a member, which must not select the type.
         val classImportSymbol = "import#${occurrence.symbol.removeSuffix("#")}"
         val identifiers = if (imported.symbol == classImportSymbol) listOf(name, imported.name) else listOf(name)
         return identifiers.any { identifier ->
-            firstNameOccurrence(TextIndex(text), occurrence.range.toLsp(), identifier)?.contains(position) == true
+            firstNameOccurrence(index, range, identifier)?.contains(position) == true
         }
     }
 
@@ -94,6 +112,6 @@ class ImplementationProvider(private val compilationService: GroovyCompilationSe
         compareValuesBy(position, start, { it.line }, { it.character }) >= 0 &&
             compareValuesBy(position, end, { it.line }, { it.character }) < 0
 
-    private fun com.github.albertocavalcante.gvy.semantics.db.Range.toLsp(): Range =
+    private fun com.github.albertocavalcante.gvy.semantics.db.Range.toCodePointRange(): Range =
         Range(Position(startLine, startColumn), Position(endLine, endColumn))
 }

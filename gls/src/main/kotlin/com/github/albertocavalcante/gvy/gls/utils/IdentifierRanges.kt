@@ -10,6 +10,7 @@ import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import java.util.concurrent.ConcurrentHashMap
 
 /** The name this node declares or refers to as a symbol; null for nodes that have none. */
 fun ASTNode.declaredName(): String? = when (this) {
@@ -24,31 +25,31 @@ fun ASTNode.declaredName(): String? = when (this) {
 
 /** Line-start table for one text, built once and reused for many offset/position lookups. */
 class TextIndex(val text: String) {
-    private val lineStarts: IntArray = ArrayList<Int>().apply {
-        add(0)
-        text.forEachIndexed { i, c -> if (c == '\n') add(i + 1) }
-    }.toIntArray()
+    private val lineStarts = calculateLineStarts(includeCarriageReturns = true)
+    private val groovyLineStarts = calculateLineStarts(includeCarriageReturns = false)
+    private val lineLengths = IntArray(lineStarts.size) { line ->
+        val start = lineStarts[line]
+        val beforeBreak = lineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
+        val end = if (beforeBreak > start && text[beforeBreak - 1] == '\r') beforeBreak - 1 else beforeBreak
+        end - start
+    }
+    private val groovyColumns = ConcurrentHashMap<Int, IntArray>()
 
     /** Offset of [p], clamped to the text. */
     fun offsetOf(p: Position): Int =
         if (p.line >= lineStarts.size) text.length else minOf(lineStarts[p.line] + p.character, text.length)
 
-    /** Position of [offset], found by binary search over the line starts. */
+    /** Position of [offset], found by binary search over the protocol line starts. */
     fun positionOf(offset: Int): Position {
-        var lo = 0
-        var hi = lineStarts.size - 1
-        while (lo < hi) {
-            val mid = (lo + hi + 1) ushr 1
-            if (lineStarts[mid] <= offset) lo = mid else hi = mid - 1
-        }
-        return Position(lo, offset - lineStarts[lo])
+        val line = lineAt(offset, lineStarts)
+        return Position(line, offset - lineStarts[line])
     }
 
-    /** Groovy lexer columns count code points; LSP columns count UTF-16 code units. */
+    /** Groovy counts code points and advances lines on LF; LSP uses UTF-16 and also recognizes bare CR. */
     internal fun utf16Position(codePoints: Position): Position? {
-        val line = lineText(codePoints.line) ?: return null
-        if (codePoints.character !in 0..line.codePointCount(0, line.length)) return null
-        return Position(codePoints.line, line.offsetByCodePoints(0, codePoints.character))
+        val column = groovyColumnOffsets(codePoints.line)?.getOrNull(codePoints.character) ?: return null
+        val position = positionOf(groovyLineStarts[codePoints.line] + column)
+        return position.takeIf { isValidPosition(it) }
     }
 
     internal fun utf16Range(codePoints: Range): Range? {
@@ -58,15 +59,66 @@ class TextIndex(val text: String) {
     }
 
     internal fun codePointPosition(utf16: Position): Position? {
-        val line = lineText(utf16.line) ?: return null
-        if (utf16.character !in 0..line.length) return null
-        return Position(utf16.line, line.codePointCount(0, utf16.character))
+        if (!isValidPosition(utf16)) return null
+        val offset = offsetOf(utf16)
+        val line = lineAt(offset, groovyLineStarts)
+        val start = groovyLineStarts[line]
+        val columns = groovyColumns[line]
+        val column = if (columns == null) {
+            // A single cursor lookup needs no full-line map allocation.
+            text.codePointCount(start, offset)
+        } else {
+            val found = columns.binarySearch(offset - start)
+            if (found >= 0) found else -found - 1
+        }
+        return Position(line, column)
     }
 
-    private fun lineText(line: Int): String? {
-        val start = lineStarts.getOrNull(line) ?: return null
-        val end = lineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
-        return text.substring(start, end).removeSuffix("\r")
+    internal fun isValidPosition(position: Position): Boolean =
+        lineLengths.getOrNull(position.line)?.let { position.character in 0..it } ?: false
+
+    internal fun lineRange(line: Int): Range? =
+        lineLengths.getOrNull(line)?.let { Range(Position(line, 0), Position(line, it)) }
+
+    private fun groovyColumnOffsets(line: Int): IntArray? {
+        val start = groovyLineStarts.getOrNull(line) ?: return null
+        return groovyColumns.computeIfAbsent(line) {
+            val end = groovyLineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
+            val columns = IntArray(text.codePointCount(start, end) + 1)
+            var at = start
+            var column = 0
+            while (at < end) {
+                columns[column++] = at - start
+                at += Character.charCount(text.codePointAt(at))
+            }
+            columns[column] = end - start
+            columns
+        }
+    }
+
+    private fun calculateLineStarts(includeCarriageReturns: Boolean): IntArray {
+        val starts = arrayListOf(0)
+        var at = 0
+        while (at < text.length) {
+            val char = text[at]
+            val crlf = char == '\r' && at + 1 < text.length && text[at + 1] == '\n'
+            if (char == '\n' || (includeCarriageReturns && char == '\r')) {
+                if (includeCarriageReturns && crlf) at++
+                starts += at + 1
+            }
+            at++
+        }
+        return starts.toIntArray()
+    }
+
+    private fun lineAt(offset: Int, starts: IntArray): Int {
+        var lo = 0
+        var hi = starts.size - 1
+        while (lo < hi) {
+            val mid = (lo + hi + 1) ushr 1
+            if (starts[mid] <= offset) lo = mid else hi = mid - 1
+        }
+        return lo
     }
 }
 
