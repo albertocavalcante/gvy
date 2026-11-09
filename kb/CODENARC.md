@@ -247,9 +247,15 @@ When disabled, CodeNarc analysis is skipped entirely (no ruleset loading, no dia
 
 **Automatic Detection**: Jenkins projects are automatically detected by the presence of:
 
-- `Jenkinsfile` in the workspace root
-- `vars/` directory (Jenkins shared library)
-- `resources/` directory (Jenkins shared library resources)
+- a `Jenkinsfile` regular file in the workspace root
+- a `vars/` directory with at least one direct `*.groovy` script (Jenkins shared library global variables)
+
+`resources/`, `src/com/` and `src/org/` are not evidence on their own: ordinary projects use them too, and the Jenkins
+profile intentionally omits the normal Groovy rules (#1200). A shared library without `vars/` scripts can opt in with a
+workspace ruleset (for example `.codenarc`). To get the full built-in Jenkins profile, copy
+`diagnostics/codenarc/src/main/resources/codenarc/rulesets/frameworks/jenkins.groovy` into it: that profile adds
+`CatchException`, `CatchThrowable`, `ThrowException` and `UnusedVariable` and sets rule priorities. Including only
+`ruleset('rulesets/jenkins.xml')` gives just the 7 CPS rules listed below.
 
 **Bundled Jenkins Rules**: The LSP includes CodeNarc's bundled `rulesets/jenkins.xml` which provides 7 Jenkins-specific
 CPS (Continuation Passing Style) rules:

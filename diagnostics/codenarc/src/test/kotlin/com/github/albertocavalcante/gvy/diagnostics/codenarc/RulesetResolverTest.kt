@@ -202,6 +202,45 @@ class RulesetResolverTest {
     }
 
     @Test
+    fun `plain project with generic directories resolves the default ruleset`(@TempDir tempDir: Path) {
+        // Regression for #1200: editor extension assets in resources/ selected the Jenkins profile.
+        Files.createDirectories(tempDir.resolve("resources"))
+        Files.createFile(tempDir.resolve("resources/icon.png"))
+        Files.createDirectories(tempDir.resolve("src/com/example"))
+        Files.createDirectories(tempDir.resolve("src/org/example"))
+
+        val config = resolver.resolve(createWorkspaceContext(tempDir, enabled = true))
+
+        assertEquals("resource:codenarc/rulesets/base/default.groovy", config.source)
+        assertFalse(config.rulesetContent.contains("ruleset('rulesets/jenkins.xml')"))
+    }
+
+    @Test
+    fun `shared library with vars scripts resolves the Jenkins ruleset`(@TempDir tempDir: Path) {
+        Files.createDirectory(tempDir.resolve("vars"))
+        Files.writeString(tempDir.resolve("vars/buildPlugin.groovy"), "def call() {}\n")
+        Files.createDirectories(tempDir.resolve("resources"))
+
+        val config = resolver.resolve(createWorkspaceContext(tempDir, enabled = true))
+
+        assertEquals("resource:codenarc/rulesets/frameworks/jenkins.groovy", config.source)
+    }
+
+    @Test
+    fun `explicit workspace ruleset takes precedence over Jenkins detection`(@TempDir tempDir: Path) {
+        Files.createFile(tempDir.resolve("Jenkinsfile"))
+        Files.createDirectory(tempDir.resolve("vars"))
+        Files.writeString(tempDir.resolve("vars/buildPlugin.groovy"), "def call() {}\n")
+        val customRuleset = "ruleset { ruleset('rulesets/basic.xml') }"
+        Files.writeString(tempDir.resolve("codenarc.groovy"), customRuleset)
+
+        val config = resolver.resolve(createWorkspaceContext(tempDir, enabled = true))
+
+        assertEquals("workspace:codenarc.groovy", config.source)
+        assertEquals(customRuleset, config.rulesetContent)
+    }
+
+    @Test
     fun `should use workspace codenarc file when present`(@TempDir tempDir: Path) {
         // Given: Workspace with .codenarc file
         val customRuleset = """
