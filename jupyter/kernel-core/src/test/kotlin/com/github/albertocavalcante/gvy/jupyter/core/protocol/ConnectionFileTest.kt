@@ -148,4 +148,25 @@ class ConnectionFileTest {
         // Then: Signing should be enabled
         assertThat(config.isSigningEnabled()).isTrue()
     }
+
+    @Test
+    fun `should reject unsupported signature scheme when a key is set`() {
+        val file = ConnectionFile(
+            transport = "tcp", ip = "127.0.0.1", controlPort = 1, shellPort = 2, stdinPort = 3,
+            heartbeatPort = 4, iopubPort = 5, signatureScheme = "hmac-sha512", key = "k",
+        )
+
+        org.junit.jupiter.api.assertThrows<IllegalArgumentException> { file.requireSupportedSignatureScheme() }
+    }
+
+    @Test
+    fun `should accept hmac-sha256 and unsigned connection files`() {
+        val base = ConnectionFile(
+            transport = "tcp", ip = "127.0.0.1", controlPort = 1, shellPort = 2, stdinPort = 3,
+            heartbeatPort = 4, iopubPort = 5, signatureScheme = "hmac-sha256", key = "k",
+        )
+
+        base.requireSupportedSignatureScheme()
+        base.copy(signatureScheme = "", key = "").requireSupportedSignatureScheme()
+    }
 }

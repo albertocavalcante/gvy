@@ -27,6 +27,7 @@ fun main(args: Array<String>) {
     runCatching {
         val connectionFileContent = File(connectionFilePath).readText()
         val connectionFile = ConnectionFile.parse(connectionFileContent)
+        connectionFile.requireSupportedSignatureScheme()
 
         // Initialize Crypto
         val signer = HmacSigner(connectionFile.key)
