@@ -32,6 +32,7 @@ class DiagnosticsOrchestratorDebounceTest {
         val compilationService = mockk<GroovyCompilationService>()
         val client = mockk<LanguageClient>()
         val orchestrator: DiagnosticsOrchestrator
+        private val documents = DocumentProvider()
 
         init {
             val result = mockk<CompilationResult> { every { diagnostics } returns emptyList() }
@@ -43,11 +44,16 @@ class DiagnosticsOrchestratorDebounceTest {
                 coroutineScope = scope,
                 compilationService = compilationService,
                 diagnosticsService = diagnosticsService,
-                documentProvider = mockk<DocumentProvider>(),
+                documentProvider = documents,
                 serverConfiguration = ServerConfiguration(),
                 client = { client },
                 debounceMillis = debounceMillis,
             )
+        }
+
+        fun trigger(uri: URI, content: String, debounce: Boolean = false) {
+            documents.put(uri, content)
+            orchestrator.trigger(uri, content, debounce)
         }
     }
 
@@ -59,11 +65,11 @@ class DiagnosticsOrchestratorDebounceTest {
         val scope = scopeOnTestScheduler()
         val f = Fixture(scope, debounceMillis = 250)
 
-        f.orchestrator.trigger(uri, "v1", debounce = true)
+        f.trigger(uri, "v1", debounce = true)
         advanceTimeBy(100)
-        f.orchestrator.trigger(uri, "v2", debounce = true)
+        f.trigger(uri, "v2", debounce = true)
         advanceTimeBy(100)
-        f.orchestrator.trigger(uri, "v3", debounce = true)
+        f.trigger(uri, "v3", debounce = true)
 
         advanceTimeBy(249)
         coVerify(exactly = 0) { f.compilationService.compileAsync(any(), any(), any()) }
@@ -80,7 +86,7 @@ class DiagnosticsOrchestratorDebounceTest {
         val scope = scopeOnTestScheduler()
         val f = Fixture(scope, debounceMillis = 250)
 
-        f.orchestrator.trigger(uri, "opened")
+        f.trigger(uri, "opened")
         advanceTimeBy(1)
 
         coVerify(exactly = 1) { f.compilationService.compileAsync(any(), uri, "opened") }
@@ -93,7 +99,7 @@ class DiagnosticsOrchestratorDebounceTest {
         val scope = scopeOnTestScheduler()
         val f = Fixture(scope, debounceMillis = 250)
 
-        f.orchestrator.trigger(uri, "v1", debounce = true)
+        f.trigger(uri, "v1", debounce = true)
         advanceTimeBy(100)
         f.orchestrator.cancelAndRemove(uri)
 
@@ -108,9 +114,9 @@ class DiagnosticsOrchestratorDebounceTest {
         val scope = scopeOnTestScheduler()
         val f = Fixture(scope, debounceMillis = 250)
 
-        f.orchestrator.trigger(uri, "typed", debounce = true)
+        f.trigger(uri, "typed", debounce = true)
         advanceTimeBy(100)
-        f.orchestrator.trigger(uri, "saved")
+        f.trigger(uri, "saved")
         advanceTimeBy(1)
         coVerify(exactly = 1) { f.compilationService.compileAsync(any(), uri, "saved") }
 

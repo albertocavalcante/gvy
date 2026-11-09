@@ -75,7 +75,6 @@ import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.PrepareRenameDefaultBehavior
 import org.eclipse.lsp4j.PrepareRenameParams
 import org.eclipse.lsp4j.PrepareRenameResult
-import org.eclipse.lsp4j.PublishDiagnosticsParams
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.ReferenceParams
 import org.eclipse.lsp4j.RenameParams
@@ -339,31 +338,28 @@ class GroovyTextDocumentService(
         if (params.contentChanges.isNotEmpty()) {
             // Invalidate documentation cache for this document
             DocumentationProvider.invalidateDocument(uri)
-
-            diagnosticsOrchestrator.trigger(uri, snapshot.content, debounce = true)
         }
+        // Even a version-only update retires the previous snapshot's diagnostic publication.
+        diagnosticsOrchestrator.trigger(uri, snapshot.content, debounce = true)
     }
 
     override fun didClose(params: DidCloseTextDocumentParams) {
         logger.info { "Document closed: ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
-        documentProvider.remove(uri)
-        // The buffer may have differed from the disk ("Don't save"): the index follows the disk again.
-        coroutineScope.launch {
-            compilationService.symbolIndexingService.refreshAfterClose(uri)
-            compilationService.refreshSemanticFromDisk(listOf(uri))
+        try {
+            diagnosticsOrchestrator.close(uri)
+        } finally {
+            // A disconnected client must not prevent restoring disk-backed index state after close.
+            // A reentrant reopen retires this close, including its cleanup of untitled-buffer indices.
+            if (documentProvider.getSnapshot(uri) == null) {
+                coroutineScope.launch {
+                    // TODO(#1184): Fence queued refresh publication against a later reopen.
+                    //   See: https://github.com/albertocavalcante/gvy/issues/1184
+                    compilationService.symbolIndexingService.refreshAfterClose(uri)
+                    compilationService.refreshSemanticFromDisk(listOf(uri))
+                }
+            }
         }
-
-        // Cancel and remove any running diagnostics for this file
-        diagnosticsOrchestrator.cancelAndRemove(uri)
-
-        // Clear diagnostics for closed document
-        client()?.publishDiagnostics(
-            PublishDiagnosticsParams().apply {
-                this.uri = params.textDocument.uri
-                this.diagnostics = emptyList()
-            },
-        )
     }
 
     override fun didSave(params: DidSaveTextDocumentParams) {
