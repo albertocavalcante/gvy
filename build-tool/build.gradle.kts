@@ -56,6 +56,27 @@ kover {
     }
 }
 
+/** Machine-specific paths for the real Tooling API test; internal so they never affect cache keys. */
+abstract class ScopedGradleTestArguments : CommandLineArgumentProvider {
+    @get:Internal
+    abstract val installation: DirectoryProperty
+
+    @get:Internal
+    abstract val userHome: DirectoryProperty
+
+    override fun asArguments(): List<String> =
+        listOfNotNull(
+            installation.orNull?.let { "-Dgvy.gradle.scoped.test.installation=${it.asFile.absolutePath}" },
+            "-Dgvy.gradle.scoped.test.home=${userHome.get().asFile.absolutePath}",
+        )
+}
+
 tasks.test {
     useJUnitPlatform()
+    jvmArgumentProviders.add(
+        objects.newInstance<ScopedGradleTestArguments>().apply {
+            gradle.gradleHomeDir?.let { installation.set(it) }
+            userHome.set(layout.buildDirectory.dir("scoped-gradle-test-home"))
+        },
+    )
 }

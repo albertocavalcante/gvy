@@ -1,0 +1,122 @@
+import javax.inject.Inject
+import org.gradle.api.Plugin
+import org.gradle.api.Project
+import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
+import org.gradle.tooling.provider.model.ToolingModelBuilder
+import org.gradle.tooling.provider.model.ToolingModelBuilderRegistry
+
+class GvyScopedWorkspace implements Serializable {
+    String buildDirectory
+    List targets
+}
+class GvyScopedTarget implements Serializable {
+    String projectPath
+    String projectDirectory
+    String sourceSet
+    String configuration
+    String enrichmentConfiguration
+    String state
+    List sourceRoots
+    List artifacts
+}
+class GvyScopedEntry implements Serializable {
+    String path
+    List coordinateCandidates
+}
+class GvyScopedCoordinates implements Serializable {
+    String group
+    String module
+    String version
+}
+
+class GvyScopedModelBuilder implements ToolingModelBuilder {
+    boolean canBuild(String name) {
+        name == 'com.github.albertocavalcante.gvy.build.gradle.GradleScopedDependencyModel'
+    }
+
+    Object buildAll(String name, Project requested) {
+        def targets = []
+        requested.rootProject.allprojects.each { project ->
+            project.extensions.findByType(SourceSetContainer)?.each { sourceSet ->
+                targets << observe(project, sourceSet)
+            }
+        }
+        new GvyScopedWorkspace(buildDirectory: requested.rootProject.projectDir.absolutePath, targets: targets)
+    }
+
+    private static GvyScopedTarget observe(Project project, sourceSet) {
+        def target = new GvyScopedTarget(
+            projectPath: project.path,
+            projectDirectory: project.projectDir.absolutePath,
+            sourceSet: sourceSet.name,
+            state: 'UNRESOLVED',
+            sourceRoots: [],
+            artifacts: []
+        )
+        try {
+            // Inside the guard: lazily configured roots can fail for one target without erasing siblings.
+            target.sourceRoots = sourceSet.allSource.srcDirs.collect { it.absolutePath }
+            def classpath = sourceSet.compileClasspath.collect { it }
+            target.artifacts = classpath.collect { new GvyScopedEntry(path: it.absolutePath, coordinateCandidates: []) }
+            target.state = 'COMPLETE'
+            enrich(project, sourceSet, classpath, target)
+        } catch (Exception failure) {
+            rethrowCancellationOrError(failure)
+            target.state = 'UNRESOLVED'
+            target.sourceRoots = []
+            target.artifacts = []
+        }
+        target
+    }
+
+    private static void enrich(Project project, sourceSet, List classpath, GvyScopedTarget target) {
+        try {
+            target.enrichmentConfiguration = sourceSet.compileClasspathConfigurationName
+            def configuration = project.configurations.getByName(target.enrichmentConfiguration)
+            // Default strict resolution; no lenient view can hide nominal artifact failures.
+            def resolved = configuration.incoming.artifacts.artifacts
+            def byFile = [:].withDefault { [] }
+            resolved.each { artifact ->
+                def component = artifact.id.componentIdentifier
+                if (component instanceof ModuleComponentIdentifier) {
+                    byFile[artifact.file] << new GvyScopedCoordinates(
+                        group: component.group, module: component.module, version: component.version
+                    )
+                }
+            }
+            def configurationFiles = configuration.collect { it }
+            if (classpath == configurationFiles) target.configuration = configuration.name
+            classpath.eachWithIndex { file, index ->
+                target.artifacts[index].coordinateCandidates = byFile[file]
+            }
+        } catch (Exception failure) {
+            rethrowCancellationOrError(failure)
+            // Effective enumeration is independent of optional nominal configuration enrichment.
+        }
+    }
+
+    private static void rethrowCancellationOrError(Throwable failure) {
+        def seen = Collections.newSetFromMap(new IdentityHashMap<Throwable, Boolean>())
+        def current = failure
+        while (current != null && seen.add(current)) {
+            if (current instanceof Error || current instanceof InterruptedException ||
+                current instanceof java.util.concurrent.CancellationException ||
+                current instanceof org.gradle.api.BuildCancelledException) {
+                throw current
+            }
+            current = current.cause
+        }
+    }
+}
+
+class GvyScopedModelPlugin implements Plugin<Project> {
+    @Inject GvyScopedModelPlugin(ToolingModelBuilderRegistry registry) {
+        registry.register(new GvyScopedModelBuilder())
+    }
+    void apply(Project project) {}
+}
+
+gradle.beforeProject { project ->
+    if (project == project.rootProject) project.pluginManager.apply(GvyScopedModelPlugin)
+}
