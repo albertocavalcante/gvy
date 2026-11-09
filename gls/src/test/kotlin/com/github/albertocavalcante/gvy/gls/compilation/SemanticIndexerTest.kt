@@ -7,6 +7,9 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import java.net.URI
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -119,5 +122,76 @@ class SemanticIndexerTest {
         indexer.update(uri, content, parse(content), phase = Phases.SEMANTIC_ANALYSIS)
 
         assertTrue(index.getDocument(uri) === canonical, "an earlier phase never replaces a later one")
+    }
+
+    @Test
+    fun `building a document holds no lock, so removing the file meanwhile neither waits nor is undone`() {
+        val building = CountDownLatch(1)
+        val removed = CountDownLatch(1)
+        val slow = SemanticIndexer(index, build = { ast, u ->
+            building.countDown()
+            removed.await(LATCH_SECONDS, TimeUnit.SECONDS)
+            com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
+        })
+        val content = "class Slow {}"
+        val ast = parse(content)
+        val update = CompletableFuture.runAsync {
+            slow.update(uri, content, ast, phase = Phases.CANONICALIZATION)
+        }
+        assertTrue(building.await(LATCH_SECONDS, TimeUnit.SECONDS))
+
+        val remove = CompletableFuture.runAsync { slow.remove(uri) }
+        remove.get(REMOVE_SECONDS, TimeUnit.SECONDS) // waited on the build's lock before
+        removed.countDown()
+        update.get(LATCH_SECONDS, TimeUnit.SECONDS)
+
+        assertNull(index.getDocument(uri), "a build that outlived the file's removal must not publish")
+    }
+
+    @Test
+    fun `a publication taken earlier never overwrites one taken later, whichever finishes first`() {
+        val older = indexer.begin(uri)
+        val newer = indexer.begin(uri)
+        newer.use { indexer.publish(it, "class Newer {}", parse("class Newer {}"), Phases.CANONICALIZATION) }
+
+        older.use { indexer.publish(it, "class Older {}", parse("class Older {}"), Phases.CANONICALIZATION) }
+
+        assertEquals(listOf("Newer"), names().filter { it == "Newer" || it == "Older" })
+    }
+
+    @Test
+    fun `a phase upgrade by an older publication does not lower the ordering fence`() {
+        val t1 = indexer.begin(uri)
+        val t2 = indexer.begin(uri)
+        val t3 = indexer.begin(uri)
+        t3.use { indexer.publish(it, "class X {}", parse("class X {}"), Phases.SEMANTIC_ANALYSIS) }
+        t1.use { indexer.publish(it, "class X {}", parse("class X {}"), Phases.CANONICALIZATION) }
+
+        t2.use { indexer.publish(it, "class Y {}", parse("class Y {}"), Phases.CANONICALIZATION) }
+
+        assertEquals(listOf("X"), names().filter { it == "X" || it == "Y" })
+    }
+
+    @Test
+    fun `an older publication cannot land after a newer one failed to build`() {
+        var fail = false
+        val failing = SemanticIndexer(index, build = { ast, u ->
+            check(!fail) { "builder bug" }
+            com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
+        })
+        val older = failing.begin(uri)
+        val newer = failing.begin(uri)
+        fail = true
+        newer.use { failing.publish(it, "class Newer {}", parse("class Newer {}"), Phases.CANONICALIZATION) }
+        fail = false
+
+        older.use { failing.publish(it, "class Older {}", parse("class Older {}"), Phases.CANONICALIZATION) }
+
+        assertNull(index.getDocument(uri), "the older text must not come back")
+    }
+
+    private companion object {
+        const val LATCH_SECONDS = 10L
+        const val REMOVE_SECONDS = 3L
     }
 }
