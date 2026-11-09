@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    # Kotlin/Gradle paths are push-only: Bazel runs after merge to catch Gradle/Bazel dependency
+    # drift (e.g. a test importing a library its Bazel target lacks) without costing every PR a run.
     paths:
       - 'MODULE.bazel'
       - 'MODULE.bazel.lock'
@@ -14,6 +16,11 @@ on:
       - '.bazelversion'
       - 'third_party/patches/**'
       - '.github/workflows/ci-bazel.yml'
+      - '**/src/**'
+      - '**/build.gradle.kts'
+      - 'gradle/libs.versions.toml'
+  schedule:
+    - cron: '30 4 * * *' # Daily at 04:30 UTC: backstop for drift the push filter misses
   pull_request:
     branches:
       - main
