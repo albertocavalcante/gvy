@@ -32,11 +32,25 @@ import javax.xml.parsers.DocumentBuilderFactory
  * Manages the Jenkins pipeline context, including classpath and GDSL metadata.
  * Keeps Jenkins-specific compilation separate from general Groovy sources.
  */
-class JenkinsContext(
+class JenkinsContext internal constructor(
     private val configuration: JenkinsConfiguration,
     private val workspaceRoot: Path,
-    private val pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
+    private val pluginManager: JenkinsPluginManager,
+    bundledMetadataLoader: () -> MergedJenkinsMetadata,
+    private val classpathScanner: (List<Path>) -> BundledJenkinsMetadata,
 ) {
+    constructor(
+        configuration: JenkinsConfiguration,
+        workspaceRoot: Path,
+        pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
+    ) : this(
+        configuration = configuration,
+        workspaceRoot = workspaceRoot,
+        pluginManager = pluginManager,
+        bundledMetadataLoader = { sharedBundledMetadata },
+        classpathScanner = JenkinsClasspathScanner()::scan,
+    )
+
     private val logger = KotlinLogging.logger {}
     private val libraryResolver = SharedLibraryResolver(configuration)
     private val gdslLoader = GdslLoader()
@@ -245,28 +259,44 @@ class JenkinsContext(
      */
     fun isJenkinsFile(uri: java.net.URI): Boolean = fileDetector.isJenkinsFile(uri)
 
-    private val scanner = JenkinsClasspathScanner()
-    private val dynamicMetadataCache =
-        mutableMapOf<Int, BundledJenkinsMetadata>()
-    private var currentClasspathHash: Int = 0
+    /** Bundled base for this context, loaded on first use and never rebuilt. */
+    private val bundledMetadata: MergedJenkinsMetadata by lazy(bundledMetadataLoader)
+
+    /** Result of the latest successful classpath scan; replaced atomically by [scanClasspath]. */
+    private class ScanSnapshot(val classpath: List<Path>, val metadata: BundledJenkinsMetadata)
+
+    /** Merged view computed for one scan snapshot (null scan = bundled metadata only). */
+    private class MergedSnapshot(val scan: ScanSnapshot?, val metadata: MergedJenkinsMetadata)
+
+    @Volatile
+    private var scanSnapshot: ScanSnapshot? = null
+
+    @Volatile
+    private var mergedSnapshot: MergedSnapshot? = null
 
     /**
      * Get combined metadata (bundled + dynamic), optionally filtered by installed plugins.
+     *
+     * Completion and hover call this per request, so the result is memoized: it is rebuilt only
+     * when a classpath scan publishes new dynamic metadata. Configuration (plugins, GDSL paths)
+     * is fixed per context; a configuration change creates a new context and therefore a new view.
      *
      * HEURISTIC: If plugins.txt exists, filter to only show steps from installed plugins.
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
      */
     fun getAllMetadata(): MergedJenkinsMetadata {
-        // 1. Load base bundled/versioned metadata
-        val loader = VersionedMetadataLoader()
-        val versionedMerged = loader.loadMerged() // This is MergedJenkinsMetadata (Context-rich)
-        // We need Bundled for merging... VersionedMetadataLoader.loadMerged() returns MergedJenkinsMetadata.
-        // We might need to step back and use MetadataMerger capabilities directly.
+        val scan = scanSnapshot
+        mergedSnapshot?.takeIf { it.scan === scan }?.let { return it.metadata }
 
-        // Let's get the raw bundled/versioned first if possible or just use the merged and overlay dynamic.
-        // Since MergedJenkinsMetadata is the target, we can overlay dynamic steps onto it.
+        // Racing callers may compute the same view twice; both results are equal and the
+        // expensive bundled load is guarded by its own lazy initializer.
+        val merged = buildMergedMetadata(scan?.metadata)
+        mergedSnapshot = MergedSnapshot(scan, merged)
+        return merged
+    }
 
-        val dynamicMetadata = dynamicMetadataCache[currentClasspathHash]
+    private fun buildMergedMetadata(dynamicMetadata: BundledJenkinsMetadata?): MergedJenkinsMetadata {
+        val versionedMerged = bundledMetadata
 
         val finalMetadata = if (dynamicMetadata != null) {
             val combinedSteps = versionedMerged.steps + dynamicMetadata.steps.mapValues { (name, step) ->
@@ -330,19 +360,23 @@ class JenkinsContext(
 
     /**
      * Parse and scan classpath for Jenkins metadata.
+     *
+     * Rescans only when the classpath differs from the last scan. The production scanner
+     * ([JenkinsClasspathScanner.scan]) never throws: an unreadable jar yields empty metadata, which is
+     * published like any other result. Only an injected scanner that throws leaves the previous
+     * snapshot in place.
      */
+    @Synchronized
     fun scanClasspath(classpath: List<Path>) {
-        val newHash = classpath.hashCode()
-        if (newHash == currentClasspathHash && dynamicMetadataCache.containsKey(newHash)) {
-            logger.debug { "Classpath hash unchanged ($newHash), skipping scan" }
+        if (scanSnapshot?.classpath == classpath) {
+            logger.debug { "Classpath unchanged (${classpath.size} entries), skipping scan" }
             return
         }
 
         try {
-            logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata (hash: $newHash)" }
-            val metadata = scanner.scan(classpath)
-            dynamicMetadataCache[newHash] = metadata
-            currentClasspathHash = newHash
+            logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
+            val snapshot = classpath.toList()
+            scanSnapshot = ScanSnapshot(snapshot, classpathScanner(snapshot))
         } catch (e: Exception) {
             logger.error(e) { "Failed to scan classpath" }
         }
@@ -352,6 +386,14 @@ class JenkinsContext(
      * Parses library references from Jenkinsfile source.
      */
     fun parseLibraries(source: String): List<LibraryReference> = libraryParser.parseLibraries(source)
+
+    companion object {
+        /**
+         * Bundled and enrichment metadata come from immutable classpath resources, so every
+         * context in the process shares one deserialized and merged copy.
+         */
+        private val sharedBundledMetadata: MergedJenkinsMetadata by lazy { VersionedMetadataLoader().loadMerged() }
+    }
 }
 
 private fun MutableList<Path>.addProjectDependencies(logger: KLogger, projectDependencies: List<Path>) {

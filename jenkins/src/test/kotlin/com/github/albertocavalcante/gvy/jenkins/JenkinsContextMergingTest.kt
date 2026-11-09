@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.jenkins
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter
+import com.github.albertocavalcante.gvy.jenkins.metadata.VersionedMetadataLoader
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -17,10 +18,6 @@ class JenkinsContextMergingTest {
 
     @Test
     fun `getAllMetadata should merge stable parameters when overlaying dynamic metadata`() {
-        // 1. Setup Context
-        val config = JenkinsConfiguration()
-        val context = JenkinsContext(config, tempDir)
-
         // 2. Define a dynamic step for "sh" (which exists in StableStepDefinitions)
         // Stable "sh" has parameters like "script", "returnStdout", etc.
         // Our dynamic version only defines "script" and a NEW "customDynamicParam".
@@ -43,15 +40,15 @@ class JenkinsContextMergingTest {
             agentTypes = emptyMap(),
         )
 
-        // 3. Inject into dynamicMetadataCache using reflection (Java Reflection to avoid kotlin-reflect dependency)
-        val cacheField = JenkinsContext::class.java.getDeclaredField("dynamicMetadataCache")
-        cacheField.isAccessible = true
-
-        @Suppress("UNCHECKED_CAST")
-        val cache = cacheField.get(context) as MutableMap<Int, BundledJenkinsMetadata>
-        cache[0] = dynamicMetadata
-
-        // We assume currentClasspathHash is 0 by default, which matches our cache key.
+        // 3. Publish the dynamic metadata through a classpath scan
+        val context = JenkinsContext(
+            configuration = JenkinsConfiguration(),
+            workspaceRoot = tempDir,
+            pluginManager = JenkinsPluginManager(),
+            bundledMetadataLoader = { VersionedMetadataLoader().loadMerged() },
+            classpathScanner = { dynamicMetadata },
+        )
+        context.scanClasspath(listOf(tempDir.resolve("workflow-durable-task-step.jar")))
 
         // 4. Act
         val result = context.getAllMetadata()
