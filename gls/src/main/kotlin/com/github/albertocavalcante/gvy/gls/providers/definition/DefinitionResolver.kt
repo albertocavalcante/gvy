@@ -22,6 +22,7 @@ import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.Reso
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.SemanticDBResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.definition.resolution.SymbolResolutionStrategy
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
@@ -135,6 +136,7 @@ class DefinitionResolver(
             logger.debug { "Specific error finding definition: $e" }
             throw e
         } catch (e: Exception) {
+            rethrowIfCancellationOrError(e) // a cancelled lookup is not "symbol not found"
             logger.error(e) { "Unexpected error finding definition at $uri:${position.line}:${position.character}" }
             throw createSymbolNotFoundException("unknown", uri, position)
         }

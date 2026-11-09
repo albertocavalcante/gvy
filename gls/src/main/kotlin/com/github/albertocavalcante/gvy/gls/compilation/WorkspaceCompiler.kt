@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -260,31 +261,20 @@ class WorkspaceCompiler(
                     "No AST produced"
                 }
                 logger.warn { "Failed to compile $uri: $errorMessage" }
-                FileCompilationResult.Failure(
-                    listOf(
-                        CompilationError(
-                            uri = uri,
-                            message = errorMessage,
-                            phase = "SEMANTIC_ANALYSIS",
-                        ),
-                    ),
-                )
+                semanticAnalysisFailure(uri, errorMessage)
             }
         } catch (e: Exception) {
+            rethrowIfCancellationOrError(e) // cancellation is not a compile error of this file
             logger.error(e) { "Exception compiling $uri" }
-            FileCompilationResult.Failure(
-                listOf(
-                    CompilationError(
-                        uri = uri,
-                        message = e.message ?: "Unknown error: ${e.javaClass.simpleName}",
-                        phase = "SEMANTIC_ANALYSIS",
-                    ),
-                ),
-            )
+            semanticAnalysisFailure(uri, e.message ?: "Unknown error: ${e.javaClass.simpleName}")
         } finally {
             publication.close()
         }
     }
+
+    private fun semanticAnalysisFailure(uri: URI, message: String) = FileCompilationResult.Failure(
+        listOf(CompilationError(uri = uri, message = message, phase = "SEMANTIC_ANALYSIS")),
+    )
 
     /**
      * Builds locator candidates for a source file.

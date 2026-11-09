@@ -4,6 +4,7 @@ import com.github.albertocavalcante.gvy.build.BuildToolManager
 import com.github.albertocavalcante.gvy.build.TestCommand
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.coverage.GetCoverageParams
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
 import com.github.albertocavalcante.reports.coverage.parsers.JacocoParser
 import com.github.albertocavalcante.reports.results.model.TestResultsResponse
@@ -56,6 +57,7 @@ class TestRequestDelegate(
                 logger.error(e) { "Error generating test command" }
                 throw e
             } catch (e: Exception) {
+                rethrowIfCancellationOrError(e) // a cancelled request is not an internal error
                 logger.error(e) { "Error generating test command" }
                 throw ResponseErrorException(
                     ResponseError(

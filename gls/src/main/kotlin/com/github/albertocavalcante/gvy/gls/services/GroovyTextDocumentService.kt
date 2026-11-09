@@ -32,6 +32,7 @@ import com.github.albertocavalcante.gvy.gls.providers.typedefinition.TypeDefinit
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -482,6 +483,7 @@ class GroovyTextDocumentService(
                 logger.debug { "Found ${highlights.size} highlights" }
                 highlights
             } catch (e: Exception) {
+                rethrowIfCancellationOrError(e) // a cancelled request ends cancelled, not with no highlights
                 when (e) {
                     is IllegalArgumentException -> logger.error(e) { "Invalid arguments finding highlights" }
                     is IllegalStateException -> logger.error(e) { "Invalid state finding highlights" }
