@@ -5,10 +5,10 @@
         </encoder>
     </appender>
 
-    <logger name="com.github.albertocavalcante.groovylsp.e2e" level="INFO" additivity="false">
+    <logger name="com.github.albertocavalcante.gvy.gls.e2e" level="INFO" additivity="false">
         <appender-ref ref="STDOUT" />
     </logger>
-    <logger name="com.github.albertocavalcante.groovylsp" level="INFO" additivity="false">
+    <logger name="com.github.albertocavalcante.gvy" level="INFO" additivity="false">
         <appender-ref ref="STDOUT" />
     </logger>
     <logger name="StepExecutors" level="INFO" additivity="false">
