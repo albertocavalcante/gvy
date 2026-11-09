@@ -143,6 +143,26 @@ describe("GradleService", () => {
     expect(gradleService.isTaskDiscoverySupported()).to.equal(false);
   });
 
+  it("reports an unsupporting server once through the log callback", async () => {
+    const messages: string[] = [];
+    const service = new GradleService(
+      () => mockLanguageClient as unknown as LanguageClient,
+      (message) => messages.push(message),
+    );
+    mockLanguageClient.sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method",
+      ),
+    );
+
+    await service.getTasks("file:///w");
+    await service.getTasks("file:///w");
+
+    expect(messages).to.have.length(1);
+    expect(messages[0]).to.match(/groovy\/gradleTasks/);
+  });
+
   it("asks again after a restart replaces the client", async () => {
     mockLanguageClient.sendRequest.rejects(
       new ResponseError(

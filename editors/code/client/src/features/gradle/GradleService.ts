@@ -29,7 +29,10 @@ export class GradleService {
   /** Clients that answered MethodNotFound; a restart yields a new client. */
   private readonly unsupportedClients = new WeakSet<object>();
 
-  constructor(private readonly getClient: ClientProvider) {}
+  constructor(
+    private readonly getClient: ClientProvider,
+    private readonly log: (message: string) => void = () => undefined,
+  ) {}
 
   private get client() {
     return requireClient(this.getClient);
@@ -59,8 +62,8 @@ export class GradleService {
       // no tasks and keep Build/Test/Clean and tasks.json entries working.
       if (isMethodNotFound(error)) {
         this.unsupportedClients.add(client);
-        console.info(
-          "Groovy language server does not support groovy/gradleTasks; Gradle task discovery is off for this session.",
+        this.log(
+          "The language server does not support groovy/gradleTasks; Gradle task discovery is off until it restarts.",
         );
         return [];
       }
