@@ -8,7 +8,7 @@ steps:
         jenkins.filePatterns: ["Jenkinsfile"]
         jenkins.sharedLibraries:
           - name: "utils"
-            jar: "/tmp/utils.jar"
+            jar: "/nonexistent/gvy-e2e/utils.jar"
   - initialized: {}
   - openDocument:
       path: "Jenkinsfile"

@@ -23,12 +23,16 @@ data class JenkinsConfiguration(
         /**
          * Files treated as Jenkins pipelines when `jenkins.filePatterns` is not set.
          *
-         * Keep in sync with the `groovy.jenkins.filePatterns` default and the `jenkinsfile` language
-         * patterns in `editors/code/package.json`, so files the editor opens as Jenkinsfiles get Jenkins features.
+         * Must equal the `groovy.jenkins.filePatterns` default in `editors/code/package.json` (enforced by the
+         * extension manifest test), which in turn covers every `jenkinsfile` language pattern, so files the editor
+         * opens as Jenkinsfiles get Jenkins features. `Jenkinsfile*` is deliberately avoided: it would claim classes
+         * such as `JenkinsfileTest.groovy`.
          */
         val DEFAULT_FILE_PATTERNS: List<String> = listOf(
             "Jenkinsfile",
-            "Jenkinsfile*",
+            "Jenkinsfile.*",
+            "Jenkinsfile-*",
+            "Jenkinsfile_*",
             "*.jenkinsfile",
             "*.Jenkinsfile",
             "vars/*.groovy",

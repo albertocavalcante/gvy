@@ -75,4 +75,28 @@ describe("package.json manifest", () => {
       );
     }
   });
+
+  it("uses the same Jenkins file patterns as the server default", () => {
+    const kotlin = fs.readFileSync(
+      path.join(
+        root,
+        "../../jenkins/src/main/kotlin/com/github/albertocavalcante/gvy/jenkins/JenkinsConfiguration.kt",
+      ),
+      "utf8",
+    );
+    const list = /DEFAULT_FILE_PATTERNS: List<String> = listOf\(([^)]*)\)/.exec(
+      kotlin,
+    );
+    assert.ok(
+      list,
+      "DEFAULT_FILE_PATTERNS not found in JenkinsConfiguration.kt",
+    );
+    const serverDefaults = [...list[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    assert.deepStrictEqual(
+      manifest.contributes.configuration.properties[
+        "groovy.jenkins.filePatterns"
+      ].default,
+      serverDefaults,
+    );
+  });
 });

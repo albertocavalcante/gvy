@@ -234,7 +234,9 @@
           "Jenkinsfile"
         ],
         "filenamePatterns": [
-          "Jenkinsfile*",
+          "Jenkinsfile.*",
+          "Jenkinsfile-*",
+          "Jenkinsfile_*",
           "*.jenkinsfile",
           "*.Jenkinsfile"
         ],
@@ -682,7 +684,9 @@
           },
           "default": [
             "Jenkinsfile",
-            "Jenkinsfile*",
+            "Jenkinsfile.*",
+            "Jenkinsfile-*",
+            "Jenkinsfile_*",
             "*.jenkinsfile",
             "*.Jenkinsfile",
             "vars/*.groovy"

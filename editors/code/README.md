@@ -142,7 +142,9 @@ For Jenkins shared libraries:
   // File patterns to recognize as Jenkinsfiles (this is the default; setting it replaces the whole list)
   "groovy.jenkins.filePatterns": [
     "Jenkinsfile",
-    "Jenkinsfile*",
+    "Jenkinsfile.*",
+    "Jenkinsfile-*",
+    "Jenkinsfile_*",
     "*.jenkinsfile",
     "*.Jenkinsfile",
     "vars/*.groovy"
