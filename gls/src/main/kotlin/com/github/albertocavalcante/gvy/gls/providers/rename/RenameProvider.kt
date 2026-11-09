@@ -66,7 +66,8 @@ class RenameProvider private constructor(
 
     private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
-    private val crossFileUses = CrossFileUseGuard(compilationService.getWorkspaceSymbolIndex(), openBuffers)
+    private val crossFileUses =
+        CrossFileUseGuard(checkNotNull(compilationService.getWorkspaceSymbolIndex()), openBuffers)
 
     // Groovy keywords that cannot be used as identifiers
     private val groovyKeywords = setOf(

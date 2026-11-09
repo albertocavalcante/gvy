@@ -33,16 +33,20 @@ class CrossFileRenameGuardTest {
         return file.toUri()
     }
 
-    /** Writes the files, compiles the workspace, then opens and compiles [open] as the editor would. */
-    private fun workspace(files: Map<String, String>, open: String): URI = runBlocking {
-        val uris = files.mapValues { (name, text) -> write(name, text) }
-        service.workspaceManager.initializeWorkspace(tempDir)
-        service.getWorkspaceCompiler().compileWorkspace()
-        val uri = checkNotNull(uris[open])
-        documents.put(uri, files.getValue(open))
-        service.compile(uri, files.getValue(open))
-        uri
-    }
+    /**
+     * Writes the files, compiles the workspace, then opens and compiles [open] as the editor would, under the
+     * URI spelling [editorSpelling] gives it (editors spell file URIs differently from `Path.toUri()`).
+     */
+    private fun workspace(files: Map<String, String>, open: String, editorSpelling: (URI) -> URI = { it }): URI =
+        runBlocking {
+            val uris = files.mapValues { (name, text) -> write(name, text) }
+            service.workspaceManager.initializeWorkspace(tempDir)
+            service.getWorkspaceCompiler().compileWorkspace()
+            val uri = editorSpelling(checkNotNull(uris[open]))
+            documents.put(uri, files.getValue(open))
+            service.compile(uri, files.getValue(open))
+            uri
+        }
 
     private fun positionOf(text: String, needle: String, occurrence: Int = 0): Position {
         var index = -1
@@ -144,6 +148,30 @@ class CrossFileRenameGuardTest {
         val edit = provider.provideRename(uri.toString(), positionOf(a, "total"), "sum")
 
         assertEquals(2, edit.documentChanges.filter { it.isLeft }.sumOf { it.left.edits.size })
+    }
+
+    @Test
+    fun `the renamed file under the editor's URI spelling is not another file`(): Unit = runBlocking {
+        // VS Code percent-encodes '@' where Path.toUri() does not, so the index holds both spellings.
+        val a = "class A {\n    def greet() { 'hi' }\n    def run() { greet() }\n}\n"
+        val files = mapOf("@org/A.groovy" to a, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
+        val uri = workspace(files, open = "@org/A.groovy") { URI.create(it.toString().replace("@", "%40")) }
+        assertTrue("%40" in uri.toString())
+
+        val edit = provider.provideRename(uri.toString(), positionOf(a, "greet"), "hello")
+
+        assertEquals(2, edit.documentChanges.filter { it.isLeft }.sumOf { it.left.edits.size })
+    }
+
+    @Test
+    fun `a class used only in its own file still renames under the text rule`(): Unit = runBlocking {
+        val a = "class Foo {\n    Foo copy() { new Foo() }\n}\n"
+        val files = mapOf("Foo.groovy" to a, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
+        val uri = workspace(files, open = "Foo.groovy")
+
+        val edit = provider.provideRename(uri.toString(), positionOf(a, "Foo"), "Bar")
+
+        assertTrue(edit.documentChanges.isNotEmpty())
     }
 
     @Test
