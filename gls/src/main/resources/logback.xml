@@ -14,7 +14,7 @@
     </root>
 
     <!-- Groovy LSP specific logger -->
-    <logger name="com.github.albertocavalcante.groovylsp" level="INFO" />
+    <logger name="com.github.albertocavalcante.gvy" level="INFO" />
     <logger name="GroovyLSP" level="INFO" />
 
     <!-- Reduce verbosity of some dependencies -->
