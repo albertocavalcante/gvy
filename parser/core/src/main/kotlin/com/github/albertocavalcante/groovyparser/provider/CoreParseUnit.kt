@@ -43,7 +43,15 @@ import com.github.albertocavalcante.groovyparser.ast.stmt.ThrowStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.TryCatchStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.WhileStatement
 import java.nio.file.Path
+import com.github.albertocavalcante.groovyparser.Position as CorePosition
 
+/**
+ * Public adapter over parser-produced core nodes. Their source spans retain Groovy's
+ * 1-based, exclusive end positions; lookup and text extraction use those half-open spans.
+ * Query columns remain native parser coordinates, without LSP UTF-16 normalization.
+ * Native supplementary-character columns have mixed units: lookup and text stay null
+ * where a line prefix makes conversion ambiguous, rather than returning a wrong slice.
+ */
 class CoreParseUnit(
     override val source: String,
     override val path: Path?,
@@ -52,19 +60,23 @@ class CoreParseUnit(
 
     override val isSuccessful: Boolean = result.isSuccessful
 
-    private val lineCache by lazy { source.lines() }
+    private val lineStartOffsets by lazy {
+        buildList {
+            add(0)
+            source.forEachIndexed { index, character ->
+                if (character == '\n') {
+                    add(index + 1)
+                }
+            }
+        }
+    }
 
     override fun nodeAt(position: Position): NodeInfo? {
         val unit = result.result.orElse(null) ?: return null
+        if (sourceOffset(position.line, position.column) == null) return null
 
-        // Convert API position (1-based) to core Position (1-based)
-        val corePosition = com.github.albertocavalcante.groovyparser.Position(position.line, position.column)
-
-        // Create a range for the position (single point)
-        val targetRange = com.github.albertocavalcante.groovyparser.Range(corePosition, corePosition)
-
-        // Find the deepest node containing this position
-        val node = unit.findByRange(targetRange).orElse(null) ?: return null
+        val corePosition = CorePosition(position.line, position.column)
+        val node = findNodeAt(unit, corePosition) ?: return null
 
         return NodeInfo(
             kind = mapNodeKind(node),
@@ -72,6 +84,15 @@ class CoreParseUnit(
             range = extractRange(node),
             text = extractNodeText(node),
         )
+    }
+
+    private fun findNodeAt(node: Node, position: CorePosition): Node? {
+        val range = node.range
+        if (range != null && (position < range.begin || position >= range.end)) return null
+
+        // The root and synthetic script containers may have no range while their children do.
+        return node.getChildNodes().firstNotNullOfOrNull { findNodeAt(it, position) }
+            ?: node.takeIf { range != null }
     }
 
     override fun diagnostics(): List<Diagnostic> = result.problems.map { problem ->
@@ -194,52 +215,21 @@ class CoreParseUnit(
 
     private fun extractNodeText(node: Node): String? {
         val range = node.range ?: return null
-        // Extract text from source using the node's range
-        val lines = lineCache
-        // Validate line numbers are within bounds (1-based line numbers)
-        if (lines.isEmpty() ||
-            range.begin.line < 1 || range.begin.line > lines.size ||
-            range.end.line < 1 || range.end.line > lines.size
-        ) {
-            return null
-        }
-        return if (range.begin.line == range.end.line) {
-            // Single line
-            val line = lines[range.begin.line - 1]
-            val startCol = (range.begin.column - 1).coerceAtLeast(0)
-            val endCol = (range.end.column - 1).coerceAtMost(line.length)
-            if (startCol <= endCol && startCol < line.length) {
-                line.substring(startCol, endCol)
-            } else {
-                null
-            }
-        } else {
-            // Multi-line
-            val result = StringBuilder()
-            for (lineNum in range.begin.line..range.end.line) {
-                val line = lines[lineNum - 1]
-                when (lineNum) {
-                    range.begin.line -> {
-                        val startCol = (range.begin.column - 1).coerceAtLeast(0)
-                        if (startCol < line.length) {
-                            result.append(line.substring(startCol))
-                        }
-                    }
-                    range.end.line -> {
-                        val endCol = (range.end.column - 1).coerceAtMost(line.length)
-                        if (endCol >= 0) {
-                            result.append(line.substring(0, endCol))
-                        }
-                    }
-                    else -> {
-                        result.append(line)
-                    }
-                }
-                if (lineNum < range.end.line) {
-                    result.append("\n")
-                }
-            }
-            result.toString()
-        }
+        val start = sourceOffset(range.begin.line, range.begin.column) ?: return null
+        val end = sourceOffset(range.end.line, range.end.column) ?: return null
+        return if (start < end) source.substring(start, end) else null
+    }
+
+    private fun sourceOffset(line: Int, column: Int): Int? {
+        if (line < 1 || column < 1) return null
+        val start = lineStartOffsets.getOrNull(line - 1) ?: return null
+        val nextLineStart = lineStartOffsets.getOrNull(line)
+        var end = nextLineStart?.minus(1) ?: source.length
+        if (nextLineStart != null && end > start && source[end - 1] == '\r') end--
+        if (column > end - start + 1) return null
+        val offset = start + column - 1
+        // TODO(#1190): Normalize supplementary-character coordinate units across parser providers.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1190
+        return offset.takeUnless { (start until offset).any { source[it].isSurrogate() } }
     }
 }
