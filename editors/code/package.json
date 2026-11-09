@@ -671,19 +671,19 @@
         "groovy.repl.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Enable/disable the Groovy REPL integration"
+          "description": "Enable/disable the Groovy REPL integration. The REPL is not yet supported by the language server."
         },
         "groovy.repl.maxSessions": {
           "type": "number",
           "default": 10,
           "minimum": 1,
-          "description": "Maximum number of concurrent REPL sessions"
+          "description": "Maximum number of concurrent REPL sessions. The REPL is not yet supported by the language server."
         },
         "groovy.repl.sessionTimeoutMinutes": {
           "type": "number",
           "default": 60,
           "minimum": 1,
-          "description": "Idle timeout for REPL sessions (minutes)"
+          "description": "Idle timeout for REPL sessions (minutes). The REPL is not yet supported by the language server."
         },
         "groovy.codenarc.enabled": {
           "type": "boolean",

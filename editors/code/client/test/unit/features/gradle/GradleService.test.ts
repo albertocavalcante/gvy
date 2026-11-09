@@ -85,6 +85,21 @@ describe("GradleService", () => {
     expect(tasks).to.be.an("array").that.is.empty;
   });
 
+  it("rethrows server errors other than a missing handler", async () => {
+    mockLanguageClient.sendRequest.rejects(
+      new ResponseError(ErrorCodes.InternalError, "Gradle import failed"),
+    );
+
+    let error: Error | undefined;
+    try {
+      await gradleService.getTasks("file:///path/to/workspace");
+    } catch (e) {
+      error = e as Error;
+    }
+
+    expect(error?.message).to.equal("Gradle import failed");
+  });
+
   it("should return an empty array if LSP returns null", async () => {
     const workspaceUri = "file:///path/to/workspace";
     mockLanguageClient.sendRequest.resolves(null);

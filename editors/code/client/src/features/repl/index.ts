@@ -52,6 +52,7 @@ class ReplSession implements vscode.Disposable {
 export class ReplService implements vscode.Disposable {
   private readonly replClient = new GroovyReplClient(getClient);
   private session: ReplSession | undefined;
+  private warnedUnsupported = false;
   private readonly statusBar: ReplStatusBar;
 
   constructor() {
@@ -196,7 +197,11 @@ export class ReplService implements vscode.Disposable {
         const message =
           "The Groovy REPL is not supported by this server version.";
         session.write(`${message}\r\n`);
-        vscode.window.showWarningMessage(message);
+        // Once per session: keybound sends would otherwise stack popups.
+        if (!this.warnedUnsupported) {
+          this.warnedUnsupported = true;
+          vscode.window.showWarningMessage(message);
+        }
       } else {
         const errorMessage =
           error instanceof Error ? error.message : String(error);

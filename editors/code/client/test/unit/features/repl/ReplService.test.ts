@@ -130,4 +130,23 @@ describe("ReplService", () => {
       "user is told outside the terminal",
     );
   });
+
+  it("shows the unsupported popup once, then only writes to the terminal", async () => {
+    sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method: groovy/execute",
+      ),
+    );
+    await commands.get("groovy.repl.sendLine")!();
+    await commands.get("groovy.repl.sendLine")!();
+    const [terminal] = terminals;
+    terminal.pty.open();
+    const text = terminal.written.join("");
+    assert.strictEqual(
+      text.match(/not supported by this server version/g)?.length,
+      2,
+    );
+    assert.ok(showWarningMessage.calledOnce, "popup repeated");
+  });
 });

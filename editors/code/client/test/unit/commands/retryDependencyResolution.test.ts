@@ -3,7 +3,7 @@ import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
 describe("groovy.retryDependencyResolution", () => {
-  function load() {
+  function load(running = true) {
     const handlers = new Map<string, () => Promise<void>>();
     // The server has no groovy.resolveDependencies command: an unknown
     // workspace/executeCommand resolves to null instead of failing.
@@ -36,7 +36,8 @@ describe("groovy.retryDependencyResolution", () => {
       "../server/client": {
         restartClient,
         stopClient: sinon.stub(),
-        getClient: () => ({ sendRequest, initializeResult: {} }),
+        getClient: () =>
+          running ? { sendRequest, initializeResult: {} } : undefined,
       },
       "../features/update/UpdateService": { UpdateService: class {} },
       "../ui/statusBar": {
@@ -69,5 +70,12 @@ describe("groovy.retryDependencyResolution", () => {
     const { retry, restartClient } = load();
     await retry();
     assert.ok(restartClient.calledOnce, "server was not restarted");
+  });
+
+  it("starts the server when it is not running instead of asking the user to", async () => {
+    const { retry, restartClient, window } = load(false);
+    await retry();
+    assert.ok(restartClient.calledOnce, "server was not started");
+    assert.ok(window.showWarningMessage.notCalled);
   });
 });
