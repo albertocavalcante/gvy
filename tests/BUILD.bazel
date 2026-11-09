@@ -31,6 +31,8 @@ kt_test(
         "-Dgroovy.lsp.e2e.goldenDir.marker=$(rootpath e2e/resources/golden/index-lsif-calculator.lsif)",
         # Use rootpath - path relative to runfiles where the test JVM runs
         "-Dgroovy.lsp.e2e.execJar=$(rootpath //gls:gls_deploy_deploy.jar)",
+        # Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache (expanded by the launcher).
+        "-Dgroovy.lsp.jenkins.stubsCacheRoot=${TEST_TMPDIR}/jenkins-stubs-cache",
     ],
     deps = [
         "//fmt",

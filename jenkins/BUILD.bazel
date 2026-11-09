@@ -31,6 +31,8 @@ kt_test(
     name = "jenkins_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":jenkins"],
+    # Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache (expanded by the launcher).
+    jvm_flags = ["-Dgroovy.lsp.jenkins.stubsCacheRoot=${TEST_TMPDIR}/jenkins-stubs-cache"],
     resources = glob(["src/test/resources/**/*"]),
     test_packages = ["com.github.albertocavalcante.gvy.jenkins"],
     deps = [

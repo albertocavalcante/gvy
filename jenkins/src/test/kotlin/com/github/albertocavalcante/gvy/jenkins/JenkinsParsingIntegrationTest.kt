@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -15,14 +16,15 @@ class JenkinsParsingIntegrationTest {
     @Test
     fun `stubs allow parsing valid Jenkinsfile with declarative syntax`() {
         val config = JenkinsConfiguration()
-        val context = JenkinsContext(config, tempDir)
+        val workspace = tempDir.resolve("workspace").also { it.toFile().mkdirs() }
+        val stubsCacheRoot = tempDir.resolve("stubs-cache")
+        val context = JenkinsContext(config, workspace, stubsCacheRoot = stubsCacheRoot)
 
-        // Trigger classpath build and stub generation
-        // This will generate stubs in tempDir/.jenkins-stubs
+        // Trigger classpath build and stub generation (outside the workspace)
         val classpath = context.buildClasspath(emptyList())
 
         // Verify stubs existence
-        val stubsDir = tempDir.resolve(".jenkins-stubs")
+        val stubsDir = JenkinsStubsLocation.directoryFor(stubsCacheRoot, workspace)
         assertTrue(classpath.contains(stubsDir), "Classpath should contain stubs dir")
         assertTrue(
             stubsDir.resolve("org/jenkinsci/plugins/workflow/cps/CpsScript.groovy").toFile().exists(),
@@ -74,8 +76,6 @@ class JenkinsParsingIntegrationTest {
         try {
             scriptLoader.parseClass(script)
         } catch (e: Exception) {
-            val errorFile = java.io.File("/tmp/jenkins_test_error.txt")
-            errorFile.writeText(e.toString())
             throw AssertionError("Failed to parse Jenkinsfile with generated stubs: ${e.message}", e)
         }
     }
