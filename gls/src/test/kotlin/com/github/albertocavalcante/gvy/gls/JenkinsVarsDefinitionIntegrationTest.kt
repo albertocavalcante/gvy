@@ -198,6 +198,36 @@ class JenkinsVarsDefinitionIntegrationTest {
     }
 
     @Test
+    fun `call on a def local initialized with a map literal does not resolve to vars file`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "def helper = [:]\nhelper.deployApp()"
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "helper.deployApp()" (line 1, char 7-15)
+        val definitions = requestDefinitionAt(uri, Position(1, 10))
+
+        assertTrue(
+            definitions.none { it.uri.endsWith("vars/deployApp.groovy") },
+            "a map receiver dispatches to the map, not vars/, but was: ${definitions.map { it.uri }}",
+        )
+    }
+
+    @Test
+    fun `call on a def local initialized with a constructor resolves to the class method`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "class Helper {\n    def deployApp() { 'helper' }\n}\n" +
+            "def helper = new Helper()\nhelper.deployApp()"
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "helper.deployApp()" (line 4, char 7-15)
+        val definitions = requestDefinitionAt(uri, Position(4, 10))
+
+        assertEquals(1, definitions.size, "helper.deployApp() should resolve, but was: $definitions")
+        assertEquals(uri, definitions[0].uri, "helper.deployApp() must resolve within the Jenkinsfile")
+        assertEquals(1, definitions[0].range.start.line, "helper.deployApp() must resolve to Helper.deployApp")
+    }
+
+    @Test
     fun `call on a dynamically typed steps field in a src class resolves to vars file`(): Unit = runBlocking {
         // Shared-library classes reach globals through a script or steps reference: CpsScript.invokeMethod
         // dispatches the call to the vars/ global even though src/ files are not Jenkins-mode files.

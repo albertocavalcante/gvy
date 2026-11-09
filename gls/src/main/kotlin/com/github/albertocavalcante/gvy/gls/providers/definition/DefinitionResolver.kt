@@ -53,7 +53,7 @@ class DefinitionResolver(
      * Resolution pipeline using Railway-Oriented Programming with Arrow Either.
      *
      * Strategies are tried in priority order:
-     * 1. JenkinsVars - Jenkins vars/ lookup for unresolved globals in Jenkins-mode files (highest priority)
+     * 1. JenkinsVars - Jenkins vars/ lookup for script globals and dynamic receivers (highest priority)
      * 2. LocalSymbol - Same-file definitions via AST/symbol table
      * 3. SemanticDB - Cross-file resolution for all symbol types (methods, fields, properties, etc.)
      * 4. Method - Method-level navigation for classpath methods
@@ -77,6 +77,10 @@ class DefinitionResolver(
                                         .isJenkinsModeEnabled(uri)
                                 },
                                 astModel = astVisitor,
+                                isGroovyOnlyMode = {
+                                    ModeResolver.fromConfig(service.serverConfiguration, capabilities)
+                                        .isGroovyOnlyMode()
+                                },
                             ),
                         )
                     }

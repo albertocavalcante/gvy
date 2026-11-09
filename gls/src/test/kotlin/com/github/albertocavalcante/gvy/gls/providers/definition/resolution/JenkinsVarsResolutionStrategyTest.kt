@@ -20,10 +20,17 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.EmptyExpression
+import org.codehaus.groovy.ast.expr.Expression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.syntax.Token
+import org.codehaus.groovy.syntax.Types
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -465,6 +472,71 @@ class JenkinsVarsResolutionStrategyTest {
         val strategy = JenkinsVarsResolutionStrategy(capabilitiesWith("deploy"), astModel = astModel)
 
         assertResolved(strategy, call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy skips call on a def local initialized with a map literal`() {
+        val call = callOnDefLocal("deploy", MapExpression())
+
+        assertNotResolved(call.strategy, call.call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy skips call on a def local initialized with a constructor call`() {
+        val helperType = ClassNode("Helper", 1, ClassHelper.OBJECT_TYPE)
+        val call = callOnDefLocal("deploy", ConstructorCallExpression(helperType, ArgumentListExpression()))
+
+        assertNotResolved(call.strategy, call.call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy skips call on a def local initialized with a string literal`() {
+        val call = callOnDefLocal("deploy", ConstantExpression("abc"))
+
+        assertNotResolved(call.strategy, call.call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy resolves call on a def local initialized from another variable`() {
+        val call = callOnDefLocal("deploy", VariableExpression(DynamicVariable("script", false)))
+
+        assertResolved(call.strategy, call.call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy resolves call on a def local without an initializer`() {
+        val call = callOnDefLocal("deploy", EmptyExpression.INSTANCE)
+
+        assertResolved(call.strategy, call.call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy honors explicit Groovy mode for a dynamically typed receiver`() {
+        val capabilities = capabilitiesWith("deploy", jenkinsFile = false)
+        val modeResolver = ModeResolver(GroovyMode.GROOVY, capabilities)
+        val strategy = JenkinsVarsResolutionStrategy(
+            capabilities,
+            modeResolver::isJenkinsModeEnabled,
+            isGroovyOnlyMode = modeResolver::isGroovyOnlyMode,
+        )
+        val owner = ClassNode("org.x.Foo", 1, ClassHelper.OBJECT_TYPE)
+        val field = FieldNode("steps", 1, ClassHelper.OBJECT_TYPE, owner, null)
+        val call = MethodCallExpression(VariableExpression(field), "deploy", ArgumentListExpression())
+
+        assertNotResolved(strategy, call, URI.create("file:///workspace/src/org/x/Foo.groovy"))
+    }
+
+    private class CallOnLocal(val strategy: JenkinsVarsResolutionStrategy, val call: MethodCallExpression)
+
+    /** `def receiver = [initializer]; receiver.[method]()` with the declaration tracked as the local's parent. */
+    private fun callOnDefLocal(method: String, initializer: Expression): CallOnLocal {
+        val declared = VariableExpression("receiver")
+        val declaration = DeclarationExpression(declared, Token.newSymbol(Types.ASSIGN, -1, -1), initializer)
+        val call = MethodCallExpression(VariableExpression(declared), method, ArgumentListExpression())
+        val astModel = mockk<GroovyAstModel> {
+            every { getParent(declared) } returns declaration
+        }
+        return CallOnLocal(JenkinsVarsResolutionStrategy(capabilitiesWith(method), astModel = astModel), call)
     }
 
     private fun scriptClass(): ClassNode = ClassNode("Jenkinsfile", 1, ClassHelper.make(Script::class.java)).apply {

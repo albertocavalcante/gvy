@@ -11,6 +11,12 @@ import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.PropertyNode
 import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.GStringExpression
+import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import java.net.URI
@@ -43,8 +49,11 @@ import java.net.URI
  * Calls on a dynamically typed receiver (`steps.deploy()` where `steps` is an untyped, `def`,
  * `Object`, `Script` or `CpsScript` variable, parameter or field) resolve to vars/ in any file:
  * this is how shared-library `src/` classes reach globals, through `CpsScript.invokeMethod`.
- * Calls on statically typed receivers (`String s; s.size()`, `Helper h; h.deploy()`) and on other
- * receiver expressions are skipped.
+ * Skipped are calls on statically typed receivers (`String s; s.size()`, `Helper h; h.deploy()`),
+ * on a local whose initializer fixes its runtime type (`def m = [:]`, `def h = new Helper()`,
+ * string, number and GString literals), and on other receiver expressions such as `this.steps`.
+ *
+ * An explicit `groovy.mode=GROOVY` ([isGroovyOnlyMode]) disables vars/ lookup for every reference.
  *
  * ## Node Handling
  * Supports both [MethodCallExpression] and [VariableExpression] to enable resilient navigation
@@ -53,13 +62,15 @@ import java.net.URI
  *
  * @param isJenkinsModeEnabled whether Jenkins features apply to a document; defaults to
  *   file-pattern detection (the `groovy.mode=AUTO` behavior)
- * @param astModel AST model used to find same-script declarations; when null, shadowing by
- *   enclosing-class members is not checked
+ * @param astModel AST model used to find same-script declarations and local initializers; when null,
+ *   shadowing by enclosing-class members and local initializer types are not checked
+ * @param isGroovyOnlyMode whether vars/ lookup is disabled for all documents (`groovy.mode=GROOVY`)
  */
 class JenkinsVarsResolutionStrategy(
     private val jenkinsCapabilities: JenkinsCapabilities,
     private val isJenkinsModeEnabled: (URI) -> Boolean = jenkinsCapabilities::isJenkinsFile,
     private val astModel: GroovyAstModel? = null,
+    private val isGroovyOnlyMode: () -> Boolean = { false },
 ) : SymbolResolutionStrategy {
 
     private val logger = KotlinLogging.logger {}
@@ -128,6 +139,7 @@ class JenkinsVarsResolutionStrategy(
 
     /** Why [reference] must not resolve to vars/ in this context, or null when it may. */
     private fun skipReason(reference: GlobalReference, context: ResolutionContext): String? {
+        if (isGroovyOnlyMode()) return "Groovy-only mode disables vars/ lookup"
         if (reference.viaDynamicReceiver) return null
         val scope = astModel?.let { enclosingScope(it, context) }
         val type = scope?.type
@@ -154,9 +166,24 @@ class JenkinsVarsResolutionStrategy(
      */
     private fun VariableExpression.isDynamicallyTypedReceiver(): Boolean {
         val variable: Variable = accessedVariable ?: this
-        return variable is DynamicVariable ||
+        val dynamicallyTyped = variable is DynamicVariable ||
             variable.isDynamicTyped ||
             variable.originType.name in DYNAMIC_RECEIVER_TYPES
+        return dynamicallyTyped && !(variable is VariableExpression && variable.hasConcreteInitializer())
+    }
+
+    /**
+     * Whether this local is declared with an initializer whose runtime type is known, such as `[:]` or
+     * `new Helper()`: calls on it dispatch to that type, not to the script. Reassignments are not tracked.
+     */
+    private fun VariableExpression.hasConcreteInitializer(): Boolean {
+        val declaration = astModel?.getParent(this) as? DeclarationExpression ?: return false
+        if (declaration.leftExpression !== this) return false
+        return when (val initializer = declaration.rightExpression) {
+            is ConstructorCallExpression, is MapExpression, is ListExpression, is GStringExpression -> true
+            is ConstantExpression -> initializer.value != null
+            else -> false
+        }
     }
 
     /** The method and class enclosing the target node, plus the fallback script classes. */
