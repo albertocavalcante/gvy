@@ -4,6 +4,7 @@ import com.github.albertocavalcante.gvy.gls.GroovyLanguageServer
 import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
 import com.github.albertocavalcante.gvy.gls.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.gvy.gls.testing.client.HarnessLanguageClient
+import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
@@ -19,6 +20,9 @@ import java.time.Duration
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
+
+/** Test-JVM system properties forwarded to a language-server subprocess. */
+private val FORWARDED_PROPERTIES = listOf(JenkinsStubsLocation.CACHE_ROOT_PROPERTY)
 
 class LanguageServerSessionFactory {
     private val logger = KotlinLogging.logger {}
@@ -101,9 +105,10 @@ class LanguageServerSessionFactory {
 
     private fun buildCommand(mode: ServerLaunchMode): List<String> {
         val javaBinary = resolveJavaBinary()
+        val jvm = listOf(javaBinary) + forwardedSystemProperties()
         val launchArgs = when {
-            serverClasspath != null && mainClass != null -> listOf(javaBinary, "-cp", serverClasspath, mainClass)
-            execJar != null -> listOf(javaBinary, "-jar", execJar.toString())
+            serverClasspath != null && mainClass != null -> jvm + listOf("-cp", serverClasspath, mainClass)
+            execJar != null -> jvm + listOf("-jar", execJar.toString())
             else -> error(
                 "Unable to locate language server executable; expected either groovy.lsp.e2e.execJar or " +
                     "(groovy.lsp.e2e.serverClasspath & groovy.lsp.e2e.mainClass) system properties",
@@ -115,6 +120,11 @@ class LanguageServerSessionFactory {
             ServerLaunchMode.Socket -> error("Socket mode is not yet implemented in the e2e harness")
             ServerLaunchMode.InProcess -> error("In-process mode should not invoke buildCommand")
         }
+    }
+
+    /** Test-JVM properties the server subprocess must inherit to stay isolated. */
+    private fun forwardedSystemProperties(): List<String> = FORWARDED_PROPERTIES.mapNotNull { key ->
+        System.getProperty(key)?.takeIf { it.isNotBlank() }?.let { "-D$key=$it" }
     }
 
     private fun resolveGradleUserHome(): Path? {

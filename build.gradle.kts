@@ -273,6 +273,13 @@ subprojects {
             // Fail on discovery warnings. JUnit silently skips a @Test that returns a value (e.g. a Kotlin
             // `fun x() = runBlocking { ...; assertNotNull(y) }`); this turns that into a build failure.
             systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
+
+            // Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache during tests.
+            // Mirrors JenkinsStubsLocation.CACHE_ROOT_PROPERTY.
+            systemProperty(
+                "groovy.lsp.jenkins.stubsCacheRoot",
+                layout.buildDirectory.dir("tmp/jenkins-stubs-cache").get().asFile.absolutePath,
+            )
         }
     }
 }

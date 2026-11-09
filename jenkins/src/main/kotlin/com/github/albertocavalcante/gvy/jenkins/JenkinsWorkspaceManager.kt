@@ -16,9 +16,10 @@ class JenkinsWorkspaceManager(
     private val configuration: JenkinsConfiguration,
     private val workspaceRoot: Path,
     private val pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
+    private val stubsCacheRoot: Path? = null,
 ) {
     private val logger = KotlinLogging.logger {}
-    private val jenkinsContext = JenkinsContext(configuration, workspaceRoot, pluginManager)
+    private val jenkinsContext = JenkinsContext(configuration, workspaceRoot, pluginManager, stubsCacheRoot)
     private val varsProvider = VarsGlobalVariableProvider(workspaceRoot)
     private val librarySourceLoader = LibrarySourceLoader()
 
@@ -136,7 +137,7 @@ class JenkinsWorkspaceManager(
      */
     fun updateConfiguration(newConfig: JenkinsConfiguration): JenkinsWorkspaceManager {
         logger.info { "Updating Jenkins configuration" }
-        return JenkinsWorkspaceManager(newConfig, workspaceRoot, pluginManager)
+        return JenkinsWorkspaceManager(newConfig, workspaceRoot, pluginManager, stubsCacheRoot)
     }
 
     /**

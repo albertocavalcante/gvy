@@ -3,16 +3,24 @@ package com.github.albertocavalcante.gvy.jenkins.stubs
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import kotlin.io.path.createDirectories
+import kotlin.io.path.deleteIfExists
 import kotlin.io.path.writeText
 
 /**
  * Generates lightweight Groovy stubs for Jenkins types defined in metadata.
  * This allows the Groovy parser to resolve types and methods without requiring
  * heavy plugin JARs on the classpath.
+ *
+ * @param writeFile writes one stub file (test seam); the public constructor uses an atomic write-then-rename.
  */
-class JenkinsStubGenerator {
+class JenkinsStubGenerator internal constructor(private val writeFile: (Path, String) -> Unit) {
+    constructor() : this(::writeAtomically)
+
     private val logger = KotlinLogging.logger {}
 
     fun generateStubs(metadata: MergedJenkinsMetadata, outputDir: Path) {
@@ -31,7 +39,7 @@ class JenkinsStubGenerator {
     }
 
     private fun generateCpsScript(metadata: MergedJenkinsMetadata, outputDir: Path) {
-        val className = "org.jenkinsci.plugins.workflow.cps.CpsScript"
+        val className = CPS_SCRIPT
         val methodStubs = StringBuilder()
 
         metadata.steps.values.sortedBy { it.name }.forEach { step ->
@@ -99,7 +107,7 @@ class JenkinsStubGenerator {
     }
 
     private fun generateEnvAction(outputDir: Path) {
-        val className = "org.jenkinsci.plugins.workflow.cps.EnvActionImpl"
+        val className = ENV_ACTION_IMPL
         val content = """
             package org.jenkinsci.plugins.workflow.cps
             
@@ -116,7 +124,7 @@ class JenkinsStubGenerator {
     }
 
     private fun generateRunWrapper(outputDir: Path) {
-        val className = "org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper"
+        val className = RUN_WRAPPER
         val content = """
             package org.jenkinsci.plugins.workflow.support.steps.build
             
@@ -138,7 +146,7 @@ class JenkinsStubGenerator {
     }
 
     private fun generateDocker(outputDir: Path) {
-        val className = "org.jenkinsci.plugins.docker.workflow.Docker"
+        val className = DOCKER
         val content = """
              package org.jenkinsci.plugins.docker.workflow
              
@@ -162,7 +170,39 @@ class JenkinsStubGenerator {
         val simpleName = qualifiedName.substringAfterLast('.')
         val dir = root.resolve(packagePath)
         dir.createDirectories()
-        val file = dir.resolve("$simpleName.groovy")
-        file.writeText(content)
+        writeFile(dir.resolve("$simpleName.groovy"), content)
+    }
+
+    companion object {
+        private const val CPS_SCRIPT = "org.jenkinsci.plugins.workflow.cps.CpsScript"
+        private const val ENV_ACTION_IMPL = "org.jenkinsci.plugins.workflow.cps.EnvActionImpl"
+        private const val RUN_WRAPPER = "org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper"
+        private const val DOCKER = "org.jenkinsci.plugins.docker.workflow.Docker"
+
+        /** Every class [generateStubs] writes. */
+        private val GENERATED_CLASSES = listOf(CPS_SCRIPT, ENV_ACTION_IMPL, RUN_WRAPPER, DOCKER)
+
+        /** True when [outputDir] holds a stub file for every class [generateStubs] writes. */
+        internal fun hasCompleteStubs(outputDir: Path): Boolean = GENERATED_CLASSES.all { qualifiedName ->
+            Files.isRegularFile(outputDir.resolve(qualifiedName.replace('.', '/') + ".groovy"))
+        }
+    }
+}
+
+/**
+ * Write-then-rename so a concurrent reader (another server on the same workspace)
+ * never observes a truncated stub when regenerating in place.
+ */
+private fun writeAtomically(file: Path, content: String) {
+    val tmp = Files.createTempFile(file.parent, ".${file.fileName}.", ".tmp")
+    try {
+        tmp.writeText(content)
+        try {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING)
+        }
+    } finally {
+        tmp.deleteIfExists()
     }
 }

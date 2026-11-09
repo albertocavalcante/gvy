@@ -19,9 +19,11 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import com.github.albertocavalcante.gvy.jenkins.plugins.PluginDiscoveryService
 import com.github.albertocavalcante.gvy.jenkins.scanning.JenkinsClasspathScanner
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubGenerator
+import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -29,8 +31,22 @@ import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
+ * Test seams for stub generation. Production code uses the defaults.
+ *
+ * @param warn receives warnings about workspace state; `null` logs them through the context logger.
+ */
+internal class StubHooks(
+    val cacheRoot: Path? = null,
+    val generator: JenkinsStubGenerator = JenkinsStubGenerator(),
+    val defaultCacheRoot: () -> Path = JenkinsStubsLocation::defaultCacheRoot,
+    val warn: ((String) -> Unit)? = null,
+)
+
+/**
  * Manages the Jenkins pipeline context, including classpath and GDSL metadata.
  * Keeps Jenkins-specific compilation separate from general Groovy sources.
+ *
+ * Generated stubs are never written inside [workspaceRoot].
  */
 class JenkinsContext internal constructor(
     private val configuration: JenkinsConfiguration,
@@ -38,20 +54,27 @@ class JenkinsContext internal constructor(
     private val pluginManager: JenkinsPluginManager,
     bundledMetadataLoader: () -> MergedJenkinsMetadata,
     private val classpathScanner: (List<Path>) -> BundledJenkinsMetadata,
+    private val stubHooks: StubHooks = StubHooks(),
 ) {
+    /**
+     * @param stubsCacheRoot root for generated stubs; defaults to [JenkinsStubsLocation.defaultCacheRoot].
+     */
     constructor(
         configuration: JenkinsConfiguration,
         workspaceRoot: Path,
         pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
+        stubsCacheRoot: Path? = null,
     ) : this(
         configuration = configuration,
         workspaceRoot = workspaceRoot,
         pluginManager = pluginManager,
         bundledMetadataLoader = { sharedBundledMetadata },
         classpathScanner = JenkinsClasspathScanner()::scan,
+        stubHooks = StubHooks(cacheRoot = stubsCacheRoot),
     )
 
     private val logger = KotlinLogging.logger {}
+    private val warn: (String) -> Unit = stubHooks.warn ?: { message -> logger.warn { message } }
     private val libraryResolver = SharedLibraryResolver(configuration)
     private val gdslLoader = GdslLoader()
     private val gdslExecutor = GdslExecutor()
@@ -78,10 +101,28 @@ class JenkinsContext internal constructor(
         classpath.addRegisteredPluginJars(logger, pluginManager)
 
         scanClasspath(classpath)
-        classpath.tryGenerateStubs(logger, workspaceRoot, ::shouldGenerateStubs) { getAllMetadata() }
+        warnAboutLegacyStubsDir()
+        classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, ::shouldGenerateStubs) {
+            getAllMetadata()
+        }
 
         return classpath
     }
+
+    /**
+     * Older versions generated stubs into the workspace; point users at the leftover dir once per
+     * workspace per process. Must not resolve the cache root: that can fail, and this runs outside
+     * the guarded stub generation.
+     */
+    private fun warnAboutLegacyStubsDir() {
+        val legacy = JenkinsStubsLocation.legacyWorkspaceDir(workspaceRoot) ?: return
+        if (JenkinsStubsLocation.claimLegacyWarning(workspaceRoot)) {
+            warn(JenkinsStubsLocation.legacyStubsWarning(legacy))
+        }
+    }
+
+    private fun stubsDirectory(): Path =
+        JenkinsStubsLocation.directoryFor(stubHooks.cacheRoot ?: stubHooks.defaultCacheRoot(), workspaceRoot)
 
     private fun shouldGenerateStubs(classpath: List<Path>): Boolean {
         // Heuristic: If we don't have workflow-cps jar, we definitely need stubs for CpsScript
@@ -392,7 +433,7 @@ class JenkinsContext internal constructor(
          * Bundled and enrichment metadata come from immutable classpath resources, so every
          * context in the process shares one deserialized and merged copy.
          */
-        private val sharedBundledMetadata: MergedJenkinsMetadata by lazy { VersionedMetadataLoader().loadMerged() }
+        internal val sharedBundledMetadata: MergedJenkinsMetadata by lazy { VersionedMetadataLoader().loadMerged() }
     }
 }
 
@@ -478,18 +519,24 @@ private fun MutableList<Path>.addRegisteredPluginJars(logger: KLogger, pluginMan
 
 private fun MutableList<Path>.tryGenerateStubs(
     logger: KLogger,
-    workspaceRoot: Path,
+    stubGenerator: JenkinsStubGenerator,
+    stubsDirectory: () -> Path,
     shouldGenerateStubs: (List<Path>) -> Boolean,
     getAllMetadata: () -> MergedJenkinsMetadata,
 ) {
     runCatching {
-        val stubsDir = workspaceRoot.resolve(".jenkins-stubs")
         if (!shouldGenerateStubs(this)) return@runCatching
+        val stubsDir = stubsDirectory()
 
         logger.info { "Generating Jenkins plugin stubs in $stubsDir" }
-        val stubGenerator = JenkinsStubGenerator()
         val metadata = getAllMetadata()
-        stubGenerator.generateStubs(metadata, stubsDir)
+        try {
+            stubGenerator.generateStubs(metadata, stubsDir)
+        } catch (e: IOException) {
+            // A failed rewrite (e.g. a stub held open on Windows) must not drop a complete earlier set.
+            if (!JenkinsStubGenerator.hasCompleteStubs(stubsDir)) throw e
+            logger.warn(e) { "Failed to regenerate Jenkins stubs in $stubsDir; reusing the previous complete set" }
+        }
         add(stubsDir)
     }.onFailure { throwable ->
         if (throwable is Error) throw throwable
