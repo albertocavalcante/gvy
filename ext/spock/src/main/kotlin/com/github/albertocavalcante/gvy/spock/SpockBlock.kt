@@ -12,6 +12,8 @@ enum class SpockBlock {
     THEN,
     EXPECT,
     WHERE,
+    FILTER,
+    COMBINED,
     CLEANUP,
     AND,
     ;

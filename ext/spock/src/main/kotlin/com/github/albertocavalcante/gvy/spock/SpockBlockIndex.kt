@@ -55,13 +55,14 @@ class SpockBlockIndex(val methodName: String, val blocks: List<BlockSpan>) {
      * Determine which Spock blocks are valid to appear next based on current position.
      *
      * Follows Spock semantics:
-     * - Feature methods start with: given/setup, when, or expect
-     * - given/setup → when, and
+     * - Feature methods start with: given/setup, when, expect, cleanup, or where
+     * - given/setup → and, expect, when, cleanup, where
      * - when → then, and
-     * - then → and, where, cleanup, when (for another when-then pair)
-     * - expect → and, where, cleanup
-     * - where → cleanup
-     * - cleanup → (nothing, must be last)
+     * - then → and, expect, when, then, cleanup, where
+     * - expect → and, when, cleanup, where
+     * - cleanup → and, where
+     * - where/combined → and, combined, filter (data providers continue here)
+     * - filter → and (continuation)
      * - and → same as the block it continues
      */
     fun validNextBlocks(line: Int): List<SpockBlock> {
@@ -71,13 +72,34 @@ class SpockBlockIndex(val methodName: String, val blocks: List<BlockSpan>) {
         }
 
         return when (current) {
-            null -> listOf(SpockBlock.GIVEN, SpockBlock.SETUP, SpockBlock.WHEN, SpockBlock.EXPECT)
-            SpockBlock.GIVEN, SpockBlock.SETUP -> listOf(SpockBlock.WHEN, SpockBlock.AND)
+            null -> listOf(
+                SpockBlock.GIVEN,
+                SpockBlock.SETUP,
+                SpockBlock.WHEN,
+                SpockBlock.EXPECT,
+                SpockBlock.CLEANUP,
+                SpockBlock.WHERE,
+            )
+            SpockBlock.GIVEN, SpockBlock.SETUP -> listOf(
+                SpockBlock.AND,
+                SpockBlock.EXPECT,
+                SpockBlock.WHEN,
+                SpockBlock.CLEANUP,
+                SpockBlock.WHERE,
+            )
             SpockBlock.WHEN -> listOf(SpockBlock.THEN, SpockBlock.AND)
-            SpockBlock.THEN -> listOf(SpockBlock.AND, SpockBlock.WHERE, SpockBlock.CLEANUP, SpockBlock.WHEN)
-            SpockBlock.EXPECT -> listOf(SpockBlock.AND, SpockBlock.WHERE, SpockBlock.CLEANUP)
-            SpockBlock.WHERE -> listOf(SpockBlock.CLEANUP)
-            SpockBlock.CLEANUP -> emptyList()
+            SpockBlock.THEN -> listOf(
+                SpockBlock.AND,
+                SpockBlock.EXPECT,
+                SpockBlock.WHEN,
+                SpockBlock.THEN,
+                SpockBlock.CLEANUP,
+                SpockBlock.WHERE,
+            )
+            SpockBlock.EXPECT -> listOf(SpockBlock.AND, SpockBlock.WHEN, SpockBlock.CLEANUP, SpockBlock.WHERE)
+            SpockBlock.WHERE, SpockBlock.COMBINED -> listOf(SpockBlock.AND, SpockBlock.COMBINED, SpockBlock.FILTER)
+            SpockBlock.CLEANUP -> listOf(SpockBlock.AND, SpockBlock.WHERE)
+            SpockBlock.FILTER -> listOf(SpockBlock.AND)
             SpockBlock.AND -> emptyList() // Should not happen - AND is resolved to continues
         }
     }
@@ -134,7 +156,8 @@ class SpockBlockIndex(val methodName: String, val blocks: List<BlockSpan>) {
             }
 
             private fun extractSpockBlock(statement: Statement): SpockBlock? {
-                val label = statement.statementLabels?.firstOrNull()
+                // Groovy stores consecutive labels inside-out: `then: and:` is [and, then].
+                val label = statement.statementLabels?.lastOrNull()
                 return label?.let { SpockBlock.fromLabel(it) }
             }
 

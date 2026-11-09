@@ -1,67 +1,74 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
+import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
+import com.github.albertocavalcante.gvy.spock.SpockDataVariables
 import com.github.albertocavalcante.gvy.spock.SpockDetector
+import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 
 /**
  * Completion strategy for Spock framework features.
  *
  * Provides completions for:
- * - Spock block labels (given:, when:, then:, expect:, where:, cleanup:, and:)
+ * - Spock block labels at statement starts
+ * - Data variables from the owning feature, including declarations later in the where block
  *
  * This strategy only activates when:
  * 1. The file is detected as a Spock specification
  * 2. No other completion context is detected (not member access, type parameter, etc.)
- * 3. The cursor is at the start of a line (indent only before cursor)
+ * 3. The cursor is at a statement start or a data-variable prefix
  * 4. The cursor is not in a comment or string literal
  */
 internal class SpockCompletionStrategy : CompletionStrategy {
 
     override suspend fun complete(context: CompletionStrategyContext): CompletionResult {
-        // Only apply in Spock specifications
-        // Use heuristic detection since we don't have full ParseResult in context
-        val isSpockSpec = SpockDetector.isLikelySpockSpec(
-            context.baseContext.uri,
-            context.baseContext.content,
-        )
-
-        if (!isSpockSpec) {
+        val base = context.baseContext
+        val line = base.content.lines().getOrNull(base.line)
+        if (line == null || context.contextType != null) {
             return CompletionStrategy.notApplicable("SpockCompletionStrategy")
         }
-
-        // Only suggest block labels when no specific context is detected
-        if (context.contextType != null) {
+        val offset = offsetAt(base.content, base.content.split('\n'), base.line, base.character)
+        val isSpockSpec = SpockDetector.isLikelySpockSpec(base.uri, base.content)
+        if (!isSpockSpec || base.tokenIndex?.isInCommentOrString(offset) == true) {
             return CompletionStrategy.notApplicable("SpockCompletionStrategy")
         }
-
-        // Only suggest at line start (indent only before cursor)
-        if (!isLineIndentOnlyBeforeCursor(
-                context.baseContext.content,
-                context.baseContext.line,
-                context.baseContext.character,
-            )
-        ) {
-            return CompletionStrategy.notApplicable("SpockCompletionStrategy")
+        val dataItems = dataCompletions(context, line)
+        val labels = if (isLineIndentOnlyBeforeCursor(base.content, base.line, base.character)) {
+            completions { addSpockBlockLabels() }
+        } else {
+            emptyList()
         }
-
-        // Deterministic token-based suppression (don't suggest in comments or strings)
-        val offset = offsetAt(
-            context.baseContext.content,
-            context.baseContext.content.split('\n'),
-            context.baseContext.line,
-            context.baseContext.character,
-        )
-        if (context.baseContext.tokenIndex?.isInCommentOrString(offset) == true) {
-            return CompletionStrategy.notApplicable("SpockCompletionStrategy")
+        val items = labels + dataItems
+        return if (items.isEmpty()) {
+            CompletionStrategy.notApplicable("SpockCompletionStrategy")
+        } else {
+            CompletionStrategy.found(items)
         }
+    }
 
-        val items = completions {
-            addSpockBlockLabels()
+    private fun dataCompletions(context: CompletionStrategyContext, line: String): List<CompletionItem> {
+        val base = context.baseContext
+        val module = base.moduleNode ?: return emptyList()
+        val prefix = line.take(base.character.coerceIn(0, line.length))
+            .takeLastWhile { Character.isJavaIdentifierPart(it) }
+        val names = module.classes.filter { !it.isScript && SpockDetector.isSpockSpec(it, module) }
+            .flatMap { it.methods }
+            .filter { it.containsPosition(base.line, base.character) }
+            .flatMap { SpockDataVariables.extract(it).keys }
+            .distinct()
+            .filter { it.startsWith(prefix) }
+        return completions {
+            names.forEach { name ->
+                completion {
+                    label(name)
+                    kind(CompletionItemKind.Variable)
+                    detail("Spock data variable")
+                    insertText(name)
+                }
+            }
         }
-
-        return CompletionStrategy.found(items)
     }
 
     private fun CompletionsBuilder.addSpockBlockLabels() {
@@ -103,8 +110,7 @@ internal class SpockCompletionStrategy : CompletionStrategy {
 
         // NOTE: Heuristic / tradeoff:
         // We treat "all whitespace before cursor" as a signal that the user is likely starting a Spock block label.
-        // This avoids spamming completions mid-expression, but can still misfire in multiline strings/comments.
-        // TODO: Use AST to detect LabeledStatement contexts and suppress inside strings/comments when feasible.
+        // Token suppression above handles comments and strings; this check only gates block labels.
         return prefix.all { it == ' ' || it == '\t' }
     }
 

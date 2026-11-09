@@ -14,6 +14,25 @@ class SpockBlockIndexTest {
 
     private val parser = GroovyParserFacade()
 
+    @Test
+    fun `consecutive then and labels retain the outer assertion context`() {
+        val method = parseAndGetMethod(
+            """
+            class Example extends spock.lang.Specification {
+                def feature() {
+                    when:
+                    run()
+                    then:
+                    and:
+                    true
+                }
+            }
+            """.trimIndent(),
+        )
+        assertNotNull(method)
+        assertEquals(SpockBlock.THEN, SpockBlockIndex.build(method).blocks.last().block)
+    }
+
     private fun parseAndGetMethod(code: String, methodNameContains: String = "feature"): MethodNode? {
         val result = parser.parse(
             ParseRequest(
@@ -211,7 +230,15 @@ class SpockBlockIndexTest {
 
         // After CLEANUP
         val cleanupIndex = SpockBlockIndex("test", listOf(BlockSpan(SpockBlock.CLEANUP, 1, 5)))
-        assertTrue(cleanupIndex.validNextBlocks(3).isEmpty(), "Nothing after cleanup")
+        assertEquals(listOf(SpockBlock.AND, SpockBlock.WHERE), cleanupIndex.validNextBlocks(3))
+        val whereIndex = SpockBlockIndex("test", listOf(BlockSpan(SpockBlock.WHERE, 1, 5)))
+        assertEquals(
+            listOf(SpockBlock.AND, SpockBlock.COMBINED, SpockBlock.FILTER),
+            whereIndex.validNextBlocks(3),
+        )
+        assertTrue(emptyIndex.validNextBlocks(1).containsAll(listOf(SpockBlock.CLEANUP, SpockBlock.WHERE)))
+        val filterIndex = SpockBlockIndex("test", listOf(BlockSpan(SpockBlock.FILTER, 1, 5)))
+        assertEquals(listOf(SpockBlock.AND), filterIndex.validNextBlocks(3))
     }
 
     @Test
