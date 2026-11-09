@@ -89,8 +89,9 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
      * `resources/`, `src/com/` and `src/org/` are deliberately NOT evidence: they are common in
      * ordinary projects (editor extension assets, legacy source layouts), and selecting the quiet
      * Jenkins CPS-only profile there silently drops the normal Groovy rules (#1200). A shared
-     * library without `vars/` can opt in with an explicit workspace ruleset such as `.codenarc`
-     * that includes `rulesets/jenkins.xml`.
+     * library without `vars/` can opt in with an explicit workspace ruleset such as `.codenarc`:
+     * a copy of `codenarc/rulesets/frameworks/jenkins.groovy` gives the full built-in profile,
+     * while `ruleset('rulesets/jenkins.xml')` alone gives only the 7 CPS rules.
      */
     private fun isJenkinsProject(workspaceRoot: Path): Boolean =
         workspaceRoot.resolve(JENKINSFILE).isRegularFile() || hasVarsGroovyScript(workspaceRoot.resolve(VARS_DIR))
