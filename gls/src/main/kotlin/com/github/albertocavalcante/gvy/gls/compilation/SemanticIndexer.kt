@@ -175,6 +175,9 @@ class SemanticIndexer(
     /** Whether a document is stored for [uri]. */
     operator fun contains(uri: URI): Boolean = entries[uri]?.entry != null
 
+    /** The compile phase of the document stored for [uri], or null when there is none. */
+    fun phaseOf(uri: URI): Int? = entries[uri]?.entry?.phase
+
     /** Whether the stored document was built from exactly [content]. */
     fun isCurrent(uri: URI, content: String): Boolean = entries[uri]?.entry?.contentHash == contentHash(content)
 

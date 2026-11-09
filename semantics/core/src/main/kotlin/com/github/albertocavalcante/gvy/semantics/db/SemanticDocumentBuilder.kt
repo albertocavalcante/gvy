@@ -12,11 +12,15 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.AttributeExpression
+import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.MethodPointerExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -24,6 +28,7 @@ import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.CatchStatement
 import org.codehaus.groovy.ast.stmt.ForStatement
 import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.syntax.Types
 import java.net.URI
 
 /**
@@ -35,6 +40,7 @@ import java.net.URI
 class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val uri: URI) {
     private val symbols = mutableListOf<SymbolInfo>()
     private val occurrences = mutableListOf<SymbolOccurrence>()
+    private val unresolved = UnresolvedNames()
 
     /**
      * Build the semantic document by walking the entire AST
@@ -56,7 +62,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             extractMethod(methodNode, null)
         }
 
-        return SemanticDocument(uri, symbols, occurrences)
+        unresolved.dispatchesDynamically(moduleNode.classes)
+
+        return SemanticDocument(uri, symbols, occurrences, unresolved.toSet())
     }
 
     /**
@@ -449,7 +457,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             // Receiver and arguments may contain the same name; only the member is this occurrence.
             val range = nodeToRange(call.method)
-            val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it, closureScope) }
+            val outcome = call.methodAsString?.let { resolver.resolve(call, it, closureScope) }
+            val symbolId = (outcome as? CallOutcome.Resolved)?.symbolId
+            unresolved.call(call, outcome)
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
             }
@@ -506,8 +516,28 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                             !closureScope.delegateMayAnswer(expression.name)
                     }
                 symbolId?.let { occurrences.add(SymbolOccurrence(it, range, OccurrenceRole.REFERENCE)) }
+                if (symbolId == null) unresolved.name(expression.name)
             }
             super.visitVariableExpression(expression)
+        }
+
+        override fun visitBinaryExpression(expression: BinaryExpression) {
+            if (expression.operation.type == Types.LEFT_SQUARE_BRACKET) {
+                unresolved.index(expression.leftExpression, expression.rightExpression, resolver::receiverType)
+            }
+            super.visitBinaryExpression(expression)
+        }
+
+        override fun visitAttributeExpression(expression: AttributeExpression) {
+            // `obj.@name` reads the field directly; the index never attributes it.
+            unresolved.name(expression.propertyAsString)
+            super.visitAttributeExpression(expression)
+        }
+
+        override fun visitMethodPointerExpression(expression: MethodPointerExpression) {
+            // `obj.&name` names a method without calling it; the index never attributes it.
+            unresolved.name((expression.methodName as? ConstantExpression)?.value as? String)
+            super.visitMethodPointerExpression(expression)
         }
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
@@ -515,6 +545,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val symbolId = expression.propertyAsString?.let {
                 resolver.resolveProperty(expression.objectExpression, it, staticContext, expression.isSpreadSafe)
             }
+            if (symbolId == null) unresolved.name(expression.propertyAsString)
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
             }

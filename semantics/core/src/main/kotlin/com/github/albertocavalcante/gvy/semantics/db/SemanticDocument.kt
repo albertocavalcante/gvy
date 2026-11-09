@@ -9,8 +9,16 @@ import java.net.URI
  * @property uri The file URI this document represents
  * @property symbols All symbols defined in this file (classes, methods, fields, etc.)
  * @property occurrences All symbol usages in this file (references, calls, etc.)
+ * @property unresolvedNames Names this file uses that the index could not attribute to a declaration, and `"*"`
+ *   when it has a site whose name is not known statically (`obj."$n"()`, `invokeMethod(n, ...)`, `methodMissing`).
+ *   A rename of a name may only skip a file when the name is not here and `"*"` is not either.
  */
-data class SemanticDocument(val uri: URI, val symbols: List<SymbolInfo>, val occurrences: List<SymbolOccurrence>) {
+data class SemanticDocument(
+    val uri: URI,
+    val symbols: List<SymbolInfo>,
+    val occurrences: List<SymbolOccurrence>,
+    val unresolvedNames: Set<String> = emptySet(),
+) {
     /**
      * Find a symbol by its unique ID
      */

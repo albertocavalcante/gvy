@@ -199,6 +199,9 @@ class GroovyCompilationService(
      */
     fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex
 
+    /** The compile phase the semantic document of [uri] was built at, or null when none is stored. */
+    fun semanticPhaseOf(uri: URI): Int? = semanticIndexer.phaseOf(uri)
+
     internal fun beginImplementationQuery(): SemanticSnapshotGuard.Generation = semanticSnapshotGuard.begin()
 
     internal fun captureImplementationSnapshot(generation: SemanticSnapshotGuard.Generation) =
