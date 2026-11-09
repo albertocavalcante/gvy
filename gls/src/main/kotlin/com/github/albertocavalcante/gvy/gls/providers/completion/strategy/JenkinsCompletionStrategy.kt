@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
+import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.providers.completion.CursorPositionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
@@ -68,13 +69,6 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                     addJenkinsStepCompletions(metadata)
                 }
 
-                // Add Jenkins global variables
-                addJenkinsGlobalVariables(
-                    metadata = metadata,
-                    jenkinsCapabilities = context.baseContext.compilationService
-                        .workspaceManager.getJenkinsCapabilities(),
-                )
-
                 // Only add block-level completions when cursor is at block level (not inside method call args)
                 val cursorContext = detectCursorPositionContext(
                     context.nodeAtCursor,
@@ -82,39 +76,58 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 )
                 val isBlockLevel = cursorContext is CursorPositionContext.BlockLevel
 
-                // Add block-specific completions based on declarative context
-                blockContext?.blockCategories?.let { categories ->
-                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE) &&
-                        isBlockLevel
-                    ) {
-                        addJenkinsAgentTypeCompletions()
-                    }
-                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION) &&
-                        isBlockLevel
-                    ) {
-                        addJenkinsDeclarativeOptions(metadata)
-                    }
-                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.POST_CONDITION) &&
-                        isBlockLevel
-                    ) {
-                        addJenkinsPostConditionCompletions()
-                    }
+                // Global variables cannot start a statement in structural declarative blocks
+                // (pipeline, agent, stage, post, options, ...): offering them there is noise and
+                // duplicates agent types such as `docker`. Arguments and Groovy blocks keep them.
+                if (!(isBlockLevel && blockContext.isStructuralDeclarativeBlock())) {
+                    addJenkinsGlobalVariables(
+                        metadata = metadata,
+                        jenkinsCapabilities = context.baseContext.compilationService
+                            .workspaceManager.getJenkinsCapabilities(),
+                    )
                 }
 
-                // Add inner instructions (sub-blocks) from schema
-                // Only add when cursor is at block level (consistent with other declarative completions)
-                if (isBlockLevel) {
-                    blockContext?.innerInstructions?.forEach { instruction ->
-                        completion {
-                            label(instruction)
-                            kind(CompletionItemKind.Keyword)
-                            detail("Declarative directive")
-                            insertText("$instruction {")
-                            sortText("0-directive-$instruction")
-                        }
-                    }
+                if (isBlockLevel && blockContext != null) {
+                    addDeclarativeBlockCompletions(blockContext, metadata)
                 }
             }
         }
     }
+
+    /** Agent types, options, post conditions and sub-directives for the declarative block at the cursor. */
+    private fun CompletionsBuilder.addDeclarativeBlockCompletions(
+        blockContext: JenkinsBlockContext,
+        metadata: MergedJenkinsMetadata,
+    ) = with(JenkinsCompletionProvider) {
+        val categories = blockContext.blockCategories
+        if (DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE in categories) {
+            addJenkinsAgentTypeCompletions()
+        }
+        if (DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION in categories) {
+            addJenkinsDeclarativeOptions(metadata)
+        }
+        if (DeclarativePipelineSchema.CompletionCategory.POST_CONDITION in categories) {
+            addJenkinsPostConditionCompletions()
+        }
+        blockContext.innerInstructions.forEach { instruction ->
+            completion {
+                label(instruction)
+                kind(CompletionItemKind.Keyword)
+                detail("Declarative directive")
+                insertText("$instruction {")
+                sortText("0-directive-$instruction")
+            }
+        }
+    }
+}
+
+/**
+ * A strict declarative block whose content is fixed by the schema: it has sub-directives or a
+ * non-step completion category, and does not accept steps. `environment`, `expression {}` and
+ * other free-form Groovy blocks are not structural.
+ */
+private fun JenkinsBlockContext?.isStructuralDeclarativeBlock(): Boolean {
+    if (this == null || !isStrictDeclarative) return false
+    if (DeclarativePipelineSchema.CompletionCategory.STEP in blockCategories) return false
+    return innerInstructions.isNotEmpty() || blockCategories.isNotEmpty()
 }
