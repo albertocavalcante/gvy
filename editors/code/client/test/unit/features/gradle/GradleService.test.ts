@@ -4,7 +4,11 @@ import {
   GradleService,
   GradleTask,
 } from "../../../../src/features/gradle/GradleService";
-import { RequestType } from "vscode-languageserver-protocol";
+import {
+  ErrorCodes,
+  RequestType,
+  ResponseError,
+} from "vscode-languageserver-protocol";
 import type { LanguageClient } from "vscode-languageclient/node";
 
 interface MockLanguageClient {
@@ -66,6 +70,19 @@ describe("GradleService", () => {
     } catch (e) {
       expect((e as Error).message).to.equal("LSP Gradle Error");
     }
+  });
+
+  it("returns no tasks when the server does not implement the request", async () => {
+    mockLanguageClient.sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method: groovy/gradleTasks",
+      ),
+    );
+
+    const tasks = await gradleService.getTasks("file:///path/to/workspace");
+
+    expect(tasks).to.be.an("array").that.is.empty;
   });
 
   it("should return an empty array if LSP returns null", async () => {

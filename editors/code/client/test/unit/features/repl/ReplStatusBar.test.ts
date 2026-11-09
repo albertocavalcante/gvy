@@ -1,4 +1,5 @@
 import { expect } from "chai";
+import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 import { vscode } from "../../mocks/vscode";
 
@@ -39,5 +40,27 @@ describe("ReplStatusBarLogic", () => {
     expect(state.tooltip).to.include("Groovy REPL is not running");
     expect(state.command).to.equal("groovy.repl.start");
     expect(state.color).to.be.undefined;
+  });
+});
+
+describe("ReplStatusBar", () => {
+  it("shows the status item only while a REPL session runs", () => {
+    const item = { show: sinon.stub(), hide: sinon.stub() };
+    const { ReplStatusBar } = proxyquire.noCallThru()(
+      "../../../../src/features/repl/ReplStatusBar",
+      {
+        vscode: {
+          ...vscode,
+          window: { createStatusBarItem: () => item },
+          StatusBarAlignment: { Right: 2 },
+        },
+      },
+    );
+    const bar = new ReplStatusBar();
+    expect(item.show.called).to.equal(false);
+    bar.update(true);
+    expect(item.show.calledOnce).to.equal(true);
+    bar.update(false);
+    expect(item.hide.called).to.equal(true);
   });
 });

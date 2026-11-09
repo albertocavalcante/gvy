@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { GroovyReplClient } from "./GroovyReplClient";
 import { getClient } from "../../server/client";
+import { isMethodNotFound } from "../../server/clientProvider";
 import { ReplStatusBar } from "./ReplStatusBar";
 
 /**
@@ -191,9 +192,16 @@ export class ReplService implements vscode.Disposable {
         session.write(`<= ${result.result}\r\n`);
       }
     } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      session.write(`Error: ${errorMessage}\r\n`);
+      if (isMethodNotFound(error)) {
+        const message =
+          "The Groovy REPL is not supported by this server version.";
+        session.write(`${message}\r\n`);
+        vscode.window.showWarningMessage(message);
+      } else {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        session.write(`Error: ${errorMessage}\r\n`);
+      }
     }
 
     session.write("\r\n");

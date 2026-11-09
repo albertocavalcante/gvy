@@ -195,35 +195,23 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
   const retryDependencyResolutionCommand = commands.registerCommand(
     RETRY_DEPENDENCY_RESOLUTION,
     async () => {
-      const client = getClient();
-      if (!client) {
+      if (!getClient()) {
         window.showWarningMessage(
           "Groovy Language Server is not running. Please restart the server.",
         );
         return;
       }
 
-      // Use withProgress to show a proper progress notification that auto-dismisses
+      // NOTE: the server has no command to re-resolve dependencies (an
+      // unknown workspace/executeCommand returns null, which read as
+      // success). It resolves them during startup, so restart it instead.
       await window.withProgress(
         {
           location: ProgressLocation.Notification,
-          title: "Retrying dependency resolution...",
+          title: "Restarting the server to retry dependency resolution...",
           cancellable: false,
         },
-        async () => {
-          try {
-            await client.sendRequest(ExecuteCommandRequest.type, {
-              command: "groovy.resolveDependencies",
-              arguments: [],
-            });
-            // Success - progress notification will auto-dismiss
-          } catch (error) {
-            console.error("Failed to retry dependency resolution:", error);
-            window.showErrorMessage(
-              `Failed to retry dependency resolution: ${error instanceof Error ? error.message : "Unknown error"}`,
-            );
-          }
-        },
+        () => restartClient(),
       );
     },
   );

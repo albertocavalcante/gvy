@@ -185,6 +185,28 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "groovy.repl.sendFile",
+          "when": "false"
+        },
+        {
+          "command": "groovy.repl.restart",
+          "when": "false"
+        },
+        {
+          "command": "groovy.repl.stop",
+          "when": "false"
+        },
+        {
+          "command": "groovy.repl.clear",
+          "when": "false"
+        },
+        {
+          "command": "groovy.repl.show",
+          "when": "false"
+        }
+      ],
       "view/title": [
         {
           "command": "groovy.dependencies.refresh",
