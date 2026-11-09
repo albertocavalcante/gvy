@@ -29,13 +29,13 @@ class DiagnosticPositioningBattleTest {
 
     @Test
     fun `should position TrailingWhitespace diagnostic at end of line`() {
-        val sourceCode = """
-            class Test {
-                def method() {
-                    return 1
-                }
-            }
-        """.trimIndent()
+        val sourceCode = listOf(
+            "class Test {",
+            "    def method() {   ",
+            "        return 1",
+            "    }",
+            "}",
+        ).joinToString("\n")
 
         val violation = createViolation(
             ruleName = "TrailingWhitespace",
@@ -50,11 +50,15 @@ class DiagnosticPositioningBattleTest {
         val diag = diagnostics[0]
 
         // Line 2 (0-based: line 1): "    def method() {   "
-        // Trailing whitespace starts at position 18 (after '}')
+        // Trailing whitespace starts at position 18 (after '{')
         assertEquals(1, diag.range.start.line)
         assertEquals(18, diag.range.start.character)
         assertEquals(1, diag.range.end.line)
         assertEquals(21, diag.range.end.character) // 3 trailing spaces
+        assertEquals(
+            "   ",
+            sourceCode.lines()[1].substring(diag.range.start.character, diag.range.end.character),
+        )
     }
 
     @Test
@@ -252,8 +256,8 @@ class DiagnosticPositioningBattleTest {
         val violation = createViolation(
             ruleName = "CatchException",
             message = "Catching Exception is too broad",
-            lineNumber = 5, // "    } catch (Exception e) {"
-            sourceLine = "    } catch (Exception e) {",
+            lineNumber = 5, // Original line has eight spaces before the closing brace.
+            sourceLine = "} catch (Exception e) {", // CodeNarc trims the original line.
         )
 
         val diagnostics = analyzAndGetDiagnostics(sourceCode, listOf(violation))
@@ -261,12 +265,16 @@ class DiagnosticPositioningBattleTest {
         assertEquals(1, diagnostics.size)
         val diag = diagnostics[0]
 
-        // Line 5 (0-based: line 4): "    } catch (Exception e) {"
-        // "Exception" starts at position 13
+        // Line 5 (0-based: line 4): "        } catch (Exception e) {"
+        // "Exception" starts at position 17 in the original source
         assertEquals(4, diag.range.start.line)
-        assertEquals(13, diag.range.start.character)
+        assertEquals(17, diag.range.start.character)
         assertEquals(4, diag.range.end.line)
-        assertEquals(22, diag.range.end.character) // "Exception" is 9 characters
+        assertEquals(26, diag.range.end.character) // "Exception" is 9 characters
+        assertEquals(
+            "Exception",
+            sourceCode.lines()[4].substring(diag.range.start.character, diag.range.end.character),
+        )
     }
 
     @Test

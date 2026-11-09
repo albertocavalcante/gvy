@@ -23,8 +23,14 @@ object RuleRangeCalculator {
      * @param fallbackLine The source line from the file (used if violation.sourceLine is null)
      * @return Pair of (startColumn, endColumn) in 0-based LSP coordinates
      */
-    fun calculateRange(violation: Violation, fallbackLine: String): Pair<Int, Int> {
-        val sourceLine = violation.sourceLine ?: fallbackLine
+    fun calculateRange(violation: Violation, fallbackLine: String): Pair<Int, Int> =
+        calculateRangeInSource(violation, violation.sourceLine ?: fallbackLine)
+
+    /**
+     * Calculates UTF-16 columns in the original document line. CodeNarc's sourceLine can be trimmed
+     * or otherwise normalized, so its offsets cannot be applied directly to the editor buffer.
+     */
+    internal fun calculateRangeInSource(violation: Violation, sourceLine: String): Pair<Int, Int> {
         val ruleName = violation.rule.name
         val message = violation.message ?: ""
 

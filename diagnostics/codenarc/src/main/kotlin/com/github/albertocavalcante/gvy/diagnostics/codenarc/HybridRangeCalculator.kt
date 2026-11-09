@@ -30,7 +30,7 @@ class HybridRangeCalculator(private val moduleNode: ModuleNode?) {
      * Calculate the range for a violation using the best available method.
      *
      * @param violation The CodeNarc violation
-     * @param fallbackLine The source line from the file (used if violation.sourceLine is null)
+     * @param fallbackLine The original captured document line; the parameter name is retained for source compatibility.
      * @return Pair of (startColumn, endColumn) in 0-based LSP coordinates
      */
     fun calculateRange(violation: Violation, fallbackLine: String): Pair<Int, Int> {
@@ -38,7 +38,7 @@ class HybridRangeCalculator(private val moduleNode: ModuleNode?) {
 
         // For AST-supported rules, try AST path first
         if (AstAwareRangeCalculator.isSupported(ruleName) && astCalculator != null) {
-            val astRange = astCalculator?.calculateRange(violation)
+            val astRange = astCalculator?.calculateRangeInSource(violation, fallbackLine)
             if (astRange != null) {
                 return astRange
             }
@@ -46,6 +46,6 @@ class HybridRangeCalculator(private val moduleNode: ModuleNode?) {
         }
 
         // Use heuristic for unsupported rules or when AST fails
-        return RuleRangeCalculator.calculateRange(violation, fallbackLine)
+        return RuleRangeCalculator.calculateRangeInSource(violation, fallbackLine)
     }
 }
