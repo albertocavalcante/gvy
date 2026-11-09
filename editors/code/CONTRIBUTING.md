@@ -331,8 +331,8 @@ Thank you for contributing to making Groovy development in VS Code better!
 From the repository root:
 
 ```sh
-make ext-doctor
-make ext-vscode-source
+just doctor
+just install-vscode-source
 ```
 
 The source command builds and stages the current checkout's server, runs its CLI and LSP startup/shutdown smoke checks,

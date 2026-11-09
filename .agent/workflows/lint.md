@@ -41,7 +41,7 @@ When you need details, fetch only the minimum relevant snippet:
 
 - Lefthook: read only the failing command’s block in `lefthook.yml` under `pre-commit.commands.<name>`.
 - Extension scripts: read only the scripts section in `editors/code/package.json`.
-- Gradle entrypoints: prefer `make lint` / `make build`; if you need the exact underlying Gradle task, take it from the
+- Gradle entrypoints: prefer `just lint` / `just build`; if you need the exact underlying Gradle task, take it from the
   failing output (don’t guess).
 
 ## Precondition
@@ -73,7 +73,7 @@ Scope selection rules:
 | Path pattern      | Toolchain | Required gate                                                                                                         |
 | ----------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
 | `editors/code/**` | pnpm      | `cd editors/code && pnpm install --frozen-lockfile && pnpm run check-types && pnpm run lint && pnpm run format:check` |
-| anything else     | Gradle    | `make lint`                                                                                                           |
+| anything else     | Gradle    | `just lint`                                                                                                           |
 
 ## Step 2 — Run gates (auto-fix loop)
 
@@ -90,10 +90,10 @@ produce the report.
 ### 2.1 Gradle
 
 ```bash
-make lint
+just lint
 ```
 
-FAIL → record: `{command=make lint, task, file, rule}` → run `/lintfix` → re-run `make lint`.
+FAIL → record: `{command=just lint, task, file, rule}` → run `/lintfix` → re-run `just lint`.
 
 ### 2.2 Extension (skip if no `editors/code/**` in scope)
 
@@ -106,7 +106,7 @@ FAIL → record: `{command=<pnpm script>, file, message}` → run `/lintfix` →
 ### 2.3 Build (only for refactors / multi-module)
 
 ```bash
-make build
+just build
 ```
 
 ## Step 3 — Baseline check (after gates are green)
@@ -141,7 +141,7 @@ Policy:
   verified diffs) even if tools pass.
 - If you find subjective/style improvements, log them under “Smells” and proceed.
 - If user intent is **"fix all"**, you MUST fix actionable idiomacy issues in scope (correctness/maintainability/risk),
-  and then re-run the relevant gate(s) (at minimum `make lint`). Only purely subjective items may be logged.
+  and then re-run the relevant gate(s) (at minimum `just lint`). Only purely subjective items may be logged.
 
 For each changed `.kt` file, answer YES/NO:
 
@@ -183,7 +183,7 @@ Any YES → write a 1-line note under “Smells” and point to `/lintfix` (or c
 Important: do NOT stop at Detekt-only findings.
 
 - If tools are green but the Step 4 scan finds actionable issues, treat them as the next work item and fix them
-  (verified by re-running `make lint`, and `make test` when behavior might have changed).
+  (verified by re-running `just lint`, and `just test` when behavior might have changed).
 
 #### Few-shot (how to flag issues deterministically)
 

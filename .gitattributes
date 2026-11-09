@@ -6,3 +6,5 @@ tools/ export-ignore
 .spec/ export-ignore
 
 
+# Keep Just's canonical LF format on Windows checkouts too.
+/Justfile text eol=lf

@@ -26,38 +26,52 @@ We target LSP 3.17 and use `lsp4j` 0.24.0. The full support matrix lives in `doc
 
 ## Requirements
 
-- Java 17 or higher
-- Groovy 4.0+
+- Java 17+ to run the server; JDK 21+ to build it
+- Node 24+ and pnpm 12+ for the VS Code extension
+- Just 1.59.0 for the developer command interface (direct Gradle/Node commands remain available)
 
-## Building
+## Build and install from source
 
-```bash
-./gradlew build
+With JDK 21+, Node 24+, pnpm 12+ and Just 1.59.0 installed:
+
+```sh
+just doctor
+just install-vscode-source
 ```
 
-This creates a fat JAR under `build/libs/`.
+This builds both the server and extension from the selected checkout, verifies the packaged artifacts, and installs the
+VSIX into VS Code. See [developer commands](CONTRIBUTING.md#developer-commands) for bootstrap instructions, checks,
+build-directory options and compatibility aliases.
+
+## Building the server
+
+```bash
+./gradlew :gls:stageEditorServer
+```
+
+This builds the fat JAR and stages it at `gls/build/editor-server/gls.jar`.
 
 ## Running
 
 ### Stdio mode (default)
 
 ```bash
-java -jar build/libs/groovy-lsp-<version>.jar
+java -jar gls/build/editor-server/gls.jar
 ```
 
 ### Socket mode
 
 ```bash
-java -jar build/libs/groovy-lsp-<version>.jar socket 8080
+java -jar gls/build/editor-server/gls.jar socket 8080
 ```
 
 ## Development
 
 This project uses:
 
-- Kotlin 2.0
+- Kotlin/JVM
 - LSP4J for protocol implementation
-- Gradle 9.1 for builds
+- The checked-in Gradle wrapper for builds
 
 ### Running tests
 
@@ -81,18 +95,18 @@ the GitHub issue instead of printing it locally. The default model is `gpt-5-cod
 
 | Path                       | Description                         |
 | -------------------------- | ----------------------------------- |
-| `groovy-lsp/`              | Core language server                |
+| `gls/`                     | Core language server                |
 | `parser/`                  | Parsing libraries (api/native/core) |
-| `groovy-common/`           | Shared utilities                    |
-| `groovy-diagnostics/`      | Diagnostics (compiler + CodeNarc)   |
-| `groovy-formatter/`        | OpenRewrite-based formatting        |
-| `groovy-jenkins/`          | Jenkins pipeline support            |
-| `groovy-spock/`            | Spock framework support             |
-| `groovy-gdsl/`             | GDSL execution and metadata         |
-| `groovy-testing/`          | Test discovery utilities            |
-| `groovy-junit/`            | JUnit integration                   |
-| `groovy-repl/`             | Groovy REPL                         |
-| `groovy-build-tool/`       | BSP/Gradle integration              |
+| `common/`                  | Shared utilities                    |
+| `diagnostics/`             | Diagnostics (compiler + CodeNarc)   |
+| `fmt/`                     | OpenRewrite-based formatting        |
+| `jenkins/`                 | Jenkins pipeline support            |
+| `ext/spock/`               | Spock framework support             |
+| `dsl/gdsl/`                | GDSL execution and metadata         |
+| `ext/testing/`             | Test discovery utilities            |
+| `ext/junit/`               | JUnit integration                   |
+| `repl/`                    | Groovy REPL                         |
+| `build-tool/`              | BSP/Gradle integration              |
 | `editors/code/`            | VS Code/Cursor/VSCodium extension   |
 | `jupyter/`                 | Jupyter kernels (Groovy/Jenkins)    |
 | `tools/jenkins-extractor/` | Jenkins metadata extractor          |

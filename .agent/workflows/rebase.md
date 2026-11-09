@@ -42,7 +42,7 @@ git log --oneline --decorate -n 20
 4. Run the repo lint gate **before** rebasing (baseline signal):
 
 ```bash
-make lint
+just lint
 ```
 
 If it fails: STOP. Fix first (use `/lintfix`).
@@ -121,13 +121,13 @@ git rev-parse --short HEAD
 2. Run repo lint gate:
 
 ```bash
-make lint
+just lint
 ```
 
 3. If the changes are non-trivial, run build:
 
 ```bash
-make build
+just build
 ```
 
 ## Push (update existing PR)
@@ -146,6 +146,6 @@ Record exactly:
 - Before: <old sha>
 - After:  <new sha>
 - Conflicts: [none | list files]
-- Verification: make lint PASS (and make build if run)
+- Verification: just lint PASS (and just build if run)
 - Push: force-with-lease done
 ```

@@ -8,7 +8,7 @@ const { spawnSync } = require("node:child_process");
 const { installerCommand, findInstaller } = require("./editor-command.js");
 const { readZipEntry } = require("./zip.js");
 
-/** @typedef {{phase: string, cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv}} Step */
+/** @typedef {{phase: string, cmd: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, shell?: boolean}} Step */
 /** @typedef {{root: string, buildRoot: string, jar: string, vsix: string, init: string, steps: Step[]}} Plan */
 
 /** @param {Buffer} bytes */
@@ -67,7 +67,25 @@ function sourceEnvironment(inherited, jar) {
 function pnpmInvocation(args, env) {
   if (env.npm_execpath && /pnpm\.c?js$/.test(path.basename(env.npm_execpath)))
     return { cmd: process.execPath, args: [env.npm_execpath, ...args] };
-  return installerCommand("pnpm", args);
+  return installerCommand("pnpm", args, process.platform, { env });
+}
+
+/** @param {NodeJS.ProcessEnv} inherited @param {NodeJS.Platform} platform */
+function javaEnvironment(inherited, platform = process.platform) {
+  const env = { ...inherited };
+  const keys =
+    platform === "win32"
+      ? Object.keys(env)
+          .filter((key) => key.toUpperCase() === "PATH")
+          .sort()
+      : ["PATH"];
+  const original = env[keys[0]] || "";
+  for (const key of keys) delete env[key];
+  const paths = platform === "win32" ? path.win32 : path;
+  env.PATH = env.JAVA_HOME
+    ? paths.join(env.JAVA_HOME, "bin") + paths.delimiter + original
+    : original;
+  return env;
 }
 
 /** @param {string} root @param {string} buildRoot @param {NodeJS.ProcessEnv} env @returns {Plan} */
@@ -77,7 +95,7 @@ function createSourcePlan(root, buildRoot, env) {
   const init = path.join(buildRoot, "source-build.init.gradle");
   const extension = path.join(root, "editors", "code");
   const buildEnv = {
-    ...env,
+    ...javaEnvironment(env),
     GVY_BUILD_ROOT: buildRoot,
     GRADLE_USER_HOME: env.GRADLE_USER_HOME
       ? path.resolve(env.GRADLE_USER_HOME)
@@ -139,7 +157,7 @@ function runProcess(step, capture = false) {
     cwd: step.cwd,
     env: step.env,
     encoding: "utf8",
-    shell: process.platform === "win32" && step.cmd.startsWith('"'),
+    shell: step.shell || false,
     stdio: capture ? "pipe" : ["inherit", 2, 2],
   });
   if (result.error || result.status !== 0)
@@ -208,11 +226,6 @@ function preflight(plan, requested, packageOnly) {
     throw new Error(
       "A working JDK 21+ is required; set JAVA_HOME or --java-home",
     );
-  // Gradle's smoke task invokes java through PATH too.
-  if (env.JAVA_HOME)
-    for (const step of plan.steps)
-      step.env.PATH =
-        path.join(env.JAVA_HOME, "bin") + path.delimiter + (env.PATH || "");
   const pm = pnpmInvocation(["--version"], env);
   const pmVersion = runProcess(
     { phase: "pnpm", ...pm, cwd: plan.root, env },
@@ -455,6 +468,7 @@ function finishReceipt(
 module.exports = {
   createSourcePlan,
   sourceEnvironment,
+  javaEnvironment,
   executeBuild,
   localJarMatches,
   replaceLocalJar,

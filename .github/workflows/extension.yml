@@ -119,14 +119,14 @@ jobs:
           GLS_LOCAL_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
           FORCE_DOWNLOAD: 'true'
 
-      - name: Lint
-        run: pnpm run lint
+      - name: Setup pinned Just
+        run: node ../../tools/setup-just.js --github-path
 
-      - name: Check types
-        run: pnpm run check-types
+      - name: Check developer commands
+        run: just check-commands
 
-      - name: Build
-        run: pnpm run compile
+      - name: Check editor
+        run: just check-editor
 
       - name: Run tests
         env:
@@ -134,7 +134,7 @@ jobs:
         run: |
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
           export DISPLAY=:99
-          pnpm run test:all
+          pnpm run test:integration
 
       - name: Upload failed editor logs
         if: failure()
@@ -221,14 +221,22 @@ jobs:
           GLS_LOCAL_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
           FORCE_DOWNLOAD: 'true'
 
-      - name: Build
-        run: pnpm run compile
-        working-directory: editors/code
+      - name: Setup pinned Just
+        run: node tools/setup-just.js --github-path
+        working-directory: .
+
+      - name: Check developer commands
+        run: just check-commands
+        working-directory: .
+
+      - name: Check editor
+        run: just check-editor
+        working-directory: .
 
       - name: Run tests
         env:
           GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
-        run: pnpm run test:all
+        run: pnpm run test:integration
         working-directory: editors/code
 
       - name: Upload failed editor logs

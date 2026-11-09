@@ -47,20 +47,20 @@ jobs:
 
         **Step 2: Write Failing Test (TDD - MANDATORY)**
         - Create a test that reproduces the bug
-        - Run: make test
+        - Run: just test
         - Verify test FAILS for the right reason
         - If test passes immediately, the bug may not exist or test is wrong
 
         **Step 3: Implement Fix**
-        - Write minimal code to make test pass
+        - Write minimal code to make the test pass
         - Follow AGENTS.md conventions:
           * Kotlin best practices
           * Proper error handling
           * Null safety
 
         **Step 4: Verify Fix**
-        - Run: make test (all tests must pass)
-        - Run: make lint (must pass)
+        - Run: just test (all tests must pass)
+        - Run: just lint (must pass)
         - Verify no regressions
 
         **Step 5: Create PR**
@@ -77,10 +77,10 @@ jobs:
         - TDD: Failing test FIRST, then implementation
         - Git: Use `git add <file>` explicitly, NEVER `git add .`
         - Git: Check branch with `git branch --show-current`
-        - Lint: Run `make lint` before commit
-        - Build: Verify with `make build`
+        - Lint: Run `just lint` before commit
+        - Build: Verify with `just build`
       claude_args: |
-        --allowed-tools "Read,Write,Edit,Glob,Grep,Bash(./gradlew :*),Bash(make :*),Bash(git status),Bash(git branch:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh :*)"
+        --allowed-tools "Read,Write,Edit,Glob,Grep,Bash(./gradlew :*),Bash(just :*),Bash(git status),Bash(git branch:*),Bash(git checkout:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*),Bash(gh :*)"
         --disallowed-tools "Bash(git add .),Bash(git push --force),Bash(git push -f:*),Bash(rm -rf:*)"
         --max-turns 15
     secrets:

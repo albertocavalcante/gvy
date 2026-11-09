@@ -15,6 +15,8 @@ import org.openjdk.jmh.annotations.Warmup
 import java.net.URI
 import java.util.concurrent.TimeUnit
 
+private const val SCRIPT_CLASS_COUNT = 500
+
 @State(Scope.Benchmark)
 @BenchmarkMode(Mode.Throughput)
 @OutputTimeUnit(TimeUnit.SECONDS)
@@ -30,9 +32,9 @@ open class VisitorBenchmark {
     @Setup
     fun setup() {
         parser = GroovyParserFacade()
-        // Generate a large script to stress traversal (approx 1000 classes with methods and closures)
+        // Generate a fixed synthetic script to stress traversal (500 classes with methods and closures).
         val sb = StringBuilder()
-        repeat(500) { i ->
+        repeat(SCRIPT_CLASS_COUNT) { i ->
             sb.append(
                 """
                 class BenchmarkClass$i {

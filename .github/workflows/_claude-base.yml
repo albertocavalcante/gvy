@@ -72,14 +72,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: ${{ inputs.fetch_depth }}
           persist-credentials: false
 
+      - name: Setup pinned Just
+        run: node tools/setup-just.js --github-path
+
       - name: Run Claude Code
         id: claude
-        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1
+        uses: anthropics/claude-code-action@4845bacbb38b3c4b15d948f035349786f678e068 # v1.0.267
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
@@ -92,7 +95,7 @@ jobs:
       # See: https://github.com/anthropics/claude-code-action
       - name: Upload Claude execution log
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: ${{ inputs.artifact_prefix }}-${{ inputs.artifact_suffix }}-${{ github.run_id }}
           path: /home/runner/work/_temp/claude-execution-output.json
