@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.services
 // TODO: Migrate from Gson to kotlinx.serialization for better Kotlin-native serialization support.
 //       This would allow using @Serializable annotations and remove the Gson dependency.
 //       See: https://kotlinlang.org/docs/serialization.html
+import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
 
 /**
@@ -67,6 +68,7 @@ data class StatusNotification(
  * @property type Discriminator field for polymorphic JSON serialization.
  * @property suggestions List of actionable suggestions to resolve the error.
  */
+@JsonAdapter(ErrorDetailsAdapter::class)
 sealed interface ErrorDetails {
     val type: String
     val suggestions: List<String>
