@@ -26,8 +26,8 @@ internal fun contentHash(content: String): String =
  * - for the same content, only a document from a later phase replaces it: a degraded parse never
  *   displaces a resolved one, and which of two compiles of the same text lands first does not matter;
  * - a document from disk never replaces the one built from an open editor buffer ([isOpen]);
- * - a publication begun earlier (its source read earlier) never replaces one begun later, so builds that
- *   finish out of order cannot bring back older text.
+ * - for different content, a publication begun earlier never lands after one begun later, even if that
+ *   one failed or was upgraded meanwhile, so builds that finish out of order cannot bring back older text.
  */
 class SemanticIndexer(
     private val index: WorkspaceSymbolIndex,
@@ -36,17 +36,20 @@ class SemanticIndexer(
         SemanticDocumentBuilder(ast, uri).build()
     },
 ) {
-    private class Entry(val contentHash: String, val phase: Int, val ticket: Long)
+    private class Entry(val contentHash: String, val phase: Int)
 
     private class State {
         @Volatile var entry: Entry? = null
+
+        /** Highest ticket that reached a decision; kept when the entry is upgraded or dropped. */
+        var highestTicket = 0L
         var publications = 0
     }
 
     internal class Publication(
         val uri: URI,
         val identity: Any,
-        /** Order in which publications began, i.e. in which their source was read. */
+        /** Order in which publications began (callers read or capture their source around [begin]). */
         val ticket: Long,
         private val finish: () -> Unit,
     ) : AutoCloseable {
@@ -110,7 +113,8 @@ class SemanticIndexer(
         val built = buildOrNull(ast, uri)
         entries.computeIfPresent(uri) { _, state ->
             if (replaces(state, publication, hash, phase, fromBuffer)) {
-                state.entry = Entry(hash, phase, publication.ticket).takeIf { store(uri, built, content) }
+                state.entry = Entry(hash, phase).takeIf { store(uri, built, content) }
+                state.highestTicket = maxOf(state.highestTicket, publication.ticket)
             }
             state
         }
@@ -125,10 +129,10 @@ class SemanticIndexer(
         fromBuffer: Boolean,
     ): Boolean {
         val existing = state?.entry
-        val supersedes = when {
-            existing == null -> true
-            existing.contentHash == hash -> phase > existing.phase
-            else -> publication.ticket > existing.ticket
+        val supersedes = if (existing != null && existing.contentHash == hash) {
+            phase > existing.phase
+        } else {
+            publication.ticket > (state?.highestTicket ?: 0L)
         }
         return state === publication.identity && !publication.isClosed && (fromBuffer || !isOpen(publication.uri)) &&
             supersedes
@@ -148,6 +152,12 @@ class SemanticIndexer(
         built != null
     } catch (e: Exception) {
         logger.warn(e) { "Failed to store the semantic document for $uri" }
+        // Best effort: an index left holding the previous document would disagree with the empty entry.
+        try {
+            index.removeDocument(uri)
+        } catch (removal: Exception) {
+            logger.warn(removal) { "Failed to remove the semantic document for $uri" }
+        }
         false
     }
 

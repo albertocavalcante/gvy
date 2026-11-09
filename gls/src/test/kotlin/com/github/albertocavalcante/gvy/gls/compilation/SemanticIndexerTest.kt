@@ -159,6 +159,37 @@ class SemanticIndexerTest {
         assertEquals(listOf("Newer"), names().filter { it == "Newer" || it == "Older" })
     }
 
+    @Test
+    fun `a phase upgrade by an older publication does not lower the ordering fence`() {
+        val t1 = indexer.begin(uri)
+        val t2 = indexer.begin(uri)
+        val t3 = indexer.begin(uri)
+        t3.use { indexer.publish(it, "class X {}", parse("class X {}"), Phases.SEMANTIC_ANALYSIS) }
+        t1.use { indexer.publish(it, "class X {}", parse("class X {}"), Phases.CANONICALIZATION) }
+
+        t2.use { indexer.publish(it, "class Y {}", parse("class Y {}"), Phases.CANONICALIZATION) }
+
+        assertEquals(listOf("X"), names().filter { it == "X" || it == "Y" })
+    }
+
+    @Test
+    fun `an older publication cannot land after a newer one failed to build`() {
+        var fail = false
+        val failing = SemanticIndexer(index, build = { ast, u ->
+            check(!fail) { "builder bug" }
+            com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
+        })
+        val older = failing.begin(uri)
+        val newer = failing.begin(uri)
+        fail = true
+        newer.use { failing.publish(it, "class Newer {}", parse("class Newer {}"), Phases.CANONICALIZATION) }
+        fail = false
+
+        older.use { failing.publish(it, "class Older {}", parse("class Older {}"), Phases.CANONICALIZATION) }
+
+        assertNull(index.getDocument(uri), "the older text must not come back")
+    }
+
     private companion object {
         const val LATCH_SECONDS = 10L
         const val REMOVE_SECONDS = 3L
