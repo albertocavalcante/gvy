@@ -336,11 +336,12 @@ maven.artifact(
 )
 
 # CodeNarc with Groovy exclusions to avoid version conflicts
-# CodeNarc 3.7.0-groovy-4.0 bundles old Groovy 3.0.9 transitives that conflict with our 4.0.29
+# Must be the -groovy-4.0 build (as in gradle/libs.versions.toml); plain 3.7.0 targets Groovy 3
+# and fails at runtime with MissingMethodException (visitClassEx).
 maven.artifact(
     artifact = "CodeNarc",
     group = "org.codenarc",
-    version = "3.7.0",
+    version = "3.7.0-groovy-4.0",
     exclusions = [
         "org.apache.groovy:groovy",
         "org.apache.groovy:groovy-ant",
