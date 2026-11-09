@@ -3,10 +3,12 @@ package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsBlockMetadata
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.eclipse.lsp4j.SemanticTokenModifiers
 import org.eclipse.lsp4j.SemanticTokenTypes
 import java.net.URI
+import java.util.concurrent.CancellationException
 
 /**
  * Provides Jenkins-specific semantic tokens for enhanced syntax highlighting.
@@ -121,57 +123,70 @@ object JenkinsSemanticTokenProvider {
         isJenkinsFile: Boolean,
         varsNames: Set<String> = emptySet(),
     ): List<SemanticToken> {
-        if (!isJenkinsFile) {
-            return emptyList()
-        }
-
+        if (!isJenkinsFile) return emptyList()
         val tokens = mutableListOf<SemanticToken>()
-
         try {
-            val allNodes = astModel.getAllNodes()
-
-            allNodes.filterIsInstance<MethodCallExpression>().forEach { methodCall ->
-                val methodName = methodCall.methodAsString ?: return@forEach
-
-                // First check if it's a built-in Jenkins block
-                val builtInTokenType = getTokenTypeForMethod(methodName)
-                if (builtInTokenType != null) {
-                    val methodNode = methodCall.method
-                    if (methodNode.lineNumber > 0) {
-                        tokens.add(
-                            SemanticToken(
-                                line = methodNode.lineNumber - 1,
-                                startChar = methodNode.columnNumber - 1,
-                                length = methodName.length,
-                                tokenType = builtInTokenType,
-                            ),
-                        )
-                    }
-                    return@forEach
-                }
-
-                // Then check if it's a vars/ global variable call
-                if (methodName in varsNames) {
-                    val methodNode = methodCall.method
-                    if (methodNode.lineNumber > 0) {
-                        tokens.add(
-                            SemanticToken(
-                                line = methodNode.lineNumber - 1,
-                                startChar = methodNode.columnNumber - 1,
-                                length = methodName.length,
-                                tokenType = TokenTypes.FUNCTION,
-                            ),
-                        )
-                    }
-                }
-            }
-
-            logger.debug { "Generated ${tokens.size} Jenkins semantic tokens for $uri" }
+            collect(SemanticTokenInput(astModel, uri), varsNames, tokens) {}
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             logger.error(e) { "Failed to generate Jenkins semantic tokens for $uri" }
         }
-
         return tokens
+    }
+
+    internal fun tokensForSnapshot(
+        input: SemanticTokenInput,
+        isJenkinsFile: Boolean,
+        varsNames: Set<String>,
+        checkCancelled: () -> Unit,
+    ): List<SemanticToken> {
+        if (!isJenkinsFile) return emptyList()
+        val tokens = mutableListOf<SemanticToken>()
+        collect(input, varsNames, tokens, checkCancelled)
+        return tokens
+    }
+
+    private fun collect(
+        input: SemanticTokenInput,
+        varsNames: Set<String>,
+        tokens: MutableList<SemanticToken>,
+        checkCancelled: () -> Unit,
+    ) {
+        checkCancelled()
+        val allNodes = input.astModel.getNodes(input.uri)
+        allNodes.filterIsInstance<MethodCallExpression>().forEach { methodCall ->
+            checkCancelled()
+            if (input.astModel.getUri(methodCall) != input.uri) return@forEach
+            val methodName = methodCall.methodAsString ?: return@forEach
+
+            // First check if it's a built-in Jenkins block
+            val builtInTokenType = getTokenTypeForMethod(methodName)
+            if (builtInTokenType != null) {
+                val methodNode = methodCall.method
+                token(input, methodNode, methodName, builtInTokenType)?.let { tokens.add(it) }
+                return@forEach
+            }
+
+            // Then check if it's a vars/ global variable call
+            if (methodName in varsNames) {
+                val methodNode = methodCall.method
+                token(input, methodNode, methodName, TokenTypes.FUNCTION)?.let { tokens.add(it) }
+            }
+        }
+        logger.debug { "Generated ${tokens.size} Jenkins semantic tokens for ${input.uri}" }
+    }
+
+    private fun token(input: SemanticTokenInput, node: ASTNode, name: String, type: Int): SemanticToken? {
+        if (node.lineNumber <= 0) return null
+        val source = input.sourceRanges
+        return if (source == null) {
+            SemanticToken(node.lineNumber - 1, node.columnNumber - 1, name.length, type)
+        } else {
+            source.name(node, name)?.takeIf { it.start.line == it.end.line }?.let {
+                SemanticToken(it.start.line, it.start.character, it.end.character - it.start.character, type)
+            }
+        }
     }
 
     /**

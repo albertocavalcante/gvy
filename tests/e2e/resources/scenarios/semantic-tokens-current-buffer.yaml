@@ -1,0 +1,59 @@
+name: semantic-tokens-current-buffer
+description: Semantic tokens follow the current UTF16 source and disappear on close.
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: src/SemanticTest.groovy
+      languageId: groovy
+      version: 7
+      text: "/* 😀 */\rclass Fresh {}\r"
+  - request:
+      method: textDocument/semanticTokens/full
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/SemanticTest.groovy" }
+      saveAs: tokens
+  - assert:
+      source: tokens
+      checks:
+        # Delta encoding: class keyword, then exact declaration identifier.
+        - jsonPath: $.data[0:10]
+          expect: { type: EQUALS, value: [1, 0, 5, 15, 0, 0, 6, 5, 2, 3] }
+  - changeDocument:
+      path: src/SemanticTest.groovy
+      version: 8
+      text: "/* 😀 */\rclass CurrentLong {}\r"
+  - request:
+      method: textDocument/semanticTokens/full
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/SemanticTest.groovy" }
+      saveAs: changedTokens
+  - assert:
+      source: changedTokens
+      checks:
+        - jsonPath: $.data[0:10]
+          expect: { type: EQUALS, value: [1, 0, 5, 15, 0, 0, 6, 11, 2, 3] }
+  - closeDocument:
+      path: src/SemanticTest.groovy
+  - request:
+      method: textDocument/semanticTokens/full
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/SemanticTest.groovy" }
+      saveAs: closedTokens
+  - assert:
+      source: closedTokens
+      checks:
+        - jsonPath: $.data.length()
+          expect: { type: EQUALS, value: 0 }
+  - shutdown: {}
+  - exit: {}

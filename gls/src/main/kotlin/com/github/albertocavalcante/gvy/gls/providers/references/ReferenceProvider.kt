@@ -573,7 +573,7 @@ class ReferenceProvider(
         uri: URI,
     ): Range? {
         if (this !is Parameter) return firstNameOccurrence(index, searchIn, name)
-        val ranges = state.parameterRanges.getOrPut(uri) { ParameterSourceRanges(index.text.lines()) }
+        val ranges = state.parameterRanges.getOrPut(uri) { ParameterSourceRanges(index) }
         val span = ranges.name(this) ?: return null
         return Range(Position(span.line, span.start), Position(span.line, span.start + span.length))
     }

@@ -31,6 +31,17 @@ class PrepareRenameTest {
     lateinit var workspace: Path
 
     @Test
+    fun `prepare preserves bare CR parameter declaration and usage coordinates`(): Unit = runBlocking {
+        supervisorScope {
+            val source = "class Cases {\r String call(String value) { value }\r}\r"
+            fixture(source).use {
+                it.assertPrepared(source.indexOf("value"), "value")
+                it.assertPrepared(source.lastIndexOf("value"), "value")
+            }
+        }
+    }
+
+    @Test
     fun `prepare returns the exact usage range and original parameter name`(): Unit = runBlocking {
         supervisorScope {
             val source = "class Cases { String call(String value) { value } }"

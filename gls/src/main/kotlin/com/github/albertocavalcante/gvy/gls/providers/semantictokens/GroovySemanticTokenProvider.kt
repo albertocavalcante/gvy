@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ImportNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ClassExpression
@@ -11,6 +12,7 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.StaticMethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import java.net.URI
+import java.util.concurrent.CancellationException
 
 /**
  * Provides semantic tokens for all Groovy files (not just Jenkins).
@@ -95,7 +97,6 @@ object GroovySemanticTokenProvider {
      * @param sourceText Optional source text for accurate offset calculation
      * @return List of semantic tokens
      */
-    @Suppress("CyclomaticComplexMethod") // Delegating to visitor, complexity is in error handling
     fun getSemanticTokens(
         astModel: GroovyAstModel,
         uri: URI,
@@ -104,37 +105,10 @@ object GroovySemanticTokenProvider {
         sourceText: String? = null,
     ): List<SemanticToken> {
         val tokens = mutableListOf<SemanticToken>()
-
         try {
-            // Create visitor with source lines for accurate offset calculation
-            val visitor = SemanticTokenVisitor(sourceText?.lines() ?: emptyList())
-
-            val allNodes = astModel.getAllNodes()
-            val classNodes = astModel.getAllClassNodes()
-
-            // Visit imports to generate tokens with UNNECESSARY modifier for unused ones
-            if (moduleNode != null) {
-                visitor.visitImports(moduleNode, unusedImports, tokens)
-            }
-
-            // Visit all class nodes to get declarations
-            classNodes.forEach { classNode ->
-                visitor.visitClassDeclaration(classNode, tokens)
-            }
-
-            // Visit all nodes to find references and other constructs
-            allNodes.forEach { node ->
-                when (node) {
-                    is VariableExpression -> visitor.visitVariableExpression(node, tokens)
-                    is PropertyExpression -> visitor.visitPropertyExpression(node, tokens)
-                    is ClassExpression -> visitor.visitClassExpression(node, tokens)
-                    is ClosureExpression -> visitor.visitClosureExpression(node, tokens)
-                    is MethodCallExpression -> visitor.visitMethodCallExpression(node, tokens)
-                    is StaticMethodCallExpression -> visitor.visitStaticMethodCallExpression(node, tokens)
-                }
-            }
-
-            logger.debug { "Generated ${tokens.size} Groovy semantic tokens for $uri" }
+            collect(SemanticTokenInput(astModel, uri, unusedImports, moduleNode, sourceText), tokens) {}
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: NullPointerException) {
             logger.error(e) { "Null pointer encountered while generating semantic tokens for $uri: ${e.message}" }
         } catch (e: IndexOutOfBoundsException) {
@@ -149,5 +123,46 @@ object GroovySemanticTokenProvider {
         }
 
         return tokens
+    }
+
+    internal fun tokensForSnapshot(input: SemanticTokenInput, checkCancelled: () -> Unit): List<SemanticToken> {
+        val tokens = mutableListOf<SemanticToken>()
+        collect(input, tokens, checkCancelled)
+        return tokens
+    }
+
+    private fun collect(input: SemanticTokenInput, tokens: MutableList<SemanticToken>, checkCancelled: () -> Unit) {
+        checkCancelled()
+        val visitor = SemanticTokenVisitor(input)
+        val model = input.astModel
+        val module = input.moduleNode
+        // Module containers need not have a tracked URI; prove each import's ownership instead.
+        if (module != null) {
+            (module.imports + module.staticImports.values).forEach { node ->
+                checkCancelled()
+                if (model.getUri(node) == input.uri) visitor.visitImportNode(node, input.unusedImports, tokens)
+            }
+        }
+        model.getAllClassNodes().forEach { node ->
+            checkCancelled()
+            if (model.getUri(node) == input.uri) visitor.visitClassDeclaration(node, tokens)
+        }
+        model.getNodes(input.uri).forEach { node ->
+            checkCancelled()
+            if (model.getUri(node) == input.uri) visitReference(node, visitor, tokens)
+        }
+        GroovySemanticKeywords.append(input, tokens, checkCancelled)
+        logger.debug { "Generated ${tokens.size} Groovy semantic tokens for ${input.uri}" }
+    }
+
+    private fun visitReference(node: ASTNode, visitor: SemanticTokenVisitor, tokens: MutableList<SemanticToken>) {
+        when (node) {
+            is VariableExpression -> visitor.visitVariableExpression(node, tokens)
+            is PropertyExpression -> visitor.visitPropertyExpression(node, tokens)
+            is ClassExpression -> visitor.visitClassExpression(node, tokens)
+            is ClosureExpression -> visitor.visitClosureExpression(node, tokens)
+            is MethodCallExpression -> visitor.visitMethodCallExpression(node, tokens)
+            is StaticMethodCallExpression -> visitor.visitStaticMethodCallExpression(node, tokens)
+        }
     }
 }

@@ -5,7 +5,8 @@ broader monorepo is expanding to cover Jenkins pipelines, Spock, testing, and no
 
 ## Current status (snapshot)
 
-- Core LSP: completion, hover, navigation, formatting, diagnostics, code actions, rename, semantic tokens (Jenkins)
+- Core LSP: completion, hover, navigation, formatting, diagnostics, code actions, rename, semantic tokens (Groovy and
+  Jenkins)
 - Jenkins pipelines: metadata-driven completion and diagnostics, deeper context support in progress
 - Spock: spec detection and block awareness, richer DSL support in progress
 - Testing: CodeLens run/debug for tests, shared test discovery utilities

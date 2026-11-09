@@ -71,6 +71,79 @@ suite("Implementation navigation with the current server", () => {
     );
   }
 
+  test("Semantic tokens cover exact identifiers and keywords without edits", async () => {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace);
+    const semantic = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(
+        workspace.uri,
+        "client/src/test/fixtures/SemanticTokens.groovy",
+      ),
+    );
+    await vscode.window.showTextDocument(semantic);
+    const source = semantic.getText();
+    const version = semantic.version;
+    const legend =
+      await vscode.commands.executeCommand<vscode.SemanticTokensLegend>(
+        "vscode.provideDocumentSemanticTokensLegend",
+        semantic.uri,
+      );
+    const result = await vscode.commands.executeCommand<vscode.SemanticTokens>(
+      "vscode.provideDocumentSemanticTokens",
+      semantic.uri,
+    );
+    assert.ok(legend);
+    assert.ok(result);
+    assert.strictEqual(result.data.length % 5, 0);
+    const tokens: Array<{ text: string; type: string; offset: number }> = [];
+    let line = 0;
+    let character = 0;
+    for (let index = 0; index < result.data.length; index += 5) {
+      const [deltaLine, deltaStart, length, type] = result.data.slice(
+        index,
+        index + 5,
+      );
+      line += deltaLine;
+      character = deltaLine === 0 ? character + deltaStart : deltaStart;
+      const start = new vscode.Position(line, character);
+      const range = new vscode.Range(start, start.translate(0, length));
+      assert.ok(
+        line < semantic.lineCount &&
+          range.end.character <= semantic.lineAt(line).text.length,
+      );
+      tokens.push({
+        text: semantic.getText(range),
+        type: legend.tokenTypes[type],
+        offset: semantic.offsetAt(start),
+      });
+    }
+    for (const [name, type] of [
+      ["TokenExample", "class"],
+      ["echo", "method"],
+      ["value", "parameter"],
+      ["class", "keyword"],
+      ["return", "keyword"],
+    ]) {
+      assert.ok(
+        tokens.some(
+          (token) =>
+            token.text === name &&
+            token.type === type &&
+            token.offset === source.indexOf(name),
+        ),
+        `Missing exact ${type} token for ${name}: ${JSON.stringify(tokens)}`,
+      );
+    }
+    assert.deepStrictEqual(
+      tokens
+        .filter((token) => token.type === "keyword")
+        .map((token) => token.text),
+      ["class", "return"],
+    );
+    assert.strictEqual(semantic.getText(), source);
+    assert.strictEqual(semantic.version, version);
+  });
+
   test("Folding returns import, comment and owned structural ranges without edits", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);

@@ -6,7 +6,15 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 
 /** Resolves parameter spellings from bounded source fragments, not the whole declaration's AST start. */
-internal class ParameterSourceRanges(private val lines: List<String>) {
+internal class ParameterSourceRanges private constructor(
+    private val index: TextIndex,
+    private val lines: List<String>,
+) {
+    constructor(lines: List<String>) : this(TextIndex(lines.joinToString("\n")), lines)
+    constructor(index: TextIndex) : this(index, index.text.split('\n'))
+    constructor(source: String) : this(TextIndex(source))
+
+    private val codePointCounts = IntArray(lines.size) { lines[it].codePointCount(0, lines[it].length) }
     data class Span(val line: Int, val start: Int, val length: Int)
 
     private val order = compareBy<Position> { it.line }.thenBy { it.character }
@@ -27,13 +35,13 @@ internal class ParameterSourceRanges(private val lines: List<String>) {
             }
         }
         val fragment = fragment(start, end) ?: return null
-        val index = TextIndex(fragment)
+        val fragmentIndex = TextIndex(fragment)
         val range = lastNameOccurrence(
-            index,
-            Range(Position(0, 0), index.positionOf(fragment.length)),
+            fragmentIndex,
+            Range(Position(0, 0), fragmentIndex.positionOf(fragment.length)),
             parameter.name,
         ) ?: return null
-        return span(start, range.start, parameter.name.length)
+        return span(start, fragmentIndex.offsetOf(range.start), parameter.name.length)
     }
 
     fun type(parameter: Parameter): Span? {
@@ -51,58 +59,34 @@ internal class ParameterSourceRanges(private val lines: List<String>) {
             lastStart = at
             lastEnd = identifier
         }
-        return span(start, TextIndex(text).positionOf(lastStart), lastEnd - lastStart)
+        return span(start, lastStart, lastEnd - lastStart)
     }
 
     private fun position(node: ASTNode, end: Boolean): Position? {
         val line = (if (end) node.lastLineNumber else node.lineNumber) - 1
         val column = (if (end) node.lastColumnNumber else node.columnNumber) - 1
-        val text = lines.getOrNull(line) ?: return null
-        if (column < 0) return null
-        // Groovy's lexer columns count code points; semantic token columns count UTF-16 code units.
-        return Position(line, text.offsetByCodePoints(0, column.coerceAtMost(text.codePointCount(0, text.length))))
-    }
-
-    private fun fragment(start: Position, end: Position): String? {
-        if (order.compare(start, end) >= 0) return null
-        return (start.line..end.line).joinToString("\n") { line ->
-            val text = lines[line]
-            val from = if (line == start.line) start.character else 0
-            val to = if (line == end.line) end.character else text.length
-            text.substring(from, to)
-        }
-    }
-
-    private fun span(start: Position, relative: Position, length: Int): Span = Span(
-        start.line + relative.line,
-        relative.character + if (relative.line == 0) start.character else 0,
-        length,
-    )
-
-    private fun identifierEnd(text: String, start: Int): Int? {
-        if (start >= text.length || !Character.isJavaIdentifierStart(text.codePointAt(start))) return null
-        var at = start
-        while (at < text.length && Character.isJavaIdentifierPart(text.codePointAt(at))) {
-            at += Character.charCount(text.codePointAt(at))
-        }
-        return at
-    }
-
-    private fun skipTrivia(text: String, start: Int): Int {
-        var at = start
-        while (at < text.length) {
-            at = when {
-                text[at].isWhitespace() -> at + 1
-                text.startsWith("/*", at) -> commentEnd(text, at, "*/")
-                text.startsWith("//", at) -> commentEnd(text, at, "\n")
-                else -> return at
+        val count = codePointCounts.getOrNull(line)
+        return if (column < 0 || count == null) {
+            null
+        } else {
+            index.groovyOffset(Position(line, column.coerceAtMost(count)))?.let { offset ->
+                Position(line, offset - checkNotNull(index.groovyLineStartOffset(line)))
             }
         }
-        return at
     }
 
-    private fun commentEnd(text: String, start: Int, closer: String): Int {
-        val end = text.indexOf(closer, start + 2)
-        return if (end < 0) text.length else end + if (closer == "\n") 0 else closer.length
+    private fun fragment(start: Position, end: Position): String? =
+        if (order.compare(start, end) < 0) index.text.substring(offset(start), offset(end)) else null
+
+    private fun offset(position: Position): Int =
+        checkNotNull(index.groovyLineStartOffset(position.line)) + position.character
+
+    private fun span(start: Position, relativeOffset: Int, length: Int): Span {
+        val position = index.positionOf(offset(start) + relativeOffset)
+        return Span(position.line, position.character, length)
     }
+
+    private fun identifierEnd(text: String, start: Int): Int? = sourceIdentifierEnd(text, start)
+
+    private fun skipTrivia(text: String, start: Int): Int = skipSourceTrivia(text, start)
 }
