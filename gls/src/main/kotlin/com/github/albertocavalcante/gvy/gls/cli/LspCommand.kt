@@ -115,14 +115,14 @@ class LspCommand : CliktCommand(name = "lsp") {
                 addShutdownHook(serverSocket)
                 acceptConnections(serverSocket)
             }
-        } catch (e: UnknownHostException) {
-            echo("Invalid --host '$host': ${e.message}", err = true)
-            throw ProgramResult(1)
-        } catch (e: BindException) {
-            logger.error(e) { "Failed to bind to port $port (port may be in use)" }
-            throw ProgramResult(1)
         } catch (e: IOException) {
-            logger.error(e) { "IO error starting server" }
+            logger.error(e) {
+                when (e) {
+                    is UnknownHostException -> "Invalid --host '$host': cannot resolve address"
+                    is BindException -> "Failed to bind to port $port (port may be in use)"
+                    else -> "IO error starting server"
+                }
+            }
             throw ProgramResult(1)
         }
     }
