@@ -1,10 +1,11 @@
 package com.github.albertocavalcante.gvy.spock
 
-import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.nativeapi.ParseResult
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * Source-level Spock specification identity for one parsed module, derived only from AST evidence.
@@ -27,11 +28,32 @@ sealed interface SpockSourceContext {
      * Per-class classification in module order. [isPartial] is true when the AST came from a parse
      * that reported errors, so classes may be missing from [classes].
      */
-    class Available(val classes: List<SpockClassContext>, val isPartial: Boolean) : SpockSourceContext {
-        /** The innermost class containing the 0-based LSP position, including anonymous and nested classes. */
+    class Available internal constructor(val classes: List<SpockClassContext>, val isPartial: Boolean) :
+        SpockSourceContext {
+        /**
+         * The class owning the 0-based LSP position: a declared class wins over the file's script
+         * class, then the most deeply nested, then the smallest range. The end position is
+         * exclusive, so the column just after a closing brace is outside the class. Linear in the
+         * number of classes.
+         */
         fun ownerAt(line: Int, column: Int): SpockClassContext? = classes
-            .filter { it.classNode.containsPosition(line, column) }
-            .maxByOrNull { depth(it.classNode) }
+            .filter { contains(it.classNode, line + 1, column + 1) }
+            .minWithOrNull(
+                compareBy<SpockClassContext> { it.classNode.isScript }
+                    .thenByDescending { depth(it.classNode) }
+                    .thenBy { span(it.classNode) },
+            )
+
+        private fun contains(node: ClassNode, line: Int, column: Int): Boolean {
+            if (node.lineNumber < 1 || node.lastLineNumber < 1) return false
+            val afterStart = line > node.lineNumber || (line == node.lineNumber && column >= node.columnNumber)
+            val beforeEnd =
+                line < node.lastLineNumber || (line == node.lastLineNumber && column < node.lastColumnNumber)
+            return afterStart && beforeEnd
+        }
+
+        private fun span(node: ClassNode): Long = (node.lastLineNumber - node.lineNumber).toLong() * Int.MAX_VALUE +
+            (node.lastColumnNumber - node.columnNumber)
 
         private fun depth(node: ClassNode): Int = generateSequence(node.outerClass) { it.outerClass }.count()
     }
@@ -77,7 +99,7 @@ enum class SpecificationEvidence {
     /** UNCERTAIN: the superclass is declared outside this module; its hierarchy needs classpath evidence. */
     UNRESOLVED_SUPERCLASS,
 
-    /** UNCERTAIN: a class in this module has the same simple name as the imported binding. */
+    /** UNCERTAIN: more than one module class or import binds the superclass spelling. */
     SHADOWED_NAME,
 
     /** UNCERTAIN: classes in this module extend each other cyclically. */
@@ -95,8 +117,9 @@ private const val SPOCK_PACKAGE = "spock.lang."
 
 /** Applies Groovy name-binding precedence conservatively: anything the module cannot prove stays uncertain. */
 private class SpecificationClassifier(private val module: ModuleNode) {
-    private val results = HashMap<ClassNode, SpockClassContext>()
-    private val inProgress = HashSet<ClassNode>()
+    // Identity, not ClassNode equality: ClassNode compares by name, and duplicate names are common mid-edit.
+    private val results = IdentityHashMap<ClassNode, SpockClassContext>()
+    private val inProgress: MutableSet<ClassNode> = Collections.newSetFromMap(IdentityHashMap())
 
     fun classify(node: ClassNode): SpockClassContext {
         results[node]?.let { return it }
@@ -129,26 +152,26 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         return context(node, status, SpecificationEvidence.RESOLVED_HIERARCHY)
     }
 
-    private fun bySourceName(node: ClassNode, name: String): SpockClassContext {
-        val moduleBase = moduleClass(name)
+    /**
+     * Collects every binding the module can see for the superclass spelling: a top-level class, a
+     * class nested in an enclosing class, and a single-type import. More than one binding stays
+     * uncertain instead of depending on Groovy's precedence between them. Nested classes of an
+     * enclosing class's superclass are not considered.
+     */
+    private fun bySourceName(node: ClassNode, rawName: String): SpockClassContext {
+        val name = rawName.replace('$', '.')
+        val simple = '.' !in name
+        val moduleBases = moduleClasses(name) + if (simple) enclosingNested(node, name) else emptyList()
+        val explicit = if (simple) module.getImport(name)?.className else null
+        val bindings = moduleBases.distinctBy { System.identityHashCode(it) }.size + if (explicit != null) 1 else 0
         return when {
-            moduleBase is Lookup.Found -> inherit(node, classify(moduleBase.node))
-            moduleBase is Lookup.Shadowed ->
-                context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.SHADOWED_NAME)
+            bindings > 1 -> context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.SHADOWED_NAME)
+            moduleBases.isNotEmpty() -> inherit(node, classify(moduleBases.first()))
             name == SPECIFICATION_FQN ->
                 context(node, SpecificationStatus.SPECIFICATION, SpecificationEvidence.QUALIFIED_SUPERCLASS)
-            '.' in name -> uncertain(node)
-            else -> bySimpleName(node, name)
-        }
-    }
-
-    private fun bySimpleName(node: ClassNode, name: String): SpockClassContext {
-        val explicit = module.getImport(name)?.className
-        return when {
             explicit == SPECIFICATION_FQN ->
                 context(node, SpecificationStatus.SPECIFICATION, SpecificationEvidence.EXPLICIT_IMPORT)
-            explicit != null -> uncertain(node)
-            name == "Specification" && module.starImports.any { it.packageName == SPOCK_PACKAGE } ->
+            explicit == null && name == "Specification" && module.starImports.any { it.packageName == SPOCK_PACKAGE } ->
                 context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.STAR_IMPORT_ONLY)
             else -> uncertain(node)
         }
@@ -163,21 +186,15 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         return context(node, base.status, evidence)
     }
 
-    /**
-     * Top-level classes match by full or package-relative name and nested classes by their dotted
-     * spelling. A nested class whose bare simple name matches may be in scope, so it shadows.
-     */
-    private fun moduleClass(name: String): Lookup {
-        val exact = module.classes.filter { candidate ->
-            val relative = candidate.nameWithoutPackage.replace('$', '.')
-            candidate.name.replace('$', '.') == name || relative == name
-        }
-        if (exact.size == 1) return Lookup.Found(exact.single())
-        if (exact.size > 1) return Lookup.Shadowed
-        val nestedSimple = module.classes.any { candidate ->
-            candidate.outerClass != null && candidate.nameWithoutPackage.substringAfterLast('$') == name
-        }
-        return if (nestedSimple) Lookup.Shadowed else Lookup.Missing
+    /** Classes whose full or package-relative name, with `$` normalised to `.`, equals [name]. */
+    private fun moduleClasses(name: String): List<ClassNode> = module.classes.filter { candidate ->
+        candidate.name.replace('$', '.') == name || candidate.nameWithoutPackage.replace('$', '.') == name
+    }
+
+    /** Classes nested directly in one of [node]'s enclosing classes with the bare [name]. */
+    private fun enclosingNested(node: ClassNode, name: String): List<ClassNode> {
+        val scopes = generateSequence(node.outerClass) { it.outerClass }.map { it.name + "$" + name }.toSet()
+        return module.classes.filter { it.name in scopes }
     }
 
     private fun uncertain(node: ClassNode) =
@@ -185,12 +202,4 @@ private class SpecificationClassifier(private val module: ModuleNode) {
 
     private fun context(node: ClassNode, status: SpecificationStatus, evidence: SpecificationEvidence) =
         SpockClassContext(node, status, evidence)
-
-    private sealed interface Lookup {
-        data class Found(val node: ClassNode) : Lookup
-
-        data object Shadowed : Lookup
-
-        data object Missing : Lookup
-    }
 }

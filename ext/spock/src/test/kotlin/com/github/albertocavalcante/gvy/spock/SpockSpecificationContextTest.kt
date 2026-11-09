@@ -17,8 +17,11 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import org.junit.jupiter.params.provider.ValueSource
 import java.lang.reflect.Modifier
 import java.net.URI
@@ -129,7 +132,7 @@ class SpockSpecificationContextTest {
     }
 
     @Test
-    fun `module class with the imported name shadows the import`() {
+    fun `a nested class and an import alias binding the same name stay uncertain`() {
         val result = classify(
             """
             import spock.lang.Specification as Spec
@@ -140,6 +143,51 @@ class SpockSpecificationContextTest {
             """.trimIndent(),
         )
         assertEquals(UNCERTAIN to SHADOWED_NAME, result["Outer\$A"])
+    }
+
+    @Test
+    fun `nested classes resolve bare names against sibling bases in the enclosing class`() {
+        val result = classify(
+            """
+            class Outer {
+                static class Base extends spock.lang.Specification {}
+                static class A extends Base {}
+            }
+            class Other extends Base {}
+            """.trimIndent(),
+        )
+        assertEquals(SPECIFICATION to MODULE_BASE, result["Outer\$A"])
+        assertEquals(UNCERTAIN to UNRESOLVED_SUPERCLASS, result["Other"], "Out-of-scope nested classes do not bind")
+    }
+
+    @Test
+    fun `duplicate class names keep separate results`() {
+        val source = "class A {}\nclass A extends spock.lang.Specification {}"
+        val context = assertIs<SpockSourceContext.Available>(contexts(source).first())
+
+        assertEquals(2, context.classes.size)
+        assertTrue(context.classes[0].classNode !== context.classes[1].classNode)
+        assertEquals(NOT_SPECIFICATION to NO_SUPERCLASS, context.classes[0].let { it.status to it.evidence })
+        assertEquals(SPECIFICATION to QUALIFIED_SUPERCLASS, context.classes[1].let { it.status to it.evidence })
+    }
+
+    @Test
+    fun `declared classes own their bodies in files that also contain script statements`() {
+        val source =
+            """
+            println 'before'
+            class FooSpec extends spock.lang.Specification {
+                def "feature"() {
+                    expect: true
+                }
+            }
+            println 'after'
+            """.trimIndent()
+        val context = assertIs<SpockSourceContext.Available>(contexts(source).first())
+
+        assertEquals("FooSpec", context.ownerAt(3, 12)?.classNode?.name)
+        assertEquals(SPECIFICATION, context.ownerAt(3, 12)?.status)
+        assertTrue(context.ownerAt(6, 2)?.classNode?.isScript != false, "Trailing script statements are not FooSpec")
     }
 
     @Test
@@ -221,6 +269,7 @@ class SpockSpecificationContextTest {
         // Pre-resolution `Object` is a bare name a same-package class could shadow: uncertain, never a spec.
         assertEquals(UNCERTAIN to UNRESOLVED_SUPERCLASS, anonymous?.let { it.status to it.evidence })
         assertNull(context.ownerAt(0, 0), "Imports are outside every class")
+        assertNull(context.ownerAt(5, 1), "The column after a closing brace is outside the class")
     }
 
     @Test
@@ -245,5 +294,53 @@ class SpockSpecificationContextTest {
         assertEquals(NOT_SPECIFICATION to SpecificationEvidence.RESOLVED_HIERARCHY, result.getValue("B").pair())
     }
 
+    @ParameterizedTest
+    @MethodSource("resolvedTruth")
+    fun `resolving with or without Spock is never confidently wrong`(
+        source: String,
+        truth: Map<String, SpecificationStatus>,
+    ) {
+        loaders.forEach { loader ->
+            val request =
+                ParseRequest(URI.create("file:///src/Probe.groovy"), source, compilePhase = Phases.SEMANTIC_ANALYSIS)
+            val context = SpockSourceContext.from(GroovyParserFacade(loader).parse(request))
+            val classes = (context as? SpockSourceContext.Available)?.classes.orEmpty()
+            truth.forEach { (name, expected) ->
+                classes.filter { it.classNode.name == name }.forEach { actual ->
+                    assertTrue(actual.status == expected || actual.status == UNCERTAIN, "$name: $actual with $loader")
+                }
+            }
+        }
+    }
+
     private fun SpockClassContext.pair() = status to evidence
+
+    companion object {
+        @JvmStatic
+        fun resolvedTruth(): List<Arguments> = listOf(
+            Arguments.of("class A extends spock.lang.Specification {}", mapOf("A" to SPECIFICATION)),
+            Arguments.of(
+                "import spock.lang.Specification\nclass A extends Specification {}",
+                mapOf("A" to SPECIFICATION),
+            ),
+            Arguments.of("import spock.lang.Specification as S\nclass A extends S {}", mapOf("A" to SPECIFICATION)),
+            Arguments.of("import spock.lang.*\nclass A extends Specification {}", mapOf("A" to SPECIFICATION)),
+            Arguments.of(
+                "import spock.lang.*\nimport java.util.ArrayList as Specification\nclass A extends Specification {}",
+                mapOf("A" to NOT_SPECIFICATION),
+            ),
+            Arguments.of(
+                "class A extends java.util.ArrayList { def f() { given: 1 } }",
+                mapOf("A" to NOT_SPECIFICATION),
+            ),
+            Arguments.of(
+                "class Base extends spock.lang.Specification {}\nclass A extends Base {}",
+                mapOf("Base" to SPECIFICATION, "A" to SPECIFICATION),
+            ),
+            Arguments.of(
+                "class Outer {\n static class Base extends spock.lang.Specification {}\n static class A extends Base {}\n}",
+                mapOf("Outer" to NOT_SPECIFICATION, "Outer\$Base" to SPECIFICATION, "Outer\$A" to SPECIFICATION),
+            ),
+        )
+    }
 }
