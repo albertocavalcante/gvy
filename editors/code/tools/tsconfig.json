@@ -13,6 +13,10 @@
     "source-install.js",
     "editor-command.js",
     "smoke-server.js",
-    "install-extension.js"
+    "install-extension.js",
+    "../../../tools/dev-command.js",
+    "../../../tools/setup-just.js",
+    "../../../tools/test-just.js",
+    "lint-tools.js"
   ]
 }

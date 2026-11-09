@@ -928,7 +928,8 @@
     "compile:tests": "tsc -b --force client/tsconfig.json",
     "test:integration": "pnpm run compile:tests && vscode-test",
     "test:all": "pnpm run test && pnpm run test:integration",
-    "check-tools": "tsc --project tools/tsconfig.json && eslint --config tools/eslint.config.mjs tools"
+    "check-tools": "tsc --project tools/tsconfig.json && node tools/lint-tools.js",
+    "check": "pnpm run compile && pnpm test"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

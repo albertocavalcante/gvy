@@ -12,7 +12,7 @@ Systematic review of codebase health, recent activity, and planning for improvem
 
 This is a monorepo with **two build systems**:
 
-- **Kotlin/Gradle** (most modules) → `make lint`, `make test`, `make build`
+- **Kotlin/Gradle** (most modules) → `just lint`, `just test`, `just build`
 - **VS Code extension** under `editors/code` (Node/pnpm) → `pnpm run lint`, `pnpm run check-types`,
   `pnpm run format:check`, `pnpm run test:all`
 
@@ -79,7 +79,7 @@ For **PR scope** validation:
 
 ```bash
 # Kotlin/Gradle side
-make lint
+just lint
 
 # Extension side (only if editors/code changed)
 cd editors/code && pnpm install --frozen-lockfile
@@ -201,9 +201,9 @@ Create `/implementation_plan.md` with:
 Kotlin/Gradle:
 
 ```bash
-make lint
-make test
-make build
+just lint
+just test
+just build
 ```
 
 VS Code extension (from repo root):

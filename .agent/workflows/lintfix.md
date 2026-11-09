@@ -10,7 +10,7 @@ This workflow is designed to be used as a tight inner-loop, and `/lint` may invo
 gates are green.
 
 `/lint` may also invoke this workflow for **actionable idiomacy/smell fixes** found during the Step 4 smell scan, even
-when Detekt is green. In that case, treat the smell as the “failure” to fix and verify with `make lint` (and `make test`
+when Detekt is green. In that case, treat the smell as the “failure” to fix and verify with `just lint` (and `just test`
 if behavior might change).
 
 This workflow is intentionally strict: it is designed to stop LLMs from guessing, fixing multiple things at once, or
@@ -38,7 +38,7 @@ Run the failing gate from `/lint`:
 
 ```bash
 # Gradle
-make lint
+just lint
 
 # Extension (if applicable)
 cd editors/code && pnpm run check-types && pnpm run lint && pnpm run format:check
@@ -59,12 +59,12 @@ If failure came from `lefthook run pre-commit`:
 
 | Failure type                    | Fix action                                 | Verify command                                             |
 | ------------------------------- | ------------------------------------------ | ---------------------------------------------------------- |
-| Formatting (Spotless)           | `make format`                              | `make lint`                                                |
+| Formatting (Spotless)           | `just fmt`                                 | `just lint`                                                |
 | Detekt rule                     | Refactor (see hierarchy below)             | `./gradlew :<module>:detekt --rerun-tasks`                 |
 | Compiler warning                | Fix deprecated API / unchecked cast / etc. | `./gradlew :<module>:compileKotlin`                        |
 | Extension lint/types            | Fix TS error                               | `cd editors/code && pnpm run check-types && pnpm run lint` |
 | Extension format                | `cd editors/code && pnpm run format`       | `cd editors/code && pnpm run format:check`                 |
-| Idiomacy/smell (tools may pass) | Small refactor on change surface           | `make lint`                                                |
+| Idiomacy/smell (tools may pass) | Small refactor on change surface           | `just lint`                                                |
 
 ### Detekt refactor hierarchy (try in order)
 
@@ -82,7 +82,7 @@ If failure came from `lefthook run pre-commit`:
 ```
 while failing:
     1. Run narrow verify command
-    2. If PASS → run `make lint` (promote)
+    2. If PASS → run `just lint` (promote)
     3. If still FAIL → adjust fix, repeat
     4. After 3 attempts on same issue → STOP, document blocker
 ```
@@ -99,9 +99,9 @@ git diff -- '**/detekt-baseline.xml'
 ## Step 5 — Final gate
 
 ```bash
-make lint
+just lint
 # If behavior changed:
-make test
+just test
 ```
 
 Extension (if in scope):

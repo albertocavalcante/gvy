@@ -16,10 +16,10 @@ java -version  # Verify Java is available
 ## Commands
 
 ```bash
-make build   # Build + tests
-make test    # Tests only
-make lint    # Check quality
-make format  # Fix lint
+just build   # Build + tests
+just test    # Tests only
+just lint    # Check quality
+just fmt  # Fix lint
 ```
 
 > [!IMPORTANT] **VS Code Extension**: Use `pnpm` (not npm) for `editors/code/`. See `editors/code/AGENTS.md`.
