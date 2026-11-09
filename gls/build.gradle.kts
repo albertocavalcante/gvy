@@ -609,15 +609,16 @@ abstract class SmokeShadowJarTask
             fun runJar(vararg args: String): String {
                 val stdout = ByteArrayOutputStream()
                 val stderr = ByteArrayOutputStream()
-                val result = execOperations.exec {
-                    isIgnoreExitValue = true
-                    commandLine(listOf("java", "-jar", jar.absolutePath) + args)
-                    standardOutput = stdout
-                    errorOutput = stderr
-                    // Disable colored output for reliable assertion checking
-                    // Compliant with https://no-color.org/
-                    environment("NO_COLOR", "1")
-                }
+                val result =
+                    execOperations.exec {
+                        isIgnoreExitValue = true
+                        commandLine(listOf("java", "-jar", jar.absolutePath) + args)
+                        standardOutput = stdout
+                        errorOutput = stderr
+                        // Disable colored output for reliable assertion checking
+                        // Compliant with https://no-color.org/
+                        environment("NO_COLOR", "1")
+                    }
                 if (result.exitValue != 0) {
                     throw GradleException("Smoke command ${args.first()} exited ${result.exitValue}:\n$stdout\n$stderr")
                 }
