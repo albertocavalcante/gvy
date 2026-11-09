@@ -431,4 +431,56 @@ class JenkinsPipelineStageRuleTest {
 
         assertEquals(emptyList(), JenkinsPipelineStageRule().analyze(jenkinsfile, code, context))
     }
+
+    @Test
+    fun `supplementary characters before a stage keep every finding and use UTF-16 ranges`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    /* ${"\uD83D\uDE00"} */ stage('A') {}
+                    stage('B') {}
+                }
+            }
+        """.trimIndent()
+
+        val diagnostics = analyze(code)
+
+        assertEquals(
+            listOf(Range(Position(3, 17), Position(3, 27)), Range(Position(4, 8), Position(4, 18))),
+            diagnostics.map { it.range },
+            diagnostics.messages().toString(),
+        )
+        assertEquals("stage('A')", code.lines()[3].substring(17, 27))
+    }
+
+    @Test
+    fun `a finding whose AST position no longer matches the text is dropped alone`(): Unit = runBlocking {
+        val compiled = """
+            pipeline {
+                agent any
+                stages {
+                    stage('A') {}
+                    stage('B') {}
+                }
+            }
+        """.trimIndent()
+        val current = compiled.replace("        stage('A') {}", "        sh('A')")
+        val compilationService = GroovyCompilationService()
+        compilationService.compile(jenkinsfile, compiled)
+        val staleAst = compilationService.getAst(jenkinsfile)
+        val context = object : RuleContext {
+            override fun getAst(): Any? = staleAst
+
+            override fun hasErrors(): Boolean = false
+        }
+
+        val diagnostics = JenkinsPipelineStageRule().analyze(jenkinsfile, current, context)
+
+        assertEquals(
+            listOf("Stage 'B' is missing a 'steps', 'stages', 'parallel' or 'matrix' block"),
+            diagnostics.messages(),
+        )
+        assertEquals(Range(Position(4, 8), Position(4, 18)), diagnostics.single().range)
+    }
 }

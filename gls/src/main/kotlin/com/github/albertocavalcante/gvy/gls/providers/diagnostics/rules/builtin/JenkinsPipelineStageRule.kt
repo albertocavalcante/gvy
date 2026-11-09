@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.builtin
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.AbstractDiagnosticRule
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.DiagnosticAnalysisType
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -31,7 +32,7 @@ import java.util.IdentityHashMap
  * `script` is a step, so it is only valid inside `steps`.
  *
  * NOTE: The rule walks the Groovy AST, so strings and comments cannot skew it. When the AST is
- * unavailable, or does not line up with the analyzed text, it reports nothing rather than guess.
+ * unavailable it reports nothing, and a finding whose keyword is not at its AST position is dropped.
  */
 class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
 
@@ -71,13 +72,15 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
                 pipeline.sections(STAGES).forEach { checkStages(it, findings) }
             }
 
-        val lines = content.lines()
-        // NOTE: A cached AST that no longer matches the text would point at the wrong code.
-        if (findings.any { !it.anchorsIn(lines) }) {
-            logger.debug { "AST positions do not match the analyzed text for $uri; skipping" }
-            return emptyList()
+        val index = TextIndex(content)
+        return findings.mapNotNull { finding ->
+            // NOTE: A finding whose keyword is not at its AST position (stale AST) is dropped alone.
+            val range = finding.range(index)
+            if (range == null) {
+                logger.debug { "Skipping unanchored '${finding.keyword}' finding in $uri" }
+            }
+            range?.let { diagnostic(it, finding.message) }
         }
-        return findings.map { diagnostic(it.range(lines), it.message) }
     }
 
     private fun checkStages(stagesBlock: MethodCallExpression, findings: MutableList<Finding>) {
@@ -151,34 +154,32 @@ class JenkinsPipelineStageRule : AbstractDiagnosticRule() {
     /**
      * A diagnostic anchored at a block call. For a stage the range covers `stage('Name')`; for
      * any other block it covers the block keyword.
+     *
+     * Groovy positions count code points from 1; [TextIndex] converts them to LSP UTF-16 positions.
      */
     private class Finding(val call: MethodCallExpression, val keyword: String, val message: String) {
         private val startLine = call.method.lineNumber.takeIf { it > 0 } ?: call.lineNumber
         private val startColumn = call.method.columnNumber.takeIf { it > 0 } ?: call.columnNumber
 
-        fun anchorsIn(lines: List<String>): Boolean {
-            val line = lines.getOrNull(startLine - 1) ?: return false
-            return startColumn > 0 && line.startsWith(keyword, startColumn - 1)
-        }
-
-        fun range(lines: List<String>): Range {
-            val start = Position(startLine - 1, startColumn - 1)
-            val keywordEnd = Position(startLine - 1, startColumn - 1 + keyword.length)
+        /** The LSP range, or null when the text at the AST position is not [keyword]. */
+        fun range(index: TextIndex): Range? {
+            if (startLine < 1 || startColumn < 1) return null
+            val startOffset = index.groovyOffset(Position(startLine - 1, startColumn - 1)) ?: return null
+            if (!index.text.startsWith(keyword, startOffset)) return null
+            val start = index.positionOf(startOffset)
+            val keywordEnd = index.positionOf(startOffset + keyword.length)
             if (keyword != STAGE) return Range(start, keywordEnd)
 
-            val nameArgument = (call.arguments as? TupleExpression)?.expressions
+            val nameEnd = (call.arguments as? TupleExpression)?.expressions
                 ?.firstOrNull { it !is ClosureExpression }
                 ?.takeIf { it.lastLineNumber > 0 && it.lastColumnNumber > 0 }
+                ?.let { index.groovyOffset(Position(it.lastLineNumber - 1, it.lastColumnNumber - 1)) }
+                ?.takeIf { it > startOffset }
                 ?: return Range(start, keywordEnd)
-            val endLine = nameArgument.lastLineNumber - 1
-            var endColumn = nameArgument.lastColumnNumber - 1
-            val text = lines.getOrNull(endLine).orEmpty()
-            while (endColumn < text.length && text[endColumn].isWhitespace()) endColumn++
-            return if (endColumn < text.length && text[endColumn] == ')') {
-                Range(start, Position(endLine, endColumn + 1))
-            } else {
-                Range(start, Position(endLine, nameArgument.lastColumnNumber - 1))
-            }
+            var at = nameEnd
+            while (at < index.text.length && index.text[at].isWhitespace()) at++
+            val end = if (at < index.text.length && index.text[at] == ')') at + 1 else nameEnd
+            return Range(start, index.positionOf(end))
         }
     }
 }
