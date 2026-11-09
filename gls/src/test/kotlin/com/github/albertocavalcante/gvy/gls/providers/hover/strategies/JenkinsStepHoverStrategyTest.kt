@@ -126,6 +126,8 @@ class JenkinsStepHoverStrategyTest {
         assertThat(result.range).isNotNull()
         assertThat(result.range.start.line).isEqualTo(0)
         assertThat(result.range.start.character).isEqualTo(0)
+        // Groovy lastColumnNumber is exclusive (length + 1, 1-based) -> LSP exclusive end == name length
+        assertThat(result.range.end.character).isEqualTo("myCustomStep".length)
     }
 
     @Test

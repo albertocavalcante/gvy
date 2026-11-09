@@ -77,11 +77,10 @@ class JenkinsStepHoverStrategy(
             value = markdownContent
         }
 
-        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
+        // Groovy lastColumnNumber is 1-based and EXCLUSIVE; the 0-based exclusive LSP end is lastColumnNumber - 1
         val hoverRange = Range(
             Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber),
+            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
         )
 
         return Hover().apply {
@@ -129,11 +128,10 @@ class JenkinsStepHoverStrategy(
         }
 
         // Build hover range from the method call expression
-        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed for end)
+        // Groovy lastColumnNumber is 1-based and EXCLUSIVE; the 0-based exclusive LSP end is lastColumnNumber - 1
         val hoverRange = Range(
             Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber),
+            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
         )
 
         return Hover().apply {

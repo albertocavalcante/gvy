@@ -31,8 +31,8 @@ class NativeParserAdapter(private val result: ParseResult, override val uri: Str
 
     override fun nodeAt(position: Position): UnifiedNode? {
         val ast = result.ast ?: return null
-        // Native AST uses 1-based lines, LSP uses 0-based
-        val node = ast.findNodeAt(position.line + 1, position.character + 1)
+        // findNodeAt takes LSP (0-based) coordinates and converts to Groovy's 1-based ones itself
+        val node = ast.findNodeAt(position.line, position.character)
         return node?.toUnifiedNode()
     }
 
@@ -104,9 +104,9 @@ private fun ASTNode.toRange(): Range? {
     val startLine = lineNumber - 1 // Convert to 0-based
     val startCol = columnNumber - 1
     val endLine = if (lastLineNumber >= 1) lastLineNumber - 1 else startLine
-    // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-    // 1-based inclusive column N equals 0-based exclusive column N (no subtraction needed)
-    val endCol = if (lastColumnNumber >= 1) lastColumnNumber else startCol + 1
+    // Groovy lastColumnNumber is 1-based and EXCLUSIVE (the column just past the last character);
+    // the LSP end is 0-based and exclusive, so it is lastColumnNumber - 1.
+    val endCol = if (lastColumnNumber >= 1) lastColumnNumber - 1 else startCol + 1
     return Range(Position(startLine, startCol), Position(endLine, endCol))
 }
 

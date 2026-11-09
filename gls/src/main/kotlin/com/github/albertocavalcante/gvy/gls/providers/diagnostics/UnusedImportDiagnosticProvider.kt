@@ -66,11 +66,10 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
         }
 
         // Line numbers in Groovy AST are 1-based, LSP is 0-based
-        // LSP end is EXCLUSIVE, Groovy lastColumnNumber is 1-based INCLUSIVE
-        // 1-based inclusive column N equals 0-based exclusive column N (no conversion needed for end)
+        // Groovy lastColumnNumber is 1-based and EXCLUSIVE; the 0-based exclusive LSP end is lastColumnNumber - 1
         val range = Range(
             Position(importNode.lineNumber - 1, importNode.columnNumber - 1),
-            Position(importNode.lastLineNumber - 1, importNode.lastColumnNumber),
+            Position(importNode.lastLineNumber - 1, importNode.lastColumnNumber - 1),
         )
 
         // Build descriptive import name for static/aliased imports

@@ -200,4 +200,16 @@ class CoreParserAdapterTest {
         val node = adapter.nodeAt(Position(4, 4)) // On "main"
         assertNotNull(node, "Expected node at method declaration")
     }
+
+    @Test
+    fun `symbol range ends exactly at the last character of the declaration`() {
+        val code = "class Foo {}"
+        val result = GroovyParser(ParserConfiguration()).parse(code)
+        val adapter = CoreParserAdapter(result, "file:///Test.groovy")
+
+        val range = adapter.allSymbols().single().range
+
+        assertEquals(0, range.start.character)
+        assertEquals(code.length, range.end.character, "LSP end is exclusive: lastColumn(1-based exclusive) - 1")
+    }
 }

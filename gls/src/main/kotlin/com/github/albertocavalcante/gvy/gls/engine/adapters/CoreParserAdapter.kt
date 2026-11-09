@@ -161,9 +161,10 @@ private fun Node.extractType(): String? = when (this) {
     else -> null
 }
 
+// Core ranges carry Groovy's 1-based, EXCLUSIVE end column, so the 0-based LSP exclusive end is column - 1.
 private fun CoreRange.toLspRange(): Range = Range(
     Position(begin.line - 1, begin.column - 1),
-    Position(end.line - 1, end.column),
+    Position(end.line - 1, end.column - 1),
 )
 
 /**

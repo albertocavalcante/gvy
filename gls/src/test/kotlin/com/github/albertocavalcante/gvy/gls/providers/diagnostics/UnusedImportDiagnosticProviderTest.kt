@@ -96,6 +96,18 @@ class UnusedImportDiagnosticProviderTest {
     }
 
     @Test
+    fun `diagnostic range ends exactly at end of import text`(): Unit = runBlocking {
+        val importLine = "import java.util.HashMap"
+        val code = "$importLine\n\ndef x = 1"
+
+        compile(code)
+        val range = provider.provideDiagnostics(uri, code).toList().single().range
+
+        assertEquals(0, range.start.character)
+        assertEquals(importLine.length, range.end.character, "LSP end is exclusive: must not include the next char")
+    }
+
+    @Test
     fun `diagnostic should have correct code for quick fix integration`(): Unit = runBlocking {
         val code = """
             import java.util.HashMap

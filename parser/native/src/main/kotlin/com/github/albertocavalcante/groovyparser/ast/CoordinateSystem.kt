@@ -126,8 +126,8 @@ object CoordinateSystem {
      * Get the range of an AST node in LSP coordinates.
      * Returns null if the node has invalid position information.
      *
-     * NOTE: LSP end positions are EXCLUSIVE, while Groovy lastColumnNumber is 1-based INCLUSIVE.
-     * This means 1-based inclusive column N equals 0-based exclusive column N (no subtraction).
+     * NOTE: Groovy lastColumnNumber is 1-based and EXCLUSIVE (the column just past the last character),
+     * and LSP end positions are 0-based and exclusive, so the LSP end column is lastColumnNumber - 1.
      *
      * TODO: Return Result<LspRange> instead of nullable
      * This would align with SafePosition's error handling approach
@@ -137,9 +137,7 @@ object CoordinateSystem {
         if (!isValidNodePosition(node)) return null
 
         val start = groovyToLsp(node.lineNumber, node.columnNumber)
-        // For end position: line still needs -1, but column does NOT
-        // because LSP end is exclusive and Groovy lastColumnNumber is 1-based inclusive
-        val end = LspPosition(node.lastLineNumber - 1, node.lastColumnNumber)
+        val end = groovyToLsp(node.lastLineNumber, node.lastColumnNumber)
         return LspRange(start, end)
     }
 

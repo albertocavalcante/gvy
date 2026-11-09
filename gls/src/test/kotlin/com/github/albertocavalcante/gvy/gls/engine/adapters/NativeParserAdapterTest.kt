@@ -1,13 +1,16 @@
 package com.github.albertocavalcante.gvy.gls.engine.adapters
 
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserDiagnostic
 import com.github.albertocavalcante.nativeapi.ParserPosition
 import com.github.albertocavalcante.nativeapi.ParserRange
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.mockk.mockk
+import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
@@ -20,6 +23,7 @@ import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Modifier
+import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
@@ -128,10 +132,9 @@ class NativeParserAdapterTest {
 
     @Test
     fun `allSymbols range end column is exclusive (LSP spec)`() {
-        // Groovy AST uses 1-based inclusive columns
-        // LSP uses 0-based, start inclusive, end EXCLUSIVE
-        // Groovy lastColumnNumber 5 (1-based, inclusive) should become LSP end character 5 (0-based, exclusive)
-        // This verifies the fix for the range end column bug
+        // Groovy lastColumnNumber is 1-based and EXCLUSIVE (the column just past the last character),
+        // so the LSP exclusive end (0-based) is lastColumnNumber - 1.
+        // Method at Groovy lines 2-4, last column 5 -> LSP end line 3, end character 4.
         val moduleNode = createModuleWithClassAndMethod("MyClass", "myMethod")
         val parseResult = createParseResult(moduleNode)
         val adapter = NativeParserAdapter(parseResult, "file:///Test.groovy")
@@ -139,13 +142,31 @@ class NativeParserAdapterTest {
         val symbols = adapter.allSymbols()
         val methodSymbol = symbols[0].children.first { it.kind == UnifiedNodeKind.METHOD }
 
-        // Method is at Groovy lines 2-4, columns 5-5 (1-based, inclusive)
-        // LSP should be: line 1-3 (0-based), character 4-5 (0-based, end exclusive)
         assertEquals(1, methodSymbol.range.start.line, "Start line should be 1 (0-based)")
         assertEquals(4, methodSymbol.range.start.character, "Start character should be 4 (0-based)")
         assertEquals(3, methodSymbol.range.end.line, "End line should be 3 (0-based)")
-        // This is the key assertion - end character should be 5 (exclusive), NOT 4
-        assertEquals(5, methodSymbol.range.end.character, "End character should be 5 (0-based, exclusive)")
+        assertEquals(4, methodSymbol.range.end.character, "End character should be lastColumnNumber - 1")
+    }
+
+    @Test
+    fun `real parse produces class range ending exactly at last character`() {
+        val code = "class Foo {}"
+        val adapter = parseAdapter(code)
+
+        val range = adapter.allSymbols().single().range
+
+        assertEquals(0, range.start.character)
+        assertEquals(code.length, range.end.character)
+    }
+
+    @Test
+    fun `nodeAt resolves the identifier under an LSP 0-based position`() {
+        // "class Foo {}" - the 'F' of Foo is at 0-based character 6
+        val adapter = parseAdapter("class Foo {}")
+
+        val node = adapter.nodeAt(Position(0, 6))
+
+        assertEquals("Foo", node?.name)
     }
 
     @Test
@@ -171,6 +192,11 @@ class NativeParserAdapterTest {
     }
 
     // Helper methods
+
+    private fun parseAdapter(code: String): NativeParserAdapter = runBlocking {
+        val result = GroovyParserFacade().parse(ParseRequest(URI.create("file:///Test.groovy"), code))
+        NativeParserAdapter(result, "file:///Test.groovy")
+    }
 
     private fun createModuleWithClass(className: String): ModuleNode {
         val moduleNode = ModuleNode(sourceUnit)
