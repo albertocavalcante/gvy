@@ -120,4 +120,32 @@ class SemanticIndexerTest {
 
         assertTrue(index.getDocument(uri) === canonical, "an earlier phase never replaces a later one")
     }
+
+    @Test
+    fun `building a document holds no lock, so removing the file meanwhile neither waits nor is undone`() {
+        val building = java.util.concurrent.CountDownLatch(1)
+        val removed = java.util.concurrent.CountDownLatch(1)
+        val slow = SemanticIndexer(index, build = { ast, u ->
+            building.countDown()
+            removed.await(LATCH_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
+        })
+        val content = "class Slow {}"
+        val ast = parse(content)
+        val update = java.util.concurrent.CompletableFuture.runAsync {
+            slow.update(uri, content, ast, phase = Phases.CANONICALIZATION)
+        }
+        assertTrue(building.await(LATCH_SECONDS, java.util.concurrent.TimeUnit.SECONDS))
+
+        val remove = java.util.concurrent.CompletableFuture.runAsync { slow.remove(uri) }
+        remove.get(1, java.util.concurrent.TimeUnit.SECONDS) // waited on the build's lock before
+        removed.countDown()
+        update.get(LATCH_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+
+        assertNull(index.getDocument(uri), "a build that outlived the file's removal must not publish")
+    }
+
+    private companion object {
+        const val LATCH_SECONDS = 5L
+    }
 }

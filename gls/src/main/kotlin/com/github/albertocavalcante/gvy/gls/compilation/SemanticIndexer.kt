@@ -79,7 +79,14 @@ class SemanticIndexer(
         begin(uri).use { publish(it, content, ast, phase, fromBuffer) }
     }
 
-    @Suppress("TooGenericExceptionCaught") // a failing builder must not fail the compile that produced the AST
+    /** A built document with the implementation facts stored alongside it, or null when building failed. */
+    private class Built(val document: SemanticDocument, val implementations: ImplementationFacts.Snapshot)
+
+    /**
+     * Stores the document for [content] unless the entry already supersedes it. The document is built before
+     * taking the entry's lock, so a slow build blocks no other file and no removal; the decision is then
+     * taken again under the lock against whatever landed meanwhile.
+     */
     internal fun publish(
         publication: Publication,
         content: String,
@@ -89,29 +96,48 @@ class SemanticIndexer(
     ) {
         val uri = publication.uri
         val hash = contentHash(content)
+        if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
+        val built = buildOrNull(ast, uri)
         entries.computeIfPresent(uri) { _, state ->
-            val existing = state.entry
-            state.entry = when {
-                state !== publication.identity || publication.isClosed -> return@computeIfPresent state
-                !fromBuffer && isOpen(uri) -> existing
-                existing != null && existing.contentHash == hash && existing.phase >= phase -> existing
-                else -> try {
-                    index.updateDocument(
-                        uri,
-                        build(ast, uri),
-                        sourceText = content,
-                        implementations = ImplementationFacts.build(ast),
-                    )
-                    Entry(hash, phase)
-                } catch (e: Exception) {
+            if (replaces(state, publication, hash, phase, fromBuffer)) {
+                state.entry = if (built == null) {
                     // The stored document describes other content now: no document beats a stale one.
-                    logger.warn(e) { "Failed to build semantic document for $uri; dropped its stale one" }
                     index.removeDocument(uri)
                     null
+                } else {
+                    index.updateDocument(
+                        uri,
+                        built.document,
+                        sourceText = content,
+                        implementations = built.implementations,
+                    )
+                    Entry(hash, phase)
                 }
             }
             state
         }
+    }
+
+    /** Whether a document for [hash] at [phase] replaces what [state] holds (see the class rules). */
+    private fun replaces(
+        state: State?,
+        publication: Publication,
+        hash: String,
+        phase: Int,
+        fromBuffer: Boolean,
+    ): Boolean {
+        val existing = state?.entry
+        return state === publication.identity && !publication.isClosed &&
+            (fromBuffer || !isOpen(publication.uri)) &&
+            !(existing != null && existing.contentHash == hash && existing.phase >= phase)
+    }
+
+    @Suppress("TooGenericExceptionCaught") // a failing builder must not fail the compile that produced the AST
+    private fun buildOrNull(ast: ModuleNode, uri: URI): Built? = try {
+        Built(build(ast, uri), ImplementationFacts.build(ast))
+    } catch (e: Exception) {
+        logger.warn(e) { "Failed to build semantic document for $uri; dropping its stale one" }
+        null
     }
 
     /** Whether [uri] follows an open editor buffer, which a document from disk must not replace. */
