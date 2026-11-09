@@ -42,7 +42,7 @@ class SemanticIndexer(
         @Volatile var entry: Entry? = null
 
         /** Highest ticket that reached a decision; kept when the entry is upgraded or dropped. */
-        var highestTicket = 0L
+        @Volatile var highestTicket = 0L
         var publications = 0
     }
 
