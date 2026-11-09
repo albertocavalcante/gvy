@@ -9,7 +9,6 @@ const { spawnSync } = require("node:child_process");
 
 function debugLog(...args) {
   if (process.env.DEBUG_GROOVY_TOOLS === "true") {
-    // eslint-disable-next-line no-console
     console.debug(...args);
   }
 }

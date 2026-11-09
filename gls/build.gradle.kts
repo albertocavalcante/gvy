@@ -597,10 +597,10 @@ abstract class SmokeShadowJarTask
             smokeFile.writeText(
                 """
                 // Minimal Groovy file used for jar smoke checks
-                // Intentionally includes trailing whitespace so `check` reliably emits at least one diagnostic.
-                class Smoke {  \u0020
+                // Missing blank lines produce informational diagnostics without invalid syntax.
+                class Smoke {
                   static void main(String[] args) {
-                    println "ok"  \u0020
+                    println "ok"
                   }
                 }
                 """.trimIndent(),
@@ -609,13 +609,17 @@ abstract class SmokeShadowJarTask
             fun runJar(vararg args: String): String {
                 val stdout = ByteArrayOutputStream()
                 val stderr = ByteArrayOutputStream()
-                execOperations.exec {
+                val result = execOperations.exec {
+                    isIgnoreExitValue = true
                     commandLine(listOf("java", "-jar", jar.absolutePath) + args)
                     standardOutput = stdout
                     errorOutput = stderr
                     // Disable colored output for reliable assertion checking
                     // Compliant with https://no-color.org/
                     environment("NO_COLOR", "1")
+                }
+                if (result.exitValue != 0) {
+                    throw GradleException("Smoke command ${args.first()} exited ${result.exitValue}:\n$stdout\n$stderr")
                 }
                 val stderrStr = stderr.toString(Charsets.UTF_8)
                 val fatalMarkers =

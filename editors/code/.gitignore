@@ -53,3 +53,6 @@ coverage/
 .env.development.local
 .env.test.local
 .env.production.local
+
+# Concurrent source-install guard
+/.source-install.lock/

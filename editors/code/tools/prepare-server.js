@@ -12,7 +12,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const os = require("node:os");
-const { execSync } = require("node:child_process");
+const { execFileSync } = require("node:child_process");
+const { localJarMatches, replaceLocalJar } = require("./source-install.js");
 const { validateJarFile } = require("./validate-server.js");
 const { extractOrCopyJar, isZipFile } = require("./zip.js");
 const { HttpError, downloadToFile } = require("./http.js");
@@ -57,9 +58,11 @@ function sanitizeForLog(str, maxLength = 500) {
   }
 
   // Remove ANSI escape codes (e.g., \x1b[31m for colors)
+  // eslint-disable-next-line no-control-regex -- intentionally strips terminal escapes
   let sanitized = str.replace(/\x1b\[[0-9;]*m/g, "");
 
   // Remove all control characters (ASCII 0-31 except tab) including newlines
+  // eslint-disable-next-line no-control-regex -- intentionally strips control bytes
   sanitized = sanitized.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, "");
 
   // Truncate if too long
@@ -158,7 +161,7 @@ function findMonorepoRoot() {
   const root = path.parse(current).root;
 
   while (current !== root) {
-    const marker = path.join(current, "groovy-lsp", "build.gradle.kts");
+    const marker = path.join(current, "gls", "build.gradle.kts");
     if (fs.existsSync(marker)) {
       return current;
     }
@@ -181,8 +184,9 @@ function findLocalGroovyLspJar() {
 
     // 2. Monorepo sibling directory (most common for development)
     monorepoRoot
-      ? path.join(monorepoRoot, "groovy-lsp", "build", "libs")
+      ? path.join(monorepoRoot, "gls", "build", "editor-server")
       : null,
+    monorepoRoot ? path.join(monorepoRoot, "gls", "build", "libs") : null,
 
     // 3. Common workspace patterns
     path.join(
@@ -227,7 +231,9 @@ function findLocalGroovyLspJar() {
           .filter(
             (file) =>
               file.endsWith(".jar") &&
-              (file.includes("groovy-lsp") || file.startsWith("gls-")),
+              (file === "gls.jar" ||
+                file.includes("groovy-lsp") ||
+                file.startsWith("gls-")),
           )
           .sort((a, b) => {
             // Priority 1: Files ending in -all.jar (Shadow JARs)
@@ -246,7 +252,7 @@ function findLocalGroovyLspJar() {
           return foundJar;
         }
       }
-    } catch (error) {
+    } catch {
       // Ignore errors for individual paths
       continue;
     }
@@ -261,16 +267,15 @@ function copyLocalJar(localJarPath, { forceDownload }) {
   try {
     validateJarFile(localJarPath);
   } catch (error) {
-    throw new Error(`Source JAR validation failed: ${error.message}`);
+    throw new Error(`Source JAR validation failed: ${error.message}`, {
+      cause: error,
+    });
   }
 
   let shouldCopy = true;
 
   if (!forceDownload && fs.existsSync(JAR_PATH)) {
-    const localStat = fs.statSync(localJarPath);
-    const existingStat = fs.statSync(JAR_PATH);
-
-    if (localStat.mtime <= existingStat.mtime) {
+    if (localJarMatches(localJarPath, JAR_PATH)) {
       console.log(`✓ Using existing ${CANONICAL_JAR_NAME} (up to date)`);
       writeInstalledVersion("local");
       shouldCopy = false;
@@ -279,22 +284,7 @@ function copyLocalJar(localJarPath, { forceDownload }) {
 
   if (shouldCopy) {
     console.log(`Copying from local build: ${sanitizeForLog(localJarPath)}`);
-    fs.copyFileSync(localJarPath, JAR_PATH);
-
-    // Validate destination JAR after copying
-    try {
-      validateJarFile(JAR_PATH);
-    } catch (error) {
-      // Clean up corrupt file
-      try {
-        fs.unlinkSync(JAR_PATH);
-      } catch (cleanupError) {
-        console.warn(
-          `Warning: Failed to remove corrupt JAR ${JAR_PATH}: ${cleanupError.message}`,
-        );
-      }
-      throw new Error(`Copied JAR validation failed: ${error.message}`);
-    }
+    replaceLocalJar(localJarPath, JAR_PATH, validateJarFile);
 
     writeInstalledVersion("local");
     console.log(`✓ Copied to ${CANONICAL_JAR_NAME}`);
@@ -623,31 +613,42 @@ function getMonorepoRoot() {
 }
 
 /**
- * Builds the local JAR by invoking 'make jar' in the monorepo root.
+ * Builds the local JAR by invoking './gradlew :gls:stageEditorServer' in the monorepo root.
  * Only works in a monorepo environment.
  * @throws {Error} If not in monorepo or build fails
  */
 function buildLocalJar() {
   if (!detectMonorepoEnvironment()) {
     throw new Error(
-      "--build-local requires a monorepo environment (groovy-lsp sibling directory not found)",
+      "--build-local requires a monorepo environment (gls/build.gradle.kts not found)",
     );
   }
 
   const monorepoRoot = getMonorepoRoot();
-  console.log("🔨 Building local JAR via 'make jar'...");
+  console.log(
+    "🔨 Building local JAR via './gradlew :gls:stageEditorServer'...",
+  );
   console.log(`   Working directory: ${monorepoRoot}`);
 
   try {
-    execSync("make jar", {
-      cwd: monorepoRoot,
-      stdio: "inherit",
-      env: { ...process.env },
-    });
+    execFileSync(
+      process.platform === "win32"
+        ? "cmd.exe"
+        : path.join(monorepoRoot, "gradlew"),
+      process.platform === "win32"
+        ? ["/d", "/s", "/c", "gradlew.bat :gls:stageEditorServer"]
+        : [":gls:stageEditorServer"],
+      {
+        cwd: monorepoRoot,
+        stdio: "inherit",
+        env: { ...process.env },
+      },
+    );
     console.log("✓ Local JAR build completed");
   } catch (error) {
     throw new Error(
-      `Failed to build local JAR: ${error.message || "make jar failed"}`,
+      `Failed to build local JAR: ${error.message || "./gradlew :gls:stageEditorServer failed"}`,
+      { cause: error },
     );
   }
 }
@@ -808,7 +809,9 @@ async function prepareServer(runtimeOptions = {}) {
 
       // If no local JAR found and buildLocal is enabled, try to build it
       if (!localJarPath && effectiveBuildLocal) {
-        console.log("No local JAR found, building via 'make jar'...");
+        console.log(
+          "No local JAR found, building via './gradlew :gls:stageEditorServer'...",
+        );
         buildLocalJar();
         // After building, try to find the JAR again
         localJarPath = findLocalGroovyLspJar();
@@ -820,7 +823,7 @@ async function prepareServer(runtimeOptions = {}) {
       } else if (effectiveBuildLocal) {
         // If buildLocal was enabled but we still don't have a JAR, that's an error
         throw new Error(
-          "Build completed but no JAR found. Check 'make jar' output for errors.",
+          "Build completed but no JAR found. Check './gradlew :gls:stageEditorServer' output for errors.",
         );
       } else {
         console.log(
@@ -895,6 +898,7 @@ async function prepareServer(runtimeOptions = {}) {
         );
         throw new Error(
           `Server JAR validation failed at completion: ${sanitizeForLog(error.message)}`,
+          { cause: error },
         );
       }
     } else {
@@ -1057,7 +1061,7 @@ Options:
   --url <url>            Download from a URL (supports GitHub Actions artifacts)
   --checksum <sha256>    Required SHA256 checksum for URL downloads
   --prefer-local         Prefer local groovy-lsp builds from common paths
-  --build-local          Build local JAR via 'make jar' if not found (monorepo only)
+  --build-local          Build local JAR via './gradlew :gls:stageEditorServer' if not found (monorepo only)
                          NOTE: Auto-enabled in monorepo (disabled in CI); use BUILD_LOCAL=false to disable
   --force-download       Always download/copy even if a JAR already exists
   --print-release-tag    Print the pinned release tag and exit
@@ -1078,7 +1082,7 @@ Environment Variables:
 
   Download Behavior:
     PREFER_LOCAL=true         Use local build from ../groovy-lsp/build/libs/
-    BUILD_LOCAL=true          Build local JAR via 'make jar' if not found (monorepo only)
+    BUILD_LOCAL=true          Build local JAR via './gradlew :gls:stageEditorServer' if not found (monorepo only)
     FORCE_DOWNLOAD=true       Re-download even if JAR exists
     GLS_ALLOW_PINNED_FALLBACK=true  Fall back to pinned on network failure
     SKIP_PREPARE_SERVER=true  Skip server preparation entirely

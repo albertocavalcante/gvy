@@ -79,3 +79,12 @@ The git workflow rules apply to any branch, commit, or PR work.
 | `.agent/workflows/` | Step-by-step procedures               |
 | `.agent/queries/`   | GraphQL queries                       |
 | `.agent/scripts/`   | Python helpers (use `ruff` to format) |
+
+## Source installation
+
+To install both components from this checkout, use
+`node editors/code/tools/install-extension.js --from-source --installer code --json`. Redirect stderr to a local build
+log; inspect the JSON receipt first and read the log only for a failed stage. Use `--doctor` for prerequisites and
+`--build-root` (or `GVY_BUILD_ROOT`) when the checkout drive lacks space. Do not substitute a release download for a
+requested source build. The command records HEAD and dirty status, verifies packaged hashes, and runs bounded server
+smoke checks before calling the editor installer.

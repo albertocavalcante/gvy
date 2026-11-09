@@ -242,3 +242,14 @@ verify-builds: jar bazel-jar
 	@echo "Comparing Gradle and Bazel outputs..."
 	@echo "Gradle JAR: $$(ls -la build/libs/*.jar 2>/dev/null || echo 'not found')"
 	@echo "Bazel JAR: $$(ls -la bazel-bin/groovy-lsp/*.jar 2>/dev/null || echo 'not found')"
+
+# Explicit source installation: build and verify both components from this checkout.
+.PHONY: ext-vscode-source ext-package-source ext-doctor
+ext-vscode-source:
+	node editors/code/tools/install-extension.js --from-source --installer code
+
+ext-package-source:
+	node editors/code/tools/install-extension.js --from-source --package-only
+
+ext-doctor:
+	node editors/code/tools/install-extension.js --doctor

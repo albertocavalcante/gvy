@@ -915,7 +915,7 @@
     "watch": "pnpm run \"/^watch:/\"",
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project client/tsconfig.json",
-    "check-types": "tsc --noEmit --project client/tsconfig.json",
+    "check-types": "tsc --noEmit --project client/tsconfig.json && pnpm run check-tools",
     "lint": "eslint \"client/src/**/*.ts\" \"client/test/**/*.ts\"",
     "format": "prettier --write \"**/*.{ts,js,json,css,md,yaml,yml}\"",
     "format:check": "prettier --check \"**/*.{ts,js,json,css,md,yaml,yml}\"",
@@ -927,7 +927,8 @@
     "test:watch": "mocha --watch",
     "compile:tests": "tsc -b --force client/tsconfig.json",
     "test:integration": "pnpm run compile:tests && vscode-test",
-    "test:all": "pnpm run test && pnpm run test:integration"
+    "test:all": "pnpm run test && pnpm run test:integration",
+    "check-tools": "tsc --project tools/tsconfig.json && eslint --config tools/eslint.config.mjs tools"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

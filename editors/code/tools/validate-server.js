@@ -106,7 +106,9 @@ function validateJarFile(filePath) {
     } catch (zipError) {
       // If listing fails, re-throw if it's our error, or wrap it
       if (zipError.message.includes("thin JAR")) throw zipError;
-      throw new Error(`Failed to inspect JAR content: ${zipError.message}`);
+      throw new Error(`Failed to inspect JAR content: ${zipError.message}`, {
+        cause: zipError,
+      });
     }
   } finally {
     fs.closeSync(fd);
