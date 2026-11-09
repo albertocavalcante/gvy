@@ -23,7 +23,9 @@ class GroovyGdkProvider(
 
     // Map of <TargetType, List<ExtensionMethod>>
     // e.g. "java.util.List" -> [each, collect, ...]
-    private val cache = ConcurrentHashMap<String, List<GdkExtensionMethod>>()
+    private data class IndexedMethod(val display: GdkExtensionMethod, val qualifiedParameters: List<String>)
+
+    private val cache = ConcurrentHashMap<String, List<IndexedMethod>>()
     private val isInitialized = AtomicBoolean(false)
 
     /**
@@ -89,7 +91,7 @@ class GroovyGdkProvider(
 
             cache.compute(selfType) { _, list ->
                 val newList = list?.toMutableList() ?: mutableListOf()
-                newList.add(methodInfo)
+                newList.add(IndexedMethod(methodInfo, method.parameterTypes.drop(1).map { it.typeName }))
                 newList
             }
 
@@ -105,10 +107,18 @@ class GroovyGdkProvider(
      * Returns GDK methods available for a specific type.
      * Handles class hierarchy (e.g. Iterable methods are available on List).
      */
-    fun getMethodsForType(className: String): List<GdkExtensionMethod> {
+    fun getMethodsForType(className: String): List<GdkExtensionMethod> =
+        collectMethodsForType(className).map { it.display }.distinctBy { it.signatureKey() }
+
+    /** Request-local source members use qualified identities before completion display deduplication. */
+    internal fun getQualifiedMethodsForType(className: String): List<GdkExtensionMethod> =
+        collectMethodsForType(className).map { it.display.copy(parameterTypes = it.qualifiedParameters) }
+            .distinctBy { it.signatureKey() }
+
+    private fun collectMethodsForType(className: String): List<IndexedMethod> {
         ensureInitialized()
 
-        val results = mutableListOf<GdkExtensionMethod>()
+        val results = mutableListOf<IndexedMethod>()
         appendCachedMethods(results, className)
 
         val clazz = classpathService.loadClass(className)
@@ -121,18 +131,18 @@ class GroovyGdkProvider(
         // Always include Object methods (every Groovy object is an Object).
         appendCachedMethods(results, JAVA_LANG_OBJECT)
 
-        return results.distinctBy { it.signatureKey() }
+        return results
     }
 
     private fun ensureInitialized() {
         if (!isInitialized.get()) initialize()
     }
 
-    private fun appendCachedMethods(results: MutableList<GdkExtensionMethod>, className: String) {
+    private fun appendCachedMethods(results: MutableList<IndexedMethod>, className: String) {
         cache[className]?.let(results::addAll)
     }
 
-    private fun appendCachedMethodsFromHierarchy(results: MutableList<GdkExtensionMethod>, clazz: Class<*>) {
+    private fun appendCachedMethodsFromHierarchy(results: MutableList<IndexedMethod>, clazz: Class<*>) {
         collectHierarchyTypes(clazz).forEach { parent ->
             appendCachedMethods(results, parent.name)
         }
@@ -149,7 +159,7 @@ class GroovyGdkProvider(
         }
     }
 
-    private fun appendFallbackMethods(results: MutableList<GdkExtensionMethod>, className: String) {
+    private fun appendFallbackMethods(results: MutableList<IndexedMethod>, className: String) {
         when (className) {
             in FALLBACK_LIST_TYPES -> {
                 appendCachedMethods(results, JAVA_UTIL_LIST)

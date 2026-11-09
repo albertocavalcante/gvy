@@ -3,7 +3,14 @@ package com.github.albertocavalcante.gvy.gls.providers.completion
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndex
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
+import com.github.albertocavalcante.gvy.gls.utils.skipSourceTrivia
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import groovyjarjarantlr4.v4.runtime.CharStreams
+import groovyjarjarantlr4.v4.runtime.Token
+import org.apache.groovy.parser.antlr4.GroovyLangLexer
+import org.apache.groovy.parser.antlr4.GroovyLexer
+import org.apache.groovy.parser.antlr4.GroovySyntaxError
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
@@ -16,6 +23,7 @@ import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.eclipse.lsp4j.Position
 
 private const val IMPORT_KEYWORD = "import"
 private const val STATIC_KEYWORD = "static"
@@ -37,25 +45,22 @@ internal object CompletionContextDetector {
     }
 
     fun insertDummyIdentifier(content: String, line: Int, character: Int, withDef: Boolean): String {
-        val lines = content.lines().toMutableList()
-        if (line < 0 || line >= lines.size) return content
-
-        if (line > 0) {
-            val prevLineIdx = line - 1
-            if (lines[prevLineIdx].trim().endsWith("=")) {
-                lines[prevLineIdx] = lines[prevLineIdx] + " null;"
-            }
-        }
-
-        val targetLine = lines[line]
-        val safeChar = character.coerceIn(0, targetLine.length)
-
+        val index = TextIndex(content)
+        val range = index.lineRange(line) ?: return content
+        val offset = index.offsetOf(Position(line, character.coerceIn(0, range.end.character)))
         val insertion = if (withDef) "def $DUMMY_IDENTIFIER" else DUMMY_IDENTIFIER
-        val modifiedLine = targetLine.substring(0, safeChar) + insertion + targetLine.substring(safeChar)
-        lines[line] = modifiedLine
-
-        return lines.joinToString("\n")
+        val copy = StringBuilder(content).insert(offset, insertion)
+        if (line > 0) {
+            val previous = checkNotNull(index.lineRange(line - 1))
+            val start = index.offsetOf(previous.start)
+            val end = index.offsetOf(previous.end)
+            if (content.substring(start, end).trim().endsWith("=")) copy.insert(end, " null;")
+        }
+        return copy.toString()
     }
+
+    fun constructorCompletionCopy(index: TextIndex, position: Position, checkCancelled: () -> Unit = {}): String? =
+        ConstructorCompletionRecovery.repair(index, position, checkCancelled)
 
     fun findEnclosingMethodCall(node: ASTNode?, astModel: GroovyAstModel): MethodCallExpression? {
         var current: ASTNode? = node
@@ -573,4 +578,97 @@ private fun isNodeOrDescendant(targetNode: ASTNode?, potentialAncestor: ASTNode?
         current = astModel.getParent(current)
     }
     return false
+}
+
+/** Grammar recovery changes only a completion copy, never the original source or shared cache. */
+private object ConstructorCompletionRecovery {
+    private data class Slice(val type: Int, val start: Int, val end: Int)
+
+    fun repair(index: TextIndex, position: Position, checkCancelled: () -> Unit): String? {
+        val cursor = cursorOffset(index, position) ?: return null
+        val end = constructorEnd(index, cursor, checkCancelled)?.takeUnless {
+            index.text.getOrNull(skipSourceTrivia(index.text, it)) == '('
+        } ?: return null
+        return StringBuilder(index.text).insert(end, "()").insert(cursor, DUMMY_IDENTIFIER).toString()
+    }
+
+    private fun cursorOffset(index: TextIndex, position: Position): Int? {
+        val range = index.lineRange(position.line) ?: return null
+        return if (position.character < 0) {
+            null
+        } else {
+            index.offsetOf(Position(position.line, position.character.coerceAtMost(range.end.character)))
+        }
+    }
+
+    private fun constructorEnd(index: TextIndex, cursor: Int, checkCancelled: () -> Unit): Int? = try {
+        val lexer = GroovyLangLexer(CharStreams.fromString(index.text))
+        lexer.removeErrorListeners()
+        collect(lexer, index, cursor, checkCancelled)
+    } catch (_: GroovySyntaxError) {
+        null
+    }
+
+    private fun collect(lexer: GroovyLangLexer, index: TextIndex, cursor: Int, checkCancelled: () -> Unit): Int? {
+        val suffix = Suffix()
+        checkCancelled()
+        var token = lexer.nextToken()
+        while (token.type != Token.EOF) {
+            checkCancelled()
+            val slice = slice(index, token) ?: return null
+            // An unclosed /* can recover as DIV/MUL rather than throwing a lexer error.
+            if (token.type == GroovyLexer.DIV && index.text.startsWith("/*", slice.start)) return null
+            if (token.channel == Token.DEFAULT_CHANNEL && token.type != GroovyLexer.NL && slice.start < cursor) {
+                suffix.accept(slice)
+            }
+            if (slice.end >= cursor) break
+            token = lexer.nextToken()
+        }
+        return suffix.end(cursor)
+    }
+
+    private fun slice(index: TextIndex, token: Token): Slice? {
+        val position = index.utf16Position(Position(token.line - 1, token.charPositionInLine)) ?: return null
+        val text = token.text ?: return null
+        val start = index.offsetOf(position)
+        return Slice(token.type, start, start + text.length).takeIf {
+            text.length <= index.text.length - start && index.text.regionMatches(start, text, 0, text.length)
+        }
+    }
+
+    /** Only the trailing constructor state is retained; prior document tokens are discarded. */
+    private class Suffix {
+        private var active = false
+        private var expectsIdentifier = false
+        private var last: Slice? = null
+
+        fun accept(slice: Slice) {
+            when {
+                slice.type == GroovyLexer.NEW -> {
+                    active = true
+                    expectsIdentifier = true
+                    last = null
+                }
+                active && expectsIdentifier && identifier(slice.type) -> {
+                    expectsIdentifier = false
+                    last = slice
+                }
+                active && !expectsIdentifier && slice.type == GroovyLexer.DOT -> {
+                    expectsIdentifier = true
+                    last = null
+                }
+                else -> {
+                    active = false
+                    last = null
+                }
+            }
+        }
+
+        fun end(cursor: Int): Int? = last?.takeIf {
+            active && !expectsIdentifier && it.start < cursor && it.end >= cursor
+        }?.end
+
+        private fun identifier(type: Int): Boolean =
+            type == GroovyLexer.Identifier || type == GroovyLexer.CapitalizedIdentifier
+    }
 }

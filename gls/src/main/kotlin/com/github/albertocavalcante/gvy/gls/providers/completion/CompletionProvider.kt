@@ -18,6 +18,7 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.Jenkin
 import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.MemberAccessCompletionStrategy
 import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.SpockCompletionStrategy
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.jenkins.completion.JenkinsContextDetector
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
@@ -25,6 +26,8 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationFailedException
@@ -86,7 +89,17 @@ object CompletionProvider {
 
             // Strategy 1: Simple insertion (e.g. "myList.BrazilWorldCup2026")
             val content1 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = false)
-            val result1 = compilationService.compileTransient(uriObj, content1)
+            val parsed = compilationService.compileTransient(uriObj, content1)
+            val context = currentCoroutineContext()
+            val constructorCopy = if (parsed.ast == null) {
+                CompletionContextDetector.constructorCompletionCopy(TextIndex(content), Position(line, character)) {
+                    context.ensureActive()
+                }
+            } else {
+                null
+            }
+            val result1 = constructorCopy?.let { compilationService.compileTransient(uriObj, it) }
+                ?.takeIf { it.ast != null } ?: parsed
             val ast1 = result1.ast
             val astModel1 = result1.astModel
 
