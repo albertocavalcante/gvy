@@ -255,6 +255,34 @@ class CompilationJobOwnershipTest {
     }
 
     @Test
+    fun `closed acquisition cannot adopt requested text that mismatched the captured open buffer`(): Unit = runTest {
+        val fixture = Fixture(StandardTestDispatcher(testScheduler), uri = URI.create("untitled:Mismatched.groovy"))
+        fixture.documents.put(fixture.uri, "class NewerBuffer {}", 2)
+        val retired = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
+        fixture.documents.remove(fixture.uri)
+
+        val closed = fixture.orchestrator.ensureCompiled(fixture.uri)
+
+        assertNull(closed, "Observing a different open buffer must not classify requested text as unmanaged")
+        assertEquals(fixture.content, retired.await().sourceText)
+    }
+
+    @Test
+    fun `unmanaged work cannot share a mismatched open buffer request after close`(): Unit = runTest {
+        val fixture = Fixture(StandardTestDispatcher(testScheduler))
+        fixture.documents.put(fixture.uri, "class NewerBuffer {}", 2)
+        val retired = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
+        fixture.documents.remove(fixture.uri)
+
+        val unmanaged = fixture.orchestrator.compileAsync(this, fixture.uri, fixture.content)
+
+        assertNotSame(retired, unmanaged)
+        assertEquals(fixture.content, retired.await().sourceText)
+        assertEquals(fixture.content, unmanaged.await().sourceText)
+        assertEquals(2, fixture.requests.size)
+    }
+
+    @Test
     fun `closing during scheduling cannot reclassify an open request as unmanaged`(): Unit = runTest {
         val documents = spyk(DocumentProvider())
         val fixture = Fixture(StandardTestDispatcher(testScheduler), documents, URI.create("untitled:Retired.groovy"))

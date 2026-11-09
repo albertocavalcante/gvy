@@ -81,6 +81,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
 
         return runCatching {
+            // TODO(#1184): Capture queued compiler inputs together with their request identity.
+            //   See: https://github.com/albertocavalcante/gvy/issues/1184
             // Get configuration fingerprint for cache coherency (Issue #743)
             val configFingerprint = workspaceManager.getConfigurationFingerprint()
 
@@ -232,7 +234,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val identity = CompilationIdentity(
             content,
             workspaceManager.getConfigurationFingerprint(),
-            documentProvider?.getSnapshot(uri)?.takeIf { it.content == content },
+            // Different requested text still originated while this buffer was open.
+            documentProvider?.getSnapshot(uri),
         )
         return scheduleCompilation(scope, uri, identity)
     }
