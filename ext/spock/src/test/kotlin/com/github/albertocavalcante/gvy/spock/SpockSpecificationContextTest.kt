@@ -338,7 +338,8 @@ class SpockSpecificationContextTest {
                 mapOf("Base" to SPECIFICATION, "A" to SPECIFICATION),
             ),
             Arguments.of(
-                "class Outer {\n static class Base extends spock.lang.Specification {}\n static class A extends Base {}\n}",
+                "class Outer {\n static class Base extends spock.lang.Specification {}\n" +
+                    " static class A extends Base {}\n}",
                 mapOf("Outer" to NOT_SPECIFICATION, "Outer\$Base" to SPECIFICATION, "Outer\$A" to SPECIFICATION),
             ),
         )
