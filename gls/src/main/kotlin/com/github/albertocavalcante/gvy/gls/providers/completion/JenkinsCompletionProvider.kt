@@ -10,6 +10,8 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.eclipse.lsp4j.CompletionItemKind
 
 internal object JenkinsCompletionProvider {
@@ -131,7 +133,10 @@ internal object JenkinsCompletionProvider {
         astModel: GroovyAstModel,
         metadata: MergedJenkinsMetadata,
     ) {
-        val methodCall = CompletionContextDetector.findEnclosingMethodCall(nodeAtCursor, astModel)
+        // After a complete command-expression argument the dummy identifier turns `sh 'ls' |` into the
+        // property access `sh('ls').<dummy>`, so the call may be the receiver of an enclosing property.
+        val methodCall = generateSequence(nodeAtCursor) { astModel.getParent(it) }
+            .firstNotNullOfOrNull(::callOrReceiverCall)
         val callName = methodCall?.methodAsString ?: return
 
         // Never edit the inside of a string literal (e.g. `sh 'ls|'`).
@@ -156,5 +161,11 @@ internal object JenkinsCompletionProvider {
             CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, callName),
         )
         bundledParamCompletions.forEach(::add)
+    }
+
+    private fun callOrReceiverCall(node: ASTNode): MethodCallExpression? {
+        if (node is MethodCallExpression) return node
+        val receiver = (node as? PropertyExpression)?.objectExpression
+        return receiver as? MethodCallExpression
     }
 }

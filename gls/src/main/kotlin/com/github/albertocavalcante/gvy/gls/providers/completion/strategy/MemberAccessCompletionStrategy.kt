@@ -47,6 +47,12 @@ internal class MemberAccessCompletionStrategy(
         val memberAccessContext = context.contextType as? ContextType.MemberAccess
             ?: return CompletionStrategy.notApplicable("MemberAccessCompletionStrategy")
 
+        // `sh 'ls' |` parses (with the dummy identifier) as `sh('ls').<dummy>` but has no dot to complete after.
+        val base = context.baseContext
+        if (!followsMemberAccessDot(base.content, base.line, base.character)) {
+            return CompletionStrategy.notApplicable("MemberAccessCompletionStrategy")
+        }
+
         val items = completions {
             handleMemberAccessContext(
                 memberAccessContext,
@@ -672,4 +678,16 @@ private class LocalCompletionMembers(module: ModuleNode?) {
 
     private fun hasSource(node: ASTNode): Boolean =
         node.lineNumber > 0 && node.columnNumber > 0 && node.lastLineNumber > 0 && node.lastColumnNumber > 0
+}
+
+/**
+ * True when the text before the cursor (ignoring the identifier being typed and whitespace, possibly
+ * across lines) ends with a `.`, i.e. there is a member-access dot to complete after.
+ */
+internal fun followsMemberAccessDot(content: String, line: Int, character: Int): Boolean {
+    val lines = content.lines()
+    if (line !in lines.indices) return false
+    val before = lines.take(line).joinToString("\n") + (if (line > 0) "\n" else "") +
+        lines[line].take(character.coerceIn(0, lines[line].length))
+    return before.trimEnd { it.isLetterOrDigit() || it == '_' || it == '$' }.trimEnd().endsWith('.')
 }

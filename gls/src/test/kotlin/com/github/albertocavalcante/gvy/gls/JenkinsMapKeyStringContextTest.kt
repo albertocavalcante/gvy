@@ -54,7 +54,12 @@ class JenkinsMapKeyStringContextTest {
         val items = complete("node {\n$line\n}", Position(1, line.length))
 
         val returnStdout = items.find { it.label == "returnStdout:" }
-        assertNotNull(returnStdout, "returnStdout should be offered after the first argument")
+        assertNotNull(
+            returnStdout,
+            "returnStdout should be offered; got ${items.size} items: ${items.map {
+                it.label
+            }.take(15)}",
+        )
         assertTrue(returnStdout.insertText.startsWith(", returnStdout: "), returnStdout.insertText)
     }
 

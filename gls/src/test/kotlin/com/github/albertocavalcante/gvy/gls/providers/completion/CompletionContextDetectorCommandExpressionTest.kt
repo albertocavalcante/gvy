@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
+import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.followsMemberAccessDot
 import org.junit.jupiter.api.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -71,5 +72,19 @@ class CompletionContextDetectorCommandExpressionTest {
         assertFalse(inside("sh 'ls' "))
         assertFalse(inside("sh '''ls'''"))
         assertTrue(inside("sh '''ls"))
+    }
+
+    @Test
+    fun `followsMemberAccessDot distinguishes dot access from command expressions`() {
+        fun dot(text: String, line: Int = 0, cursor: Int = text.lines()[line].length) =
+            followsMemberAccessDot(text, line, cursor)
+
+        assertTrue(dot("list."))
+        assertTrue(dot("list.si"))
+        assertTrue(dot("list?."))
+        assertTrue(dot("list.\n  size()", line = 1, cursor = 2))
+        assertFalse(dot("sh 'ls' "))
+        assertFalse(dot("sh 'ls'"))
+        assertFalse(dot("sh"))
     }
 }
