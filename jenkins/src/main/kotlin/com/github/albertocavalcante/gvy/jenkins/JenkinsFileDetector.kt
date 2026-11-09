@@ -10,7 +10,7 @@ import java.nio.file.Paths
 /**
  * Detects Jenkins pipeline files based on configured patterns.
  */
-class JenkinsFileDetector(private val patterns: List<String> = listOf("Jenkinsfile")) {
+class JenkinsFileDetector(private val patterns: List<String> = JenkinsConfiguration.DEFAULT_FILE_PATTERNS) {
     private val logger = KotlinLogging.logger {}
     private val compiledPatterns = patterns.map { compilePattern(it) }
 

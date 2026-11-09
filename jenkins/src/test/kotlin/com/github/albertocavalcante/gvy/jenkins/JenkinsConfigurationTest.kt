@@ -16,7 +16,7 @@ class JenkinsConfigurationTest {
         val jenkinsConfig = JenkinsConfiguration.fromMap(emptyMap())
 
         assertNotNull(jenkinsConfig)
-        assertEquals(listOf("Jenkinsfile"), jenkinsConfig.filePatterns)
+        assertEquals(JenkinsConfiguration().filePatterns, jenkinsConfig.filePatterns)
         assertTrue(jenkinsConfig.sharedLibraries.isEmpty())
         assertTrue(jenkinsConfig.gdslPaths.isEmpty())
         assertFalse(jenkinsConfig.gdslExecutionEnabled)
@@ -110,5 +110,13 @@ class JenkinsConfigurationTest {
         assertEquals(listOf("Jenkinsfile", "*.jenkins"), jenkinsConfig.filePatterns)
         assertEquals(1, jenkinsConfig.sharedLibraries.size)
         assertEquals(listOf("/pipeline.gdsl"), jenkinsConfig.gdslPaths)
+    }
+
+    @Test
+    fun `omitted file patterns fall back to the documented defaults including vars`() {
+        val fromSettings = JenkinsConfiguration.fromMap(emptyMap())
+
+        assertEquals(JenkinsConfiguration().filePatterns, fromSettings.filePatterns)
+        assertTrue("vars/*.groovy" in fromSettings.filePatterns)
     }
 }

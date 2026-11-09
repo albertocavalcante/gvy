@@ -5,8 +5,7 @@ description: >
 steps:
   - initialize:
       initializationOptions:
-        jenkins:
-          filePatterns: ["Jenkinsfile"]
+        jenkins.filePatterns: ["Jenkinsfile"]
   - initialized: {}
 
   # =====================================================

@@ -54,8 +54,11 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 
 **Requires Java 17+** to be installed on your system.
 
-1. Download `gvy-<version>.vsix` from the [latest GitHub Release](https://github.com/albertocavalcante/gvy/releases/latest). The extension is not published to the VS Code Marketplace or Open VSX.
-2. Optionally verify the download, either against `checksums.txt` from the same release (lines look like `<sha256>  ./gvy-0.5.2.vsix`):
+1. Download `gvy-<version>.vsix` from the
+   [latest GitHub Release](https://github.com/albertocavalcante/gvy/releases/latest). The extension is not published to
+   the VS Code Marketplace or Open VSX.
+2. Optionally verify the download, either against `checksums.txt` from the same release (lines look like
+   `<sha256>  ./gvy-0.5.2.vsix`):
 
    ```bash
    shasum -a 256 -c --ignore-missing checksums.txt
@@ -75,7 +78,8 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 
 4. Open any `.groovy`, `.gradle`, or `Jenkinsfile` - language support starts automatically
 
-To update, install the newer `.vsix` the same way. The language server JAR is bundled in the `.vsix`; the separate `gls-<version>.jar` release asset is only needed for use outside VS Code.
+To update, install the newer `.vsix` the same way. The language server JAR is bundled in the `.vsix`; the separate
+`gls-<version>.jar` release asset is only needed for use outside VS Code.
 
 That's it! The extension will find Java automatically from your PATH or `JAVA_HOME`.
 
@@ -135,8 +139,16 @@ For Jenkins shared libraries:
 
 ```json
 {
-  // File patterns to recognize as Jenkinsfiles
-  "groovy.jenkins.filePatterns": ["Jenkinsfile", "vars/*.groovy"],
+  // File patterns to recognize as Jenkinsfiles (this is the default; setting it replaces the whole list)
+  "groovy.jenkins.filePatterns": [
+    "Jenkinsfile",
+    "Jenkinsfile.*",
+    "Jenkinsfile-*",
+    "Jenkinsfile_*",
+    "*.jenkinsfile",
+    "*.Jenkinsfile",
+    "vars/*.groovy"
+  ],
 
   // Configure shared libraries
   "groovy.jenkins.sharedLibraries": [
@@ -255,8 +267,8 @@ when present. Tasks in `tasks.json` use the `groovy-gradle` type, with an option
 { "type": "groovy-gradle", "task": "test", "project": ":app" }
 ```
 
-**Migrating:** the type used to be `gradle`, which belongs to the Gradle for Java extension; tasks of type `gradle`
-are no longer handled by this extension. Change their `type` to `groovy-gradle`.
+**Migrating:** the type used to be `gradle`, which belongs to the Gradle for Java extension; tasks of type `gradle` are
+no longer handled by this extension. Change their `type` to `groovy-gradle`.
 
 ## Status Bar
 

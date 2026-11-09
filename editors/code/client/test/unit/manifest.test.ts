@@ -56,4 +56,47 @@ describe("package.json manifest", () => {
     const types = manifest.devDependencies["@types/vscode"].replace(/^\^/, "");
     assert.strictEqual(manifest.engines.vscode, `^${types}`);
   });
+
+  it("treats every Jenkinsfile language file as a Jenkins file by default", () => {
+    const language = manifest.contributes.languages.find(
+      (l: { id: string }) => l.id === "jenkinsfile",
+    );
+    const defaults: string[] =
+      manifest.contributes.configuration.properties[
+        "groovy.jenkins.filePatterns"
+      ].default;
+    for (const pattern of [
+      ...(language.filenames ?? []),
+      ...(language.filenamePatterns ?? []),
+    ]) {
+      assert.ok(
+        defaults.includes(pattern),
+        `${pattern} opens as a Jenkinsfile but the server default omits it`,
+      );
+    }
+  });
+
+  it("uses the same Jenkins file patterns as the server default", () => {
+    const kotlin = fs.readFileSync(
+      path.join(
+        root,
+        "../../jenkins/src/main/kotlin/com/github/albertocavalcante/gvy/jenkins/JenkinsConfiguration.kt",
+      ),
+      "utf8",
+    );
+    const list = /DEFAULT_FILE_PATTERNS: List<String> = listOf\(([^)]*)\)/.exec(
+      kotlin,
+    );
+    assert.ok(
+      list,
+      "DEFAULT_FILE_PATTERNS not found in JenkinsConfiguration.kt",
+    );
+    const serverDefaults = [...list[1].matchAll(/"([^"]+)"/g)].map((m) => m[1]);
+    assert.deepStrictEqual(
+      manifest.contributes.configuration.properties[
+        "groovy.jenkins.filePatterns"
+      ].default,
+      serverDefaults,
+    );
+  });
 });

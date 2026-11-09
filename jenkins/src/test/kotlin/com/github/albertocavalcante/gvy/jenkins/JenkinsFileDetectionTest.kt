@@ -79,4 +79,37 @@ class JenkinsFileDetectionTest {
         assertFalse(detector.isJenkinsFile(URI.create("http://example.com/Jenkinsfile")))
         assertFalse(detector.isJenkinsFile(URI.create("https://example.com/Jenkinsfile")))
     }
+
+    @Test
+    fun `default patterns match every file the editor treats as a Jenkinsfile`() {
+        val detector = JenkinsFileDetector()
+
+        listOf(
+            "file:///workspace/Jenkinsfile.prod",
+            "file:///workspace/ci/Jenkinsfile-release",
+            "file:///workspace/Jenkinsfile_dev",
+            "file:///workspace/Jenkinsfile.groovy",
+            "file:///workspace/deploy.jenkinsfile",
+            "file:///workspace/release.Jenkinsfile",
+            "file:///workspace/vars/buildApp.groovy",
+        ).forEach { uri ->
+            assertTrue(detector.isJenkinsFile(URI.create(uri)), "expected Jenkins file: $uri")
+        }
+    }
+
+    @Test
+    fun `default patterns do not claim shared library classes or other groovy files`() {
+        val detector = JenkinsFileDetector()
+
+        listOf(
+            "file:///workspace/src/org/example/BuildHelper.groovy",
+            "file:///workspace/resources/org/example/script.groovy",
+            "file:///workspace/vars/nested/helper.groovy",
+            "file:///workspace/src/org/example/JenkinsfileParser.groovy",
+            "file:///workspace/test/JenkinsfileTest.groovy",
+            "file:///workspace/build.gradle",
+        ).forEach { uri ->
+            assertFalse(detector.isJenkinsFile(URI.create(uri)), "expected plain Groovy: $uri")
+        }
+    }
 }
