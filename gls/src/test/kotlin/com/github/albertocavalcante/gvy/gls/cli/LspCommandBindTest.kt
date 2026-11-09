@@ -1,7 +1,10 @@
 package com.github.albertocavalcante.gvy.gls.cli
 
 import com.github.ajalt.clikt.core.ProgramResult
+import org.junit.jupiter.api.Assumptions
 import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.UnknownHostException
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -26,12 +29,19 @@ class LspCommandBindTest {
 
     @Test
     fun `explicit ipv6 loopback host is honoured`() {
-        val socket = runCatching { bindServerSocket(0, "::1") }.getOrNull() ?: return // no IPv6 on this host
-        socket.use { assertEquals(InetAddress.getByName("::1"), it.inetAddress) }
+        val ipv6Available = runCatching { ServerSocket(0, 1, InetAddress.getByName("::1")).close() }.isSuccess
+        Assumptions.assumeTrue(ipv6Available, "IPv6 loopback is not available on this host")
+
+        bindServerSocket(0, "::1").use { assertEquals(InetAddress.getByName("::1"), it.inetAddress) }
     }
 
     @Test
-    fun `unresolvable host fails with a clear exit`() {
+    fun `unresolvable host is rejected with UnknownHostException`() {
+        assertFailsWith<UnknownHostException> { bindServerSocket(0, "no-such-host.invalid") }
+    }
+
+    @Test
+    fun `socket command exits with status 1 for an unresolvable host`() {
         val error = assertFailsWith<ProgramResult> { LspCommand().runSocket(0, "no-such-host.invalid") }
         assertEquals(1, error.statusCode)
     }
