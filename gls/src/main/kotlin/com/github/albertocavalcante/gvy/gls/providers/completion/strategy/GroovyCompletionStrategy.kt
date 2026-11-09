@@ -25,21 +25,21 @@ import org.eclipse.lsp4j.CompletionItem
 internal class GroovyCompletionStrategy : CompletionStrategy {
 
     override suspend fun complete(context: CompletionStrategyContext): CompletionResult {
+        if (context.contextType is ContextType.MemberAccess) {
+            return CompletionStrategy.notApplicable("GroovyCompletionStrategy")
+        }
+
         // Skip Groovy completions in strict declarative Jenkins mode
         // (only declarative directives allowed - this also skips keywords and snippets)
         val skipGroovyCompletions = context.jenkinsBlockContext?.isStrictDeclarative == true
 
-        // Skip keywords when in member access context (e.g., "config.█")
-        val isMemberAccess = context.contextType is ContextType.MemberAccess
-
-        val items = buildGroovyCompletions(context, skipGroovyCompletions, isMemberAccess)
+        val items = buildGroovyCompletions(context, skipGroovyCompletions)
         return CompletionStrategy.found(items)
     }
 
     private fun buildGroovyCompletions(
         context: CompletionStrategyContext,
         skipGroovyCompletions: Boolean,
-        isMemberAccess: Boolean,
     ): List<CompletionItem> = completions {
         if (!skipGroovyCompletions) {
             addClasses(context.symbolContext.classes)
@@ -47,10 +47,7 @@ internal class GroovyCompletionStrategy : CompletionStrategy {
             addFields(context.symbolContext.fields)
             addVariables(context.symbolContext.variables)
             addImports(context.symbolContext.imports)
-            // Skip keywords in member access context (e.g., "config.abstract" makes no sense)
-            if (!isMemberAccess) {
-                addKeywords()
-            }
+            addKeywords()
             // Only add basic snippets when not in strict declarative mode
             GroovyCompletions.basic().forEach(::add)
         }

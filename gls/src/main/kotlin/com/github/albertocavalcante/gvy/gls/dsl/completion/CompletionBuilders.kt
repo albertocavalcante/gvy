@@ -336,9 +336,20 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
 
     /**
      * Convenience method for method completions.
+     *
+     * @param signature exact parameter identity for de-duplication (for example qualified erased
+     *   types). When null, overloads are told apart by their displayed parameter list.
      */
-    fun method(name: String, returnType: String, parameters: List<String>, doc: String? = null) {
-        completions.add(MethodCompletionBuilder().build(name, returnType, parameters, doc))
+    fun method(
+        name: String,
+        returnType: String,
+        parameters: List<String>,
+        doc: String? = null,
+        signature: String? = null,
+    ) {
+        val item = MethodCompletionBuilder().build(name, returnType, parameters, doc)
+        signature?.let { item.data = MethodSignatureKey(it) }
+        completions.add(item)
     }
 
     /**
@@ -421,7 +432,9 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
         val label = item.label ?: return null
         return when (item.kind) {
             CompletionItemKind.Keyword -> DedupeKey(label, item.kind, null)
-            CompletionItemKind.Method -> methodParamsKey(item)?.let { DedupeKey(label, item.kind, it) }
+            CompletionItemKind.Method -> (item.data as? MethodSignatureKey)
+                ?.let { DedupeKey(label, item.kind, it.signature, exactSignature = true) }
+                ?: methodParamsKey(item)?.let { DedupeKey(label, item.kind, it) }
             CompletionItemKind.Field,
             CompletionItemKind.Property,
             CompletionItemKind.Constant,
@@ -476,5 +489,16 @@ class CompletionsBuilder : LspBuilder<List<CompletionItem>> {
         return null
     }
 
-    private data class DedupeKey(val label: String, val kind: CompletionItemKind?, val detail: String?)
+    private data class DedupeKey(
+        val label: String,
+        val kind: CompletionItemKind?,
+        val detail: String?,
+        val exactSignature: Boolean = false,
+    )
 }
+
+/**
+ * Exact method identity carried in [CompletionItem.data] so that de-duplication survives later
+ * re-aggregation without leaking qualified names into the displayed label, detail or snippet.
+ */
+data class MethodSignatureKey(val signature: String)

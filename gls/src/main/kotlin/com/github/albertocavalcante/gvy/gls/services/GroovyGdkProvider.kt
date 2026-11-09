@@ -23,7 +23,7 @@ class GroovyGdkProvider(
 
     // Map of <TargetType, List<ExtensionMethod>>
     // e.g. "java.util.List" -> [each, collect, ...]
-    private val cache = ConcurrentHashMap<String, List<GdkExtensionMethod>>()
+    private val cache = ConcurrentHashMap<String, List<QualifiedGdkMethod>>()
     private val isInitialized = AtomicBoolean(false)
 
     /**
@@ -89,7 +89,7 @@ class GroovyGdkProvider(
 
             cache.compute(selfType) { _, list ->
                 val newList = list?.toMutableList() ?: mutableListOf()
-                newList.add(methodInfo)
+                newList.add(QualifiedGdkMethod(methodInfo, method.parameterTypes.drop(1).map { it.typeName }))
                 newList
             }
 
@@ -105,10 +105,20 @@ class GroovyGdkProvider(
      * Returns GDK methods available for a specific type.
      * Handles class hierarchy (e.g. Iterable methods are available on List).
      */
-    fun getMethodsForType(className: String): List<GdkExtensionMethod> {
+    fun getMethodsForType(className: String): List<GdkExtensionMethod> =
+        collectMethodsForType(className).map { it.display }.distinctBy { it.signatureKey() }
+
+    /**
+     * Like [getMethodsForType], but keeps each overload's qualified erased parameter types beside its
+     * simple-name display so callers can de-duplicate against source members exactly.
+     */
+    internal fun getQualifiedMethodsForType(className: String): List<QualifiedGdkMethod> =
+        collectMethodsForType(className).distinctBy { it.display.name to it.qualifiedParameters }
+
+    private fun collectMethodsForType(className: String): List<QualifiedGdkMethod> {
         ensureInitialized()
 
-        val results = mutableListOf<GdkExtensionMethod>()
+        val results = mutableListOf<QualifiedGdkMethod>()
         appendCachedMethods(results, className)
 
         val clazz = classpathService.loadClass(className)
@@ -121,18 +131,18 @@ class GroovyGdkProvider(
         // Always include Object methods (every Groovy object is an Object).
         appendCachedMethods(results, JAVA_LANG_OBJECT)
 
-        return results.distinctBy { it.signatureKey() }
+        return results
     }
 
     private fun ensureInitialized() {
         if (!isInitialized.get()) initialize()
     }
 
-    private fun appendCachedMethods(results: MutableList<GdkExtensionMethod>, className: String) {
+    private fun appendCachedMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
         cache[className]?.let(results::addAll)
     }
 
-    private fun appendCachedMethodsFromHierarchy(results: MutableList<GdkExtensionMethod>, clazz: Class<*>) {
+    private fun appendCachedMethodsFromHierarchy(results: MutableList<QualifiedGdkMethod>, clazz: Class<*>) {
         collectHierarchyTypes(clazz).forEach { parent ->
             appendCachedMethods(results, parent.name)
         }
@@ -149,7 +159,7 @@ class GroovyGdkProvider(
         }
     }
 
-    private fun appendFallbackMethods(results: MutableList<GdkExtensionMethod>, className: String) {
+    private fun appendFallbackMethods(results: MutableList<QualifiedGdkMethod>, className: String) {
         when (className) {
             in FALLBACK_LIST_TYPES -> {
                 appendCachedMethods(results, JAVA_UTIL_LIST)
@@ -174,6 +184,9 @@ class GroovyGdkProvider(
         private val FALLBACK_LIST_TYPES = setOf("java.util.ArrayList", "java.util.LinkedList")
     }
 }
+
+/** A GDK method with simple-name display types and its qualified erased parameter identity. */
+internal data class QualifiedGdkMethod(val display: GdkExtensionMethod, val qualifiedParameters: List<String>)
 
 data class GdkExtensionMethod(
     val name: String,
