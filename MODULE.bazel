@@ -104,6 +104,18 @@ maven.install(
     # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
     # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
     known_contributing_modules = ["gvy", "protobuf"],
+    # Global equivalent of Gradle's `exclude(group = "org.codehaus.groovy")` (gls/build.gradle.kts).
+    # GMetrics 2.1.0 and CodeNarc declare Groovy 3 (org.codehaus.groovy) runtime deps; on the test
+    # classpath they clash with Groovy 4: "Conflicting module versions. Module [groovy-xml is loaded
+    # in version 4.0.33 and you are trying to load version 3.0.9". Groovy 4 modules are listed above.
+    excluded_artifacts = [
+        "org.codehaus.groovy:groovy",
+        "org.codehaus.groovy:groovy-ant",
+        "org.codehaus.groovy:groovy-groovydoc",
+        "org.codehaus.groovy:groovy-json",
+        "org.codehaus.groovy:groovy-templates",
+        "org.codehaus.groovy:groovy-xml",
+    ],
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
