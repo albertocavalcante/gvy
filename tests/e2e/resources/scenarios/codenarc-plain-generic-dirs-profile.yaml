@@ -1,0 +1,39 @@
+name: codenarc-plain-generic-dirs-profile
+description: >
+  A workspace with only generic resources/, src/com/ and src/org/ directories keeps the default
+  Groovy CodeNarc profile instead of the Jenkins CPS-only profile (issue 1200).
+workspace:
+  fixture: plain-generic-dirs
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/CodeNarcRanges.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class CodeNarcRanges {
+            String greet(String name) {
+                println "Hello, World!"
+                return "Hello, ${name}!"
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: diagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: EQUALS, value: "{{workspace.uri}}src/CodeNarcRanges.groovy" }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Hello, World.*/)]
+          expect: { type: NOT_EMPTY }
+      timeoutMs: 20000
+  - assert:
+      source: diagnostics
+      checks:
+        # Both rules are absent from the quiet Jenkins profile, so they prove the default profile.
+        - jsonPath: $.diagnostics[?(@.message =~ /.*return keyword.*/)]
+          expect: { type: NOT_EMPTY }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Hello, World.*/)].source
+          expect: { type: EQUALS, value: [CodeNarc] }
+  - shutdown: {}
+  - exit: {}

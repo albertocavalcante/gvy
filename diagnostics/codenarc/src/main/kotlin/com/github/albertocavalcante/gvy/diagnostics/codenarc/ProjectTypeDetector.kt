@@ -1,9 +1,13 @@
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.IOException
+import java.io.UncheckedIOException
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
+import kotlin.io.path.isRegularFile
 import kotlin.io.path.name
 import kotlin.io.path.readText
 
@@ -29,14 +33,8 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
     companion object {
         private val logger = KotlinLogging.logger {}
 
-        // Jenkins project indicators
-        private val jenkinsIndicators = listOf(
-            "Jenkinsfile",
-            "vars", // Jenkins shared library
-            "resources", // Jenkins shared library resources
-            "src/com/", // Common Jenkins shared library structure
-            "src/org/", // Common Jenkins shared library structure
-        )
+        private const val JENKINSFILE = "Jenkinsfile"
+        private const val VARS_DIR = "vars"
 
         // Spring Boot indicators
         private val springBootIndicators = listOf(
@@ -81,11 +79,35 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
     }
 
     /**
-     * Checks if the workspace appears to be a Jenkins project.
+     * Checks if the workspace appears to be a Jenkins pipeline repository or shared library.
+     *
+     * Accepted evidence (either is sufficient):
+     * - a root `Jenkinsfile` regular file;
+     * - a root `vars/` directory with at least one direct `*.groovy` child, which is what Jenkins
+     *   loads as global variables from a shared library.
+     *
+     * `resources/`, `src/com/` and `src/org/` are deliberately NOT evidence: they are common in
+     * ordinary projects (editor extension assets, legacy source layouts), and selecting the quiet
+     * Jenkins CPS-only profile there silently drops the normal Groovy rules (#1200). A shared
+     * library without `vars/` can opt in with an explicit workspace ruleset such as `.codenarc`
+     * that includes `rulesets/jenkins.xml`.
      */
-    private fun isJenkinsProject(workspaceRoot: Path): Boolean = jenkinsIndicators.any { indicator ->
-        val path = workspaceRoot.resolve(indicator)
-        path.exists() && (path.isDirectory() || path.name == "Jenkinsfile")
+    private fun isJenkinsProject(workspaceRoot: Path): Boolean =
+        workspaceRoot.resolve(JENKINSFILE).isRegularFile() || hasVarsGroovyScript(workspaceRoot.resolve(VARS_DIR))
+
+    private fun hasVarsGroovyScript(varsDir: Path): Boolean {
+        if (!varsDir.isDirectory()) return false
+        return try {
+            Files.list(varsDir).use { entries ->
+                entries.anyMatch { it.name.endsWith(".groovy") && it.isRegularFile() }
+            }
+        } catch (e: IOException) {
+            logger.debug(e) { "Failed to list $varsDir for Jenkins shared library detection" }
+            false
+        } catch (e: UncheckedIOException) {
+            logger.debug(e) { "Failed to list $varsDir for Jenkins shared library detection" }
+            false
+        }
     }
 
     /**
