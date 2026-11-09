@@ -1,0 +1,85 @@
+name: folding-ranges
+description: Folding returns imports, comments and owned structures for the current document.
+workspace:
+  fixture: definition-basic
+steps:
+  - request:
+      method: initialize
+      params:
+        processId: null
+        workspaceFolders:
+          - uri: "{{workspace.uri}}"
+            name: folding-ranges
+        capabilities: {}
+      saveAs: initializedCapabilities
+  - assert:
+      source: initializedCapabilities
+      checks:
+        # The harness exposes the decoded SDK Either wrapper for capabilities.
+        - jsonPath: $.capabilities.foldingRangeProvider.left
+          expect: { type: EQUALS, value: true }
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: src/FoldingExample.groovy
+      languageId: groovy
+      version: 7
+      text: |
+        import java.util.List
+        import java.util.Map
+
+        /**
+         * Fold this documentation.
+         */
+        class FoldingExample {
+            def next(value) {
+                return value + 1
+            }
+        }
+  - request:
+      method: textDocument/foldingRange
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/FoldingExample.groovy" }
+      saveAs: folds
+  - assert:
+      source: folds
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 4 }
+        - jsonPath: $[?(@.kind == 'imports')].startLine
+          expect: { type: EQUALS, value: [0] }
+        - jsonPath: $[?(@.kind == 'imports')].endLine
+          expect: { type: EQUALS, value: [1] }
+        - jsonPath: $[?(@.kind == 'comment')].startLine
+          expect: { type: EQUALS, value: [3] }
+        - jsonPath: $[?(@.kind == 'comment')].endLine
+          expect: { type: EQUALS, value: [5] }
+        - jsonPath: $[?(@.kind == 'region')].startLine
+          expect: { type: EQUALS, value: [6, 7] }
+        - jsonPath: $[?(@.kind == 'region')].endLine
+          expect: { type: EQUALS, value: [9, 8] }
+  - changeDocument:
+      path: src/FoldingExample.groovy
+      version: 8
+      text: |
+        // Earlier folds must disappear.
+        def fresh = 1
+  - request:
+      method: textDocument/foldingRange
+      params:
+        textDocument: { uri: "{{workspace.uri}}src/FoldingExample.groovy" }
+      saveAs: changedFolds
+  - assert:
+      source: changedFolds
+      checks:
+        - jsonPath: $.length()
+          expect: { type: EQUALS, value: 0 }
+  - shutdown: {}
+  - exit: {}

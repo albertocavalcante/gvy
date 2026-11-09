@@ -71,6 +71,48 @@ suite("Implementation navigation with the current server", () => {
     );
   }
 
+  test("Folding returns import, comment and owned structural ranges without edits", async () => {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace);
+    const folding = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(
+        workspace.uri,
+        "client/src/test/fixtures/FoldingRanges.groovy",
+      ),
+    );
+    await vscode.window.showTextDocument(folding);
+    const source = folding.getText();
+    const version = folding.version;
+    const ranges = await vscode.commands.executeCommand<vscode.FoldingRange[]>(
+      "vscode.executeFoldingRangeProvider",
+      folding.uri,
+    );
+    assert.ok(ranges, "Editor folding provider must return ranges");
+    const includes = (
+      kind: vscode.FoldingRangeKind,
+      start: number,
+      end: number,
+    ) =>
+      ranges.some(
+        (range) =>
+          range.kind === kind && range.start === start && range.end === end,
+      );
+    assert.ok(includes(vscode.FoldingRangeKind.Imports, 0, 1));
+    assert.ok(includes(vscode.FoldingRangeKind.Comment, 3, 5));
+    assert.ok(includes(vscode.FoldingRangeKind.Region, 6, 9));
+    assert.ok(includes(vscode.FoldingRangeKind.Region, 7, 8));
+    assert.ok(
+      ranges.every(
+        (range) =>
+          range.start >= 0 &&
+          range.end > range.start &&
+          range.end < folding.lineCount,
+      ),
+    );
+    assert.strictEqual(folding.getText(), source);
+    assert.strictEqual(folding.version, version);
+  });
+
   test("Smart selection preserves ordered nested source ranges without edits", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
