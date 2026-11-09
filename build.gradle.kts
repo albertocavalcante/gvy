@@ -203,7 +203,11 @@ subprojects {
         parallel = true
         config.setFrom(rootProject.files("tools/lint/detekt.yml"))
         buildUponDefaultConfig = true
-        setSource(files("src"))
+        // Same per-module baseline as the `detekt` check; without it lintFix fails on findings
+        // that `lint` deliberately tolerates.
+        file("detekt-baseline.xml").takeIf { it.exists() }?.let { baseline.set(it) }
+        // Fix exactly what `detekt` checks (its configured source dirs), not all of src/ (e.g. jmh).
+        setSource(detekt.source)
         autoCorrect = true
         reports {
             // Disable reports for auto-correct run to keep output clean
