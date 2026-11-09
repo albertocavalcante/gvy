@@ -44,13 +44,10 @@ class GradleScopedDependencyProducerTest {
     lateinit var temporary: Path
 
     private val directory = Path.of("transport-project").toAbsolutePath()
-    private val isolatedHome = Path.of("isolated-home").toAbsolutePath()
     private val provenance = DependencyProvenance("caller-observation", 41)
     private val factory = mockk<GradleConnectionFactory>()
     private val connection = mockk<ProjectConnection>()
-    private val isolatedConnection = mockk<ProjectConnection>()
     private val builder = mockk<ModelBuilder<GradleScopedDependencyModel>>()
-    private val isolatedBuilder = mockk<ModelBuilder<GradleScopedDependencyModel>>()
     private val scripts = CopyOnWriteArrayList<Path>()
     private val tokens = CopyOnWriteArrayList<CancellationToken>()
     private val handlers = CopyOnWriteArrayList<ResultHandler<in GradleScopedDependencyModel>>()
@@ -58,10 +55,8 @@ class GradleScopedDependencyProducerTest {
 
     init {
         every { factory.getConnection(directory, null) } returns connection
-        every { factory.getConnection(directory, isolatedHome.toFile()) } returns isolatedConnection
         every { connection.model(GradleScopedDependencyModel::class.java) } returns builder
-        every { isolatedConnection.model(GradleScopedDependencyModel::class.java) } returns isolatedBuilder
-        listOf(builder, isolatedBuilder).forEach { modelBuilder ->
+        listOf(builder).forEach { modelBuilder ->
             every { modelBuilder.withArguments(*anyVararg()) } answers {
                 val arguments = firstArg<Array<String>>().toList()
                 assertTrue("--no-configure-on-demand" in arguments)
@@ -81,7 +76,6 @@ class GradleScopedDependencyProducerTest {
         factory,
         javaHome,
         initScriptDirectory = temporary.resolve("init-scripts"),
-        isolatedGradleUserHome = { isolatedHome },
     )
 
     private fun ModelBuilder<GradleScopedDependencyModel>.completes(result: GradleScopedDependencyModel?) {
@@ -164,7 +158,6 @@ class GradleScopedDependencyProducerTest {
             builder.fails(failure)
 
             assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
-            verify(exactly = 0) { factory.getConnection(directory, isolatedHome.toFile()) }
         }
 
     @Test
@@ -192,20 +185,22 @@ class GradleScopedDependencyProducerTest {
     }
 
     @Test
-    fun `init script failures retry once with an isolated gradle user home`() = runBlocking {
+    fun `init script failures yield legacy without an isolated gradle home retry`() = runBlocking {
         builder.fails(BuildException("A problem occurred evaluating init script", RuntimeException("user init.d")))
-        isolatedBuilder.completes(model)
 
-        assertIs<TargetDependencyEvidence.Scoped>(producer().resolve(directory, provenance))
-        verify(exactly = 1) { factory.getConnection(directory, isolatedHome.toFile()) }
+        assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
+        verify(exactly = 1) { factory.getConnection(directory, null) }
+        verify(exactly = 0) { factory.getConnection(any(), match<java.io.File> { true }) }
     }
 
     @Test
-    fun `a failed isolated retry yields legacy`() = runBlocking {
-        builder.fails(BuildException("A problem occurred evaluating init script", null))
-        isolatedBuilder.fails(BuildException("still broken", null))
+    fun `no absolute user home means no trusted script directory and legacy evidence`() = runBlocking {
+        builder.completes(model)
 
-        assertSame(TargetDependencyEvidence.Legacy, producer().resolve(directory, provenance))
+        val producer = GradleScopedDependencyProducer(factory, initScriptDirectory = null)
+
+        assertSame(TargetDependencyEvidence.Legacy, producer.resolve(directory, provenance))
+        verify(exactly = 0) { factory.getConnection(any(), any()) }
     }
 
     private data class Model(override val targets: List<GradleSourceSetModel?>?) : GradleScopedDependencyModel {

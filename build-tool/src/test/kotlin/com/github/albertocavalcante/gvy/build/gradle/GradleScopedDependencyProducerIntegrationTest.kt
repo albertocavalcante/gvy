@@ -63,7 +63,6 @@ class GradleScopedDependencyProducerIntegrationTest {
             factory,
             Path.of(System.getProperty("java.home")),
             initScriptDirectory = scratch.resolve("init-scripts"),
-            isolatedGradleUserHome = { Files.createDirectories(scratch.resolve("isolated-home")) },
         )
     }
 

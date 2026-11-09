@@ -11,7 +11,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.gradle.tooling.GradleConnectionException
 import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ResultHandler
-import java.io.File
 import java.io.IOException
 import java.nio.file.Path
 import java.util.concurrent.CancellationException
@@ -35,9 +34,7 @@ import kotlin.time.Duration
 class GradleScopedDependencyProducer(
     private val connectionFactory: GradleConnectionFactory = GradleConnectionPool,
     private val javaHome: Path? = null,
-    private val initScriptDirectory: Path = GradleScopedInitScript.defaultDirectory(),
-    private val isolatedGradleUserHome: () -> Path = ::isolatedGradleUserHomeDir,
-    private val failureAnalyzer: GradleFailureAnalyzer = GradleFailureAnalyzer(),
+    private val initScriptDirectory: Path? = GradleScopedInitScript.defaultDirectory(),
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -52,16 +49,20 @@ class GradleScopedDependencyProducer(
      * COMPLETE describes the enumerated property only, not complete graph or framework identity.
      * Configuration names indicate observed ordered-file equivalence, not property origin or
      * compiler-task binding. A build without any source set yields Legacy, not an empty result.
-     * Connections are borrowed from [connectionFactory] and never closed here. A failure that
-     * looks like a broken user init script is retried once with an isolated Gradle user home.
+     * Connections are borrowed from [connectionFactory] and never closed here. Unlike legacy
+     * resolution there is no isolated-Gradle-home retry: that build would omit the user's
+     * `gradle.properties` and init scripts, so it would not observe the user's effective build.
+     * Without an absolute user home there is no trusted script directory, which also yields Legacy.
      */
     suspend fun resolve(
         projectDirectory: Path,
         provenance: DependencyProvenance,
         timeout: Duration? = null,
     ): TargetDependencyEvidence = withContext(Dispatchers.IO) {
+        val directory = initScriptDirectory
+            ?: return@withContext unavailable(IOException("No absolute user home for the init script directory"))
         val script = try {
-            GradleScopedInitScript.install(initScriptDirectory)
+            GradleScopedInitScript.install(directory)
         } catch (failure: IOException) {
             return@withContext unavailable(failure)
         } catch (failure: UnsupportedOperationException) {
@@ -79,39 +80,15 @@ class GradleScopedDependencyProducer(
         projectDirectory: Path,
         script: Path,
         provenance: DependencyProvenance,
-    ): TargetDependencyEvidence {
-        val first = attempt(projectDirectory, script, gradleUserHome = null, provenance)
-        val failure = first.exceptionOrNull()
-        val retry = failure is GradleConnectionException && failureAnalyzer.isInitScriptError(failure)
-        val outcome = if (retry) retryIsolated(projectDirectory, script, provenance) else first
-        return outcome.getOrElse { finalFailure ->
-            if (finalFailure !== failure && failure != null) finalFailure.addSuppressed(failure)
-            unavailable(finalFailure)
-        }
-    }
-
-    private suspend fun retryIsolated(
-        projectDirectory: Path,
-        script: Path,
-        provenance: DependencyProvenance,
-    ): Result<TargetDependencyEvidence> {
-        logger.warn { "Scoped Gradle observation hit an init script failure; retrying with isolated user home" }
-        val isolatedHome = try {
-            isolatedGradleUserHome().toFile()
-        } catch (failure: IOException) {
-            return Result.failure(failure)
-        }
-        return attempt(projectDirectory, script, isolatedHome, provenance)
-    }
+    ): TargetDependencyEvidence = attempt(projectDirectory, script, provenance).getOrElse(::unavailable)
 
     /** Failures from the Tooling API or local transport validation; caller cancellation is rethrown. */
     private suspend fun attempt(
         projectDirectory: Path,
         script: Path,
-        gradleUserHome: File?,
         provenance: DependencyProvenance,
     ): Result<TargetDependencyEvidence> = try {
-        Result.success(project(fetch(projectDirectory, script, gradleUserHome), provenance))
+        Result.success(project(fetch(projectDirectory, script), provenance))
     } catch (cancelled: CancellationException) {
         // Checked before IllegalStateException, its supertype: never swallow caller cancellation or timeout.
         throw cancelled
@@ -125,13 +102,9 @@ class GradleScopedDependencyProducer(
         Result.failure(failure)
     }
 
-    private suspend fun fetch(
-        projectDirectory: Path,
-        script: Path,
-        gradleUserHome: File?,
-    ): GradleScopedDependencyModel? {
+    private suspend fun fetch(projectDirectory: Path, script: Path): GradleScopedDependencyModel? {
         val cancellation = GradleConnector.newCancellationTokenSource()
-        val builder = connectionFactory.getConnection(projectDirectory, gradleUserHome)
+        val builder = connectionFactory.getConnection(projectDirectory, null)
             .model(GradleScopedDependencyModel::class.java)
             .withArguments("--no-configure-on-demand", "--init-script", script.toString())
             .withCancellationToken(cancellation.token())

@@ -278,6 +278,25 @@ class GradleDependencyResolver(
         }
     }
 
+    private fun isolatedGradleUserHomeDir(): Path {
+        val userHome = System.getProperty("user.home")
+        val base = if (!userHome.isNullOrBlank()) {
+            Paths.get(userHome)
+        } else {
+            Paths.get(System.getProperty("java.io.tmpdir"))
+        }
+
+        val dir = base.resolve(".groovy-lsp").resolve("gradle-user-home")
+        return runCatching { Files.createDirectories(dir) }
+            .getOrElse { e ->
+                logger.error(e) { "Failed to create isolated Gradle user home dir at $dir; falling back to temp dir" }
+                val tempDir = Paths.get(System.getProperty("java.io.tmpdir"))
+                    .resolve("groovy-lsp-gradle-user-home")
+                Files.createDirectories(tempDir)
+                tempDir
+            }
+    }
+
     private fun processModule(
         module: IdeaModule,
         dependencies: MutableSet<Path>,
@@ -309,27 +328,3 @@ class GradleDependencyResolver(
         }
     }
 }
-
-/** Shared isolated Gradle user home used to bypass broken user init scripts. */
-internal fun isolatedGradleUserHomeDir(): Path {
-    val userHome = System.getProperty("user.home")
-    val base = if (!userHome.isNullOrBlank()) {
-        Paths.get(userHome)
-    } else {
-        Paths.get(System.getProperty("java.io.tmpdir"))
-    }
-
-    val dir = base.resolve(".groovy-lsp").resolve("gradle-user-home")
-    return runCatching { Files.createDirectories(dir) }
-        .getOrElse { e ->
-            isolatedHomeLogger.error(e) {
-                "Failed to create isolated Gradle user home dir at $dir; falling back to temp dir"
-            }
-            val tempDir = Paths.get(System.getProperty("java.io.tmpdir"))
-                .resolve("groovy-lsp-gradle-user-home")
-            Files.createDirectories(tempDir)
-            tempDir
-        }
-}
-
-private val isolatedHomeLogger = KotlinLogging.logger {}
