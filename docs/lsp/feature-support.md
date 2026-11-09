@@ -50,7 +50,7 @@ Legend:
 | `codeAction/resolve`                     | no      |                                                  |
 | `textDocument/codeLens`                  | yes     | Test run/debug lenses                            |
 | `codeLens/resolve`                       | no      |                                                  |
-| `textDocument/foldingRange`              | yes     |                                                  |
+| `textDocument/foldingRange`              | yes     | Owned structures, imports and block comments     |
 | `textDocument/formatting`                | yes     | OpenRewrite                                      |
 | `textDocument/rangeFormatting`           | no      |                                                  |
 | `textDocument/onTypeFormatting`          | no      |                                                  |
@@ -130,4 +130,9 @@ Legend:
   Character offsets beyond a line clamp to its end; negative positions and invalid lines return `InvalidParams`.
   Requests support at most 1,024 positions and 64 nested ranges per position; larger batches return `InvalidParams`. The
   outermost document range is retained when limiting depth. Unknown documents return null.
+- `textDocument/foldingRange` uses one captured source/parse pair. It includes owned class, method and block regions,
+  contiguous import groups and lexer-proven block comments. Structural regions retain the closing-brace line; imports
+  and comments include their last line. Source changes reject the request, cancellation propagates, and cold queries do
+  not publish compilation state. Unknown documents return an empty list. Responses are sorted, deduplicated and capped
+  at 10,000 ranges; this bounds response count, not document-processing cost.
 - `workspace/executeCommand` is implemented for `groovy.version` only, but not advertised.

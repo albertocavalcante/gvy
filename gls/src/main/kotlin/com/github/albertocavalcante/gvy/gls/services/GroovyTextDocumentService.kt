@@ -19,7 +19,7 @@ import com.github.albertocavalcante.gvy.gls.providers.diagnostics.DiagnosticProv
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.UnusedImportDiagnosticProvider
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.CustomRulesProvider
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.builtin.BuiltinRules
-import com.github.albertocavalcante.gvy.gls.providers.folding.FoldingRangeProvider
+import com.github.albertocavalcante.gvy.gls.providers.folding.FoldingRangeRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.highlight.DocumentHighlightProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.inlayhints.InlayHintsProvider
@@ -236,8 +236,8 @@ class GroovyTextDocumentService(
         SelectionRangeProvider(compilationService, documentProvider)
     }
 
-    private val foldingRangeProvider by lazy {
-        FoldingRangeProvider(compilationService)
+    private val foldingRangeHandler by lazy {
+        FoldingRangeRequestHandler(compilationService, documentProvider)
     }
 
     private val callHierarchyProvider by lazy {
@@ -588,19 +588,7 @@ class GroovyTextDocumentService(
         coroutineScope.future { selectionRangeProvider.provide(params) }
 
     override fun foldingRange(params: FoldingRangeRequestParams): CompletableFuture<List<FoldingRange>> =
-        coroutineScope.future {
-            logger.debug { "Folding range requested for ${params.textDocument.uri}" }
-            val uri = URI.create(params.textDocument.uri)
-
-            // Ensure file is compiled before providing folding ranges
-            val compilationResult = ensureCompiledOrCompileNow(uri)
-            if (compilationResult == null) {
-                logger.warn { "Document $uri not compiled, cannot provide folding ranges" }
-                return@future emptyList()
-            }
-
-            foldingRangeProvider.provideFoldingRanges(uri)
-        }
+        coroutineScope.future { foldingRangeHandler.provide(params) }
 
     override fun inlayHint(params: InlayHintParams): CompletableFuture<List<InlayHint>> = coroutineScope.future {
         logger.debug { "Inlay hints requested for ${params.textDocument.uri}" }
