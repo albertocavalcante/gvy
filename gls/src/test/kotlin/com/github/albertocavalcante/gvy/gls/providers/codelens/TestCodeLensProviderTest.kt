@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.providers.codelens
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
+import com.github.albertocavalcante.gvy.testing.spock.SpockTestDetector
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
@@ -34,7 +36,9 @@ class TestCodeLensProviderTest {
         val mockService = mockk<GroovyCompilationService>()
         every { mockService.getParseResult(uri) } returns parseResult
 
-        val provider = TestCodeLensProvider(mockService)
+        // Production registers detectors in GroovyLanguageServer; this test owns an isolated registry.
+        val registry = TestFrameworkRegistry().apply { register(SpockTestDetector()) }
+        val provider = TestCodeLensProvider(mockService, registry)
         val codeLenses = provider.provideCodeLenses(uri)
 
         // Should have CodeLenses (the exact count depends on if we're generating class-level too)

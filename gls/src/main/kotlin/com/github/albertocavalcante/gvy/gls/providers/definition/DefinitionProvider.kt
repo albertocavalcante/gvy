@@ -53,6 +53,11 @@ class DefinitionProvider(
         logger.debug { "Providing definitions for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
+        spockDefinition(compilationService, documentUri, position)?.let {
+            telemetrySink.report(DefinitionTelemetryEvent(uri, DefinitionStatus.SUCCESS))
+            emit(it)
+            return@flow
+        }
         val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
         emitDefinitions(uri, documentUri, position.toGroovyPosition(), context)
@@ -65,6 +70,10 @@ class DefinitionProvider(
         logger.debug { "Providing definition links for $uri at ${position.line}:${position.character}" }
 
         val documentUri = parseUriOrReport(uri) ?: return@flow
+        spockDefinition(compilationService, documentUri, position)?.let {
+            emit(LocationLink(it.uri, it.range, it.range))
+            return@flow
+        }
         val context = obtainDefinitionContext(documentUri, uri) ?: return@flow
 
         val resolver = DefinitionResolver(
@@ -515,6 +524,14 @@ class DefinitionProvider(
         )
         null
     }
+}
+
+private fun spockDefinition(service: GroovyCompilationService, uri: URI, position: Position): Location? {
+    val snapshot = service.getCompiledSnapshot(uri) ?: return null
+    val module = snapshot.parseResult.ast ?: return null
+    val origin = snapshot.parseResult.astModel.getNodeAt(uri, position.toGroovyPosition())
+    val target = SpockDefinitionLookup.find(module, snapshot.sourceText, position, origin) ?: return null
+    return target.toLspRange()?.let { Location(uri.toString(), it) }
 }
 
 data class DefinitionTelemetryEvent(val uri: String, val status: DefinitionStatus, val reason: String? = null)

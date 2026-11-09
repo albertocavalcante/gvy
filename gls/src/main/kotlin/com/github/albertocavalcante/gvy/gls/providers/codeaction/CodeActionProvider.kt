@@ -16,7 +16,7 @@ import java.net.URI
  * - Deterministic lint fixes from CodeNarc
  */
 class CodeActionProvider(
-    compilationService: GroovyCompilationService,
+    private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
     formatter: Formatter,
 ) {
@@ -36,12 +36,29 @@ class CodeActionProvider(
         logger.debug { "Providing code actions for ${params.textDocument.uri}" }
 
         // Get document content
-        val content = documentProvider.get(uri) ?: run {
+        val snapshot = documentProvider.getSnapshot(uri) ?: run {
             logger.debug { "Document not found in provider: $uri" }
             return emptyList()
         }
 
+        val content = snapshot.content
+        val compiled = compilationService.getCompiledSnapshot(uri)
         val actions = buildList {
+            if (compiled != null && compiled.sourceText == content) {
+                addAll(
+                    SpockTableAction.createActions(
+                        SpockTableRequest(
+                            params.textDocument.uri,
+                            content,
+                            compiled.parseResult.ast,
+                            params.range,
+                            params.context.only,
+                            snapshot.version,
+                        ),
+                    ),
+                )
+            }
+
             // Add formatting action if available
             formattingAction.createFormattingAction(params.textDocument.uri, content)?.let(::add)
 

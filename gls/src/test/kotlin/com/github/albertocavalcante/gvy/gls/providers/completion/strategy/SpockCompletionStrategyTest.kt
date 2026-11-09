@@ -19,6 +19,57 @@ class SpockCompletionStrategyTest {
     private val strategy = SpockCompletionStrategy()
 
     @Test
+    fun `compact features on one line keep data completions separate`() {
+        val content = "class Example extends spock.lang.Specification { " +
+            "def first(){ expect: a > 0; where: a << [1] }; " +
+            "def second(){ expect: b > 0; where: b << [2] } }"
+        val context = createSpockContext(content, 0, content.lastIndexOf("expect:") + "expect: ".length)
+        val module = com.github.albertocavalcante.groovyparser.GroovyParserFacade().parse(
+            com.github.albertocavalcante.nativeapi.ParseRequest(
+                URI.create("file:///Example.groovy"),
+                content,
+                compilePhase = org.codehaus.groovy.control.Phases.CONVERSION,
+            ),
+        ).ast
+        every { context.baseContext.moduleNode } returns module
+        val result = runBlocking { strategy.complete(context) }
+        result.fold(
+            ifLeft = { throw AssertionError("Expected data completion: $it") },
+            ifRight = { items -> assertThat(items.map { it.label }).containsExactly("b") },
+        )
+    }
+
+    @Test
+    fun `completes data variables declared later in the same feature`() {
+        val content = """
+            import spock.lang.Specification
+            class Example extends Specification {
+                def "data feature"() {
+                    expect:
+                    val
+                    where:
+                    value | expected
+                    1 | true
+                }
+            }
+        """.trimIndent()
+        val context = createSpockContext(content, 4, 11)
+        val module = com.github.albertocavalcante.groovyparser.GroovyParserFacade().parse(
+            com.github.albertocavalcante.nativeapi.ParseRequest(
+                URI.create("file:///Example.groovy"),
+                content,
+                compilePhase = org.codehaus.groovy.control.Phases.CONVERSION,
+            ),
+        ).ast
+        every { context.baseContext.moduleNode } returns module
+        val result = runBlocking { strategy.complete(context) }
+        result.fold(
+            ifLeft = { throw AssertionError("Expected data completion: $it") },
+            ifRight = { items -> assertThat(items.map { it.label }).contains("value") },
+        )
+    }
+
+    @Test
     fun `suggests block labels in Spock test methods`() {
         val content = """
             import spock.lang.Specification
