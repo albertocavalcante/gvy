@@ -26,15 +26,18 @@ make format  # Fix lint
 
 ## Rules (ALWAYS APPLY)
 
-1. **Worktrees**: Use `git worktree add` for new work. **Do not edit files in the main worktree.**
-   - The main worktree (for example, `/path/to/main/worktree`) is READ-ONLY for reference.
-   - Before any edit, verify you are in the correct worktree: `git worktree list` or `pwd`.
-   - Create worktrees with: `git worktree add ../gvy-<feature-name> -b <branch-name>`.
-   - All `cd`, file edits, and git commands must target the worktree path, not `main`.
+1. **Worktrees**: Use the workspace manager (`wt new <branch>` in the worker-pool workspace); otherwise create an
+   isolated Git worktree from fresh `origin/main`. **Do not edit or build in the main worktree.**
+   - Before any edit, verify the worktree and branch with `git worktree list` and `git branch --show-current`.
+   - Preserve other agents' checkouts and edits; do not switch, reset, clean, or stash a shared worktree.
 2. **Git**: `git branch --show-current` before commit. `git add <file>` explicitly, NEVER `git add .`
 3. **TDD**: Failing test FIRST → implement → refactor
 4. **Lint**: `./gradlew lintFix` before commit
 5. **GitHub**: Use `gh` CLI, never curl/fetch for GitHub URLs
+6. **Completion includes cleanup**: The agent creating a branch/worktree owns its cleanup after a verified merge. Follow
+   the squash-aware proof and deletion steps in `.agent/rules/git-workflow.md`; verify remote head deletion, remove only
+   the owned clean/unlocked worktree and branch, prune tracking refs, and report anything retained. Open PRs, unique
+   commits, and other agents' active work are preserved.
 
 ## Commits
 
