@@ -11,6 +11,7 @@ import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** SHA-256 of [content], the key that says two compiles saw the same text. */
 internal fun contentHash(content: String): String =
@@ -24,7 +25,9 @@ internal fun contentHash(content: String): String =
  * - a document built from different content replaces the stored one (stale is worse than degraded);
  * - for the same content, only a document from a later phase replaces it: a degraded parse never
  *   displaces a resolved one, and which of two compiles of the same text lands first does not matter;
- * - a document from disk never replaces the one built from an open editor buffer ([isOpen]).
+ * - a document from disk never replaces the one built from an open editor buffer ([isOpen]);
+ * - a publication begun earlier (its source read earlier) never replaces one begun later, so builds that
+ *   finish out of order cannot bring back older text.
  */
 class SemanticIndexer(
     private val index: WorkspaceSymbolIndex,
@@ -33,14 +36,20 @@ class SemanticIndexer(
         SemanticDocumentBuilder(ast, uri).build()
     },
 ) {
-    private class Entry(val contentHash: String, val phase: Int)
+    private class Entry(val contentHash: String, val phase: Int, val ticket: Long)
 
     private class State {
         @Volatile var entry: Entry? = null
         var publications = 0
     }
 
-    internal class Publication(val uri: URI, val identity: Any, private val finish: () -> Unit) : AutoCloseable {
+    internal class Publication(
+        val uri: URI,
+        val identity: Any,
+        /** Order in which publications began, i.e. in which their source was read. */
+        val ticket: Long,
+        private val finish: () -> Unit,
+    ) : AutoCloseable {
         private val closed = AtomicBoolean()
         val isClosed: Boolean get() = closed.get()
 
@@ -51,6 +60,7 @@ class SemanticIndexer(
 
     private val logger = KotlinLogging.logger {}
     private val entries = ConcurrentHashMap<URI, State>()
+    private val tickets = AtomicLong()
 
     /** Acquire before reading/enqueueing source. Removal invalidates every outstanding publication. */
     internal fun begin(uri: URI): Publication {
@@ -59,7 +69,7 @@ class SemanticIndexer(
                 (existing ?: State()).also { it.publications++ }
             },
         )
-        return Publication(uri, state) {
+        return Publication(uri, state, tickets.incrementAndGet()) {
             entries.computeIfPresent(uri) { _, current ->
                 if (current === state) {
                     current.publications--
@@ -100,19 +110,7 @@ class SemanticIndexer(
         val built = buildOrNull(ast, uri)
         entries.computeIfPresent(uri) { _, state ->
             if (replaces(state, publication, hash, phase, fromBuffer)) {
-                state.entry = if (built == null) {
-                    // The stored document describes other content now: no document beats a stale one.
-                    index.removeDocument(uri)
-                    null
-                } else {
-                    index.updateDocument(
-                        uri,
-                        built.document,
-                        sourceText = content,
-                        implementations = built.implementations,
-                    )
-                    Entry(hash, phase)
-                }
+                state.entry = Entry(hash, phase, publication.ticket).takeIf { store(uri, built, content) }
             }
             state
         }
@@ -127,9 +125,30 @@ class SemanticIndexer(
         fromBuffer: Boolean,
     ): Boolean {
         val existing = state?.entry
-        return state === publication.identity && !publication.isClosed &&
-            (fromBuffer || !isOpen(publication.uri)) &&
-            !(existing != null && existing.contentHash == hash && existing.phase >= phase)
+        val supersedes = when {
+            existing == null -> true
+            existing.contentHash == hash -> phase > existing.phase
+            else -> publication.ticket > existing.ticket
+        }
+        return state === publication.identity && !publication.isClosed && (fromBuffer || !isOpen(publication.uri)) &&
+            supersedes
+    }
+
+    /**
+     * Puts [built] in the index, or, when building failed, removes the stale document (no document beats
+     * one that describes other content). Returns whether a document is now stored.
+     */
+    @Suppress("TooGenericExceptionCaught") // an index failure must not fail the compile that produced the AST
+    private fun store(uri: URI, built: Built?, content: String): Boolean = try {
+        if (built != null) {
+            index.updateDocument(uri, built.document, sourceText = content, implementations = built.implementations)
+        } else {
+            index.removeDocument(uri)
+        }
+        built != null
+    } catch (e: Exception) {
+        logger.warn(e) { "Failed to store the semantic document for $uri" }
+        false
     }
 
     @Suppress("TooGenericExceptionCaught") // a failing builder must not fail the compile that produced the AST

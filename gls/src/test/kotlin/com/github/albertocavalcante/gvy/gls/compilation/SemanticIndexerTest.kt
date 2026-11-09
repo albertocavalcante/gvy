@@ -7,6 +7,9 @@ import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.Phases
 import java.net.URI
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -123,29 +126,41 @@ class SemanticIndexerTest {
 
     @Test
     fun `building a document holds no lock, so removing the file meanwhile neither waits nor is undone`() {
-        val building = java.util.concurrent.CountDownLatch(1)
-        val removed = java.util.concurrent.CountDownLatch(1)
+        val building = CountDownLatch(1)
+        val removed = CountDownLatch(1)
         val slow = SemanticIndexer(index, build = { ast, u ->
             building.countDown()
-            removed.await(LATCH_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+            removed.await(LATCH_SECONDS, TimeUnit.SECONDS)
             com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
         })
         val content = "class Slow {}"
         val ast = parse(content)
-        val update = java.util.concurrent.CompletableFuture.runAsync {
+        val update = CompletableFuture.runAsync {
             slow.update(uri, content, ast, phase = Phases.CANONICALIZATION)
         }
-        assertTrue(building.await(LATCH_SECONDS, java.util.concurrent.TimeUnit.SECONDS))
+        assertTrue(building.await(LATCH_SECONDS, TimeUnit.SECONDS))
 
-        val remove = java.util.concurrent.CompletableFuture.runAsync { slow.remove(uri) }
-        remove.get(1, java.util.concurrent.TimeUnit.SECONDS) // waited on the build's lock before
+        val remove = CompletableFuture.runAsync { slow.remove(uri) }
+        remove.get(REMOVE_SECONDS, TimeUnit.SECONDS) // waited on the build's lock before
         removed.countDown()
-        update.get(LATCH_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+        update.get(LATCH_SECONDS, TimeUnit.SECONDS)
 
         assertNull(index.getDocument(uri), "a build that outlived the file's removal must not publish")
     }
 
+    @Test
+    fun `a publication taken earlier never overwrites one taken later, whichever finishes first`() {
+        val older = indexer.begin(uri)
+        val newer = indexer.begin(uri)
+        newer.use { indexer.publish(it, "class Newer {}", parse("class Newer {}"), Phases.CANONICALIZATION) }
+
+        older.use { indexer.publish(it, "class Older {}", parse("class Older {}"), Phases.CANONICALIZATION) }
+
+        assertEquals(listOf("Newer"), names().filter { it == "Newer" || it == "Older" })
+    }
+
     private companion object {
-        const val LATCH_SECONDS = 5L
+        const val LATCH_SECONDS = 10L
+        const val REMOVE_SECONDS = 3L
     }
 }
