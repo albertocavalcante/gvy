@@ -1,4 +1,8 @@
-import { ClientProvider, requireClient } from "../../server/clientProvider";
+import {
+  ClientProvider,
+  isMethodNotFound,
+  requireClient,
+} from "../../server/clientProvider";
 import { RequestType } from "vscode-languageserver-protocol";
 
 export interface GradleTask {
@@ -21,9 +25,19 @@ export class GradleService {
   }
 
   async getTasks(workspaceUri: string): Promise<GradleTask[]> {
-    const tasks = await this.client.sendRequest(GradleTasksRequest, {
-      workspaceUri,
-    });
-    return tasks || [];
+    try {
+      const tasks = await this.client.sendRequest(GradleTasksRequest, {
+        workspaceUri,
+      });
+      return tasks || [];
+    } catch (error) {
+      // NOTE: no server version implements groovy/gradleTasks yet. List no
+      // tasks rather than an error; Build/Test/Clean and tasks.json entries
+      // run without it.
+      if (isMethodNotFound(error)) {
+        return [];
+      }
+      throw error;
+    }
   }
 }

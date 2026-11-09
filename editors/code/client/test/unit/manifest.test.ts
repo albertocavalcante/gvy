@@ -52,6 +52,19 @@ describe("package.json manifest", () => {
     }
   });
 
+  it("hides REPL commands: no server version implements groovy/execute", () => {
+    const palette: Array<{ command: string; when?: string }> =
+      manifest.contributes.menus.commandPalette ?? [];
+    const repl = declared.filter((c) => c.startsWith("groovy.repl."));
+    assert.ok(repl.length > 0);
+    for (const command of repl) {
+      assert.ok(
+        palette.some((m) => m.command === command && m.when === "false"),
+        `${command} is offered but cannot work`,
+      );
+    }
+  });
+
   it("targets the VS Code version its @types/vscode describes", () => {
     const types = manifest.devDependencies["@types/vscode"].replace(/^\^/, "");
     assert.strictEqual(manifest.engines.vscode, `^${types}`);

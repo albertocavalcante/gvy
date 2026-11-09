@@ -44,7 +44,6 @@ export class ReplStatusBar implements vscode.Disposable {
     );
     this.logic = new ReplStatusBarLogic();
     this.update(false); // Initial state is not running
-    this.item.show();
   }
 
   public update(isRunning: boolean): void {
@@ -54,6 +53,14 @@ export class ReplStatusBar implements vscode.Disposable {
     this.item.tooltip = state.tooltip;
     this.item.command = state.command;
     this.item.color = state.color;
+    // NOTE: shown only for a running session. No server version implements
+    // groovy/execute, so an always-visible "click to start" item would offer
+    // a REPL that cannot evaluate anything.
+    if (isRunning) {
+      this.item.show();
+    } else {
+      this.item.hide();
+    }
   }
 
   public dispose(): void {

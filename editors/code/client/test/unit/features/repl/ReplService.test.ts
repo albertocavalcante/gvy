@@ -1,6 +1,7 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
+import { ErrorCodes, ResponseError } from "vscode-languageserver-protocol";
 
 class FakeEmitter<T> {
   private listeners: Array<(e: T) => void> = [];
@@ -29,11 +30,13 @@ describe("ReplService", () => {
   let commands: Map<string, () => Promise<void>>;
   let sendRequest: sinon.SinonStub;
   let service: { initialize: (ctx: unknown) => void };
+  let showWarningMessage: sinon.SinonStub;
 
   beforeEach(() => {
     terminals = [];
     commands = new Map();
     sendRequest = sinon.stub().resolves({ result: "2", output: "" });
+    showWarningMessage = sinon.stub();
     const vscodeMock = {
       EventEmitter: FakeEmitter,
       window: {
@@ -64,6 +67,7 @@ describe("ReplService", () => {
         },
         showErrorMessage: sinon.stub(),
         showInformationMessage: sinon.stub(),
+        showWarningMessage,
       },
       commands: {
         registerCommand: (id: string, cb: () => Promise<void>) => {
@@ -106,5 +110,43 @@ describe("ReplService", () => {
 
     await commands.get("groovy.repl.sendLine")!();
     assert.strictEqual(terminals.length, 2, "no third terminal");
+  });
+
+  it("says the REPL is unsupported when the server lacks groovy/execute", async () => {
+    sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method: groovy/execute",
+      ),
+    );
+    await commands.get("groovy.repl.sendLine")!();
+    const [terminal] = terminals;
+    terminal.pty.open();
+    const text = terminal.written.join("");
+    assert.match(text, /not supported by this server version/);
+    assert.doesNotMatch(text, /Unsupported request method/);
+    assert.ok(
+      showWarningMessage.calledOnce,
+      "user is told outside the terminal",
+    );
+  });
+
+  it("shows the unsupported popup once, then only writes to the terminal", async () => {
+    sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method: groovy/execute",
+      ),
+    );
+    await commands.get("groovy.repl.sendLine")!();
+    await commands.get("groovy.repl.sendLine")!();
+    const [terminal] = terminals;
+    terminal.pty.open();
+    const text = terminal.written.join("");
+    assert.strictEqual(
+      text.match(/not supported by this server version/g)?.length,
+      2,
+    );
+    assert.ok(showWarningMessage.calledOnce, "popup repeated");
   });
 });
