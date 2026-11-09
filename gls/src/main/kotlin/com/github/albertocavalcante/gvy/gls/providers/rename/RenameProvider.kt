@@ -43,6 +43,7 @@ import java.nio.file.Paths
 class RenameProvider private constructor(
     private val compilationService: GroovyCompilationService,
     private val documentSource: RenameDocumentSource,
+    private val openBuffers: () -> Map<URI, String> = { emptyMap() },
 ) {
     /** Current text of a document (open buffer, else file on disk); null if unavailable. */
     constructor(
@@ -60,10 +61,13 @@ class RenameProvider private constructor(
         RenameDocumentSource { uri ->
             documents.getSnapshot(uri) ?: readFromDisk(uri)?.let { DocumentSnapshot(it, null) }
         },
+        documents::snapshot,
     )
 
     private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
+    private val crossFileUses =
+        CrossFileUseGuard(checkNotNull(compilationService.getWorkspaceSymbolIndex()), openBuffers)
 
     // Groovy keywords that cannot be used as identifiers
     private val groovyKeywords = setOf(
@@ -97,6 +101,7 @@ class RenameProvider private constructor(
             throw createError(ResponseErrorCode.InvalidRequest, "New name is the same as the current name")
         }
         val nameLocations = collectNameLocations(target, sources)
+        refuseIfUsedElsewhere(target)
         sources.validate()
         return buildWorkspaceEdit(target.definition, newName, nameLocations, target.definitionLocation, sources)
     }
@@ -111,9 +116,12 @@ class RenameProvider private constructor(
         if (location == null) {
             null
         } else {
+            refuseIfUsedElsewhere(target)
             sources.validate()
             PrepareRenameResult(location.range, target.oldName)
         }
+    } catch (e: RenameRefusedException) {
+        throw e // Unlike other ineligible targets, the client should show why before asking for a name.
     } catch (e: ResponseErrorException) {
         when (e.responseError.code) {
             ResponseErrorCode.InvalidParams.value,
@@ -124,6 +132,15 @@ class RenameProvider private constructor(
         }
     } catch (_: IllegalArgumentException) {
         null
+    }
+
+    /** Only this file is edited, so a target other files use would be silently broken. */
+    private fun refuseIfUsedElsewhere(target: RenameTarget) {
+        val uses = crossFileUses.usesOutside(target.documentUri, target.definition, target.oldName)
+        if (!uses.isEmpty) {
+            val error = ResponseError(ResponseErrorCode.InvalidRequest, uses.message(target.oldName), null)
+            throw RenameRefusedException(error)
+        }
     }
 
     private data class RenameTarget(
@@ -431,3 +448,6 @@ private operator fun Position.compareTo(other: Position): Int =
 /** True if [inner] lies within this range and is not the same range. */
 private fun org.eclipse.lsp4j.Range.strictlyContains(inner: org.eclipse.lsp4j.Range): Boolean =
     start <= inner.start && inner.end <= end && this != inner
+
+/** A rename refused because other files would break; surfaced even by prepareRename. */
+internal class RenameRefusedException(error: ResponseError) : ResponseErrorException(error)
