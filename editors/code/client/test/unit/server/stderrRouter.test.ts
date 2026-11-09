@@ -57,16 +57,53 @@ describe("stderrRouter", () => {
     route("14:03:11.125 [main] ERROR x.Y -- failed");
     route("java.lang.IllegalStateException: nope");
     route("\tat x.Y.run(Y.kt:10)");
+    route("Caused by: java.io.IOException: disk");
+    route("\t... 3 more");
     route("14:03:11.200 [main] INFO x.Y -- recovered");
-    route("\tat not.really.a.trace(Z.kt:1)");
 
     expect(entries.map(([level]) => level)).to.deep.equal([
       "error",
       "error",
       "error",
-      "info",
+      "error",
+      "error",
       "info",
     ]);
+  });
+
+  it("does not let INFO swallow a crash that bypasses Logback", () => {
+    for (const crash of [
+      'Exception in thread "main" java.lang.OutOfMemoryError: Java heap space',
+      "# A fatal error has been detected by the Java Runtime Environment:",
+      "Error: Could not find or load main class gls",
+    ]) {
+      const { sink, entries } = recordingSink();
+      const route = createStderrRouter(sink);
+      route("14:03:11.123 [main] INFO x.Y -- healthy");
+      route(crash);
+      expect(entries[1], crash).to.deep.equal(["error", crash]);
+    }
+  });
+
+  it("keeps the exception line after a WARN header but not later plain lines", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:11.123 [main] WARN x.Y -- retrying");
+    route("java.net.SocketTimeoutException: timed out");
+    route("\tat x.Y.run(Y.kt:1)");
+    route("something unrelated");
+    expect(entries.map(([level]) => level)).to.deep.equal([
+      "warn",
+      "warn",
+      "warn",
+      "error",
+    ]);
+  });
+
+  it("accepts thread names containing brackets", () => {
+    const { sink, entries } = recordingSink();
+    createStderrRouter(sink)("14:03:11.123 [pool-1[worker]] INFO x.Y -- hi");
+    expect(entries[0][0]).to.equal("info");
   });
 
   it("classifies Logback status lines printed before configuration", () => {
