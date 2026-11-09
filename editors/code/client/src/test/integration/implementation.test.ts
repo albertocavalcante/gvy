@@ -2,6 +2,7 @@ import * as assert from "assert";
 import { createHash } from "crypto";
 import { existsSync, readFileSync, realpathSync } from "fs";
 import * as vscode from "vscode";
+import * as path from "path";
 
 suite("Implementation navigation with the current server", () => {
   let document: vscode.TextDocument;
@@ -24,7 +25,7 @@ suite("Implementation navigation with the current server", () => {
     const candidate =
       process.env.GVY_TEST_SERVER_JAR ||
       vscode.Uri.joinPath(
-        workspace.uri,
+        vscode.Uri.file(path.resolve(__dirname, "../../../..")),
         "../../gls/build/editor-server/gls.jar",
       ).fsPath;
     assert.ok(
@@ -45,10 +46,7 @@ suite("Implementation navigation with the current server", () => {
 
     await extension.activate();
     document = await vscode.workspace.openTextDocument(
-      vscode.Uri.joinPath(
-        workspace.uri,
-        "client/src/test/fixtures/Implementation.groovy",
-      ),
+      vscode.Uri.joinPath(workspace.uri, "Implementation.groovy"),
     );
     await vscode.window.showTextDocument(document);
   });
@@ -71,14 +69,94 @@ suite("Implementation navigation with the current server", () => {
     );
   }
 
+  test("CodeNarc diagnostics underline original source tokens without edits", async () => {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace);
+    const uri = vscode.Uri.joinPath(workspace.uri, "CodeNarcRanges.groovy");
+    const lint = await vscode.workspace.openTextDocument(uri);
+    await vscode.window.showTextDocument(lint);
+    const source = lint.getText();
+    const version = lint.version;
+    const diagnostics = await new Promise<vscode.Diagnostic[]>(
+      (resolve, reject) => {
+        const timer = setTimeout(() => {
+          listener.dispose();
+          reject(new Error("CodeNarc did not publish the fixture diagnostics"));
+        }, 20000);
+        const check = () => {
+          const result = vscode.languages.getDiagnostics(uri);
+          if (
+            result.some((diagnostic) =>
+              diagnostic.message.includes("Hello, World!"),
+            ) &&
+            result.some((diagnostic) =>
+              diagnostic.message.includes("return keyword"),
+            )
+          ) {
+            clearTimeout(timer);
+            listener.dispose();
+            resolve(result);
+          }
+        };
+        const listener = vscode.languages.onDidChangeDiagnostics(check);
+        check();
+      },
+    );
+    for (const [text, message] of [
+      ['"Hello, World!"', "Hello, World!"],
+      ["return", "return keyword"],
+    ]) {
+      const diagnostic = diagnostics.find((item) =>
+        item.message.includes(message),
+      );
+      assert.ok(diagnostic);
+      const offset = source.indexOf(text);
+      assert.ok(
+        diagnostic.range.isEqual(
+          new vscode.Range(
+            lint.positionAt(offset),
+            lint.positionAt(offset + text.length),
+          ),
+        ),
+        `Incorrect source range for ${message}: ${JSON.stringify(diagnostic.range)}`,
+      );
+      assert.strictEqual(lint.getText(diagnostic.range), text);
+      assert.strictEqual(diagnostic.source, "CodeNarc");
+      assert.strictEqual(
+        diagnostic.severity,
+        vscode.DiagnosticSeverity.Information,
+      );
+    }
+    const stringDiagnostic = diagnostics.find((item) =>
+      item.message.includes("Hello, World!"),
+    );
+    assert.ok(stringDiagnostic);
+    const actions = await vscode.commands.executeCommand<vscode.CodeAction[]>(
+      "vscode.executeCodeActionProvider",
+      uri,
+      stringDiagnostic.range,
+      vscode.CodeActionKind.QuickFix.value,
+    );
+    const quoteFix = actions?.find(
+      (action) => action.title === "Use single-quoted string",
+    );
+    assert.ok(quoteFix?.edit, "Expected the real CodeNarc quote quick fix");
+    const entries = quoteFix.edit.entries();
+    assert.strictEqual(entries.length, 1);
+    assert.strictEqual(entries[0][0].toString(), uri.toString());
+    const edits = entries[0][1];
+    assert.strictEqual(edits.length, 1);
+    assert.ok(edits[0].range.isEqual(stringDiagnostic.range));
+    assert.strictEqual(edits[0].newText, "'Hello, World!'");
+    assert.strictEqual(lint.getText(), source);
+    assert.strictEqual(lint.version, version);
+  });
+
   test("Semantic tokens cover exact identifiers and keywords without edits", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
     const semantic = await vscode.workspace.openTextDocument(
-      vscode.Uri.joinPath(
-        workspace.uri,
-        "client/src/test/fixtures/SemanticTokens.groovy",
-      ),
+      vscode.Uri.joinPath(workspace.uri, "SemanticTokens.groovy"),
     );
     await vscode.window.showTextDocument(semantic);
     const source = semantic.getText();
@@ -148,10 +226,7 @@ suite("Implementation navigation with the current server", () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
     const folding = await vscode.workspace.openTextDocument(
-      vscode.Uri.joinPath(
-        workspace.uri,
-        "client/src/test/fixtures/FoldingRanges.groovy",
-      ),
+      vscode.Uri.joinPath(workspace.uri, "FoldingRanges.groovy"),
     );
     await vscode.window.showTextDocument(folding);
     const source = folding.getText();
@@ -190,10 +265,7 @@ suite("Implementation navigation with the current server", () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
     const selection = await vscode.workspace.openTextDocument(
-      vscode.Uri.joinPath(
-        workspace.uri,
-        "client/src/test/fixtures/SelectionRanges.groovy",
-      ),
+      vscode.Uri.joinPath(workspace.uri, "SelectionRanges.groovy"),
     );
     const editor = await vscode.window.showTextDocument(selection);
     const source = selection.getText();
@@ -258,10 +330,7 @@ suite("Implementation navigation with the current server", () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
     const script = await vscode.workspace.openTextDocument(
-      vscode.Uri.joinPath(
-        workspace.uri,
-        "client/src/test/fixtures/ScriptClassLiterals.groovy",
-      ),
+      vscode.Uri.joinPath(workspace.uri, "ScriptClassLiterals.groovy"),
     );
     await vscode.window.showTextDocument(script);
     const source = script.getText();
@@ -293,10 +362,7 @@ suite("Implementation navigation with the current server", () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
     const aliases = await vscode.workspace.openTextDocument(
-      vscode.Uri.joinPath(
-        workspace.uri,
-        "client/src/test/fixtures/ImportedAliases.groovy",
-      ),
+      vscode.Uri.joinPath(workspace.uri, "ImportedAliases.groovy"),
     );
     await vscode.window.showTextDocument(aliases);
     const source = aliases.getText();
@@ -602,10 +668,7 @@ suite("Implementation navigation with the current server", () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
     const preparedDocument = await vscode.workspace.openTextDocument(
-      vscode.Uri.joinPath(
-        workspace.uri,
-        "client/src/test/fixtures/PrepareRename.groovy",
-      ),
+      vscode.Uri.joinPath(workspace.uri, "PrepareRename.groovy"),
     );
     await vscode.window.showTextDocument(preparedDocument);
     const source = preparedDocument.getText();

@@ -40,26 +40,32 @@ class AstAwareRangeCalculator(private val nodeFinder: AstNodeFinder) {
      * @return Pair of (startColumn, endColumn) in 0-based LSP coordinates,
      *         or null if AST lookup fails or rule is unsupported
      */
-    fun calculateRange(violation: Violation): Pair<Int, Int>? {
+    fun calculateRange(violation: Violation): Pair<Int, Int>? = calculateRange(violation, null)
+
+    /** Calculate columns in the original document line rather than CodeNarc's trimmed snippet. */
+    internal fun calculateRangeInSource(violation: Violation, sourceLine: String): Pair<Int, Int>? =
+        calculateRange(violation, sourceLine)
+
+    private fun calculateRange(violation: Violation, originalLine: String?): Pair<Int, Int>? {
         val ruleName = violation.rule.name
         if (!isSupported(ruleName)) {
             return null
         }
 
         return when (ruleName) {
-            "ClassName" -> calculateClassNameRange(violation)
-            "MethodName" -> calculateMethodNameRange(violation)
-            "FieldName" -> calculateFieldNameRange(violation)
-            "UnusedVariable" -> calculateUnusedVariableRange(violation)
-            "UnusedImport" -> calculateUnusedImportRange(violation)
+            "ClassName" -> calculateClassNameRange(violation, originalLine)
+            "MethodName" -> calculateMethodNameRange(violation, originalLine)
+            "FieldName" -> calculateFieldNameRange(violation, originalLine)
+            "UnusedVariable" -> calculateUnusedVariableRange(violation, originalLine)
+            "UnusedImport" -> calculateUnusedImportRange(violation, originalLine)
             else -> null
         }
     }
 
-    private fun calculateClassNameRange(violation: Violation): Pair<Int, Int>? {
+    private fun calculateClassNameRange(violation: Violation, originalLine: String?): Pair<Int, Int>? {
         val lineNumber = violation.lineNumber ?: return null
         val classNode = nodeFinder.findClassAtLine(lineNumber) ?: return null
-        val sourceLine = violation.sourceLine ?: return null
+        val sourceLine = originalLine ?: violation.sourceLine ?: return null
 
         // Get the simple class name (without package and outer class prefix)
         val className = classNode.nameWithoutPackage.substringAfterLast('$')
@@ -68,10 +74,10 @@ class AstAwareRangeCalculator(private val nodeFinder: AstNodeFinder) {
         return findIdentifierInLine(sourceLine, className)
     }
 
-    private fun calculateMethodNameRange(violation: Violation): Pair<Int, Int>? {
+    private fun calculateMethodNameRange(violation: Violation, originalLine: String?): Pair<Int, Int>? {
         val lineNumber = violation.lineNumber ?: return null
         val methodNode = nodeFinder.findMethodAtLine(lineNumber) ?: return null
-        val sourceLine = violation.sourceLine ?: return null
+        val sourceLine = originalLine ?: violation.sourceLine ?: return null
 
         val methodName = methodNode.name
 
@@ -79,10 +85,10 @@ class AstAwareRangeCalculator(private val nodeFinder: AstNodeFinder) {
         return findIdentifierInLine(sourceLine, methodName)
     }
 
-    private fun calculateFieldNameRange(violation: Violation): Pair<Int, Int>? {
+    private fun calculateFieldNameRange(violation: Violation, originalLine: String?): Pair<Int, Int>? {
         val lineNumber = violation.lineNumber ?: return null
         val fieldNode = nodeFinder.findFieldAtLine(lineNumber) ?: return null
-        val sourceLine = violation.sourceLine ?: return null
+        val sourceLine = originalLine ?: violation.sourceLine ?: return null
 
         val fieldName = fieldNode.name
 
@@ -90,9 +96,9 @@ class AstAwareRangeCalculator(private val nodeFinder: AstNodeFinder) {
         return findIdentifierInLine(sourceLine, fieldName)
     }
 
-    private fun calculateUnusedVariableRange(violation: Violation): Pair<Int, Int>? {
+    private fun calculateUnusedVariableRange(violation: Violation, originalLine: String?): Pair<Int, Int>? {
         val lineNumber = violation.lineNumber ?: return null
-        val sourceLine = violation.sourceLine ?: return null
+        val sourceLine = originalLine ?: violation.sourceLine ?: return null
 
         // Extract variable name from message: "The variable [varName] in class X is not used"
         val varName = extractBracketedValue(violation.message, "variable") ?: return null
@@ -103,10 +109,10 @@ class AstAwareRangeCalculator(private val nodeFinder: AstNodeFinder) {
         return findIdentifierInLine(sourceLine, varName)
     }
 
-    private fun calculateUnusedImportRange(violation: Violation): Pair<Int, Int>? {
+    private fun calculateUnusedImportRange(violation: Violation, originalLine: String?): Pair<Int, Int>? {
         val lineNumber = violation.lineNumber ?: return null
         val importNode = nodeFinder.findImportAtLine(lineNumber) ?: return null
-        val sourceLine = violation.sourceLine ?: return null
+        val sourceLine = originalLine ?: violation.sourceLine ?: return null
 
         // For imports, highlight the class name (not "import" keyword)
         val className = importNode.className

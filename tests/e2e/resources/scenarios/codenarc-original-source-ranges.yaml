@@ -1,0 +1,46 @@
+name: codenarc-original-source-ranges
+description: CodeNarc squiggles use original indented source instead of trimmed snippets.
+workspace:
+  fixture: empty-workspace
+steps:
+  - initialize: {}
+  - initialized: {}
+  - openDocument:
+      path: src/CodeNarcRanges.groovy
+      languageId: groovy
+      version: 1
+      text: |
+        class CodeNarcRanges {
+            String greet(String name) {
+                println "Hello, World!"
+                return "Hello, ${name}!"
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: diagnostics
+      checks:
+        - jsonPath: $.uri
+          expect: { type: EQUALS, value: "{{workspace.uri}}src/CodeNarcRanges.groovy" }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Hello, World.*/)]
+          expect: { type: NOT_EMPTY }
+      timeoutMs: 20000
+  - assert:
+      source: diagnostics
+      checks:
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Hello, World.*/)].range.start.line
+          expect: { type: EQUALS, value: [2] }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Hello, World.*/)].range.start.character
+          expect: { type: EQUALS, value: [16] }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Hello, World.*/)].range.end.character
+          expect: { type: EQUALS, value: [31] }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*return keyword.*/)].range.start.line
+          expect: { type: EQUALS, value: [3] }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*return keyword.*/)].range.start.character
+          expect: { type: EQUALS, value: [8] }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*return keyword.*/)].range.end.character
+          expect: { type: EQUALS, value: [14] }
+        - jsonPath: $.diagnostics[?(@.message =~ /.*return keyword.*/)].severity
+          expect: { type: EQUALS, value: [Information] }
+  - shutdown: {}
+  - exit: {}

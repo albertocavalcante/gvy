@@ -18,7 +18,8 @@ export default defineConfig([
     ...(installed
       ? { useInstallation: { fromPath: installed } }
       : { version: "1.144.0" }),
-    workspaceFolder: "./",
+    // Keep the editor workspace independent of extension assets and project detection.
+    workspaceFolder: "client/src/test/fixtures",
     mocha: {
       ui: "tdd",
       timeout: 30000,
