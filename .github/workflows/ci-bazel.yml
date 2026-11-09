@@ -16,7 +16,7 @@ on:
       - '.bazelversion'
       - 'third_party/patches/**'
       - '.github/workflows/ci-bazel.yml'
-      - '**/*.kt'
+      - '**/src/**'
       - '**/build.gradle.kts'
       - 'gradle/libs.versions.toml'
   schedule:
