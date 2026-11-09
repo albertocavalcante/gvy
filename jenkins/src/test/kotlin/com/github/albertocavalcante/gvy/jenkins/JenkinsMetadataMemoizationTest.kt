@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
 import com.github.albertocavalcante.gvy.jenkins.plugins.PluginConfiguration
+import com.github.albertocavalcante.gvy.jenkins.scanning.JenkinsClasspathScanner
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
@@ -13,6 +14,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -140,7 +142,7 @@ class JenkinsMetadataMemoizationTest {
     }
 
     @Test
-    fun `a failed scan keeps serving the previous classpath metadata`() {
+    fun `a scanner that throws leaves the previous snapshot in place`() {
         val cpA = listOf(tempDir.resolve("a.jar"))
         val context = context(
             scanResult = { cp -> if (cp == cpA) dynamic("fromA") else error("corrupt jar") },
@@ -150,6 +152,17 @@ class JenkinsMetadataMemoizationTest {
         context.scanClasspath(listOf(tempDir.resolve("broken.jar")))
 
         assertEquals(setOf("echo", "sh", "fromA"), context.getAllMetadata().steps.keys)
+    }
+
+    @Test
+    fun `the production scanner reports an unreadable jar as empty metadata instead of throwing`() {
+        val corruptJar = tempDir.resolve("corrupt.jar")
+        corruptJar.writeText("not a zip archive")
+
+        val result = JenkinsClasspathScanner().scan(listOf(corruptJar))
+
+        assertTrue(result.steps.isEmpty())
+        assertTrue(result.globalVariables.isEmpty())
     }
 
     @Test

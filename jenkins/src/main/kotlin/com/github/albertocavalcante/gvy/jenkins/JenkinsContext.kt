@@ -361,8 +361,10 @@ class JenkinsContext internal constructor(
     /**
      * Parse and scan classpath for Jenkins metadata.
      *
-     * Rescans only when the classpath differs from the last successful scan. A failed scan keeps
-     * the previous snapshot so completion does not lose dynamic steps on a transient error.
+     * Rescans only when the classpath differs from the last scan. The production scanner
+     * ([JenkinsClasspathScanner.scan]) never throws: an unreadable jar yields empty metadata, which is
+     * published like any other result. Only an injected scanner that throws leaves the previous
+     * snapshot in place.
      */
     @Synchronized
     fun scanClasspath(classpath: List<Path>) {
