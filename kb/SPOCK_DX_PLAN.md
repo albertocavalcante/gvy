@@ -243,6 +243,16 @@ column typing, malformed-source recovery, editor rendering, isolated iteration e
 Publication must separately verify CI runner coverage; Runmux migration is tracked in
 [PR #1165](https://github.com/albertocavalcante/gvy/pull/1165).
 
+### Structural-rule containment
+
+The registered `spock-test-structure` rule now remains quiet. Its old preferred-block template was not a compiler
+invariant: real Spock accepts minimal given-only, cleanup-only and where-only features, and quoted/test-prefixed helpers
+need not be features. The rule ID, default severity, enabled state and analysis metadata remain compatible.
+
+This retires unsupported reports without adding an artificial AST check or claiming complete Spock semantic validation.
+Groovy parser diagnostics and other diagnostic rules remain unchanged. Any future structural feedback needs a separately
+proven invariant, matching source/framework context and compiler-backed regression fixtures.
+
 ### Remaining component work
 
 Ownership below identifies component scope, not an assigned individual. Documentation does not resolve these items.
@@ -250,7 +260,7 @@ Ownership below identifies component scope, not an assigned individual. Document
 | Item                  | Impact and reason open                                                                                                                                    | Responsible scope        | Next action and acceptance                                                                                            |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | S1–S2 remaining       | Transition fixes, filter/combined vocabulary and outer-label recognition are included; individual label ranges and blank-line context remain incomplete.  | `ext/spock`              | Offset-based label/body spans with parser-backed blank-line and consecutive-label location tests.                     |
-| S3–S4                 | Heuristic providers cause false positives and missing scoped help; shared model pending.                                                                  | Completion/diagnostics   | Consume source context; prove long-method, lexical, and adjacent-method cases.                                        |
+| S3                    | Heuristic completion activation remains; shared source context is pending.                                                                                | Completion/diagnostics   | Consume source context; prove class ownership, lexical isolation and incomplete-source cases.                         |
 | S5 remaining          | Declaration/root mapping is included; semicolon tables, class-level unroll patterns, complete diagnostic confidence and column typing remain unsupported. | Spock/semantic providers | Extend the model and prove coercion, mixed types, configuration and unsupported syntax before publishing diagnostics. |
 | S6–S7                 | Phase fallback does not establish malformed-source recovery.                                                                                              | Parser/compilation       | Edit-sequence tests; explicit partial behavior; no stale locations.                                                   |
 | S8                    | Iteration display currently reruns the enclosing feature.                                                                                                 | Testing server/editor    | Engine identity and support detection; prove exactly one iteration executes.                                          |

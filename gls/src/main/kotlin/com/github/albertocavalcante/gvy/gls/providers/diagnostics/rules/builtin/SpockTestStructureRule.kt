@@ -8,75 +8,24 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import java.net.URI
 
 /**
- * Detects incomplete Spock test methods.
+ * Retains the registered Spock rule and its configuration without speculative reports.
  *
- * Spock tests typically follow the given-when-then or expect-where pattern.
- * This rule helps identify test methods that are missing key blocks.
- *
- * NOTE: Simple pattern-based detection. AST analysis would provide
- * more accurate Spock block detection.
+ * The former preferred-block template was not a Spock validity rule: minimal features and helpers
+ * can legitimately omit when/then/expect blocks. Replacing its text scan with AST checks would
+ * preserve that invalid premise. Keep this entry quiet until a separate, proven invariant exists;
+ * parsing work that cannot establish a diagnostic would add no value here.
  */
 class SpockTestStructureRule : AbstractDiagnosticRule() {
-
-    private companion object {
-        private const val LOOK_AHEAD_LINES = 20
-        private const val RANGE_END_OFFSET = 1
-    }
-
     override val id = "spock-test-structure"
 
-    override val description = "Detect incomplete Spock test methods missing key blocks"
+    override val description = "Reserved Spock structure rule; no standalone diagnostics"
 
+    // Preserve existing rule metadata and settings compatibility while the old reports are retired.
     override val analysisType = DiagnosticAnalysisType.HEURISTIC
 
     override val defaultSeverity = DiagnosticSeverity.Information
 
     override val enabledByDefault = true
 
-    override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> {
-        // Only analyze Spock test files
-        val path = uri.path ?: return emptyList()
-        if (!path.contains("Spec.groovy") && !path.contains("Test.groovy")) {
-            return emptyList()
-        }
-
-        val diagnostics = mutableListOf<Diagnostic>()
-        val lines = content.lines()
-
-        // Find test methods (def "test name"() or def testName())
-        val testMethodPattern = Regex("""def\s+["'].*["']\s*\(\s*\)\s*\{|def\s+test\w+\s*\(\s*\)\s*\{""")
-
-        lines.forEachIndexed { lineIndex, line ->
-            val match = testMethodPattern.find(line)
-            if (match != null) {
-                // Check the next several lines for Spock blocks
-                val endLine = minOf(lineIndex + LOOK_AHEAD_LINES, lines.size)
-                val methodContent = lines.subList(lineIndex, endLine).joinToString("\n")
-
-                val hasWhen = methodContent.contains(Regex("""(\n|^)\s*when:"""))
-                val hasThen = methodContent.contains(Regex("""(\n|^)\s*then:"""))
-                val hasExpect = methodContent.contains(Regex("""(\n|^)\s*expect:"""))
-                val hasWhere = methodContent.contains(Regex("""(\n|^)\s*where:"""))
-
-                // Check for valid patterns
-                val hasGivenWhenThen = hasWhen && hasThen
-                val hasExpectPattern = hasExpect
-                val isDataDriven = hasWhere
-
-                if (!hasGivenWhenThen && !hasExpectPattern && !isDataDriven) {
-                    diagnostics.add(
-                        diagnostic(
-                            lineIndex,
-                            match.range.first,
-                            match.range.last + RANGE_END_OFFSET,
-                            "Spock test may be missing expected blocks (given/when/then, expect, or where)",
-                            defaultSeverity,
-                        ),
-                    )
-                }
-            }
-        }
-
-        return diagnostics
-    }
+    override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> = emptyList()
 }
