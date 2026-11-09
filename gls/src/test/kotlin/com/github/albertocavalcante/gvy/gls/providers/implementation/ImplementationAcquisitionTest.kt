@@ -47,6 +47,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @Execution(ExecutionMode.SAME_THREAD) // The controlled parse interleaving scopes a constructor mock.
@@ -283,7 +284,7 @@ class ImplementationAcquisitionTest {
             put(contract, contractText, 1)
             put(implementation, implementationText, 1)
         }
-        val compilation = spyk(GroovyCompilationService(documentProvider = documents))
+        val compilation = GroovyCompilationService(documentProvider = documents)
         if (closedOrigin) {
             Files.writeString(Path.of(contract), contractText)
             Files.writeString(Path.of(implementation), implementationText)
@@ -292,33 +293,43 @@ class ImplementationAcquisitionTest {
         val diagnostics = mockk<DiagnosticsOrchestrator>()
         val jobs = ConcurrentHashMap<URI, Job>()
         every { diagnostics.getDiagnosticJobsMap() } returns jobs
-        val handler = CrossFileOperationsHandler(
-            compilation,
-            documents,
-            mockk<SourceNavigator>(),
-            diagnostics,
-            { false },
-            {},
-            this,
-        )
         assertTrue(compilation.compile(contract, contractText).isSuccess)
         assertTrue(compilation.compile(implementation, implementationText).isSuccess)
-        return Fixture(contract, implementation, compilation, handler, documents, jobs)
+        return Fixture(contract, implementation, compilation, documents, jobs) { observed ->
+            CrossFileOperationsHandler(
+                observed,
+                documents,
+                mockk<SourceNavigator>(),
+                diagnostics,
+                { false },
+                {},
+                this,
+            )
+        }
     }
 
     private class Fixture(
         val contract: URI,
         val implementation: URI,
-        val compilation: GroovyCompilationService,
-        val handler: CrossFileOperationsHandler,
+        private val actual: GroovyCompilationService,
         val documents: DocumentProvider,
         val jobs: ConcurrentHashMap<URI, Job>,
+        createHandler: (GroovyCompilationService) -> CrossFileOperationsHandler,
     ) : AutoCloseable {
+        val compilation = spyk(actual)
+        val handler = createHandler(compilation)
+
+        init {
+            assertSame(actual.compilationCacheService, compilation.compilationCacheService)
+            assertSame(actual.symbolIndexingService, compilation.symbolIndexingService)
+        }
+
         fun invalidateAfterCompilation(repeatedly: Boolean = false, uri: URI? = null): AtomicInteger {
             val armed = AtomicBoolean(true)
             val invalidations = AtomicInteger()
             coEvery { compilation.ensureCompiled(contract) } coAnswers {
-                val result = callOriginal()
+                // Await the real delegate; suspend-spy callOriginal returns the suspension marker.
+                val result = actual.ensureCompiled(contract)
                 if (repeatedly || armed.compareAndSet(true, false)) {
                     if (uri == null) compilation.clearCaches() else compilation.invalidateCache(uri)
                     invalidations.incrementAndGet()

@@ -19,7 +19,7 @@ class CompilationCacheService(
     isOpen: (URI) -> Boolean = { false },
 ) {
     private val cache = CompilationCache(maxEntries, isOpen)
-    private val compilationJobs = ConcurrentHashMap<URI, Deferred<CompilationResult>>()
+    private val compilationJobs = ConcurrentHashMap<URI, PendingCompilation>()
 
     /**
      * Gets cached ParseResult if content AND configuration fingerprint match.
@@ -87,14 +87,34 @@ class CompilationCacheService(
     }
 
     /**
-     * Tracks an ongoing compilation job.
-     * Used for async compilation coordination and job reuse.
-     *
-     * @param uri The URI being compiled
-     * @param deferred The deferred compilation job
+     * Atomically selects compatible work or registers a new lazy job before it can start.
+     * [create] must only construct work; starting it and external lifecycle callbacks belong outside
+     * the map operation. Late handler attachment also cleans up an already finished/cancelled job.
      */
-    fun trackCompilation(uri: URI, deferred: Deferred<CompilationResult>) {
-        compilationJobs[uri] = deferred
+    internal fun registerCompilation(
+        uri: URI,
+        identity: CompilationIdentity,
+        create: () -> Deferred<CompilationResult>,
+    ): Deferred<CompilationResult> {
+        var created = false
+        var selected: PendingCompilation? = null
+        compilationJobs.compute(uri) { _, existing ->
+            if (existing != null && existing.isPending && existing.identity.matches(identity)) {
+                selected = existing
+                existing
+            } else {
+                val replacement = PendingCompilation(identity, create())
+                selected = replacement
+                created = true
+                // An already cancelled creator must not evict another caller's live work.
+                replacement.takeIf { it.isPending } ?: existing?.takeIf { it.isPending }
+            }
+        }
+        val compilation = checkNotNull(selected)
+        if (created) {
+            compilation.deferred.invokeOnCompletion { compilationJobs.remove(uri, compilation) }
+        }
+        return compilation.deferred
     }
 
     /**
@@ -104,17 +124,17 @@ class CompilationCacheService(
      * @param uri The URI to check
      * @return Deferred compilation job if active, null otherwise
      */
-    fun getActiveCompilation(uri: URI): Deferred<CompilationResult>? = compilationJobs[uri]
+    fun getActiveCompilation(uri: URI): Deferred<CompilationResult>? = compilationJobs[uri]?.deferred
 
     /**
-     * Removes a compilation job from tracking.
-     * Should be called when compilation completes or is cancelled.
-     *
-     * @param uri The URI to remove
+     * Unmanaged callers have no authoritative buffer text. They may await the latest unversioned
+     * request with the current configuration, but never adopt an old open-document job after close.
      */
-    fun removeCompilation(uri: URI) {
-        compilationJobs.remove(uri)
-    }
+    internal fun getPendingCompilation(uri: URI, configurationFingerprint: String): PendingCompilation? =
+        compilationJobs[uri]?.takeIf {
+            it.isPending && it.identity.document == null &&
+                it.identity.configurationFingerprint == configurationFingerprint
+        }
 
     /**
      * Invalidates all cached data for a specific URI.

@@ -35,6 +35,7 @@ import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -58,7 +59,7 @@ class HoverSnapshotTest {
     fun `hover recompiles its open buffer if initialization invalidates the awaited cache`(): Unit = runBlocking {
         fixture().use { fixture ->
             coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                callOriginal()
+                fixture.acquireCompilation()
                 fixture.compilation.clearCaches()
                 null
             }
@@ -107,7 +108,7 @@ class HoverSnapshotTest {
     fun `hover rejects a version change during compilation acquisition`(): Unit = runBlocking {
         fixture().use { fixture ->
             coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                callOriginal().also { fixture.documents.put(fixture.uri, ORIGINAL_SOURCE, 42) }
+                fixture.acquireCompilation().also { fixture.documents.put(fixture.uri, ORIGINAL_SOURCE, 42) }
             }
 
             val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
@@ -120,7 +121,7 @@ class HoverSnapshotTest {
     fun `hover rejects closing the buffer during acquisition`(): Unit = runBlocking {
         fixture().use { fixture ->
             coEvery { fixture.compilation.ensureCompiled(fixture.uri) } coAnswers {
-                callOriginal().also { fixture.documents.remove(fixture.uri) }
+                fixture.acquireCompilation().also { fixture.documents.remove(fixture.uri) }
             }
 
             val error = assertFailsWith<ResponseErrorException> { fixture.endpoint.hover(fixture.params()).await() }
@@ -176,27 +177,35 @@ class HoverSnapshotTest {
     private suspend fun fixture(engine: EngineType = EngineType.Core): Fixture {
         val uri = workspace.resolve("Sample.groovy").toUri()
         val documents = DocumentProvider().apply { put(uri, ORIGINAL_SOURCE, 41) }
-        val compilation = spyk(
-            GroovyCompilationService(documentProvider = documents, engineConfig = EngineConfiguration(engine)),
-        )
+        val compilation =
+            GroovyCompilationService(documentProvider = documents, engineConfig = EngineConfiguration(engine))
         compilation.workspaceManager.initializeWorkspace(workspace)
         assertTrue(compilation.compile(uri, ORIGINAL_SOURCE).isSuccess)
         val scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher())
-        val endpoint = GroovyTextDocumentService(
-            scope,
-            compilation,
-            GroovyTextDocumentServiceOptions(documentProvider = documents),
-        )
-        return Fixture(uri, documents, compilation, scope, endpoint)
+        return Fixture(uri, documents, compilation, scope)
     }
 
     private data class Fixture(
         val uri: URI,
         val documents: DocumentProvider,
-        val compilation: GroovyCompilationService,
+        private val actual: GroovyCompilationService,
         val scope: CoroutineScope,
-        val endpoint: GroovyTextDocumentService,
     ) : AutoCloseable {
+        val compilation = spyk(actual)
+        val endpoint = GroovyTextDocumentService(
+            scope,
+            compilation,
+            GroovyTextDocumentServiceOptions(documentProvider = documents),
+        )
+
+        init {
+            assertSame(actual.compilationCacheService, compilation.compilationCacheService)
+            assertSame(actual.symbolIndexingService, compilation.symbolIndexingService)
+        }
+
+        // Delegate normally: a suspend spy's callOriginal cannot await COROUTINE_SUSPENDED.
+        suspend fun acquireCompilation() = actual.ensureCompiled(uri)
+
         fun params() = HoverParams(TextDocumentIdentifier(uri.toString()), Position(0, 23))
 
         fun change(source: String, version: Int) = endpoint.didChange(

@@ -10,11 +10,11 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.Phases
@@ -22,8 +22,6 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
-
-private const val RETRY_DELAY_MS = 50L
 
 /**
  * Orchestrates the Groovy compilation process, handling caching,
@@ -83,6 +81,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
 
         return runCatching {
+            // TODO(#1184): Capture queued compiler inputs together with their request identity.
+            //   See: https://github.com/albertocavalcante/gvy/issues/1184
             // Get configuration fingerprint for cache coherency (Issue #743)
             val configFingerprint = workspaceManager.getConfigurationFingerprint()
 
@@ -227,29 +227,60 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     }
 
     /**
-     * Start async compilation and return Deferred for coordination.
+     * Start or share a compatible compilation. The first creating scope owns the work: cancelling
+     * another coroutine that only awaits it does not cancel it. A cancelled owner retires the job.
      */
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String): Deferred<CompilationResult> {
-        // Check if already compiling this document
-        cacheService.getActiveCompilation(uri)?.let { existing ->
-            if (existing.isActive) {
-                logger.debug { "Reusing active compilation for: $uri" }
-                return existing
-            }
-        }
+        val identity = CompilationIdentity(
+            content,
+            workspaceManager.getConfigurationFingerprint(),
+            // Different requested text still originated while this buffer was open.
+            documentProvider?.getSnapshot(uri),
+        )
+        return scheduleCompilation(scope, uri, identity)
+    }
 
+    private fun scheduleCompilation(
+        scope: CoroutineScope,
+        uri: URI,
+        identity: CompilationIdentity,
+    ): Deferred<CompilationResult> {
+        // Acquire before exposing queued work, without nesting semantic and registry map locks.
         val publication = semanticIndexer?.begin(uri)
-        val deferred = scope.async(ioDispatcher) {
-            try {
-                compile(uri, content, Phases.CANONICALIZATION, publication)
-            } finally {
-                cacheService.removeCompilation(uri)
+        var created = false
+        var retainedPublication = false
+        try {
+            val deferred = cacheService.registerCompilation(uri, identity) {
+                scope.async(ioDispatcher, start = CoroutineStart.LAZY) {
+                    compile(uri, identity.content, Phases.CANONICALIZATION, publication)
+                }.also { created = true }
             }
+            if (created) {
+                deferred.invokeOnCompletion { publication?.close() }
+                retainedPublication = true
+            }
+            deferred.start()
+            return deferred
+        } finally {
+            if (!retainedPublication) publication?.close()
         }
-        deferred.invokeOnCompletion { publication?.close() }
+    }
 
-        cacheService.trackCompilation(uri, deferred)
-        return deferred
+    private suspend fun awaitCompilation(uri: URI, identity: CompilationIdentity): CompilationResult {
+        val scope = CoroutineScope(currentCoroutineContext())
+        return try {
+            scheduleCompilation(scope, uri, identity).await()
+        } catch (e: CancellationException) {
+            // A separate owner may have cancelled shared work; a cancelled waiter must never retry.
+            currentCoroutineContext().ensureActive()
+            logger.debug(e) { "Compilation owner cancelled for $uri, retrying with current caller" }
+            val retry = CompilationIdentity(
+                identity.content,
+                workspaceManager.getConfigurationFingerprint(),
+                identity.document,
+            )
+            scheduleCompilation(scope, uri, retry).await()
+        }
     }
 
     /**
@@ -258,31 +289,21 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     @Suppress("ReturnCount") // Multiple cache and validation checks require early returns
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
-        // Check for active compilation first
-        cacheService.getActiveCompilation(uri)?.let { deferred ->
-            if (deferred.isActive) {
-                logger.debug { "Awaiting active compilation for: $uri" }
-                return try {
-                    deferred.await()
-                } catch (e: CancellationException) {
-                    // If compilation was cancelled, try once more
-                    logger.debug(e) { "Compilation cancelled for $uri, retrying..." }
-                    delay(RETRY_DELAY_MS)
-                    cacheService.getActiveCompilation(uri)?.await()
-                }
-            }
-        }
-
         // An open buffer is the source of truth: it may be unsaved, untitled, or newer than the file on
         // disk or the cached parse, and didOpen compiles it in a background job that may not have
-        // started yet. compile() reuses the cache when the content is unchanged.
-        documentProvider?.get(uri)?.let { content ->
-            logger.debug { "Compiling open document on-demand: $uri" }
-            return compile(uri, content)
+        // started yet. Resolve its identity before selecting any pending job.
+        documentProvider?.getSnapshot(uri)?.let { snapshot ->
+            val identity =
+                CompilationIdentity(snapshot.content, workspaceManager.getConfigurationFingerprint(), snapshot)
+            return awaitCompilation(uri, identity)
         }
 
         // Get current fingerprint for cache coherency validation
         val configFingerprint = workspaceManager.getConfigurationFingerprint()
+
+        cacheService.getPendingCompilation(uri, configFingerprint)?.let { pending ->
+            return awaitCompilation(uri, pending.identity)
+        }
 
         // Check cache with fingerprint validation
         cacheService.getCachedWithContent(uri)?.let { (content, parseResult) ->

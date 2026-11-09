@@ -15,6 +15,7 @@ import kotlin.test.assertTrue
 
 class CompilationCacheServiceTest {
     private lateinit var cacheService: CompilationCacheService
+    private val identity = CompilationIdentity("class Test {}", "test-fingerprint", null)
 
     @BeforeTest
     fun setup() {
@@ -122,11 +123,11 @@ class CompilationCacheServiceTest {
     }
 
     @Test
-    fun `trackCompilation stores deferred job`() {
+    fun `registerCompilation stores deferred job`() {
         val uri = URI.create("file:///test.groovy")
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.trackCompilation(uri, deferred)
+        cacheService.registerCompilation(uri, identity) { deferred }
         val result = cacheService.getActiveCompilation(uri)
 
         assertNotNull(result)
@@ -142,12 +143,12 @@ class CompilationCacheServiceTest {
     }
 
     @Test
-    fun `removeCompilation removes job from tracking`() {
+    fun `completion removes its job from tracking`() {
         val uri = URI.create("file:///test.groovy")
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.trackCompilation(uri, deferred)
-        cacheService.removeCompilation(uri)
+        cacheService.registerCompilation(uri, identity) { deferred }
+        deferred.complete(CompilationResult.failure(emptyList()))
         val result = cacheService.getActiveCompilation(uri)
 
         assertNull(result)
@@ -161,7 +162,7 @@ class CompilationCacheServiceTest {
         val deferred = CompletableDeferred<CompilationResult>()
 
         cacheService.putCached(uri, content, parseResult)
-        cacheService.trackCompilation(uri, deferred)
+        cacheService.registerCompilation(uri, identity) { deferred }
         cacheService.invalidate(uri)
 
         assertNull(cacheService.getCached(uri, content))
@@ -176,7 +177,7 @@ class CompilationCacheServiceTest {
         val deferred = CompletableDeferred<CompilationResult>()
 
         cacheService.putCached(uri, content, parseResult)
-        cacheService.trackCompilation(uri, deferred)
+        cacheService.registerCompilation(uri, identity) { deferred }
         cacheService.clear()
 
         assertNull(cacheService.getCached(uri, content))
@@ -203,7 +204,7 @@ class CompilationCacheServiceTest {
         val uri = URI.create("file:///test.groovy")
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.trackCompilation(uri, deferred)
+        cacheService.registerCompilation(uri, identity) { deferred }
         val stats = cacheService.getStatistics()
 
         assertEquals(1, stats["activeCompilations"])
