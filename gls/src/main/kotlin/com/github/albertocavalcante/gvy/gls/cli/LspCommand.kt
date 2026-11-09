@@ -19,6 +19,7 @@ import java.net.BindException
 import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.UnknownHostException
 import java.util.concurrent.Executors
 
 private val logger = KotlinLogging.logger {}
@@ -28,11 +29,18 @@ private const val ACCEPT_BACKLOG = 50
 /**
  * Binds the socket-mode listener. Defaults to the loopback interface so the server (which can read
  * workspace files and run build tooling) is not exposed to the network unless explicitly requested.
+ *
+ * "Loopback" here is the JVM's loopback address, normally IPv4 `127.0.0.1`. A single listener cannot serve
+ * both families, so IPv6-only clients must be given an explicit `--host ::1`.
+ *
+ * @throws java.net.UnknownHostException if [host] cannot be resolved
  */
 internal fun bindServerSocket(port: Int, host: String? = null): ServerSocket {
     val address = if (host == null) InetAddress.getLoopbackAddress() else InetAddress.getByName(host)
     if (!address.isLoopbackAddress) {
-        logger.warn { "Binding to non-loopback address $address exposes the language server to the network" }
+        logger.warn {
+            "Binding to non-loopback address $address exposes the unauthenticated language server to the network"
+        }
     }
     return ServerSocket(port, ACCEPT_BACKLOG, address)
 }
@@ -103,10 +111,13 @@ class LspCommand : CliktCommand(name = "lsp") {
     internal fun runSocket(port: Int, host: String? = null) {
         try {
             bindServerSocket(port, host).use { serverSocket ->
-                logger.info { "Listening on ${serverSocket.inetAddress}:$port..." }
+                logger.info { "Listening on ${serverSocket.inetAddress}:${serverSocket.localPort}..." }
                 addShutdownHook(serverSocket)
                 acceptConnections(serverSocket)
             }
+        } catch (e: UnknownHostException) {
+            echo("Invalid --host '$host': ${e.message}", err = true)
+            throw ProgramResult(1)
         } catch (e: BindException) {
             logger.error(e) { "Failed to bind to port $port (port may be in use)" }
             throw ProgramResult(1)
