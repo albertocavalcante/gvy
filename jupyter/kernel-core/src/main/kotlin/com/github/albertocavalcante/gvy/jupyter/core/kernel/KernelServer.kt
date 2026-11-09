@@ -111,10 +111,24 @@ class KernelServer(
         }
 
         logger.debug { "Received ${frames.size} frames on $socketName" }
+        dispatchFrames(frames, socketName)
+    }
 
+    /**
+     * Parse, authenticate and dispatch one multipart message.
+     *
+     * Messages whose HMAC signature does not match are dropped before any handler runs.
+     * Authentication is skipped only when the connection file carries an empty key.
+     */
+    internal fun dispatchFrames(frames: List<ByteArray>, socketName: String) {
         try {
             // Parse wire message
             val wireMessage = WireMessage.fromFrames(frames)
+
+            if (!wireMessage.hasValidSignature(connection.signer)) {
+                logger.warn { "Dropping message on $socketName: invalid HMAC signature" }
+                return
+            }
 
             // Convert to JupyterMessage
             val jupyterMessage = wireMessage.toJupyterMessage()

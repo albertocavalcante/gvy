@@ -65,6 +65,16 @@ data class WireMessage(
     }
 
     /**
+     * Check the HMAC signature over header, parent_header, metadata and content (in that order).
+     *
+     * Always true when the signer has no key (signing disabled by the connection file).
+     */
+    fun hasValidSignature(signer: HmacSigner): Boolean {
+        if (!signer.isEnabled) return true
+        return signer.verify(signature, listOf(header, parentHeader, metadata, content))
+    }
+
+    /**
      * Convert this wire message to a high-level JupyterMessage.
      *
      * Parses JSON fields into structured data.

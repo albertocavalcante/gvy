@@ -18,6 +18,9 @@ import javax.crypto.spec.SecretKeySpec
 class HmacSigner(private val key: String) {
     private val algorithm = "HmacSHA256"
 
+    /** False when the key is empty, meaning messages are neither signed nor authenticated. */
+    val isEnabled: Boolean get() = key.isNotEmpty()
+
     /**
      * Sign message parts and return hex-encoded signature.
      *
