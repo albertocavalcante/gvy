@@ -1,123 +1,182 @@
 package com.github.albertocavalcante.groovyparser.provider
 
+import com.github.albertocavalcante.groovyparser.api.model.NodeInfo
+import com.github.albertocavalcante.groovyparser.api.model.NodeKind
 import com.github.albertocavalcante.groovyparser.api.model.Position
+import com.github.albertocavalcante.groovyparser.api.model.Range
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 
-/**
- * Tests for CoreParseUnit.nodeAt() implementation.
- *
- * Note: These tests verify that the nodeAt() implementation doesn't crash
- * and returns reasonable results when ranges are available. The core parser
- * may not have complete range information for all nodes yet, which is why
- * some assertions are lenient.
- */
 class CoreParseUnitNodeAtTest {
 
     @Test
-    fun `nodeAt returns null for invalid position`() {
-        val source = "class Test {}"
+    fun `nodeAt returns the class at its name with exact source text`() {
+        val source = "class Foo { String name }"
         val parseUnit = parseCore(source)
 
-        val node = parseUnit.nodeAt(Position(100, 100))
-
-        assertThat(node).isNull()
+        assertThat(parseUnit.isSuccessful).isTrue()
+        assertThat(parseUnit.diagnostics()).isEmpty()
+        assertThat(parseUnit.nodeAt(Position(1, 7))).isEqualTo(
+            NodeInfo(NodeKind.CLASS, "Foo", Range(Position(1, 1), Position(1, 26)), source),
+        )
     }
 
     @Test
-    fun `nodeAt does not crash when called with valid position`() {
-        val source = """
-            class TestClass {
-                def field = 1
-            }
-        """.trimIndent()
-        val parseUnit = parseCore(source)
+    fun `nodeAt returns the field rather than its containing class`() {
+        val parseUnit = parseCore(CLASS_WITH_MEMBERS)
 
-        // Position at "TestClass" on line 1
-        // May or may not return a node depending on parser range information
-        val node = parseUnit.nodeAt(Position(1, 7))
-
-        // Just verify it doesn't crash - node may be null if ranges aren't set
-        // This is acceptable for now as the parser range information may be incomplete
+        assertThat(parseUnit.nodeAt(Position(2, 9))).isEqualTo(
+            NodeInfo(NodeKind.FIELD, "name", Range(Position(2, 2), Position(2, 13)), "String name"),
+        )
     }
 
     @Test
-    fun `nodeAt handles position at line 1 column 1`() {
-        val source = "class Test {}"
-        val parseUnit = parseCore(source)
+    fun `nodeAt returns the method at its declaration`() {
+        val parseUnit = parseCore(CLASS_WITH_MEMBERS)
 
-        // Should not crash
-        val node = parseUnit.nodeAt(Position(1, 1))
-
-        // May or may not return a node - just verify no crash
+        assertThat(parseUnit.nodeAt(Position(3, 9))).isEqualTo(
+            NodeInfo(
+                NodeKind.METHOD,
+                "greet",
+                Range(Position(3, 2), Position(3, 25)),
+                "String greet() { name }",
+            ),
+        )
     }
 
     @Test
-    fun `nodeAt handles multi-line source`() {
-        val source = """
-            package com.example
+    fun `nodeAt returns the deepest expression inside a method`() {
+        val parseUnit = parseCore(CLASS_WITH_MEMBERS)
 
-            class TestClass {
-                def method() {
-                    println "hello"
-                }
-            }
-        """.trimIndent()
-        val parseUnit = parseCore(source)
-
-        // Try various positions - should not crash
-        parseUnit.nodeAt(Position(1, 1))
-        parseUnit.nodeAt(Position(3, 7))
-        parseUnit.nodeAt(Position(5, 13))
-
-        // Just verify no crashes occur
+        assertThat(parseUnit.nodeAt(Position(3, 19))).isEqualTo(
+            NodeInfo(NodeKind.VARIABLE_REFERENCE, "name", Range(Position(3, 19), Position(3, 23)), "name"),
+        )
     }
 
     @Test
-    fun `nodeAt returns null for position before first line`() {
-        val source = "class Test {}"
+    fun `nodeAt includes the start and final character but excludes the native end position`() {
+        val source = "class Foo {}"
         val parseUnit = parseCore(source)
+        val expected = NodeInfo(NodeKind.CLASS, "Foo", Range(Position(1, 1), Position(1, 13)), source)
 
-        val node = parseUnit.nodeAt(Position(0, 1))
-
-        // Invalid position (0-based) should return null
-        assertThat(node).isNull()
+        assertThat(parseUnit.nodeAt(Position(1, 1))).isEqualTo(expected)
+        assertThat(parseUnit.nodeAt(Position(1, 12))).isEqualTo(expected)
+        assertThat(parseUnit.nodeAt(Position(1, 13))).isNull()
     }
 
     @Test
-    fun `nodeAt handles parsing errors gracefully`() {
-        val source = "class {{{{" // Invalid syntax
-        val parseUnit = parseCore(source)
+    fun `nodeAt does not extend the first class into the next line`() {
+        val parseUnit = parseCore("class One {}\nclass Two {}")
 
-        // Should not crash even with parse errors
-        val node = parseUnit.nodeAt(Position(1, 1))
-
-        // May be null due to parse error - that's acceptable
+        assertThat(parseUnit.nodeAt(Position(1, 13))).isNull()
+        assertThat(parseUnit.nodeAt(Position(2, 7))).isEqualTo(
+            NodeInfo(NodeKind.CLASS, "Two", Range(Position(2, 1), Position(2, 13)), "class Two {}"),
+        )
     }
 
     @Test
-    fun `nodeAt with empty source returns null`() {
-        val source = ""
+    fun `nodeAt preserves line endings when extracting a multiline class`() {
+        val source = CLASS_WITH_MEMBERS.replace("\n", "\r\n")
         val parseUnit = parseCore(source)
 
-        val node = parseUnit.nodeAt(Position(1, 1))
-
-        assertThat(node).isNull()
+        assertThat(parseUnit.nodeAt(Position(1, 7))).isEqualTo(
+            NodeInfo(NodeKind.CLASS, "Foo", Range(Position(1, 1), Position(4, 2)), source),
+        )
+        assertThat(parseUnit.nodeAt(Position(3, 19))?.text).isEqualTo("name")
     }
 
     @Test
-    fun `nodeAt with simple script`() {
+    fun `nodeAt retains Groovy line coordinates for bare carriage returns`() {
+        val source = CLASS_WITH_MEMBERS.replace("\n", "\r")
+        val parseUnit = parseCore(source)
+
+        assertThat(parseUnit.nodeAt(Position(1, 7))).isEqualTo(
+            NodeInfo(NodeKind.CLASS, "Foo", Range(Position(1, 1), Position(1, 52)), source),
+        )
+        assertThat(parseUnit.nodeAt(Position(1, 21))).isEqualTo(
+            NodeInfo(NodeKind.FIELD, "name", Range(Position(1, 14), Position(1, 25)), "String name"),
+        )
+    }
+
+    @Test
+    fun `nodeAt does not guess text or lookup columns after a supplementary character`() {
+        val parseUnit = parseCore("class Foo { String emoji = '😀'; String name }")
+
+        assertThat(parseUnit.nodeAt(Position(1, 7))).isEqualTo(
+            NodeInfo(NodeKind.CLASS, "Foo", Range(Position(1, 1), Position(1, 46)), null),
+        )
+        assertThat(parseUnit.nodeAt(Position(1, 33))).isNull()
+    }
+
+    @Test
+    fun `nodeAt preserves supplementary text on an intermediate line with unambiguous endpoints`() {
+        val source = "class Foo {\n String emoji = '😀'\n}"
+        val parseUnit = parseCore(source)
+
+        assertThat(parseUnit.nodeAt(Position(1, 7))).isEqualTo(
+            NodeInfo(NodeKind.CLASS, "Foo", Range(Position(1, 1), Position(3, 2)), source),
+        )
+    }
+
+    @Test
+    fun `nodeAt preserves BMP unicode source text`() {
+        val source = "class Café { String résumé }"
+        val parseUnit = parseCore(source)
+
+        assertThat(parseUnit.nodeAt(Position(1, 7))).isEqualTo(
+            NodeInfo(NodeKind.CLASS, "Café", Range(Position(1, 1), Position(1, source.length + 1)), source),
+        )
+    }
+
+    @Test
+    fun `nodeAt traverses synthetic script containers to find the method call`() {
         val source = "println 'hello'"
         val parseUnit = parseCore(source)
 
-        // Should handle script-style code without crashes
-        parseUnit.nodeAt(Position(1, 1))
-        parseUnit.nodeAt(Position(1, 5))
-        parseUnit.nodeAt(Position(1, 10))
+        assertThat(parseUnit.isSuccessful).isTrue()
+        assertThat(parseUnit.nodeAt(Position(1, 1))).isEqualTo(
+            NodeInfo(NodeKind.METHOD_CALL, "println", Range(Position(1, 1), Position(1, 16)), source),
+        )
     }
 
-    private fun parseCore(source: String): CoreParseUnit {
-        val provider = CoreParserProvider()
-        return provider.parse(source) as CoreParseUnit
+    @Test
+    fun `nodeAt traverses a script call to find its literal argument`() {
+        val parseUnit = parseCore("println 'hello'")
+
+        assertThat(parseUnit.nodeAt(Position(1, 10))).isEqualTo(
+            NodeInfo(NodeKind.LITERAL, null, Range(Position(1, 9), Position(1, 16)), "'hello'"),
+        )
+        assertThat(parseUnit.nodeAt(Position(1, 16))).isNull()
+    }
+
+    @Test
+    fun `nodeAt returns null for positions outside the source`() {
+        val parseUnit = parseCore(CLASS_WITH_MEMBERS)
+
+        for (position in listOf(Position(0, 1), Position(1, 0), Position(-1, 1), Position(2, 100), Position(100, 1))) {
+            assertThat(parseUnit.nodeAt(position)).describedAs("lookup at %s", position).isNull()
+        }
+    }
+
+    @Test
+    fun `nodeAt returns null when partial syntax has no recoverable source node`() {
+        val parseUnit = parseCore("class Broken {")
+
+        assertThat(parseUnit.isSuccessful).isFalse()
+        assertThat(parseUnit.diagnostics()).isNotEmpty()
+        assertThat(parseUnit.nodeAt(Position(1, 7))).isNull()
+    }
+
+    @Test
+    fun `nodeAt returns null for empty source`() {
+        val parseUnit = parseCore("")
+
+        assertThat(parseUnit.nodeAt(Position(1, 1))).isNull()
+    }
+
+    private fun parseCore(source: String): CoreParseUnit = CoreParserProvider().parse(source) as CoreParseUnit
+
+    private companion object {
+        const val CLASS_WITH_MEMBERS = "class Foo {\n String name\n String greet() { name }\n}"
     }
 }
