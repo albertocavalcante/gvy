@@ -182,17 +182,69 @@ class JenkinsVarsDefinitionIntegrationTest {
     }
 
     @Test
-    fun `call on an explicit receiver does not resolve to vars file`(): Unit = runBlocking {
+    fun `call on a typed receiver whose class declares the method does not resolve to vars file`(): Unit = runBlocking {
         val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
-        val content = "def helper = [:]\nhelper.deployApp()"
+        val content = "class Helper {\n    def deployApp() { 'helper' }\n}\n" +
+            "Helper helper = new Helper()\nhelper.deployApp()"
 
         openDocument(uri, content)
-        // Position at 'deployApp' in "helper.deployApp()" (line 1, char 7-15)
-        val definitions = requestDefinitionAt(uri, Position(1, 10))
+        // Position at 'deployApp' in "helper.deployApp()" (line 4, char 7-15)
+        val definitions = requestDefinitionAt(uri, Position(4, 10))
 
         assertTrue(
             definitions.none { it.uri.endsWith("vars/deployApp.groovy") },
-            "helper.deployApp() must not resolve to vars/deployApp.groovy, but was: ${definitions.map { it.uri }}",
+            "typed helper.deployApp() must not resolve to vars/, but was: ${definitions.map { it.uri }}",
+        )
+    }
+
+    @Test
+    fun `call on a dynamically typed steps field in a src class resolves to vars file`(): Unit = runBlocking {
+        // Shared-library classes reach globals through a script or steps reference: CpsScript.invokeMethod
+        // dispatches the call to the vars/ global even though src/ files are not Jenkins-mode files.
+        val srcFile = workspaceRoot.resolve("src/org/example/Deployer.groovy")
+        val content = "package org.example\n\nclass Deployer {\n    def steps\n\n" +
+            "    void run() {\n        steps.deployApp()\n    }\n}"
+        Files.writeString(srcFile, content)
+        val uri = srcFile.toUri().toString()
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "        steps.deployApp()" (line 6, char 14-22)
+        val definitions = requestDefinitionAt(uri, Position(6, 16))
+
+        assertEquals(1, definitions.size, "steps.deployApp() should resolve, but was: $definitions")
+        assertTrue(
+            definitions[0].uri.endsWith("vars/deployApp.groovy"),
+            "steps.deployApp() should resolve to vars/deployApp.groovy, but was: ${definitions[0].uri}",
+        )
+    }
+
+    @Test
+    fun `implicit call inside a class declared in a Jenkinsfile does not resolve to vars file`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "class H {\n    def go() {\n        deployApp()\n    }\n}\nnode {\n    new H().go()\n}"
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "        deployApp()" (line 2, char 8-16)
+        val definitions = requestDefinitionAt(uri, Position(2, 10))
+
+        assertTrue(
+            definitions.none { it.uri.endsWith("vars/deployApp.groovy") },
+            "deployApp() inside class H must not resolve to vars/, but was: ${definitions.map { it.uri }}",
+        )
+    }
+
+    @Test
+    fun `implicit call inside a static script method does not resolve to vars file`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "static def f() {\n    deployApp()\n}\nnode {\n    f()\n}"
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "    deployApp()" (line 1, char 4-12)
+        val definitions = requestDefinitionAt(uri, Position(1, 6))
+
+        assertTrue(
+            definitions.none { it.uri.endsWith("vars/deployApp.groovy") },
+            "deployApp() in a static method has no script instance, but was: ${definitions.map { it.uri }}",
         )
     }
 

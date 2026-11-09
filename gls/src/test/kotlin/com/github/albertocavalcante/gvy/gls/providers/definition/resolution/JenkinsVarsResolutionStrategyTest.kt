@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.DynamicVariable
+import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
@@ -26,6 +27,7 @@ import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.lang.reflect.Modifier
 import java.net.URI
 import java.nio.file.Files
 
@@ -216,9 +218,73 @@ class JenkinsVarsResolutionStrategyTest {
     }
 
     @Test
-    fun `Jenkins vars strategy skips method call on an explicit receiver`() {
+    fun `Jenkins vars strategy skips method call on a typed receiver`() {
         val strategy = JenkinsVarsResolutionStrategy(capabilitiesWith("deploy"))
-        val call = MethodCallExpression(VariableExpression("helper"), "deploy", ArgumentListExpression())
+        val receiver = VariableExpression(Parameter(ClassHelper.STRING_TYPE, "helper"))
+        val call = MethodCallExpression(receiver, "deploy", ArgumentListExpression())
+
+        assertNotResolved(strategy, call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy resolves call on a dynamically typed receiver outside Jenkins mode`() {
+        val strategy = JenkinsVarsResolutionStrategy(capabilitiesWith("deploy", jenkinsFile = false))
+        val receiver = VariableExpression(VariableExpression("steps"))
+        val call = MethodCallExpression(receiver, "deploy", ArgumentListExpression())
+
+        assertResolved(strategy, call, URI.create("file:///workspace/src/org/x/Foo.groovy"))
+    }
+
+    @Test
+    fun `Jenkins vars strategy resolves call on a Script typed field receiver`() {
+        val owner = ClassNode("org.x.Foo", 1, ClassHelper.OBJECT_TYPE)
+        val field = FieldNode("script", 1, ClassHelper.make(Script::class.java), owner, null)
+        val strategy = JenkinsVarsResolutionStrategy(capabilitiesWith("deploy", jenkinsFile = false))
+        val call = MethodCallExpression(VariableExpression(field), "deploy", ArgumentListExpression())
+
+        assertResolved(strategy, call, URI.create("file:///workspace/src/org/x/Foo.groovy"))
+    }
+
+    @Test
+    fun `Jenkins vars strategy skips implicit call inside a non-script class`() {
+        val helperClass = ClassNode("H", 1, ClassHelper.OBJECT_TYPE)
+        val method = MethodNode(
+            "go",
+            1,
+            ClassHelper.OBJECT_TYPE,
+            Parameter.EMPTY_ARRAY,
+            ClassNode.EMPTY_ARRAY,
+            BlockStatement(),
+        )
+        helperClass.addMethod(method)
+        val call = MethodCallExpression(VariableExpression("this"), "deploy", ArgumentListExpression())
+        val astModel = mockk<GroovyAstModel> {
+            every { getParent(call) } returns method
+            every { getParent(method) } returns helperClass
+            every { getParent(helperClass) } returns null
+        }
+        val strategy = JenkinsVarsResolutionStrategy(capabilitiesWith("deploy"), astModel = astModel)
+
+        assertNotResolved(strategy, call, JENKINSFILE)
+    }
+
+    @Test
+    fun `Jenkins vars strategy skips implicit call inside a static script method`() {
+        val method = MethodNode(
+            "f",
+            Modifier.PUBLIC or Modifier.STATIC,
+            ClassHelper.OBJECT_TYPE,
+            Parameter.EMPTY_ARRAY,
+            ClassNode.EMPTY_ARRAY,
+            BlockStatement(),
+        )
+        scriptClass().addMethod(method)
+        val call = MethodCallExpression(VariableExpression("this"), "deploy", ArgumentListExpression())
+        val astModel = mockk<GroovyAstModel> {
+            every { getParent(call) } returns method
+            every { getParent(method) } returns null
+        }
+        val strategy = JenkinsVarsResolutionStrategy(capabilitiesWith("deploy"), astModel = astModel)
 
         assertNotResolved(strategy, call, JENKINSFILE)
     }

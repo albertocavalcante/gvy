@@ -10,6 +10,7 @@ import org.codehaus.groovy.ast.DynamicVariable
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import java.net.URI
@@ -27,16 +28,23 @@ import java.net.URI
  * ## Scope
  * Because this strategy runs first, it only claims references that Groovy would dispatch to
  * a Jenkins global at runtime; everything else falls through to [LocalSymbolResolutionStrategy]
- * and the remaining strategies:
+ * and the remaining strategies.
+ *
+ * Script-scoped references (calls on `this`, implicit `deploy()` or explicit `this.deploy()`, and
+ * variables the compiler left unresolved, i.e. no accessed variable or a [DynamicVariable]):
  * - The document must be in Jenkins mode ([isJenkinsModeEnabled], normally `groovy.mode`
  *   via `ModeResolver`, which applies the configured `jenkins.filePatterns`).
- * - Method calls must target `this` (implicit `deploy()` or explicit `this.deploy()`); calls on
- *   any other receiver such as `helper.deploy()` or `steps.deploy()` are skipped.
- * - Variable references must be unresolved by the compiler (no accessed variable, or a
- *   [DynamicVariable]); locals, parameters and fields are skipped.
- * - A member with the same name declared in the enclosing class (the script class for a
- *   Jenkinsfile or vars/ file) shadows the global, as it does in Groovy dispatch: methods, fields
- *   and properties shadow calls; fields and properties shadow variable references.
+ * - The reference must be dispatched through the script instance: code inside a non-script class
+ *   or a static method has no CpsScript `this`, so it is skipped.
+ * - A member with the same name declared in the script class shadows the global, as it does in
+ *   Groovy dispatch: methods, fields and properties shadow calls; fields and properties shadow
+ *   variable references.
+ *
+ * Calls on a dynamically typed receiver (`steps.deploy()` where `steps` is an untyped, `def`,
+ * `Object`, `Script` or `CpsScript` variable, parameter or field) resolve to vars/ in any file:
+ * this is how shared-library `src/` classes reach globals, through `CpsScript.invokeMethod`.
+ * Calls on statically typed receivers (`String s; s.size()`, `Helper h; h.deploy()`) and on other
+ * receiver expressions are skipped.
  *
  * ## Node Handling
  * Supports both [MethodCallExpression] and [VariableExpression] to enable resilient navigation
@@ -57,10 +65,11 @@ class JenkinsVarsResolutionStrategy(
     private val logger = KotlinLogging.logger {}
 
     override suspend fun resolve(context: ResolutionContext): ResolutionResult {
-        val varName = extractVariableName(context.targetNode)
+        val reference = extractReference(context.targetNode)
             ?: return SymbolResolutionStrategy.notApplicable(STRATEGY_NAME)
+        val varName = reference.name
 
-        skipReason(varName, context)?.let { reason ->
+        skipReason(reference, context)?.let { reason ->
             return SymbolResolutionStrategy.notFound(reason, STRATEGY_NAME)
         }
 
@@ -88,32 +97,50 @@ class JenkinsVarsResolutionStrategy(
         )
     }
 
+    /** A name that Groovy could dispatch to a Jenkins global, and how it is reached. */
+    private data class GlobalReference(val name: String, val viaDynamicReceiver: Boolean)
+
     /**
-     * Extract the name of a reference that Groovy could dispatch to a Jenkins global.
+     * Extract a reference that Groovy could dispatch to a Jenkins global.
      *
      * Supports:
      * - [MethodCallExpression] on `this`: the method name (e.g., `buildPlugin` from `buildPlugin()`)
+     * - [MethodCallExpression] on a dynamically typed variable (e.g., `deploy` from `steps.deploy()`)
      * - Unresolved [VariableExpression]: the variable name (e.g., `infra` from `infra.checkoutSCM()`)
      *
      * Returns null for other receivers, compiler-resolved variables, and unsupported node types
      * (e.g., ConstantExpression).
      */
-    private fun extractVariableName(node: ASTNode): String? = when (node) {
-        is MethodCallExpression -> node.methodAsString?.takeIf { node.isCallOnThis() }
-        is VariableExpression -> node.name.takeIf { node.isUnresolvedReference() }
+    private fun extractReference(node: ASTNode): GlobalReference? = when (node) {
+        is MethodCallExpression -> node.methodAsString?.let { name ->
+            val receiver = node.objectExpression as? VariableExpression
+            when {
+                receiver == null || receiver.isSuperExpression -> null
+                receiver.isThisExpression -> GlobalReference(name, viaDynamicReceiver = false)
+                receiver.isDynamicallyTypedReceiver() -> GlobalReference(name, viaDynamicReceiver = true)
+                else -> null
+            }
+        }
+        is VariableExpression -> GlobalReference(node.name, viaDynamicReceiver = false)
+            .takeIf { node.isUnresolvedReference() }
         else -> null
     }
 
-    /** Why [varName] must not resolve to vars/ in this context, or null when it may. */
-    private fun skipReason(varName: String, context: ResolutionContext): String? = when {
-        !isJenkinsModeEnabled(context.documentUri) -> "Document is not in Jenkins mode"
-        isDeclaredInEnclosingClass(varName, context) ->
-            "'$varName' is declared in the enclosing class and shadows vars/"
-        else -> null
+    /** Why [reference] must not resolve to vars/ in this context, or null when it may. */
+    private fun skipReason(reference: GlobalReference, context: ResolutionContext): String? {
+        if (reference.viaDynamicReceiver) return null
+        val scope = astModel?.let { enclosingScope(it, context) }
+        val type = scope?.type
+        val method = scope?.method
+        return when {
+            !isJenkinsModeEnabled(context.documentUri) -> "Document is not in Jenkins mode"
+            type != null && !type.isScript -> "Enclosing class ${type.name} is not dispatched through the script"
+            method != null && method.isStatic -> "Static method ${method.name} has no script instance"
+            scope != null && scope.declares(reference.name, context.targetNode is MethodCallExpression) ->
+                "'${reference.name}' is declared in the script class and shadows vars/"
+            else -> null
+        }
     }
-
-    private fun MethodCallExpression.isCallOnThis(): Boolean =
-        (objectExpression as? VariableExpression)?.isThisExpression == true
 
     private fun VariableExpression.isUnresolvedReference(): Boolean {
         if (isThisExpression || isSuperExpression) return false
@@ -122,25 +149,51 @@ class JenkinsVarsResolutionStrategy(
     }
 
     /**
-     * Whether a member named [name] is declared in a class enclosing the target node.
-     *
-     * Method calls are shadowed by methods, fields and properties (a closure-valued field is callable);
-     * variable references only by fields and properties, since `deploy.foo` is a property lookup.
-     *
-     * The enclosing class comes from the AST parent chain, using the declaring class of the first
-     * method, field or property on the way. A script with no top-level statements gets no source
-     * position for its script class, so the tracker never records that class as a parent; the
-     * declaring class of the enclosing method still reaches it. When nothing on the chain names a
-     * class, falls back to the script classes of the model, preferring the document's own.
+     * Whether calls on this receiver go through dynamic dispatch, which Jenkins routes to vars/ globals.
+     * Uses the declared variable when the compiler bound one, otherwise this expression's own type.
      */
-    private fun isDeclaredInEnclosingClass(name: String, context: ResolutionContext): Boolean {
-        val model = astModel ?: return false
-        val includeMethods = context.targetNode is MethodCallExpression
-        val enclosing = generateSequence(model.getParent(context.targetNode)) { model.getParent(it) }
-            .firstNotNullOfOrNull { it.declaringClassOrSelf() }
-        val candidates = enclosing?.let { generateSequence(it) { cls -> cls.outerClass } }
-            ?: scriptClassesOf(model, context.documentUri)
-        return candidates.any { it.declaresMember(name, includeMethods) }
+    private fun VariableExpression.isDynamicallyTypedReceiver(): Boolean {
+        val variable: Variable = accessedVariable ?: this
+        return variable is DynamicVariable ||
+            variable.isDynamicTyped ||
+            variable.originType.name in DYNAMIC_RECEIVER_TYPES
+    }
+
+    /** The method and class enclosing the target node, plus the fallback script classes. */
+    private class EnclosingScope(
+        val method: MethodNode?,
+        val type: ClassNode?,
+        private val fallbackScripts: () -> Sequence<ClassNode>,
+    ) {
+        /**
+         * Method calls are shadowed by methods, fields and properties (a closure-valued field is callable);
+         * variable references only by fields and properties, since `deploy.foo` is a property lookup.
+         */
+        fun declares(name: String, includeMethods: Boolean): Boolean =
+            (type?.let { sequenceOf(it) } ?: fallbackScripts()).any { it.declaresMember(name, includeMethods) }
+
+        private fun ClassNode.declaresMember(name: String, includeMethods: Boolean): Boolean =
+            (includeMethods && getMethods(name).isNotEmpty()) ||
+                getDeclaredField(name) != null ||
+                getProperty(name) != null
+    }
+
+    /**
+     * Find the method and class enclosing the target node.
+     *
+     * The class comes from the AST parent chain, using the declaring class of the first method,
+     * field or property on the way. A script with no top-level statements gets no source position
+     * for its script class, so the tracker never records that class as a parent; the declaring class
+     * of the enclosing method still reaches it. When nothing on the chain names a class, shadowing
+     * falls back to the script classes of the model, preferring the document's own.
+     */
+    private fun enclosingScope(model: GroovyAstModel, context: ResolutionContext): EnclosingScope {
+        val chain = generateSequence(model.getParent(context.targetNode)) { model.getParent(it) }.toList()
+        return EnclosingScope(
+            method = chain.firstNotNullOfOrNull { it as? MethodNode },
+            type = chain.firstNotNullOfOrNull { it.declaringClassOrSelf() },
+            fallbackScripts = { scriptClassesOf(model, context.documentUri) },
+        )
     }
 
     private fun ASTNode.declaringClassOrSelf(): ClassNode? = when (this) {
@@ -160,12 +213,14 @@ class JenkinsVarsResolutionStrategy(
             .filter { it.isScript }
             .filter { cls -> model.getUri(cls).let { it == null || it == documentUri } }
 
-    private fun ClassNode.declaresMember(name: String, includeMethods: Boolean): Boolean =
-        (includeMethods && getMethods(name).isNotEmpty()) ||
-            getDeclaredField(name) != null ||
-            getProperty(name) != null
-
     companion object {
         private const val STRATEGY_NAME = "JenkinsVars"
+
+        /** Receiver types whose calls Groovy dispatches dynamically, reaching Jenkins globals at runtime. */
+        private val DYNAMIC_RECEIVER_TYPES = setOf(
+            "java.lang.Object",
+            "groovy.lang.Script",
+            "org.jenkinsci.plugins.workflow.cps.CpsScript",
+        )
     }
 }
