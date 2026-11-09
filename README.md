@@ -51,6 +51,9 @@ java -jar build/libs/groovy-lsp-<version>.jar
 java -jar build/libs/groovy-lsp-<version>.jar socket 8080
 ```
 
+Socket mode listens on the loopback interface only. To bind another address (for example inside a container), pass
+`--host <address>` to the `lsp` command; this exposes the server to the network, so only do it on trusted networks.
+
 ## Development
 
 This project uses:
