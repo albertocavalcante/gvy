@@ -7,6 +7,7 @@ import com.github.albertocavalcante.groovyparser.ast.findNodeAt
 import com.github.albertocavalcante.groovyparser.ast.resolveToDefinition
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.errors.GroovyLspException
 import com.github.albertocavalcante.gvy.gls.errors.SymbolNotFoundException
 import com.github.albertocavalcante.gvy.gls.errors.invalidPosition
@@ -52,7 +53,7 @@ class DefinitionResolver(
      * Resolution pipeline using Railway-Oriented Programming with Arrow Either.
      *
      * Strategies are tried in priority order:
-     * 1. JenkinsVars - Jenkins vars/ directory lookup (highest priority)
+     * 1. JenkinsVars - Jenkins vars/ lookup for script globals and dynamic receivers (highest priority)
      * 2. LocalSymbol - Same-file definitions via AST/symbol table
      * 3. SemanticDB - Cross-file resolution for all symbol types (methods, fields, properties, etc.)
      * 4. Method - Method-level navigation for classpath methods
@@ -64,8 +65,25 @@ class DefinitionResolver(
     private val resolutionPipeline: SymbolResolutionStrategy =
         run {
             val strategies = buildList {
-                compilationService?.workspaceManager?.getJenkinsCapabilities()?.let {
-                    add(JenkinsVarsResolutionStrategy(it))
+                compilationService?.let { service ->
+                    service.workspaceManager.getJenkinsCapabilities()?.let { capabilities ->
+                        add(
+                            JenkinsVarsResolutionStrategy(
+                                jenkinsCapabilities = capabilities,
+                                // Same mode decision as Jenkins hover/completion; read the configuration per
+                                // request so a groovy.mode change applies without rebuilding the resolver.
+                                isJenkinsModeEnabled = { uri ->
+                                    ModeResolver.fromConfig(service.serverConfiguration, capabilities)
+                                        .isJenkinsModeEnabled(uri)
+                                },
+                                astModel = astVisitor,
+                                isGroovyOnlyMode = {
+                                    ModeResolver.fromConfig(service.serverConfiguration, capabilities)
+                                        .isGroovyOnlyMode()
+                                },
+                            ),
+                        )
+                    }
                 }
                 add(LocalSymbolResolutionStrategy(astVisitor, symbolTable))
                 workspaceSymbolIndex?.let { index ->
