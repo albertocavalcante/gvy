@@ -2,7 +2,10 @@ package com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.DiagnosticRuleConfig
+import com.github.albertocavalcante.gvy.gls.config.GroovyMode
+import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.StreamingDiagnosticProvider
+import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -99,5 +102,15 @@ class CustomRulesProvider(
             }
             // Assume errors if we can't check
             .getOrDefault(true)
+
+        override fun isJenkinsFile(uri: URI): Boolean {
+            val configuration = compilationService.serverConfiguration
+            val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
+            // Without a Jenkins strategy (e.g. no workspace) AUTO mode still honours the configured patterns.
+            if (jenkinsCapabilities == null && configuration.groovyMode == GroovyMode.AUTO) {
+                return JenkinsFileDetector(configuration.jenkinsConfig.filePatterns).isJenkinsFile(uri)
+            }
+            return ModeResolver.fromConfig(configuration, jenkinsCapabilities).isJenkinsModeEnabled(uri)
+        }
     }
 }

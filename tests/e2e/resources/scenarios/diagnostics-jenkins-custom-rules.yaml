@@ -1,5 +1,7 @@
 name: diagnostics-jenkins-custom-rules
-description: Validates that Jenkins-specific custom diagnostic rules detect incomplete pipeline stages
+description: >
+  Validates that the Jenkins stage-structure rule reports incomplete and misplaced Declarative
+  Pipeline stage content, and never reports scripted pipeline stages.
 workspace:
   fixture: jenkins-diagnostics
 steps:
@@ -93,12 +95,16 @@ steps:
                 }
                 
                 stage('Deploy') {
-                    script {
-                        echo 'Deploying...'
+                    steps {
+                        script {
+                            println('deploy-marker')
+                        }
                     }
                 }
             }
         }
+  # Wait for the provider publication (println-debug marker) so the negative checks are not
+  # satisfied by the earlier parser-only publication.
   - waitNotification:
       method: textDocument/publishDiagnostics
       saveAs: fixedJenkinsDiagnostics
@@ -107,11 +113,84 @@ steps:
           expect:
             type: EQUALS
             value: "{{workspace.uri}}Jenkinsfile"
+        - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)]
+          expect:
+            type: NOT_EMPTY
   - assert:
       source: fixedJenkinsDiagnostics
       checks:
-        # After fixing, should have no incomplete stage diagnostics
+        # After fixing, should have no stage-structure diagnostics
         - jsonPath: $.diagnostics[?(@.message =~ /.*missing.*steps.*/i)]
+          expect:
+            type: EMPTY
+        - jsonPath: $.diagnostics[?(@.message =~ /.*must be inside.*/i)]
+          expect:
+            type: EMPTY
+  # 'script' is a step: directly inside a stage it is invalid Declarative syntax
+  - changeDocument:
+      path: Jenkinsfile
+      version: 3
+      text: |
+        pipeline {
+            agent any
+            stages {
+                stage('Deploy') {
+                    script {
+                        echo 'Deploying...'
+                    }
+                }
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: misplacedScriptDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}Jenkinsfile"
+        - jsonPath: $.diagnostics[?(@.message =~ /.*script.*must be inside.*steps.*/i)]
+          expect:
+            type: NOT_EMPTY
+  - assert:
+      source: misplacedScriptDiagnostics
+      checks:
+        - jsonPath: $.diagnostics[?(@.message =~ /.*script.*must be inside.*steps.*/i)].range.start.line
+          expect:
+            type: CONTAINS
+            value: 4
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Deploy.*missing.*steps.*/i)]
+          expect:
+            type: NOT_EMPTY
+  # Scripted pipelines never use 'steps' blocks, so their stages are never reported
+  - openDocument:
+      path: Jenkinsfile.scripted
+      languageId: groovy
+      version: 1
+      text: |
+        node {
+            stage('Build') {
+                sh 'make'
+            }
+            stage('Test') {
+                println('scripted-marker')
+            }
+        }
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: scriptedDiagnostics
+      checks:
+        - jsonPath: $.uri
+          expect:
+            type: EQUALS
+            value: "{{workspace.uri}}Jenkinsfile.scripted"
+        - jsonPath: $.diagnostics[?(@.message =~ /.*println.*/i)]
+          expect:
+            type: NOT_EMPTY
+  - assert:
+      source: scriptedDiagnostics
+      checks:
+        - jsonPath: $.diagnostics[?(@.message =~ /.*Stage.*/)]
           expect:
             type: EMPTY
   - shutdown: {}

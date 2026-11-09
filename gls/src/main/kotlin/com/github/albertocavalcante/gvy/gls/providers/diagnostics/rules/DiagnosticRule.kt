@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules
 
+import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import java.net.URI
@@ -111,4 +112,16 @@ interface RuleContext {
      * Useful for rules that should skip analysis on syntax errors.
      */
     fun hasErrors(): Boolean
+
+    /**
+     * Whether [uri] is a Jenkins pipeline file.
+     *
+     * The language server resolves this from the configured `groovy.mode` and
+     * `jenkins.filePatterns`; this default only knows the built-in file patterns.
+     */
+    fun isJenkinsFile(uri: URI): Boolean = DefaultJenkinsFiles.detector.isJenkinsFile(uri)
+}
+
+private object DefaultJenkinsFiles {
+    val detector = JenkinsFileDetector()
 }
