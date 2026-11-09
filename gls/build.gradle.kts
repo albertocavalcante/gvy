@@ -128,7 +128,7 @@ dependencies {
 }
 
 // Avoid the older Groovy jars that Gradle's groovy plugin adds implicitly;
-// we pin Groovy 4.0.28 above and want that version to win consistently.
+// we pin Groovy 4.0.33 above and want that version to win consistently.
 configurations.configureEach {
     exclude(group = "org.codehaus.groovy")
 }
