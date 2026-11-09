@@ -84,6 +84,10 @@ export class GradleTaskProvider implements vscode.TaskProvider {
     if (!workspaceFolders || workspaceFolders.length === 0) {
       return [];
     }
+    // The server already said it has no task discovery; do not ask again.
+    if (!this.gradleService.isTaskDiscoverySupported()) {
+      return [];
+    }
 
     // Handle all workspace folders for multi-root workspace support
     const allTasks: vscode.Task[] = [];

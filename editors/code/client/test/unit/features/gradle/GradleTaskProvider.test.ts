@@ -49,6 +49,7 @@ const WRAPPER =
 
 describe("GradleTaskProvider", () => {
   const service = {
+    isTaskDiscoverySupported: () => true,
     getTasks: async () => [
       { name: "test", group: "verification", project: ":" },
     ],
@@ -60,6 +61,21 @@ describe("GradleTaskProvider", () => {
     assert.strictEqual(task.execution.command, WRAPPER);
     assert.deepStrictEqual(task.execution.args, ["test"]);
     assert.strictEqual(task.execution.options?.cwd, "/w");
+  });
+
+  it("does not ask for tasks once discovery is known to be unsupported", async () => {
+    const { mod } = load([]);
+    let asked = false;
+    const unsupported = {
+      isTaskDiscoverySupported: () => false,
+      getTasks: async () => {
+        asked = true;
+        return [];
+      },
+    };
+    const tasks = await new mod.GradleTaskProvider(unsupported).provideTasks();
+    assert.deepStrictEqual(tasks, []);
+    assert.strictEqual(asked, false);
   });
 
   it("falls back to gradle on PATH without a wrapper", async () => {
@@ -87,7 +103,10 @@ describe("GradleTaskProvider", () => {
 describe("GradleTaskProvider task type and subprojects", () => {
   const resolve = (definition: Record<string, string>) => {
     const { mod, folder } = load([WRAPPER]);
-    return new mod.GradleTaskProvider({ getTasks: async () => [] }).resolveTask(
+    return new mod.GradleTaskProvider({
+      isTaskDiscoverySupported: () => true,
+      getTasks: async () => [],
+    }).resolveTask(
       new Task(
         definition as { type: string; task: string },
         folder,
@@ -102,6 +121,7 @@ describe("GradleTaskProvider task type and subprojects", () => {
     const { mod } = load([]);
     assert.strictEqual(mod.GRADLE_TASK_TYPE, "groovy-gradle");
     const provider = new mod.GradleTaskProvider({
+      isTaskDiscoverySupported: () => true,
       getTasks: async () => [{ name: "build", group: "build", project: ":" }],
     });
     const [task] = await provider.provideTasks();

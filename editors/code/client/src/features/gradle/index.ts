@@ -8,7 +8,9 @@ import {
 } from "./GradleTaskProvider";
 
 export function registerGradleFeatures(context: vscode.ExtensionContext) {
-  const gradleService = new GradleService(getClient);
+  const gradleService = new GradleService(getClient, (message) =>
+    getClient()?.outputChannel.info(message),
+  );
   const taskProvider = new GradleTaskProvider(gradleService);
 
   const taskProviderDisposable = vscode.tasks.registerTaskProvider(

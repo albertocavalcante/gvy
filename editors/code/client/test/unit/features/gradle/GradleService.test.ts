@@ -128,4 +128,93 @@ describe("GradleService", () => {
     }
     expect(error?.message).to.match(/not running/);
   });
+  it("asks an unsupporting server only once per client", async () => {
+    mockLanguageClient.sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method",
+      ),
+    );
+
+    await gradleService.getTasks("file:///w");
+    await gradleService.getTasks("file:///w");
+
+    expect(mockLanguageClient.sendRequest.callCount).to.equal(1);
+    expect(gradleService.isTaskDiscoverySupported()).to.equal(false);
+  });
+
+  it("reports an unsupporting server once through the log callback", async () => {
+    const messages: string[] = [];
+    const service = new GradleService(
+      () => mockLanguageClient as unknown as LanguageClient,
+      (message) => messages.push(message),
+    );
+    mockLanguageClient.sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method",
+      ),
+    );
+
+    await service.getTasks("file:///w");
+    await service.getTasks("file:///w");
+
+    expect(messages).to.have.length(1);
+    expect(messages[0]).to.match(/groovy\/gradleTasks/);
+  });
+
+  it("asks again after a restart replaces the client", async () => {
+    mockLanguageClient.sendRequest.rejects(
+      new ResponseError(
+        ErrorCodes.MethodNotFound,
+        "Unsupported request method",
+      ),
+    );
+    const restarted = {
+      sendRequest: sandbox
+        .stub()
+        .resolves([{ name: "build", group: "build", project: ":" }]),
+    };
+    let current: unknown = mockLanguageClient;
+    const service = new GradleService(() => current as LanguageClient);
+
+    await service.getTasks("file:///w");
+    current = restarted;
+    const tasks = await service.getTasks("file:///w");
+
+    expect(restarted.sendRequest.calledOnce).to.equal(true);
+    expect(tasks).to.have.length(1);
+    expect(service.isTaskDiscoverySupported()).to.equal(true);
+  });
+
+  it("does not remember transient failures as unsupported", async () => {
+    mockLanguageClient.sendRequest
+      .onFirstCall()
+      .rejects(new ResponseError(ErrorCodes.InternalError, "import failed"));
+    mockLanguageClient.sendRequest.onSecondCall().resolves([]);
+
+    let failed = false;
+    try {
+      await gradleService.getTasks("file:///w");
+    } catch {
+      failed = true;
+    }
+    await gradleService.getTasks("file:///w");
+
+    expect(failed).to.equal(true);
+    expect(mockLanguageClient.sendRequest.callCount).to.equal(2);
+  });
+
+  it("rejects malformed replies instead of listing bogus tasks", async () => {
+    for (const reply of [{ tasks: [] }, "oops", [{ group: "build" }], [null]]) {
+      mockLanguageClient.sendRequest.resolves(reply);
+      let error: Error | undefined;
+      try {
+        await gradleService.getTasks("file:///w");
+      } catch (e) {
+        error = e as Error;
+      }
+      expect(error?.message, JSON.stringify(reply)).to.match(/malformed/i);
+    }
+  });
 });
