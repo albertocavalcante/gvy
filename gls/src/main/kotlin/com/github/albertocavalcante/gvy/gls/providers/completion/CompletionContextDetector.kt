@@ -236,10 +236,12 @@ internal object CompletionContextDetector {
         val safeChar = character.coerceIn(0, currentLine.length)
         val prefix = currentLine.substring(0, safeChar)
         val trimmed = prefix.trimStart()
-        val pattern =
-            Regex("""\\b${Regex.escape(methodName)}\\s+['\"][^'\"]*$""")
-        return pattern.containsMatchIn(trimmed)
+        // The only possible match is the word directly before the still-open trailing quote.
+        return OPEN_STRING_ARGUMENT.find(trimmed)?.groupValues?.get(1) == methodName
     }
+
+    /** `<word> <whitespace> <quote> <non-quote chars>` anchored at the end of the text before the cursor. */
+    private val OPEN_STRING_ARGUMENT = Regex("""\b(\w+)\s+['"][^'"]*$""")
 }
 
 private fun resolveQualifier(
