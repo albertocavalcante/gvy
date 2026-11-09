@@ -112,4 +112,17 @@ class HmacSignerTest {
         // Then: Should be invalid
         assertThat(valid).isFalse()
     }
+
+    @Test
+    fun `should match known-answer HMAC-SHA256 vector`() {
+        // Expected value computed independently with Python:
+        //   m = hmac.new(b"secret-key", digestmod=hashlib.sha256)
+        //   for p in (b'{"msg_id":"1"}', b"{}", b"{}", b'{"code":"1+1"}'): m.update(p)
+        //   m.hexdigest()
+        val expected = "f29edc2ae347e99e996cf426a9068abd72bbac08f131d7b7d863f0430600434a"
+        val parts = listOf("""{"msg_id":"1"}""", "{}", "{}", """{"code":"1+1"}""")
+
+        assertThat(HmacSigner("secret-key").sign(parts)).isEqualTo(expected)
+        assertThat(HmacSigner("secret-key").verify(expected, parts)).isTrue()
+    }
 }

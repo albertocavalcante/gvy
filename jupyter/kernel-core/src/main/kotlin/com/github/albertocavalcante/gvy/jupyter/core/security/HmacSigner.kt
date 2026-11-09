@@ -27,16 +27,20 @@ class HmacSigner(private val key: String) {
      * @param parts List of JSON strings: [header, parent_header, metadata, content]
      * @return Hex-encoded signature, or empty string if signing is disabled
      */
-    fun sign(parts: List<String>): String {
+    fun sign(parts: List<String>): String = signBytes(parts.map { it.toByteArray(Charsets.UTF_8) })
+
+    /**
+     * Sign raw message parts (exact wire bytes) and return the hex-encoded signature.
+     *
+     * Use this when verifying received messages: decoding to a String and re-encoding is not byte-exact for
+     * input that is not canonical UTF-8.
+     */
+    fun signBytes(parts: List<ByteArray>): String {
         if (key.isEmpty()) return ""
 
         val mac = Mac.getInstance(algorithm)
-        mac.init(SecretKeySpec(key.toByteArray(), algorithm))
-
-        // Concatenate all parts
-        parts.forEach { mac.update(it.toByteArray()) }
-
-        // Return hex-encoded signature
+        mac.init(SecretKeySpec(key.toByteArray(Charsets.UTF_8), algorithm))
+        parts.forEach { mac.update(it) }
         return mac.doFinal().joinToString("") { "%02x".format(it) }
     }
 
@@ -50,5 +54,14 @@ class HmacSigner(private val key: String) {
     fun verify(signature: String, parts: List<String>): Boolean {
         if (key.isEmpty()) return signature.isEmpty()
         return java.security.MessageDigest.isEqual(sign(parts).toByteArray(), signature.toByteArray())
+    }
+
+    /** Verify a signature against the exact wire bytes of the message parts. */
+    fun verifyBytes(signature: String, parts: List<ByteArray>): Boolean {
+        if (key.isEmpty()) return signature.isEmpty()
+        return java.security.MessageDigest.isEqual(
+            signBytes(parts).toByteArray(Charsets.UTF_8),
+            signature.toByteArray(Charsets.UTF_8),
+        )
     }
 }

@@ -40,6 +40,8 @@ data class WireMessage(
     val metadata: String,
     val content: String,
     val buffers: List<ByteArray> = emptyList(),
+    /** Exact received bytes of header, parent_header, metadata, content; set by [fromFrames]. */
+    private val rawSignedParts: List<ByteArray>? = null,
 ) {
     /**
      * Convert to ZMQ multipart frames (without recomputing signature).
@@ -71,7 +73,9 @@ data class WireMessage(
      */
     fun hasValidSignature(signer: HmacSigner): Boolean {
         if (!signer.isEnabled) return true
-        return signer.verify(signature, listOf(header, parentHeader, metadata, content))
+        val raw = rawSignedParts
+            ?: listOf(header, parentHeader, metadata, content).map { it.toByteArray(Charsets.UTF_8) }
+        return signer.verifyBytes(signature, raw)
     }
 
     /**
@@ -215,6 +219,7 @@ data class WireMessage(
                 metadata = metadata,
                 content = content,
                 buffers = buffers,
+                rawSignedParts = afterDelimiter.subList(IDX_HEADER, IDX_CONTENT + 1).toList(),
             )
         }
     }

@@ -94,4 +94,22 @@ class KernelServerSignatureTest {
         server("", handler).dispatchFrames(frames(""), "shell")
         assertEquals(1, handler.handled.size)
     }
+
+    @Test
+    fun `signature is verified over the raw received bytes`() {
+        // 0xFF is not valid UTF-8: decode/re-encode would change it to U+FFFD and break the signature.
+        val header = Header(msgType = "kernel_info_request", session = "s").toJson().toByteArray()
+        val content = "{\"x\":\"".toByteArray() + byteArrayOf(0xFF.toByte()) + "\"}".toByteArray()
+        val rawParts = listOf(header, "{}".toByteArray(), "{}".toByteArray(), content)
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec("secret".toByteArray(), "HmacSHA256"))
+        rawParts.forEach { mac.update(it) }
+        val signature = mac.doFinal().joinToString("") { "%02x".format(it) }
+        val frames = listOf("id".toByteArray(), WireMessage.DELIMITER.toByteArray(), signature.toByteArray()) + rawParts
+
+        val handler = RecordingHandler()
+        server("secret", handler).dispatchFrames(frames, "shell")
+
+        assertEquals(1, handler.handled.size)
+    }
 }

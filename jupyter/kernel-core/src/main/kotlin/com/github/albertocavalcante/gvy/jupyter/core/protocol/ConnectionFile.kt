@@ -32,6 +32,19 @@ data class ConnectionFile(
     fun isSigningEnabled(): Boolean = key.isNotEmpty()
 
     /**
+     * Fail fast when the connection file asks for a signature scheme this kernel cannot verify.
+     *
+     * Only `hmac-sha256` is implemented. Silently signing/verifying with SHA-256 under another declared
+     * scheme would make every message from the frontend fail authentication (or, worse, hide the mismatch).
+     * Unsigned connections (empty key) ignore the scheme, as in the Jupyter protocol.
+     */
+    fun requireSupportedSignatureScheme() {
+        require(!isSigningEnabled() || signatureScheme == SUPPORTED_SIGNATURE_SCHEME) {
+            "Unsupported signature_scheme '$signatureScheme'; only '$SUPPORTED_SIGNATURE_SCHEME' is supported"
+        }
+    }
+
+    /**
      * Build ZMQ address for shell socket.
      */
     fun shellAddress(): String = "$transport://$ip:$shellPort"
@@ -57,6 +70,8 @@ data class ConnectionFile(
     fun heartbeatAddress(): String = "$transport://$ip:$heartbeatPort"
 
     companion object {
+        const val SUPPORTED_SIGNATURE_SCHEME = "hmac-sha256"
+
         private val json = Json { ignoreUnknownKeys = true }
 
         /**
