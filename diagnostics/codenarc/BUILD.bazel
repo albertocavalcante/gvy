@@ -36,5 +36,6 @@ kt_test(
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_codenarc_CodeNarc",
+        "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
 )
