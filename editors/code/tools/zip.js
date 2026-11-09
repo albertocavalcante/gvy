@@ -248,7 +248,25 @@ function extractOrCopyJar(inputPath, destPath) {
   }
 }
 
+/** @param {string} zipPath @param {string} name @returns {Buffer} */
+function readZipEntry(zipPath, name) {
+  const buffer = fs.readFileSync(zipPath);
+  const eocd = findEndOfCentralDirectory(buffer);
+  if (eocd < 0)
+    throw new Error("Invalid ZIP file: End of Central Directory not found");
+  const entries = parseCentralDirectory(
+    buffer,
+    buffer.readUInt32LE(eocd + 16),
+    buffer.readUInt16LE(eocd + 10),
+  );
+  const matches = entries.filter((entry) => entry.name === name);
+  if (matches.length !== 1)
+    throw new Error(`Expected exactly one ZIP entry: ${name}`);
+  return extractEntry(buffer, matches[0]);
+}
+
 module.exports = {
+  readZipEntry,
   isZipFile,
   listZipEntries,
   extractJarFromZip,

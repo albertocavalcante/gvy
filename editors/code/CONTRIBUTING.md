@@ -325,3 +325,52 @@ Releases are automated through Release Please:
 5. Extension is automatically published to VS Code Marketplace
 
 Thank you for contributing to making Groovy development in VS Code better!
+
+## Build and install this checkout
+
+From the repository root:
+
+```sh
+make ext-doctor
+make ext-vscode-source
+```
+
+The source command builds and stages the current checkout's server, runs its CLI and LSP startup/shutdown smoke checks,
+installs locked extension dependencies, runs helper checks and unit tests, and packages the extension. Before
+installing, it verifies that the VSIX contains the exact staged server and compiled client. It never falls back to a
+release, nightly, or another checkout. It does not fetch Git updates; select the desired revision first. Local changes
+are allowed and reported as `dirty` in the receipt.
+
+Prerequisites: JDK 21+, Node 24+, pnpm 12+, Git, and a compatible VS Code CLI. Set `JAVA_HOME` to the build JDK. Build
+storage and the Gradle cache need at least 1 GiB free each; a cold build may need more. Choose another build location
+when space is limited:
+
+```sh
+node editors/code/tools/install-extension.js --from-source \
+  --build-root /path/with-space/build \
+  --java-home /path/to/jdk21 --installer code --json 2>source-build.log
+```
+
+`GVY_BUILD_ROOT` is the environment equivalent of `--build-root`. The default is `editors/code/dist/source/`.
+`GRADLE_USER_HOME` remains authoritative when set; otherwise the command keeps its Gradle cache inside the build root.
+The command checks the requested editor before building and never substitutes another editor. It leaves Java and editor
+settings unchanged.
+
+The build root contains `artifacts/gvy-source.vsix` and `artifacts/install-result.json` with the checkout SHA, dirty
+status, versions, artifact hashes, and final stage. `--json` emits one result object on stdout; command logs go to
+stderr. For a failed build, inspect the reported stage and log. `--package-only` builds and verifies without installing.
+`--doctor` checks prerequisites without building, although it may create build/cache directories.
+
+A source installation holds guards in the extension directory and build root. Concurrent installs fail rather than
+sharing intermediate files. If an interrupted process leaves `.source-install.lock`, inspect its `owner.json` and verify
+the recorded process has stopped before removing that guard and retrying.
+
+To reinstall an existing package without building:
+
+```sh
+node editors/code/tools/install-extension.js --vsix /path/to/gvy-source.vsix --installer code
+```
+
+This uses VS Code's normal extension replacement operation. Keep a previous VSIX if you need to roll back; build and
+verification failures do not invoke the editor installer. The source command retains its build/cache for fast repeat
+runs.

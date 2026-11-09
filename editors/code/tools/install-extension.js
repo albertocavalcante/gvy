@@ -1,18 +1,14 @@
 #!/usr/bin/env node
+// @ts-check
 
 const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 
 const REPO_ROOT = path.join(__dirname, "..");
-const DEFAULT_INSTALLERS = [
-  "code",
-  "code-insiders",
-  "agy",
-  "cursor",
-  "cursor-insiders",
-];
+const { installerCommand, findInstaller } = require("./editor-command.js");
 
+/** @param {string[]} argv @param {number} index @param {string} flag */
 function expectValue(argv, index, flag) {
   if (index >= argv.length || argv[index].startsWith("--")) {
     throw new Error(`Missing value for ${flag} option.`);
@@ -20,26 +16,47 @@ function expectValue(argv, index, flag) {
   return argv[index];
 }
 
+/** @param {string[]} argv */
 function parseArgs(argv = []) {
   const parsed = {
-    tag: null,
+    tag: /** @type {string | null} */ (null),
     nightly: false,
     latest: false,
-    local: null,
-    url: null,
-    checksum: null,
-    channel: null,
+    local: /** @type {string | null} */ (null),
+    url: /** @type {string | null} */ (null),
+    checksum: /** @type {string | null} */ (null),
+    channel: /** @type {string | null} */ (null),
     forceDownload: false,
-    installer: null,
+    installer: /** @type {string | null} */ (null),
     packageOnly: false,
-    vsix: null,
+    vsix: /** @type {string | null} */ (null),
     help: false,
-    unknown: [],
+    fromSource: false,
+    doctor: false,
+    json: false,
+    buildRoot: /** @type {string | null} */ (null),
+    javaHome: /** @type {string | null} */ (null),
+    unknown: /** @type {string[]} */ ([]),
   };
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     switch (arg) {
+      case "--from-source":
+        parsed.fromSource = true;
+        break;
+      case "--doctor":
+        parsed.doctor = true;
+        break;
+      case "--json":
+        parsed.json = true;
+        break;
+      case "--build-root":
+        parsed.buildRoot = expectValue(argv, ++i, arg);
+        break;
+      case "--java-home":
+        parsed.javaHome = expectValue(argv, ++i, arg);
+        break;
       case "--tag":
         parsed.tag = expectValue(argv, i + 1, "--tag");
         i += 1;
@@ -92,6 +109,7 @@ function parseArgs(argv = []) {
   return parsed;
 }
 
+/** @param {string} cmd @param {string[]} args @param {import("node:child_process").SpawnSyncOptions} options */
 function runCommand(cmd, args, options = {}) {
   const result = spawnSync(cmd, args, {
     stdio: "inherit",
@@ -108,72 +126,7 @@ function runCommand(cmd, args, options = {}) {
   }
 }
 
-// Characters cmd.exe interprets even inside double quotes, or that end
-// them. Parentheses are safe when quoted ("Program Files (x86)").
-const WINDOWS_SHELL_META = /[\r\n\0"%!^&|<>]/u;
-
-/**
- * How to spawn an editor CLI. On Windows these are .cmd launchers (code.cmd,
- * cursor.cmd): Node finds them only through cmd.exe's PATHEXT lookup and
- * refuses to spawn .cmd files without a shell (CVE-2024-27980), so they run
- * through cmd with every argument quoted.
- */
-function installerCommand(cmd, args, platform = process.platform) {
-  if (platform !== "win32") {
-    return { cmd, args, shell: false };
-  }
-  for (const value of [cmd, ...args]) {
-    if (WINDOWS_SHELL_META.test(value)) {
-      throw new Error(
-        `Argument is unsafe for the Windows command shell: ${value}`,
-      );
-    }
-  }
-  return {
-    cmd: `"${cmd}"`,
-    args: args.map((arg) => `"${arg}"`),
-    shell: true,
-  };
-}
-
-function commandExists(cmd, platform = process.platform, spawn = spawnSync) {
-  // Throws for a name cmd cannot run safely.
-  const invocation = installerCommand(cmd, ["--version"], platform);
-  const result = spawn(invocation.cmd, invocation.args, {
-    stdio: "ignore",
-    shell: invocation.shell,
-  });
-  if (result.error) {
-    return false;
-  }
-  if (invocation.shell) {
-    // cmd itself always starts; a missing command exits non-zero.
-    return result.status === 0;
-  }
-  return result.status === 0 || result.status === 1; // some CLIs return 1 for --version
-}
-
-function findInstaller(
-  preferred,
-  platform = process.platform,
-  spawn = spawnSync,
-) {
-  // An explicitly requested installer that cannot be run safely is an error,
-  // not a reason to silently pick another one.
-  if (preferred && commandExists(preferred, platform, spawn)) {
-    return preferred;
-  }
-  for (const candidate of DEFAULT_INSTALLERS) {
-    if (candidate === preferred) continue;
-    try {
-      if (commandExists(candidate, platform, spawn)) return candidate;
-    } catch {
-      // not runnable through cmd; try the next one
-    }
-  }
-  return null;
-}
-
+/** @param {string | null} explicitPath */
 function findVsix(explicitPath) {
   if (explicitPath) {
     const resolved = path.resolve(explicitPath);
@@ -205,9 +158,10 @@ function findVsix(explicitPath) {
 // Selection variables read by tools/prepare-server.js.
 const SELECTION_VARS = ["GLS_TAG", "GLS_CHANNEL", "GLS_LOCAL_JAR", "GLS_URL"];
 
+/** @param {Partial<ReturnType<typeof parseArgs>>} args */
 function buildEnv(args) {
   const env = { ...process.env };
-  const select = (name, value) => {
+  const select = (/** @type {string} */ name, /** @type {string} */ value) => {
     for (const key of SELECTION_VARS) delete env[key];
     delete env.USE_LATEST_GLS;
     delete env.GLS_USE_PINNED;
@@ -246,6 +200,7 @@ function buildEnv(args) {
  * script (npm_execpath) so no .cmd shim is spawned; Node refuses to spawn
  * .cmd files without a shell on Windows (CVE-2024-27980).
  */
+/** @param {NodeJS.ProcessEnv} env @param {NodeJS.Platform} platform */
 function packageCommand(env = process.env, platform = process.platform) {
   const args = ["run", "package"];
   if (env.npm_execpath) {
@@ -263,6 +218,11 @@ function printHelp() {
 Usage: node tools/install-extension.js [options]
 
 Options:
+  --from-source         Build, verify, and install this checkout (no release fallback)
+  --doctor              Check source-build prerequisites without building
+  --build-root <path>   Place Gradle cache, build outputs and artifacts here
+  --java-home <path>    JDK 21+ for the source build
+  --json                Emit a JSON source-install result; logs go to stderr
   --tag <tag>            Bundle a specific Groovy LSP release tag
   --nightly              Bundle the latest nightly/prerelease Groovy LSP
   --latest               Bundle the latest stable Groovy LSP release
@@ -283,16 +243,61 @@ Token resolution (for GitHub artifact downloads):
   console.log(help);
 }
 
-function main() {
-  const args = parseArgs(process.argv.slice(2));
+/** @param {string[]} argv */
+function main(argv = process.argv.slice(2)) {
+  const args = parseArgs(argv);
 
   if (args.help) {
     printHelp();
     return;
   }
 
-  if (args.unknown.length > 0) {
-    console.warn(`Ignoring unknown options: ${args.unknown.join(", ")}`);
+  if (args.unknown.length > 0)
+    throw new Error(`Unknown options: ${args.unknown.join(", ")}`);
+  const selectors = [
+    args.tag,
+    args.nightly,
+    args.latest,
+    args.channel,
+    args.local,
+    args.url,
+    args.vsix,
+    args.fromSource || args.doctor,
+  ].filter(Boolean);
+  if (selectors.length > 1)
+    throw new Error(
+      "Choose exactly one source: --from-source, --local, --vsix, --tag, --latest, --nightly, --channel, or --url",
+    );
+  if (args.fromSource || args.doctor) {
+    const { installFromSource } = require("./source-install.js");
+    const result = installFromSource({
+      root: path.resolve(REPO_ROOT, "..", ".."),
+      ...args,
+    });
+    if (args.json) console.log(JSON.stringify(result));
+    else
+      console.log(
+        `Source ${args.doctor ? "preflight passed" : args.packageOnly ? "package verified" : "installation verified"}. Build root: ${result.buildRoot}`,
+      );
+    return;
+  }
+  if (args.buildRoot || args.javaHome)
+    throw new Error(
+      "--build-root and --java-home require --from-source or --doctor",
+    );
+  if (args.vsix && args.packageOnly)
+    throw new Error("--package-only cannot be combined with --vsix");
+  if (args.vsix) {
+    const vsix = findVsix(args.vsix);
+    const installer = findInstaller(args.installer);
+    if (!installer) throw new Error("No supported editor installer found");
+    const install = installerCommand(installer, [
+      "--install-extension",
+      vsix,
+      "--force",
+    ]);
+    runCommand(install.cmd, install.args, { shell: install.shell });
+    return;
   }
 
   const env = buildEnv(args);
@@ -320,6 +325,7 @@ function main() {
   const install = installerCommand(installer, [
     "--install-extension",
     vsixPath,
+    "--force",
   ]);
   runCommand(install.cmd, install.args, {
     cwd: REPO_ROOT,
@@ -329,6 +335,8 @@ function main() {
 }
 
 module.exports = {
+  parseArgs,
+  main,
   buildEnv,
   packageCommand,
   installerCommand,
@@ -338,7 +346,21 @@ module.exports = {
 if (require.main === module) {
   try {
     main();
-  } catch (error) {
+  } catch (caught) {
+    const error =
+      /** @type {Error & {stage?: string, installed?: boolean, receipt?: string}} */ (
+        caught
+      );
+    if (process.argv.includes("--json"))
+      console.log(
+        JSON.stringify({
+          success: false,
+          error: error.message,
+          stage: error.stage,
+          installed: error.installed,
+          receipt: error.receipt,
+        }),
+      );
     console.error(`Failed to install extension: ${error.message}`);
     process.exit(1);
   }

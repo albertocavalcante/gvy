@@ -2,6 +2,7 @@ import * as assert from "assert";
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const tool = require("../../../../tools/install-extension.js") as {
+  main: (argv: string[]) => void;
   buildEnv: (args: Record<string, unknown>) => NodeJS.ProcessEnv;
   packageCommand: (
     env: NodeJS.ProcessEnv,
@@ -169,5 +170,40 @@ describe("tools/install-extension", () => {
         },
       );
     });
+  });
+});
+
+describe("installer source safety", () => {
+  it("does not fall back when the requested editor is missing", () => {
+    assert.throws(
+      () =>
+        tool.findInstaller("missing-editor", "darwin", () => ({ status: 127 })),
+      /requested installer/i,
+    );
+  });
+});
+
+describe("installer argument contract", () => {
+  it("rejects conflicting source selectors before running commands", () => {
+    assert.throws(
+      () => tool.main(["--from-source", "--latest"]),
+      /Choose exactly one source/,
+    );
+    assert.throws(() => tool.main(["--unknown"]), /Unknown options/);
+  });
+  it("rejects build-only options outside source mode", () => {
+    assert.throws(
+      () => tool.main(["--build-root", "/somewhere"]),
+      /require --from-source/,
+    );
+  });
+});
+
+describe("existing VSIX no-install guard", () => {
+  it("rejects --package-only before any existing VSIX can be installed", () => {
+    assert.throws(
+      () => tool.main(["--vsix", "already-built.vsix", "--package-only"]),
+      /cannot be combined/,
+    );
   });
 });

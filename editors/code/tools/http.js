@@ -80,7 +80,7 @@ async function followRedirects(url, maxRedirects, actionLabel, once) {
     redirectCount += 1
   ) {
     const urlObj = new URL(currentUrl);
-    // eslint-disable-next-line no-await-in-loop
+
     const result = await once(urlObj);
 
     if (result.redirectUrl) {
@@ -202,7 +202,7 @@ async function fetchJson(url, options = {}) {
   try {
     return JSON.parse(text);
   } catch (error) {
-    throw new Error(`Failed to parse JSON: ${error.message}`);
+    throw new Error(`Failed to parse JSON: ${error.message}`, { cause: error });
   }
 }
 
