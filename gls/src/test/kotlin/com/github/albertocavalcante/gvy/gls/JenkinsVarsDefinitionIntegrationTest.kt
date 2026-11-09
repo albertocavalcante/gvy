@@ -124,6 +124,95 @@ class JenkinsVarsDefinitionIntegrationTest {
         )
     }
 
+    @Test
+    fun `local variable named like a vars step resolves to its declaration`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "def deployApp = 'local'\nprintln deployApp"
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "println deployApp" (line 1, char 8-16)
+        val definitions = requestDefinitionAt(uri, Position(1, 10))
+
+        assertEquals(1, definitions.size, "Should have exactly one definition, but was: $definitions")
+        assertEquals(uri, definitions[0].uri, "Local variable must resolve within the Jenkinsfile")
+        assertEquals(0, definitions[0].range.start.line, "Local variable must resolve to its declaration line")
+    }
+
+    @Test
+    fun `script method named like a vars step resolves to the script method`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "def deployApp() {\n    echo 'local'\n}\nnode {\n    deployApp()\n}"
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "    deployApp()" (line 4, char 4-12)
+        val definitions = requestDefinitionAt(uri, Position(4, 6))
+
+        assertEquals(1, definitions.size, "Should have exactly one definition, but was: $definitions")
+        assertEquals(uri, definitions[0].uri, "Script method call must resolve within the Jenkinsfile")
+        assertEquals(0, definitions[0].range.start.line, "Script method call must resolve to the local method")
+    }
+
+    @Test
+    fun `helper method in a methods-only vars file resolves to the local method`(): Unit = runBlocking {
+        // A vars file with only method declarations has no top-level statements, so Groovy gives its
+        // script class no source position and the AST tracker never records it as a parent.
+        // The test server sends no jenkins.filePatterns, so the default vars/*.groovy pattern enables Jenkins mode.
+        val varsFile = workspaceRoot.resolve("vars/buildPlugin.groovy")
+        val content = "def call() {\n    deployApp()\n    buildPlugin()\n}\n\ndef deployApp() {\n    echo 'local'\n}"
+        Files.writeString(varsFile, content)
+        val uri = varsFile.toUri().toString()
+
+        openDocument(uri, content)
+
+        // Guard: an unshadowed global in the same file still resolves to vars/, so Jenkins mode is active.
+        // Position at 'buildPlugin' in "    buildPlugin()" (line 2, char 4-14)
+        val globalDefinitions = requestDefinitionAt(uri, Position(2, 6))
+        assertEquals(1, globalDefinitions.size, "buildPlugin() should resolve, but was: $globalDefinitions")
+        assertTrue(
+            globalDefinitions[0].uri.endsWith("vars/buildPlugin.groovy"),
+            "buildPlugin() should resolve to vars/buildPlugin.groovy, but was: ${globalDefinitions[0].uri}",
+        )
+
+        // Position at 'deployApp' in "    deployApp()" (line 1, char 4-12)
+        val definitions = requestDefinitionAt(uri, Position(1, 6))
+
+        assertEquals(1, definitions.size, "Should have exactly one definition, but was: $definitions")
+        assertEquals(uri, definitions[0].uri, "Helper call must resolve within the vars file")
+        assertEquals(5, definitions[0].range.start.line, "Helper call must resolve to the local helper method")
+    }
+
+    @Test
+    fun `call on an explicit receiver does not resolve to vars file`(): Unit = runBlocking {
+        val uri = workspaceRoot.resolve("Jenkinsfile").toUri().toString()
+        val content = "def helper = [:]\nhelper.deployApp()"
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "helper.deployApp()" (line 1, char 7-15)
+        val definitions = requestDefinitionAt(uri, Position(1, 10))
+
+        assertTrue(
+            definitions.none { it.uri.endsWith("vars/deployApp.groovy") },
+            "helper.deployApp() must not resolve to vars/deployApp.groovy, but was: ${definitions.map { it.uri }}",
+        )
+    }
+
+    @Test
+    fun `call in a non-Jenkins source file does not resolve to vars file`(): Unit = runBlocking {
+        val srcFile = workspaceRoot.resolve("src/org/example/Deployer.groovy")
+        val content = "package org.example\n\nclass Deployer {\n    void run() {\n        deployApp()\n    }\n}"
+        Files.writeString(srcFile, content)
+        val uri = srcFile.toUri().toString()
+
+        openDocument(uri, content)
+        // Position at 'deployApp' in "        deployApp()" (line 4, char 8-16)
+        val definitions = requestDefinitionAt(uri, Position(4, 10))
+
+        assertTrue(
+            definitions.none { it.uri.endsWith("vars/deployApp.groovy") },
+            "deployApp() in a src/ class must not resolve to vars/, but was: ${definitions.map { it.uri }}",
+        )
+    }
+
     /**
      * FIXME: src/ class resolution is partially implemented - infrastructure is in place (src/ in source roots,
      * class name matching for simple/fully-qualified names) but the cursor-to-AST-node resolution doesn't find
