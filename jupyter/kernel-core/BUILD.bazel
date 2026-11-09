@@ -18,9 +18,10 @@ kt_library(
 kt_test(
     name = "kernel-core_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
+    # Grants the tests access to the library's `internal` API (e.g. KernelServer.dispatchFrames).
+    associates = [":kernel-core"],
     test_packages = ["com.github.albertocavalcante.gvy.jupyter.core"],
     deps = [
-        ":kernel-core",
         "//repl",
         "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
