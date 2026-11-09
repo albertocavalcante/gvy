@@ -391,14 +391,34 @@ function installFromSource(options) {
       receipt.stage = stage;
       finishReceipt(receiptPath, receipt, locks);
     } else {
-      for (const lock of locks.reverse())
-        fs.rmSync(lock, { recursive: true, force: true });
+      const failures = releaseLocks(locks);
+      if (failures.length)
+        console.error("Guard cleanup also failed:", failures);
     }
   }
 }
 
+/** Attempt every owned guard even when a build volume has disconnected.
+ * @param {string[]} locks @param {(lock: string) => void} remove @returns {Error[]}
+ */
+function releaseLocks(
+  locks,
+  remove = (lock) => fs.rmSync(lock, { recursive: true, force: true }),
+) {
+  const failures = [];
+  for (const lock of [...locks].reverse()) {
+    try {
+      remove(lock);
+    } catch (error) {
+      failures.push(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+  return failures;
+}
+
 /** @param {string} file @param {Record<string, unknown>} receipt @param {string[]} locks
  * @param {(file: string, contents: string) => void} write
+ * @param {(lock: string) => void} remove
  */
 function finishReceipt(
   file,
@@ -408,22 +428,27 @@ function finishReceipt(
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, contents);
   },
+  remove = (lock) => fs.rmSync(lock, { recursive: true, force: true }),
 ) {
+  /** @type {Error[]} */
+  const failures = [];
   try {
     write(file, JSON.stringify(receipt, null, 2) + "\n");
   } catch (error) {
-    if (receipt.error) console.error("Could not save failure receipt:", error);
+    failures.push(error instanceof Error ? error : new Error(String(error)));
+  }
+  failures.push(...releaseLocks(locks, remove));
+  if (failures.length) {
+    if (receipt.error)
+      console.error("Could not finalize failure receipt/guards:", failures);
     else
       throw Object.assign(
         new Error(
-          `Source stage '${receipt.stage}' completed, but its receipt could not be saved`,
-          { cause: error },
+          `Source stage '${receipt.stage}' completed, but receipt/guard finalization failed`,
+          { cause: new AggregateError(failures) },
         ),
         { stage: receipt.stage, installed: receipt.stage === "installed" },
       );
-  } finally {
-    for (const lock of locks.reverse())
-      fs.rmSync(lock, { recursive: true, force: true });
   }
 }
 
@@ -436,4 +461,5 @@ module.exports = {
   verifyVsix,
   installFromSource,
   finishReceipt,
+  releaseLocks,
 };

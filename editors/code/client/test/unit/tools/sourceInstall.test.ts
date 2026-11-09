@@ -18,6 +18,7 @@ const {
   replaceLocalJar,
   verifyVsix,
   finishReceipt,
+  releaseLocks,
 } = require("../../../../tools/source-install.js") as {
   createSourcePlan: (
     root: string,
@@ -31,6 +32,7 @@ const {
     dest: string,
     validate: (file: string) => void,
   ) => void;
+  releaseLocks: (locks: string[], remove: (lock: string) => void) => Error[];
   finishReceipt: (
     file: string,
     receipt: Record<string, unknown>,
@@ -196,5 +198,18 @@ describe("receipt failure recovery", () => {
       },
     );
     assert.strictEqual(fs.existsSync(lock), false);
+  });
+});
+
+describe("guard cleanup after volume failure", () => {
+  it("attempts every guard and collects errors without masking a primary failure", () => {
+    const attempted: string[] = [];
+    const errors = releaseLocks(["checkout", "external-volume"], (lock) => {
+      attempted.push(lock);
+      if (lock === "external-volume") throw new Error("volume disconnected");
+    });
+    assert.deepStrictEqual(attempted, ["external-volume", "checkout"]);
+    assert.strictEqual(errors.length, 1);
+    assert.match(errors[0].message, /volume disconnected/);
   });
 });
