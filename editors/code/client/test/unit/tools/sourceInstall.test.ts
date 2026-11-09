@@ -12,6 +12,7 @@ interface Plan {
 }
 const {
   createSourcePlan,
+  javaEnvironment,
   executeBuild,
   localJarMatches,
   sourceEnvironment,
@@ -44,10 +45,31 @@ const {
     jar: string,
     bundle: string,
   ) => { jar: string; bundle: string; vsix: string };
+  javaEnvironment: (
+    env: NodeJS.ProcessEnv,
+    platform: NodeJS.Platform,
+  ) => NodeJS.ProcessEnv;
   sourceEnvironment: (env: NodeJS.ProcessEnv, jar: string) => NodeJS.ProcessEnv;
 };
 
 describe("source installation contract", () => {
+  it("preserves Windows tool directories when selecting Java", () => {
+    const inherited = {
+      Path: "C:\\tools;C:\\Windows\\System32",
+      JAVA_HOME: "C:\\jdk",
+    };
+    const env = javaEnvironment(inherited, "win32");
+    assert.strictEqual(env.PATH, "C:\\jdk\\bin;" + inherited.Path);
+    assert.strictEqual(env.Path, undefined);
+    assert.strictEqual(inherited.Path, "C:\\tools;C:\\Windows\\System32");
+    const plan = createSourcePlan("/repo", "/scratch", {
+      JAVA_HOME: "/jdk",
+      PATH: "/tools",
+    });
+    for (const step of plan.steps)
+      assert.strictEqual(step.env.PATH, plan.steps[0].env.PATH);
+    assert.strictEqual(plan.steps[0].env.PATH?.split(path.delimiter).length, 2);
+  });
   it("stages and smoke-tests this checkout before packaging its exact jar", () => {
     const plan = createSourcePlan("/repo with spaces", "/scratch build", {});
     assert.ok(

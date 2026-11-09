@@ -205,6 +205,11 @@ subprojects {
         buildUponDefaultConfig = true
         setSource(files("src"))
         autoCorrect = true
+        // Match the normal detekt task: existing module debt must not prevent fixes.
+        val moduleBaseline = file("detekt-baseline.xml")
+        if (moduleBaseline.exists()) {
+            baseline.set(moduleBaseline)
+        }
         reports {
             // Disable reports for auto-correct run to keep output clean
             html.required.set(false)

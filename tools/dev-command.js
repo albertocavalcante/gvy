@@ -6,7 +6,7 @@ const root = path.resolve(__dirname, "..");
 
 /** @param {string} cmd @param {string[]} args @param {{cwd?: string, env?: NodeJS.ProcessEnv}} options */
 function command(cmd, args, options = {}) {
-  const invocation = installerCommand(cmd, args);
+  const invocation = installerCommand(cmd, args, process.platform, options);
   const result = spawnSync(invocation.cmd, invocation.args, {
     cwd: root,
     env: process.env,

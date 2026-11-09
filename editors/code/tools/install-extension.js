@@ -210,7 +210,7 @@ function packageCommand(env = process.env, platform = process.platform) {
       shell: false,
     };
   }
-  return { cmd: "pnpm", args, shell: platform === "win32" };
+  return installerCommand("pnpm", args, platform, { env });
 }
 
 function printHelp() {

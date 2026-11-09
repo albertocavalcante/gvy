@@ -171,3 +171,80 @@ test("Git checkout keeps the Justfile LF even with autocrlf enabled", () => {
     "Justfile checkout must retain LF for the formatter",
   );
 });
+
+test(
+  "Windows launcher resolves batch shims and preserves argv and exit status",
+  { skip: process.platform !== "win32" },
+  () => {
+    const bin = path.join(base, "bin with spaces");
+    fs.mkdirSync(bin);
+    const shim = path.join(bin, "fixture-cli.cmd");
+    const recorder = path.join(bin, "record.js");
+    fs.writeFileSync(path.join(bin, "fixture-cli"), "#!/bin/sh\nexit 99\n");
+    fs.writeFileSync(
+      recorder,
+      "require('node:fs').writeFileSync(process.env.GVY_ARGV_LOG, JSON.stringify(process.argv.slice(2))); process.exit(Number(process.env.GVY_EXIT || 0));",
+    );
+    fs.writeFileSync(
+      shim,
+      `@echo off\r\n"${process.execPath}" "${recorder}" %*\r\n`,
+    );
+    const launcher = path.join(__dirname, "dev-command.js");
+    const expected = ["space bearing argument", "C:\\path with spaces\\", ""];
+    for (const executable of ["fixture-cli", shim]) {
+      for (const exit of [0, 7]) {
+        const result = spawnSync(
+          process.execPath,
+          [
+            "-e",
+            `require(${JSON.stringify(launcher)}).command(${JSON.stringify(executable)}, ${JSON.stringify(expected)})`,
+          ],
+          {
+            encoding: "utf8",
+            env: {
+              ...process.env,
+              Path: bin,
+              PATH: bin,
+              PATHEXT: ".COM;.EXE;.BAT;.CMD",
+              GVY_ARGV_LOG: log,
+              GVY_EXIT: String(exit),
+            },
+          },
+        );
+        assert.equal(result.status, exit === 0 ? 0 : 1, result.stderr);
+        assert.deepEqual(JSON.parse(fs.readFileSync(log, "utf8")), expected);
+        if (exit) assert.match(result.stderr, /exited 7/u);
+      }
+    }
+  },
+);
+
+test("Windows lookup ignores POSIX shims and runs native executables directly", () => {
+  const {
+    installerCommand,
+  } = require("../editors/code/tools/editor-command.js");
+  const bin = path.join(base, "shim directory");
+  fs.mkdirSync(bin);
+  fs.writeFileSync(path.join(bin, "fixture"), "POSIX shim");
+  const shim = path.join(bin, "fixture.CMD");
+  fs.writeFileSync(shim, "batch shim");
+  const options = { cwd: base, env: { Path: bin, PATHEXT: ".EXE;.CMD" } };
+  assert.deepEqual(
+    installerCommand("fixture", ["C:\\space path\\"], "win32", options),
+    {
+      cmd: `"${shim}"`,
+      args: ['"C:\\space path\\\\"'],
+      shell: true,
+    },
+  );
+  const exe = path.join(bin, "fixture.EXE");
+  fs.writeFileSync(exe, "native executable");
+  assert.deepEqual(
+    installerCommand("fixture", ["literal & argument"], "win32", options),
+    {
+      cmd: exe,
+      args: ["literal & argument"],
+      shell: false,
+    },
+  );
+});
