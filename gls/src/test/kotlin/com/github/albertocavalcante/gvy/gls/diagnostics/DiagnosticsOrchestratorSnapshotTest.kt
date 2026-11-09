@@ -329,7 +329,7 @@ class DiagnosticsOrchestratorSnapshotTest {
         advanceUntilIdle()
         assertNull(fixture.documents.getSnapshot(uri))
         assertTrue(fixture.publications.isEmpty())
-        coVerify(exactly = 1) { fixture.indexing.refreshAfterClose(uri) }
+        coVerify(exactly = 1) { fixture.indexing.refreshAfterClose(uri, any()) }
         coVerify(exactly = 1) { fixture.compilation.refreshSemanticFromDisk(listOf(uri)) }
     }
 
@@ -345,7 +345,7 @@ class DiagnosticsOrchestratorSnapshotTest {
 
         advanceUntilIdle()
         assertNull(fixture.documents.getSnapshot(uri))
-        coVerify(exactly = 1) { fixture.indexing.refreshAfterClose(uri) }
+        coVerify(exactly = 1) { fixture.indexing.refreshAfterClose(uri, any()) }
         coVerify(exactly = 1) { fixture.compilation.refreshSemanticFromDisk(listOf(uri)) }
     }
 

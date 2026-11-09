@@ -34,6 +34,7 @@ class SymbolIndexingServiceTest {
     private lateinit var workerSessionManager: WorkerSessionManager
     private lateinit var workspaceManager: WorkspaceManager
     private val testDispatcher = UnconfinedTestDispatcher()
+    private val ownership = ArtifactOwnership()
 
     @BeforeTest
     fun setup() {
@@ -48,6 +49,7 @@ class SymbolIndexingServiceTest {
             ioDispatcher = testDispatcher,
             workerSessionManager = workerSessionManager,
             workspaceManager = workspaceManager,
+            ownership = ownership,
         )
     }
 
@@ -59,8 +61,8 @@ class SymbolIndexingServiceTest {
         }
         val uri = file.toUri()
         var open = false
-        val racing = SymbolIndexingService(testDispatcher, workerSessionManager, workspaceManager) { open }
-        val bufferIndex = racing.indexCompiled(uri, "class Buffer {}", mockk(relaxed = true))
+        val racing = SymbolIndexingService(testDispatcher, workerSessionManager, workspaceManager, ownership) { open }
+        val bufferIndex = racing.ensureIndexed(ownership.begin(uri), "class Buffer {}") { mockk(relaxed = true) }
         coEvery { workerSessionManager.parse(any<ParseRequest>()) } answers {
             open = true // the user opens the file mid-parse
             createMockParseResult()
@@ -106,9 +108,9 @@ class SymbolIndexingServiceTest {
         val uri = URI.create("file:///test.groovy")
         val astModel = mockk<GroovyAstModel>(relaxed = true)
 
-        val first = indexingService.ensureIndexed(uri, "class A {}") { astModel }
-        val again = indexingService.ensureIndexed(uri, "class A {}") { error("must not rebuild") }
-        val changed = indexingService.ensureIndexed(uri, "class B {}") { astModel }
+        val first = indexingService.ensureIndexed(ownership.begin(uri), "class A {}") { astModel }
+        val again = indexingService.ensureIndexed(ownership.begin(uri), "class A {}") { error("must not rebuild") }
+        val changed = indexingService.ensureIndexed(ownership.begin(uri), "class B {}") { astModel }
 
         assertNotNull(first)
         assertSame(first, again)
@@ -266,7 +268,7 @@ class SymbolIndexingServiceTest {
 
         // Index file2 from a compile result rather than from disk
         val astModel = mockk<GroovyAstModel>(relaxed = true)
-        indexingService.indexCompiled(file2.toUri(), "class Test2 {}", astModel)
+        indexingService.ensureIndexed(ownership.begin(file2.toUri()), "class Test2 {}") { astModel }
 
         val allIndices = indexingService.getAllSymbolIndices()
 

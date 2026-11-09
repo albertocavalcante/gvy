@@ -9,11 +9,16 @@ import java.net.URI
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CompilationCacheServiceTest {
+    private companion object {
+        const val FP = "test-fingerprint"
+    }
+
     private lateinit var cacheService: CompilationCacheService
     private val identity = CompilationIdentity("class Test {}", "test-fingerprint", null)
 
@@ -25,7 +30,7 @@ class CompilationCacheServiceTest {
     @Test
     fun `getCached returns null on cache miss`() {
         val uri = URI.create("file:///test.groovy")
-        val result = cacheService.getCached(uri, "test content")
+        val result = cacheService.getCached(uri, "test content", FP)
 
         assertNull(result)
     }
@@ -36,8 +41,8 @@ class CompilationCacheServiceTest {
         val content = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri, content, parseResult)
-        val result = cacheService.getCached(uri, content)
+        put(uri, content, parseResult)
+        val result = cacheService.getCached(uri, content, FP)
 
         assertNotNull(result)
         assertEquals(parseResult, result)
@@ -49,23 +54,42 @@ class CompilationCacheServiceTest {
         val originalContent = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri, originalContent, parseResult)
-        val result = cacheService.getCached(uri, "class Modified {}")
+        put(uri, originalContent, parseResult)
+        val result = cacheService.getCached(uri, "class Modified {}", FP)
 
         assertNull(result)
     }
 
     @Test
-    fun `getCached without content validation returns cached result`() {
+    fun `content-less read rejects an entry from another configuration`() {
         val uri = URI.create("file:///test.groovy")
-        val content = "class Test {}"
-        val parseResult = createMockParseResult()
+        put(uri, "class Test {}", createMockParseResult())
 
-        cacheService.putCached(uri, content, parseResult)
-        val result = cacheService.getCached(uri)
+        assertNull(cacheService.getCachedWithContent(uri, "other-fingerprint"))
+    }
 
-        assertNotNull(result)
-        assertEquals(parseResult, result)
+    @Test
+    fun `publish with a retired ticket stores nothing`() {
+        val uri = URI.create("file:///test.groovy")
+        val ticket = cacheService.ownership.begin(uri)
+        var alongside = false
+        cacheService.ownership.retire(uri)
+
+        val stored = cacheService.publish(ticket, "class Test {}", createMockParseResult(), FP) { alongside = true }
+
+        assertFalse(stored)
+        assertFalse(alongside, "the other artifacts of a retired compile must not be written either")
+        assertNull(cacheService.getCachedWithContent(uri, FP))
+    }
+
+    @Test
+    fun `retiring one file does not retire another`() {
+        val uri = URI.create("file:///test.groovy")
+        val other = URI.create("file:///other.groovy")
+        val ticket = cacheService.ownership.begin(uri)
+        cacheService.ownership.retire(other)
+
+        assertTrue(cacheService.publish(ticket, "class Test {}", createMockParseResult(), FP))
     }
 
     @Test
@@ -74,8 +98,8 @@ class CompilationCacheServiceTest {
         val content = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri, content, parseResult)
-        val result = cacheService.getCachedWithContent(uri)
+        put(uri, content, parseResult)
+        val result = cacheService.getCachedWithContent(uri, FP)
 
         assertNotNull(result)
         assertEquals(content, result.first)
@@ -88,8 +112,8 @@ class CompilationCacheServiceTest {
         val content = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri, content, parseResult)
-        val result = cacheService.getCached(uri, content)
+        put(uri, content, parseResult)
+        val result = cacheService.getCached(uri, content, FP)
 
         assertNotNull(result)
     }
@@ -100,9 +124,9 @@ class CompilationCacheServiceTest {
         val content = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri, content, parseResult)
+        put(uri, content, parseResult)
         cacheService.invalidate(uri)
-        val result = cacheService.getCached(uri, content)
+        val result = cacheService.getCached(uri, content, FP)
 
         assertNull(result)
     }
@@ -114,12 +138,12 @@ class CompilationCacheServiceTest {
         val content = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri1, content, parseResult)
-        cacheService.putCached(uri2, content, parseResult)
+        put(uri1, content, parseResult)
+        put(uri2, content, parseResult)
         cacheService.clear()
 
-        assertNull(cacheService.getCached(uri1, content))
-        assertNull(cacheService.getCached(uri2, content))
+        assertNull(cacheService.getCached(uri1, content, FP))
+        assertNull(cacheService.getCached(uri2, content, FP))
     }
 
     @Test
@@ -161,12 +185,13 @@ class CompilationCacheServiceTest {
         val parseResult = createMockParseResult()
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.putCached(uri, content, parseResult)
+        put(uri, content, parseResult)
         cacheService.registerCompilation(uri, identity) { deferred }
         cacheService.invalidate(uri)
 
-        assertNull(cacheService.getCached(uri, content))
+        assertNull(cacheService.getCached(uri, content, FP))
         assertNull(cacheService.getActiveCompilation(uri))
+        assertTrue(deferred.isCancelled, "an invalidated job must be cancelled, not only forgotten")
     }
 
     @Test
@@ -176,12 +201,13 @@ class CompilationCacheServiceTest {
         val parseResult = createMockParseResult()
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.putCached(uri, content, parseResult)
+        put(uri, content, parseResult)
         cacheService.registerCompilation(uri, identity) { deferred }
         cacheService.clear()
 
-        assertNull(cacheService.getCached(uri, content))
+        assertNull(cacheService.getCached(uri, content, FP))
         assertNull(cacheService.getActiveCompilation(uri))
+        assertTrue(deferred.isCancelled, "a cleared job must be cancelled, not only forgotten")
     }
 
     @Test
@@ -190,7 +216,7 @@ class CompilationCacheServiceTest {
         val content = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri, content, parseResult)
+        put(uri, content, parseResult)
         val stats = cacheService.getStatistics()
 
         assertTrue(stats.containsKey("cachedResults"))
@@ -217,8 +243,8 @@ class CompilationCacheServiceTest {
         val content = "class Test {}"
         val parseResult = createMockParseResult()
 
-        cacheService.putCached(uri1, content, parseResult)
-        cacheService.putCached(uri2, content, parseResult)
+        put(uri1, content, parseResult)
+        put(uri2, content, parseResult)
         val uris = cacheService.getCachedUris()
 
         assertEquals(2, uris.size)
@@ -227,6 +253,10 @@ class CompilationCacheServiceTest {
     }
 
     // Helper methods
+
+    private fun put(uri: URI, content: String, parseResult: ParseResult) {
+        assertTrue(cacheService.publish(cacheService.ownership.begin(uri), content, parseResult, FP))
+    }
 
     private fun createMockParseResult(): ParseResult {
         val moduleNode = mockk<ModuleNode>(relaxed = true)

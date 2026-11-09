@@ -40,13 +40,15 @@ class ParseResultAccessor(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Gets the cached ParseResult for a URI.
-     * Returns null if not cached or compilation failed.
+     * Gets the cached ParseResult for a URI, compiled under the current workspace configuration.
+     * Returns null if not cached or compilation failed. The entry of a closed file is retired whenever its
+     * buffer closes or the file changes on disk, so this never serves a closed buffer's parse.
      *
      * @param uri The URI of the file
      * @return ParseResult if cached, null otherwise
      */
-    fun getParseResult(uri: URI): ParseResult? = cacheService.getCached(uri)
+    fun getParseResult(uri: URI): ParseResult? =
+        cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint())?.second
 
     /**
      * Gets the AST (ModuleNode) for a URI.
@@ -136,8 +138,12 @@ class ParseResultAccessor(
      * @param uri The URI of the file
      * @return ParseResult if available, null if not cached or re-compilation failed
      */
+    @Suppress("ReturnCount") // guard clauses follow the ticket, which must be taken before the cache read
     suspend fun getValidParseResult(uri: URI): ParseResult? {
-        val cachedResult = cacheService.getCached(uri) ?: return null
+        // Owned before the cache and disk are read: an invalidation meanwhile discards the re-parse below.
+        val ticket = cacheService.ownership.begin(uri)
+        val fingerprint = workspaceManager.getConfigurationFingerprint()
+        val (cachedContent, cachedResult) = cacheService.getCachedWithContent(uri, fingerprint) ?: return null
 
         // Use helper function to check for suspicious Script node
         if (isSuspiciousScript(uri, cachedResult)) {
@@ -147,7 +153,7 @@ class ParseResultAccessor(
             val fileContent = if (sourcePath != null && Files.exists(sourcePath)) {
                 Files.readString(sourcePath)
             } else {
-                cacheService.getCachedWithContent(uri)?.first
+                cachedContent
             }
             val content = fileContent ?: return null
             logger.info {
@@ -167,10 +173,10 @@ class ParseResultAccessor(
                 ),
             )
 
-            // Replace the cached result and its symbol index together, under the current configuration
+            // Replace the cached result and its symbol index together, unless they were retired meanwhile
             if (parseResult.ast != null) {
-                cacheService.putCached(uri, content, parseResult, workspaceManager.getConfigurationFingerprint())
-                symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
+                val symbols = symbolIndexer.prepare(content, parseResult.astModel)
+                cacheService.publish(ticket, content, parseResult, fingerprint) { symbolIndexer.install(uri, symbols) }
             }
             logger.info {
                 "Re-parsed $uri at CONVERSION: classes=${

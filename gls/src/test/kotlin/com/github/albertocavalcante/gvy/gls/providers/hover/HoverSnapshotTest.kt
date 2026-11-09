@@ -89,15 +89,23 @@ class HoverSnapshotTest {
             val cache = fixture.compilation.compilationCacheService
             mockkObject(cache)
             try {
-                every { cache.getCachedWithContent(fixture.uri) } answers {
-                    callOriginal().also { cache.putCached(fixture.uri, ORIGINAL_SOURCE, original) }
+                every { cache.getCachedWithContent(fixture.uri, any()) } answers {
+                    callOriginal().also {
+                        cache.publish(cache.ownership.begin(fixture.uri), ORIGINAL_SOURCE, original, secondArg())
+                    }
                 }
 
                 val hover = fixture.endpoint.hover(fixture.params()).await()
 
                 assertContains(hover.contents.right.value, "Integer")
                 assertEquals(CURRENT_SOURCE, fixture.documents.get(fixture.uri))
-                assertEquals(ORIGINAL_SOURCE, cache.getCachedWithContent(fixture.uri)?.first)
+                assertEquals(
+                    ORIGINAL_SOURCE,
+                    cache.getCachedWithContent(
+                        fixture.uri,
+                        fixture.compilation.workspaceManager.getConfigurationFingerprint(),
+                    )?.first,
+                )
             } finally {
                 unmockkObject(cache)
             }

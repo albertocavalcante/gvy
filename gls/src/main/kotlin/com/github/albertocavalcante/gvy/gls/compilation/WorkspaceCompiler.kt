@@ -48,12 +48,14 @@ data class WorkspaceCompilationResult(
  * @param workerSessionManager The worker session manager for executing compilation
  * @param workspaceManager The workspace manager providing workspace sources and configuration
  * @param semanticIndexer The shared owner of the workspace semantic index
+ * @param ownership Publication fence shared with the other artifacts of the same files
  */
 class WorkspaceCompiler(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
     private val semanticIndexer: SemanticIndexer,
     val dependencyGraph: DependencyGraph = DependencyGraph(),
+    private val ownership: ArtifactOwnership = ArtifactOwnership(),
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -136,11 +138,15 @@ class WorkspaceCompiler(
 
     /** Whether [uri]'s document must be rebuilt from disk; drops it when there is no source file to build from. */
     private fun needsRefresh(uri: URI): Boolean {
+        // Owned before the open check: a reopen in between makes this removal stale (#1184).
+        val ticket = ownership.begin(uri)
         if (semanticIndexer.followsBuffer(uri)) return false
         val path = UriPathConverter.toPath(uri)?.takeIf { it.extension.equals("groovy", ignoreCase = true) }
         // Read once: the file may vanish between a check and the read (a checkout in progress).
         val content = path?.let { runCatching { it.readText() }.getOrNull() }
-        if (content == null) semanticIndexer.remove(uri)
+        if (content == null) {
+            ownership.commit(ticket) { if (!semanticIndexer.followsBuffer(uri)) semanticIndexer.remove(uri) }
+        }
         return content != null && !semanticIndexer.isCurrent(uri, content)
     }
 

@@ -13,6 +13,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
+import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -27,6 +28,7 @@ import java.nio.file.Path
  * Facade service for Groovy compilation, delegating to specialized services for caching,
  * symbol indexing, AST access, engine lifecycle, and orchestration.
  */
+@Suppress("LongParameterList") // all defaulted; the session decorator is a test seam for compile timing
 class GroovyCompilationService(
     parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
@@ -34,6 +36,8 @@ class GroovyCompilationService(
     sourceNavigator: SourceNavigator? = null,
     engineConfig: EngineConfiguration = EngineConfiguration(),
     compilationCacheMaxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
+    /** Wraps every parser session, so a test can hold a compile at an exact point. */
+    workerSessionDecorator: (WorkerSession) -> WorkerSession = { it },
 ) {
     private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
@@ -49,15 +53,20 @@ class GroovyCompilationService(
 
     private val parser = GroovyParserFacade(parentClassLoader)
     private val workerSessionManager = WorkerSessionManager(
-        defaultSession = InProcessWorkerSession(parser),
-        sessionFactory = { InProcessWorkerSession(parser) },
+        defaultSession = workerSessionDecorator(InProcessWorkerSession(parser)),
+        sessionFactory = { workerSessionDecorator(InProcessWorkerSession(parser)) },
     )
 
     // Specialized services
     private val isOpen: (URI) -> Boolean = { uri -> documentProvider?.get(uri) != null }
-    private val cacheService = CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen)
+
+    // One publication fence for every artifact derived from a file (#1184)
+    private val ownership = ArtifactOwnership()
+    private val cacheService =
+        CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen, ownership = ownership)
     val workspaceManager = WorkspaceManager()
-    private val symbolIndexer = SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager, isOpen)
+    private val symbolIndexer =
+        SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager, ownership, isOpen)
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
     val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
@@ -77,6 +86,7 @@ class GroovyCompilationService(
         workspaceManager,
         semanticIndexer,
         dependencyGraph = dependencyGraph,
+        ownership = ownership,
     )
 
     // Managers that handle complex lifecycle and orchestration
@@ -129,7 +139,8 @@ class GroovyCompilationService(
     fun updateEngineConfiguration(newConfig: EngineConfiguration) = engineManager.updateEngineConfiguration(newConfig)
 
     fun getSession(uri: URI): LanguageSession? {
-        val cached = cacheService.getCachedWithContent(uri) ?: return null
+        val cached =
+            cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint()) ?: return null
         val (content, _) = cached
         return engineManager.activeEngine.createSession(uri, content)
     }
@@ -202,19 +213,44 @@ class GroovyCompilationService(
     // Workspace and Cache API
     // ==========================================================================
 
+    /**
+     * Retires every file's artifacts: work that started earlier can no longer publish, and pending jobs are
+     * cancelled. Nothing new can be published between the separate removals.
+     */
     fun clearCaches() = semanticSnapshotGuard.invalidate {
-        cacheService.clear()
-        symbolIndexer.clear()
-        semanticIndexer.clear()
+        ownership.retireAll {
+            cacheService.clear()
+            symbolIndexer.clear()
+            semanticIndexer.clear()
+        }
         invalidateClassLoader()
     }
 
+    /** Retires [uri]'s artifacts, as [clearCaches] does for every file. */
     fun invalidateCache(uri: URI) = semanticSnapshotGuard.invalidate {
-        cacheService.invalidate(uri)
-        symbolIndexer.invalidate(uri)
-        semanticIndexer.remove(uri)
+        ownership.retire(uri) {
+            cacheService.invalidate(uri)
+            symbolIndexer.invalidate(uri)
+            semanticIndexer.remove(uri)
+        }
         logger.debug { "Invalidated cache for: $uri" }
     }
+
+    /**
+     * A buffer for [uri] opened: work begun under an earlier lifecycle (a disk compile, a delayed close
+     * cleanup) can no longer publish. The cached facts stay; content-keyed reads still reuse them.
+     */
+    fun onDocumentOpened(uri: URI) {
+        ownership.advance(uri)
+    }
+
+    /**
+     * The buffer for [uri] closed, or the closed file changed on disk: its cached parse no longer describes
+     * the file, so content-less readers must not see it. Symbol and semantic facts are kept until refreshed
+     * from disk under the returned ticket. Returns null, retiring nothing, when a buffer is open again.
+     */
+    fun onClosedSourceChanged(uri: URI): ArtifactOwnership.Ticket? =
+        ownership.retireClosed(uri, isOpen) { cacheService.invalidate(uri) }
 
     /**
      * Re-derives the semantic document of [uri] from disk: after its buffer was closed, or after the file
@@ -256,11 +292,13 @@ class GroovyCompilationService(
     fun getAst(uri: URI) = parseAccessor.getAst(uri)
 
     /** The source text the cached AST for [uri] was compiled from, so AST positions index into it. */
-    fun getCompiledContent(uri: URI): String? = cacheService.getCachedWithContent(uri)?.first
+    fun getCompiledContent(uri: URI): String? =
+        cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint())?.first
 
     /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
-        cacheService.getCachedWithContent(uri)?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
+        cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint())
+            ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)
     fun getDiagnostics(uri: URI) = parseAccessor.getDiagnostics(uri)

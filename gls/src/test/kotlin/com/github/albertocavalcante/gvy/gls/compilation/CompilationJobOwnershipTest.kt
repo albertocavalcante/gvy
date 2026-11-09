@@ -115,8 +115,9 @@ class CompilationJobOwnershipTest {
     @Test
     fun `an older completion cannot remove a replacement registration`(): Unit = runTest {
         val fixture = Fixture(StandardTestDispatcher(testScheduler))
+        // Different text replaces the registration while the first job is still live (invalidation would
+        // cancel it, completing it before the replacement exists).
         val first = fixture.orchestrator.compileAsync(this, fixture.uri, "class Before {}")
-        fixture.cache.invalidate(fixture.uri)
         lateinit var replacement: Deferred<CompilationResult>
         fixture.onParse = { request ->
             if (request.content == fixture.content) {

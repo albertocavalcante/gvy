@@ -54,35 +54,41 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val errorHandler = dependencies.errorHandler
     private val semanticIndexer = dependencies.semanticIndexer
     private val dependencyGraph = dependencies.dependencyGraph
+    private val ownership = cacheService.ownership
 
     private val logger = KotlinLogging.logger {}
 
     /** The content hash whose degradation was last logged, per file. */
     private val loggedDegradations = ConcurrentHashMap<URI, ParseOutcome>()
 
-    private data class CompilationInput(
-        val uri: URI,
-        val content: String,
-        val publication: SemanticIndexer.Publication?,
-    )
+    /**
+     * The ownership a compile takes before it reads any input: a cache/symbol ticket and a semantic publication,
+     * acquired together so no invalidation can fall between them. Retired work publishes nothing.
+     */
+    private class Claim(val ticket: ArtifactOwnership.Ticket, val publication: SemanticIndexer.Publication?)
+
+    private data class CompilationInput(val uri: URI, val content: String, val claim: Claim)
+
+    private fun claim(uri: URI): Claim {
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer?.begin(uri) }
+        return Claim(ticket, publication)
+    }
 
     /**
      * Compiles Groovy source code and returns the result.
      */
-    suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult =
-        semanticIndexer?.begin(uri).use { compile(uri, content, compilePhase, it) }
+    suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult {
+        val claim = claim(uri)
+        return claim.publication.use { compile(uri, content, compilePhase, claim) }
+    }
 
-    private suspend fun compile(
-        uri: URI,
-        content: String,
-        compilePhase: Int,
-        publication: SemanticIndexer.Publication?,
-    ): CompilationResult {
+    private suspend fun compile(uri: URI, content: String, compilePhase: Int, claim: Claim): CompilationResult {
         logger.debug { "Compiling: $uri (phase=$compilePhase)" }
+        val publication = claim.publication
 
         return runCatching {
-            // TODO(#1184): Capture queued compiler inputs together with their request identity.
-            //   See: https://github.com/albertocavalcante/gvy/issues/1184
+            // Inputs read below may already be newer than the claim; a retirement in between rejects the
+            // publication, so a parse is never stored as though it used another configuration (#1184).
             // Get configuration fingerprint for cache coherency (Issue #743)
             val configFingerprint = workspaceManager.getConfigurationFingerprint()
 
@@ -95,15 +101,15 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 if (isSuspiciousScriptNode) {
                     logger.info { "Cached result has suspicious Script node for $uri, re-compiling" }
                     performCompilation(
-                        CompilationInput(uri, content, publication),
+                        CompilationInput(uri, content, claim),
                         compilePhase,
                         configFingerprint = configFingerprint,
                     )
                 } else {
                     logger.debug { "Using cached parse result for: $uri" }
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
-                    symbolIndexer.ensureIndexed(uri, content) { cachedResult.astModel }
-                    cachedResult.ast?.let {
+                    symbolIndexer.ensureIndexed(claim.ticket, content) { cachedResult.astModel }
+                    cachedResult.ast?.takeIf { ownership.isCurrent(claim.ticket) }?.let {
                         publication?.let { token ->
                             semanticIndexer?.publish(token, content, it, cachedResult.outcome.achievedPhase)
                         }
@@ -112,7 +118,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 }
             } else {
                 performCompilation(
-                    CompilationInput(uri, content, publication),
+                    CompilationInput(uri, content, claim),
                     compilePhase,
                     configFingerprint = configFingerprint,
                 )
@@ -132,7 +138,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         parseMode: ParseMode = ParseMode.WORKSPACE,
         configFingerprint: String? = null,
     ): CompilationResult {
-        val (uri, content, publication) = input
+        val (uri, content, claim) = input
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Get file-specific classpath
@@ -164,15 +170,22 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val ast = parseResult.ast
 
         if (ast != null) {
-            // Cache parse result with configuration fingerprint for coherency (Issue #743)
+            // Cache parse result with configuration fingerprint for coherency (Issue #743), and its symbol
+            // index, as one commit that a retired compile cannot make (#1184)
             val fingerprint = configFingerprint ?: workspaceManager.getConfigurationFingerprint()
-            cacheService.putCached(uri, content, parseResult, fingerprint)
+            val symbols = symbolIndexer.prepare(content, parseResult.astModel)
+            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint) {
+                symbolIndexer.install(uri, symbols)
+            }
 
-            // Index symbols
-            symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
-
-            // Semantic document for cross-file resolution
-            publication?.let { semanticIndexer?.publish(it, content, ast, parseResult.outcome.achievedPhase) }
+            if (published) {
+                // Semantic document for cross-file resolution
+                claim.publication?.let {
+                    semanticIndexer?.publish(it, content, ast, parseResult.outcome.achievedPhase)
+                }
+            } else {
+                logger.debug { "Discarded the result of a retired compile of $uri" }
+            }
         }
 
         return resultMapper.map(parseResult, content)
@@ -246,13 +259,14 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         identity: CompilationIdentity,
     ): Deferred<CompilationResult> {
         // Acquire before exposing queued work, without nesting semantic and registry map locks.
-        val publication = semanticIndexer?.begin(uri)
+        val claim = claim(uri)
+        val publication = claim.publication
         var created = false
         var retainedPublication = false
         try {
             val deferred = cacheService.registerCompilation(uri, identity) {
                 scope.async(ioDispatcher, start = CoroutineStart.LAZY) {
-                    compile(uri, identity.content, Phases.CANONICALIZATION, publication)
+                    compile(uri, identity.content, Phases.CANONICALIZATION, claim)
                 }.also { created = true }
             }
             if (created) {
@@ -305,15 +319,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             return awaitCompilation(uri, pending.identity)
         }
 
-        // Check cache with fingerprint validation
-        cacheService.getCachedWithContent(uri)?.let { (content, parseResult) ->
-            // Validate by attempting to get with fingerprint - if it returns null, cache is stale
-            val validatedResult = cacheService.getCached(uri, content, configFingerprint)
-            if (validatedResult != null) {
-                logger.debug { "Using cached result for: $uri" }
-                return resultMapper.mapFromCache(parseResult, content)
-            }
-            logger.debug { "Cache entry for $uri is stale (fingerprint mismatch), will recompile" }
+        // A closed file's entry is retired when its buffer closes or the file changes, so it follows the disk
+        cacheService.getCachedWithContent(uri, configFingerprint)?.let { (content, parseResult) ->
+            logger.debug { "Using cached result for: $uri" }
+            return resultMapper.mapFromCache(parseResult, content)
         }
 
         // Use on-demand compilation from disk if file exists
@@ -321,14 +330,15 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val path = runCatching { Path.of(uri) }.getOrNull()
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
             logger.debug { "Compiling from disk on-demand: $uri" }
-            return semanticIndexer?.begin(uri).use { publication ->
+            val claim = claim(uri)
+            return claim.publication.use {
                 try {
                     val content = withContext(ioDispatcher) {
                         Files.readString(path)
                     }
                     // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
                     performCompilation(
-                        CompilationInput(uri, content, publication),
+                        CompilationInput(uri, content, claim),
                         parseMode = ParseMode.MINIMAL,
                         configFingerprint = configFingerprint,
                     )

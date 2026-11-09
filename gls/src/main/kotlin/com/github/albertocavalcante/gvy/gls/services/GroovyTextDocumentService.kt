@@ -318,6 +318,8 @@ class GroovyTextDocumentService(
         logger.info { "Document opened: ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
         val content = params.textDocument.text
+        // Fence work of the previous lifecycle before the buffer becomes visible to it.
+        compilationService.onDocumentOpened(uri)
         documentProvider.put(uri, content, params.textDocument.version)
 
         diagnosticsOrchestrator.trigger(uri, content)
@@ -350,12 +352,11 @@ class GroovyTextDocumentService(
             diagnosticsOrchestrator.close(uri)
         } finally {
             // A disconnected client must not prevent restoring disk-backed index state after close.
-            // A reentrant reopen retires this close, including its cleanup of untitled-buffer indices.
-            if (documentProvider.getSnapshot(uri) == null) {
+            // A reentrant reopen retires this close, including its cleanup of untitled-buffer indices:
+            // the refresh owns only the generation this close started.
+            compilationService.onClosedSourceChanged(uri)?.let { closed ->
                 coroutineScope.launch {
-                    // TODO(#1184): Fence queued refresh publication against a later reopen.
-                    //   See: https://github.com/albertocavalcante/gvy/issues/1184
-                    compilationService.symbolIndexingService.refreshAfterClose(uri)
+                    compilationService.symbolIndexingService.refreshAfterClose(uri, closed)
                     compilationService.refreshSemanticFromDisk(listOf(uri))
                 }
             }

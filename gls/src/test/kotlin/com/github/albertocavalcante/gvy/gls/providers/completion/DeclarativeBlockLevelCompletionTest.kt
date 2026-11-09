@@ -123,7 +123,7 @@ class DeclarativeBlockLevelCompletionTest {
         // including the fresh parse acquired when hover recompiles a script.
         mockkObject(cache)
         try {
-            every { cache.getCachedWithContent(uri) } answers {
+            every { cache.getCachedWithContent(uri, any()) } answers {
                 callOriginal()?.also { (_, parse) -> pinStepLookup(parse, uri, models) }
             }
             assertFalse(endpoint.hover(params).await().contents.right.value.contains("Jenkins Step:"))

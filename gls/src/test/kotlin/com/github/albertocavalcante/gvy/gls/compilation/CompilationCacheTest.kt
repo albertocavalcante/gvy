@@ -55,15 +55,13 @@ class CompilationCacheTest {
     }
 
     @Test
-    fun `get without fingerprint ignores fingerprint validation`() {
+    fun `content-less read validates the configuration fingerprint`() {
         val cache = CompilationCache()
 
-        cache.put(uri, content, parseResult, "any-fingerprint")
+        cache.put(uri, content, parseResult, "fingerprint-v1")
 
-        // Old API without fingerprint should still work for backward compatibility
-        val result = cache.get(uri, content)
-
-        assertNotNull(result)
+        assertEquals(content, cache.getWithContent(uri, "fingerprint-v1")?.first)
+        assertNull(cache.getWithContent(uri, "fingerprint-v2"), "an entry from another configuration is stale")
     }
 
     @Test
