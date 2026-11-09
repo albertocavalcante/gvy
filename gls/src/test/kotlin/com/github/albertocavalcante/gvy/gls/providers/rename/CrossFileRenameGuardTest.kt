@@ -37,16 +37,20 @@ class CrossFileRenameGuardTest {
      * Writes the files, compiles the workspace, then opens and compiles [open] as the editor would, under the
      * URI spelling [editorSpelling] gives it (editors spell file URIs differently from `Path.toUri()`).
      */
-    private fun workspace(files: Map<String, String>, open: String, editorSpelling: (URI) -> URI = { it }): URI =
-        runBlocking {
-            val uris = files.mapValues { (name, text) -> write(name, text) }
-            service.workspaceManager.initializeWorkspace(tempDir)
-            service.getWorkspaceCompiler().compileWorkspace()
-            val uri = editorSpelling(checkNotNull(uris[open]))
-            documents.put(uri, files.getValue(open))
-            service.compile(uri, files.getValue(open))
-            uri
-        }
+    private fun workspace(
+        files: Map<String, String>,
+        open: String,
+        indexWorkspace: Boolean = true,
+        editorSpelling: (URI) -> URI = { it },
+    ): URI = runBlocking {
+        val uris = files.mapValues { (name, text) -> write(name, text) }
+        service.workspaceManager.initializeWorkspace(tempDir)
+        if (indexWorkspace) service.getWorkspaceCompiler().compileWorkspace()
+        val uri = editorSpelling(checkNotNull(uris[open]))
+        documents.put(uri, files.getValue(open))
+        service.compile(uri, files.getValue(open))
+        uri
+    }
 
     private fun positionOf(text: String, needle: String, occurrence: Int = 0): Position {
         var index = -1
@@ -58,7 +62,7 @@ class CrossFileRenameGuardTest {
     private fun refusal(block: suspend () -> Unit): String {
         val error = runCatching { runBlocking { block() } }.exceptionOrNull()
         val response = assertNotNull(error as? ResponseErrorException, "expected a refusal, got $error").responseError
-        assertEquals(ResponseErrorCode.InvalidRequest.value, response.code)
+        assertEquals(ResponseErrorCode.RequestFailed.value, response.code)
         return response.message
     }
 
@@ -115,6 +119,145 @@ class CrossFileRenameGuardTest {
         documents.put(b, "class B {\n    def run() { new A().greet() }\n}\n")
 
         assertRefused(uri, a, "greet", "B.groovy", "unsaved changes not analyzed yet")
+    }
+
+    private fun assertRenameRefused(files: Map<String, String>, open: String, needle: String, indexed: Boolean = true) {
+        val uri = workspace(files, open, indexWorkspace = indexed)
+        assertRefused(uri, files.getValue(open), needle, "'$needle'", "not supported yet")
+    }
+
+    private fun assertRenames(uri: URI, text: String, needle: String) = runBlocking {
+        val edit = provider.provideRename(uri.toString(), positionOf(text, needle), "renamedX")
+        assertTrue(edit.documentChanges.isNotEmpty())
+    }
+
+    private val a = "class A {\n    def greet() { 'hi' }\n}\n"
+    private val label = "class A {\n    String label = 'x'\n}\n"
+
+    @Test
+    fun `a closed file the index never saw is refused (P9)`() = assertRenameRefused(
+        mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { new A().greet() }\n}\n"),
+        "A.groovy",
+        "greet",
+        indexed = false,
+    )
+
+    @Test
+    fun `an untyped receiver in another file is refused (P2)`() = assertRenameRefused(
+        mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run(x) { x.greet() }\n}\n"),
+        "A.groovy",
+        "greet",
+    )
+
+    @Test
+    fun `a getter call in another file is refused (P3)`() = assertRenameRefused(
+        mapOf("A.groovy" to label, "B.groovy" to "class B {\n    def run() { new A().getLabel() }\n}\n"),
+        "A.groovy",
+        "label",
+    )
+
+    @Test
+    fun `a setter call in another file is refused (P4)`() = assertRenameRefused(
+        mapOf("A.groovy" to label, "B.groovy" to "class B {\n    def run() { new A().setLabel('y') }\n}\n"),
+        "A.groovy",
+        "label",
+    )
+
+    @Test
+    fun `a boolean is-accessor in another file is refused`() = assertRenameRefused(
+        mapOf(
+            "A.groovy" to "class A {\n    boolean flag = true\n}\n",
+            "B.groovy" to "class B {\n    def run() { new A().isFlag() }\n}\n",
+        ),
+        "A.groovy",
+        "flag",
+    )
+
+    @Test
+    fun `a map constructor key in another file is refused (P5)`() = assertRenameRefused(
+        mapOf("A.groovy" to label, "B.groovy" to "class B {\n    def run() { new A(label: 'y') }\n}\n"),
+        "A.groovy",
+        "label",
+    )
+
+    @Test
+    fun `a static import in another file is refused (P8)`() = assertRenameRefused(
+        mapOf(
+            "A.groovy" to "class A {\n    static String helper() { 'h' }\n}\n",
+            "B.groovy" to "import static A.helper\nclass B {\n    def run() { helper() }\n}\n",
+        ),
+        "A.groovy",
+        "helper",
+    )
+
+    @Test
+    fun `another file that does not compile but mentions the name is refused (P11)`() = assertRenameRefused(
+        mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { new A().greet() }\n    def broken( {\n}\n"),
+        "A.groovy",
+        "greet",
+    )
+
+    @Test
+    fun `a subclass override in another file is refused (P6)`() = assertRenameRefused(
+        mapOf("A.groovy" to a, "B.groovy" to "class B extends A {\n    def greet() { 'b' }\n}\n"),
+        "A.groovy",
+        "greet",
+    )
+
+    @Test
+    fun `an interface implementation in another file is refused (P7)`() = assertRenameRefused(
+        mapOf(
+            "I.groovy" to "interface I {\n    String greet()\n}\n",
+            "C.groovy" to "class C implements I {\n    String greet() { 'c' }\n}\n",
+        ),
+        "I.groovy",
+        "greet",
+    )
+
+    @Test
+    fun `renaming an override whose base is in another file is refused (P10)`() = assertRenameRefused(
+        mapOf(
+            "B.groovy" to "class B extends A {\n    def greet() { 'b' }\n}\n",
+            "A.groovy" to a,
+            "C.groovy" to "class C {\n    def run(A a) { a.greet() }\n}\n",
+        ),
+        "B.groovy",
+        "greet",
+    )
+
+    @Test
+    fun `a private member is not exempt from the text rule`() = assertRenameRefused(
+        mapOf(
+            "A.groovy" to "class A {\n    private def total() { 1 }\n    def go() { total() }\n}\n",
+            "B.groovy" to "class B {\n    def total() { 2 }\n}\n",
+        ),
+        "A.groovy",
+        "total",
+    )
+
+    @Test
+    fun `the word match is whole-word so a longer name does not refuse`(): Unit = runBlocking {
+        val files = mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def greeting() { 'greetings' }\n}\n")
+        assertRenames(workspace(files, open = "A.groovy"), a, "greet")
+    }
+
+    @Test
+    fun `an untitled or Jenkinsfile buffer mentioning the name does not refuse`(): Unit = runBlocking {
+        val files = mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
+        val uri = workspace(files, open = "A.groovy")
+        documents.put(URI.create("untitled:Untitled-1"), "println 'greet'")
+        documents.put(tempDir.resolve("Jenkinsfile").toUri(), "node { echo 'greet' }")
+        documents.put(tempDir.resolve("build.gradle").toUri(), "println 'greet'")
+        documents.put(URI.create("jar:file:///x/lib.jar!/Y.groovy"), "class Y { def greet() {} }")
+
+        assertRenames(uri, a, "greet")
+    }
+
+    @Test
+    fun `a member the closed index never saw but only its own file uses still renames`(): Unit = runBlocking {
+        val own = "class A {\n    def greet() { 'hi' }\n    def run() { greet() }\n}\n"
+        val files = mapOf("A.groovy" to own, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
+        assertRenames(workspace(files, open = "A.groovy", indexWorkspace = false), own, "greet")
     }
 
     @Test

@@ -24,6 +24,8 @@ import com.github.albertocavalcante.gvy.gls.providers.highlight.DocumentHighligh
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.gvy.gls.providers.rename.RenameProvider
+import com.github.albertocavalcante.gvy.gls.providers.rename.RenameRefusedException
+import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceTextCache
 import com.github.albertocavalcante.gvy.gls.providers.selection.SelectionRangeProvider
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.gvy.gls.providers.symbols.toDocumentSymbol
@@ -128,6 +130,9 @@ class GroovyTextDocumentService(
     private var definitionLinkSupport: Boolean = options.definitionLinkSupport
 
     private val logger = KotlinLogging.logger {}
+
+    /** Providers are built per request; this keeps unchanged workspace files cached across rename checks. */
+    private val renameDiskText = WorkspaceTextCache()
 
     fun updateDefinitionLinkSupport(supported: Boolean) {
         definitionLinkSupport = supported
@@ -509,7 +514,7 @@ class GroovyTextDocumentService(
     override fun prepareRename(
         params: PrepareRenameParams,
     ): CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>?> = coroutineScope.future {
-        RenameProvider(compilationService, documentProvider)
+        RenameProvider(compilationService, documentProvider, renameDiskText)
             .providePrepareRename(params.textDocument.uri, params.position)
             ?.let { Either3.forSecond<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>(it) }
     }
@@ -522,13 +527,16 @@ class GroovyTextDocumentService(
         }
 
         try {
-            val renameProvider = RenameProvider(compilationService, documentProvider)
+            val renameProvider = RenameProvider(compilationService, documentProvider, renameDiskText)
             renameProvider.provideRename(
                 params.textDocument.uri,
                 params.position,
                 params.newName,
             )
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: RenameRefusedException) {
+            logger.info { "Rename refused: ${e.message}" }
             throw e
         } catch (e: ResponseErrorException) {
             logger.error { "Rename failed: ${e.message}" }

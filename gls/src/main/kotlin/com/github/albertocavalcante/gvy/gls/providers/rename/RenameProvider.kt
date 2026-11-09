@@ -44,6 +44,8 @@ class RenameProvider private constructor(
     private val compilationService: GroovyCompilationService,
     private val documentSource: RenameDocumentSource,
     private val openBuffers: () -> Map<URI, String> = { emptyMap() },
+    private val diskText: WorkspaceTextCache = WorkspaceTextCache(),
+    private val scanLimits: ScanLimits = ScanLimits(),
 ) {
     /** Current text of a document (open buffer, else file on disk); null if unavailable. */
     constructor(
@@ -56,18 +58,34 @@ class RenameProvider private constructor(
         },
     )
 
-    internal constructor(compilationService: GroovyCompilationService, documents: DocumentProvider) : this(
+    /**
+     * [diskText] should outlive a request (providers are built per request) so unchanged files are not re-read;
+     * [scanLimits] bounds the cross-file check.
+     */
+    internal constructor(
+        compilationService: GroovyCompilationService,
+        documents: DocumentProvider,
+        diskText: WorkspaceTextCache = WorkspaceTextCache(),
+        scanLimits: ScanLimits = ScanLimits(),
+    ) : this(
         compilationService,
         RenameDocumentSource { uri ->
             documents.getSnapshot(uri) ?: readFromDisk(uri)?.let { DocumentSnapshot(it, null) }
         },
         documents::snapshot,
+        diskText,
+        scanLimits,
     )
 
     private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
-    private val crossFileUses =
-        CrossFileUseGuard(checkNotNull(compilationService.getWorkspaceSymbolIndex()), openBuffers)
+    private val crossFileUses = CrossFileUseGuard(
+        checkNotNull(compilationService.getWorkspaceSymbolIndex()),
+        openBuffers,
+        compilationService.workspaceManager::getWorkspaceSources,
+        diskText,
+        scanLimits,
+    )
 
     // Groovy keywords that cannot be used as identifiers
     private val groovyKeywords = setOf(
@@ -138,7 +156,7 @@ class RenameProvider private constructor(
     private fun refuseIfUsedElsewhere(target: RenameTarget) {
         val uses = crossFileUses.usesOutside(target.documentUri, target.definition, target.oldName)
         if (!uses.isEmpty) {
-            val error = ResponseError(ResponseErrorCode.InvalidRequest, uses.message(target.oldName), null)
+            val error = ResponseError(ResponseErrorCode.RequestFailed, uses.message(target.oldName), null)
             throw RenameRefusedException(error)
         }
     }
