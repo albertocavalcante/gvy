@@ -246,11 +246,14 @@ class GroovyCompilationService(
 
     /**
      * The buffer for [uri] closed, or the closed file changed on disk: its cached parse no longer describes
-     * the file, so content-less readers must not see it. Symbol and semantic facts are kept until refreshed
-     * from disk under the returned ticket. Returns null, retiring nothing, when a buffer is open again.
+     * the file, so content-less readers must not see it, and in-flight semantic publications of the old text
+     * are retired. Symbol and semantic facts are kept until refreshed from disk under the returned ticket.
+     * Returns null, retiring nothing, when a buffer is open again.
      */
-    fun onClosedSourceChanged(uri: URI): ArtifactOwnership.Ticket? =
-        ownership.retireClosed(uri, isOpen) { cacheService.invalidate(uri) }
+    fun onClosedSourceChanged(uri: URI): ArtifactOwnership.Ticket? = ownership.retireClosed(uri, isOpen) {
+        cacheService.invalidate(uri)
+        semanticIndexer.retirePublications(uri)
+    }
 
     /**
      * Re-derives the semantic document of [uri] from disk: after its buffer was closed, or after the file

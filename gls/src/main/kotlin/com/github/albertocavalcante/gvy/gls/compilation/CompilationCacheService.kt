@@ -56,17 +56,27 @@ class CompilationCacheService(
      * @param content The content that was compiled
      * @param parseResult The result of compilation
      * @param configFingerprint The workspace configuration fingerprint at compilation time
+     * @param isValid What else must still hold, checked under the same fence (e.g. the buffer is still open)
      * @param alongside Short, non-suspending writes of artifacts derived from the same compile
      */
+    @Suppress("LongParameterList") // one atomic write: what was compiled, under which ticket, and its guards
     internal fun publish(
         ticket: ArtifactOwnership.Ticket,
         content: String,
         parseResult: ParseResult,
         configFingerprint: String,
+        isValid: () -> Boolean = { true },
         alongside: () -> Unit = {},
-    ): Boolean = ownership.commit(ticket) {
-        cache.put(ticket.uri, content, parseResult, configFingerprint)
-        alongside()
+    ): Boolean {
+        var stored = false
+        ownership.commit(ticket) {
+            if (isValid()) {
+                cache.put(ticket.uri, content, parseResult, configFingerprint)
+                alongside()
+                stored = true
+            }
+        }
+        return stored
     }
 
     /**

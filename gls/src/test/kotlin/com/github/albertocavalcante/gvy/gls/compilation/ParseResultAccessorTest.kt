@@ -316,8 +316,8 @@ class ParseResultAccessorTest {
 
         accessor.getValidParseResult(uri)
 
-        verify { cacheService.publish(any(), "class Fingerprinted {}", freshResult, "fp-1", any()) }
-        verify { symbolIndexer.prepare("class Fingerprinted {}", freshResult.astModel) }
+        verify { cacheService.publish(any(), "cached source", freshResult, "fp-1", any(), any()) }
+        verify { symbolIndexer.prepare("cached source", freshResult.astModel) }
     }
 
     @Test

@@ -10,7 +10,6 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Diagnostic
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Path
 
 private const val CONTENT_START_PREVIEW_LENGTH = 50
@@ -129,8 +128,8 @@ class ParseResultAccessor(
      *
      * Unlike [getParseResult], this method checks if the cached result contains a suspicious
      * Script node (which can happen when file was compiled before sourceRoots was populated).
-     * If detected, it parses directly at CONVERSION phase WITHOUT workspaceSources to avoid
-     * name collisions that cause Script fallback.
+     * If detected, it re-parses the entry's own source text directly at CONVERSION phase WITHOUT
+     * workspaceSources to avoid name collisions that cause Script fallback.
      *
      * Use this method when you need to ensure the AST accurately represents the source code
      * structure (e.g., test discovery, Spock detection).
@@ -138,7 +137,6 @@ class ParseResultAccessor(
      * @param uri The URI of the file
      * @return ParseResult if available, null if not cached or re-compilation failed
      */
-    @Suppress("ReturnCount") // guard clauses follow the ticket, which must be taken before the cache read
     suspend fun getValidParseResult(uri: URI): ParseResult? {
         // Owned before the cache and disk are read: an invalidation meanwhile discards the re-parse below.
         val ticket = cacheService.ownership.begin(uri)
@@ -148,14 +146,10 @@ class ParseResultAccessor(
         // Use helper function to check for suspicious Script node
         if (isSuspiciousScript(uri, cachedResult)) {
             logger.info { "Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase" }
-            // Read content directly from file instead of cache to verify content is correct
+            // Re-parse the text this entry was compiled from. Reading the disk instead would publish the file
+            // over an open, unsaved buffer that the entry describes.
+            val content = cachedContent
             val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-            val fileContent = if (sourcePath != null && Files.exists(sourcePath)) {
-                Files.readString(sourcePath)
-            } else {
-                cachedContent
-            }
-            val content = fileContent ?: return null
             logger.info {
                 "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
             }

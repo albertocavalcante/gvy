@@ -13,11 +13,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.Phases
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -40,6 +44,11 @@ data class CompilationOrchestratorDependencies(
     val dependencyGraph: DependencyGraph? = null,
     /** Open editor buffers; [CompilationOrchestrator.ensureCompiled] compiles these before falling back to disk. */
     val documentProvider: DocumentProvider? = null,
+    /**
+     * Owns compiles started on behalf of [CompilationOrchestrator.ensureCompiled] waiters, so a cancelled request
+     * stops waiting without cancelling the work other waiters share.
+     */
+    val waiterScope: CoroutineScope = CoroutineScope(SupervisorJob() + ioDispatcher),
 )
 
 class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
@@ -54,6 +63,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val errorHandler = dependencies.errorHandler
     private val semanticIndexer = dependencies.semanticIndexer
     private val dependencyGraph = dependencies.dependencyGraph
+    private val waiterScope = dependencies.waiterScope
     private val ownership = cacheService.ownership
 
     private val logger = KotlinLogging.logger {}
@@ -61,24 +71,60 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     /** The content hash whose degradation was last logged, per file. */
     private val loggedDegradations = ConcurrentHashMap<URI, ParseOutcome>()
 
+    /** Where a compile's text came from, which decides what must still hold when it publishes. */
+    private enum class Origin {
+        /** An open editor buffer: publishes only while that same open/close lifecycle is current. */
+        BUFFER,
+
+        /** The file on disk: never publishes over a buffer opened meanwhile. */
+        DISK,
+
+        /** Text supplied by a caller for a file that is not open. */
+        UNMANAGED,
+    }
+
     /**
      * The ownership a compile takes before it reads any input: a cache/symbol ticket and a semantic publication,
-     * acquired together so no invalidation can fall between them. Retired work publishes nothing.
+     * acquired together so no invalidation can fall between them. Retired work publishes nothing, and [isValid]
+     * is checked inside the same commit, so a buffer closed (or reopened) meanwhile cannot be republished.
      */
-    private class Claim(val ticket: ArtifactOwnership.Ticket, val publication: SemanticIndexer.Publication?)
+    private class Claim(
+        val ticket: ArtifactOwnership.Ticket,
+        val publication: SemanticIndexer.Publication?,
+        val isValid: () -> Boolean,
+    )
 
     private data class CompilationInput(val uri: URI, val content: String, val claim: Claim)
 
-    private fun claim(uri: URI): Claim {
-        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer?.begin(uri) }
-        return Claim(ticket, publication)
+    private fun claim(uri: URI, origin: Origin): Claim {
+        val (ticket, owned) = ownership.acquire(uri) {
+            semanticIndexer?.begin(uri) to documentProvider?.getIncarnation(uri)
+        }
+        val (publication, incarnation) = owned
+        val isValid: () -> Boolean = when (origin) {
+            Origin.BUFFER -> {
+                { incarnation != null && documentProvider?.getIncarnation(uri) === incarnation }
+            }
+            Origin.DISK -> {
+                { documentProvider?.getSnapshot(uri) == null }
+            }
+            Origin.UNMANAGED -> {
+                { true }
+            }
+        }
+        return Claim(ticket, publication, isValid)
+    }
+
+    private fun originOf(uri: URI): Origin {
+        val open = documentProvider?.getSnapshot(uri) != null
+        return if (open) Origin.BUFFER else Origin.UNMANAGED
     }
 
     /**
      * Compiles Groovy source code and returns the result.
      */
     suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult {
-        val claim = claim(uri)
+        val claim = claim(uri, originOf(uri))
         return claim.publication.use { compile(uri, content, compilePhase, claim) }
     }
 
@@ -174,7 +220,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // index, as one commit that a retired compile cannot make (#1184)
             val fingerprint = configFingerprint ?: workspaceManager.getConfigurationFingerprint()
             val symbols = symbolIndexer.prepare(content, parseResult.astModel)
-            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint) {
+            val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
                 symbolIndexer.install(uri, symbols)
             }
 
@@ -259,7 +305,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         identity: CompilationIdentity,
     ): Deferred<CompilationResult> {
         // Acquire before exposing queued work, without nesting semantic and registry map locks.
-        val claim = claim(uri)
+        val claim = claim(uri, if (identity.document != null) Origin.BUFFER else Origin.UNMANAGED)
         val publication = claim.publication
         var created = false
         var retainedPublication = false
@@ -280,49 +326,69 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         }
     }
 
-    private suspend fun awaitCompilation(uri: URI, identity: CompilationIdentity): CompilationResult {
-        val scope = CoroutineScope(currentCoroutineContext())
-        return try {
-            scheduleCompilation(scope, uri, identity).await()
-        } catch (e: CancellationException) {
-            // A separate owner may have cancelled shared work; a cancelled waiter must never retry.
-            currentCoroutineContext().ensureActive()
-            logger.debug(e) { "Compilation owner cancelled for $uri, retrying with current caller" }
-            val retry = CompilationIdentity(
-                identity.content,
-                workspaceManager.getConfigurationFingerprint(),
-                identity.document,
-            )
-            scheduleCompilation(scope, uri, retry).await()
-        }
+    /**
+     * Awaits shared work, or returns null when its owner cancelled or invalidation retired it while this caller
+     * is still active (a cancelled caller propagates its own cancellation). The caller then re-resolves.
+     * Work this waiter starts is owned by [waiterScope], not by the request: cancelling one request (a client
+     * does so on every superseded hover) does not cancel the compile its co-waiters are sharing.
+     */
+    private suspend fun awaitShared(uri: URI, identity: CompilationIdentity): CompilationResult? = try {
+        scheduleCompilation(waiterScope, uri, identity).await()
+    } catch (e: CancellationException) {
+        currentCoroutineContext().ensureActive()
+        logger.debug(e) { "Compilation of $uri was cancelled or retired; resolving its current inputs again" }
+        null
     }
 
     /**
      * Ensures a file is compiled, either by awaiting active compilation or fetching from cache.
      * Validates configuration fingerprint for cache coherency (Issue #743).
+     *
+     * Shared work that is retired while this caller waits is never retried with its old inputs: the open
+     * buffer, pending work, cache and disk are resolved again, so a buffer closed meanwhile is answered from
+     * disk. After [MAX_RESOLUTIONS] retirements in a row the caller gets ContentModified, not a cancellation
+     * it did not ask for.
      */
-    @Suppress("ReturnCount") // Multiple cache and validation checks require early returns
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
+        repeat(MAX_RESOLUTIONS) {
+            when (val resolution = resolveCompiled(uri)) {
+                Resolution.Retired -> Unit
+                is Resolution.Done -> return resolution.result
+            }
+        }
+        throw ResponseErrorException(
+            ResponseError(ResponseErrorCode.ContentModified, "Compilation of $uri kept being invalidated", null),
+        )
+    }
+
+    private sealed interface Resolution {
+        data object Retired : Resolution
+
+        class Done(val result: CompilationResult?) : Resolution
+    }
+
+    @Suppress("ReturnCount") // Multiple cache and validation checks require early returns
+    private suspend fun resolveCompiled(uri: URI): Resolution {
         // An open buffer is the source of truth: it may be unsaved, untitled, or newer than the file on
         // disk or the cached parse, and didOpen compiles it in a background job that may not have
         // started yet. Resolve its identity before selecting any pending job.
         documentProvider?.getSnapshot(uri)?.let { snapshot ->
             val identity =
                 CompilationIdentity(snapshot.content, workspaceManager.getConfigurationFingerprint(), snapshot)
-            return awaitCompilation(uri, identity)
+            return awaitShared(uri, identity)?.let { Resolution.Done(it) } ?: Resolution.Retired
         }
 
         // Get current fingerprint for cache coherency validation
         val configFingerprint = workspaceManager.getConfigurationFingerprint()
 
         cacheService.getPendingCompilation(uri, configFingerprint)?.let { pending ->
-            return awaitCompilation(uri, pending.identity)
+            return awaitShared(uri, pending.identity)?.let { Resolution.Done(it) } ?: Resolution.Retired
         }
 
         // A closed file's entry is retired when its buffer closes or the file changes, so it follows the disk
         cacheService.getCachedWithContent(uri, configFingerprint)?.let { (content, parseResult) ->
             logger.debug { "Using cached result for: $uri" }
-            return resultMapper.mapFromCache(parseResult, content)
+            return Resolution.Done(resultMapper.mapFromCache(parseResult, content))
         }
 
         // Use on-demand compilation from disk if file exists
@@ -330,29 +396,32 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val path = runCatching { Path.of(uri) }.getOrNull()
         if (path != null && Files.exists(path) && Files.isRegularFile(path)) {
             logger.debug { "Compiling from disk on-demand: $uri" }
-            val claim = claim(uri)
-            return claim.publication.use {
-                try {
-                    val content = withContext(ioDispatcher) {
-                        Files.readString(path)
+            // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
+            val claim = claim(uri, Origin.DISK)
+            return Resolution.Done(
+                claim.publication.use {
+                    try {
+                        val content = withContext(ioDispatcher) {
+                            Files.readString(path)
+                        }
+                        // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
+                        performCompilation(
+                            CompilationInput(uri, content, claim),
+                            parseMode = ParseMode.MINIMAL,
+                            configFingerprint = configFingerprint,
+                        )
+                    } catch (e: CancellationException) {
+                        throw e // the request was cancelled; not a failure to compile
+                    } catch (e: Exception) {
+                        logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
+                        null
                     }
-                    // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
-                    performCompilation(
-                        CompilationInput(uri, content, claim),
-                        parseMode = ParseMode.MINIMAL,
-                        configFingerprint = configFingerprint,
-                    )
-                } catch (e: CancellationException) {
-                    throw e // the request was cancelled; not a failure to compile
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to compile from disk for $uri: ${e.message}" }
-                    null
-                }
-            }
+                },
+            )
         }
 
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
-        return null
+        return Resolution.Done(null)
     }
 
     /**
@@ -391,5 +460,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             candidates += path.toAbsolutePath().toString()
         }
         return candidates
+    }
+
+    private companion object {
+        /** Retirements of awaited work tolerated in a row before a caller is told the content changed. */
+        const val MAX_RESOLUTIONS = 3
     }
 }

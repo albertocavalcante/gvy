@@ -96,4 +96,21 @@ class SemanticPublicationTest {
             assertNull(index.getDocument(uri), "closed token cannot publish into a fresh lifecycle")
         }
     }
+
+    @Test
+    fun `retiring publications keeps the document but rejects work that read the old text`() {
+        indexer.update(uri, content, ast, Phases.CANONICALIZATION)
+        val stored = index.getDocument(uri)
+        indexer.begin(uri).use { beforeClose ->
+            indexer.retirePublications(uri)
+            indexer.publish(beforeClose, "class Example { def unsaved() {} }", ast, Phases.SEMANTIC_ANALYSIS)
+        }
+
+        assertSame(stored, index.getDocument(uri), "a publication begun before the close landed after it")
+        assertTrue(indexer.isCurrent(uri, content))
+        indexer.begin(uri).use { afterClose ->
+            indexer.publish(afterClose, "class Example { def fresh() {} }", ast, Phases.CANONICALIZATION)
+        }
+        assertTrue(indexer.isCurrent(uri, "class Example { def fresh() {} }"), "later work still publishes")
+    }
 }
