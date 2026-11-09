@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.diagnostics
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
@@ -101,7 +102,7 @@ class DiagnosticsOrchestrator(
 
                     val settings = runtime
                     // Use compileAsync for proper coordination
-                    val result = compilationService.compileAsync(this, uri, content).await()
+                    val result = compileCurrent(this, uri, captured, currentJob, settings)
 
                     ensureActive() // Ensure job wasn't cancelled before publishing
 
@@ -154,6 +155,30 @@ class DiagnosticsOrchestrator(
         }
         previous?.cancel()
         job.start()
+    }
+
+    /** A shared compile may belong to another request; only a still-current waiter may retry it once. */
+    private suspend fun compileCurrent(
+        scope: CoroutineScope,
+        uri: URI,
+        captured: DocumentSnapshot,
+        owner: Job,
+        settings: Runtime,
+    ): CompilationResult {
+        try {
+            return compilationService.compileAsync(scope, uri, captured.content).await()
+        } catch (cancelled: CancellationException) {
+            // An external owner can cancel its Deferred without cancelling this diagnostics job.
+            // Own cancellation must propagate, and obsolete work must never be restarted.
+            scope.ensureActive()
+            if (documentProvider.getSnapshot(uri) !== captured || runtime !== settings ||
+                diagnosticJobs[uri] !== owner
+            ) {
+                throw cancelled
+            }
+            logger.debug { "Retrying current diagnostics after shared compilation was cancelled for $uri" }
+            return compilationService.compileAsync(scope, uri, captured.content).await()
+        }
     }
 
     /**
