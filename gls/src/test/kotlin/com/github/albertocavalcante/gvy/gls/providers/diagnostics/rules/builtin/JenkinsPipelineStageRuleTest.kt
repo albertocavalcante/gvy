@@ -1,41 +1,72 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.builtin
 
+import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.config.GroovyMode
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.CustomRulesProvider
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules.RuleContext
-import io.mockk.every
-import io.mockk.mockk
+import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
+import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
+/**
+ * Runs the rule through [CustomRulesProvider] and a real [GroovyCompilationService], so the
+ * AST, error state and Jenkins file detection are the ones the language server provides.
+ */
 class JenkinsPipelineStageRuleTest {
 
-    private val rule = JenkinsPipelineStageRule()
+    private val jenkinsfile = URI.create("file:///workspace/Jenkinsfile")
+
+    private fun analyze(
+        code: String,
+        uri: URI = jenkinsfile,
+        configuration: ServerConfiguration? = null,
+    ): List<Diagnostic> = runBlocking {
+        val compilationService = GroovyCompilationService()
+        configuration?.let { compilationService.updateServerConfiguration(it) }
+        compilationService.compile(uri, code)
+        CustomRulesProvider(listOf(JenkinsPipelineStageRule()), compilationService)
+            .provideDiagnostics(uri, code)
+            .toList()
+    }
+
+    private fun List<Diagnostic>.messages(): List<String> = map { it.message }
 
     @Test
-    fun `should detect incomplete Jenkins stage in Jenkinsfile`(): Unit = runBlocking {
+    fun `declarative stage without steps is reported at the stage call`() {
         val code = """
             pipeline {
                 agent any
                 stages {
                     stage('Build') {
-                        // Missing steps block
+                        echo 'Building...'
                     }
                 }
             }
         """.trimIndent()
 
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
+        val diagnostics = analyze(code)
 
-        assertEquals(1, diagnostics.size)
-        val diagnostic = diagnostics.first()
-        assertTrue(diagnostic.message.contains("steps"))
+        assertEquals(1, diagnostics.size, diagnostics.messages().toString())
+        val diagnostic = diagnostics.single()
+        assertEquals(
+            "Stage 'Build' is missing a 'steps', 'stages', 'parallel' or 'matrix' block",
+            diagnostic.message,
+        )
+        assertEquals(DiagnosticSeverity.Warning, diagnostic.severity)
+        assertEquals(Range(Position(3, 8), Position(3, 22)), diagnostic.range)
+        assertEquals("stage('Build')", code.lines()[3].substring(8, 22))
     }
 
     @Test
-    fun `should not flag complete Jenkins stage`(): Unit = runBlocking {
+    fun `declarative stage with steps is accepted`() {
         val code = """
             pipeline {
                 agent any
@@ -49,30 +80,299 @@ class JenkinsPipelineStageRuleTest {
             }
         """.trimIndent()
 
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
-
-        assertEquals(0, diagnostics.size)
+        assertEquals(emptyList(), analyze(code).messages())
     }
 
     @Test
-    fun `should not flag stage with script block`(): Unit = runBlocking {
+    fun `scripted pipeline stages are never reported`() {
         val code = """
-            stage('Deploy') {
-                script {
-                    echo 'Deploying...'
+            node {
+                stage('Build') {
+                    sh 'make'
+                }
+                stage('Test') {
+                    sh 'make test'
                 }
             }
         """.trimIndent()
 
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
-
-        assertEquals(0, diagnostics.size)
+        assertEquals(emptyList(), analyze(code).messages())
     }
 
     @Test
-    fun `should not use steps from a later stage`(): Unit = runBlocking {
+    fun `scripted stages in vars helpers are never reported`() {
+        val code = """
+            def call(Map config = [:]) {
+                stage('Test') {
+                    sh 'make test'
+                }
+            }
+        """.trimIndent()
+
+        val diagnostics = analyze(code, URI.create("file:///workspace/vars/runTests.groovy"))
+
+        assertEquals(emptyList(), diagnostics.messages())
+    }
+
+    @Test
+    fun `declarative pipeline defined in a vars helper is checked`() {
+        val code = """
+            def call() {
+                pipeline {
+                    agent any
+                    stages {
+                        stage('Test') {
+                            echo 'no steps'
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val diagnostics = analyze(code, URI.create("file:///workspace/vars/standardPipeline.groovy"))
+
+        assertEquals(1, diagnostics.size, diagnostics.messages().toString())
+        assertTrue(diagnostics.single().message.startsWith("Stage 'Test' is missing"))
+        assertEquals(Range(Position(4, 12), Position(4, 25)), diagnostics.single().range)
+    }
+
+    @Test
+    fun `stage with nested sequential stages is accepted and children are checked`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Outer') {
+                        stages {
+                            stage('Inner ok') {
+                                steps { sh 'make' }
+                            }
+                            stage('Inner empty') {
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val diagnostics = analyze(code)
+
+        assertEquals(
+            listOf("Stage 'Inner empty' is missing a 'steps', 'stages', 'parallel' or 'matrix' block"),
+            diagnostics.messages(),
+        )
+    }
+
+    @Test
+    fun `stage with parallel stages is accepted`() {
+        val code = """
+            pipeline {
+                agent none
+                stages {
+                    stage('Checks') {
+                        parallel {
+                            stage('Lint') {
+                                steps { sh 'make lint' }
+                            }
+                            stage('Unit') {
+                                steps { sh 'make test' }
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        assertEquals(emptyList(), analyze(code).messages())
+    }
+
+    @Test
+    fun `stage with matrix is accepted`() {
+        val code = """
+            pipeline {
+                agent none
+                stages {
+                    stage('Platforms') {
+                        matrix {
+                            axes {
+                                axis {
+                                    name 'PLATFORM'
+                                    values 'linux', 'windows'
+                                }
+                            }
+                            stages {
+                                stage('Build') {
+                                    steps { echo "Building on ${'$'}{PLATFORM}" }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        assertEquals(emptyList(), analyze(code).messages())
+    }
+
+    @Test
+    fun `script directly inside a declarative stage is reported`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Deploy') {
+                        script {
+                            echo 'Deploying...'
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val diagnostics = analyze(code)
+
+        assertEquals(
+            listOf(
+                "Stage 'Deploy' is missing a 'steps', 'stages', 'parallel' or 'matrix' block",
+                "'script' must be inside 'steps' (stage 'Deploy')",
+            ),
+            diagnostics.messages(),
+        )
+        assertEquals(Range(Position(4, 12), Position(4, 18)), diagnostics[1].range)
+        assertEquals("script", code.lines()[4].substring(12, 18))
+    }
+
+    @Test
+    fun `script inside steps is accepted`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Deploy') {
+                        steps {
+                            script {
+                                echo 'Deploying...'
+                            }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        assertEquals(emptyList(), analyze(code).messages())
+    }
+
+    @Test
+    fun `stage with more than one execution block is reported`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Mixed') {
+                        steps { sh 'make' }
+                        parallel {
+                            stage('A') { steps { sh 'a' } }
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        assertEquals(
+            listOf("Stage 'Mixed' must contain only one of 'steps', 'stages', 'parallel' or 'matrix'"),
+            analyze(code).messages(),
+        )
+    }
+
+    @Test
+    fun `Jenkinsfile variants matched by the default patterns are analyzed`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Release') {
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val diagnostics = analyze(code, URI.create("file:///workspace/Jenkinsfile.prod"))
+
+        assertEquals(1, diagnostics.size, diagnostics.messages().toString())
+    }
+
+    @Test
+    fun `explicit Jenkins mode analyzes any file`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Release') {
+                    }
+                }
+            }
+        """.trimIndent()
+
+        val diagnostics = analyze(
+            code,
+            URI.create("file:///workspace/ci/release.groovy"),
+            ServerConfiguration(groovyMode = GroovyMode.JENKINS),
+        )
+
+        assertEquals(1, diagnostics.size, diagnostics.messages().toString())
+    }
+
+    @Test
+    fun `non-Jenkins files are not analyzed`() {
+        val code = """
+            pipeline {
+                stages {
+                    stage('Build') {
+                    }
+                }
+            }
+        """.trimIndent()
+
+        assertEquals(emptyList(), analyze(code, URI.create("file:///workspace/src/Build.groovy")).messages())
+    }
+
+    @Test
+    fun `braces inside strings do not end the stage early`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Build') {
+                        when { expression { return env.MARKER == '}' } }
+                        steps {
+                            echo '}'
+                        }
+                    }
+                }
+            }
+        """.trimIndent()
+
+        assertEquals(emptyList(), analyze(code).messages())
+    }
+
+    @Test
+    fun `steps inside a block comment do not satisfy the stage`() {
+        val code = """
+            pipeline {
+                agent any
+                stages {
+                    stage('Build') {
+                        /* steps { sh 'make' } */
+                    }
+                }
+            }
+        """.trimIndent()
+
+        assertEquals(1, analyze(code).size)
+    }
+
+    @Test
+    fun `steps of a later stage do not satisfy an earlier stage`() {
         val code = """
             pipeline {
                 stages {
@@ -88,15 +388,14 @@ class JenkinsPipelineStageRuleTest {
             }
         """.trimIndent()
 
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
+        val diagnostics = analyze(code)
 
-        assertEquals(1, diagnostics.size)
-        assertTrue(diagnostics.first().message.contains("Build"))
+        assertEquals(1, diagnostics.size, diagnostics.messages().toString())
+        assertTrue(diagnostics.single().message.contains("'Build'"))
     }
 
     @Test
-    fun `should ignore stage declarations in line comments`(): Unit = runBlocking {
+    fun `commented out stages are ignored`() {
         val code = """
             pipeline {
                 // stage('Build') {
@@ -104,81 +403,32 @@ class JenkinsPipelineStageRuleTest {
                 stages {
                     // stage('Test') {
                     // }
-                }
-            }
-        """.trimIndent()
-
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
-
-        assertEquals(0, diagnostics.size)
-    }
-
-    @Test
-    fun `should not analyze non-Jenkins files`(): Unit = runBlocking {
-        val code = """
-            stage('Build') {
-                // This is not a Jenkins file
-            }
-        """.trimIndent()
-
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///NotAJenkinsfile.groovy"), code, context)
-
-        assertEquals(0, diagnostics.size)
-    }
-
-    @Test
-    fun `should not flag stage with steps beyond initial lookahead`(): Unit = runBlocking {
-        val code = """
-            pipeline {
-                stages {
-                    stage('Build') {
-                        // 1
-                        // 2
-                        // 3
-                        // 4
-                        // 5
-                        // 6
-                        // 7
-                        // 8
-                        // 9
-                        // 10
-                        // 11
-                        steps {
-                            echo 'ok'
-                        }
+                    stage('Real') {
+                        steps { echo 'ok' }
                     }
                 }
             }
         """.trimIndent()
 
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///Jenkinsfile"), code, context)
-
-        assertEquals(0, diagnostics.size)
+        assertEquals(emptyList(), analyze(code).messages())
     }
 
     @Test
-    fun `should analyze files in vars directory`(): Unit = runBlocking {
+    fun `no AST yields no diagnostics instead of guessing`(): Unit = runBlocking {
+        val context = object : RuleContext {
+            override fun getAst(): Any? = null
+
+            override fun hasErrors(): Boolean = false
+        }
         val code = """
-            def call() {
-                stage('Test') {
-                    // Missing steps
+            pipeline {
+                stages {
+                    stage('Build') {
+                    }
                 }
             }
         """.trimIndent()
 
-        val context = mockContext()
-        val diagnostics = rule.analyze(URI.create("file:///vars/myPipeline.groovy"), code, context)
-
-        assertEquals(1, diagnostics.size)
-    }
-
-    private fun mockContext(): RuleContext {
-        val context = mockk<RuleContext>()
-        every { context.hasErrors() } returns false
-        every { context.getAst() } returns null
-        return context
+        assertEquals(emptyList(), JenkinsPipelineStageRule().analyze(jenkinsfile, code, context))
     }
 }
