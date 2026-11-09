@@ -131,16 +131,72 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
-    fun `stage block offers exactly the stage directives as keywords`(): Unit = runTest {
+    fun `stage block offers exactly the stage directives`(): Unit = runTest {
         val code = "pipeline {\n    stages {\n        stage('Build') {\n            \n        }\n    }\n}"
         val items = completeAt(code, line = 3, character = 12)
 
         assertNoDuplicateLabels(items)
+        // TODO(#1243): drop this filter once stage(...)'s map keys stop leaking into its body.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1243
+        val leakedMapKeys = items.labels().filter { it.endsWith(":") }.toSet()
         assertEquals(
             setOf("agent", "environment", "matrix", "options", "parallel", "post", "steps", "tools", "when"),
-            items.labels(CompletionItemKind.Keyword),
+            items.labels() - leakedMapKeys,
         )
-        assertTrue(items.labels(CompletionItemKind.Variable).isEmpty(), "No global variables at stage level")
+    }
+
+    @Test
+    fun `when expression body offers global variables but no when conditions`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Build') {\n            when {\n" +
+            "                expression {\n                    \n                }\n            }\n" +
+            "        }\n    }\n}"
+        val items = completeAt(code, line = 6, character = 20)
+
+        assertNoDuplicateLabels(items)
+        assertTrue(setOf("env", "params", "currentBuild").all { it in items.labels(CompletionItemKind.Variable) })
+        assertTrue("branch" !in items.labels(), "when conditions are not valid inside expression {}")
+    }
+
+    @Test
+    fun `nested when expression body offers global variables`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Build') {\n            when {\n" +
+            "                allOf {\n                    expression {\n                        \n" +
+            "                    }\n                }\n            }\n        }\n    }\n}"
+        val items = completeAt(code, line = 7, character = 24)
+
+        assertNoDuplicateLabels(items)
+        assertTrue(setOf("env", "params", "currentBuild").all { it in items.labels(CompletionItemKind.Variable) })
+    }
+
+    @Test
+    fun `scripted stage inside a script block offers steps and global variables`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Build') {\n            steps {\n" +
+            "                script {\n                    stage('Inner') {\n                        \n" +
+            "                    }\n                }\n            }\n        }\n    }\n}"
+        val items = completeAt(code, line = 7, character = 24)
+
+        assertNoDuplicateLabels(items)
+        assertTrue("sh" in items.labels(CompletionItemKind.Function), "steps inside a scripted stage")
+        assertTrue(metadata.globalVariables.keys.all { it in items.labels(CompletionItemKind.Variable) })
+    }
+
+    @Test
+    fun `declarative node agent offers no steps or global variables`(): Unit = runTest {
+        val code = "pipeline {\n    agent {\n        node {\n            \n        }\n    }\n}"
+        val items = completeAt(code, line = 3, character = 12)
+
+        assertNoDuplicateLabels(items)
+        assertTrue(items.labels(CompletionItemKind.Function).isEmpty(), "No steps in agent { node {} }")
+    }
+
+    @Test
+    fun `one-line post condition opening offers steps and global variables`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    post { always {\n        \n    } }\n}"
+        val items = completeAt(code, line = 3, character = 8)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(metadata.steps.keys, items.labels(CompletionItemKind.Function))
+        assertEquals(metadata.globalVariables.keys, items.labels(CompletionItemKind.Variable))
     }
 
     @Test

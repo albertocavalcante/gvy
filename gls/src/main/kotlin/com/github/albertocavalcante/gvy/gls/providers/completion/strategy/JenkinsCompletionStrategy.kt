@@ -63,7 +63,8 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 // Add Jenkins step completions if allowed by block context
                 val allowSteps = blockContext == null ||
                     !blockContext.isStrictDeclarative ||
-                    blockContext.blockCategories.contains(DeclarativePipelineSchema.CompletionCategory.STEP)
+                    blockContext.blockCategories.contains(DeclarativePipelineSchema.CompletionCategory.STEP) ||
+                    blockContext.isInsideGroovyBody()
 
                 if (allowSteps) {
                     addJenkinsStepCompletions(metadata)
@@ -87,8 +88,11 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                     )
                 }
 
-                if (isBlockLevel && blockContext != null) {
-                    addDeclarativeBlockCompletions(blockContext, metadata)
+                // Directives belong to the innermost declarative block only: `when { expression { | } }`
+                // and a scripted `stage('x') {}` inside `script {}` are Groovy, not places for
+                // `branch` or the `parallel` directive (which would duplicate the `parallel` step).
+                blockContext?.takeIf { isBlockLevel && it.acceptsDeclarativeDirectives() }?.let {
+                    addDeclarativeBlockCompletions(it, metadata)
                 }
             }
         }
@@ -122,12 +126,41 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
 }
 
 /**
- * A strict declarative block whose content is fixed by the schema: it has sub-directives or a
- * non-step completion category, and does not accept steps. `environment`, `expression {}` and
- * other free-form Groovy blocks are not structural.
+ * Declarative blocks whose statements are fixed directives, sections or conditions, never
+ * expressions. Global variables are not offered at their block level.
+ *
+ * Deliberately not listed: `steps`, post-condition bodies and `script` (steps), `environment`
+ * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), and `parameters`,
+ * `triggers`, `tools`, `libraries`, `matrix`, whose contents are not modeled yet (#1246).
+ */
+private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf(
+    "pipeline", "agent", "stages", "stage", "parallel", "axes", "post", "options", "when",
+)
+
+/** True unless a tracked non-schema block (such as `expression {}`) sits inside [JenkinsBlockContext.currentBlock]. */
+private fun JenkinsBlockContext.isInnermostTrackedBlock(): Boolean =
+    enclosingBlocks.isEmpty() || enclosingBlocks.last() == currentBlock
+
+/**
+ * True when the cursor sits directly in a structural declarative block: the innermost tracked
+ * block is that block (not, say, `expression {}` inside `when`), and no Groovy body encloses it
+ * (a scripted `stage('x') {}` inside `script {}` takes steps and globals).
  */
 private fun JenkinsBlockContext?.isStructuralDeclarativeBlock(): Boolean {
     if (this == null || !isStrictDeclarative) return false
-    if (DeclarativePipelineSchema.CompletionCategory.STEP in blockCategories) return false
-    return innerInstructions.isNotEmpty() || blockCategories.isNotEmpty()
+    val block = currentBlock ?: return false
+    if (block !in STRUCTURAL_DECLARATIVE_BLOCKS) return false
+    if (!isInnermostTrackedBlock()) return false
+    return !isInsideGroovyBody()
 }
+
+/** The cursor is directly in a declarative block (not in Groovy nested inside one). */
+private fun JenkinsBlockContext.acceptsDeclarativeDirectives(): Boolean =
+    isInnermostTrackedBlock() && !isInsideGroovyBody()
+
+/**
+ * A `script {}`, or a scripted `node {}`, encloses the cursor, so scripted-pipeline statements
+ * apply beneath it. `agent { node { label 'x' } }` is the declarative node agent, not Groovy.
+ */
+private fun JenkinsBlockContext.isInsideGroovyBody(): Boolean =
+    "script" in enclosingBlocks || ("node" in enclosingBlocks && "agent" !in enclosingBlocks)

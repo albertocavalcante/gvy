@@ -291,4 +291,50 @@ class JenkinsContextDetectorTest {
 
         assertEquals(listOf("pipeline", "stages", "stage", "steps"), context.enclosingBlocks)
     }
+
+    @Test
+    fun `one-line post condition opening is tracked`() {
+        val lines = listOf(
+            "pipeline {",
+            "    post { always {",
+            "        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 2, column = 8)
+
+        assertEquals(listOf("pipeline", "post", "always"), context.enclosingBlocks)
+        assertEquals("always", context.currentBlock)
+    }
+
+    @Test
+    fun `when expression blocks are tracked as enclosing blocks`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            when {",
+            "                allOf {",
+            "                    expression {",
+            "                        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 6, column = 24)
+
+        assertEquals(
+            listOf("pipeline", "stages", "stage", "when", "allOf", "expression"),
+            context.enclosingBlocks,
+        )
+    }
+
+    @Test
+    fun `when condition combinators anyOf and not are tracked`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            when { anyOf { not {",
+            "                ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 4, column = 16)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "when", "anyOf", "not"), context.enclosingBlocks)
+    }
 }

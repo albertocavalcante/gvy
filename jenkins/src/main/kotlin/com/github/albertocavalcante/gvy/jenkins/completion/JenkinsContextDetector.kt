@@ -33,6 +33,11 @@ object JenkinsContextDetector {
         "triggers" to Regex("""\btriggers\s*\{"""),
         "tools" to Regex("""\btools\s*\{"""),
         "when" to Regex("""\bwhen\s*\{"""),
+        // `when` condition blocks: expression {} holds arbitrary Groovy, the combinators hold conditions.
+        "expression" to Regex("""\bexpression\s*\{"""),
+        "allOf" to Regex("""\ballOf\s*\{"""),
+        "anyOf" to Regex("""\banyOf\s*\{"""),
+        "not" to Regex("""\bnot\s*\{"""),
         "script" to Regex("""\bscript\s*\{"""),
         "node" to Regex("""\bnode\s*(?:\([^)]*\))?\s*\{"""),
     )
@@ -43,8 +48,8 @@ object JenkinsContextDetector {
         "changed", "fixed", "regression", "aborted", "notBuilt", "unsuccessful", "cleanup",
     )
 
-    // Pre-compiled pattern for post conditions (avoids per-iteration regex compilation)
-    private val POST_CONDITION_PATTERN = Regex("""^(${POST_CONDITIONS.joinToString("|")})\s*\{.*""")
+    // Post condition openings anywhere on a line, so `post { always {` is tracked too
+    private val POST_CONDITION_PATTERN = Regex("""\b(${POST_CONDITIONS.joinToString("|")})\s*\{""")
 
     // Step name pattern - matches step name followed by space or end of string
     private val STEP_PATTERN = Regex("""^\s*(\w+)(?:\s|$)""")
@@ -136,7 +141,6 @@ object JenkinsContextDetector {
             val cleanLine = GroovyCodeCleaner.stripSingleLineComments(line)
 
             addBlockOpenings(cleanLine, blockStack)
-            addPostConditionBlocks(cleanLine, blockStack)
 
             braceDepth += cleanLine.count { it == '{' } - cleanLine.count { it == '}' }
             trimBlockStackToDepth(blockStack, braceDepth)
@@ -146,7 +150,8 @@ object JenkinsContextDetector {
     }
 
     /**
-     * Add any block openings found in the line to the stack, in the order they appear.
+     * Add any block openings (including post conditions) found in the line to the stack, in the
+     * order they appear.
      */
     private fun addBlockOpenings(line: String, blockStack: MutableList<String>) {
         val matches = mutableListOf<Pair<Int, String>>()
@@ -155,19 +160,12 @@ object JenkinsContextDetector {
                 matches.add(match.range.first to blockName)
             }
         }
+        POST_CONDITION_PATTERN.findAll(line).forEach { match ->
+            matches.add(match.range.first to match.groupValues[1])
+        }
         // Sort by position and add to stack
         matches.sortBy { it.first }
         matches.forEach { blockStack.add(it.second) }
-    }
-
-    /**
-     * Add any post condition blocks found in the line to the stack.
-     */
-    private fun addPostConditionBlocks(line: String, blockStack: MutableList<String>) {
-        val trimmedLine = line.trim()
-        POST_CONDITION_PATTERN.find(trimmedLine)?.groups?.get(1)?.value?.let { condition ->
-            blockStack.add(condition)
-        }
     }
 
     /**

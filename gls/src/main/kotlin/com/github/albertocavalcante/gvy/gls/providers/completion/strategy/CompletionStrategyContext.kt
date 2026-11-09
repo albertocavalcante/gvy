@@ -38,10 +38,12 @@ internal data class CompletionStrategyContext(
  * @property blockCategories Completion categories allowed in this block
  * @property innerInstructions Sub-directives allowed in this block
  * @property isStrictDeclarative Whether we're in strict declarative mode (no arbitrary Groovy)
+ * @property enclosingBlocks All tracked blocks around the cursor, outermost first
  */
 internal data class JenkinsBlockContext(
     val currentBlock: String?,
     val blockCategories: Set<DeclarativePipelineSchema.CompletionCategory>,
     val innerInstructions: Set<String>,
     val isStrictDeclarative: Boolean,
+    val enclosingBlocks: List<String> = emptyList(),
 )
