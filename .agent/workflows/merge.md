@@ -130,6 +130,16 @@ The script will:
 
 ---
 
+## Verify Landing and Clean Up
+
+A merge helper's successful exit is not proof that GitHub merged the PR. Independently verify `state=MERGED`, the actual
+publication head and merge commit, then complete [Post-Merge Cleanup](../rules/git-workflow.md#post-merge-cleanup). The
+merging agent owns this step: verify automatic remote head deletion, release only its clean/unlocked worktree, remove
+the proven merged local branch, prune stale tracking refs, and report retained work. Preserve stacked/open PRs and other
+agents' active checkouts. Repository housekeeping is part of completion, not a later owner's task.
+
+---
+
 ## Quick Reference
 
 ```

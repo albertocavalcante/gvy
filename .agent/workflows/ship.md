@@ -164,6 +164,11 @@ gh pr create \
 
 ### 4.3 Cleanup
 
+Remove only task-owned temporary files after publication. Keep the branch/worktree while the PR remains open. After
+landing, the agent owns the verified branch/worktree cleanup in
+[Post-Merge Cleanup](../rules/git-workflow.md#post-merge-cleanup); include its result or the reason for retaining work
+in the completion report.
+
 ```bash
 rm /tmp/pr_body.md
 ```
