@@ -230,18 +230,36 @@ internal object CompletionContextDetector {
         return inSingle || inDouble
     }
 
+    /**
+     * True when the cursor is inside a (single-line) string literal. Triple-quoted strings are covered by the
+     * same quote toggling; strings spanning several lines are not tracked.
+     */
+    fun isInsideStringLiteral(content: String, line: Int, character: Int): Boolean {
+        val currentLine = content.lines().getOrNull(line) ?: return false
+        val safeChar = character.coerceIn(0, currentLine.length)
+        return isInStringLiteral(currentLine, safeChar)
+    }
+
+    /**
+     * True when the text before the cursor is a paren-less call to [methodName] whose first positional
+     * argument is a complete string literal, e.g. `sh 'ls' |`. Further named options must then be
+     * introduced with a `, ` separator. False inside the literal, after an existing comma, or for
+     * parenthesised calls.
+     */
     fun isCommandExpression(content: String, line: Int, character: Int, methodName: String): Boolean {
         val lines = content.lines()
         val currentLine = lines.getOrNull(line) ?: return false
         val safeChar = character.coerceIn(0, currentLine.length)
         val prefix = currentLine.substring(0, safeChar)
-        val trimmed = prefix.trimStart()
-        // The only possible match is the word directly before the still-open trailing quote.
-        return OPEN_STRING_ARGUMENT.find(trimmed)?.groupValues?.get(1) == methodName
+        if (isInStringLiteral(prefix, prefix.length)) return false
+        // The only possible match ends at the cursor, so the captured word is the called method.
+        return COMPLETE_STRING_ARGUMENT.find(prefix.trimStart())?.groupValues?.get(1) == methodName
     }
 
-    /** `<word> <whitespace> <quote> <non-quote chars>` anchored at the end of the text before the cursor. */
-    private val OPEN_STRING_ARGUMENT = Regex("""\b(\w+)\s+['"][^'"]*$""")
+    /** `<word> <whitespace> <complete string literal> <whitespace>` anchored at the end of the prefix. */
+    private val COMPLETE_STRING_ARGUMENT = Regex(
+        """\b(\w+)\s+(?:'{3}.*?'{3}|"{3}.*?"{3}|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*$""",
+    )
 }
 
 private fun resolveQualifier(

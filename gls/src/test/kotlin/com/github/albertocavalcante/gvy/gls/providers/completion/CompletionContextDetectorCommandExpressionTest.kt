@@ -4,41 +4,72 @@ import org.junit.jupiter.api.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
+/**
+ * A "command expression" is a paren-less call whose first positional argument is complete and the cursor
+ * is right after it (`sh 'ls' |`), which is where map-style options must be introduced with a `, `.
+ */
 class CompletionContextDetectorCommandExpressionTest {
     private fun detect(line: String, method: String, cursor: Int = line.length) =
         CompletionContextDetector.isCommandExpression(line, 0, cursor, method)
 
     @Test
-    fun `detects single-quoted command argument being typed`() = assertTrue(detect("sh 'ls", "sh"))
+    fun `detects after complete single-quoted argument`() = assertTrue(detect("sh 'ls'", "sh"))
 
     @Test
-    fun `detects double-quoted command argument being typed`() = assertTrue(detect("println \"x", "println"))
+    fun `detects after complete double-quoted argument`() = assertTrue(detect("println \"x\"", "println"))
 
     @Test
-    fun `detects with cursor inside a closed string`() = assertTrue(detect("sh 'ls'", "sh", cursor = 6))
+    fun `detects with trailing whitespace after the argument`() = assertTrue(detect("sh 'ls' ", "sh"))
 
     @Test
-    fun `detects after leading indentation and extra spaces`() = assertTrue(detect("    echo   'foo", "echo"))
+    fun `detects after indentation and extra spaces`() = assertTrue(detect("    echo   'foo'", "echo"))
 
     @Test
-    fun `detects empty string just opened`() = assertTrue(detect("echo '", "echo"))
+    fun `detects after triple-quoted argument`() {
+        assertTrue(detect("sh '''ls -l'''", "sh"))
+        assertTrue(detect("sh \"\"\"ls -l\"\"\"", "sh"))
+    }
+
+    @Test
+    fun `detects argument containing escaped quote`() = assertTrue(detect("echo 'it\\'s'", "echo"))
+
+    @Test
+    fun `does not match while the string is still open`() {
+        assertFalse(detect("sh 'ls", "sh"))
+        assertFalse(detect("println \"x", "println"))
+        assertFalse(detect("sh '''ls", "sh"))
+    }
+
+    @Test
+    fun `does not match with cursor inside a closed string`() = assertFalse(detect("sh 'ls'", "sh", cursor = 6))
+
+    @Test
+    fun `does not match when a comma already follows the argument`() = assertFalse(detect("sh 'ls',", "sh"))
 
     @Test
     fun `does not match unquoted argument`() = assertFalse(detect("echo foo", "echo"))
 
     @Test
-    fun `does not match parenthesised call`() = assertFalse(detect("sh('ls", "sh"))
+    fun `does not match parenthesised call`() = assertFalse(detect("sh('ls'", "sh"))
 
     @Test
-    fun `does not match a different method name`() = assertFalse(detect("shell 'ls", "sh"))
-
-    @Test
-    fun `does not match when string is already closed before cursor`() = assertFalse(detect("sh 'ls'", "sh"))
-
-    @Test
-    fun `does not match method name containing regex metacharacters`() = assertFalse(detect("sh 'ls", "s.", 6))
+    fun `does not match a different method name`() = assertFalse(detect("shell 'ls'", "sh"))
 
     @Test
     fun `out of range position is false`() =
-        assertFalse(CompletionContextDetector.isCommandExpression("sh 'ls", 5, 0, "sh"))
+        assertFalse(CompletionContextDetector.isCommandExpression("sh 'ls'", 5, 0, "sh"))
+
+    @Test
+    fun `isInsideStringLiteral tracks quotes before the cursor`() {
+        fun inside(line: String, cursor: Int = line.length) =
+            CompletionContextDetector.isInsideStringLiteral(line, 0, cursor)
+
+        assertTrue(inside("sh 'ls"))
+        assertTrue(inside("sh 'ls'", cursor = 6))
+        assertTrue(inside("sh \"echo \\\"x"))
+        assertFalse(inside("sh 'ls'"))
+        assertFalse(inside("sh 'ls' "))
+        assertFalse(inside("sh '''ls'''"))
+        assertTrue(inside("sh '''ls"))
+    }
 }

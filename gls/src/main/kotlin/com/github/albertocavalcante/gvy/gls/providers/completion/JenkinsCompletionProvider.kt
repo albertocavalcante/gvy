@@ -134,6 +134,9 @@ internal object JenkinsCompletionProvider {
         val methodCall = CompletionContextDetector.findEnclosingMethodCall(nodeAtCursor, astModel)
         val callName = methodCall?.methodAsString ?: return
 
+        // Never edit the inside of a string literal (e.g. `sh 'ls|'`).
+        if (CompletionContextDetector.isInsideStringLiteral(ctx.content, ctx.line, ctx.character)) return
+
         // Collect already specified argument map keys if present
         val existingKeys = mutableSetOf<String>()
         val args = methodCall.arguments
