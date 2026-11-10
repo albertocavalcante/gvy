@@ -123,10 +123,12 @@ class SpockCompiledHierarchyTest {
             parse("class Probe extends A {}", roots = listOf(roots)).let { it to probeOf(it) }
         }
 
-        // This request leaves `locatorCandidates` empty, so the facade cannot attribute B.groovy's error to a
-        // source and keeps the compile (measured on CI: achievedPhase 4, no fallback, nothing excluded), and the
-        // cycle reaches the final AST the classifier walks. Production gls compiles set `locatorCandidates`
-        // (CompilationOrchestrator), where B.groovy is excluded instead; this test pins the cycle-in-AST case.
+        // Measured on CI: achievedPhase 4, no fallback, nothing excluded, so the cycle reaches the final AST the
+        // classifier walks. With `locatorCandidates` empty, B.groovy's cycle error stays an ERROR diagnostic, so the
+        // no-collected-error COMPILATION_FAILED retry does not fire. Nothing is excluded because B.groovy comes only
+        // from a source root, not from the open or workspace sources the facade can exclude. In production gls also
+        // passes B.groovy as a workspace source (CompilationOrchestrator), so it is excluded there instead; this
+        // test pins the cycle-in-AST case.
         assertNull(result.outcome.fallback, "${result.outcome}")
         assertEquals(emptyList(), result.outcome.excludedSources)
         val messages = result.diagnostics.map { it.message }
