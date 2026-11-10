@@ -131,4 +131,68 @@ class GroovyCodeCleanerTest {
         // The string content should be removed
         assert(!result.contains("import spock.lang.Specification"))
     }
+
+    @Test
+    fun `blankCommentsAndStrings keeps the length and every newline`() {
+        val code = "a = \'\'\'x\n}\n\'\'\' /* {\n */ b // }\nc"
+
+        val blanked = GroovyCodeCleaner.blankCommentsAndStrings(code)
+
+        assertEquals(code.length, blanked.length)
+        assertEquals(code.indices.filter { code[it] == '\n' }, blanked.indices.filter { blanked[it] == '\n' })
+        assertEquals("a =     \n \n        \n    b     \nc", blanked)
+    }
+
+    @Test
+    fun `blankCommentsAndStrings blanks single and double quoted strings with escapes`() {
+        assertEquals("echo      ; x", GroovyCodeCleaner.blankCommentsAndStrings("echo '}\\''; x"))
+        assertEquals("echo        x", GroovyCodeCleaner.blankCommentsAndStrings("echo \"{\\\"}\" x"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings blanks dollar-slashy and slashy strings but not division`() {
+        assertEquals("j =        ;", GroovyCodeCleaner.blankCommentsAndStrings("j = ${'$'}/{ }/${'$'};"))
+        assertEquals("r =     ;", GroovyCodeCleaner.blankCommentsAndStrings("r = /a{/;"))
+        assertEquals("h = t / 2 / c", GroovyCodeCleaner.blankCommentsAndStrings("h = t / 2 / c"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings ends an unterminated quoted string at the end of its line`() {
+        assertEquals("a =       \nb { }", GroovyCodeCleaner.blankCommentsAndStrings("a = 'stray\nb { }"))
+        assertEquals("a =       \nb { }", GroovyCodeCleaner.blankCommentsAndStrings("a = \"stray\nb { }"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings treats return, case, in and assert as the start of a slashy string`() {
+        assertEquals("case       : x", GroovyCodeCleaner.blankCommentsAndStrings("case /it's/: x"))
+        assertEquals("return      ", GroovyCodeCleaner.blankCommentsAndStrings("return /a{}/"))
+        assertEquals("x in      ", GroovyCodeCleaner.blankCommentsAndStrings("x in /b}c/"))
+        assertEquals("assert      ", GroovyCodeCleaner.blankCommentsAndStrings("assert /d{e/"))
+        assertEquals("total / count", GroovyCodeCleaner.blankCommentsAndStrings("total / count"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings treats a closure arrow as the start of a slashy string`() {
+        assertEquals("x.find { it ->       }", GroovyCodeCleaner.blankCommentsAndStrings("x.find { it -> /a{}/ }"))
+        assertEquals("a > b / c", GroovyCodeCleaner.blankCommentsAndStrings("a > b / c"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings keeps a GString open across a multi-line interpolation`() {
+        val code = "s = \"${'$'}{ items.collect {\n it } }\" ; b {"
+
+        val blanked = GroovyCodeCleaner.blankCommentsAndStrings(code)
+
+        assertEquals("s =                    \n         ; b {", blanked)
+        assertEquals("t =       \nb {", GroovyCodeCleaner.blankCommentsAndStrings("t = \"stray\nb {"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings skips an escaped brace inside a GString interpolation`() {
+        val literal = "\"${'$'}{ s.replace('\\{', '') }\""
+
+        val blanked = GroovyCodeCleaner.blankCommentsAndStrings("$literal ; b {")
+
+        assertEquals(" ".repeat(literal.length) + " ; b {", blanked)
+    }
 }

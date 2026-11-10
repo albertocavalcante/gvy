@@ -140,14 +140,13 @@ object JenkinsContextDetector {
      */
     private fun analyzeBlockStructure(lines: List<String>, lineNumber: Int, column: Int): List<String> {
         val braceStack = mutableListOf<String?>()
-
-        for (i in 0 until minOf(lineNumber + 1, lines.size)) {
-            val line = if (i == lineNumber) lines[i].take(column.coerceAtLeast(0)) else lines[i]
-            // Strings and comments can contain `always {` or unbalanced braces (`echo '}'`).
-            // Line-based: strings and block comments spanning lines are not handled (#1281).
-            val cleanLine = GroovyCodeCleaner.removeCommentsAndStrings(line)
+        val prefix = (0 until minOf(lineNumber + 1, lines.size)).joinToString("\n") { i ->
+            if (i == lineNumber) lines[i].take(column.coerceAtLeast(0)) else lines[i]
+        }
+        // Strings and comments can contain `always {` or unbalanced braces (`echo '}'`), also across lines
+        // (`sh '''...'''`, `/* ... */`, #1281): the whole prefix is cleaned once, keeping its lines.
+        GroovyCodeCleaner.blankCommentsAndStrings(prefix).lineSequence().forEach { cleanLine ->
             val openers = blockOpeningsByBrace(cleanLine)
-
             cleanLine.forEachIndexed { index, char ->
                 when (char) {
                     '{' -> braceStack.add(openers[index])

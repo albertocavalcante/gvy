@@ -419,4 +419,137 @@ class JenkinsContextDetectorTest {
 
         assertEquals(listOf("pipeline", "stages", "stage", "steps", "script"), context.enclosingBlocks)
     }
+
+    /** Inside `steps {}` of a stage, after [body] (lines that open and close within the steps block). */
+    private fun enclosingAfter(vararg body: String): List<String> {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('Build') {",
+            "            steps {",
+        ) + body + "                "
+        return JenkinsContextDetector.detectFromDocument(
+            lines,
+            lineNumber = lines.lastIndex,
+            column = 16,
+        ).enclosingBlocks
+    }
+
+    private val inSteps = listOf("pipeline", "stages", "stage", "steps")
+
+    @Test
+    fun `braces and block keywords inside a multi-line triple-quoted shell script do not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                sh '''",
+                "                    if [ -f x ]; then { echo hi; }",
+                "                    }",
+                "                    post { success {",
+                "                '''",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line GString does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                sh \"\"\"",
+                "                    echo \"${'$'}{env.X} }\"",
+                "                    always {",
+                "                \"\"\"",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line block comment does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                /* disabled:",
+                "                stage('Old') {",
+                "                } } }",
+                "                */",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line dollar-slashy string does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                def json = ${'$'}/",
+                "                    { \"a\": { \"b\": 1 } } }",
+                "                /${'$'}",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line slashy regex does not shift the blocks, while division stays code`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                def re = /^a{2}",
+                "                    }b/",
+                "                def half = total / 2 / count",
+            ),
+        )
+    }
+
+    @Test
+    fun `a stray quote early in the file does not blank the blocks after it`() {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('A') {",
+            "            steps {",
+            "                echo 'half-edited",
+            "            }",
+            "        }",
+            "    }",
+            "    post {",
+            "        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 10, column = 8)
+
+        assertEquals(listOf("pipeline", "post"), context.enclosingBlocks)
+    }
+
+    @Test
+    fun `a GString with a multi-line closure interpolation does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                echo \"Files: ${'$'}{files.collect { f ->",
+                "                    f.name } }\"",
+            ),
+        )
+    }
+
+    @Test
+    fun `a half-typed GString interpolation does not swallow the braces after it`() {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('A') {",
+            "            steps {",
+            "                echo \"${'$'}{env.X",
+            "            }",
+            "        }",
+            "    }",
+            "    post {",
+            "        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 10, column = 8)
+
+        assertEquals(listOf("pipeline", "post"), context.enclosingBlocks)
+    }
 }
