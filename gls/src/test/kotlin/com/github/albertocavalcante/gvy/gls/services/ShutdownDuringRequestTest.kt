@@ -5,20 +5,17 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.core.read.ListAppender
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.providers.crossfile.CrossFileOperationsHandler
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
-import io.mockk.every
 import io.mockk.mockk
 import io.mockk.spyk
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
@@ -31,7 +28,6 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.slf4j.LoggerFactory
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -119,13 +115,8 @@ class ShutdownDuringRequestTest {
         assertTrue(logs.list.none { it.level.isGreaterOrEqual(Level.ERROR) })
     }
 
-    private fun handler(): CrossFileOperationsHandler {
-        val diagnostics = mockk<DiagnosticsOrchestrator>()
-        every { diagnostics.getDiagnosticJobsMap() } returns ConcurrentHashMap<URI, Job>()
-        return CrossFileOperationsHandler(compilation, documents, mockk<SourceNavigator>(relaxed = true), diagnostics, {
-            false
-        }, {})
-    }
+    private fun handler() =
+        CrossFileOperationsHandler(compilation, documents, mockk<SourceNavigator>(relaxed = true), { false }, {})
 
     private companion object {
         const val WAIT_SECONDS = 10L

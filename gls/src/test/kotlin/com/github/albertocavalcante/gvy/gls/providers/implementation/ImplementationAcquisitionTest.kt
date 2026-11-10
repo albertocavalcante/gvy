@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.implementation
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.providers.crossfile.CrossFileOperationsHandler
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
@@ -17,10 +16,8 @@ import io.mockk.mockkConstructor
 import io.mockk.spyk
 import io.mockk.unmockkConstructor
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.future.await
 import kotlinx.coroutines.runBlocking
@@ -37,7 +34,6 @@ import org.junit.jupiter.api.parallel.ExecutionMode
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -88,9 +84,9 @@ class ImplementationAcquisitionTest {
         val parsed = CountDownLatch(1)
         val release = CountDownLatch(1)
         val acquiring = CountDownLatch(1)
+        val proceed = CountDownLatch(1)
         val armed = AtomicBoolean()
         val target = AtomicReference<URI?>()
-        val diagnostic = CompletableDeferred<Unit>()
         mockkConstructor(InProcessWorkerSession::class)
         pauseParsedDocument(armed, target, parsed, release)
         try {
@@ -107,9 +103,12 @@ class ImplementationAcquisitionTest {
                     text,
                 )
                 assertTrue(parsed.await(10, TimeUnit.SECONDS), "The real target parse must finish before invalidation")
-                fixture.jobs[document] = diagnostic
+                // Hold the request after it captured the generation, until the late publication is observed.
                 every { fixture.compilation.beginImplementationQuery() } answers {
-                    callOriginal().also { acquiring.countDown() }
+                    callOriginal().also {
+                        acquiring.countDown()
+                        check(proceed.await(10, TimeUnit.SECONDS)) { "test never released the request" }
+                    }
                 }
                 val request = async(Dispatchers.Default) {
                     fixture.handler.getImplementations(fixture.contract.toString(), Position(1, 12))
@@ -125,13 +124,13 @@ class ImplementationAcquisitionTest {
                 assertFailsWith<CancellationException> { background.await() }
                 assertNull(fixture.compilation.getSymbolStorage(document))
                 assertNull(fixture.compilation.getWorkspaceSymbolIndex()?.getDocument(document))
-                diagnostic.complete(Unit)
+                proceed.countDown()
 
                 assertEquals(listOf(fixture.implementation.toString()), request.await().left.map { it.uri })
             }
         } finally {
             release.countDown()
-            diagnostic.complete(Unit)
+            proceed.countDown()
             unmockkConstructor(InProcessWorkerSession::class)
         }
     }
@@ -291,17 +290,13 @@ class ImplementationAcquisitionTest {
             Files.writeString(Path.of(implementation), implementationText)
             compilation.updateWorkspaceModel(workspace, emptyList(), listOf(workspace))
         }
-        val diagnostics = mockk<DiagnosticsOrchestrator>()
-        val jobs = ConcurrentHashMap<URI, Job>()
-        every { diagnostics.getDiagnosticJobsMap() } returns jobs
         assertTrue(compilation.compile(contract, contractText).isSuccess)
         assertTrue(compilation.compile(implementation, implementationText).isSuccess)
-        return Fixture(contract, implementation, compilation, documents, jobs) { observed ->
+        return Fixture(contract, implementation, compilation, documents) { observed ->
             CrossFileOperationsHandler(
                 observed,
                 documents,
                 mockk<SourceNavigator>(),
-                diagnostics,
                 { false },
                 {},
             )
@@ -313,7 +308,6 @@ class ImplementationAcquisitionTest {
         val implementation: URI,
         private val actual: GroovyCompilationService,
         val documents: DocumentProvider,
-        val jobs: ConcurrentHashMap<URI, Job>,
         createHandler: (GroovyCompilationService) -> CrossFileOperationsHandler,
     ) : AutoCloseable {
         val compilation = spyk(actual)

@@ -1,246 +1,145 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.ast.ModuleNode
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class CompilationEnsurerTest {
+    private val first = URI.create("file:///First.groovy")
+    private val second = URI.create("file:///Second.groovy")
+    private val documents = mockk<DocumentProvider>()
+    private val indexing = mockk<SymbolIndexingService>()
+    private val compilation = mockk<GroovyCompilationService> {
+        every { symbolIndexingService } returns indexing
+    }
+    private val snapshots = mutableMapOf<URI, DocumentSnapshot>()
+
+    private fun open(vararg uris: URI) {
+        every { documents.getAllUris() } returns uris.toSet()
+        uris.forEach { uri ->
+            val snapshot = DocumentSnapshot("class ${uri.path.drop(1).substringBefore('.')} {}", 1)
+            snapshots[uri] = snapshot
+            every { documents.getSnapshot(uri) } returns snapshot
+        }
+    }
+
+    private fun compiled(withAst: Boolean = true) =
+        CompilationResult(withAst, if (withAst) mockk<ModuleNode>() else null, emptyList())
 
     @Test
-    fun `ensureAllCompiled returns immediately when all documents compiled`(): Unit = runBlocking {
-        // Given
-        val uri1 = URI.create("file:///test1.groovy")
-        val uri2 = URI.create("file:///test2.groovy")
+    fun `documents indexed from their current text are not compiled again`(): Unit = runBlocking {
+        open(first, second)
+        every { indexing.isIndexed(any(), any()) } returns true
 
-        val documentProvider = mockk<DocumentProvider>()
-        every { documentProvider.getAllUris() } returns setOf(uri1, uri2)
+        CompilationEnsurer(documents, compilation).ensureAllCompiled()
 
-        val compilationService = mockk<GroovyCompilationService>()
-        // Both documents are already compiled (getSymbolStorage returns non-null)
-        every { compilationService.getSymbolStorage(uri1) } returns mockk()
-        every { compilationService.getSymbolStorage(uri2) } returns mockk()
-
-        val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
-        // When
-        val ensurer = CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticJobs,
-        )
-        ensurer.ensureAllCompiled()
-
-        // Then - should return immediately without compiling anything
-        coVerify(exactly = 0) { compilationService.compile(any(), any()) }
+        coVerify(exactly = 0) { compilation.ensureCompiled(any(), any<DocumentSnapshot>()) }
     }
 
     @Test
-    fun `ensureAllCompiled respects iteration limit`(): Unit = runBlocking {
-        // Given
-        val uri = URI.create("file:///test.groovy")
+    fun `a document that is not current is compiled from its current snapshot`(): Unit = runBlocking {
+        open(first, second)
+        every { indexing.isIndexed(first, any()) } returns true
+        every { indexing.isIndexed(second, any()) } returnsMany listOf(false, true)
+        coEvery { compilation.ensureCompiled(second, any<DocumentSnapshot>()) } returns compiled()
 
-        val documentProvider = mockk<DocumentProvider>()
-        every { documentProvider.getAllUris() } returns setOf(uri)
-        every { documentProvider.get(uri) } returns "class Test {}"
+        CompilationEnsurer(documents, compilation).ensureAllCompiled()
 
-        val compilationService = mockk<GroovyCompilationService>()
-        // Always return null to simulate uncompiled state (will trigger iteration limit)
-        every { compilationService.getSymbolStorage(uri) } returns null
-        coEvery { compilationService.compile(uri, any()) } returns mockk()
-
-        val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
-        // When
-        val ensurer = CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticJobs,
-            maxIterations = 3,
-        )
-        ensurer.ensureAllCompiled()
-
-        // Then - should stop after maxIterations
-        // Each iteration compiles once, so 3 iterations = 3 compile calls
-        coVerify(exactly = 3) { compilationService.compile(uri, any()) }
+        coVerify(exactly = 1) { compilation.ensureCompiled(second, snapshots.getValue(second)) }
+        coVerify(exactly = 0) { compilation.ensureCompiled(first, any<DocumentSnapshot>()) }
     }
 
     @Test
-    fun `ensureAllCompiled respects timeout`(): Unit = runBlocking {
-        // Given
-        val uri = URI.create("file:///test.groovy")
+    fun `a compile whose writes were discarded is retried once`(): Unit = runBlocking {
+        open(first)
+        every { indexing.isIndexed(first, any()) } returns false // retired after it completed
+        coEvery { compilation.ensureCompiled(first, any<DocumentSnapshot>()) } returns compiled()
 
-        val documentProvider = mockk<DocumentProvider>()
-        every { documentProvider.getAllUris() } returns setOf(uri)
-        every { documentProvider.get(uri) } returns "class Test {}"
+        CompilationEnsurer(documents, compilation).ensureAllCompiled()
 
-        val compilationService = mockk<GroovyCompilationService>()
-        every { compilationService.getSymbolStorage(uri) } returns null
-        coEvery { compilationService.compile(uri, any()) } coAnswers {
-            delay(100) // Simulate slow compilation
-            mockk()
+        coVerify(exactly = 2) { compilation.ensureCompiled(first, any<DocumentSnapshot>()) }
+    }
+
+    @Test
+    fun `a buffer without an AST is compiled once per request`(): Unit = runBlocking {
+        open(first)
+        every { indexing.isIndexed(first, any()) } returns false
+        coEvery { compilation.ensureCompiled(first, any<DocumentSnapshot>()) } returns compiled(withAst = false)
+
+        CompilationEnsurer(documents, compilation).ensureAllCompiled()
+
+        coVerify(exactly = 1) { compilation.ensureCompiled(first, any<DocumentSnapshot>()) }
+    }
+
+    @Test
+    fun `a failing or churning document does not stop the others`(): Unit = runBlocking {
+        open(first, second)
+        every { indexing.isIndexed(any(), any()) } returnsMany listOf(false, false, true)
+        coEvery { compilation.ensureCompiled(first, any<DocumentSnapshot>()) } throws
+            ResponseErrorException(ResponseError(ResponseErrorCode.ContentModified, "churn", null))
+        coEvery { compilation.ensureCompiled(second, any<DocumentSnapshot>()) } returns compiled()
+
+        CompilationEnsurer(documents, compilation).ensureAllCompiled()
+
+        coVerify(exactly = 1) { compilation.ensureCompiled(second, any<DocumentSnapshot>()) }
+    }
+
+    @Test
+    fun `a closed document is skipped`(): Unit = runBlocking {
+        every { documents.getAllUris() } returns setOf(first)
+        every { documents.getSnapshot(first) } returns null
+
+        CompilationEnsurer(documents, compilation).ensureAllCompiled()
+
+        coVerify(exactly = 0) { compilation.ensureCompiled(any(), any<DocumentSnapshot>()) }
+    }
+
+    @Test
+    fun `waiting is bounded by the overall timeout`(): Unit = runBlocking {
+        open(first)
+        every { indexing.isIndexed(any(), any()) } returns false
+        coEvery { compilation.ensureCompiled(first, any<DocumentSnapshot>()) } coAnswers { awaitCancellation() }
+
+        val start = System.currentTimeMillis()
+        CompilationEnsurer(documents, compilation, maxTimeMs = 200).ensureAllCompiled()
+
+        val elapsed = System.currentTimeMillis() - start
+        assertTrue(elapsed < 2_000, "should give up after its bound, took ${elapsed}ms")
+    }
+
+    @Test
+    fun `cancelling the request cancels the wait`(): Unit = runBlocking {
+        open(first)
+        every { indexing.isIndexed(any(), any()) } returns false
+        val compiling = CompletableDeferred<Unit>()
+        coEvery { compilation.ensureCompiled(first, any<DocumentSnapshot>()) } coAnswers {
+            compiling.complete(Unit)
+            awaitCancellation()
         }
 
-        val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
-        // When
-        val ensurer = CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticJobs,
-            maxTimeMs = 250, // Short timeout
-        )
-
-        val startTime = System.currentTimeMillis()
-        ensurer.ensureAllCompiled()
-        val elapsed = System.currentTimeMillis() - startTime
-
-        // Then - should timeout and not continue indefinitely
-        assertTrue(elapsed < 500, "Should timeout within reasonable time, took ${elapsed}ms")
-    }
-
-    @Test
-    fun `ensureAllCompiled tracks failed URIs to avoid retry loops`(): Unit = runBlocking {
-        // Given
-        val uri = URI.create("file:///test.groovy")
-
-        val documentProvider = mockk<DocumentProvider>()
-        every { documentProvider.getAllUris() } returns setOf(uri)
-        every { documentProvider.get(uri) } returns "class Test {}"
-
-        val compilationService = mockk<GroovyCompilationService>()
-        every { compilationService.getSymbolStorage(uri) } returns null
-        // First call throws exception, subsequent calls would succeed if retried
-        var callCount = 0
-        coEvery { compilationService.compile(uri, any()) } coAnswers {
-            callCount++
-            if (callCount == 1) {
-                error("Compilation failed")
-            }
-            mockk()
+        val request = async(start = CoroutineStart.UNDISPATCHED) {
+            CompilationEnsurer(documents, compilation).ensureAllCompiled()
         }
+        compiling.await()
+        request.cancel()
 
-        val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
-        // When
-        val ensurer = CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticJobs,
-            maxIterations = 5,
-        )
-        ensurer.ensureAllCompiled()
-
-        // Then - should only attempt once and not retry failed URIs
-        assertEquals(1, callCount, "Should only attempt compilation once for failed URI")
-    }
-
-    @Test
-    fun `ensureAllCompiled waits for pending diagnostic jobs`(): Unit = runBlocking {
-        // Given
-        val uri = URI.create("file:///test.groovy")
-
-        val documentProvider = mockk<DocumentProvider>()
-        every { documentProvider.getAllUris() } returns setOf(uri)
-
-        val compilationService = mockk<GroovyCompilationService>()
-        every { compilationService.getSymbolStorage(uri) } returns mockk()
-
-        val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
-        // Create a pending job
-        var jobCompleted = false
-        val pendingJob = launch {
-            delay(50)
-            jobCompleted = true
-        }
-        diagnosticJobs[uri] = pendingJob
-
-        // When
-        val ensurer = CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticJobs,
-        )
-        ensurer.ensureAllCompiled()
-
-        // Then - should have waited for the job to complete
-        assertTrue(jobCompleted, "Should wait for pending diagnostic jobs")
-        assertFalse(pendingJob.isActive, "Pending job should be completed")
-    }
-
-    @Test
-    fun `ensureAllCompiled compiles unindexed documents`(): Unit = runBlocking {
-        // Given
-        val uri1 = URI.create("file:///compiled.groovy")
-        val uri2 = URI.create("file:///uncompiled.groovy")
-
-        val documentProvider = mockk<DocumentProvider>()
-        every { documentProvider.getAllUris() } returns setOf(uri1, uri2)
-        every { documentProvider.get(uri2) } returns "class Uncompiled {}"
-
-        val compilationService = mockk<GroovyCompilationService>()
-        // uri1 is already compiled
-        every { compilationService.getSymbolStorage(uri1) } returns mockk()
-        // uri2 is not compiled initially, then becomes compiled after compile()
-        var uri2Compiled = false
-        every { compilationService.getSymbolStorage(uri2) } answers {
-            if (uri2Compiled) mockk() else null
-        }
-        coEvery { compilationService.compile(uri2, any()) } coAnswers {
-            uri2Compiled = true
-            mockk()
-        }
-
-        val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
-        // When
-        val ensurer = CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticJobs,
-        )
-        ensurer.ensureAllCompiled()
-
-        // Then - should only compile unindexed document
-        coVerify(exactly = 1) { compilationService.compile(uri2, "class Uncompiled {}") }
-        coVerify(exactly = 0) { compilationService.compile(uri1, any()) }
-    }
-
-    @Test
-    fun `ensureAllCompiled handles null content gracefully`(): Unit = runBlocking {
-        // Given
-        val uri = URI.create("file:///test.groovy")
-
-        val documentProvider = mockk<DocumentProvider>()
-        every { documentProvider.getAllUris() } returns setOf(uri)
-        every { documentProvider.get(uri) } returns null // Document removed
-
-        val compilationService = mockk<GroovyCompilationService>()
-        every { compilationService.getSymbolStorage(uri) } returns null
-
-        val diagnosticJobs = ConcurrentHashMap<URI, Job>()
-
-        // When
-        val ensurer = CompilationEnsurer(
-            documentProvider = documentProvider,
-            compilationService = compilationService,
-            diagnosticJobs = diagnosticJobs,
-        )
-        ensurer.ensureAllCompiled()
-
-        // Then - should not attempt to compile document with null content
-        coVerify(exactly = 0) { compilationService.compile(any(), any()) }
+        assertFailsWith<CancellationException> { request.await() }
     }
 }

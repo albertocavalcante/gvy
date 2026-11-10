@@ -259,7 +259,6 @@ class GroovyTextDocumentService(
             compilationService = compilationService,
             documentProvider = documentProvider,
             sourceNavigator = sourceNavigator,
-            diagnosticsOrchestrator = diagnosticsOrchestrator,
             definitionLinkSupport = { definitionLinkSupport },
             clientTelemetry = { event -> client()?.telemetryEvent(event) },
         )
