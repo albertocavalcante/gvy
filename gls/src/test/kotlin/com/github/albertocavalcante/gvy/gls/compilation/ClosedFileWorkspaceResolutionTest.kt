@@ -87,17 +87,16 @@ class ClosedFileWorkspaceResolutionTest {
     }
 
     @Test
-    fun `a broken declaring source leaves the requested file compiled with the class unresolved`(): Unit =
-        runBlocking {
-            write("Outers.groovy", "class Outer2 { static abstract class Inner { }\n") // unbalanced: fails to parse
-            val spec = write("TableSpec.groovy", "class TableSpec extends Outer2.Inner {\n  def answer() { 42 }\n}\n")
+    fun `a broken declaring source leaves the file compiled with the class unresolved`(): Unit = runBlocking {
+        write("Outers.groovy", "class Outer2 { static abstract class Inner { }\n") // unbalanced: fails to parse
+        val spec = write("TableSpec.groovy", "class TableSpec extends Outer2.Inner {\n  def answer() { 42 }\n}\n")
 
-            val snapshot = compileClosed(spec)
+        val snapshot = compileClosed(spec)
 
-            assertNotNull(snapshot.parseResult.ast, "the requested file keeps its AST: ${snapshot.messages()}")
-            assertTrue(snapshot.messages().any { it.contains("Outer2.Inner") }, "${snapshot.messages()}")
-            assertTrue(snapshot.messages().none { it.contains("Unexpected input") }, "no error from Outers.groovy")
-        }
+        assertNotNull(snapshot.parseResult.ast, "the requested file keeps its AST: ${snapshot.messages()}")
+        assertTrue(snapshot.messages().any { it.contains("Outer2.Inner") }, "${snapshot.messages()}")
+        assertTrue(snapshot.messages().none { it.contains("Unexpected input") }, "no error from Outers.groovy")
+    }
 
     @Test
     fun `the on-demand compile adds only the sources it resolves, however large the workspace`(): Unit = runBlocking {
@@ -123,5 +122,17 @@ class ClosedFileWorkspaceResolutionTest {
         val snapshot = compileClosed(spec)
 
         assertEquals(listOf("TableSpec.groovy"), snapshot.compiledFiles(), "the workspace file is never added")
+    }
+
+    @Test
+    fun `a file declaring two classes is added once when the second is referenced first`(): Unit = runBlocking {
+        // Both names lead to one file: the first answer queues it, and the second is found in the unit.
+        write("Pair.groovy", "class First {}\nclass Second {}\n")
+        val spec = write("TableSpec.groovy", "class TableSpec {\n  Second second\n  First first\n}\n")
+
+        val snapshot = compileClosed(spec)
+
+        assertTrue(snapshot.messages().none { it.contains("unable to resolve class") }, "${snapshot.messages()}")
+        assertEquals(listOf("Pair.groovy", "TableSpec.groovy"), snapshot.compiledFiles())
     }
 }
