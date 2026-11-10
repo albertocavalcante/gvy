@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.delegation
 
+import com.github.albertocavalcante.gvy.semantics.db.methodsSafe
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -126,7 +127,7 @@ class DelegationResolver {
      * ClassNode.getMethods(name) searches the entire class hierarchy (superclasses and interfaces).
      */
     private fun findMethod(classNode: ClassNode, methodName: String): MethodNode? =
-        classNode.getMethods(methodName).firstOrNull()
+        classNode.methodsSafe(methodName).firstOrNull()
 
     /**
      * Finds a method by name on a class, optionally matching parameter types.
@@ -142,7 +143,7 @@ class DelegationResolver {
      * @return The matching method, or null if not found
      */
     fun findMethodWithParams(classNode: ClassNode, methodName: String, parameterTypes: List<String>?): MethodNode? {
-        val candidateMethods = classNode.getMethods(methodName)
+        val candidateMethods = classNode.methodsSafe(methodName)
 
         // If no parameter types specified, return first match (backward compatibility)
         if (parameterTypes == null) {

@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.spock
 
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
+import com.github.albertocavalcante.groovyparser.ast.superClassChain
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -42,7 +44,7 @@ sealed interface SpockSourceContext {
         fun ownerAt(line: Int, column: Int): SpockClassContext? = classes
             .filter { contains(it.classNode, line + 1, column + 1) }
             .minWithOrNull(
-                compareBy<SpockClassContext> { it.classNode.isScript }
+                compareBy<SpockClassContext> { it.classNode.isScriptSafe() }
                     .thenByDescending { depth(it.classNode) }
                     .thenBy { span(it.classNode) },
             )
@@ -197,7 +199,11 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         val superClass = node.superClass
         val bound = superClass?.let(::compilerBound)
         return when {
-            node.isScript -> context(node, SpecificationStatus.NOT_SPECIFICATION, SpecificationEvidence.SCRIPT_CLASS)
+            node.isScriptSafe() -> context(
+                node,
+                SpecificationStatus.NOT_SPECIFICATION,
+                SpecificationEvidence.SCRIPT_CLASS,
+            )
             superClass == null || superClass.name == ClassHelper.OBJECT_TYPE.name ->
                 context(node, SpecificationStatus.NOT_SPECIFICATION, SpecificationEvidence.NO_SUPERCLASS)
             superClass.isResolved -> resolved(node, superClass)
@@ -276,7 +282,9 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     }
 
     private fun resolved(node: ClassNode, superClass: ClassNode): SpockClassContext {
-        val isSpecification = generateSequence(superClass) { it.superClass }.any { it.name == SPECIFICATION_FQN }
+        val isSpecification = (sequenceOf(superClass) + superClass.superClassChain()).any {
+            it.name == SPECIFICATION_FQN
+        }
         val status = if (isSpecification) SpecificationStatus.SPECIFICATION else SpecificationStatus.NOT_SPECIFICATION
         return context(node, status, SpecificationEvidence.RESOLVED_HIERARCHY)
     }

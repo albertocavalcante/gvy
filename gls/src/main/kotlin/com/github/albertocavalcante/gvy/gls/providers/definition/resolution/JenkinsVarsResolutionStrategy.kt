@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -146,7 +147,7 @@ class JenkinsVarsResolutionStrategy(
         val method = scope?.method
         return when {
             !isJenkinsModeEnabled(context.documentUri) -> "Document is not in Jenkins mode"
-            type != null && !type.isScript -> "Enclosing class ${type.name} is not dispatched through the script"
+            type != null && !type.isScriptSafe() -> "Enclosing class ${type.name} is not dispatched through the script"
             method != null && method.isStatic -> "Static method ${method.name} has no script instance"
             scope != null && scope.declares(reference.name, context.targetNode is MethodCallExpression) ->
                 "'${reference.name}' is declared in the script class and shadows vars/"
@@ -237,7 +238,7 @@ class JenkinsVarsResolutionStrategy(
      */
     private fun scriptClassesOf(model: GroovyAstModel, documentUri: URI): Sequence<ClassNode> =
         model.getAllClassNodes().asSequence()
-            .filter { it.isScript }
+            .filter { it.isScriptSafe() }
             .filter { cls -> model.getUri(cls).let { it == null || it == documentUri } }
 
     companion object {

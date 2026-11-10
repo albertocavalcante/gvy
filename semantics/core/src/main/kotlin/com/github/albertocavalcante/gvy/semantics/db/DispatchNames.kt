@@ -65,7 +65,7 @@ internal object DispatchNames {
 
     private fun hasDispatchHook(type: ClassNode): Boolean {
         val chain = superclassChain(type) ?: return false
-        return (chain + chain.flatMap { it.allInterfaces }).any {
+        return (chain + chain.flatMap { it.allInterfacesSafe() }).any {
             it.name !in standardDispatchers && !isGenerated(it) && GroovyDispatch.dispatchesByItself(it)
         }
     }

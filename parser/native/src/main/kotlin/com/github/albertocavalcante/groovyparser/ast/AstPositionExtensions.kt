@@ -176,7 +176,7 @@ private fun MethodCallExpression.mayCall(method: MethodNode): Boolean {
     val type = receiver.type ?: return true
     val owner = method.declaringClass?.let(::traitOrSelf) ?: return true
     if (ClassHelper.isDynamicTyped(type) || type == ClassHelper.OBJECT_TYPE) return true
-    if (type.name == owner.name || type.isDerivedFrom(owner) || type.implementsInterface(owner)) return true
+    if (type.name == owner.name || type.isDerivedFromSafe(owner) || type.implementsInterfaceSafe(owner)) return true
     // Files that only reached CONVERSION leave an unresolved placeholder, named as written in source
     // (`C`, not `p.C`); compare simple names then rather than dropping the call. Only for a
     // placeholder: isResolved is false for every class compiled from source, so testing it alone
@@ -269,7 +269,7 @@ private fun findEnclosingClass(node: ASTNode, visitor: GroovyAstModel): ClassNod
         // This handles cases where parent-child relationships don't include ClassNode -> MethodNode
         if (current is MethodNode) {
             val declaringClass = current.declaringClass
-            if (declaringClass != null && !declaringClass.isScript) {
+            if (declaringClass != null && !declaringClass.isScriptSafe()) {
                 return declaringClass
             }
         }
@@ -305,7 +305,7 @@ private fun getVariableTypeFromSymbol(
  */
 private fun findPropertyInClass(classNode: ClassNode, propertyName: String, symbolTable: SymbolTable): ASTNode? =
     symbolTable.registry.findFieldDeclaration(classNode, propertyName)
-        ?: classNode.getField(propertyName)
+        ?: classNode.findFieldSafe(propertyName)
         ?: classNode.getProperty(propertyName)
 
 /**

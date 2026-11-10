@@ -144,7 +144,9 @@ class NodeRelationshipTracker {
             // NOTE: Stdout is reserved for JSON-RPC in stdio mode; debug output must go through the logger.
             logger.debug { "[getAllClassNodes] Found ${result.size} classes:" }
             result.forEach { cls ->
-                logger.debug { "- ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScript}" }
+                logger.debug {
+                    "- ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScriptSafe()}"
+                }
             }
         }
         return result

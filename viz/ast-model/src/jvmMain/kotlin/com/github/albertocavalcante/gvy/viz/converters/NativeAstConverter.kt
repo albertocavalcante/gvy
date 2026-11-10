@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.viz.converters
 
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.NativeAstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
@@ -130,7 +131,7 @@ class NativeAstConverter {
                 put("name", node.name ?: "")
                 put("isInterface", node.isInterface.toString())
                 put("isEnum", node.isEnum.toString())
-                put("isScript", node.isScript.toString())
+                put("isScript", node.isScriptSafe().toString())
                 put("isAbstract", node.isAbstract.toString())
 
                 node.superClass?.let {

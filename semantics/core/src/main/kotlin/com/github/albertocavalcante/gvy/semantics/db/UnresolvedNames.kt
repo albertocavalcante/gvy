@@ -121,7 +121,7 @@ internal class UnresolvedNames {
 
     private fun isKeyedByIndex(type: ClassNode): Boolean = type.isArray ||
         listOf(ClassHelper.MAP_TYPE, ClassHelper.LIST_TYPE).any {
-            type.name == it.name || type.isDerivedFrom(it) || type.implementsInterface(it)
+            type.name == it.name || type.isDerivedFromSafe(it) || type.implementsInterfaceSafe(it)
         }
 
     private fun cannotBeName(index: Expression): Boolean = when (index) {

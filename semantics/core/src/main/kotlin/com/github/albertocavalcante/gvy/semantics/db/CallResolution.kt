@@ -288,7 +288,7 @@ internal class CallResolver(
         if (variable.isThisExpression) return currentClass
         val binding = lookup(variable.name)
         if (binding != null) return binding.type
-        val member = currentClass.getField(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
+        val member = currentClass.findFieldSafe(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
         return TypeSignatures.knownTypeOrNull(member)
     }
 }
@@ -317,7 +317,7 @@ internal object RuntimeReceivers {
         }
     }
 
-    private fun ClassNode.isSubtypeOf(type: ClassNode) = isDerivedFrom(type) || implementsInterface(type)
+    private fun ClassNode.isSubtypeOf(type: ClassNode) = isDerivedFromSafe(type) || implementsInterfaceSafe(type)
 }
 
 /** The runtime class of a literal, or null: only literals whose JDK/Groovy class is certain. */
@@ -532,7 +532,7 @@ internal object GroovyDispatch {
 
     /** A class whose property reads Groovy routes elsewhere: a Map (keys), or one handling them itself. */
     fun interceptsProperties(type: ClassNode): Boolean =
-        type.name == MAP || type.implementsInterface(ClassHelper.MAP_TYPE) ||
+        type.name == MAP || type.implementsInterfaceSafe(ClassHelper.MAP_TYPE) ||
             type.methods.any { it.name in propertyDispatchMethods }
 
     private val propertyDispatchMethods = setOf("getProperty", "propertyMissing")
@@ -545,7 +545,7 @@ internal object GroovyDispatch {
      */
     fun dispatchesByItself(type: ClassNode): Boolean =
         (type.isPrimaryClassNode && (addsMethods(type) || isInterceptable(type))) ||
-            type.name == MAP || type.implementsInterface(ClassHelper.MAP_TYPE) ||
+            type.name == MAP || type.implementsInterfaceSafe(ClassHelper.MAP_TYPE) ||
             type.methods.any { it.name in selfDispatchMethods && (it.lineNumber > 0 || !isGeneratedMemberHook(type)) }
 
     /**

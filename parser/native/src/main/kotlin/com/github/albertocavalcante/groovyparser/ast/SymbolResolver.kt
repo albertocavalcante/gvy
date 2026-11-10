@@ -92,7 +92,7 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         }
 
         // Look for the field in the class
-        return enclosingClass.getField(variableExpr.name)
+        return enclosingClass.findFieldSafe(variableExpr.name)
     }
 
     /**

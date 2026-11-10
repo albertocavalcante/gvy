@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition
 
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.spock.SpockDataVariables
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import com.github.albertocavalcante.gvy.spock.SpockUnrollPattern
@@ -31,7 +32,7 @@ internal object SpockDefinitionLookup {
         val line = content.lines().getOrNull(position.line) ?: return null
         val source = SpockSourceContext.from(module, isPartial)
         val header = HeaderContext(SpockUnrollSelection.forModule(module), SpockUnrollSource(content), content)
-        return source.classes.filter { !it.classNode.isScript && it.isSpecification(module) }
+        return source.classes.filter { !it.classNode.isScriptSafe() && it.isSpecification(module) }
             .flatMap { it.classNode.methods }
             .filter { it.containsPosition(position.line, position.character) }
             .firstNotNullOfOrNull { method ->
