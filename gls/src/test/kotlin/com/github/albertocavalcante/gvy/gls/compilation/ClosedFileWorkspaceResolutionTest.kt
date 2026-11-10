@@ -176,7 +176,7 @@ class ClosedFileWorkspaceResolutionTest {
             val parent = if (link < 39) " extends C${link + 1}" else ""
             write("chain/Link$link.groovy", "class C$link$parent {}\n")
         }
-        val spec = write("TableSpec.groovy", "class TableSpec extends C0 {\n  String s\n}\n")
+        val spec = write("TableSpec.groovy", "class TableSpec extends C0 {\n  String s\n  Nope n\n}\n")
 
         val snapshot = compileClosed(spec)
 
@@ -185,8 +185,15 @@ class ClosedFileWorkspaceResolutionTest {
         // probes must miss, or a plain `String` would resolve to an empty stand-in.
         val field = snapshot.parseResult.ast?.classes?.single { it.name == "TableSpec" }?.getField("s")
         assertEquals("java.lang.String", field?.type?.name, "${snapshot.messages()}")
-        assertTrue(snapshot.parseResult.outcome.unlocatedClasses.isNotEmpty(), "the cut is recorded")
-        assertTrue(snapshot.messages().none { it.contains("unable to resolve class") }, "${snapshot.messages()}")
+        val outcome = snapshot.parseResult.outcome
+        assertTrue(outcome.unlocatedClasses.contains("C32"), "the cut is recorded: ${outcome.unlocatedClasses}")
+        // C32 is stubbed by its exact name although Link31, not the requester, names it; the requester's own
+        // missing Nope is stubbed in the same round, so the cap does not eat the stub rounds.
+        assertTrue(outcome.stubbedClasses.containsAll(listOf("C32", "Nope")), "${outcome.stubbedClasses}")
+        assertTrue(snapshot.messages().none { it.contains("unable to resolve class C") }, "${snapshot.messages()}")
+        // The stub never reaches the index: C32 is still declared by its own file only.
+        val c32 = compilation.symbolIndexingService.findClasses(ClassNameQuery.Exact("C32")).map { it.uri }
+        assertEquals(listOf(src.resolve("chain/Link32.groovy").toUri()), c32)
     }
 
     @Test

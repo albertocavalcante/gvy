@@ -17,8 +17,6 @@ import com.github.albertocavalcante.nativeapi.ParseResult
 import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
-import org.codehaus.groovy.ast.ClassHelper
-import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.ClassNodeResolver
 import org.codehaus.groovy.control.ClassNodeResolver.LookupResult
@@ -29,7 +27,6 @@ import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.io.StringReaderSource
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
-import java.lang.reflect.Modifier
 import java.net.URI
 import java.net.URL
 import java.nio.file.Files
@@ -670,10 +667,10 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
  * Each file is answered once. Groovy restarts resolution when an answer is a source and expects that source to be
  * queued; once the file is in the unit, its own members probe names such as `Outer2$Specification`, and answering
  * those with the file again would restart with nothing queued. Added files resolve through this resolver too, as
- * a hierarchy needs, so at most [MAX_LOCATED_SOURCES] files are added per compile; a name past the cap resolves to
- * an empty stand-in, and is recorded in [ParseOutcome.unlocatedClasses].
+ * a hierarchy needs, so at most [MAX_LOCATED_SOURCES] files are added per compile; a name past the cap is left
+ * unresolved and recorded, so [MissingClassStubs] stubs it and [ParseOutcome.unlocatedClasses] reports it.
  */
-private class LocatingClassNodeResolver(
+internal class LocatingClassNodeResolver(
     private val locator: (String) -> List<Path>,
     excludedSources: Set<Path>,
     private val buffers: Map<Path, Pair<URI, String>>,
@@ -690,10 +687,11 @@ private class LocatingClassNodeResolver(
         val path = locator(topLevel).map { it.toAbsolutePath().normalize() }
             .firstOrNull { it !in excluded && it !in added } ?: return null
         if (added.size >= MAX_LOCATED_SOURCES) {
-            // Past the cap the class is known but not compiled: an empty stand-in keeps the file that names it
-            // compiling, instead of failing it and unravelling the chain one recompile at a time.
+            // Past the cap the class stays unresolved here and is recorded; MissingClassStubs stubs it by this exact
+            // name on its next pass. Answering with a stand-in instead would also answer Groovy's nested-class
+            // probes (`C32$String`) and capture every simple name below the cut.
             unlocated.add(topLevel)
-            return LookupResult(null, ClassNode(name, Modifier.PUBLIC, ClassHelper.OBJECT_TYPE))
+            return null
         }
         added.add(path)
         val buffer = buffers[path]
