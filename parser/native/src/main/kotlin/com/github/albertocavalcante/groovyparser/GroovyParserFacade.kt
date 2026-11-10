@@ -88,15 +88,15 @@ private class TransformFilteringClassLoader(parent: ClassLoader) : GroovyClassLo
 
 private val compileLogger = KotlinLogging.logger {}
 
-/** Outcome of a compile that did not complete; [missingClassMessage] is set when a needed class was missing. */
-private class CompileFailure(val missingClassMessage: String? = null)
+/** Outcome of a compile that did not complete, with the thrown exception's message when it has one. */
+private class CompileFailure(val message: String? = null)
 
 private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequest): CompileFailure? = try {
     compilationUnit.compile(request.compilePhase)
     null
 } catch (e: CompilationFailedException) {
     compileLogger.debug { "Compilation failed for ${request.uri}: ${e.message}" }
-    CompileFailure()
+    CompileFailure(e.message)
 } catch (e: NoClassDefFoundError) {
     // A transform needed a class the server does not ship; surface it as a diagnostic for this
     // source instead of aborting the caller (e.g. workspace indexing).
@@ -392,7 +392,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
         val failure = compileCatching(compilationUnit, request)
         val compilationFailed = failure != null
-        val linkageFailure = failure?.missingClassMessage
+        val failureMessage = failure?.message
 
         val tokenIndex = GroovyTokenIndex.build(request.content)
 
@@ -401,7 +401,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates).toMutableList()
 
         if (compilationFailed && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
-            val errorMessage = linkageFailure ?: compilationUnit.errorCollector.lastError?.toString() ?: "Unknown error"
+            // ErrorCollector.getLastError throws when nothing was collected, so read the list instead.
+            val lastCollected = compilationUnit.errorCollector.errors.orEmpty().lastOrNull()?.toString()
+            val errorMessage = failureMessage ?: lastCollected ?: "Unknown error"
             diagnostics.add(
                 com.github.albertocavalcante.nativeapi.ParserDiagnostic(
                     range = com.github.albertocavalcante.nativeapi.ParserRange.point(0, 0),

@@ -48,4 +48,20 @@ class GroovyParserGrabTest {
             "expected a diagnostic naming the missing class, got ${result.diagnostics.map { it.message }}",
         )
     }
+
+    @Test
+    fun `a failed compile with no collected errors yields a diagnostic instead of an NPE`() {
+        val code = "class FailsWithoutErrors {}"
+
+        val result = parser.parse(ParseRequest(URI.create("file:///FailsWithoutErrors.groovy"), code))
+
+        assertTrue(
+            result.diagnostics.any { it.message.startsWith("Compilation failed:") },
+            "expected a 'Compilation failed' diagnostic, got ${result.diagnostics.map { it.message }}",
+        )
+        assertTrue(
+            result.diagnostics.none { it.message.contains("Unknown error") },
+            "the exception's own message should be reported, got ${result.diagnostics.map { it.message }}",
+        )
+    }
 }
