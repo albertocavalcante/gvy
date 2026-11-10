@@ -124,11 +124,10 @@ class JenkinsWorkspaceManager(
     fun loadGdslMetadata(): GdslLoadResults = jenkinsContext.loadGdslMetadata()
 
     /**
-     * Reloads GDSL metadata.
+     * Reloads GDSL metadata; the next [getAllMetadata] reflects the files' current contents.
      */
     fun reloadGdslMetadata(): GdslLoadResults {
         logger.info { "Reloading Jenkins GDSL metadata" }
-        // In a real implementation, this would likely clear caches or update symbol tables
         return loadGdslMetadata()
     }
 

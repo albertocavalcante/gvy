@@ -13,9 +13,13 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter
 /**
  * Adapter that converts GDSL parse results to Jenkins metadata.
  *
- * This replaces the regex-based GdslParser with execution-based parsing.
- * The groovy-gdsl module executes GDSL scripts natively, and this adapter
+ * The groovy-gdsl module reads GDSL scripts from their AST without running them, and this adapter
  * converts the captured contributions to Jenkins-specific metadata types.
+ *
+ * GDSL files come from the workspace, so their text is untrusted, while completion and hover render
+ * metadata as markdown. The adapter is that boundary: documentation becomes escaped literal text (no
+ * links, `command:` URIs, HTML or emphasis), names must be identifiers, types must look like type names
+ * (otherwise `Object`), and a default value that could break out of a code span is dropped.
  *
  * Example usage:
  * ```kotlin
@@ -38,6 +42,24 @@ class JenkinsGdslAdapter {
             "groovy.lang." to "",
             "java.util." to "",
         )
+
+        private val IDENTIFIER = Regex("[A-Za-z_$][A-Za-z0-9_$]*")
+        private val TYPE_NAME = Regex("[A-Za-z_$][A-Za-z0-9_$.<>\\[\\], ?]*")
+        private const val FALLBACK_TYPE = "Object"
+        private const val MAX_TYPE_LENGTH = 200
+
+        /** CommonMark lets a backslash escape any ASCII punctuation character, which then renders literally. */
+        private const val MARKDOWN_PUNCTUATION = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"
+
+        /** [text] as markdown that renders as exactly that text. */
+        internal fun literalMarkdown(text: String): String = buildString {
+            text.replace("\r\n", "\n").forEach { char ->
+                if (char in MARKDOWN_PUNCTUATION) append('\\')
+                append(char)
+            }
+        }
+
+        private fun isIdentifier(name: String): Boolean = IDENTIFIER.matches(name)
     }
 
     /**
@@ -53,10 +75,12 @@ class JenkinsGdslAdapter {
         }
 
         val steps = result.methods
+            .filter { isIdentifier(it.name) }
             .map { convertMethod(it, pluginSource) }
             .associateBy { it.name }
 
         val globalVariables = result.properties
+            .filter { isIdentifier(it.name) }
             .map { convertProperty(it) }
             .associateBy { it.name }
 
@@ -85,7 +109,7 @@ class JenkinsGdslAdapter {
             name = method.name,
             plugin = pluginSource,
             parameters = parameters,
-            documentation = method.documentation,
+            documentation = method.documentation?.let(::literalMarkdown),
         )
     }
 
@@ -97,21 +121,22 @@ class JenkinsGdslAdapter {
      */
     fun convertProperty(property: PropertyDescriptor): GlobalVariableMetadata = GlobalVariableMetadata(
         name = property.name,
-        type = property.type,
-        documentation = property.documentation,
+        type = simplifyType(property.type),
+        documentation = property.documentation?.let(::literalMarkdown),
     )
 
     /**
      * Converts named parameters to step parameters.
      */
     private fun convertNamedParameters(params: List<NamedParameterDescriptor>): Map<String, StepParameter> =
-        params.associate { param ->
+        params.filter { isIdentifier(it.name) }.associate { param ->
             param.name to StepParameter(
                 name = param.name,
                 type = simplifyType(param.type),
                 required = param.required,
-                default = param.defaultValue,
-                documentation = param.documentation,
+                // Hover shows the default inside a code span, where escapes do not apply.
+                default = param.defaultValue?.takeUnless { value -> value.any { it == '`' || it.isISOControl() } },
+                documentation = param.documentation?.let(::literalMarkdown),
             )
         }
 
@@ -119,13 +144,13 @@ class JenkinsGdslAdapter {
      * Converts positional parameters to step parameters.
      */
     private fun convertPositionalParameters(params: List<ParameterDescriptor>): Map<String, StepParameter> =
-        params.associate { param ->
+        params.filter { isIdentifier(it.name) }.associate { param ->
             param.name to StepParameter(
                 name = param.name,
                 type = simplifyType(param.type),
                 required = false, // Positional params don't have required info
                 default = null,
-                documentation = param.documentation,
+                documentation = param.documentation?.let(::literalMarkdown),
             )
         }
 
@@ -136,8 +161,11 @@ class JenkinsGdslAdapter {
      * - java.lang.String → String
      * - groovy.lang.Closure → Closure
      * - java.util.Map → Map
+     *
+     * Anything that does not look like a type name (it is shown inside a code span) becomes `Object`.
      */
     private fun simplifyType(type: String): String {
+        if (type.length > MAX_TYPE_LENGTH || !TYPE_NAME.matches(type)) return FALLBACK_TYPE
         var simplified = type
         for ((prefix, replacement) in TYPE_SIMPLIFICATIONS) {
             if (simplified.startsWith(prefix)) {

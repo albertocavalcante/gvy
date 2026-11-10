@@ -9,8 +9,11 @@ package com.github.albertocavalcante.gvy.jenkins
 import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
 import com.github.albertocavalcante.gvy.gdsl.GdslLoadResults
 import com.github.albertocavalcante.gvy.gdsl.GdslLoader
+import com.github.albertocavalcante.gvy.jenkins.gdsl.JenkinsGdslAdapter
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.GlobalVariableMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
+import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
@@ -78,6 +81,7 @@ class JenkinsContext internal constructor(
     private val libraryResolver = SharedLibraryResolver(configuration)
     private val gdslLoader = GdslLoader()
     private val gdslExecutor = GdslExecutor()
+    private val gdslAdapter = JenkinsGdslAdapter()
     private val fileDetector = JenkinsFileDetector(configuration.filePatterns)
     private val libraryParser = LibraryParser()
     private val pluginDiscovery = PluginDiscoveryService(workspaceRoot, configuration.pluginConfig)
@@ -260,8 +264,11 @@ class JenkinsContext internal constructor(
     }
 
     /**
-     * Loads and executes GDSL metadata files from configured paths.
+     * Loads the configured GDSL files and publishes the steps and global variables they declare, replacing
+     * those of the previous load (this is also the reload path). GDSL is read from its AST, never run.
+     * A file that fails to load or read is logged and skipped; the other files still contribute.
      */
+    @Synchronized
     fun loadGdslMetadata(): GdslLoadResults {
         val results = gdslLoader.loadAllGdslFiles(configuration.gdslPaths)
 
@@ -277,17 +284,32 @@ class JenkinsContext internal constructor(
                 }
             }
 
+            gdslSnapshot = null
             return results
         }
 
-        // Read each loaded file. GdslExecutor interprets the AST and never runs the script; the captured
-        // contributions are not yet merged into metadata (audit H21, follow-up PR).
-        results.successful.forEach { result ->
-            logger.info { "Loaded Jenkins GDSL: ${result.path}" }
-            result.content?.let { content -> gdslExecutor.executeAndCapture(content, result.path) }
-        }
-
+        gdslSnapshot = GdslSnapshot(readGdsl(results))
         return results
+    }
+
+    /** Contributions of every readable file; a later file's step or global replaces an earlier one's. */
+    private fun readGdsl(results: GdslLoadResults): BundledJenkinsMetadata {
+        val steps = mutableMapOf<String, JenkinsStepMetadata>()
+        val globals = mutableMapOf<String, GlobalVariableMetadata>()
+        results.successful.forEach { result ->
+            val content = result.content ?: return@forEach
+            val parsed = gdslExecutor.executeAndCapture(content, result.path)
+            if (!parsed.success) {
+                logger.warn { "Could not read Jenkins GDSL ${result.path}: ${parsed.error}" }
+                return@forEach
+            }
+            parsed.warnings.forEach { logger.warn { "Jenkins GDSL ${result.path}: $it" } }
+            val metadata = gdslAdapter.convert(parsed)
+            steps += metadata.steps
+            globals += metadata.globalVariables
+            logger.info { "Loaded Jenkins GDSL ${result.path}: ${metadata.steps.size} steps" }
+        }
+        return BundledJenkinsMetadata(steps = steps, globalVariables = globals)
     }
 
     /**
@@ -301,11 +323,17 @@ class JenkinsContext internal constructor(
     /** Result of the latest successful classpath scan; replaced atomically by [scanClasspath]. */
     private class ScanSnapshot(val classpath: List<Path>, val metadata: BundledJenkinsMetadata)
 
-    /** Merged view computed for one scan snapshot (null scan = bundled metadata only). */
-    private class MergedSnapshot(val scan: ScanSnapshot?, val metadata: MergedJenkinsMetadata)
+    /** Metadata declared by the configured GDSL files; replaced atomically by [loadGdslMetadata]. */
+    private class GdslSnapshot(val metadata: BundledJenkinsMetadata)
+
+    /** Merged view computed for one scan and GDSL snapshot (null = that source contributes nothing). */
+    private class MergedSnapshot(val scan: ScanSnapshot?, val gdsl: GdslSnapshot?, val metadata: MergedJenkinsMetadata)
 
     @Volatile
     private var scanSnapshot: ScanSnapshot? = null
+
+    @Volatile
+    private var gdslSnapshot: GdslSnapshot? = null
 
     @Volatile
     private var mergedSnapshot: MergedSnapshot? = null
@@ -314,22 +342,46 @@ class JenkinsContext internal constructor(
      * Get combined metadata (bundled + dynamic), optionally filtered by installed plugins.
      *
      * Completion and hover call this per request, so the result is memoized: it is rebuilt only
-     * when a classpath scan publishes new dynamic metadata. Configuration (plugins, GDSL paths)
-     * is fixed per context; a configuration change creates a new context and therefore a new view.
+     * when a classpath scan or a GDSL (re)load publishes new metadata. Configuration (plugins, GDSL
+     * paths) is fixed per context; a configuration change creates a new context and therefore a new view.
      *
      * HEURISTIC: If plugins.txt exists, filter to only show steps from installed plugins.
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
      */
     fun getAllMetadata(): MergedJenkinsMetadata {
         val scan = scanSnapshot
-        mergedSnapshot?.takeIf { it.scan === scan }?.let { return it.metadata }
+        val gdsl = gdslSnapshot
+        mergedSnapshot?.takeIf { it.scan === scan && it.gdsl === gdsl }?.let { return it.metadata }
 
         // Racing callers may compute the same view twice; both results are equal and the
         // expensive bundled load is guarded by its own lazy initializer.
-        val merged = buildMergedMetadata(scan?.metadata)
-        mergedSnapshot = MergedSnapshot(scan, merged)
+        val merged = withGdsl(buildMergedMetadata(scan?.metadata), gdsl?.metadata)
+        mergedSnapshot = MergedSnapshot(scan, gdsl, merged)
         return merged
     }
+
+    /**
+     * Adds GDSL steps and globals the other sources do not know. Bundled and scanned metadata are richer
+     * (enrichment, parameters, plugins), so GDSL never replaces them. GDSL entries are the user's own
+     * configuration, so plugin filtering does not apply to them.
+     */
+    private fun withGdsl(metadata: MergedJenkinsMetadata, gdsl: BundledJenkinsMetadata?): MergedJenkinsMetadata {
+        if (gdsl == null) return metadata
+        val newSteps = gdsl.steps.filterKeys { it !in metadata.steps }.mapValues { (_, step) -> step.toMerged() }
+        val newGlobals = gdsl.globalVariables.filterKeys { it !in metadata.globalVariables }
+            .mapValues { (_, global) -> global.toMerged() }
+        if (newSteps.isEmpty() && newGlobals.isEmpty()) return metadata
+        return metadata.copy(steps = metadata.steps + newSteps, globalVariables = metadata.globalVariables + newGlobals)
+    }
+
+    private fun GlobalVariableMetadata.toMerged(): MergedGlobalVariable = MergedGlobalVariable(
+        name = name,
+        type = type,
+        extractedDocumentation = documentation,
+        enrichedDescription = null,
+        documentationUrl = null,
+        properties = emptyMap(),
+    )
 
     private fun buildMergedMetadata(dynamicMetadata: BundledJenkinsMetadata?): MergedJenkinsMetadata {
         val versionedMerged = bundledMetadata
