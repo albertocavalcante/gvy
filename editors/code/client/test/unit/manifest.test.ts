@@ -112,4 +112,26 @@ describe("package.json manifest", () => {
       serverDefaults,
     );
   });
+
+  it("keeps settings that run code or choose executables out of workspace control", () => {
+    // A cloned repository's .vscode/settings.json must not be able to run its own code: GDSL scripts
+    // run arbitrary Groovy in the server, the Java homes pick the java binary the extension and builds
+    // launch, and VM args can add -javaagent.
+    const properties = manifest.contributes.configuration.properties;
+    for (const key of [
+      "groovy.jenkins.gdslExecution.enabled",
+      "groovy.jenkins.gdslPaths",
+      "groovy.languageServer.javaHome",
+      "groovy.java.home",
+      "groovy.server.vmargs",
+      "groovy.configuration.runtimes",
+      "groovy.project.javaHome",
+    ]) {
+      assert.ok(properties[key], `${key} is not contributed`);
+      assert.ok(
+        ["machine", "application"].includes(properties[key].scope),
+        `${key} must be machine- or application-scoped, not ${properties[key].scope ?? "window"}`,
+      );
+    }
+  });
 });

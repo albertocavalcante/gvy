@@ -487,17 +487,19 @@
       "title": "Groovy Language Server",
       "properties": {
         "groovy.languageServer.javaHome": {
+          "scope": "machine",
           "type": "string",
           "description": "Path to Java home for running the Groovy Language Server (requires Java 17+). If not set, auto-detected."
         },
         "groovy.java.home": {
+          "scope": "machine",
           "type": "string",
           "deprecationMessage": "Use 'groovy.languageServer.javaHome' instead. This setting will be removed in a future version.",
           "description": "DEPRECATED: Use groovy.languageServer.javaHome"
         },
         "groovy.project.javaHome": {
           "type": "string",
-          "scope": "resource",
+          "scope": "machine",
           "description": "Path to Java home for project build/test execution (Maven, Gradle). If not set, uses system JAVA_HOME."
         },
         "groovy.jdk.suppressMismatchWarning": {
@@ -508,7 +510,7 @@
         },
         "groovy.configuration.runtimes": {
           "type": "array",
-          "scope": "machine-overridable",
+          "scope": "machine",
           "description": "Map Java versions to local JDK installations. Used to select the appropriate JDK for projects with specific version requirements.",
           "items": {
             "type": "object",
@@ -611,6 +613,7 @@
           "description": "Select the parser engine to use (Core: GroovyParser, Native: Groovy 3)."
         },
         "groovy.server.vmargs": {
+          "scope": "machine",
           "type": "array",
           "items": {
             "type": "string"
@@ -742,17 +745,19 @@
           "markdownDescription": "Jenkins shared libraries configuration. Each library provides custom pipeline steps and DSL extensions.\n\nExample:\n```json\n[\n  {\n    \"name\": \"my-pipeline-lib\",\n    \"jar\": \"/path/to/my-pipeline-lib.jar\",\n    \"sourcesJar\": \"/path/to/my-pipeline-lib-sources.jar\"\n  }\n]\n```"
         },
         "groovy.jenkins.gdslPaths": {
+          "scope": "machine",
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Paths to IntelliJ GDSL files for DSL enhancements. GDSL files provide dynamic method and property contributions for pipeline DSLs.\n\nExample: `[\"/path/to/jenkins.gdsl\"]`"
+          "markdownDescription": "Paths to IntelliJ GDSL files for DSL enhancements. GDSL files provide dynamic method and property contributions for pipeline DSLs. Can only be set in user (or remote machine) settings, because the scripts run in the server.\n\nExample: `[\"/path/to/jenkins.gdsl\"]`"
         },
         "groovy.jenkins.gdslExecution.enabled": {
+          "scope": "machine",
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Enable execution of GDSL scripts. Disabled by default for security because GDSL runs arbitrary Groovy code. Only enable for trusted workspaces."
+          "markdownDescription": "Enable execution of GDSL scripts. Disabled by default for security because GDSL runs arbitrary Groovy code. Can only be set in user (or remote machine) settings, never by a workspace."
         },
         "groovy.jenkins.pluginsTxtPath": {
           "type": "string",
