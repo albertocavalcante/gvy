@@ -68,7 +68,11 @@ class JenkinsStepHoverStrategy(
         // `script {}` or `node {}`) is the step.
         val declarative = (name == PIPELINE || PIPELINE in enclosing) && enclosing.none { it in SCRIPTED_BODIES }
         if (!declarative) return null
-        val option = metadata.declarativeOptions[name]?.takeIf { enclosing.firstOrNull() == OPTIONS_BLOCK }
+        val parent = enclosing.firstOrNull()
+        val option = metadata.declarativeOptions[name]?.takeIf { parent == OPTIONS_BLOCK }
+        // A section or directive only where its schema allows it: `stage('x') {}` inside `steps {}` is the step.
+        val section = metadata.sections[name]?.takeIf { isAllowedIn(it.allowedIn, parent) }
+        val directive = metadata.directives[name]?.takeIf { isAllowedIn(it.allowedIn, parent) }
         val content = when {
             option != null -> markdown {
                 h2("Declarative option `$name`")
@@ -79,31 +83,32 @@ class JenkinsStepHoverStrategy(
                     list(option.parameters.map { (key, param) -> "**`$key`**: `${param.type}`" })
                 }
             }
-            metadata.sections[name] != null -> metadata.sections.getValue(name).let { section ->
-                declarativeBlockMarkdown(
-                    "section",
-                    name,
-                    section.description,
-                    section.allowedIn,
-                    section.documentationUrl,
-                )
-            }
-            metadata.directives[name] != null -> metadata.directives.getValue(name).let { directive ->
-                declarativeBlockMarkdown(
-                    "directive",
-                    name,
-                    directive.description,
-                    directive.allowedIn,
-                    directive.documentationUrl,
-                )
-            }
+            section != null -> declarativeBlockMarkdown(
+                "section",
+                name,
+                section.description,
+                section.allowedIn,
+                section.documentationUrl,
+            )
+            directive != null -> declarativeBlockMarkdown(
+                "directive",
+                name,
+                directive.description,
+                directive.allowedIn,
+                directive.documentationUrl,
+            )
             else -> return null
         }
         return Hover().apply {
             contents = Either.forRight(MarkupContent(MarkupKind.MARKDOWN, content))
-            range = hoverRangeOf(node)
+            // Only the name: a section's call spans its whole block (`pipeline` would highlight the file).
+            range = hoverRangeOf(node.method) ?: hoverRangeOf(node)
         }
     }
+
+    /** `root` (only `pipeline`) means top level, outside any block. */
+    private fun isAllowedIn(allowedIn: List<String>, parent: String?): Boolean =
+        if (parent == null) ROOT in allowedIn else parent in allowedIn
 
     private fun declarativeBlockMarkdown(
         kind: String,
@@ -225,7 +230,7 @@ class JenkinsStepHoverStrategy(
      * that no negative LSP coordinate is ever emitted. Groovy's `lastColumnNumber` is 1-based and EXCLUSIVE; the
      * 0-based exclusive LSP end is `lastColumnNumber - 1`.
      */
-    private fun hoverRangeOf(node: MethodCallExpression): Range? {
+    private fun hoverRangeOf(node: ASTNode): Range? {
         val positions = listOf(node.lineNumber, node.columnNumber, node.lastLineNumber, node.lastColumnNumber)
         if (positions.any { it < 1 }) return null
         return Range(
@@ -237,6 +242,7 @@ class JenkinsStepHoverStrategy(
     private companion object {
         const val OPTIONS_BLOCK = "options"
         const val PIPELINE = "pipeline"
+        const val ROOT = "root"
         val SCRIPTED_BODIES = setOf("script", "node")
     }
 }

@@ -999,4 +999,43 @@ class Calculator {
 
         logger.debug { "Fallback hover test succeeded. Content: $content" }
     }
+
+    /**
+     * Hovering the name of a call on the implicit `this` shows that call, like the explicit `this.foo()`.
+     * Before, the name resolved to the implicit receiver and the hover read `def this`.
+     */
+    @Test
+    fun `hover on an implicit-this call name shows the method call`(): Unit = runTest {
+        val script = hoverValue("implicit-script", "def foo(int x) { x }\nfoo(1)\n", Position(1, 1))
+        val method = hoverValue(
+            "implicit-method",
+            "class A {\n  String bar(String s) { s }\n  def run() {\n    bar('x')\n  }\n}\n",
+            Position(3, 5),
+        )
+
+        assertMethodCallHover(script, "foo")
+        assertMethodCallHover(method, "bar")
+    }
+
+    /** Guard: the explicit receiver form was already the method-call hover and must stay so. */
+    @Test
+    fun `hover on an explicit this call name is unchanged`(): Unit = runTest {
+        val explicit = hoverValue("explicit-this", "def foo(int x) { x }\nthis.foo(1)\n", Position(1, 6))
+
+        assertMethodCallHover(explicit, "foo")
+        assertTrue(explicit!!.contains("this.foo(1)"), explicit)
+    }
+
+    private suspend fun hoverValue(name: String, code: String, position: Position): String? {
+        val uri = URI.create("file:///$name.groovy")
+        documentProvider.put(uri, code)
+        compilationService.compile(uri, code)
+        return hoverProvider.provideHover(uri.toString(), position)?.contents?.right?.value
+    }
+
+    private fun assertMethodCallHover(value: String?, method: String) {
+        assertNotNull(value)
+        assertTrue(value.contains("### Method Call") && value.contains("**Method**: $method"), value)
+        assertFalse(value.contains("def this"), value)
+    }
 }

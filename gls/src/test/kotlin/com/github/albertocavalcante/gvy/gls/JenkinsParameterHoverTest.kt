@@ -208,6 +208,27 @@ class JenkinsParameterHoverTest {
         assertTrue(stages?.contains("Declarative section `stages`") == true, "stages section: $stages")
     }
 
+    @Test
+    fun `a section name used where the section is not allowed keeps the step hover`(): Unit = runBlocking {
+        val line = "                stage('inner') { echo 'x' }"
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('B') {\n            steps {\n" +
+            "$line\n            }\n        }\n    }\n}"
+        val text = hoverText(code, line = 5, character = line.indexOf("stage") + 2)
+
+        assertTrue(text == null || !text.contains("Declarative section"), "stage inside steps: $text")
+    }
+
+    @Test
+    fun `a declarative hover range covers the name, not the whole block`(): Unit = runBlocking {
+        val code = "pipeline {\n    agent any\n    stages {\n    }\n}"
+        val pipeline = hoverAt(code, line = 0, character = 2)
+        val stages = hoverAt(code, line = 2, character = 6)
+
+        assertTrue(pipeline?.contents?.right?.value?.contains("Declarative section `pipeline`") == true)
+        assertEquals(Range(Position(0, 0), Position(0, 8)), pipeline?.range)
+        assertEquals(Range(Position(2, 4), Position(2, 10)), stages?.range)
+    }
+
     /** Guard: passes with or without the strategy (the ordinary hover never mentions the Jenkins env docs). */
     @Test
     fun `a local variable named like a global keeps the ordinary hover`(): Unit = runBlocking {
