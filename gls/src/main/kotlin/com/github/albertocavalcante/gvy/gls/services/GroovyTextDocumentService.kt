@@ -14,6 +14,7 @@ import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarch
 import com.github.albertocavalcante.gvy.gls.providers.codeaction.CodeActionProvider
 import com.github.albertocavalcante.gvy.gls.providers.codelens.TestCodeLensProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider
+import com.github.albertocavalcante.gvy.gls.providers.completion.forClient
 import com.github.albertocavalcante.gvy.gls.providers.crossfile.CrossFileOperationsHandler
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.DiagnosticProviderAdapter
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.UnusedImportDiagnosticProvider
@@ -133,6 +134,10 @@ class GroovyTextDocumentService(
     @Volatile
     private var definitionLinkSupport: Boolean = options.definitionLinkSupport
 
+    // Read once from the client's initialize capabilities; see updateLabelDetailsSupport.
+    @Volatile
+    private var labelDetailsSupport: Boolean = false
+
     private val logger = KotlinLogging.logger {}
 
     /** Providers are built per request; this keeps unchanged workspace files cached across rename checks. */
@@ -153,6 +158,11 @@ class GroovyTextDocumentService(
 
     /** Called on any watched-file event: the directory walk behind rename checks may be out of date. */
     fun invalidateWorkspaceFiles() = renameWalks.invalidate()
+
+    /** Whether the client renders `CompletionItem.labelDetails` (LSP 3.17), from its initialize capabilities. */
+    fun updateLabelDetailsSupport(supported: Boolean) {
+        labelDetailsSupport = supported
+    }
 
     fun updateDefinitionLinkSupport(supported: Boolean) {
         definitionLinkSupport = supported
@@ -450,7 +460,7 @@ class GroovyTextDocumentService(
             )
 
             logger.debug { "Returning ${completions.size} completions" }
-            Either.forLeft(completions)
+            Either.forLeft(completions.forClient(labelDetailsSupport))
         }
 
     override fun resolveCompletionItem(unresolved: CompletionItem): CompletableFuture<CompletionItem> =

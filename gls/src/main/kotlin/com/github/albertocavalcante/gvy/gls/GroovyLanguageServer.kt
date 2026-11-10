@@ -235,6 +235,9 @@ class GroovyLanguageServer(
 
         val linkSupport = params.capabilities?.textDocument?.definition?.linkSupport == true
         textDocumentService.updateDefinitionLinkSupport(linkSupport)
+        textDocumentService.updateLabelDetailsSupport(
+            params.capabilities?.textDocument?.completion?.completionItem?.labelDetailsSupport == true,
+        )
 
         savedInitOptionsMap = parseInitOptions(params.initializationOptions)
         textDocumentService.updateConfiguration(ServerConfiguration.fromMap(savedInitOptionsMap))
