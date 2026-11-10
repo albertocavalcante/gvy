@@ -369,8 +369,9 @@ class SpockTableProviderTest {
         assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
 
         // A syntax break plus a header change: the file is excluded for certain (the compile degrades), and
-        // matching by short name would see Outer1.Inner's changed header.
-        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("MissingOuter1Base { void m( }"))
+        // matching by short name would see Outer1.Inner's changed header. The break must still lex, because it
+        // comes before Outer2.Inner: a lex error before the target's header denies reuse by design.
+        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("MissingOuter1Base { void m() { def x = } }"))
         fixture.edit()
 
         val degraded = compilationService.getCompiledSnapshot(fixture.fileUri)?.parseResult?.outcome
