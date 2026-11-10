@@ -78,6 +78,8 @@ class RetiredWaiterTest {
     @AfterEach
     fun tearDown() {
         released.countDown()
+        // A failed test must not leave owner parses parked on their latches for WAIT_SECONDS
+        gated?.releaseAll()
         scope.cancel()
     }
 
@@ -250,9 +252,13 @@ class RetiredWaiterTest {
     private fun CoroutineScope.waitOn(uri: URI) =
         async(SupervisorJob(), start = CoroutineStart.UNDISPATCHED) { service.ensureCompiled(uri) }
 
+    /** The owners of the running test, released in [tearDown] whatever its outcome. */
+    private var gated: Owners? = null
+
     private fun gatedOwners(uri: URI, beforeReplacement: () -> Unit = {}, text: () -> String): Owners {
         armed.set(false)
         val owners = Owners(uri, text, beforeReplacement)
+        gated = owners
         beforeParse = owners::gate
         return owners
     }
