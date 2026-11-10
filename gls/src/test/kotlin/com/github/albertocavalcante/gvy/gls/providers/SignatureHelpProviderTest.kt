@@ -226,10 +226,10 @@ class SignatureHelpProviderTest {
 
         val signature = result.signatures.first()
         val paramLabels = signature.parameters.mapNotNull { it.label?.left }
-        // Arrays are now displayed as Type[] (we can't reliably detect varargs from AST)
+        // A parameter written `Object... args` reads as written (#1405); `Object[]` stays an array.
         assertTrue(
-            paramLabels.last().contains("Object[] args"),
-            "Should show array param as Object[]. Found: $paramLabels",
+            paramLabels.last().contains("Object... args"),
+            "Should show the varargs parameter as written. Found: $paramLabels",
         )
 
         // Active parameter should map to the varargs index (1) even if we are at arg index 2

@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.providers.hover
 import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
 import com.github.albertocavalcante.gvy.gls.documentation.SignatureFormatter
 import com.github.albertocavalcante.gvy.semantics.native.displayName
+import com.github.albertocavalcante.gvy.semantics.native.displayType
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -112,5 +113,5 @@ internal object DeclarationNodeRenderer {
     }
 
     private fun parametersString(node: MethodNode): String =
-        node.parameters.joinToString(", ") { "${it.type.displayName()} ${it.name}" }
+        node.parameters.joinToString(", ") { "${it.displayType()} ${it.name}" }
 }

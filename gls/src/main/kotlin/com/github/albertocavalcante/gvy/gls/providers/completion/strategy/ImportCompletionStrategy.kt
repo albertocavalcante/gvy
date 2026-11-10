@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.semantics.native.displayName
+import com.github.albertocavalcante.gvy.semantics.native.displayType
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.Position
@@ -178,7 +179,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
             .forEach { method ->
                 val returnType = method.returnType?.displayName() ?: "def"
-                val params = method.parameters.joinToString(", ") { it.type.displayName() }
+                val params = method.parameters.joinToString(", ") { it.displayType() }
                 builder.add(
                     CompletionItem().apply {
                         label = method.name

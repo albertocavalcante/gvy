@@ -15,6 +15,7 @@ import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.displayName
+import com.github.albertocavalcante.gvy.semantics.native.displayType
 import groovy.lang.Script
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
@@ -381,16 +382,13 @@ class SignatureHelpProvider(
 // --- Converters ---
 
 private fun MethodNode.toSignatureInformation(): SignatureInformation {
-    // NOTE: Heuristic - We display all array parameters as `Type[]` instead of trying to
-    // detect varargs (`Type...`). This is because Groovy's MethodNode doesn't expose a
-    // reliable `isVargsMethod()` flag, and incorrectly guessing would show `String[]` as
-    // `String...` which is misleading. The trade-off is that true varargs methods will
-    // display as `Type[]` instead of `Type...`, but this is semantically correct and
-    // avoids user confusion.
+    // A parameter written `Type...` reads as written: the parse context Groovy keeps on the parameter
+    // records the `...` (Parameter.isVarargs). Explicit `Type[]` parameters, and parameters without that
+    // context, display as arrays (#1405).
     val paramsInfo = parameters.map { param ->
         val typeName = when {
             param.isDynamicTyped -> "def"
-            else -> param.type.displayName()
+            else -> param.displayType()
         }
         val defaultValue = param.initialExpression?.let { expr ->
             val text = expr.text ?: return@let ""
