@@ -68,6 +68,26 @@ refute "real markers in markdown are caught" check main
 branch_with eight T.kt 'a\n======== not a marker\n<<<<<<<<< also not\n'
 assert "longer runs and mid-line text pass" check main
 
+# An added line that looks like a diff file header must not relabel the file.
+branch_with plusplus README.md 'Title\n=======\n++ not a header\n'
+assert "added '++ ' line does not break the markdown exception" check main
+branch_with plusplus2 README.md '++ a\n=======\n'
+assert "added '++ ' line then heading underline passes" check main
+branch_with plusplus3 T.kt '++ b/Other.md\n<<<<<<< HEAD\n'
+out=$(cd "${tmp}" && bash "${script}" main 2>&1 || true)
+if [[ "${out}" == *"T.kt:2: leftover"* ]]; then
+  echo "ok   - '++ b/...' content keeps the real file and line"
+else
+  echo "FAIL - '++ b/...' content keeps the real file and line (got: ${out})"
+  fails=$((fails + 1))
+fi
+
+# CRLF files.
+branch_with crlf T.kt 'x\r\n=======\r\ny\r\n'
+refute "CRLF ======= is caught" check main
+branch_with crlfmd README.md 'Title\r\n=======\r\n'
+assert "CRLF markdown heading underline passes" check main
+
 # Staged mode on the index, before anything is committed.
 git_ checkout -q main
 printf 'x\n<<<<<<< HEAD\n' >"${tmp}/S.kt"

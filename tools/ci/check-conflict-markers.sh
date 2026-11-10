@@ -39,13 +39,18 @@ git diff "${range[@]}" --unified=0 --no-color --no-ext-diff --no-textconv \
         }
       }
     }
-    /^\+\+\+ / {
+    /^diff --git / {
+      inheader = 1
+      next
+    }
+    inheader && /^\+\+\+ / {
       current = substr($0, 5)
       sub(/^b\//, "", current)
       isdoc[current] = (current ~ /\.(md|rst|adoc|txt)$/)
       next
     }
     /^@@ / {
+      inheader = 0
       # @@ -a,b +c,d @@
       split($3, plus, ",")
       lineno = substr(plus[1], 2) + 0
@@ -53,6 +58,7 @@ git diff "${range[@]}" --unified=0 --no-color --no-ext-diff --no-textconv \
     }
     /^\+/ {
       body = substr($0, 2)
+      sub(/\r$/, "", body) # CRLF files
       kind_now = ""
       if (body ~ /^(<<<<<<<|>>>>>>>|\|\|\|\|\|\|\|)( |$)/) kind_now = "strong"
       else if (body ~ /^=======$/) kind_now = "sep"
