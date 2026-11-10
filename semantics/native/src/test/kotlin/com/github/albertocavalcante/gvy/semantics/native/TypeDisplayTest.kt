@@ -41,6 +41,8 @@ class TypeDisplayTest {
             InnerClassNode(script, "Script\$_run_closure1", Modifier.PUBLIC or SYNTHETIC, ClassHelper.OBJECT_TYPE)
 
         assertEquals("Script\$_run_closure1", closure.displayName())
+        val flagged = InnerClassNode(script, "Script\$_gen3", Modifier.PUBLIC, OBJECT).apply { isSynthetic = true }
+        assertEquals("Script\$_gen3", flagged.displayName())
     }
 
     @Test

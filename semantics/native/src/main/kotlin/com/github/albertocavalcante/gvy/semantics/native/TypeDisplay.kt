@@ -21,9 +21,14 @@ fun ClassNode.displayName(): String {
     val inner = node as? InnerClassNode
     val outer = inner?.outerClass ?: return binaryNameDisplay(node.nameWithoutPackage)
     // Structural facts first: a user-declared `class _Helper` is named, whatever its spelling.
-    val separator = if (inner.isAnonymous || inner.isSynthetic || inner.isClosureClass()) "$" else "."
+    val separator = if (inner.isAnonymous || inner.isGenerated() || inner.isClosureClass()) "$" else "."
     return outer.displayName() + separator + inner.name.substringAfterLast('$')
 }
+
+// Either form of the synthetic marker: AST's own flag, or the ACC_SYNTHETIC modifier bit.
+private fun InnerClassNode.isGenerated(): Boolean = isSynthetic || (modifiers and ACC_SYNTHETIC) != 0
+
+private const val ACC_SYNTHETIC = 0x1000
 
 // Groovy's closure classes (`Script$_run_closure1`) extend Closure directly. Reads the declared
 // superclass node only, never resolving a hierarchy.
