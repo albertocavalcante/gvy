@@ -23,6 +23,7 @@ import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import org.codehaus.groovy.control.Phases
 import java.net.URI
@@ -248,13 +249,22 @@ class GroovyCompilationService internal constructor(
     /**
      * Retires every file's artifacts: work that started earlier can no longer publish, and pending jobs are
      * cancelled. Nothing new can be published between the separate removals.
+     *
+     * Under the fence this only swaps references, so it is O(1) whatever the workspace size (#1342). The retired
+     * pending jobs are cancelled after the fence is released; one that is still running when this returns is only
+     * wasted work, because its ticket belongs to the retired epoch and can never commit.
      */
     fun clearCaches() = semanticSnapshotGuard.invalidate {
+        var retired: Collection<Deferred<CompilationResult>> = emptyList()
+        // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
         ownership.retireAll {
-            cacheService.clear()
+            retired = cacheService.detach()
             symbolIndexer.clear()
             semanticIndexer.clear()
         }
+        // Cancelled outside the fence: their cancellation handlers may take tickets. A retired job still running
+        // after this returns is only wasted work, because its old-epoch ticket can never commit.
+        retired.forEach { it.cancel() }
         invalidateClassLoader()
     }
 

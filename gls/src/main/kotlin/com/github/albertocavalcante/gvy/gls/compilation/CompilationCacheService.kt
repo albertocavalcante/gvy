@@ -21,7 +21,12 @@ class CompilationCacheService(
     val ownership: ArtifactOwnership = ArtifactOwnership(),
 ) {
     private val cache = CompilationCache(maxEntries, isOpen)
-    private val compilationJobs = ConcurrentHashMap<URI, PendingCompilation>()
+    /*
+     * Swapped by [detach] (#1342). A registration racing a swap may land in the old map: such a job was claimed
+     * before the global retirement, so its old-epoch ticket can never commit, and it is at most wasted work. Each
+     * job's own cleanup re-reads this field and removes only itself, so it never touches a newer job.
+     */
+    @Volatile private var compilationJobs = ConcurrentHashMap<URI, PendingCompilation>()
 
     /**
      * Gets cached ParseResult if content AND configuration fingerprint match.
@@ -147,9 +152,18 @@ class CompilationCacheService(
      * Clears all cached data and cancels every compilation job.
      * Used when workspace configuration changes significantly.
      */
-    fun clear() {
+    fun clear() = detach().forEach { it.cancel() }
+
+    /**
+     * Drops all cached data and the pending jobs in O(1), returning those jobs for the caller to cancel. A global
+     * clear calls this inside the fence and cancels the jobs after it, so their cancellation handlers never run
+     * while the fence is held (#1342).
+     */
+    internal fun detach(): Collection<Deferred<CompilationResult>> {
         cache.clear()
-        compilationJobs.keys.forEach { uri -> compilationJobs.remove(uri)?.deferred?.cancel() }
+        val detached = compilationJobs
+        compilationJobs = ConcurrentHashMap()
+        return detached.values.map { it.deferred }
     }
 
     /**

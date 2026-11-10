@@ -26,7 +26,9 @@ sealed interface ClassNameQuery {
  * entries change together under one lock.
  */
 internal class WorkspaceClassNames {
-    private val files = ConcurrentSkipListMap<String, MutableSet<URI>>()
+    // Replaced by [clear] under [lock]; [replace] re-reads it under the same lock, so no write lands in a dead map
+    // after a clear. Lock-free readers see the old or the new map (#1342).
+    @Volatile private var files = ConcurrentSkipListMap<String, MutableSet<URI>>()
     private val lock = Any()
 
     /**
@@ -46,9 +48,10 @@ internal class WorkspaceClassNames {
         }
     }
 
+    /** Runs [write] (the owner's own swap) and swaps in an empty name map, both under the lock: O(1) (#1342). */
     fun clear(write: () -> Unit) = synchronized(lock) {
         write()
-        files.clear()
+        files = ConcurrentSkipListMap()
     }
 
     fun files(query: ClassNameQuery): Set<URI> = when (query) {
