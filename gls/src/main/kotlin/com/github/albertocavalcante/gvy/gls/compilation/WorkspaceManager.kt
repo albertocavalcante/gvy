@@ -269,16 +269,37 @@ class WorkspaceManager internal constructor(
     fun listedSpellings(paths: Collection<Path>): Map<Path, Path> {
         if (paths.isEmpty()) return emptyMap()
         val workspace = current()
-        val index = listedIndex?.takeIf { it.workspace === workspace }
-            ?: ListedIndex(workspace).also { listedIndex = it }
+        val index = listedIndexFor(workspace)
         return paths.associateWith { path ->
             index.spelling.inRoot(path)?.let(index::listedSpelling) ?: path
         }
     }
 
     /** One model's [Spelling] and its listed sources by key: models are immutable, so it is keyed by identity. */
-    private inner class ListedIndex(val workspace: WorkspaceModel) {
+    private fun listedIndexFor(workspace: WorkspaceModel): ListedIndex =
+        listedIndex?.takeIf { it.spells(workspace) } ?: ListedIndex(workspace).also { listedIndex = it }
+
+    /**
+     * An identity that changes exactly when [listedSpellings] may answer differently: a new root, source roots or
+     * listing. A dependency or target re-stamp publishes a new model with the same ones and keeps it (#1446).
+     */
+    internal fun spellingGeneration(): Any = listedIndexFor(current())
+
+    private inner class ListedIndex(private val workspace: WorkspaceModel) {
         val spelling = Spelling(workspace.sourceRoots.map { it.toAbsolutePath().normalize() }, workspace.root)
+
+        // The last model found to spell alike: each model is compared once, structurally, then by identity.
+        @Volatile
+        private var agreed: WorkspaceModel = workspace
+
+        /** Whether [next] spells paths as this did: the same root, source roots and listing, by value. */
+        fun spells(next: WorkspaceModel): Boolean {
+            if (next === agreed) return true
+            val same = next.root == workspace.root && next.sourceRoots == workspace.sourceRoots &&
+                next.sources == workspace.sources
+            if (same) agreed = next
+            return same
+        }
 
         // A translated path already is its listed spelling when every key is the path's own text (no root folds
         // case and the platform keeps normalisations apart) and the roots, so the sources, are spelled normalised.

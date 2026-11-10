@@ -46,6 +46,8 @@ class SymbolIndexingService(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
     private val ownership: ArtifactOwnership = ArtifactOwnership(),
+    /** Listed copies an open buffer under another spelling stands for (#1446): left out of [getAllSymbolIndices]. */
+    private val shadowed: () -> Set<URI> = { emptySet() },
     /** Whether [uri] is open in the editor: its buffer, indexed by the compile path, wins over the disk. */
     private val isOpen: (URI) -> Boolean = { false },
 ) {
@@ -119,8 +121,11 @@ class SymbolIndexingService(
      *
      * @return Map of URI to SymbolIndex for all indexed files
      */
-    fun getAllSymbolIndices(): Map<URI, SymbolIndex> = entries.entries.sortedBy { it.key }
-        .associateTo(LinkedHashMap()) { it.key to it.value.index }
+    fun getAllSymbolIndices(): Map<URI, SymbolIndex> {
+        val hidden = shadowed()
+        return entries.entries.filter { it.key !in hidden }.sortedBy { it.key }
+            .associateTo(LinkedHashMap()) { it.key to it.value.index }
+    }
 
     /**
      * Workspace classes matching [query], ordered by file. Reads only the files that declare a matching
