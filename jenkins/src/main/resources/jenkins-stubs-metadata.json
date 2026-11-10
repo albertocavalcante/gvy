@@ -1376,7 +1376,7 @@
             "documentation": "Description shown on the build form"
           }
         },
-        "documentation": "A password parameter; the value is masked. Its default is bound through the defaultValueAsSecret constructor argument (a Secret); Pipeline syntax documents defaultValue"
+        "documentation": "A password parameter; the value is masked. Its default is bound through the defaultValueAsSecret constructor argument (a Secret); Pipeline syntax documents defaultValue. A literal default is visible in the Jenkinsfile and in build history, so use credentials for real secrets"
       }
     },
     "tools": {

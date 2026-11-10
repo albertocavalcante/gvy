@@ -439,6 +439,26 @@ class JenkinsCompletionExactSetTest {
         assertEquals(setOf("name:", "choices:", "description:"), choice.labels(CompletionItemKind.Property))
     }
 
+    /** Map keys inside an entry's argument list, by directive, as the bundled entries define them (#1246 M1). */
+    private suspend fun entryKeys(directive: String, entry: String): Set<String> {
+        val line = "        $entry()"
+        val code = "pipeline {\n    agent any\n    $directive {\n$line\n    }\n}"
+        return completeAt(code, line = 3, character = line.length - 1).labels(CompletionItemKind.Property)
+    }
+
+    @Test
+    fun `trigger entry arguments offer exactly their keys`(): Unit = runTest {
+        assertEquals(setOf("spec:"), entryKeys("triggers", "cron"))
+        assertEquals(setOf("upstreamProjects:", "threshold:"), entryKeys("triggers", "upstream"))
+    }
+
+    @Test
+    fun `parameter entry arguments offer exactly their keys`(): Unit = runTest {
+        assertEquals(setOf("name:", "defaultValue:", "description:"), entryKeys("parameters", "booleanParam"))
+        assertEquals(setOf("name:", "defaultValue:", "description:", "trim:"), entryKeys("parameters", "text"))
+        assertEquals(setOf("name:", "defaultValue:", "description:"), entryKeys("parameters", "password"))
+    }
+
     @Test
     fun `env member access offers env properties but no steps, globals or map keys`(): Unit = runTest {
         val items = completeAt("node {\n    env.\n}", line = 1, character = 8)

@@ -222,5 +222,6 @@ class BundledJenkinsMetadataLoaderTest {
         assertEquals(setOf("name", "defaultValue", "description"), password.parameters.keys)
         assertTrue(password.parameters.getValue("defaultValue").description.orEmpty().contains("defaultValueAsSecret"))
         assertTrue(password.documentation.orEmpty().contains("defaultValueAsSecret"))
+        assertTrue(password.documentation.orEmpty().contains("use credentials for real secrets"))
     }
 }
