@@ -99,6 +99,8 @@ class ParserDiagnosticConverterTest {
         assertTrue(diagnostic.message.contains("bad thing here"), diagnostic.message)
         assertEquals(6, diagnostic.range.start.line)
         assertEquals(4, diagnostic.range.start.character)
+        assertEquals(6, diagnostic.range.end.line)
+        assertEquals(5, diagnostic.range.end.character)
     }
 
     @Test
@@ -121,5 +123,32 @@ class ParserDiagnosticConverterTest {
         }
 
         assertEquals("custom compiler message", convertOne(custom).message)
+    }
+
+    @Test
+    fun `an exception message is cut to its first line and a sane length`() {
+        val cause = IllegalStateException("first line /Users/someone/secret/path\nsecond line\n" + "x".repeat(1000))
+        val diagnostic = convertOne(ExceptionMessage(cause, true, source()))
+
+        assertTrue(diagnostic.message.startsWith("IllegalStateException: first line"), diagnostic.message)
+        assertTrue(!diagnostic.message.contains("second line"), diagnostic.message)
+        assertTrue(diagnostic.message.length <= 300, "length ${diagnostic.message.length}")
+        val long = convertOne(ExceptionMessage(IllegalStateException("y".repeat(1000)), true, source()))
+        assertEquals(300, long.message.length)
+    }
+
+    @Test
+    fun `the written fallback is also one capped line`() {
+        val custom = object : Message() {
+            override fun write(writer: java.io.PrintWriter, owner: org.codehaus.groovy.control.Janitor) {
+                writer.println("z".repeat(1000))
+                writer.println("at some.Frame(Frame.java:1)")
+            }
+        }
+
+        val message = convertOne(custom).message
+
+        assertEquals(300, message.length)
+        assertTrue(!message.contains("Frame"), message)
     }
 }

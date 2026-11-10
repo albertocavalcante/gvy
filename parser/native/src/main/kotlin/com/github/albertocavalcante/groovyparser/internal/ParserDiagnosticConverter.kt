@@ -13,6 +13,7 @@ import org.codehaus.groovy.control.messages.SimpleMessage
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
 import org.codehaus.groovy.control.messages.WarningMessage
 import org.codehaus.groovy.syntax.SyntaxException
+import org.codehaus.groovy.syntax.Token
 import java.io.PrintWriter
 import java.io.StringWriter
 
@@ -86,7 +87,10 @@ internal object ParserDiagnosticConverter {
     internal fun textOf(message: Message): String = when (message) {
         is LocatedMessage -> message.message
         is SimpleMessage -> message.message
-        is ExceptionMessage -> message.cause.let { "${it.javaClass.simpleName}: ${it.message ?: "no message"}" }
+        is ExceptionMessage -> message.cause?.let {
+            oneLine("${it.javaClass.simpleName}: ${it.message ?: "no message"}")
+        }
+            .orEmpty()
         is WarningMessage -> message.message
         else -> written(message)
     }.ifBlank { written(message) }
@@ -97,7 +101,8 @@ internal object ParserDiagnosticConverter {
         return if (token == null || token.startLine < 1) {
             ParserRange.point(0, 0)
         } else {
-            ParserRange.point(token.startLine - 1, maxOf(0, token.startColumn - 1))
+            val column = maxOf(0, token.startColumn - 1)
+            ParserRange.singleLine(token.startLine - 1, column, column + ((token as? Token)?.text.orEmpty().length))
         }
     }
 
@@ -106,7 +111,17 @@ internal object ParserDiagnosticConverter {
         runCatching { StringWriter().also { message.write(PrintWriter(it), Janitor()) }.toString().trim() }
             .getOrNull()
             ?.takeIf { it.isNotBlank() }
+            ?.let(::oneLine)
             ?: message.javaClass.simpleName
+
+    /**
+     * First line only, capped. Exception messages can span lines (and `ExceptionMessage.write` prints a whole stack
+     * trace), and they may contain absolute paths, so a diagnostic must not carry all of that.
+     */
+    private fun oneLine(text: String): String = text.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty()
+        .trim().take(MAX_MESSAGE_CHARS)
+
+    private const val MAX_MESSAGE_CHARS = 300
 
     private fun matchesLocator(sourceLocator: String?, allowedLocators: Set<String>): Boolean {
         if (sourceLocator == null) return false
