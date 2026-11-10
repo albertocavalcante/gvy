@@ -151,11 +151,14 @@ class GroovyWorkspaceService(
 
         // Handle source file changes for incremental indexing, and folder events under the source roots (#1424).
         // Any other path may be a folder under a source root; only its creation or deletion matters.
-        // A changed closed file's parse is retired now, an in-memory fence, so no reader gets the old parse while
-        // the queued work waits. An open buffer keeps its own parse, and its event has nothing left to do.
+        // A closed source's parse is retired now, an in-memory fence, so no reader gets the old parse while the
+        // queued work waits: a Changed event, or an atomic save reported as Deleted plus Created. An open buffer
+        // keeps its own parse; its Changed event has nothing left to do, its Created or Deleted still moves the list.
         val queued = changes[FileType.SOURCE].orEmpty().filter { event ->
-            event.type != FileChangeType.Changed ||
-                uriOf(event.uri)?.let { compilationService.onClosedSourceChanged(it, keepIfUnchanged = false) } != null
+            val retired = uriOf(event.uri)?.let { uri ->
+                compilationService.onClosedSourceChanged(uri, keepIfUnchanged = false)
+            }
+            event.type != FileChangeType.Changed || retired != null
         } + changes[FileType.OTHER].orEmpty().filter { it.type != FileChangeType.Changed }
         if (queued.isNotEmpty()) enqueue(queued)
 

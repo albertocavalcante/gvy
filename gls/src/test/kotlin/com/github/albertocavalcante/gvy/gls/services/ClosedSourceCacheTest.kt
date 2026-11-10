@@ -166,8 +166,8 @@ class ClosedSourceCacheTest {
         )
     }
 
-    @Test
-    fun `a changed closed file is retired before its queued work runs`(): Unit = runBlocking {
+    /** Notifies [types] for one closed file through a paused source queue, then reads it before the queue runs. */
+    private fun assertRetiredBeforeQueueRuns(name: String, vararg types: FileChangeType): Unit = runBlocking {
         val paused = ArrayDeque<Runnable>()
         val queued = GroovyWorkspaceService(
             compilation,
@@ -175,21 +175,27 @@ class ClosedSourceCacheTest {
             scope,
             sourceChangeDispatcher = Executor { paused.addLast(it) }.asCoroutineDispatcher(),
         )
-        val file = tempDir.resolve("Queued.groovy")
+        val file = tempDir.resolve("$name.groovy")
         Files.writeString(file, "class Before {}")
         val uri = file.toUri()
         assertEquals("class Before {}", compilation.ensureCompiled(uri)?.sourceText)
 
         Files.writeString(file, "class After {}")
-        queued.didChangeWatchedFiles(
-            DidChangeWatchedFilesParams(listOf(FileEvent(uri.toString(), FileChangeType.Changed))),
-        )
+        queued.didChangeWatchedFiles(DidChangeWatchedFilesParams(types.map { FileEvent(uri.toString(), it) }))
 
         // Nothing queued has run: the retirement itself happened on the notification.
         assertFalse(paused.isEmpty(), "the rest of the work is still queued")
         assertFalse("Before" in classNames(compilation.getAst(uri)), "old parse served while the queue waits")
         assertEquals("class After {}", compilation.ensureCompiled(uri)?.sourceText)
     }
+
+    @Test
+    fun `a changed closed file is retired before its queued work runs`() =
+        assertRetiredBeforeQueueRuns("Changed", FileChangeType.Changed)
+
+    @Test
+    fun `an atomic save reported as deleted and created is retired before its queued work runs`() =
+        assertRetiredBeforeQueueRuns("Atomic", FileChangeType.Deleted, FileChangeType.Created)
 
     private fun open(uri: String, content: String) =
         DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, content))

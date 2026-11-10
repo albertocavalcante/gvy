@@ -4,8 +4,9 @@ import java.nio.file.Path
 
 /**
  * Directories that never hold project sources, at any depth: version control metadata, tool caches and vendored
- * JavaScript. The source scan, the rename guard's walk and watched-file events all skip them, so the incremental
- * source list and a rebuild scan agree.
+ * JavaScript. The source scan and watched-file events skip them below a source root, so the incremental source
+ * list and a rebuild scan agree. The rename guard's workspace walk skips them outside source roots only: inside a
+ * source root it walks everything, since a rename must not miss a reference.
  */
 internal val ALWAYS_SKIPPED_DIRECTORIES: Set<String> =
     setOf(".git", ".hg", ".svn", ".gradle", ".idea", "node_modules")
