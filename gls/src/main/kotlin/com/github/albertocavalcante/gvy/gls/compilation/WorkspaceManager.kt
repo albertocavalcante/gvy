@@ -4,9 +4,14 @@ import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.IOException
 import java.net.URI
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
@@ -178,16 +183,44 @@ class WorkspaceManager(
     private fun scanSources(sourceRoots: List<Path>): List<Path> {
         val workspaceSources = sourceRoots.flatMap { sourceRoot ->
             if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
-            Files.walk(sourceRoot).use { stream ->
-                stream.filter { Files.isRegularFile(it) && it.extension.equals("groovy", ignoreCase = true) }
-                    .sorted()
-                    .toList()
-            }
+            collectGroovySources(sourceRoot).sorted()
         }
 
         logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }
         workspaceSources.forEach { logger.debug { "Indexed source: $it" } }
         return workspaceSources
+    }
+
+    /**
+     * The Groovy sources under [root]. An entry that cannot be read or vanishes mid-walk (a branch switch, a
+     * build cleaning its output) is skipped instead of aborting the whole workspace update (#1314).
+     */
+    private fun collectGroovySources(root: Path): List<Path> {
+        val found = mutableListOf<Path>()
+        Files.walkFileTree(
+            root,
+            object : SimpleFileVisitor<Path>() {
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (attrs.isRegularFile && file.extension.equals("groovy", ignoreCase = true)) found.add(file)
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
+                    if (exc is NoSuchFileException) {
+                        logger.debug { "Skipped a source entry that vanished during the scan: $file" }
+                    } else {
+                        logger.warn { "Skipped an unreadable source entry: $file (${exc.message})" }
+                    }
+                    return FileVisitResult.CONTINUE
+                }
+
+                override fun postVisitDirectory(dir: Path, exc: IOException?): FileVisitResult {
+                    exc?.let { logger.debug { "Directory changed during the scan: $dir (${it.message})" } }
+                    return FileVisitResult.CONTINUE
+                }
+            },
+        )
+        return found
     }
 
     fun getDependencyClasspath(): List<Path> = current().classpath
