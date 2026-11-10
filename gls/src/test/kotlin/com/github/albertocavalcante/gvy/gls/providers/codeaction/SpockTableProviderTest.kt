@@ -340,6 +340,10 @@ class SpockTableProviderTest {
                 "class Outer2 { static abstract class Inner $body2 }\n"
         }
         Files.writeString(fixture.src.resolve("Outers.groovy"), nested("extends Specification {}"))
+        // The workspace model lists its sources when it is built, and a source-root lookup by class name cannot
+        // find Outer2 in Outers.groovy, so rebuild the model after creating the file, as a client's file-created
+        // notification would (#1420: the earlier version of this test never put Outers.groovy in the compile).
+        useSpockClasspath(sources = listOf(fixture.src))
         fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
         assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
 
