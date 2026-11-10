@@ -384,4 +384,39 @@ class JenkinsContextDetectorTest {
         assertEquals(listOf("pipeline", "stages", "stage", "when", "allOf"), context.enclosingBlocks)
         assertEquals("when", context.currentBlock)
     }
+
+    @Test
+    fun `a stage that opens and closes inside an untracked parallel block is popped`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Parallel') {",
+            "            parallel {",
+            "                stage('A') {",
+            "                    steps { sh 'make' }",
+            "                }",
+            "                ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 7, column = 16)
+
+        assertEquals(listOf("pipeline", "stages", "stage"), context.enclosingBlocks)
+    }
+
+    @Test
+    fun `a closed block inside an untracked if block does not linger`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            steps {",
+            "                script {",
+            "                    if (params.DEPLOY) {",
+            "                        stage('Deploy') {",
+            "                        }",
+            "                        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 8, column = 24)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "steps", "script"), context.enclosingBlocks)
+    }
 }
