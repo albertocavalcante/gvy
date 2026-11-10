@@ -13,6 +13,8 @@ import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
@@ -183,7 +185,9 @@ internal object JenkinsCompletionProvider {
             existingKeys,
             metadata,
             isCommand,
-            directive,
+            // Only a statement directly in the directive block is one of its entries; a nested call such as
+            // `string(defaultValue: string(|))` keeps the step's own keys.
+            directive?.takeIf { isClosureStatement(methodCall, astModel) },
         )
         val typedWord = if (isCommand) typedWordBeforeCursor(ctx) else null
         bundledParamCompletions.forEach { item ->
@@ -209,6 +213,16 @@ internal object JenkinsCompletionProvider {
     private fun isCommandAt(ctx: CompletionContext, call: MethodCallExpression): Boolean {
         val name = call.methodAsString ?: return false
         return CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, name)
+    }
+
+    /**
+     * True when [call] is a statement of a closure body (`parameters { string(...) }`), not nested in
+     * another expression.
+     */
+    private fun isClosureStatement(call: MethodCallExpression, astModel: GroovyAstModel): Boolean {
+        val statement = astModel.getParent(call) as? ExpressionStatement ?: return false
+        val block = astModel.getParent(statement) as? BlockStatement ?: return false
+        return astModel.getParent(block) is ClosureExpression
     }
 
     private fun callOrReceiverCall(

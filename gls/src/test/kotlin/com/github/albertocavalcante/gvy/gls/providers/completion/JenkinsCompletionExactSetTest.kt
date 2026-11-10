@@ -362,6 +362,17 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
+    fun `a call nested inside a directive entry keeps its own step keys`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    parameters {\n" +
+            "        string(name: 'A', defaultValue: string())\n    }\n}"
+        val items = completeAt(code, line = 3, character = 47)
+
+        val keys = items.labels(CompletionItemKind.Property)
+        assertTrue("credentialsId:" in keys, "the nested string() is the credentials binding step: $keys")
+        assertTrue("trim:" !in keys, "the nested call is not a parameters {} entry: $keys")
+    }
+
+    @Test
     fun `trigger and tool entries offer their own keys`(): Unit = runTest {
         val pollScm =
             completeAt(
