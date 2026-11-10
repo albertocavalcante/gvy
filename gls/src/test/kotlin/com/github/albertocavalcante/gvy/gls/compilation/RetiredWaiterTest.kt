@@ -44,12 +44,14 @@ class RetiredWaiterTest {
 
     /** Invoked after every parse, before the compile publishes. */
     private var afterParse: () -> Unit = {}
+    private val parsed = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
     private val documents = DocumentProvider()
     private val service = GroovyCompilationService(
         documentProvider = documents,
         workerSessionDecorator = { delegate ->
             object : WorkerSession {
                 override fun parse(request: ParseRequest): ParseResult = delegate.parse(request).also {
+                    parsed.computeIfAbsent(request.content) { AtomicInteger() }.incrementAndGet()
                     if (armed.compareAndSet(true, false)) {
                         entered.countDown()
                         check(released.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "never released" }
@@ -105,6 +107,7 @@ class RetiredWaiterTest {
 
         assertEquals("class Shared {}", second.await()?.sourceText, "the co-waiter must get the shared result")
         assertTrue(first.isCancelled)
+        assertEquals(1, parsed["class Shared {}"]?.get(), "the shared compile must survive, not be redone")
         assertNotNull(service.getSymbolStorage(uri), "the shared compile still published")
     }
 
@@ -134,6 +137,23 @@ class RetiredWaiterTest {
         val error = assertFailsWith<ResponseErrorException> { service.ensureCompiled(uri) }
 
         assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+    }
+
+    @Test
+    fun `a closed file's in-flight semantic publication is retired with its parse`(): Unit = runBlocking {
+        val sources = Files.createDirectories(tempDir.resolve("ws/src"))
+        val file = Files.writeString(sources.resolve("Changed.groovy"), "class Before {}")
+        service.updateWorkspaceModel(tempDir.resolve("ws"), emptyList(), listOf(sources))
+        val compiling = scope.async { service.getWorkspaceCompiler().compileWorkspace() }
+        assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "workspace compile never parsed")
+
+        // The closed file changes on disk while its old text is compiled, and the watcher reports it.
+        Files.writeString(file, "class After {}")
+        assertNotNull(service.onClosedSourceChanged(file.toUri()))
+        released.countDown()
+        compiling.await()
+
+        assertEquals(null, service.getWorkspaceSymbolIndex()?.getDocument(file.toUri()), "old text was published")
     }
 
     private companion object {

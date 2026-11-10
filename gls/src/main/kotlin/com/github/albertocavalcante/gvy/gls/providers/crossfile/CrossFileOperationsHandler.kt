@@ -17,11 +17,9 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.future.await
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.LocationLink
 import org.eclipse.lsp4j.Position
@@ -50,7 +48,6 @@ private const val MAX_IMPLEMENTATION_SNAPSHOT_ATTEMPTS = 3
  * @property diagnosticsOrchestrator Orchestrator for managing diagnostic jobs
  * @property definitionLinkSupport Lambda returning whether definition links are supported
  * @property clientTelemetry Lambda for sending telemetry events to the client
- * @property coroutineScope Coroutine scope for async compilation
  */
 class CrossFileOperationsHandler(
     private val compilationService: GroovyCompilationService,
@@ -59,7 +56,6 @@ class CrossFileOperationsHandler(
     private val diagnosticsOrchestrator: DiagnosticsOrchestrator,
     private val definitionLinkSupport: () -> Boolean,
     private val clientTelemetry: (Any) -> Unit,
-    private val coroutineScope: CoroutineScope,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -283,8 +279,9 @@ class CrossFileOperationsHandler(
     private suspend fun ensureCompiledOrCompileNow(uri: URI): CompilationResult? {
         compilationService.ensureCompiled(uri)?.let { return it }
 
-        val content = documentProvider.get(uri) ?: return null
-        return compilationService.compileAsync(coroutineScope, uri, content).await()
+        // One captured snapshot, compiled under the shared retirement policy (no raw cancellation escapes).
+        val snapshot = documentProvider.getSnapshot(uri) ?: return null
+        return compilationService.ensureCompiled(uri, snapshot)
     }
 
     /**

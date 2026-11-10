@@ -231,7 +231,7 @@ class ExitStepExecutor : StepExecutor<ScenarioStep.Exit> {
 class OpenDocumentStepExecutor : StepExecutor<ScenarioStep.OpenDocument> {
     override fun execute(step: ScenarioStep.OpenDocument, context: ScenarioContext, nextStep: ScenarioStep?) {
         val uri = context.resolveUri(step.uri, step.path)
-        val text = context.interpolateString(step.text)
+        val text = step.text?.let(context::interpolateString) ?: fileContents(uri)
         val languageId = context.interpolateString(step.languageId)
 
         val textDocument = TextDocumentItem().apply {
@@ -251,6 +251,11 @@ class OpenDocumentStepExecutor : StepExecutor<ScenarioStep.OpenDocument> {
         }
     }
 }
+
+/** What an editor sends when it opens [uri] without edits: the file's text, or nothing for a new file. */
+private fun fileContents(uri: String): String = runCatching {
+    java.nio.file.Files.readString(java.nio.file.Path.of(java.net.URI.create(uri)))
+}.getOrDefault("")
 
 class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
     override fun execute(step: ScenarioStep.ChangeDocument, context: ScenarioContext, nextStep: ScenarioStep?) {

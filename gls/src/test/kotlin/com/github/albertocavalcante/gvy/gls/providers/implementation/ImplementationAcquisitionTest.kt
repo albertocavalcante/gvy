@@ -304,7 +304,6 @@ class ImplementationAcquisitionTest {
                 diagnostics,
                 { false },
                 {},
-                this,
             )
         }
     }

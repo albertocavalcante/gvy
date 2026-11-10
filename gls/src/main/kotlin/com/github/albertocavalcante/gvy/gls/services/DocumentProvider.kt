@@ -9,6 +9,9 @@ data class DocumentSnapshot(val content: String, val version: Int?)
 /** Identity of one open/close lifecycle; accepted edits retain it. */
 internal class DocumentIncarnation
 
+/** A buffer's state and the lifecycle it belongs to, read together. */
+internal class OpenBuffer(val snapshot: DocumentSnapshot, val incarnation: DocumentIncarnation)
+
 class DocumentProvider {
     private class OpenDocument(
         val snapshot: DocumentSnapshot,
@@ -23,6 +26,8 @@ class DocumentProvider {
     fun getSnapshot(uri: URI): DocumentSnapshot? = documents[uri]?.snapshot
 
     internal fun getIncarnation(uri: URI): DocumentIncarnation? = documents[uri]?.incarnation
+
+    internal fun getBuffer(uri: URI): OpenBuffer? = documents[uri]?.let { OpenBuffer(it.snapshot, it.incarnation) }
 
     /** Replace an unversioned buffer, retaining the existing API for internal callers. */
     fun put(uri: URI, content: String) {

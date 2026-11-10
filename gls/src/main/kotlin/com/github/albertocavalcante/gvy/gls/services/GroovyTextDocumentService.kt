@@ -35,7 +35,6 @@ import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.future.await
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
@@ -263,7 +262,6 @@ class GroovyTextDocumentService(
             diagnosticsOrchestrator = diagnosticsOrchestrator,
             definitionLinkSupport = { definitionLinkSupport },
             clientTelemetry = { event -> client()?.telemetryEvent(event) },
-            coroutineScope = coroutineScope,
         )
     }
 
@@ -310,8 +308,9 @@ class GroovyTextDocumentService(
         // TODO(#564): Pre-register compilation jobs synchronously on didOpen/didChange
         //   so ensureCompiled never returns null.
         //   See: https://github.com/albertocavalcante/gvy/issues/564
-        val content = documentProvider.get(uri) ?: return null
-        return compilationService.compileAsync(coroutineScope, uri, content).await()
+        // One captured snapshot, compiled under the shared retirement policy (no raw cancellation escapes).
+        val snapshot = documentProvider.getSnapshot(uri) ?: return null
+        return compilationService.ensureCompiled(uri, snapshot)
     }
 
     override fun didOpen(params: DidOpenTextDocumentParams) {

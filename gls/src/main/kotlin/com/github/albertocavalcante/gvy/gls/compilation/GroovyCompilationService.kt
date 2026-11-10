@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.engine.impl.native.NativeLanguageEng
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
@@ -134,6 +135,9 @@ class GroovyCompilationService(
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String) = orchestrator.compileAsync(scope, uri, content)
 
     suspend fun ensureCompiled(uri: URI) = orchestrator.ensureCompiled(uri)
+
+    /** Compiles a buffer [snapshot] the caller read itself, with [ensureCompiled]'s retirement policy. */
+    suspend fun ensureCompiled(uri: URI, snapshot: DocumentSnapshot) = orchestrator.ensureCompiled(uri, snapshot)
 
     // ==========================================================================
     // Engine and Configuration API (Delegated to EngineManager)

@@ -288,9 +288,9 @@ class CompilationJobOwnershipTest {
         val documents = spyk(DocumentProvider())
         val fixture = Fixture(StandardTestDispatcher(testScheduler), documents, URI.create("untitled:Retired.groovy"))
         documents.put(fixture.uri, fixture.content, 1)
-        val captured = documents.getSnapshot(fixture.uri)
+        val captured = documents.getBuffer(fixture.uri)
         var reads = 0
-        every { documents.getSnapshot(fixture.uri) } answers {
+        every { documents.getBuffer(fixture.uri) } answers {
             if (reads++ == 0) {
                 captured
             } else {

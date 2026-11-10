@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseMode
 import com.github.albertocavalcante.nativeapi.ParseOutcome
@@ -97,11 +99,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     private data class CompilationInput(val uri: URI, val content: String, val claim: Claim)
 
-    private fun claim(uri: URI, origin: Origin): Claim {
-        val (ticket, owned) = ownership.acquire(uri) {
-            semanticIndexer?.begin(uri) to documentProvider?.getIncarnation(uri)
-        }
-        val (publication, incarnation) = owned
+    /** [incarnation]: for [Origin.BUFFER], the lifecycle the text was read from, captured with that text. */
+    private fun claim(uri: URI, origin: Origin, incarnation: DocumentIncarnation? = null): Claim {
+        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer?.begin(uri) }
         val isValid: () -> Boolean = when (origin) {
             Origin.BUFFER -> {
                 { incarnation != null && documentProvider?.getIncarnation(uri) === incarnation }
@@ -116,11 +116,6 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         return Claim(ticket, publication, isValid)
     }
 
-    private fun originOf(uri: URI): Origin {
-        val open = documentProvider?.getSnapshot(uri) != null
-        return if (open) Origin.BUFFER else Origin.UNMANAGED
-    }
-
     /** Stops compiles started for waiters (server shutdown); later waiters fail fast. */
     fun shutdown() {
         waiterScope.cancel()
@@ -130,7 +125,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * Compiles Groovy source code and returns the result.
      */
     suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult {
-        val claim = claim(uri, originOf(uri))
+        val incarnation = documentProvider?.getIncarnation(uri)
+        val claim = claim(uri, if (incarnation != null) Origin.BUFFER else Origin.UNMANAGED, incarnation)
         return claim.publication.use { compile(uri, content, compilePhase, claim) }
     }
 
@@ -296,11 +292,13 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * another coroutine that only awaits it does not cancel it. A cancelled owner retires the job.
      */
     fun compileAsync(scope: CoroutineScope, uri: URI, content: String): Deferred<CompilationResult> {
+        val buffer = documentProvider?.getBuffer(uri)
         val identity = CompilationIdentity(
             content,
             workspaceManager.getConfigurationFingerprint(),
             // Different requested text still originated while this buffer was open.
-            documentProvider?.getSnapshot(uri),
+            buffer?.snapshot,
+            buffer?.incarnation,
         )
         return scheduleCompilation(scope, uri, identity)
     }
@@ -311,7 +309,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         identity: CompilationIdentity,
     ): Deferred<CompilationResult> {
         // Acquire before exposing queued work, without nesting semantic and registry map locks.
-        val claim = claim(uri, if (identity.document != null) Origin.BUFFER else Origin.UNMANAGED)
+        val incarnation = identity.incarnation
+        val claim = claim(uri, if (incarnation != null) Origin.BUFFER else Origin.UNMANAGED, incarnation)
         val publication = claim.publication
         var created = false
         var retainedPublication = false
@@ -362,10 +361,33 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 is Resolution.Done -> return resolution.result
             }
         }
-        throw ResponseErrorException(
-            ResponseError(ResponseErrorCode.ContentModified, "Compilation of $uri kept being invalidated", null),
-        )
+        throw contentModified(uri)
     }
+
+    /**
+     * Compiles [snapshot], a buffer the caller read itself, under the same policy as [ensureCompiled]: shared
+     * work retired meanwhile is retried with the newest buffer text this service knows, never leaking a
+     * cancellation the caller did not ask for, and ends in ContentModified after [MAX_RESOLUTIONS] attempts.
+     */
+    suspend fun ensureCompiled(uri: URI, snapshot: DocumentSnapshot): CompilationResult {
+        var current = snapshot
+        repeat(MAX_RESOLUTIONS) {
+            val buffer = documentProvider?.getBuffer(uri)?.takeIf { it.snapshot === current }
+            val identity = CompilationIdentity(
+                current.content,
+                workspaceManager.getConfigurationFingerprint(),
+                current,
+                buffer?.incarnation,
+            )
+            awaitShared(uri, identity)?.let { return it }
+            documentProvider?.getSnapshot(uri)?.let { current = it }
+        }
+        throw contentModified(uri)
+    }
+
+    private fun contentModified(uri: URI) = ResponseErrorException(
+        ResponseError(ResponseErrorCode.ContentModified, "Compilation of $uri kept being invalidated", null),
+    )
 
     private sealed interface Resolution {
         data object Retired : Resolution
@@ -378,9 +400,13 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         // An open buffer is the source of truth: it may be unsaved, untitled, or newer than the file on
         // disk or the cached parse, and didOpen compiles it in a background job that may not have
         // started yet. Resolve its identity before selecting any pending job.
-        documentProvider?.getSnapshot(uri)?.let { snapshot ->
-            val identity =
-                CompilationIdentity(snapshot.content, workspaceManager.getConfigurationFingerprint(), snapshot)
+        documentProvider?.getBuffer(uri)?.let { buffer ->
+            val identity = CompilationIdentity(
+                buffer.snapshot.content,
+                workspaceManager.getConfigurationFingerprint(),
+                buffer.snapshot,
+                buffer.incarnation,
+            )
             return awaitShared(uri, identity)?.let { Resolution.Done(it) } ?: Resolution.Retired
         }
 
@@ -457,19 +483,19 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private fun openSourcesFor(uri: URI): Map<URI, String> =
         documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
 
-    private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
-        val candidates = mutableSetOf<String>()
-        candidates += uri.toString()
-        candidates += uri.path
-        sourcePath?.let { path ->
-            candidates += path.toString()
-            candidates += path.toAbsolutePath().toString()
-        }
-        return candidates
-    }
-
     private companion object {
         /** Retirements of awaited work tolerated in a row before a caller is told the content changed. */
         const val MAX_RESOLUTIONS = 3
     }
+}
+
+private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
+    val candidates = mutableSetOf<String>()
+    candidates += uri.toString()
+    candidates += uri.path
+    sourcePath?.let { path ->
+        candidates += path.toString()
+        candidates += path.toAbsolutePath().toString()
+    }
+    return candidates
 }
