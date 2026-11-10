@@ -324,6 +324,99 @@ class SpockCompletionStrategyTest {
         )
     }
 
+    // Activation from the AST source context (#974): confident verdicts decide, UNCERTAIN keeps the heuristic.
+
+    private fun parsed(content: String) = com.github.albertocavalcante.groovyparser.GroovyParserFacade().parse(
+        com.github.albertocavalcante.nativeapi.ParseRequest(
+            URI.create("file:///test/Example.groovy"),
+            content,
+            compilePhase = org.codehaus.groovy.control.Phases.CONVERSION,
+        ),
+    ).ast
+
+    private fun completeAt(content: String, line: Int): List<String>? {
+        val character = content.lines()[line].length
+        val context = createSpockContext(content, line, character)
+        every { context.baseContext.moduleNode } returns parsed(content)
+        return runBlocking { strategy.complete(context) }
+            .fold(ifLeft = { null }, ifRight = { items -> items.map { it.label } })
+    }
+
+    @Test
+    fun `an ordinary class in a file importing Spock gets no block labels`() {
+        val content = """
+            import spock.lang.Specification
+            class Helper {
+                def run() {
+                    given: 1
+
+                }
+            }
+        """.trimIndent()
+
+        assertThat(completeAt(content, 4)).isNull()
+    }
+
+    @Test
+    fun `a helper next to a spec gets no block labels while the spec keeps them`() {
+        val content = """
+            import spock.lang.Specification
+            class FooSpec extends Specification {
+                def "feature"() {
+
+                }
+            }
+            class Helper {
+                def run() {
+
+                }
+            }
+        """.trimIndent()
+
+        assertThat(completeAt(content, 3)).contains("given:", "expect:")
+        assertThat(completeAt(content, 8)).isNull()
+    }
+
+    @Test
+    fun `an aliased Specification import is a spec for data variables too`() {
+        val content = """
+            import spock.lang.Specification as Spec
+            class FooSpec extends Spec {
+                def "feature"() {
+                    expect:
+                    val
+                    where:
+                    value << [1]
+                }
+            }
+        """.trimIndent()
+
+        assertThat(completeAt(content, 4)).contains("value")
+    }
+
+    @Test
+    fun `uncertain classes keep today's heuristic`() {
+        val externalBase = """
+            class FooSpec extends BaseSpec {
+                def "feature"() {
+                    given: 1
+
+                }
+            }
+        """.trimIndent()
+        assertThat(completeAt(externalBase, 3)).contains("given:")
+
+        val starOnly = """
+            import spock.lang.*
+            class FooSpec extends Specification {
+                def "feature"() {
+
+                }
+            }
+        """.trimIndent()
+        assertThat(completeAt(starOnly, 3)).contains("given:")
+    }
+
     // Helper methods to create test contexts
 
     private fun createSpockContext(

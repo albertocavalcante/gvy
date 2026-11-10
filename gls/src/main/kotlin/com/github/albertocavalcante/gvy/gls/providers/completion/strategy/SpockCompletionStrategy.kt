@@ -3,8 +3,12 @@ package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
+import com.github.albertocavalcante.gvy.spock.SpecificationStatus
+import com.github.albertocavalcante.gvy.spock.SpockClassContext
 import com.github.albertocavalcante.gvy.spock.SpockDataVariables
 import com.github.albertocavalcante.gvy.spock.SpockDetector
+import com.github.albertocavalcante.gvy.spock.SpockSourceContext
+import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 
@@ -30,11 +34,12 @@ internal class SpockCompletionStrategy : CompletionStrategy {
             return CompletionStrategy.notApplicable("SpockCompletionStrategy")
         }
         val offset = offsetAt(base.content, base.content.split('\n'), base.line, base.character)
-        val isSpockSpec = SpockDetector.isLikelySpockSpec(base.uri, base.content)
+        val source = base.moduleNode?.let { SpockSourceContext.from(it, isPartial = false) }
+        val isSpockSpec = isSpecificationAt(context, source)
         if (!isSpockSpec || base.tokenIndex?.isInCommentOrString(offset) == true) {
             return CompletionStrategy.notApplicable("SpockCompletionStrategy")
         }
-        val dataItems = dataCompletions(context, line)
+        val dataItems = source?.let { dataCompletions(context, line, it) }.orEmpty()
         val labels = if (isLineIndentOnlyBeforeCursor(base.content, base.line, base.character)) {
             completions { addSpockBlockLabels() }
         } else {
@@ -48,12 +53,41 @@ internal class SpockCompletionStrategy : CompletionStrategy {
         }
     }
 
-    private fun dataCompletions(context: CompletionStrategyContext, line: String): List<CompletionItem> {
+    /**
+     * Whether the cursor sits in a Spock specification (#974). A confident AST verdict for the declared
+     * owner at the cursor decides; anonymous bodies belong to their declaring spec. An UNCERTAIN
+     * verdict or a missing AST keeps the previous text heuristic. A cursor in script code also falls
+     * back, but only because Groovy gives the synthetic script class no source position, so
+     * `declaredOwnerAt` finds no owner there; it is not an explicit script check.
+     */
+    private fun isSpecificationAt(context: CompletionStrategyContext, source: SpockSourceContext.Available?): Boolean {
+        val base = context.baseContext
+        val owner = source?.declaredOwnerAt(base.line, base.character)
+        return when (owner?.status) {
+            SpecificationStatus.SPECIFICATION -> true
+            SpecificationStatus.NOT_SPECIFICATION -> false
+            SpecificationStatus.UNCERTAIN, null -> SpockDetector.isLikelySpockSpec(base.uri, base.content)
+        }
+    }
+
+    /** A confident verdict decides; UNCERTAIN keeps the previous class-level detector. */
+    private fun isSpecification(owner: SpockClassContext, module: ModuleNode): Boolean = when (owner.status) {
+        SpecificationStatus.SPECIFICATION -> true
+        SpecificationStatus.NOT_SPECIFICATION -> false
+        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(owner.classNode, module)
+    }
+
+    private fun dataCompletions(
+        context: CompletionStrategyContext,
+        line: String,
+        source: SpockSourceContext.Available,
+    ): List<CompletionItem> {
         val base = context.baseContext
         val module = base.moduleNode ?: return emptyList()
         val prefix = line.take(base.character.coerceIn(0, line.length))
             .takeLastWhile { Character.isJavaIdentifierPart(it) }
-        val names = module.classes.filter { !it.isScript && SpockDetector.isSpockSpec(it, module) }
+        val names = source.classes.filter { owner -> !owner.classNode.isScript && isSpecification(owner, module) }
+            .map { it.classNode }
             .flatMap { it.methods }
             .filter { it.containsPosition(base.line, base.character) }
             .flatMap { SpockDataVariables.extract(it).keys }
