@@ -271,6 +271,42 @@ class WorkspaceManager internal constructor(
         if (refusedLinks.add(root)) logger.warn { "Not following source root link $root: $why" }
     }
 
+    /** The roots a scan walks, each with its walk start, and every skipped alias root mapped to the walked one. */
+    private class ScannedRoots(val scanned: List<Pair<Path, Path>>, val aliasOf: Map<Path, Path>)
+
+    /**
+     * The roots a scan walks (#1431): each existing root the trust boundary accepts, with where it is walked from,
+     * except a root naming the same directory as an earlier one (a link to it, or another case or normalisation
+     * under a case-insensitive root). The first such root in order is walked; [ScannedRoots.aliasOf] maps every
+     * later one, absolute and normalised, onto it. Missing and refused roots are dropped first, so a refused link
+     * never displaces a trusted root. The published roots, and so the fingerprint, are not changed.
+     *
+     * Decided afresh by every scan and every notification's [Spelling], as the trust boundary is: both read the
+     * disk at their own time. They can only disagree when a root appears or vanishes in between, and then the
+     * disk agrees with the notification: a vanished first root lists nothing more, and the next model build
+     * rescans from the roots as they are.
+     */
+    private fun scannedRoots(roots: List<Path>, workspaceRoot: Path?): ScannedRoots {
+        val firstByKey = HashMap<String, Path>()
+        val scanned = mutableListOf<Pair<Path, Path>>()
+        val aliasOf = HashMap<Path, Path>()
+        roots.distinct().forEach { root ->
+            if (!Files.exists(root)) return@forEach
+            val start = scanStart(root, workspaceRoot) ?: return@forEach
+            val absolute = root.toAbsolutePath().normalize()
+            val canonical = DocumentTargetSelector.canonical(start)
+            val key = nameKey(canonical.toString(), isCaseInsensitive(absolute, canonical), normalisesNames)
+            val first = firstByKey.putIfAbsent(key, absolute)
+            if (first == null) {
+                scanned.add(root to start)
+            } else if (first != absolute) {
+                aliasOf[absolute] = first
+                logger.info { "Source root $root names the same directory as $first; scanned once, as $first" }
+            }
+        }
+        return ScannedRoots(scanned, aliasOf)
+    }
+
     /**
      * How one notification's paths are spelled against [roots] (#1424). An event path is translated into the
      * spelling of the root holding it, so the list keeps the scan's spelling: a lexical match is free, and only a
@@ -294,10 +330,21 @@ class WorkspaceManager internal constructor(
             roots[index] to isCaseInsensitive(roots[index], canonicalRoots[index])
         }
 
+        // A root naming the same directory as an earlier one is not scanned: its events take that root's spelling.
+        private val aliasOf = scannedRoots(roots, workspaceRoot).aliasOf
+
         fun inRoot(path: Path): Path? {
             val absolute = path.toAbsolutePath().normalize()
             val translated = if (isScannedUnder(absolute, roots)) absolute else rebased(absolute)
-            return translated?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
+            return translated?.let(::ontoScannedRoot)
+                ?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
+        }
+
+        /** [path] respelled under the scanned root when the root holding it is an alias of one (#1431). */
+        private fun ontoScannedRoot(path: Path): Path {
+            val owner = roots.filter { path.startsWith(it) }.maxByOrNull { it.nameCount } ?: return path
+            val scanned = aliasOf[owner] ?: return path
+            return scanned.resolve(owner.relativize(path))
         }
 
         // Parent directories' real paths, looked up once per notification: a branch switch creates many siblings.
@@ -321,7 +368,7 @@ class WorkspaceManager internal constructor(
         private fun rebased(absolute: Path): Path? {
             val canonical = DocumentTargetSelector.canonical(absolute)
             val index = canonicalRoots.indices
-                .filter { roots[it] !in refused && canonical.startsWith(canonicalRoots[it]) }
+                .filter { roots[it] !in refused && roots[it] !in aliasOf && canonical.startsWith(canonicalRoots[it]) }
                 .maxByOrNull { canonicalRoots[it].nameCount } ?: return null
             val rebased = roots[index].resolve(canonicalRoots[index].relativize(canonical))
             return rebased.takeIf { isScannedUnder(it, roots) }
@@ -329,10 +376,7 @@ class WorkspaceManager internal constructor(
 
         fun key(path: Path): String {
             val owner = roots.filter { path.startsWith(it) }.maxByOrNull { it.nameCount }
-            val text = path.toString()
-            val foldsCase = owner != null && insensitive[owner] == true
-            val normalised = if (foldsCase || normalisesNames) Normalizer.normalize(text, Normalizer.Form.NFC) else text
-            return if (foldsCase) normalised.lowercase(Locale.ROOT) else normalised
+            return nameKey(path.toString(), foldsCase = owner != null && insensitive[owner] == true, normalisesNames)
         }
 
         /** Whether a proper ancestor of [path] has a key in [prefixes]: [path] lies strictly under it. */
@@ -446,10 +490,9 @@ class WorkspaceManager internal constructor(
     }
 
     private fun scanSources(sourceRoots: List<Path>, workspaceRoot: Path?): List<Path> {
-        val workspaceSources = sourceRoots.flatMap { sourceRoot ->
-            if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
-            // A refused root lists nothing; an accepted link root is walked at its checked target.
-            val start = scanStart(sourceRoot, workspaceRoot) ?: return@flatMap emptyList<Path>()
+        // A refused root lists nothing, an accepted link root is walked at its checked target, and a directory
+        // named by several roots is walked once, under the first ([scannedRoots]).
+        val workspaceSources = scannedRoots(sourceRoots, workspaceRoot).scanned.flatMap { (sourceRoot, start) ->
             collectGroovySources(sourceRoot, start = start).sorted()
         }
 
@@ -646,6 +689,15 @@ internal fun probeCaseInsensitive(root: Path): Boolean {
     } catch (_: SecurityException) {
         false
     }
+}
+
+/**
+ * How a path compares under its root: NFC-normalised when the root [foldsCase] or the platform [normalisesNames],
+ * and lowercased with `Locale.ROOT` when it [foldsCase] (#1424, #1431).
+ */
+private fun nameKey(text: String, foldsCase: Boolean, normalisesNames: Boolean): String {
+    val normalised = if (foldsCase || normalisesNames) Normalizer.normalize(text, Normalizer.Form.NFC) else text
+    return if (foldsCase) normalised.lowercase(Locale.ROOT) else normalised
 }
 
 /** macOS file systems (APFS, HFS+) ignore Unicode normalisation in names, even on case-sensitive volumes. */
