@@ -267,6 +267,30 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
+    fun `stage input parameters block offers exactly the parameter types`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Deploy') {\n            input {\n" +
+            "                message 'Deploy?'\n                parameters {\n                    \n" +
+            "                }\n            }\n            steps { echo 'x' }\n        }\n    }\n}"
+        val items = completeAt(code, line = 7, character = 20)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("booleanParam", "choice", "password", "string", "text"), items.labels())
+    }
+
+    @Test
+    fun `stage input parameter arguments offer the parameter keys`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Deploy') {\n            input {\n" +
+            "                parameters {\n                    string()\n                }\n            }\n" +
+            "            steps { echo 'x' }\n        }\n    }\n}"
+        val items = completeAt(code, line = 6, character = 27)
+
+        assertEquals(
+            setOf("name:", "defaultValue:", "description:", "trim:"),
+            items.labels(CompletionItemKind.Property),
+        )
+    }
+
+    @Test
     fun `tools block offers exactly the tool types`(): Unit = runTest {
         val items = completeAt("pipeline {\n    agent any\n    tools {\n        \n    }\n}", line = 3, character = 8)
 

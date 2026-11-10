@@ -1368,7 +1368,7 @@
           "defaultValue": {
             "type": "String",
             "required": false,
-            "documentation": "Default value"
+            "documentation": "Default value, the form Pipeline syntax documents. Jenkins' data-bound constructor takes it as defaultValueAsSecret (a Secret)"
           },
           "description": {
             "type": "String",
@@ -1376,7 +1376,7 @@
             "documentation": "Description shown on the build form"
           }
         },
-        "documentation": "A password parameter; the value is masked"
+        "documentation": "A password parameter; the value is masked. Its default is bound through the defaultValueAsSecret constructor argument (a Secret); Pipeline syntax documents defaultValue"
       }
     },
     "tools": {

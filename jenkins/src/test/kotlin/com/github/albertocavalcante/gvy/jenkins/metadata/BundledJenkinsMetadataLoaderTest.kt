@@ -212,4 +212,15 @@ class BundledJenkinsMetadataLoaderTest {
         assertTrue(string.parameters.getValue("name").required)
         assertEquals("jenkins-core", merged.directiveEntries.getValue("triggers").getValue("cron").plugin)
     }
+
+    /** `password`'s documented `defaultValue` is bound through `defaultValueAsSecret` in Jenkins (#1246). */
+    @Test
+    fun `password parameter docs name the defaultValueAsSecret constructor argument`() {
+        val parameters = VersionedMetadataLoader().loadMerged().directiveEntries["parameters"]
+        val password = assertNotNull(parameters?.get("password"))
+
+        assertEquals(setOf("name", "defaultValue", "description"), password.parameters.keys)
+        assertTrue(password.parameters.getValue("defaultValue").description.orEmpty().contains("defaultValueAsSecret"))
+        assertTrue(password.documentation.orEmpty().contains("defaultValueAsSecret"))
+    }
 }
