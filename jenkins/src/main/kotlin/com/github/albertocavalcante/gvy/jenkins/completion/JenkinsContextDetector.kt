@@ -123,21 +123,22 @@ object JenkinsContextDetector {
             return JenkinsCompletionContext(isTopLevel = true)
         }
 
-        val blockStack = analyzeBlockStructure(lines, lineNumber)
+        val blockStack = analyzeBlockStructure(lines, lineNumber, column)
         val lineContext = detectCurrentLineContext(lines, lineNumber, column)
 
         return buildContext(blockStack, lineContext)
     }
 
     /**
-     * Analyze block structure up to the given line.
+     * Analyze block structure up to the cursor. Text after the cursor on its own line is ignored, so
+     * `allOf { | }` (auto-closed by the editor) or a one-line `when { ...; | } }` keeps its blocks.
      */
-    private fun analyzeBlockStructure(lines: List<String>, lineNumber: Int): List<String> {
+    private fun analyzeBlockStructure(lines: List<String>, lineNumber: Int, column: Int): List<String> {
         val blockStack = mutableListOf<String>()
         var braceDepth = 0
 
         for (i in 0 until minOf(lineNumber + 1, lines.size)) {
-            val line = lines[i]
+            val line = if (i == lineNumber) lines[i].take(column.coerceAtLeast(0)) else lines[i]
             // Strings and comments can contain `always {` or unbalanced braces (`echo '}'`).
             // Line-based: strings and block comments spanning lines are not handled (#1281).
             val cleanLine = GroovyCodeCleaner.removeCommentsAndStrings(line)

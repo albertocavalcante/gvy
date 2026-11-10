@@ -367,4 +367,21 @@ class JenkinsContextDetectorTest {
 
         assertEquals(listOf("pipeline", "stages", "stage", "steps"), context.enclosingBlocks)
     }
+
+    @Test
+    fun `text after the cursor on the cursor line does not close blocks`() {
+        // One-line `when { allOf { branch 'x'; | } }`, or an editor that auto-closed `allOf { | }`.
+        val line = "            when { allOf { branch 'main'; } }"
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            line,
+        )
+        val column = line.indexOf("; }") + 2
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 3, column = column)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "when", "allOf"), context.enclosingBlocks)
+        assertEquals("when", context.currentBlock)
+    }
 }

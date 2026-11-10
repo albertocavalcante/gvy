@@ -130,9 +130,9 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
  * expressions. Global variables are not offered at their block level.
  *
  * Deliberately not listed: `steps`, post-condition bodies and `script` (steps), `environment`
- * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), and `parameters`,
- * `triggers`, `tools`, `libraries`, `matrix`, `parallel`, `axes`, whose contents are not modeled
- * or not tracked by the block detector yet (#1246).
+ * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), `parameters`, `triggers`,
+ * `tools` and `libraries`, whose contents are not modeled yet (#1246), and `matrix`, `parallel`,
+ * `axes`, which the block detector does not track yet (#1290).
  */
 private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf("pipeline", "agent", "stages", "stage", "post", "options", "when")
 
