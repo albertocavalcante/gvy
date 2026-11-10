@@ -14,6 +14,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /** Parameter hints resolved from workspace classes, for closed files and unsaved buffers (#1312). */
 class WorkspaceParameterHintsTest {
@@ -71,6 +72,28 @@ class WorkspaceParameterHintsTest {
             hintsFor("def u = new Util('x')\n    u.send('y')", imports = "import b.Util\n"),
             "an imported simple name keeps its package",
         )
+    }
+
+    @Test
+    fun `a bare name prefers the default-package class only in default-package code`(): Unit = runBlocking {
+        index("Plain.groovy", "class Util {\n  Util(int size) {}\n  def send(int size) {}\n}\n")
+        index("C.groovy", "package c\nclass Util {\n  Util(int count) {}\n  def send(int count) {}\n}\n")
+
+        assertEquals(listOf("size:", "size:"), hintsFor("new Util(1).send(2)"))
+        // Packaged code cannot use a default-package class. The compiler qualifies `new Util` with the
+        // file's package, but a variable receiver arrives as the bare name: keep the same-name merge for it.
+        assertEquals(listOf("count:", "count:"), hintsFor("new Util(1).send(2)", imports = "package c\n"))
+        val viaVariable = hintsFor("def u = new Util(1)\n    u.send(2)", imports = "package c\n")
+        assertTrue("size:" !in viaVariable, "found $viaVariable")
+    }
+
+    @Test
+    fun `a variable receiver falls back to the same-name merge`(): Unit = runBlocking {
+        // Not recovered yet: the receiver type comes from the initializer as a simple name.
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
+        index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
+
+        assertEquals(listOf("first:"), hintsFor("def u = new a.Util('x')\n    u.send('y')"))
     }
 
     @Test

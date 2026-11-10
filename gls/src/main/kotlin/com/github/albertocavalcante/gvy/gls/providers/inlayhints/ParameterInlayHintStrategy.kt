@@ -150,7 +150,7 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
                     argCount,
                     receiverType,
                     isStaticCall,
-                    context.workspaceMethods,
+                    context,
                 )
             },
             {
@@ -193,7 +193,7 @@ class ParameterInlayHintStrategy : InlayHintStrategy {
             context.compilationService,
             { InlayHintsCandidates.findConstructorCandidatesInAst(context.astModel, typeName, argCount) },
             {
-                InlayHintsCandidates.findWorkspaceConstructorCandidates(typeName, argCount, context.compilationService)
+                InlayHintsCandidates.findWorkspaceConstructorCandidates(typeName, argCount, context)
             },
             {
                 InlayHintsCandidates.findClasspathConstructorCandidates(

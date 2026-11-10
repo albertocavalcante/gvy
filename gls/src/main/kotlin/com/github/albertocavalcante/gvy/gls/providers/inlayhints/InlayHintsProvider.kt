@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.inlayhints
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.InlayHintsConfiguration
@@ -330,15 +329,20 @@ internal object InlayHintsCandidates {
         argCount: Int,
         receiverType: String?,
         isStaticCall: Boolean,
-        workspaceMethods: Map<WorkspaceMethodKey, List<Symbol.Method>>,
+        context: HintContext,
     ): List<CallableSignature> {
         val normalizedReceiverType = receiverType?.let { InlayHintsTypes.normalizeTypeName(it) } ?: return emptyList()
         val receiverSimple = normalizedReceiverType.substringAfterLast('.')
 
         // Owners named exactly like the receiver share its simple name, so one key covers both matches.
         // A method of the exact receiver class wins over same-named classes in other packages (#1374).
-        val sameName = workspaceMethods[WorkspaceMethodKey(methodName, receiverSimple)].orEmpty()
-        return sameName.filter { it.owner?.name == normalizedReceiverType }.ifEmpty { sameName }
+        val sameName = context.workspaceMethods[WorkspaceMethodKey(methodName, receiverSimple)].orEmpty()
+        val exact = if (context.namesExactly(normalizedReceiverType)) {
+            sameName.filter { it.owner?.name == normalizedReceiverType }
+        } else {
+            emptyList()
+        }
+        return exact.ifEmpty { sameName }
             .asSequence()
             .filter { it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
@@ -413,13 +417,18 @@ internal object InlayHintsCandidates {
     fun findWorkspaceConstructorCandidates(
         typeName: String,
         argCount: Int,
-        compilationService: GroovyCompilationService,
+        context: HintContext,
     ): List<CallableSignature> {
         val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
         val simpleName = normalizedType.substringAfterLast('.')
         // The exact class wins over same-named classes in other packages (#1374).
-        val sameName = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
-        return sameName.filter { it.fullyQualifiedName == normalizedType }.ifEmpty { sameName }
+        val sameName = context.compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+        val exact = if (context.namesExactly(normalizedType)) {
+            sameName.filter { it.fullyQualifiedName == normalizedType }
+        } else {
+            emptyList()
+        }
+        return exact.ifEmpty { sameName }
             .asSequence()
             .flatMap { classSymbol ->
                 classSymbol.node.declaredConstructors
