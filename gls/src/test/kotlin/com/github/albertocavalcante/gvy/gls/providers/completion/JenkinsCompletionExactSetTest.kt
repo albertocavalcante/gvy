@@ -423,6 +423,7 @@ class JenkinsCompletionExactSetTest {
         val envProperties = requireNotNull(metadata.globalVariables["env"]).properties.keys
         assertTrue(envProperties.isNotEmpty())
         assertTrue(envProperties.all { it in items.labels(CompletionItemKind.Property) }, "All env properties")
+        assertTrue("BUILD_ID" in items.labels(), "env.BUILD_ID is offered")
         assertJenkinsStatementItemsAbsent(items)
     }
 
@@ -441,6 +442,29 @@ class JenkinsCompletionExactSetTest {
         val items = completeAt("node {\n    env.BR\n}", line = 1, character = 10)
 
         assertJenkinsStatementItemsAbsent(items)
+    }
+
+    @Test
+    fun `steps and this receivers still offer the pipeline steps`(): Unit = runTest {
+        val viaSteps = completeAt("def call() {\n    steps.\n}", line = 1, character = 10)
+        val viaThis = completeAt("node {\n    this.\n}", line = 1, character = 9)
+
+        assertTrue(
+            setOf("sh", "echo").all {
+                it in viaSteps.labels(CompletionItemKind.Function)
+            },
+            "steps.sh, steps.echo",
+        )
+        assertTrue("sh" in viaThis.labels(CompletionItemKind.Function), "this.sh")
+    }
+
+    @Test
+    fun `other receivers offer no steps`(): Unit = runTest {
+        val params = completeAt("node {\n    params.\n}", line = 1, character = 11)
+        val image = completeAt("node {\n    docker.image('maven').\n}", line = 1, character = 25)
+
+        assertJenkinsStatementItemsAbsent(params)
+        assertJenkinsStatementItemsAbsent(image)
     }
 
     /** Steps, global variables and step map keys are statement or argument completions, never members. */

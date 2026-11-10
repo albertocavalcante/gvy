@@ -47,9 +47,14 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
         // such as `env.sh`. A member-access context without a real dot (`sh 'ls' |`, parsed as
         // `sh('ls').<dummy>`) is still a statement position and keeps its `, key:` completions.
         val base = context.baseContext
-        if (context.contextType is ContextType.MemberAccess &&
-            followsMemberAccessDot(base.content, base.line, base.character)
-        ) {
+        val memberAccess = context.contextType as? ContextType.MemberAccess
+        if (memberAccess != null && followsMemberAccessDot(base.content, base.line, base.character)) {
+            // `steps.sh` (the shared-library idiom) and `this.sh` call steps through an explicit receiver.
+            if (memberAccess.qualifierName in STEP_RECEIVERS) {
+                return CompletionStrategy.found(
+                    completions { with(JenkinsCompletionProvider) { addJenkinsStepCompletions(metadata) } },
+                )
+            }
             return CompletionStrategy.notApplicable("JenkinsCompletion")
         }
 
@@ -164,6 +169,9 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
 private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf(
     "pipeline", "agent", "stages", "stage", "post", "options", "when", "triggers", "parameters", "tools",
 )
+
+/** Receivers whose members are the pipeline steps: `steps.sh` in shared libraries and `this.sh`. */
+private val STEP_RECEIVERS = setOf("steps", "this")
 
 /** `when` condition combinators: their bodies hold `when` conditions, so they behave as `when` itself. */
 private val WHEN_COMBINATORS = setOf("allOf", "anyOf", "not")
