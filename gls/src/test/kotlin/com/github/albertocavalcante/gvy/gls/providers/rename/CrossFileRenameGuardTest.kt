@@ -459,7 +459,8 @@ class CrossFileRenameGuardTest {
             "A.groovy" to a,
             "B.groovy" to "println \"\$greet\"\nprintln \"\${1}-\$greet.length\"\n",
         ),
-        "A.groovy", "greet",
+        "A.groovy",
+        "greet",
     )
 
     @Test

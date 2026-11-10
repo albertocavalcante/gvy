@@ -552,12 +552,12 @@ class GroovyTextDocumentService(
 
         try {
             val renameProvider = RenameProvider(
-            compilationService,
-            documentProvider,
-            renameDiskText,
-            extraRoots = { workspaceFolders },
-            walks = renameWalks,
-        )
+                compilationService,
+                documentProvider,
+                renameDiskText,
+                extraRoots = { workspaceFolders },
+                walks = renameWalks,
+            )
             renameProvider.provideRename(
                 params.textDocument.uri,
                 params.position,

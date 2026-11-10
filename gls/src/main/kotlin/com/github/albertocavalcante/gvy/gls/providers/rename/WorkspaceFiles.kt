@@ -78,7 +78,12 @@ private val ALWAYS_SKIPPED = setOf(".git", ".hg", ".svn", ".gradle", ".idea", "n
 private val BUILD_OUTPUTS = setOf("build", "out", "target")
 
 private val MODULE_FILES = listOf(
-    "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "pom.xml", "build.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+    "pom.xml",
+    "build.xml",
 )
 
 private fun hasFile(dir: Path, name: String) = Files.exists(dir.resolve(name))
