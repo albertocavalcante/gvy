@@ -129,6 +129,17 @@ class GlobalClassWorkspaceLookupTest {
     }
 
     @Test
+    fun `a nested class written in source form resolves to its own package`(): Unit = runBlocking {
+        val first = file("a.groovy", "package a\nclass Outer { static class Inner {} }")
+        val second = file("b.groovy", "package b\nclass Outer { static class Mid { static class Inner {} } }")
+        listOf(first, second).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(first to "a.Outer\$Inner", resolve("a.Outer.Inner"))
+        assertEquals(second to "b.Outer\$Mid\$Inner", resolve("b.Outer.Mid.Inner"))
+        assertEquals(second to "b.Outer\$Mid", resolve("b.Outer.Mid"))
+    }
+
+    @Test
     fun `the lookup does not scan every indexed file`(): Unit = runBlocking {
         compilation.symbolIndexingService.indexFile(file("Greeter.groovy", "package app\nclass Greeter {}"))
 

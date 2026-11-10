@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
@@ -35,7 +36,7 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         // simple name decides and each file offers its first match, as before.
         val matches = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleClassName))
         val exact = if (className.contains('.') || referencedFromDefaultPackage(context.documentUri)) {
-            matches.filter { it.fullyQualifiedName == className }
+            matches.filter { it.fullyQualifiedName == className }.ifEmpty { nestedExactMatches(className) }
         } else {
             emptyList()
         }
@@ -59,6 +60,23 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
             "Class $className not found in workspace symbol index",
             STRATEGY_NAME,
         )
+    }
+
+    /**
+     * A nested class written in source form (`b.Outer.Inner`) is indexed under its binary name
+     * (`b.Outer$Inner`): turn trailing dots into `$`, innermost first, until a class matches exactly (#1375).
+     */
+    private fun nestedExactMatches(className: String): List<Symbol.Class> {
+        var candidate = className
+        while (candidate.contains('.')) {
+            candidate = candidate.substringBeforeLast('.') + '$' + candidate.substringAfterLast('.')
+            val name = candidate
+            val found = compilationService.symbolIndexingService
+                .findClasses(ClassNameQuery.Exact(name.substringAfterLast('.')))
+                .filter { it.fullyQualifiedName == name }
+            if (found.isNotEmpty()) return found
+        }
+        return emptyList()
     }
 
     /**
