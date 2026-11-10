@@ -24,6 +24,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -171,5 +172,104 @@ class WorkspaceSourceRescanTest {
         notify(gone to FileChangeType.Deleted)
 
         assertFalse(compilation.workspaceManager.getWorkspaceSources().contains(gone))
+    }
+
+    private fun sources() = compilation.workspaceManager.getWorkspaceSources()
+
+    private fun write(path: Path, text: String): Path = path.also {
+        Files.createDirectories(it.parent)
+        Files.writeString(it, text)
+    }
+
+    @Test
+    fun `a folder created with sources in it adds them all with one cache clear`() {
+        val src = src()
+        val pkg = src.resolve("pkg")
+        val nested = listOf(
+            write(pkg.resolve("A.groovy"), "class A {}\n"),
+            write(pkg.resolve("deep/B.groovy"), "class B {}\n"),
+        )
+        write(pkg.resolve("notes.txt"), "not a source\n")
+        clearMocks(compilation, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+
+        // A folder copied or moved in is one Created event for the folder: no glob names its files.
+        notify(pkg to FileChangeType.Created)
+
+        assertTrue(sources().containsAll(nested), "${sources()}")
+        assertEquals(2, sources().size, "${sources()}")
+        verify(exactly = 1) { compilation.clearCaches() }
+    }
+
+    @Test
+    fun `a folder created outside every source root is not scanned`() {
+        src()
+        val outside = tempDir.resolve("scripts")
+        val stray = write(outside.resolve("Stray.groovy"), "class Stray {}\n")
+
+        notify(outside to FileChangeType.Created)
+
+        assertFalse(sources().contains(stray), "${sources()}")
+    }
+
+    @Test
+    fun `a deleted folder removes only the sources under it`() {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val under = write(src.resolve("pkg/A.groovy"), "class A {}\n")
+        val deeper = write(src.resolve("pkg/deep/B.groovy"), "class B {}\n")
+        // Same name prefix, different folder: a string prefix match would wrongly drop it.
+        val sibling = write(src.resolve("pkgUtil/C.groovy"), "class C {}\n")
+        src()
+        assertTrue(sources().containsAll(listOf(under, deeper, sibling)), "precondition")
+
+        src.resolve("pkg").toFile().deleteRecursively()
+        notify(src.resolve("pkg") to FileChangeType.Deleted)
+
+        assertEquals(listOf(sibling), sources())
+    }
+
+    @Test
+    fun `a deleted Jenkinsfile is not mistaken for a folder`() {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val jenkinsfile = write(src.resolve("Jenkinsfile"), "pipeline {}\n")
+        val steps = write(src.resolve("JenkinsfileSteps.groovy"), "class JenkinsfileSteps {}\n")
+        val named = write(src.resolve("Jenkinsfile.groovy"), "class Jenkinsfile {}\n")
+        val other = write(src.resolve("lib/Lib.groovy"), "class Lib {}\n")
+        src()
+        val before = sources()
+        assertTrue(before.containsAll(listOf(steps, named, other)), "precondition")
+        clearMocks(compilation, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+
+        Files.delete(jenkinsfile)
+        notify(jenkinsfile to FileChangeType.Deleted)
+
+        assertEquals(before, sources(), "nothing lives under a file, so nothing leaves")
+        verify(exactly = 0) { compilation.clearCaches() }
+    }
+
+    @Test
+    fun `a moved folder leaves its old path and joins under the new one`() {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        write(src.resolve("old/A.groovy"), "class A {}\n")
+        src()
+        val moved = Files.move(src.resolve("old"), src.resolve("new"))
+        clearMocks(compilation, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+
+        notify(src.resolve("old") to FileChangeType.Deleted, moved to FileChangeType.Created)
+
+        assertEquals(listOf(moved.resolve("A.groovy")), sources())
+        verify(exactly = 1) { compilation.clearCaches() }
+    }
+
+    @Test
+    fun `a folder deleted and recreated in one notification keeps what is on disk`() {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val kept = write(src.resolve("pkg/A.groovy"), "class A {}\n")
+        val dropped = write(src.resolve("pkg/B.groovy"), "class B {}\n")
+        src()
+        Files.delete(dropped)
+
+        notify(src.resolve("pkg") to FileChangeType.Deleted, src.resolve("pkg") to FileChangeType.Created)
+
+        assertEquals(listOf(kept), sources())
     }
 }

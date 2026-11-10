@@ -145,7 +145,13 @@ class WorkspaceManager(
      * uses; a deleted path leaves the list. Each root's sources stay sorted, as [scanSources] orders them.
      * Classpath, roots, targets and so the fingerprint are unchanged. Returns whether the list changed.
      */
-    fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): Boolean {
+    @Suppress("UnusedParameter")
+    fun applySourceChanges(
+        created: Collection<Path>,
+        deleted: Collection<Path>,
+        createdDirectories: Collection<Path> = emptyList(),
+        deletedPrefixes: Collection<Path> = emptyList(),
+    ): Boolean {
         var changed = false
         update { current ->
             val createdKeys = created.mapTo(HashSet()) { it.toAbsolutePath().normalize() }

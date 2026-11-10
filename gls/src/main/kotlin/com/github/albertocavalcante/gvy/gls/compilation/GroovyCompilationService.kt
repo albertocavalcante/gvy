@@ -267,8 +267,13 @@ class GroovyCompilationService internal constructor(
      * its ticket before it reads the model, so any compile that read the old list holds a ticket from
      * before the retirement and cannot publish; a compile after it reads the new list.
      */
-    fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): Boolean {
-        val changed = workspaceManager.applySourceChanges(created, deleted)
+    fun onWorkspaceSourcesChanged(
+        created: Collection<Path>,
+        deleted: Collection<Path>,
+        createdDirectories: Collection<Path> = emptyList(),
+        deletedPrefixes: Collection<Path> = emptyList(),
+    ): Boolean {
+        val changed = workspaceManager.applySourceChanges(created, deleted, createdDirectories, deletedPrefixes)
         if (changed) clearCaches()
         return changed
     }
