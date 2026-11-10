@@ -92,12 +92,13 @@ data class SpockClassContext(
     /**
      * Whether a provider should treat this class as a specification (#974). A confident verdict decides;
      * UNCERTAIN keeps the previous class-level [SpockDetector.isSpockSpec], so behaviour changes only where
-     * the source alone proves the answer. [module] must be the module this context was built from.
+     * the source alone proves the answer. [module] must be the module this context was built from;
+     * [specClassNode], when a caller has loaded `spock.lang.Specification`, is passed to that fallback.
      */
-    fun isSpecification(module: ModuleNode): Boolean = when (status) {
+    fun isSpecification(module: ModuleNode, specClassNode: ClassNode? = null): Boolean = when (status) {
         SpecificationStatus.SPECIFICATION -> true
         SpecificationStatus.NOT_SPECIFICATION -> false
-        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(classNode, module)
+        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(classNode, module, specClassNode)
     }
 }
 

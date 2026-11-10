@@ -1,7 +1,11 @@
 package com.github.albertocavalcante.gvy.testing.spock
 
+import com.github.albertocavalcante.gvy.spock.SpecificationEvidence
+import com.github.albertocavalcante.gvy.spock.SpecificationStatus
+import com.github.albertocavalcante.gvy.spock.SpockClassContext
 import com.github.albertocavalcante.gvy.spock.SpockDetector
 import com.github.albertocavalcante.gvy.spock.SpockFeatureExtractor
+import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import com.github.albertocavalcante.gvy.testing.api.TestFramework
 import com.github.albertocavalcante.gvy.testing.api.TestFrameworkDetector
 import com.github.albertocavalcante.gvy.testing.api.TestItem
@@ -11,6 +15,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
+import java.lang.ref.WeakReference
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Spock test framework detector.
@@ -18,8 +24,31 @@ import org.codehaus.groovy.ast.ModuleNode
  * Delegates to [SpockDetector] for detection and [SpockFeatureExtractor]
  * for extracting feature methods. This adapter bridges the existing
  * spock module with the new groovy-testing API.
+ *
+ * Specification identity comes from the module's source model (#974): a confident verdict decides
+ * and UNCERTAIN keeps [SpockDetector.isSpockSpec]. The registry asks once per class, so the verdicts
+ * for the most recent module are cached (see [ModuleVerdicts]).
  */
-class SpockTestDetector : TestFrameworkDetector {
+class SpockTestDetector internal constructor(private val classify: (ModuleNode) -> List<SpockClassContext>) :
+    TestFrameworkDetector {
+    constructor() : this({ SpockSourceContext.from(it, isPartial = false).classes })
+
+    /**
+     * Verdicts for one module, aligned with `module.classes`. Only enums are kept: every ClassNode
+     * references its module, so caching contexts would pin an old AST. The module is held weakly and
+     * compared by identity; any mismatch rebuilds.
+     */
+    private class ModuleVerdicts(
+        module: ModuleNode,
+        val verdicts: List<Pair<SpecificationStatus, SpecificationEvidence>>,
+    ) {
+        private val module = WeakReference(module)
+
+        fun isFor(candidate: ModuleNode): Boolean =
+            module.get() === candidate && verdicts.size == candidate.classes.size
+    }
+
+    private val lastModule = AtomicReference<ModuleVerdicts?>(null)
 
     private val logger = KotlinLogging.logger {}
 
@@ -33,12 +62,26 @@ class SpockTestDetector : TestFrameworkDetector {
         } else {
             null
         }
-        val result = SpockDetector.isSpockSpec(classNode, module, specClassNode)
+        val owner = module?.let { contextFor(classNode, it) }
+        val result = if (owner != null && module != null) {
+            owner.isSpecification(module, specClassNode)
+        } else {
+            SpockDetector.isSpockSpec(classNode, module, specClassNode)
+        }
         logger.info {
             val specStatus = if (specClassNode != null) "loaded" else "null"
             "SpockTestDetector.appliesTo(${classNode.name}) = $result (specClassNode=$specStatus)"
         }
         return result
+    }
+
+    private fun contextFor(classNode: ClassNode, module: ModuleNode): SpockClassContext? {
+        val index = module.classes.indexOfFirst { it === classNode }
+        if (index < 0) return null
+        val cached = lastModule.get()?.takeIf { it.isFor(module) }
+            ?: ModuleVerdicts(module, classify(module).map { it.status to it.evidence }).also(lastModule::set)
+        val (status, evidence) = cached.verdicts.getOrNull(index) ?: return null
+        return SpockClassContext(classNode, status, evidence)
     }
 
     override fun extractTests(classNode: ClassNode): List<TestItem> {
