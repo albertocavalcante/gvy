@@ -25,7 +25,10 @@ class CompilationEnsurerTest {
     private val first = URI.create("file:///First.groovy")
     private val second = URI.create("file:///Second.groovy")
     private val documents = mockk<DocumentProvider>()
-    private val indexing = mockk<SymbolIndexingService>()
+    private val indexing = mockk<SymbolIndexingService> {
+        // Readiness markers (#1344): a real, empty registry
+        every { unparseable } returns UnparseableTexts(ArtifactOwnership())
+    }
     private val compilation = mockk<GroovyCompilationService> {
         every { symbolIndexingService } returns indexing
     }

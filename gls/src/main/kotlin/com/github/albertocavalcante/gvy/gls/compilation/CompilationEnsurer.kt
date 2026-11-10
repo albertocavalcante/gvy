@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
@@ -26,6 +27,7 @@ import java.net.URI
  * SAFEGUARDS:
  * - [maxTimeMs]: overall bound; on expiry the request proceeds with the facts available
  * - each document is compiled at most once per call; a failing compile is logged and skipped
+ * - text whose compile yielded no AST is not compiled again until its inputs change (#1344)
  * - cancellation of the calling request propagates
  */
 class CompilationEnsurer(
@@ -57,20 +59,10 @@ class CompilationEnsurer(
         currentCoroutineContext().ensureActive()
         val snapshot = documentProvider.getSnapshot(uri) ?: return // closed meanwhile
         val indexing = compilationService.symbolIndexingService
-        if (indexing.isIndexed(uri, snapshot)) return
+        // Text already known not to parse is answered like its failed compile was: without an index (#1344)
+        if (indexing.isIndexed(uri, snapshot) || indexing.unparseable.isKnown(uri, snapshot)) return
         try {
-            repeat(MAX_ATTEMPTS) {
-                // Owned by the compilation service, not this request: cancelling the request leaves the shared
-                // compile running for its other waiters; retirements are re-resolved by its retry policy.
-                val result = compilationService.ensureCompiled(uri, snapshot)
-                // A compile retired after it finished returns with its writes discarded: try once more. A buffer
-                // without an AST never indexes, and an edited one is the next request's concern.
-                if (result.ast == null || indexing.isIndexed(uri, snapshot) ||
-                    documentProvider.getSnapshot(uri) !== snapshot
-                ) {
-                    return
-                }
-            }
+            compileForReadiness(uri, snapshot, indexing)
         } catch (e: CancellationException) {
             throw e
         } catch (e: ResponseErrorException) {
@@ -78,6 +70,27 @@ class CompilationEnsurer(
             logger.debug(e) { "ensureAllOpenDocumentsCompiled: $uri kept changing; continuing without it" }
         } catch (e: Exception) {
             logger.error(e) { "ensureAllOpenDocumentsCompiled: Failed to compile $uri" }
+        }
+    }
+
+    private suspend fun compileForReadiness(uri: URI, snapshot: DocumentSnapshot, indexing: SymbolIndexingService) {
+        repeat(MAX_ATTEMPTS) {
+            // Taken before the compile reads its inputs, so a retirement meanwhile voids the marker below
+            val ticket = indexing.unparseable.begin(uri)
+            // Owned by the compilation service, not this request: cancelling the request leaves the shared
+            // compile running for its other waiters; retirements are re-resolved by its retry policy.
+            val result = compilationService.ensureCompiled(uri, snapshot)
+            // A buffer without an AST never indexes. Remember text the parser actually rejected, so later
+            // requests skip it; a failure the parse never finished (a worker crash) is retried next time.
+            if (result.ast == null) {
+                if (result.parseCompleted && documentProvider.getSnapshot(uri) === snapshot) {
+                    indexing.unparseable.mark(uri, snapshot, ticket)
+                }
+                return
+            }
+            // A compile retired after it finished returns with its writes discarded: try once more. An edited
+            // buffer is the next request's concern.
+            if (indexing.isIndexed(uri, snapshot) || documentProvider.getSnapshot(uri) !== snapshot) return
         }
     }
 

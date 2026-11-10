@@ -82,11 +82,15 @@ class SymbolIndexingService(
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
     internal fun install(uri: URI, prepared: Prepared) {
+        unparseable.remove(uri)
         classNames.replace(uri, prepared.classes) { entries.put(uri, prepared)?.classes }
     }
 
     /** Whether the stored index of [uri] was built from exactly [snapshot]'s text; older text is not current. */
     fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean = entries[uri]?.contentHash == snapshot.contentHash
+
+    /** Text known not to parse, so readiness checks skip it (#1344); removed with this file's index. */
+    internal val unparseable = UnparseableTexts(ownership)
 
     /**
      * Returns the index for [content], building it from [astModelProvider] only when the stored one was built
@@ -187,6 +191,7 @@ class SymbolIndexingService(
      * @param uri The URI to invalidate
      */
     fun invalidate(uri: URI) {
+        unparseable.remove(uri)
         classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes }
     }
 
@@ -198,6 +203,7 @@ class SymbolIndexingService(
      * refresh cannot erase or replace the facts of the new buffer.
      */
     suspend fun refreshAfterClose(uri: URI, ticket: ArtifactOwnership.Ticket = ownership.begin(uri)) {
+        unparseable.remove(uri) // the closed buffer's text is gone; a reopen starts over
         if (UriPathConverter.toPath(uri) == null) {
             commitFromDisk(ticket) { classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes } }
         } else {
@@ -210,6 +216,7 @@ class SymbolIndexingService(
      * Used when workspace configuration changes significantly.
      */
     fun clear() {
+        unparseable.clear()
         classNames.clear { entries.clear() }
     }
 
