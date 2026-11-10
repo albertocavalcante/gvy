@@ -1,6 +1,10 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
+import io.mockk.clearMocks
+import io.mockk.spyk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,10 +30,10 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
- * Measures what one large watched-files notification costs on the LSP notification thread (#1428): every closed
- * source event is retired synchronously before [GroovyWorkspaceService.didChangeWatchedFiles] returns. Step 1
- * only reports the timings (`[#1428]` lines in the test output); the budget is set from them later. The
- * retirement semantics are asserted on every measured notification.
+ * What one large watched-files notification costs on the LSP notification thread (#1428): every closed source
+ * event is retired synchronously before [GroovyWorkspaceService.didChangeWatchedFiles] returns. Measured on CI
+ * at about 92 ms warm for 5,000 events, so the retirement stays per event; the budget only catches a regression
+ * to quadratic cost. The timings are printed (`[#1428]` lines) and the retirement semantics asserted every call.
  */
 class WatchedFilesRetireCostTest {
     @TempDir
@@ -64,8 +68,10 @@ class WatchedFilesRetireCostTest {
         val openParse = setUpWorkspace()
 
         val timings = linkedMapOf<String, Double>()
+        var warmLarge = emptyList<Double>()
         for (size in listOf(LARGE, SMALL)) {
             val runs = measureNotifications(size, openParse)
+            if (size == LARGE) warmLarge = runs.drop(1)
             timings["didChangeWatchedFiles, $size events, cold"] = runs.first()
             timings["didChangeWatchedFiles, $size events, warm (median of ${RUNS - 1})"] = median(runs.drop(1))
         }
@@ -77,6 +83,8 @@ class WatchedFilesRetireCostTest {
         timings.forEach { (label, millis) ->
             println("[#1428] $label: ${String.format(Locale.ROOT, "%.2f", millis)} ms")
         }
+        val warm = median(warmLarge)
+        assertTrue(warm < BUDGET_MILLIS, "$LARGE events took $warm ms warm, over the $BUDGET_MILLIS ms budget")
 
         // The drained queue re-retires the closed files and still skips the open buffer.
         while (paused.isNotEmpty()) paused.removeFirst().run()
@@ -84,6 +92,29 @@ class WatchedFilesRetireCostTest {
         assertTrue(compilation.workspaceManager.getWorkspaceSources().containsAll(files), "changed files stay listed")
         val reread = assertNotNull(compilation.ensureCompiled(sample.first()))
         assertTrue("v = 2" in reread.sourceText.orEmpty(), "a retired file is recompiled from the new disk text")
+    }
+
+    @Test
+    fun `a watcher retirement does not look up the fingerprint it never compares with`(): Unit = runBlocking {
+        val manager = spyk(WorkspaceManager())
+        val service = GroovyCompilationService(
+            ioDispatcher = Dispatchers.Unconfined,
+            documentProvider = DocumentProvider(),
+            workspaceManager = manager,
+        )
+        val uri = tempDir.resolve("W.groovy").also { Files.writeString(it, "class W {}") }.toUri()
+        assertNotNull(service.ensureCompiled(uri))
+
+        clearMocks(manager, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+        assertNotNull(service.onClosedSourceChanged(uri, keepIfUnchanged = false), "a closed file is retired")
+        verify(exactly = 0) { manager.fingerprintFor(any<URI>()) }
+        assertNull(service.getCompiledSnapshot(uri), "the parse was retired")
+
+        // The close of an unchanged buffer still compares the cached text, under the fingerprint.
+        assertNotNull(service.ensureCompiled(uri))
+        clearMocks(manager, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+        service.onClosedSourceChanged(uri, keepIfUnchanged = true)
+        verify(atLeast = 1) { manager.fingerprintFor(any<URI>()) }
     }
 
     /** [LARGE] listed sources under one source root, F0 open as a buffer; returns the open buffer's parse. */
@@ -143,5 +174,8 @@ class WatchedFilesRetireCostTest {
         const val SAMPLE_STRIDE = 100
         const val RUNS = 6
         const val NANOS_PER_MILLI = 1_000_000.0
+
+        // Generous for slow runners (measured ~92 ms warm), yet far below what quadratic retirement would take.
+        const val BUDGET_MILLIS = 2_000.0
     }
 }
