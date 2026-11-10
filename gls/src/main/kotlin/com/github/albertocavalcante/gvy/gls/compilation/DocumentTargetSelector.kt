@@ -69,6 +69,10 @@ internal class DocumentTargetSelector(evidence: TargetDependencyEvidence) {
         /**
          * The real path of the deepest existing ancestor with the rest appended, so a new or unsaved file
          * under a symlinked directory compares equal to its real root; never throws for a bad path.
+         *
+         * Limitation: the path is normalised lexically before the real-path lookup, so `a/link/../b`
+         * drops `link/..` without following `link`. When `link` points elsewhere this can differ from
+         * the file system's own resolution; such a spelling may then be attributed by its lexical form.
          */
         fun canonical(path: Path): Path {
             val absolute = path.toAbsolutePath().normalize()
