@@ -96,6 +96,14 @@ class JenkinsMapKeyStringContextTest {
         assertTrue(edit.newText.startsWith(", returnStdout: "), edit.newText)
     }
 
+    @Test
+    fun `parenthesised call followed by a space offers no step map keys`(): Unit = runBlocking {
+        val line = "  sh('ls') "
+        val items = complete("node {\n$line\n}", Position(1, line.length))
+
+        assertNull(items.find { it.label == "returnStdout:" }, "sh('ls') returnStdout: is not valid Groovy")
+    }
+
     private suspend fun complete(content: String, position: Position): List<CompletionItem> {
         serverHandle!!.server.textDocumentService.didOpen(
             DidOpenTextDocumentParams().apply {

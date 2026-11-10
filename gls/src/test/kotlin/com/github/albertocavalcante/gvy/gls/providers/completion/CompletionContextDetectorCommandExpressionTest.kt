@@ -101,5 +101,11 @@ class CompletionContextDetectorCommandExpressionTest {
         assertTrue(dot("list. /* c */ ", cursor = 14))
         assertTrue(dot("println \"http://x\"."))
         assertFalse(dot("sh 'ls' // see foo."))
+        assertTrue(dot("obj.@"))
+        assertTrue(dot("obj.@fi"))
+        assertTrue(dot("obj.&"))
+        // an odd quote in a slashy string far above must not swallow the cursor region
+        val far = "def s = /it's/\n" + "\n".repeat(15) + "list."
+        assertTrue(dot(far, line = far.lines().lastIndex, cursor = 5))
     }
 }

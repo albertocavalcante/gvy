@@ -142,7 +142,13 @@ internal object JenkinsCompletionProvider {
         // after `sh(...).trim|` or `readFile('x').|` the receiver call is not a step being configured.
         val afterDot = followsMemberAccessDot(ctx.content, ctx.line, ctx.character)
         val methodCall = generateSequence(nodeAtCursor) { astModel.getParent(it) }
-            .firstNotNullOfOrNull { callOrReceiverCall(it, allowReceiver = !afterDot) }
+            .firstNotNullOfOrNull { node ->
+                callOrReceiverCall(node) { receiver ->
+                    // The receiver is the step being configured only for a paren-less command expression
+                    // (`sh 'ls' |`); `sh('ls') |` and `sh(...).x|` are complete / member-access cases.
+                    !afterDot && isCommandAt(ctx, receiver)
+                }
+            }
         val callName = methodCall?.methodAsString ?: return
 
         // Never edit the inside of a string literal (e.g. `sh 'ls|'`).
@@ -185,13 +191,20 @@ internal object JenkinsCompletionProvider {
     private fun typedWordBeforeCursor(ctx: CompletionContext): String {
         val lineText = ctx.content.lines().getOrNull(ctx.line).orEmpty()
         val prefix = lineText.take(ctx.character.coerceIn(0, lineText.length))
-        return prefix.takeLastWhile { it.isLetterOrDigit() || it == '_' }
+        return prefix.takeLastWhile { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '_' }
     }
 
-    private fun callOrReceiverCall(node: ASTNode, allowReceiver: Boolean): MethodCallExpression? {
+    private fun isCommandAt(ctx: CompletionContext, call: MethodCallExpression): Boolean {
+        val name = call.methodAsString ?: return false
+        return CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, name)
+    }
+
+    private fun callOrReceiverCall(
+        node: ASTNode,
+        acceptReceiver: (MethodCallExpression) -> Boolean,
+    ): MethodCallExpression? {
         if (node is MethodCallExpression) return node
-        if (!allowReceiver) return null
-        val receiver = (node as? PropertyExpression)?.objectExpression
-        return receiver as? MethodCallExpression
+        val receiver = (node as? PropertyExpression)?.objectExpression as? MethodCallExpression
+        return receiver?.takeIf(acceptReceiver)
     }
 }
