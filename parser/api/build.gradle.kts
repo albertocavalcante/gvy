@@ -9,6 +9,8 @@ version = rootProject.version
 dependencies {
     // Minimal dependencies - this is a pure API module
     implementation(libs.kotlin.stdlib)
+    // The compiler policy customizes Groovy's CompilerConfiguration; consumers (parser:core/native) bring Groovy
+    compileOnly(libs.groovy.core)
 
     detektPlugins(libs.detekt.formatting)
 

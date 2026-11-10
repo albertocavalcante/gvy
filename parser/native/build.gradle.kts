@@ -20,6 +20,8 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
+    // Provides @ASTTest, to prove the analysis policy keeps its closures from running
+    testImplementation(libs.groovy.test)
     testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.jqwik)
     testRuntimeOnly(libs.junit.platform.launcher)
