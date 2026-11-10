@@ -55,6 +55,9 @@ class RetiredWaiterTest {
     private val released = CountDownLatch(1)
     private val armed = AtomicBoolean(true)
 
+    /** Set if an armed parse gave up waiting: no test may only pass because a latch timed out (#1429). */
+    private val latchTimedOut = AtomicBoolean(false)
+
     /** Invoked after every parse, before the compile publishes. */
     private var afterParse: () -> Unit = {}
 
@@ -71,7 +74,9 @@ class RetiredWaiterTest {
                         parsed.computeIfAbsent(request.content) { AtomicInteger() }.incrementAndGet()
                         if (armed.compareAndSet(true, false)) {
                             entered.countDown()
-                            check(released.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "never released" }
+                            val wasReleased = released.await(WAIT_SECONDS, TimeUnit.SECONDS)
+                            if (!wasReleased) latchTimedOut.set(true)
+                            check(wasReleased) { "never released" }
                         }
                         afterParse()
                     }
@@ -104,9 +109,12 @@ class RetiredWaiterTest {
         // didClose: the buffer is removed and its closed source retired, cancelling the pending job.
         documents.remove(uri)
         assertNotNull(service.onClosedSourceChanged(uri))
-        val answer = waiter.await()
+        val answer = withTimeout(WAIT_SECONDS * 1_000) { waiter.await() }
+        // The retirement woke the waiter at once; the stale compile it shared is still running (#1429)
+        assertFalse(owner.isCompleted, "the waiter waited for the retired compile to finish")
         released.countDown()
         runCatching { owner.await() }
+        assertFalse(latchTimedOut.get(), "the test reached its answer only because a latch timed out")
 
         assertEquals("class OnDisk {}", answer?.sourceText, "the waiter must re-resolve to the file on disk")
         val names = (service.getAst(uri) as? ModuleNode)?.classes?.map { it.nameWithoutPackage }.orEmpty()

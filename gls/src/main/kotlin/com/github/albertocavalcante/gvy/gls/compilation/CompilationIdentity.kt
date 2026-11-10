@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Deferred
 
 /** Inputs that must agree before callers can share a pending compilation. */
@@ -26,6 +27,12 @@ internal class PendingCompilation(
     val deferred: Deferred<CompilationResult>,
     val ticket: ArtifactOwnership.Ticket,
 ) {
+    /** Completed when the service retires this job (#1429). */
+    val retired = CompletableDeferred<Unit>()
+
+    /** The job's result, or null once the service retires it. */
+    suspend fun awaitUnlessRetired(): CompilationResult? = deferred.await()
+
     // A registered LAZY coroutine is shareable before it becomes active.
     val isPending: Boolean get() = !deferred.isCompleted && !deferred.isCancelled
 }
