@@ -94,6 +94,8 @@ class DiagnosticsOrchestratorSnapshotTest {
 
         init {
             every { compilation.symbolIndexingService } returns indexing
+            // A relaxed mock would answer a mocked URI: the document is listed as opened, so it shadows nothing.
+            every { compilation.onShadowingDocumentClosed(any()) } returns null
             var generation = 0
             coEvery { compilation.compileAsync(any(), uri, any()) } answers {
                 val result = mockk<CompilationResult>()
