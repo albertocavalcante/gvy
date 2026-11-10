@@ -58,6 +58,26 @@ class GlobalClassWorkspaceLookupTest {
     }
 
     @Test
+    fun `a class differing only in case does not resolve`(): Unit = runBlocking {
+        // The name index folds case for prefix lookups; an exact lookup still compares names exactly.
+        val lower = file("a.groovy", "package low\nclass greeter {}")
+        val upper = file("b.groovy", "package app\nclass Greeter {}")
+        listOf(lower, upper).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(upper to "app.Greeter", resolve("Greeter"), "a.groovy sorts first but its class differs in case")
+        assertEquals(null, resolve("GREETER"))
+    }
+
+    @Test
+    fun `a nested class resolves by its binary name`(): Unit = runBlocking {
+        val outer = file("Outer.groovy", "package app\nclass Outer { static class Inner {} }")
+        compilation.symbolIndexingService.indexFile(outer)
+
+        assertEquals(outer to "app.Outer\$Inner", resolve("app.Outer\$Inner"))
+        assertEquals(outer to "app.Outer", resolve("Outer"))
+    }
+
+    @Test
     fun `the lookup does not scan every indexed file`(): Unit = runBlocking {
         compilation.symbolIndexingService.indexFile(file("Greeter.groovy", "package app\nclass Greeter {}"))
 
