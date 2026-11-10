@@ -12,9 +12,11 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asContextElement
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import org.codehaus.groovy.ast.ModuleNode
@@ -28,6 +30,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
+import java.util.concurrent.Executors
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -81,6 +86,7 @@ class RetiredWaiterTest {
         // A failed test must not leave owner parses parked on their latches for WAIT_SECONDS
         gated?.releaseAll()
         scope.cancel()
+        waiterThread.shutdownNow()
     }
 
     @Test
@@ -221,26 +227,39 @@ class RetiredWaiterTest {
          * Cancels the newest owner and returns once the waiter has re-resolved onto its successor.
          * [settleMillis] stalls this thread after the release, as a loaded CI machine may (run 42800948915).
          */
-        suspend fun cancelNewest(settleMillis: Long = 0) {
+        suspend fun cancelNewest(settleMillis: Long = 0, expectWake: Boolean = true) {
             assertNoStrays()
             val owner = started.last()
+            val ownerNumber = started.indexOf(owner)
+            // A second task from the previous wake, landing late, would make this round consume it as its own
+            check(waiterWoke.availablePermits() == 0) {
+                "waiter dispatched more than one task before owner $ownerNumber"
+            }
             // Cancel only once its parse is running, so the cancellation aborts that parse
             checkNotNull(withTimeoutOrNull(WAIT_SECONDS * 1_000) { owner.parsing.await() }) { "no parse" }
-            // Registered while the owner is provably incomplete (its parse is held), so it is queued, not run now
-            val handled = CompletableDeferred<Unit>()
-            owner.job.invokeOnCompletion { handled.complete(Unit) }
             owner.scope.cancel()
             // The successor exists before the cancelled owner can finish, so the waiter always finds it
             beforeReplacement()
             start()
             owner.release.countDown()
             if (settleMillis > 0) Thread.sleep(settleMillis)
-            // Relies on runBlocking's FIFO event loop: the waiter's await handler was registered before
-            // [handled]'s, so its resume is dispatched to this loop first, and it re-resolves onto the successor
-            // without suspending until it awaits it. Only then does this coroutine resume.
-            handled.await()
+            // The waiter's wake on this owner is one task on its executor; when that task has finished, the waiter
+            // has re-resolved and parked on the successor (or ended). Nothing here relies on handler or event-loop
+            // order, which the trace in run 42813080154 showed cannot be trusted.
+            if (expectWake) {
+                check(withContext(Dispatchers.IO) { waiterWoke.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS) }) {
+                    "the waiter never woke for owner $ownerNumber"
+                }
+                // One wake must be exactly one task; a second one would desync the rounds silently
+                check(!waiterWoke.tryAcquire()) { "waiter dispatched more than one task for owner $ownerNumber" }
+            }
             assertNoStrays()
         }
+
+        /** Consumes the one task a waiter runs when it ends outside a round (for example on its own cancellation). */
+        suspend fun awaitWaiterTask() = check(
+            withContext(Dispatchers.IO) { waiterWoke.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS) },
+        ) { "the waiter never ran its final task" }
 
         fun assertNoStrays() = check(strays.isEmpty()) { "un-owned parse(s); the waiter compiled on its own: $strays" }
     }
@@ -248,9 +267,25 @@ class RetiredWaiterTest {
     /** Which [Owners.Owner] a parse belongs to, carried into the owner's compile coroutine. */
     private val ownerIndex = ThreadLocal<Int?>()
 
-    /** A navigation request on the runBlocking loop; its own job, so a failure stays in the test's assertion. */
+    /** One permit per finished task of the waiter: each wake of a waiting request is exactly one task. */
+    private val waiterWoke = Semaphore(0)
+    private val waiterThread = Executors.newSingleThreadExecutor { Thread(it, "retired-waiter") }
+    private val waiterDispatcher = Executor { task ->
+        waiterThread.execute {
+            try {
+                task.run()
+            } finally {
+                waiterWoke.release()
+            }
+        }
+    }.asCoroutineDispatcher()
+
+    /**
+     * A navigation request on its own single thread, started in place so it is parked on the first owner before
+     * this returns; its own job, so a failure stays in the test's assertion.
+     */
     private fun CoroutineScope.waitOn(uri: URI) =
-        async(SupervisorJob(), start = CoroutineStart.UNDISPATCHED) { service.ensureCompiled(uri) }
+        async(SupervisorJob() + waiterDispatcher, start = CoroutineStart.UNDISPATCHED) { service.ensureCompiled(uri) }
 
     /** The owners of the running test, released in [tearDown] whatever its outcome. */
     private var gated: Owners? = null
@@ -362,10 +397,13 @@ class RetiredWaiterTest {
 
         owners.cancelNewest()
         waiter.cancel() // the client cancels the request while it waits on the next owner
-        owners.cancelNewest()
-
         assertFailsWith<CancellationException> { withTimeout(WAIT_SECONDS * 1_000) { waiter.await() } }
+        owners.awaitWaiterTask()
+        // Nobody waits on the next owner any more; cancelling it must not wake the ended request
+        owners.cancelNewest(expectWake = false)
+
         assertTrue(waiter.isCancelled, "a cancelled request must end, not keep re-resolving")
+        check(!waiterWoke.tryAcquire()) { "a cancelled request kept re-resolving" }
         owners.releaseAll()
         owners.assertNoStrays()
     }
