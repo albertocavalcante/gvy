@@ -520,7 +520,7 @@ class WorkspaceManager internal constructor(
  * entered, the rule watched-file events follow too (#1424). [beforeVisit] runs before each file is classified
  * (a test seam).
  */
-internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}, start: Path = root): List<Path> {
+internal fun collectGroovySources(root: Path, start: Path = root, beforeVisit: (Path) -> Unit = {}): List<Path> {
     // A walk does not follow links: a root that is itself a link is walked at the [start] its caller trusts, and
     // what it finds is spelled through the root (#1424).
     val found = mutableListOf<Path>()
