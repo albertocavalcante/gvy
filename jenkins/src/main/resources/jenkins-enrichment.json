@@ -551,6 +551,45 @@
         "aborted"
       ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#post"
+    },
+    "parallel": {
+      "description": "Run the nested stages of a stage in parallel.",
+      "allowedIn": [
+        "stage"
+      ],
+      "innerInstructions": [
+        "stage"
+      ],
+      "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#parallel"
+    },
+    "matrix": {
+      "description": "Run the nested stages once for every combination of the axes' values.",
+      "allowedIn": [
+        "stage"
+      ],
+      "innerInstructions": [
+        "axes",
+        "excludes",
+        "stages",
+        "agent",
+        "environment",
+        "input",
+        "options",
+        "post",
+        "tools",
+        "when"
+      ],
+      "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#declarative-matrix"
+    },
+    "axes": {
+      "description": "The axes of a matrix: each axis has a name and a list of values.",
+      "allowedIn": [
+        "matrix"
+      ],
+      "innerInstructions": [
+        "axis"
+      ],
+      "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#declarative-matrix"
     }
   },
   "directives": {
@@ -595,6 +634,21 @@
         "matrix"
       ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#tools"
+    },
+    "triggers": {
+      "description": "Ways the pipeline is re-triggered automatically (cron, pollSCM, upstream).",
+      "allowedIn": [
+        "pipeline"
+      ],
+      "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#triggers"
+    },
+    "input": {
+      "description": "Pause the stage and prompt for input before running it.",
+      "allowedIn": [
+        "stage",
+        "matrix"
+      ],
+      "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#input"
     }
   }
 }

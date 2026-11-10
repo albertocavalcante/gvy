@@ -9,6 +9,8 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContext
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverStrategy
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.MapEntryExpression
+import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
@@ -66,9 +68,12 @@ class JenkinsStepHoverStrategy(
         val enclosing = enclosingCallNames(node, astModel)
         // Sections and options only exist in Declarative Pipeline; a scripted `stage('x') {}` (also inside
         // `script {}` or `node {}`) is the step.
-        val declarative = (name == PIPELINE || PIPELINE in enclosing) && enclosing.none { it in SCRIPTED_BODIES }
+        val names = enclosing.map { it.name }
+        // A closure passed as a map value (`parallel(a: { ... })`) is a scripted body, like `script {}`.
+        val declarative = (name == PIPELINE || PIPELINE in names) &&
+            enclosing.none { it.name in SCRIPTED_BODIES || !it.isBlockArgument }
         if (!declarative) return null
-        val parent = enclosing.firstOrNull()
+        val parent = names.firstOrNull()
         val option = metadata.declarativeOptions[name]?.takeIf { parent == OPTIONS_BLOCK }
         // A section or directive only where its schema allows it: `stage('x') {}` inside `steps {}` is the step.
         val section = metadata.sections[name]?.takeIf { isAllowedIn(it.allowedIn, parent) }
@@ -127,22 +132,30 @@ class JenkinsStepHoverStrategy(
      * Names of the calls whose closures contain [call], innermost first (`[options, pipeline]` for
      * `pipeline { options { timeout(...) } }`).
      */
-    private fun enclosingCallNames(call: MethodCallExpression, astModel: GroovyAstModel): List<String> {
-        val names = mutableListOf<String>()
+    private fun enclosingCallNames(call: MethodCallExpression, astModel: GroovyAstModel): List<EnclosingBlock> {
+        val blocks = mutableListOf<EnclosingBlock>()
         var insideClosure = false
+        var viaMapValue = false
         var current: ASTNode? = astModel.getParent(call)
         while (current != null) {
             when {
-                current is ClosureExpression -> insideClosure = true
+                current is ClosureExpression -> {
+                    insideClosure = true
+                    viaMapValue = false
+                }
+                insideClosure && (current is MapEntryExpression || current is MapExpression) -> viaMapValue = true
                 insideClosure && current is MethodCallExpression -> {
-                    current.methodAsString?.let(names::add)
+                    current.methodAsString?.let { blocks += EnclosingBlock(it, isBlockArgument = !viaMapValue) }
                     insideClosure = false
                 }
             }
             current = astModel.getParent(current)
         }
-        return names
+        return blocks
     }
+
+    /** A call whose closure contains the hovered call; [isBlockArgument] is false for `call(key: { ... })`. */
+    private data class EnclosingBlock(val name: String, val isBlockArgument: Boolean)
 
     /**
      * Try to create a hover for a vars/ global variable call.
