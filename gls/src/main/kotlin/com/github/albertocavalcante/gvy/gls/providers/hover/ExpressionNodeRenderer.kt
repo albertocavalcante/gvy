@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.native.displayName
+import com.github.albertocavalcante.gvy.semantics.native.displayType
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -224,5 +225,5 @@ internal object ExpressionNodeRenderer {
     }
 
     private fun ClosureExpression.parametersString(): String =
-        parameters?.joinToString(", ") { "${it.type.displayName()} ${it.name}" } ?: ""
+        parameters?.joinToString(", ") { "${it.displayType()} ${it.name}" } ?: ""
 }

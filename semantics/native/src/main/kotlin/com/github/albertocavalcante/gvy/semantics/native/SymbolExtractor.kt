@@ -166,7 +166,7 @@ object SymbolExtractor {
             val parameters = methodNode.parameters.map { param ->
                 ParameterInfo(
                     name = param.name,
-                    type = param.type.displayName(),
+                    type = param.displayType(),
                 )
             }
 

@@ -23,6 +23,7 @@ import com.github.albertocavalcante.gvy.semantics.db.ImplementationMethodSignatu
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
 import com.github.albertocavalcante.gvy.semantics.native.displayName
+import com.github.albertocavalcante.gvy.semantics.native.displayType
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
@@ -778,7 +779,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
     private fun ownMethods(node: ClassNode, inherited: Boolean): List<Pair<String, MethodCandidate>> =
         node.methods.filter { hasSource(it) && (!inherited || !it.isPrivate) }.map { method ->
             val parameters = method.parameters.map {
-                CandidateParameter(typeName(it.type), "${it.type.displayName()} ${it.name}")
+                CandidateParameter(typeName(it.type), "${it.displayType()} ${it.name}")
             }
             val identity = "${method.name}(${parameters.joinToString(",") { it.identity }})"
             identity to MethodCandidate(

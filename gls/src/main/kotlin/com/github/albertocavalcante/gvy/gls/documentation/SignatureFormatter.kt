@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.documentation
 
 import com.github.albertocavalcante.gvy.semantics.native.displayName
+import com.github.albertocavalcante.gvy.semantics.native.isVarargs
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -193,7 +194,7 @@ object SignatureFormatter {
         appendAnnotations(param.annotations, options, " ")
 
         // Type
-        append(formatType(param.type))
+        append(if (param.isVarargs()) formatType(param.type.componentType) + "..." else formatType(param.type))
         append(" ")
 
         // Parameter name
