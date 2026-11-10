@@ -41,14 +41,15 @@ object ConfigurationFingerprint {
     }
 
     /**
-     * Extends [base] with each artifact's observed size and modification time, in classpath order, so a
-     * jar replaced at the same path yields a new key. A null stamp (not stat'ed or unreadable) is keyed too.
+     * Extends [base] with each artifact's observed stamp, in classpath order, so a jar replaced at the same path, or a
+     * class rewritten in a class directory (#1364), yields a new key. A null stamp (not stat'ed or unreadable) is
+     * keyed too.
      */
     fun withStamps(base: String, stamps: List<ArtifactStamp?>): String = sha256(
         buildString {
             append(base).append("\nstamps:")
             stamps.forEach { stamp ->
-                append('\n').append(stamp?.let { "${it.size}:${it.lastModifiedMillis}" } ?: "-")
+                append('\n').append(stamp?.let { "${it.size}:${it.lastModifiedMillis}:${it.files ?: ""}" } ?: "-")
             }
         },
     )
