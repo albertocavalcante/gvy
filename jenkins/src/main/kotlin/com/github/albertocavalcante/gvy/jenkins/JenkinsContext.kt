@@ -478,15 +478,18 @@ class JenkinsContext internal constructor(
      * previous snapshot in place.
      */
     fun scanClasspath(classpath: List<Path>): BundledJenkinsMetadata? {
-        val observed = scanSnapshot.get()
-        if (observed?.classpath == classpath) {
+        val unchanged = scanSnapshot.get()?.takeIf { it.classpath == classpath }
+        // Skip only when no newer request has started: otherwise an older scan still in flight would replace
+        // this classpath's snapshot after this (newer) request returned.
+        if (unchanged != null && unchanged.generation == scanRequests.get()) {
             logger.debug { "Classpath unchanged (${classpath.size} entries), skipping scan" }
-            return observed.metadata
+            return unchanged.metadata
         }
 
         val generation = scanRequests.incrementAndGet()
         val snapshot = classpath.toList()
-        val metadata = try {
+        // An unchanged classpath is republished under this request's generation, without rescanning.
+        val metadata = unchanged?.metadata ?: try {
             logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
             classpathScanner(snapshot)
         } catch (e: Exception) {

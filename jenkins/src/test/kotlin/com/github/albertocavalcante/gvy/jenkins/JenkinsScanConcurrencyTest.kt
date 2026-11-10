@@ -139,6 +139,42 @@ class JenkinsScanConcurrencyTest {
     }
 
     @Test
+    fun `a newer request for the published classpath is not overtaken by an older scan in flight`() {
+        val cp1 = listOf(tempDir.resolve("cp1.jar"))
+        val cp2 = listOf(tempDir.resolve("cp2.jar"))
+        val cp1Scans = AtomicInteger()
+        val cp2Started = CountDownLatch(1)
+        val releaseCp2 = CountDownLatch(1)
+        val context = context { cp ->
+            if (cp == cp1) {
+                cp1Scans.incrementAndGet()
+                dynamic("fromCp1")
+            } else {
+                cp2Started.countDown()
+                releaseCp2.await(30, TimeUnit.SECONDS)
+                dynamic("fromCp2")
+            }
+        }
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            context.scanClasspath(cp1) // published first
+            val older = pool.submit { context.scanClasspath(cp2) }
+            assertTrue(cp2Started.await(10, TimeUnit.SECONDS), "cp2 scan started")
+
+            val newest = context.scanClasspath(cp1)?.steps?.keys // newest request, same classpath as published
+            releaseCp2.countDown()
+            older.get(10, TimeUnit.SECONDS)
+
+            assertEquals(setOf("fromCp1"), newest)
+            assertEquals(setOf("fromCp1"), context.getAllMetadata().steps.keys)
+            assertEquals(1, cp1Scans.get(), "an unchanged classpath is republished, not rescanned")
+        } finally {
+            releaseCp2.countDown()
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     fun `readers always see the overlay of exactly one scan`() {
         val scans = AtomicInteger()
         val context = context { cp ->
