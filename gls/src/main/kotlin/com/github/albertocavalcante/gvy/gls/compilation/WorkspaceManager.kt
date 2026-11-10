@@ -43,16 +43,18 @@ import kotlin.io.path.isDirectory
 class WorkspaceManager internal constructor(
     private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
     private val caseInsensitive: (root: Path) -> Boolean,
-    @Suppress("UnusedPrivateProperty")
-    private val normalisesNames: Boolean = false,
+    private val normalisesNames: Boolean = PLATFORM_NORMALISES_NAMES,
 ) {
     constructor(
         fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
             ConfigurationFingerprint::compute,
     ) : this(fingerprintComputer, ::probeCaseInsensitive)
 
-    // Disk probes, once per root path: whether names under the root compare case-insensitively (#1424).
+    // Disk probes, once per existing root path: whether names under the root compare case-insensitively (#1424).
     private val caseInsensitiveRoots = ConcurrentHashMap<Path, Boolean>()
+
+    // Source-root links refused at the trust boundary, each warned about once.
+    private val refusedLinks: MutableSet<Path> = ConcurrentHashMap.newKeySet()
 
     private val logger = KotlinLogging.logger {}
 
@@ -172,7 +174,8 @@ class WorkspaceManager internal constructor(
      */
     fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
         // Disk work first, outside the update lock: spellings, case probes, stats and folder walks.
-        val spelling = Spelling(current().sourceRoots.map { it.toAbsolutePath().normalize() })
+        val start = current()
+        val spelling = Spelling(start.sourceRoots.map { it.toAbsolutePath().normalize() }, start.root)
         val createdPaths = created.mapNotNull(spelling::inRoot).distinct()
         val deletedPaths = deleted.mapNotNull(spelling::inRoot).distinct()
         if (createdPaths.isEmpty() && deletedPaths.isEmpty()) return SourceListChange.NONE
@@ -223,6 +226,28 @@ class WorkspaceManager internal constructor(
         return result
     }
 
+    /** The probe for [root], run on its [canonical] directory; cached only once the root exists. */
+    private fun isCaseInsensitive(root: Path, canonical: Path): Boolean = caseInsensitiveRoots[root]
+        ?: caseInsensitive(canonical).also { if (Files.isDirectory(root)) caseInsensitiveRoots[root] = it }
+
+    /**
+     * The directory a source root that is itself a symbolic link may be scanned at: its real target, only when
+     * that lies strictly under the workspace's real path. A cloned repository's `src -> /` or `src -> ~`, a link to
+     * the workspace or an ancestor of it, or a broken link is refused (warned about once) and lists nothing, so a
+     * scan never walks outside the workspace through a link. Null for a refused link or a root that is no link.
+     */
+    private fun followedLink(root: Path, workspaceRoot: Path?): Path? {
+        val target = realPathOrNull(root) ?: return null.also { if (Files.isSymbolicLink(root)) refuse(root, "broken") }
+        val workspace = workspaceRoot?.let(::realPathOrNull) ?: workspaceRoot?.let(DocumentTargetSelector::canonical)
+        val trusted = workspace != null && target != workspace && target.startsWith(workspace)
+        if (!trusted) refuse(root, "points outside the workspace: $target")
+        return target.takeIf { trusted }
+    }
+
+    private fun refuse(root: Path, why: String) {
+        if (refusedLinks.add(root)) logger.warn { "Not following source root link $root: $why" }
+    }
+
     /**
      * How one notification's paths are spelled against [roots] (#1424). An event path is translated into the
      * spelling of the root holding it, so the list keeps the scan's spelling: a lexical match is free, and only a
@@ -231,17 +256,27 @@ class WorkspaceManager internal constructor(
      * NFC-normalised and lowercased with `Locale.ROOT`, which approximates the file system's own folding (ß and
      * the dotless i fold differently) and is accepted. Built before the update lock; [key] does no disk work.
      */
-    private inner class Spelling(private val roots: List<Path>) {
-        private val insensitive = roots.associateWith { root ->
-            caseInsensitiveRoots.getOrPut(root) { caseInsensitive(root) }
+    private inner class Spelling(private val roots: List<Path>, workspaceRoot: Path?) {
+        // A root that is a link the trust boundary refuses takes no events at all: walking under it would cross it.
+        private val links = roots.filter(Files::isSymbolicLink).associateWith { followedLink(it, workspaceRoot) }
+        private val refused = links.filterValues { it == null }.keys
+        private val canonicalRoots = roots.map { root ->
+            if (root in links) links[root] ?: root else DocumentTargetSelector.canonical(root)
         }
-        private val canonicalRoots by lazy { roots.map { DocumentTargetSelector.canonical(it) } }
+        private val insensitive = roots.indices.associate { index ->
+            roots[index] to isCaseInsensitive(roots[index], canonicalRoots[index])
+        }
 
         fun inRoot(path: Path): Path? {
             val absolute = path.toAbsolutePath().normalize()
-            if (isScannedUnder(absolute, roots)) return absolute
+            val translated = if (isScannedUnder(absolute, roots)) absolute else rebased(absolute)
+            return translated?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
+        }
+
+        private fun rebased(absolute: Path): Path? {
             val canonical = DocumentTargetSelector.canonical(absolute)
-            val index = canonicalRoots.indices.filter { canonical.startsWith(canonicalRoots[it]) }
+            val index = canonicalRoots.indices
+                .filter { roots[it] !in refused && canonical.startsWith(canonicalRoots[it]) }
                 .maxByOrNull { canonicalRoots[it].nameCount } ?: return null
             val rebased = roots[index].resolve(canonicalRoots[index].relativize(canonical))
             return rebased.takeIf { isScannedUnder(it, roots) }
@@ -250,11 +285,9 @@ class WorkspaceManager internal constructor(
         fun key(path: Path): String {
             val owner = roots.filter { path.startsWith(it) }.maxByOrNull { it.nameCount }
             val text = path.toString()
-            return if (owner != null && insensitive[owner] == true) {
-                Normalizer.normalize(text, Normalizer.Form.NFC).lowercase(Locale.ROOT)
-            } else {
-                text
-            }
+            val foldsCase = owner != null && insensitive[owner] == true
+            val normalised = if (foldsCase || normalisesNames) Normalizer.normalize(text, Normalizer.Form.NFC) else text
+            return if (foldsCase) normalised.lowercase(Locale.ROOT) else normalised
         }
 
         /** Whether a proper ancestor of [path] has a key in [prefixes]: [path] lies strictly under it. */
@@ -299,7 +332,7 @@ class WorkspaceManager internal constructor(
         root,
         classpath,
         sourceRoots,
-        scanSources(sourceRoots.distinct()),
+        scanSources(sourceRoots.distinct(), root),
         targets,
         computeFingerprint = fingerprintComputer,
     )
@@ -367,10 +400,12 @@ class WorkspaceManager internal constructor(
         return sourceRoots.toList()
     }
 
-    private fun scanSources(sourceRoots: List<Path>): List<Path> {
+    private fun scanSources(sourceRoots: List<Path>, workspaceRoot: Path?): List<Path> {
         val workspaceSources = sourceRoots.flatMap { sourceRoot ->
             if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
-            collectGroovySources(sourceRoot).sorted()
+            val start = if (Files.isSymbolicLink(sourceRoot)) followedLink(sourceRoot, workspaceRoot) else null
+            // A refused link is walked as the link itself, which a walk does not follow: it lists nothing.
+            collectGroovySources(sourceRoot, start = start ?: sourceRoot).sorted()
         }
 
         logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }
@@ -485,10 +520,9 @@ class WorkspaceManager internal constructor(
  * entered, the rule watched-file events follow too (#1424). [beforeVisit] runs before each file is classified
  * (a test seam).
  */
-internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}): List<Path> {
-    // A walk does not follow links, so a root that is itself a link is walked at its target and what it finds
-    // is spelled through the root (#1424); otherwise a symlinked source root would list nothing.
-    val start = linkTarget(root) ?: root
+internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}, start: Path = root): List<Path> {
+    // A walk does not follow links: a root that is itself a link is walked at the [start] its caller trusts, and
+    // what it finds is spelled through the root (#1424).
     val found = mutableListOf<Path>()
     Files.walkFileTree(
         start,
@@ -522,9 +556,9 @@ internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}):
     return if (start == root) found else found.map { root.resolve(start.relativize(it)) }
 }
 
-/** The real directory a root that is itself a symbolic link points at, or null when it is not a link. */
-private fun linkTarget(root: Path): Path? = try {
-    if (Files.isSymbolicLink(root)) root.toRealPath() else null
+/** The real path of [path], or null when it does not exist or cannot be resolved (a broken link). */
+private fun realPathOrNull(path: Path): Path? = try {
+    path.toRealPath()
 } catch (_: IOException) {
     null
 } catch (_: SecurityException) {
@@ -568,3 +602,7 @@ internal fun probeCaseInsensitive(root: Path): Boolean {
         false
     }
 }
+
+/** macOS file systems (APFS, HFS+) ignore Unicode normalisation in names, even on case-sensitive volumes. */
+private val PLATFORM_NORMALISES_NAMES: Boolean =
+    System.getProperty("os.name").orEmpty().startsWith("Mac", ignoreCase = true)
