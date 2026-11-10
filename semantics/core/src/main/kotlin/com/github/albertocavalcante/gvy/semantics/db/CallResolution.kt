@@ -447,13 +447,14 @@ internal object GroovyDispatch {
     }
 
     private fun addsMethods(type: ClassNode): Boolean {
-        return type.annotations.any { it.classNode.nameWithoutPackage in methodAddingAnnotations } ||
-            type.fields.any { field -> field.annotations.any { it.classNode.nameWithoutPackage == "Delegate" } } ||
-            type.properties.any { prop ->
-                prop.field?.annotations?.any { it.classNode.nameWithoutPackage == "Delegate" } ==
-                    true
-            }
+        val annotated = type.annotations.any { it.classNode.nameWithoutPackage in methodAddingAnnotations }
+        val delegateField = type.fields.any { it.hasAnnotation("Delegate") }
+        val delegateProperty = type.properties.any { it.field?.hasAnnotation("Delegate") == true }
+        return annotated || delegateField || delegateProperty
     }
+
+    private fun org.codehaus.groovy.ast.AnnotatedNode.hasAnnotation(simpleName: String): Boolean =
+        annotations.any { it.classNode.nameWithoutPackage == simpleName }
 
     private fun isInterceptable(type: ClassNode): Boolean = type.interfaces.any {
         it.name == "groovy.lang.GroovyInterceptable" || it.nameWithoutPackage == "GroovyInterceptable"

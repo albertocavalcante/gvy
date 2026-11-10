@@ -350,7 +350,10 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
         assertEquals(true, "known" in enumBody)
         val both = names("trait T { def target() {}; def run() { target(); this.target() } }")
         assertEquals(true, "target" in both)
-        val props = names("class P { String target }\ntrait T { String target; def run(P p) { this.target; target; p.target } }")
+        val props =
+            names(
+                "class P { String target }\ntrait T { String target; def run(P p) { this.target; target; p.target } }",
+            )
         assertEquals(true, "target" in props)
         val anonymous = names("class C { def run() { new Object() { def target; def r() { target } } } }")
         assertEquals(true, "target" in anonymous)
