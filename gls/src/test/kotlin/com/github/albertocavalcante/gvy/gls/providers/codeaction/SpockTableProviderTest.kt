@@ -341,8 +341,8 @@ class SpockTableProviderTest {
         }
         Files.writeString(fixture.src.resolve("Outers.groovy"), nested("extends Specification {}"))
         // The workspace model lists its sources when it is built, and a source-root lookup by class name cannot
-        // find Outer2 in Outers.groovy, so rebuild the model after creating the file, as a client's file-created
-        // notification would (#1420: the earlier version of this test never put Outers.groovy in the compile).
+        // find Outer2 in Outers.groovy, so rebuild the model after creating the file, as a model rebuild does;
+        // a Created event does not yet (#1422). (#1420: the earlier version never put Outers.groovy in the compile.)
         useSpockClasspath(sources = listOf(fixture.src))
         fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
         assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
@@ -353,12 +353,33 @@ class SpockTableProviderTest {
         assertTrue(!fixture.hasAction(), "Outer2.Inner's header changed even though Outer1.Inner's did not")
     }
 
+    @Test
+    fun `breaking only the sibling nested class keeps the remembered verdict`(): Unit = runBlocking {
+        // Positive control for the test above: Outer2.Inner is unchanged, so its prelude still matches while
+        // Outers.groovy fails to compile. Matching by short name would hash Outer1.Inner's changed header.
+        val fixture = BrokenBaseFixture()
+        val outers = { outer1Super: String ->
+            "import spock.lang.*\n" +
+                "class Outer1 { static abstract class Inner extends $outer1Super {} }\n" +
+                "class Outer2 { static abstract class Inner extends Specification {} }\n"
+        }
+        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("Specification"))
+        useSpockClasspath(sources = listOf(fixture.src))
+        fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
+        assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
+
+        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("MissingOuter1Base"))
+        fixture.edit()
+
+        assertTrue(fixture.hasAction(), "Outer2.Inner is unchanged, so its verdict is recalled: ${diagnosis(fixture)}")
+    }
+
     /** How the classifier saw TableSpec's superclass in the last compile (#1420). */
     private fun diagnosis(fixture: BrokenBaseFixture): String {
         val parsed = compilationService.getCompiledSnapshot(fixture.fileUri)?.parseResult ?: return "no snapshot"
         val module = parsed.ast ?: return "no AST: ${parsed.outcome}"
         val context = SpockSourceContext.from(module, isPartial = false).classes
-            .single { it.classNode.name == "TableSpec" }
+            .firstOrNull { it.classNode.name == "TableSpec" } ?: return "TableSpec missing: ${parsed.outcome}"
         val superClass = context.classNode.superClass
         val target = superClass?.redirect()
         val inUnit = target?.module?.let { owner -> module.unit?.modules?.any { it === owner } }

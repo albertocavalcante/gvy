@@ -30,8 +30,9 @@ import java.util.IdentityHashMap
  * - the degraded part is the same base: one of its source files is excluded, one of its classes is stubbed,
  *   or, for a base from a jar, the whole compile fell back;
  * - every link above the class is unchanged. A link in the spec's own file must have the same declaration
- *   in the current module. A link in another file must have the same prelude (its significant tokens from
- *   the file start to the class body, found with the Groovy lexer and matched by enclosing class, so comments,
+ *   in the current module. A link in another file must have the same prelude (the file's package and imports,
+ *   each enclosing class's header and its own header, found with the Groovy lexer and matched by enclosing
+ *   class, so edits to unrelated classes in the file do not count and comments,
  *   strings and same-named nested classes cannot stand in) and the same package file set across every source
  *   root, since a new file in that package, even under another root, can shadow a star-imported name.
  *   Anything that cannot be computed denies reuse; these checks can only deny. They catch a base edited to
@@ -213,7 +214,11 @@ internal class SpockVerdictMemory {
      * `extends` name up to `implements` or the body.
      */
     private class PreludeScanner(private val path: List<String>) {
-        private val enclosing = ArrayDeque<Pair<String, Int>>()
+        /** Classes whose bodies are open: name, the depth outside their body, and their header tokens. */
+        private val enclosing = ArrayDeque<Triple<String, Int, String>>()
+        private val seen = mutableListOf<String>()
+        private val segment = mutableListOf<String>()
+        private var filePrelude: List<String>? = null
         private var depth = 0
         private var keyword = false
         private var afterDot = false
@@ -223,22 +228,49 @@ internal class SpockVerdictMemory {
         var extendsName: String? = null
             private set
 
+        /**
+         * What identifies the target: the file's tokens before its first top-level declaration (package,
+         * imports), each enclosing class's header, and the target's header. Tokens of unrelated classes and
+         * bodies are left out, so an edit elsewhere in the file does not change it.
+         */
+        val identity: String
+            get() {
+                val parts = listOf(filePrelude.orEmpty().joinToString(" ")) + enclosing.map { it.third } +
+                    segment.joinToString(" ")
+                return parts.joinToString(" | ")
+            }
+
         /** Feeds one significant token; true when it is the target's body `{`. */
         fun accept(token: Token): Boolean {
             val wasAfterDot = afterDot
             afterDot = token.type == GroovyLangLexer.DOT
-            return if (inHeader) header(token) else outside(token, wasAfterDot)
+            if (inHeader) {
+                if (token.type == GroovyLangLexer.LBRACE) return true
+                segment += token.text
+                header(token)
+                return false
+            }
+            when (token.type) {
+                GroovyLangLexer.LBRACE -> open()
+                GroovyLangLexer.RBRACE -> close()
+                else -> {
+                    segment += token.text
+                    outside(token, wasAfterDot)
+                }
+            }
+            seen += token.text
+            return false
         }
 
-        private fun outside(token: Token, wasAfterDot: Boolean): Boolean {
+        private fun outside(token: Token, wasAfterDot: Boolean) {
             when {
                 keyword -> declare(token.text)
                 // `Foo.class` is a class literal, not a declaration.
-                token.type in DECLARATION_KEYWORDS && !wasAfterDot -> keyword = true
-                token.type == GroovyLangLexer.LBRACE -> open()
-                token.type == GroovyLangLexer.RBRACE -> close()
+                token.type in DECLARATION_KEYWORDS && !wasAfterDot -> {
+                    keyword = true
+                    if (depth == 0 && filePrelude == null) filePrelude = seen.toList()
+                }
             }
-            return false
         }
 
         private fun declare(name: String) {
@@ -249,19 +281,20 @@ internal class SpockVerdictMemory {
         }
 
         private fun open() {
-            pendingClass?.let { enclosing.addLast(it to depth) }
+            pendingClass?.let { enclosing.addLast(Triple(it, depth, segment.joinToString(" "))) }
             pendingClass = null
+            segment.clear()
             depth++
         }
 
         private fun close() {
             depth--
             if (enclosing.lastOrNull()?.second == depth) enclosing.removeLast()
+            segment.clear()
         }
 
-        private fun header(token: Token): Boolean {
+        private fun header(token: Token) {
             when {
-                token.type == GroovyLangLexer.LBRACE -> return true
                 token.type == GroovyLangLexer.EXTENDS -> {
                     inExtends = true
                     extendsName = ""
@@ -269,11 +302,9 @@ internal class SpockVerdictMemory {
                 inExtends && token.type in NAME_TOKENS -> extendsName = (extendsName ?: "") + token.text
                 else -> inExtends = false
             }
-            return false
         }
     }
 
-    // Not private so tests can exercise the prelude scan directly; the class itself is internal.
     companion object {
         private val DECLARATION_KEYWORDS = setOf(
             GroovyLangLexer.CLASS,
@@ -305,10 +336,11 @@ internal class SpockVerdictMemory {
             } + "|" + imports
 
         /**
-         * The significant tokens of [text] up to the body of the class named [fqn], hashed, with the class's
+         * The identity of the class named [fqn] in [text], hashed (see [PreludeScanner.identity]), with its
          * written `extends` name; null when the declaration is not found or the text does not lex. Comments and
          * string literals are not significant, so they can neither end the prelude nor change the hash. Tokens
-         * are pulled lazily and the scan stops at the body's `{`, so a broken body is never lexed.
+         * are pulled lazily and the scan stops at the target's body `{`; a broken body that comes before the
+         * target in the file is lexed, and if that fails the prelude is null, which denies reuse.
          */
         fun preludeOf(text: String, fqn: String): Prelude? {
             if (text.length > MAX_SOURCE_CHARS) return null
@@ -319,15 +351,11 @@ internal class SpockVerdictMemory {
         }
 
         private fun scanPrelude(lexer: GroovyLangLexer, path: List<String>): Prelude? {
-            val significant = mutableListOf<String>()
             val scanner = PreludeScanner(path)
             var token = lexer.nextToken()
             while (token.type != Token.EOF) {
                 if (token.channel == Token.DEFAULT_CHANNEL && token.type != GroovyLangLexer.NL) {
-                    if (scanner.accept(token)) {
-                        return Prelude(sha256(significant.joinToString(" ")), scanner.extendsName)
-                    }
-                    significant += token.text
+                    if (scanner.accept(token)) return Prelude(sha256(scanner.identity), scanner.extendsName)
                 }
                 token = lexer.nextToken()
             }
