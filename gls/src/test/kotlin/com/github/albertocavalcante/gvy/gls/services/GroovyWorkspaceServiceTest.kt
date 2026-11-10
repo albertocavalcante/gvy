@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.Version
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
 import com.github.albertocavalcante.gvy.gls.test.parseGroovyVersion
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionRange
 import com.github.albertocavalcante.gvy.gls.worker.WorkerCapabilities
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.util.concurrent.ExecutionException
 
 class GroovyWorkspaceServiceTest {
@@ -78,7 +80,7 @@ class GroovyWorkspaceServiceTest {
         val future = service.executeCommand(ExecuteCommandParams("groovy.resolveDependencies", emptyList()))
 
         assertTrue(future.isCompletedExceptionally)
-        val thrown = org.junit.jupiter.api.assertThrows<ExecutionException> { future.get() }
+        val thrown = assertThrows<ExecutionException> { future.get() }
         val cause = assertInstanceOf(ResponseErrorException::class.java, thrown.cause)
         assertEquals(ResponseErrorCode.InvalidParams.value, cause.responseError.code)
         assertTrue(cause.responseError.message.contains("groovy.resolveDependencies"))
@@ -86,8 +88,7 @@ class GroovyWorkspaceServiceTest {
 
     @Test
     fun `advertised execute commands are exactly the implemented ones`() {
-        val provider = com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
-            .createInitializeResult().capabilities.executeCommandProvider
+        val provider = ServerCapabilitiesFactory.createInitializeResult().capabilities.executeCommandProvider
 
         assertEquals(listOf("groovy.version"), provider?.commands)
     }

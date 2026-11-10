@@ -104,7 +104,8 @@ class GroovyWorkspaceService(
                     ResponseErrorException(
                         ResponseError(
                             ResponseErrorCode.InvalidParams,
-                            "Unknown command: ${params.command}. Supported commands: ${SUPPORTED_COMMANDS.joinToString()}",
+                            "Unknown command: ${params.command}. " +
+                                "Supported commands: ${SUPPORTED_COMMANDS.joinToString()}",
                             null,
                         ),
                     ),

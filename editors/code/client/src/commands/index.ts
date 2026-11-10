@@ -197,8 +197,9 @@ export function registerCommands(context: ExtensionContext): Disposable[] {
     async () => {
       // NOTE: the server has no command to re-resolve dependencies (an
       // unknown workspace/executeCommand now fails with InvalidParams; it
-      // used to return null, which read as success). It resolves them during startup, so (re)start it instead;
-      // this also covers a server that is not running.
+      // used to return null, which read as success). It resolves them
+      // during startup, so (re)start it instead; this also covers a server
+      // that is not running.
       await window.withProgress(
         {
           location: ProgressLocation.Notification,
