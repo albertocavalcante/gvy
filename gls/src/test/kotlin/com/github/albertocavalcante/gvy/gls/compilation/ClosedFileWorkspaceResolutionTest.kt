@@ -176,15 +176,17 @@ class ClosedFileWorkspaceResolutionTest {
             val parent = if (link < 39) " extends C${link + 1}" else ""
             write("chain/Link$link.groovy", "class C$link$parent {}\n")
         }
-        val spec = write("TableSpec.groovy", "class TableSpec extends C0 {}\n")
+        val spec = write("TableSpec.groovy", "class TableSpec extends C0 {\n  String s\n}\n")
 
         val snapshot = compileClosed(spec)
 
         assertEquals(1 + 32, snapshot.compiledFiles().size, "${snapshot.compiledFiles()}")
+        // Groovy probes nested classes up the superclass chain (`C32$String`) before java.lang: past the cut, those
+        // probes must miss, or a plain `String` would resolve to an empty stand-in.
+        val field = snapshot.parseResult.ast?.classes?.single { it.name == "TableSpec" }?.getField("s")
+        assertEquals("java.lang.String", field?.type?.name, "${snapshot.messages()}")
         assertTrue(snapshot.parseResult.outcome.unlocatedClasses.isNotEmpty(), "the cut is recorded")
-        // The stand-in for a class past the cap is declared by no module, so nothing indexes it as a declaration.
-        val declared = snapshot.parseResult.compilationUnit.ast.modules.flatMap { it.classes }.map { it.name }
-        assertTrue(snapshot.parseResult.outcome.unlocatedClasses.none { it in declared }, "$declared")
+        assertTrue(snapshot.messages().none { it.contains("unable to resolve class") }, "${snapshot.messages()}")
     }
 
     @Test
