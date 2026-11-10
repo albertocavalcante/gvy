@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.nativeapi.ParseRequest
-import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import groovy.lang.GroovyShell
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
 import org.codehaus.groovy.control.Phases
+import org.codehaus.groovy.control.messages.SimpleMessage
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -94,8 +94,10 @@ class ClasspathLocalTransformTest {
         facade: GroovyParserFacade,
         classpath: List<Path>,
         phase: Int,
-        source: String,
+        case: Case,
     ) {
+        val source = case.source
+        val expectedClass = case.expectedClass
         val marker = tempDir.resolve("marker-$label-$phase")
         System.setProperty(MARKER_PROPERTY, marker.toString())
 
@@ -110,23 +112,36 @@ class ClasspathLocalTransformTest {
 
         assertFalse(marker.exists(), "$label: the classpath jar's local transform ran at phase $phase")
         assertTrue(result.ast != null, "$label: no AST at phase $phase, so the check proves nothing")
-        // From SEMANTIC_ANALYSIS the unknown transform class is reported as an error instead of being run
-        val failed = result.diagnostics.any { it.severity == ParserSeverity.ERROR }
-        assertTrue(failed == (phase >= Phases.SEMANTIC_ANALYSIS), "$label: unexpected diagnostics at phase $phase")
+        // From SEMANTIC_ANALYSIS the transform class is "not found" (it is not on the server's transform loader), and
+        // that, not some unrelated failure, is why nothing ran. The converter only keeps SimpleMessage's identity
+        // hash as the diagnostic text, so read the compiler's own error messages.
+        val errors = result.compilationUnit.errorCollector.errors.orEmpty()
+            .joinToString("\n") { (it as? SimpleMessage)?.message ?: it.toString() }
+        if (phase >= Phases.SEMANTIC_ANALYSIS) {
+            assertTrue(
+                expectedClass in errors,
+                "$label: expected an error naming $expectedClass at phase $phase: $errors",
+            )
+        } else {
+            assertTrue(errors.isEmpty(), "$label: unexpected errors at phase $phase: $errors")
+        }
     }
 
+    private class Case(val source: String, val expectedClass: String)
+
     private val cases = mapOf(
-        "direct" to directSource,
-        "processor" to processorSource,
+        "direct" to Case(directSource, "probe.MarkTransform"),
+        "processor" to Case(processorSource, "probe.MarkProcessor"),
     )
     private val phases = listOf(Phases.CONVERSION, Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)
 
     @Test
     fun `server-like facade does not run a classpath jar's local transform`() {
         val jar = transformJar()
-        for ((label, source) in cases) {
+        for ((label, case) in cases) {
             for (phase in phases) {
-                assertNotRun("default-parent/$label", GroovyParserFacade(), listOf(groovyJar(), jar), phase, source)
+                val facade = GroovyParserFacade()
+                assertNotRun("default-parent/$label", facade, listOf(groovyJar(), jar), phase, case)
             }
         }
     }
@@ -134,10 +149,10 @@ class ClasspathLocalTransformTest {
     @Test
     fun `facade sharing Groovy's loader does not run a classpath jar's local transform either`() {
         val jar = transformJar()
-        for ((label, source) in cases) {
+        for ((label, case) in cases) {
             for (phase in phases) {
                 val facade = GroovyParserFacade(GroovyClassLoader::class.java.classLoader)
-                assertNotRun("shared-parent/$label", facade, listOf(jar), phase, source)
+                assertNotRun("shared-parent/$label", facade, listOf(jar), phase, case)
             }
         }
     }
