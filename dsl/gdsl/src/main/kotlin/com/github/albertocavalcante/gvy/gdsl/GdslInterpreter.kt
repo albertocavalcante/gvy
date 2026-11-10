@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gdsl
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.gdsl.model.GdslParseResult
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -58,7 +59,7 @@ internal class GdslInterpreter(private val limits: Limits = Limits()) {
     private var depth = 0
 
     fun interpret(module: ModuleNode): GdslParseResult {
-        if (module.classes.any { !it.isScript }) {
+        if (module.classes.any { !it.isScriptSafe() }) {
             warnings += "Class declarations are not supported and were skipped"
         }
         return try {

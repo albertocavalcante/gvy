@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.internal
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isScriptSafe
 import com.github.albertocavalcante.groovyparser.ast.AnnotationExpr
 import com.github.albertocavalcante.groovyparser.ast.Node
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
@@ -34,7 +35,7 @@ internal class DeclarationConverter(private val setRange: (Node, ASTNode) -> Uni
             name = classNode.nameWithoutPackage,
             isInterface = classNode.isInterface,
             isEnum = classNode.isEnum,
-            isScript = classNode.isScript,
+            isScript = classNode.isScriptSafe(),
         )
 
         // Convert annotations
