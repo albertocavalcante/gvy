@@ -198,13 +198,18 @@ class RetiredWaiterTest {
             }
         }
 
-        /** Cancels the newest owner, lets its parse finish, and returns once the waiter has re-resolved. */
-        suspend fun cancelNewest() {
+        /**
+         * Cancels the newest owner, lets its parse finish, and returns once the waiter has re-resolved.
+         * [settleMillis] stalls this thread after the release, as a loaded CI machine may: the owner can then
+         * finish before this waits for it.
+         */
+        suspend fun cancelNewest(settleMillis: Long = 0) {
             val job = jobs.last()
             // Cancel only once its parse is running: a job cancelled before it starts would leave a spare permit
             check(withContext(Dispatchers.IO) { arrived.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS) }) { "no parse" }
             scopes.last().cancel()
             gate.release()
+            if (settleMillis > 0) Thread.sleep(settleMillis)
             job.join()
             yield()
         }
@@ -283,6 +288,31 @@ class RetiredWaiterTest {
         owners.gate.release(owners.jobs.size)
     }
 
+    /**
+     * Run 42800948915 failed the bounded test above on CI: the rounds lost lockstep with the waiter. Stalling
+     * the test thread past the owner's completion, while the successor starts slowly, reproduces that here.
+     */
+    @Test
+    fun `owner cancellations stay in lockstep when the owner finishes first and its successor starts slowly`(): Unit =
+        runBlocking {
+            val uri = tempDir.resolve("Loaded.groovy").toUri()
+            service.onDocumentOpened(uri)
+            documents.put(uri, "class Loaded {}", 1)
+            val owners = gatedOwners(uri, beforeReplacement = { Thread.sleep(SLOW_SUCCESSOR_MILLIS) }) {
+                "class Loaded {}"
+            }
+            owners.start()
+            val waiter = waitOn(uri)
+
+            val error = assertFailsWith<ResponseErrorException> {
+                repeat(MAX_OWNER_CANCELLATIONS) { owners.cancelNewest(settleMillis = SETTLE_MILLIS) }
+                withTimeout(WAIT_SECONDS * 1_000) { waiter.await() }
+            }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            owners.gate.release(owners.jobs.size)
+        }
+
     @Test
     fun `a cancelled request stops re-resolving after an owner cancellation`(): Unit = runBlocking {
         val uri = tempDir.resolve("Gone.groovy").toUri()
@@ -305,5 +335,9 @@ class RetiredWaiterTest {
         const val WAIT_SECONDS = 10L
         const val MAX_RESOLUTIONS = 3
         const val MAX_OWNER_CANCELLATIONS = 10
+
+        /** Longer than [SETTLE_MILLIS], so the successor is still starting when the test thread resumes. */
+        const val SLOW_SUCCESSOR_MILLIS = 50L
+        const val SETTLE_MILLIS = 20L
     }
 }
