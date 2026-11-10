@@ -521,4 +521,15 @@ class JenkinsContextDetectorTest {
 
         assertEquals(listOf("pipeline", "post"), context.enclosingBlocks)
     }
+
+    @Test
+    fun `a GString with a multi-line closure interpolation does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                echo \"Files: ${'$'}{files.collect { f ->",
+                "                    f.name } }\"",
+            ),
+        )
+    }
 }

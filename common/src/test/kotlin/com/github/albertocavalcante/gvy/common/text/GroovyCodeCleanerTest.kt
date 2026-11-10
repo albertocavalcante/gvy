@@ -170,4 +170,20 @@ class GroovyCodeCleanerTest {
         assertEquals("assert      ", GroovyCodeCleaner.blankCommentsAndStrings("assert /d{e/"))
         assertEquals("total / count", GroovyCodeCleaner.blankCommentsAndStrings("total / count"))
     }
+
+    @Test
+    fun `blankCommentsAndStrings treats a closure arrow as the start of a slashy string`() {
+        assertEquals("x.find { it ->       }", GroovyCodeCleaner.blankCommentsAndStrings("x.find { it -> /a{}/ }"))
+        assertEquals("a > b / c", GroovyCodeCleaner.blankCommentsAndStrings("a > b / c"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings keeps a GString open across a multi-line interpolation`() {
+        val code = "s = \"${'$'}{ items.collect {\n it } }\" ; b {"
+
+        val blanked = GroovyCodeCleaner.blankCommentsAndStrings(code)
+
+        assertEquals("s =                    \n         ; b {", blanked)
+        assertEquals("t =       \nb {", GroovyCodeCleaner.blankCommentsAndStrings("t = \"stray\nb {"))
+    }
 }
