@@ -32,8 +32,9 @@ import kotlin.test.assertTrue
 /**
  * What one large watched-files notification costs on the LSP notification thread (#1428): every closed source
  * event is retired synchronously before [GroovyWorkspaceService.didChangeWatchedFiles] returns. Measured on CI
- * at about 92 ms warm for 5,000 events, so the retirement stays per event; the budget only catches a regression
- * to quadratic cost. The timings are printed (`[#1428]` lines) and the retirement semantics asserted every call.
+ * at 47-92 ms warm for 5,000 events, so the retirement stays per event. The 5,000 / 500 warm ratio catches a
+ * regression to quadratic cost, and an absolute budget backs it up. The timings are printed (`[#1428]` lines) and
+ * the retirement semantics asserted on every call.
  */
 class WatchedFilesRetireCostTest {
     @TempDir
@@ -68,10 +69,11 @@ class WatchedFilesRetireCostTest {
         val openParse = setUpWorkspace()
 
         val timings = linkedMapOf<String, Double>()
-        var warmLarge = emptyList<Double>()
+        val warmMedians = HashMap<Int, Double>()
         for (size in listOf(LARGE, SMALL)) {
             val runs = measureNotifications(size, openParse)
-            if (size == LARGE) warmLarge = runs.drop(1)
+            // The first call of each size is dropped; the 500-event runs also follow every 5,000-event run.
+            warmMedians[size] = median(runs.drop(1))
             timings["didChangeWatchedFiles, $size events, cold"] = runs.first()
             timings["didChangeWatchedFiles, $size events, warm (median of ${RUNS - 1})"] = median(runs.drop(1))
         }
@@ -83,7 +85,12 @@ class WatchedFilesRetireCostTest {
         timings.forEach { (label, millis) ->
             println("[#1428] $label: ${String.format(Locale.ROOT, "%.2f", millis)} ms")
         }
-        val warm = median(warmLarge)
+        val warm = warmMedians.getValue(LARGE)
+        val ratio = warm / warmMedians.getValue(SMALL)
+        println("[#1428] warm scaling, $LARGE / $SMALL events: ${String.format(Locale.ROOT, "%.1f", ratio)}x")
+        // Linear is about 10x, quadratic about 100x: a cheap quadratic passes the absolute budget, not this.
+        assertTrue(ratio < MAX_SCALING, "$LARGE events cost ${ratio}x $SMALL events warm, over ${MAX_SCALING}x")
+        // Backstop for a slowdown that scales linearly.
         assertTrue(warm < BUDGET_MILLIS, "$LARGE events took $warm ms warm, over the $BUDGET_MILLIS ms budget")
 
         // The drained queue re-retires the closed files and still skips the open buffer.
@@ -175,7 +182,10 @@ class WatchedFilesRetireCostTest {
         const val RUNS = 6
         const val NANOS_PER_MILLI = 1_000_000.0
 
-        // Generous for slow runners (measured ~92 ms warm), yet far below what quadratic retirement would take.
+        // A backstop, generous for slow runners (measured 47-92 ms warm); [MAX_SCALING] catches a cheap quadratic.
         const val BUDGET_MILLIS = 2_000.0
+
+        // 10x the events: linear about 10, quadratic about 100; measured 13-17 on CI. Headroom for noise at 5 ms.
+        const val MAX_SCALING = 40.0
     }
 }
