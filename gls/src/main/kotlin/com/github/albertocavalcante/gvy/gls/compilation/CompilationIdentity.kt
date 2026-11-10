@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.gls.services.DocumentIncarnation
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import kotlinx.coroutines.Deferred
 
@@ -8,6 +9,8 @@ internal class CompilationIdentity(
     val content: String,
     val configurationFingerprint: String,
     val document: DocumentSnapshot?,
+    /** The open/close lifecycle [document] was read from; its work publishes only while that lifecycle is open. */
+    val incarnation: DocumentIncarnation? = null,
 ) {
     fun matches(other: CompilationIdentity): Boolean = content == other.content &&
         configurationFingerprint == other.configurationFingerprint && document === other.document

@@ -17,6 +17,8 @@ import java.util.concurrent.ConcurrentHashMap
 class CompilationCacheService(
     maxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
     isOpen: (URI) -> Boolean = { false },
+    /** Fences cache writes against invalidation; share it with every other artifact of the same files. */
+    val ownership: ArtifactOwnership = ArtifactOwnership(),
 ) {
     private val cache = CompilationCache(maxEntries, isOpen)
     private val compilationJobs = ConcurrentHashMap<URI, PendingCompilation>()
@@ -35,55 +37,46 @@ class CompilationCacheService(
         cache.get(uri, content, configFingerprint)
 
     /**
-     * Gets cached ParseResult if content matches (ignores configuration fingerprint).
-     * For backward compatibility with callers that don't have fingerprint context.
+     * Gets the cached content and ParseResult, if they were compiled under [configFingerprint].
+     * For readers that do not hold the current text: invalidation keeps such an entry in step with its source.
      *
      * @param uri The URI of the file
-     * @param content The current content of the file
-     * @return ParseResult if cached and content matches, null otherwise
+     * @param configFingerprint The current workspace configuration fingerprint
+     * @return Pair of (content, ParseResult) if cached under that configuration, null otherwise
      */
-    fun getCached(uri: URI, content: String): ParseResult? = cache.get(uri, content)
+    fun getCachedWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? =
+        cache.getWithContent(uri, configFingerprint)
 
     /**
-     * Gets cached ParseResult without content validation.
-     * Returns null if not cached.
-     *
-     * @param uri The URI of the file
-     * @return ParseResult if cached, null otherwise
-     */
-    fun getCached(uri: URI): ParseResult? = cache.get(uri)
-
-    /**
-     * Gets cached content and ParseResult pair.
-     * Returns null if not cached.
-     *
-     * @param uri The URI of the file
-     * @return Pair of (content, ParseResult) if cached, null otherwise
-     */
-    fun getCachedWithContent(uri: URI): Pair<String, ParseResult>? = cache.getWithContent(uri)
-
-    /**
-     * Stores a ParseResult in the cache with configuration fingerprint.
+     * Stores a ParseResult (and [alongside], the other artifacts of the same compile) only while [ticket] is
+     * current, atomically with respect to invalidation. Returns whether it was stored.
      * Issue #743: Cache coherency through configuration fingerprinting.
      *
-     * @param uri The URI of the file
+     * @param ticket Ownership taken before the compile read its inputs
      * @param content The content that was compiled
      * @param parseResult The result of compilation
      * @param configFingerprint The workspace configuration fingerprint at compilation time
+     * @param isValid What else must still hold, checked under the same fence (e.g. the buffer is still open)
+     * @param alongside Short, non-suspending writes of artifacts derived from the same compile
      */
-    fun putCached(uri: URI, content: String, parseResult: ParseResult, configFingerprint: String) {
-        cache.put(uri, content, parseResult, configFingerprint)
-    }
-
-    /**
-     * Stores a ParseResult in the cache (backward compatibility, no fingerprint).
-     *
-     * @param uri The URI of the file
-     * @param content The content that was compiled
-     * @param parseResult The result of compilation
-     */
-    fun putCached(uri: URI, content: String, parseResult: ParseResult) {
-        cache.put(uri, content, parseResult)
+    @Suppress("LongParameterList") // one atomic write: what was compiled, under which ticket, and its guards
+    internal fun publish(
+        ticket: ArtifactOwnership.Ticket,
+        content: String,
+        parseResult: ParseResult,
+        configFingerprint: String,
+        isValid: () -> Boolean = { true },
+        alongside: () -> Unit = {},
+    ): Boolean {
+        var stored = false
+        ownership.commit(ticket) {
+            if (isValid()) {
+                cache.put(ticket.uri, content, parseResult, configFingerprint)
+                alongside()
+                stored = true
+            }
+        }
+        return stored
     }
 
     /**
@@ -137,23 +130,24 @@ class CompilationCacheService(
         }
 
     /**
-     * Invalidates all cached data for a specific URI.
-     * Removes both cached parse results and ongoing compilation jobs.
+     * Invalidates all cached data for a specific URI: removes its cached parse result and cancels its
+     * ongoing compilation job. Callers retire the URI's [ownership] first, so the job cannot publish anyway;
+     * awaiting callers that are still current retry against the new state.
      *
      * @param uri The URI to invalidate
      */
     fun invalidate(uri: URI) {
         cache.invalidate(uri)
-        compilationJobs.remove(uri)
+        compilationJobs.remove(uri)?.deferred?.cancel()
     }
 
     /**
-     * Clears all cached data and compilation jobs.
+     * Clears all cached data and cancels every compilation job.
      * Used when workspace configuration changes significantly.
      */
     fun clear() {
         cache.clear()
-        compilationJobs.clear()
+        compilationJobs.keys.forEach { uri -> compilationJobs.remove(uri)?.deferred?.cancel() }
     }
 
     /**

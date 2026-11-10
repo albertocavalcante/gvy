@@ -27,8 +27,8 @@ class CompilationCacheEvictionTest {
         (1..5).forEach { cache.putN(it) }
 
         assertEquals(setOf(uri(3), uri(4), uri(5)), cache.keys())
-        assertNull(cache.get(uri(1)))
-        assertNull(cache.get(uri(2)))
+        assertNull(cache.getWithContent(uri(1), "fp"))
+        assertNull(cache.getWithContent(uri(2), "fp"))
     }
 
     @Test
@@ -39,8 +39,8 @@ class CompilationCacheEvictionTest {
         assertNotNull(cache.get(uri(1), "c1", "fp"))
         cache.putN(4)
 
-        assertNotNull(cache.get(uri(1)), "recently read entry must survive")
-        assertNull(cache.get(uri(2)), "least recently used entry is evicted")
+        assertNotNull(cache.getWithContent(uri(1), "fp"), "recently read entry must survive")
+        assertNull(cache.getWithContent(uri(2), "fp"), "least recently used entry is evicted")
     }
 
     @Test
@@ -50,8 +50,8 @@ class CompilationCacheEvictionTest {
 
         (1..10).forEach { cache.putN(it) }
 
-        assertNotNull(cache.get(uri(1)))
-        assertNotNull(cache.get(uri(2)))
+        assertNotNull(cache.getWithContent(uri(1), "fp"))
+        assertNotNull(cache.getWithContent(uri(2), "fp"))
         assertEquals(3, cache.keys().size)
         assertTrue(uri(10) in cache.keys())
     }
@@ -61,12 +61,12 @@ class CompilationCacheEvictionTest {
         val open = mutableSetOf(uri(1))
         val cache = CompilationCache(maxEntries = 2, isOpen = { it in open })
         (1..3).forEach { cache.putN(it) }
-        assertNotNull(cache.get(uri(1)))
+        assertNotNull(cache.getWithContent(uri(1), "fp"))
 
         open.clear()
         (4..6).forEach { cache.putN(it) }
 
-        assertNull(cache.get(uri(1)))
+        assertNull(cache.getWithContent(uri(1), "fp"))
         assertEquals(2, cache.keys().size)
     }
 
@@ -78,7 +78,7 @@ class CompilationCacheEvictionTest {
         assertNotNull(cache.get(uri(1), "a", "fp1"))
         assertNull(cache.get(uri(1), "a", "other"))
         assertNull(cache.get(uri(1), "b", "fp1"))
-        assertEquals("a", cache.getWithContent(uri(1))?.first)
+        assertEquals("a", cache.getWithContent(uri(1), "fp1")?.first)
     }
 
     @Test
@@ -95,8 +95,8 @@ class CompilationCacheEvictionTest {
                     repeat(2_000) { i ->
                         val n = (t * 1_000 + i) % 400
                         cache.putN(n)
-                        cache.get(uri((n * 7) % 400))
-                        cache.getWithContent(uri(n))
+                        cache.getWithContent(uri((n * 7) % 400), "fp")
+                        cache.getWithContent(uri(n), "fp")
                         cache.keys()
                     }
                 }.onFailure { failures += it }
@@ -122,8 +122,8 @@ class CompilationCacheEvictionTest {
         cache.putN(3)
 
         assertNotNull(cache.get(uri(3), "c3", "fp"), "the closed file just compiled must be readable")
-        assertNotNull(cache.get(uri(1)))
-        assertNotNull(cache.get(uri(2)))
+        assertNotNull(cache.getWithContent(uri(1), "fp"))
+        assertNotNull(cache.getWithContent(uri(2), "fp"))
     }
 
     @Test

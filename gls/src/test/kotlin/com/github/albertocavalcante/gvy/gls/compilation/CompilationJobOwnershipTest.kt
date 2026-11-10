@@ -115,8 +115,9 @@ class CompilationJobOwnershipTest {
     @Test
     fun `an older completion cannot remove a replacement registration`(): Unit = runTest {
         val fixture = Fixture(StandardTestDispatcher(testScheduler))
+        // Different text replaces the registration while the first job is still live (invalidation would
+        // cancel it, completing it before the replacement exists).
         val first = fixture.orchestrator.compileAsync(this, fixture.uri, "class Before {}")
-        fixture.cache.invalidate(fixture.uri)
         lateinit var replacement: Deferred<CompilationResult>
         fixture.onParse = { request ->
             if (request.content == fixture.content) {
@@ -287,9 +288,9 @@ class CompilationJobOwnershipTest {
         val documents = spyk(DocumentProvider())
         val fixture = Fixture(StandardTestDispatcher(testScheduler), documents, URI.create("untitled:Retired.groovy"))
         documents.put(fixture.uri, fixture.content, 1)
-        val captured = documents.getSnapshot(fixture.uri)
+        val captured = documents.getBuffer(fixture.uri)
         var reads = 0
-        every { documents.getSnapshot(fixture.uri) } answers {
+        every { documents.getBuffer(fixture.uri) } answers {
             if (reads++ == 0) {
                 captured
             } else {

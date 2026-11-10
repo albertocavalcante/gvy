@@ -45,7 +45,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
-import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -81,7 +80,7 @@ class ImplementationAcquisitionTest {
     }
 
     @Test
-    fun `a closed origin cache hit restores facts lost by a late invalidated publication`(): Unit = runBlocking {
+    fun `a closed origin compile retired by invalidation still yields current implementations`(): Unit = runBlocking {
         assertLatePublication(closedOrigin = true)
     }
 
@@ -121,8 +120,10 @@ class ImplementationAcquisitionTest {
                 )
                 fixture.compilation.clearCaches()
                 release.countDown()
-                assertTrue(background.await().isSuccess)
-                assertNotNull(fixture.compilation.getSymbolStorage(document))
+                // Invalidation retires the paused compile (#1184): it is cancelled and can no longer publish
+                // its cache/symbol facts without the matching semantic document.
+                assertFailsWith<CancellationException> { background.await() }
+                assertNull(fixture.compilation.getSymbolStorage(document))
                 assertNull(fixture.compilation.getWorkspaceSymbolIndex()?.getDocument(document))
                 diagnostic.complete(Unit)
 
@@ -303,7 +304,6 @@ class ImplementationAcquisitionTest {
                 diagnostics,
                 { false },
                 {},
-                this,
             )
         }
     }

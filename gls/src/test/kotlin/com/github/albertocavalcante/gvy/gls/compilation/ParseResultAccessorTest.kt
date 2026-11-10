@@ -54,7 +54,7 @@ class ParseResultAccessorTest {
         val uri = URI.create("file:///test.groovy")
         val parseResult = createMockParseResult()
 
-        every { cacheService.getCached(uri) } returns parseResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to parseResult)
 
         val result = accessor.getParseResult(uri)
 
@@ -67,7 +67,7 @@ class ParseResultAccessorTest {
         val moduleNode = mockk<ModuleNode>(relaxed = true)
         val parseResult = createMockParseResult(ast = moduleNode)
 
-        every { cacheService.getCached(uri) } returns parseResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to parseResult)
 
         val result = accessor.getAst(uri)
 
@@ -78,7 +78,7 @@ class ParseResultAccessorTest {
     fun `getAst returns null when no parse result`() {
         val uri = URI.create("file:///test.groovy")
 
-        every { cacheService.getCached(uri) } returns null
+        every { cacheService.getCachedWithContent(uri, any()) } returns null
 
         val result = accessor.getAst(uri)
 
@@ -90,7 +90,7 @@ class ParseResultAccessorTest {
         val uri = URI.create("file:///test.groovy")
         val parseResult = createMockParseResult()
 
-        every { cacheService.getCached(uri) } returns parseResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to parseResult)
 
         val result = accessor.getDiagnostics(uri)
 
@@ -102,7 +102,7 @@ class ParseResultAccessorTest {
     fun `getDiagnostics returns empty list when no parse result`() {
         val uri = URI.create("file:///test.groovy")
 
-        every { cacheService.getCached(uri) } returns null
+        every { cacheService.getCachedWithContent(uri, any()) } returns null
 
         val result = accessor.getDiagnostics(uri)
 
@@ -115,7 +115,7 @@ class ParseResultAccessorTest {
         val astModel = mockk<GroovyAstModel>(relaxed = true)
         val parseResult = createMockParseResult(astModel = astModel)
 
-        every { cacheService.getCached(uri) } returns parseResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to parseResult)
 
         val result = accessor.getAstModel(uri)
 
@@ -127,7 +127,7 @@ class ParseResultAccessorTest {
         val uri = URI.create("file:///test.groovy")
         val parseResult = createMockParseResult()
 
-        every { cacheService.getCached(uri) } returns parseResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to parseResult)
 
         val result = accessor.getSymbolTable(uri)
 
@@ -139,7 +139,7 @@ class ParseResultAccessorTest {
         val uri = URI.create("file:///test.groovy")
         val parseResult = createMockParseResult()
 
-        every { cacheService.getCached(uri) } returns parseResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to parseResult)
 
         val result = accessor.getTokenIndex(uri)
 
@@ -241,7 +241,7 @@ class ParseResultAccessorTest {
         every { moduleNode.classes } returns listOf(normalClass)
 
         val parseResult = createMockParseResult(ast = moduleNode)
-        every { cacheService.getCached(uri) } returns parseResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to parseResult)
 
         val result = accessor.getValidParseResult(uri)
 
@@ -268,7 +268,7 @@ class ParseResultAccessorTest {
         every { cachedModuleNode.classes } returns listOf(scriptClass)
 
         val cachedResult = createMockParseResult(ast = cachedModuleNode)
-        every { cacheService.getCached(uri) } returns cachedResult
+        every { cacheService.getCachedWithContent(uri, any()) } returns ("cached source" to cachedResult)
 
         // Setup fresh parse result
         val freshSuperClass = mockk<ClassNode>(relaxed = true)
@@ -306,7 +306,8 @@ class ParseResultAccessorTest {
         every { scriptClass.superClass } returns scriptSuperClass
         val cachedModuleNode = mockk<ModuleNode>(relaxed = true)
         every { cachedModuleNode.classes } returns listOf(scriptClass)
-        every { cacheService.getCached(uri) } returns createMockParseResult(ast = cachedModuleNode)
+        every { cacheService.getCachedWithContent(uri, any()) } returns
+            ("cached source" to createMockParseResult(ast = cachedModuleNode))
 
         val freshResult = createMockParseResult(ast = mockk<ModuleNode>(relaxed = true))
         coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns freshResult
@@ -315,15 +316,15 @@ class ParseResultAccessorTest {
 
         accessor.getValidParseResult(uri)
 
-        verify { cacheService.putCached(uri, "class Fingerprinted {}", freshResult, "fp-1") }
-        verify { symbolIndexer.indexCompiled(uri, "class Fingerprinted {}", freshResult.astModel) }
+        verify { cacheService.publish(any(), "cached source", freshResult, "fp-1", any(), any()) }
+        verify { symbolIndexer.prepare("cached source", freshResult.astModel) }
     }
 
     @Test
     fun `getValidParseResult returns null when not cached`(): Unit = runBlocking {
         val uri = URI.create("file:///test.groovy")
 
-        every { cacheService.getCached(uri) } returns null
+        every { cacheService.getCachedWithContent(uri, any()) } returns null
 
         val result = accessor.getValidParseResult(uri)
 

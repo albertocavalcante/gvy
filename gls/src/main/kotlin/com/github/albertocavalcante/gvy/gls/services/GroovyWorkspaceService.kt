@@ -149,6 +149,9 @@ class GroovyWorkspaceService(
             }
         }
 
+        // A closed file's cached parse no longer describes it; an open buffer keeps its own.
+        toIndex.forEach { compilationService.onClosedSourceChanged(it, keepIfUnchanged = false) }
+
         if (toIndex.isNotEmpty()) {
             logger.info { "Indexing ${toIndex.size} changed source files" }
             coroutineScope.launch {

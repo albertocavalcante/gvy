@@ -178,6 +178,22 @@ class SemanticIndexer(
     /** Whether the stored document was built from exactly [content]. */
     fun isCurrent(uri: URI, content: String): Boolean = entries[uri]?.entry?.contentHash == contentHash(content)
 
+    /**
+     * Makes every outstanding publication for [uri] stale while keeping its stored document: the buffer it
+     * followed closed, or the closed file changed on disk, and a refresh from disk follows. A compile that
+     * read the old text can then no longer publish after that refresh.
+     */
+    internal fun retirePublications(uri: URI) {
+        entries.computeIfPresent(uri) { _, state ->
+            state.entry?.let { kept ->
+                State().also {
+                    it.entry = kept
+                    it.highestTicket = state.highestTicket
+                }
+            }
+        }
+    }
+
     fun remove(uri: URI) {
         entries.compute(uri) { _, _ ->
             index.removeDocument(uri)

@@ -10,7 +10,6 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.Diagnostic
 import java.net.URI
-import java.nio.file.Files
 import java.nio.file.Path
 
 private const val CONTENT_START_PREVIEW_LENGTH = 50
@@ -40,13 +39,15 @@ class ParseResultAccessor(
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Gets the cached ParseResult for a URI.
-     * Returns null if not cached or compilation failed.
+     * Gets the cached ParseResult for a URI, compiled under the current workspace configuration.
+     * Returns null if not cached or compilation failed. The entry of a closed file is retired whenever its
+     * buffer closes or the file changes on disk, so this never serves a closed buffer's parse.
      *
      * @param uri The URI of the file
      * @return ParseResult if cached, null otherwise
      */
-    fun getParseResult(uri: URI): ParseResult? = cacheService.getCached(uri)
+    fun getParseResult(uri: URI): ParseResult? =
+        cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint())?.second
 
     /**
      * Gets the AST (ModuleNode) for a URI.
@@ -127,8 +128,8 @@ class ParseResultAccessor(
      *
      * Unlike [getParseResult], this method checks if the cached result contains a suspicious
      * Script node (which can happen when file was compiled before sourceRoots was populated).
-     * If detected, it parses directly at CONVERSION phase WITHOUT workspaceSources to avoid
-     * name collisions that cause Script fallback.
+     * If detected, it re-parses the entry's own source text directly at CONVERSION phase WITHOUT
+     * workspaceSources to avoid name collisions that cause Script fallback.
      *
      * Use this method when you need to ensure the AST accurately represents the source code
      * structure (e.g., test discovery, Spock detection).
@@ -137,19 +138,18 @@ class ParseResultAccessor(
      * @return ParseResult if available, null if not cached or re-compilation failed
      */
     suspend fun getValidParseResult(uri: URI): ParseResult? {
-        val cachedResult = cacheService.getCached(uri) ?: return null
+        // Owned before the cache and disk are read: an invalidation meanwhile discards the re-parse below.
+        val ticket = cacheService.ownership.begin(uri)
+        val fingerprint = workspaceManager.getConfigurationFingerprint()
+        val (cachedContent, cachedResult) = cacheService.getCachedWithContent(uri, fingerprint) ?: return null
 
         // Use helper function to check for suspicious Script node
         if (isSuspiciousScript(uri, cachedResult)) {
             logger.info { "Cached result has suspicious Script node for $uri, parsing directly at CONVERSION phase" }
-            // Read content directly from file instead of cache to verify content is correct
+            // Re-parse the text this entry was compiled from. Reading the disk instead would publish the file
+            // over an open, unsaved buffer that the entry describes.
+            val content = cachedContent
             val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-            val fileContent = if (sourcePath != null && Files.exists(sourcePath)) {
-                Files.readString(sourcePath)
-            } else {
-                cacheService.getCachedWithContent(uri)?.first
-            }
-            val content = fileContent ?: return null
             logger.info {
                 "Content starts with: '${content.take(CONTENT_START_PREVIEW_LENGTH).replace("\n", "\\n")}'"
             }
@@ -167,10 +167,10 @@ class ParseResultAccessor(
                 ),
             )
 
-            // Replace the cached result and its symbol index together, under the current configuration
+            // Replace the cached result and its symbol index together, unless they were retired meanwhile
             if (parseResult.ast != null) {
-                cacheService.putCached(uri, content, parseResult, workspaceManager.getConfigurationFingerprint())
-                symbolIndexer.indexCompiled(uri, content, parseResult.astModel)
+                val symbols = symbolIndexer.prepare(content, parseResult.astModel)
+                cacheService.publish(ticket, content, parseResult, fingerprint) { symbolIndexer.install(uri, symbols) }
             }
             logger.info {
                 "Re-parsed $uri at CONVERSION: classes=${

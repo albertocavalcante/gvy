@@ -179,7 +179,8 @@ sealed interface ScenarioStep {
         val path: String? = null,
         val languageId: String = "groovy",
         val version: Int = 1,
-        val text: String = "",
+        /** The buffer text; when omitted, the file's current contents (as an editor opening it would send). */
+        val text: String? = null,
     ) : ScenarioStep
 
     data class ChangeDocument(

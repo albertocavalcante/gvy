@@ -44,18 +44,11 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     }
 
     /**
-     * Gets cached result if content matches (ignores fingerprint).
-     * For backward compatibility with callers that don't have fingerprint context.
+     * The entry for [uri] with the source it was compiled from, if it was compiled under [configFingerprint].
+     * For readers without the current text; the entry itself must be retired when that text changes.
      */
-    fun get(uri: URI, content: String): ParseResult? = synchronized(entries) {
-        val entry = entries[uri] ?: return null
-        if (entry.content == content) entry.parseResult else null
-    }
-
-    fun get(uri: URI): ParseResult? = synchronized(entries) { entries[uri]?.parseResult }
-
-    fun getWithContent(uri: URI): Pair<String, ParseResult>? = synchronized(entries) {
-        entries[uri]?.let { it.content to it.parseResult }
+    fun getWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? = synchronized(entries) {
+        entries[uri]?.takeIf { it.configFingerprint == configFingerprint }?.let { it.content to it.parseResult }
     }
 
     /**
@@ -63,16 +56,6 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
      */
     fun put(uri: URI, content: String, parseResult: ParseResult, configFingerprint: String) {
         store(uri, CacheEntry(content, parseResult, configFingerprint))
-    }
-
-    /**
-     * Stores a parse result without fingerprint (backward compatibility).
-     * Uses empty fingerprint. Entries stored this way can be retrieved via get(uri, content)
-     * which ignores fingerprint, but will NOT match get(uri, content, fingerprint) unless
-     * the fingerprint parameter is also empty.
-     */
-    fun put(uri: URI, content: String, parseResult: ParseResult) {
-        store(uri, CacheEntry(content, parseResult, ""))
     }
 
     fun invalidate(uri: URI) {
