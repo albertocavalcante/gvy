@@ -7,7 +7,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
 
@@ -22,6 +22,10 @@ import kotlin.io.path.isDirectory
  *
  * This class serves as a central point for workspace state, allowing other components
  * of the compilation service to query and update workspace-related information.
+ *
+ * The configuration is one immutable [WorkspaceModel] replaced atomically (H1): updates are serialized and
+ * build the next model before publishing it, and every getter reads a single published model. Callers that
+ * need several values from the same configuration read [current] once.
  */
 @Suppress("TooManyFunctions")
 class WorkspaceManager(
@@ -30,25 +34,17 @@ class WorkspaceManager(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Dependency classpath management
-    private val dependencyClasspath = mutableListOf<Path>()
-    private var workspaceRoot: Path? = null
-    private val sourceRoots = mutableSetOf<Path>()
-    private var workspaceSources: List<Path> = emptyList()
+    private val model = AtomicReference(emptyModel(null))
+
+    // Serializes writers; readers never take it.
+    private val updateLock = Any()
 
     // Project strategy registry for project-type-specific functionality
+    @Volatile
     private var strategyRegistry: ProjectStrategyRegistry? = null
 
-    // Fingerprint cache. Every mutation of the classpath or source roots bumps [stateVersion] once the mutation
-    // is complete; a cached value is only trusted if it was computed under the current version. A reader that
-    // raced with a mutation therefore stores its (possibly stale) result under an outdated version, which is
-    // never served.
-    private class CachedFingerprint(val version: Long, val value: String)
-
-    private val stateVersion = AtomicLong()
-
-    @Volatile
-    private var cachedFingerprint: CachedFingerprint? = null
+    /** The current workspace configuration: one consistent snapshot of root, classpath, roots and sources. */
+    fun current(): WorkspaceModel = model.get()
 
     /**
      * Sets the project strategy registry.
@@ -74,74 +70,65 @@ class WorkspaceManager(
 
     fun initializeWorkspace(workspaceRoot: Path) {
         logger.info { "Initializing workspace (non-blocking): $workspaceRoot" }
-        this.workspaceRoot = workspaceRoot
-        try {
-            refreshSourceRoots(workspaceRoot)
-            refreshWorkspaceSources()
-        } finally {
-            stateVersion.incrementAndGet()
+        update { current ->
+            val roots = current.sourceRoots.ifEmpty { discoverSourceRoots(workspaceRoot) }
+            model(workspaceRoot, current.classpath, roots)
         }
     }
 
     fun updateDependencies(newDependencies: List<Path>): Boolean {
         var changed = false
-        synchronized(dependencyClasspath) {
-            if (newDependencies.size != dependencyClasspath.size ||
-                newDependencies.toSet() != dependencyClasspath.toSet()
-            ) {
-                dependencyClasspath.clear()
-                dependencyClasspath.addAll(newDependencies)
+        update { current ->
+            if (classpathChanged(current.classpath, newDependencies)) {
                 changed = true
-                logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
+                logger.info { "Updated dependency classpath with ${newDependencies.size} dependencies" }
+                WorkspaceModel(current.root, newDependencies, current.sourceRoots, current.sources, fingerprintComputer)
             } else {
                 logger.debug { "Dependencies unchanged" }
+                current
             }
         }
-        if (changed) stateVersion.incrementAndGet()
         return changed
     }
 
-    fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>): Boolean =
-        try {
-            applyWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
-        } finally {
-            stateVersion.incrementAndGet()
-        }
-
-    private fun applyWorkspaceModel(
-        workspaceRoot: Path,
-        dependencies: List<Path>,
-        sourceDirectories: List<Path>,
-    ): Boolean {
-        this.workspaceRoot = workspaceRoot
-
-        val depsChanged = synchronized(dependencyClasspath) {
-            val changed =
-                dependencies.size != dependencyClasspath.size || dependencies.toSet() != dependencyClasspath.toSet()
-            if (changed) {
-                dependencyClasspath.clear()
-                dependencyClasspath.addAll(dependencies)
-                logger.info { "Updated dependency classpath with ${dependencyClasspath.size} dependencies" }
+    fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>): Boolean {
+        var changed = false
+        update { current ->
+            val depsChanged = classpathChanged(current.classpath, dependencies)
+            if (depsChanged) logger.info { "Updated dependency classpath with ${dependencies.size} dependencies" }
+            val sourcesChanged = sourceDirectories.toSet() != current.sourceRoots.toSet()
+            val roots = when {
+                // A reordering of the same roots or classpath is not a change: keep the current order, so the
+                // order-sensitive fingerprint agrees with the reported result and nothing diverges silently.
+                sourceDirectories.isNotEmpty() && !sourcesChanged -> current.sourceRoots
+                sourceDirectories.isNotEmpty() -> sourceDirectories.also {
+                    logger.info { "Received ${it.distinct().size} source roots from build model" }
+                }
+                current.sourceRoots.isEmpty() -> discoverSourceRoots(workspaceRoot)
+                else -> current.sourceRoots
             }
-            changed
+            changed = depsChanged || sourcesChanged
+            model(workspaceRoot, if (depsChanged) dependencies else current.classpath, roots)
         }
-
-        val sourcesChanged = sourceDirectories.toSet() != sourceRoots
-        if (sourceDirectories.isNotEmpty()) {
-            sourceRoots.clear()
-            sourceDirectories.forEach(sourceRoots::add)
-            logger.info { "Received ${sourceRoots.size} source roots from build model" }
-        } else if (sourceRoots.isEmpty()) {
-            refreshSourceRoots(workspaceRoot)
-        }
-
-        refreshWorkspaceSources()
-
-        return depsChanged || sourcesChanged
+        return changed
     }
 
-    private fun refreshSourceRoots(rootPath: Path) {
-        if (sourceRoots.isNotEmpty()) return
+    /** Builds the next model outside any reader's view (including disk walks) and publishes it whole. */
+    private inline fun update(next: (WorkspaceModel) -> WorkspaceModel) {
+        synchronized(updateLock) { model.set(next(model.get())) }
+    }
+
+    private fun model(root: Path?, classpath: List<Path>, sourceRoots: List<Path>) =
+        WorkspaceModel(root, classpath, sourceRoots, scanSources(sourceRoots.distinct()), fingerprintComputer)
+
+    private fun emptyModel(root: Path?) =
+        WorkspaceModel(root, emptyList(), emptyList(), emptyList(), fingerprintComputer)
+
+    private fun classpathChanged(current: List<Path>, next: List<Path>) =
+        next.size != current.size || next.toSet() != current.toSet()
+
+    private fun discoverSourceRoots(rootPath: Path): List<Path> {
+        val sourceRoots = linkedSetOf<Path>()
 
         // Standard Maven/Gradle source directories
         val standardSourceDirs = listOf(
@@ -185,10 +172,11 @@ class WorkspaceManager(
         }
 
         logger.info { "Indexed ${sourceRoots.size} source roots: ${sourceRoots.joinToString { it.toString() }}" }
+        return sourceRoots.toList()
     }
 
-    private fun refreshWorkspaceSources() {
-        workspaceSources = sourceRoots.flatMap { sourceRoot ->
+    private fun scanSources(sourceRoots: List<Path>): List<Path> {
+        val workspaceSources = sourceRoots.flatMap { sourceRoot ->
             if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
             Files.walk(sourceRoot).use { stream ->
                 stream.filter { Files.isRegularFile(it) && it.extension.equals("groovy", ignoreCase = true) }
@@ -198,28 +186,21 @@ class WorkspaceManager(
         }
 
         logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }
-        workspaceSources.forEach { logger.info { "Indexed source: $it" } }
+        workspaceSources.forEach { logger.debug { "Indexed source: $it" } }
+        return workspaceSources
     }
 
-    fun getDependencyClasspath(): List<Path> = dependencyClasspath.toList()
-    fun getWorkspaceRoot(): Path? = workspaceRoot
-    fun getSourceRoots(): List<Path> = sourceRoots.toList()
-    fun getWorkspaceSources(): List<Path> = workspaceSources
+    fun getDependencyClasspath(): List<Path> = current().classpath
+    fun getWorkspaceRoot(): Path? = current().root
+    fun getSourceRoots(): List<Path> = current().sourceRoots
+    fun getWorkspaceSources(): List<Path> = current().sources
 
     /**
      * Computes a fingerprint of the current workspace configuration.
      * Used for cache coherency - when this changes, cached compilations may be stale.
      * Issue #743: Normalize parse modes and cache authority for cross-file resolution
      */
-    fun getConfigurationFingerprint(): String {
-        val version = stateVersion.get()
-        cachedFingerprint?.let { if (it.version == version) return it.value }
-
-        val dependencies = synchronized(dependencyClasspath) { dependencyClasspath.toList() }
-        val value = fingerprintComputer(dependencies, sourceRoots.toList())
-        cachedFingerprint = CachedFingerprint(version, value)
-        return value
-    }
+    fun getConfigurationFingerprint(): String = current().fingerprint
 
     /**
      * Gets bounded workspace sources filtered by the given URIs.
@@ -232,7 +213,11 @@ class WorkspaceManager(
      * @param boundedUris Set of URIs to filter workspace sources by
      * @return List of paths that match the bounded URIs
      */
-    fun getBoundedWorkspaceSources(boundedUris: Set<URI>): List<Path> {
+    fun getBoundedWorkspaceSources(boundedUris: Set<URI>): List<Path> =
+        getBoundedWorkspaceSources(boundedUris, current())
+
+    /** [getBoundedWorkspaceSources] against one [workspace] snapshot a compile already holds. */
+    fun getBoundedWorkspaceSources(boundedUris: Set<URI>, workspace: WorkspaceModel): List<Path> {
         if (boundedUris.isEmpty()) return emptyList()
 
         val boundedPaths = boundedUris.mapNotNull { uri ->
@@ -244,14 +229,14 @@ class WorkspaceManager(
                 }
         }.toSet()
 
-        return workspaceSources.filter { it in boundedPaths }
+        return workspace.sources.filter { it in boundedPaths }
     }
 
     /**
      * Gets workspace source URIs for indexing.
      * Converts Path objects to URI objects for use in compilation service.
      */
-    fun getWorkspaceSourceUris(): List<URI> = workspaceSources.mapNotNull { path ->
+    fun getWorkspaceSourceUris(): List<URI> = current().sources.mapNotNull { path ->
         runCatching { path.toUri() }
             .getOrElse { throwable ->
                 rethrowIfCancellationOrError(throwable)
@@ -267,16 +252,20 @@ class WorkspaceManager(
      * a non-null classpath, that is used. Otherwise falls back to the standard dependency
      * classpath.
      */
-    fun getClasspathForFile(uri: URI, content: String): List<Path> {
-        // Try strategies first
+    fun getClasspathForFile(uri: URI, content: String): List<Path> = getClasspathForFile(uri, content, current())
+
+    /** [getClasspathForFile] against one [workspace] snapshot a compile already holds. */
+    fun getClasspathForFile(uri: URI, content: String, workspace: WorkspaceModel): List<Path> {
+        // One immutable classpath: a strategy may retain it without seeing later updates
+        val dependencies = workspace.classpath
         strategyRegistry?.activeStrategies?.forEach { strategy ->
-            val classpath = strategy.getClasspathForFile(uri, content, dependencyClasspath)
+            val classpath = strategy.getClasspathForFile(uri, content, dependencies)
             if (classpath != null) {
                 return classpath
             }
         }
 
         // Return standard dependency classpath for non-handled files
-        return dependencyClasspath.toList()
+        return dependencies
     }
 }

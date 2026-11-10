@@ -136,10 +136,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val publication = claim.publication
 
         return runCatching {
-            // Inputs read below may already be newer than the claim; a retirement in between rejects the
-            // publication, so a parse is never stored as though it used another configuration (#1184).
-            // Get configuration fingerprint for cache coherency (Issue #743)
-            val configFingerprint = workspaceManager.getConfigurationFingerprint()
+            // One workspace model supplies this compile's key and inputs (H1). It may already be newer than
+            // the claim; a retirement in between rejects the publication (#1184).
+            val workspace = workspaceManager.current()
+            val configFingerprint = workspace.fingerprint
 
             // Check cache first - validates both content AND configuration fingerprint
             val cachedResult = cacheService.getCached(uri, content, configFingerprint)
@@ -149,11 +149,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
                 if (isSuspiciousScriptNode) {
                     logger.info { "Cached result has suspicious Script node for $uri, re-compiling" }
-                    performCompilation(
-                        CompilationInput(uri, content, claim),
-                        compilePhase,
-                        configFingerprint = configFingerprint,
-                    )
+                    performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase)
                 } else {
                     logger.debug { "Using cached parse result for: $uri" }
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
@@ -166,11 +162,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                     resultMapper.map(cachedResult, content)
                 }
             } else {
-                performCompilation(
-                    CompilationInput(uri, content, claim),
-                    compilePhase,
-                    configFingerprint = configFingerprint,
-                )
+                performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase)
             }
         }.getOrElse { throwable ->
             when (throwable) {
@@ -183,19 +175,19 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     private suspend fun performCompilation(
         input: CompilationInput,
+        workspace: WorkspaceModel,
         compilePhase: Int = Phases.CANONICALIZATION,
         parseMode: ParseMode = ParseMode.WORKSPACE,
-        configFingerprint: String? = null,
     ): CompilationResult {
         val (uri, content, claim) = input
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
         // Get file-specific classpath
-        val classpath = workspaceManager.getClasspathForFile(uri, content)
+        val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
 
         // Use bounded workspace selection when dependency info is available (Issue #743)
         // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri, logBounded = true)
+        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace, logBounded = true)
 
         // Parse the source code; the compile aborts between phases if this coroutine is cancelled
         val checkCancelled = cancellationCheck()
@@ -204,7 +196,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = workspaceManager.getSourceRoots(),
+                sourceRoots = workspace.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = openSourcesFor(uri),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
@@ -221,7 +213,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         if (ast != null) {
             // Cache parse result with configuration fingerprint for coherency (Issue #743), and its symbol
             // index, as one commit that a retired compile cannot make (#1184)
-            val fingerprint = configFingerprint ?: workspaceManager.getConfigurationFingerprint()
+            val fingerprint = workspace.fingerprint
             val symbols = symbolIndexer.prepare(content, parseResult.astModel)
             val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
                 symbolIndexer.install(uri, symbols)
@@ -261,10 +253,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     suspend fun compileTransient(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): ParseResult {
         logger.debug { "Transient compile: $uri" }
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
-        val classpath = workspaceManager.getClasspathForFile(uri, content)
+        val workspace = workspaceManager.current()
+        val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
 
         // Use bounded workspace selection when available (Issue #743)
-        val workspaceSources = getWorkspaceSourcesForCompilation(uri)
+        val workspaceSources = getWorkspaceSourcesForCompilation(uri, workspace)
         val checkCancelled = cancellationCheck()
 
         return workerSessionManager.parse(
@@ -272,7 +265,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 uri = uri,
                 content = content,
                 classpath = classpath,
-                sourceRoots = workspaceManager.getSourceRoots(),
+                sourceRoots = workspace.sourceRoots,
                 workspaceSources = workspaceSources,
                 openSources = openSourcesFor(uri),
                 locatorCandidates = buildLocatorCandidates(uri, sourcePath),
@@ -415,8 +408,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             return awaitShared(uri, identity)?.let { Resolution.Done(it) } ?: Resolution.Retired
         }
 
-        // Get current fingerprint for cache coherency validation
-        val configFingerprint = workspaceManager.getConfigurationFingerprint()
+        // One model for this resolution: the fingerprint validates the cache and keys any disk compile
+        val workspace = workspaceManager.current()
+        val configFingerprint = workspace.fingerprint
 
         cacheService.getPendingCompilation(uri, configFingerprint)?.let { pending ->
             return awaitShared(uri, pending.identity)?.let { Resolution.Done(it) } ?: Resolution.Retired
@@ -444,8 +438,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                         // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
                         performCompilation(
                             CompilationInput(uri, content, claim),
+                            workspace,
                             parseMode = ParseMode.MINIMAL,
-                            configFingerprint = configFingerprint,
                         )
                     } catch (e: CancellationException) {
                         throw e // the request was cancelled; not a failure to compile
@@ -469,16 +463,19 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * @param logBounded Whether to log when bounded selection is used (for debugging)
      * @return List of workspace source paths to include in compilation
      */
-    private fun getWorkspaceSourcesForCompilation(uri: URI, logBounded: Boolean = false): List<Path> =
-        if (dependencyGraph?.hasInfo(uri) == true) {
-            val boundedUris = dependencyGraph.getCompilationSources(uri)
-            if (logBounded) {
-                logger.debug { "Using bounded workspace sources for $uri: ${boundedUris.size} files" }
-            }
-            workspaceManager.getBoundedWorkspaceSources(boundedUris)
-        } else {
-            workspaceManager.getWorkspaceSources()
+    private fun getWorkspaceSourcesForCompilation(
+        uri: URI,
+        workspace: WorkspaceModel,
+        logBounded: Boolean = false,
+    ): List<Path> = if (dependencyGraph?.hasInfo(uri) == true) {
+        val boundedUris = dependencyGraph.getCompilationSources(uri)
+        if (logBounded) {
+            logger.debug { "Using bounded workspace sources for $uri: ${boundedUris.size} files" }
         }
+        workspaceManager.getBoundedWorkspaceSources(boundedUris, workspace)
+    } else {
+        workspace.sources
+    }
 
     /**
      * The other documents open in the editor, so a file compiles against their unsaved content:

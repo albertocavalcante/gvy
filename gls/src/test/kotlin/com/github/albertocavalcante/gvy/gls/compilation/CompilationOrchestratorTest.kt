@@ -57,10 +57,13 @@ class CompilationOrchestratorTest {
         every { workerSessionManager.parse(capture(requestSlot)) } returns parseResult
 
         val workspaceManager = mockk<WorkspaceManager>()
-        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getClasspathForFile(any(), any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns listOf(workspaceSource)
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        every { workspaceManager.current() } answers {
+            testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = listOf(workspaceSource))
+        }
 
         val orchestrator = CompilationOrchestrator(
             CompilationOrchestratorDependencies(
@@ -107,10 +110,13 @@ class CompilationOrchestratorTest {
 
         var currentFingerprint = "fingerprint-v1"
         val workspaceManager = mockk<WorkspaceManager>()
-        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getClasspathForFile(any(), any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns emptyList()
         every { workspaceManager.getWorkspaceSources() } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } answers { currentFingerprint }
+        every { workspaceManager.current() } answers {
+            testWorkspace(currentFingerprint, sourceRoots = emptyList(), sources = emptyList())
+        }
 
         val orchestrator = CompilationOrchestrator(
             CompilationOrchestratorDependencies(
@@ -171,11 +177,14 @@ class CompilationOrchestratorTest {
 
         val boundedUrisSlot = slot<Set<URI>>()
         val workspaceManager = mockk<WorkspaceManager>()
-        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getClasspathForFile(any(), any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
-        every { workspaceManager.getBoundedWorkspaceSources(capture(boundedUrisSlot)) } returns boundedSources
+        every { workspaceManager.getBoundedWorkspaceSources(capture(boundedUrisSlot), any()) } returns boundedSources
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        every { workspaceManager.current() } answers {
+            testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = fullWorkspaceSources)
+        }
 
         // DependencyGraph with info for this URI
         val dependencyGraph = DependencyGraph()
@@ -235,10 +244,13 @@ class CompilationOrchestratorTest {
         )
 
         val workspaceManager = mockk<WorkspaceManager>()
-        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getClasspathForFile(any(), any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        every { workspaceManager.current() } answers {
+            testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = fullWorkspaceSources)
+        }
 
         // Empty DependencyGraph - no info for this URI
         val dependencyGraph = DependencyGraph()
@@ -289,10 +301,13 @@ class CompilationOrchestratorTest {
         )
 
         val workspaceManager = mockk<WorkspaceManager>()
-        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getClasspathForFile(any(), any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        every { workspaceManager.current() } answers {
+            testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = fullWorkspaceSources)
+        }
 
         // No dependency graph (null)
         val orchestrator = CompilationOrchestrator(

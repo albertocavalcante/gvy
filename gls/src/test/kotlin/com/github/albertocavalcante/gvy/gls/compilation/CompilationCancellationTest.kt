@@ -53,10 +53,13 @@ class CompilationCancellationTest {
         cacheService: CompilationCacheService = CompilationCacheService(),
     ): CompilationOrchestrator {
         val workspaceManager = mockk<WorkspaceManager>()
-        every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getClasspathForFile(any(), any(), any()) } returns emptyList()
         every { workspaceManager.getSourceRoots() } returns emptyList()
         every { workspaceManager.getWorkspaceSources() } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } returns "fp"
+        every { workspaceManager.current() } answers {
+            testWorkspace("fp", sourceRoots = emptyList(), sources = emptyList())
+        }
         return CompilationOrchestrator(
             CompilationOrchestratorDependencies(
                 cacheService = cacheService,

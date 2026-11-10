@@ -249,12 +249,13 @@ class SymbolIndexingService(
         // Parse the source code for indexing
         // Note: GroovyParserFacade automatically retries at CONVERSION phase if it detects
         // Script fallback (when a class extends groovy.lang.Script due to unresolved superclass)
+        val workspace = workspaceManager.current()
         val parseResult = workerSessionManager.parse(
             ParseRequest(
                 uri = uri,
                 content = content,
-                classpath = workspaceManager.getDependencyClasspath(),
-                sourceRoots = workspaceManager.getSourceRoots(),
+                classpath = workspace.classpath,
+                sourceRoots = workspace.sourceRoots,
                 workspaceSources = emptyList(), // Don't recurse during indexing
                 locatorCandidates = buildLocatorCandidates(uri, path),
             ),

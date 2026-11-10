@@ -84,8 +84,9 @@ class WorkspaceCompiler(
         val startTime = System.currentTimeMillis()
         logger.info { "Starting workspace compilation" }
 
-        // Get all workspace sources
-        val workspaceSources = workspaceManager.getWorkspaceSources()
+        // One workspace model for the whole batch: sources, classpath and roots agree (H1)
+        val workspace = workspaceManager.current()
+        val workspaceSources = workspace.sources
         logger.info { "Found ${workspaceSources.size} workspace sources to compile" }
 
         if (workspaceSources.isEmpty()) {
@@ -98,7 +99,7 @@ class WorkspaceCompiler(
         }
 
         // Compile all files together
-        val result = compileFiles(workspaceSources)
+        val result = compileFiles(workspaceSources, workspace)
         workspaceCompiled = true
 
         val elapsed = System.currentTimeMillis() - startTime
@@ -125,13 +126,16 @@ class WorkspaceCompiler(
         when {
             stale.isEmpty() -> Unit
             workspaceCompiled && stale.size > BATCH_REFRESH_LIMIT -> compileWorkspace()
-            else -> stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
-                compileFileWithWorkspaceContext(
-                    checkNotNull(UriPathConverter.toPath(uri)),
-                    workspaceManager.getWorkspaceSources(),
-                    workspaceManager.getDependencyClasspath(),
-                    workspaceManager.getSourceRoots(),
-                )
+            else -> {
+                val workspace = workspaceManager.current()
+                stale.filter { workspaceCompiled || it in semanticIndexer }.forEach { uri ->
+                    compileFileWithWorkspaceContext(
+                        checkNotNull(UriPathConverter.toPath(uri)),
+                        workspace.sources,
+                        workspace.classpath,
+                        workspace.sourceRoots,
+                    )
+                }
             }
         }
     }
@@ -164,13 +168,13 @@ class WorkspaceCompiler(
      * This uses the Groovy compiler's ability to compile multiple sources in a single
      * compilation unit, which enables cross-file resolution.
      */
-    private suspend fun compileFiles(sources: List<Path>): WorkspaceCompilationResult {
+    private suspend fun compileFiles(sources: List<Path>, workspace: WorkspaceModel): WorkspaceCompilationResult {
         val modules = mutableMapOf<URI, ModuleNode>()
         val errors = mutableListOf<CompilationError>()
 
         // Get workspace configuration
-        val classpath = workspaceManager.getDependencyClasspath()
-        val sourceRoots = workspaceManager.getSourceRoots()
+        val classpath = workspace.classpath
+        val sourceRoots = workspace.sourceRoots
 
         // We need to compile each file separately but with all workspace sources available
         // to the compilation unit. This allows the compiler to resolve cross-file references.
