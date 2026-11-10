@@ -136,7 +136,6 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
 
     /** The project's ProjectState when it offers applyToMutableState(Consumer), else null (feature detection). */
     private static Object projectState(Project project) {
-        return null // RED (#1376): lock API detection forced off, to show the compatibility job can fail
         try {
             if (!project.respondsTo('getOwner')) return null
             def owner = project.getOwner()
