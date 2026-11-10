@@ -28,10 +28,18 @@ class SpockVerdictMemoryTest {
         ),
     )
 
-    private fun SpockVerdictMemory.exchange(result: ParseResult): Set<String> {
+    private fun SpockVerdictMemory.exchange(result: ParseResult, reader: (String) -> String? = read): Set<String> {
         val module = checkNotNull(result.ast)
         val source = assertIs<SpockSourceContext.Available>(SpockSourceContext.from(result))
-        return access(uri, "fp", result.outcome, read).exchange(module, source)
+        return access(uri, "fp", result.outcome, reader).exchange(module, source)
+    }
+
+    @Test
+    fun `an unreadable base at recall denies reuse`() {
+        val memory = SpockVerdictMemory()
+        memory.exchange(parse(withBase = true))
+
+        assertEquals(emptySet(), memory.exchange(parse(withBase = false)) { null })
     }
 
     @Test

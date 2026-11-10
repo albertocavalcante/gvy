@@ -183,11 +183,15 @@ class SpockTableProviderTest {
             useSpockClasspath(sources = listOf(src))
         }
 
-        fun writeBase(name: String, broken: Boolean = false, extends: String = "extends Specification"): Path =
-            src.resolve("$name.groovy").also {
-                val body = if (broken) "{ void m( }" else "{}"
-                Files.writeString(it, "import spock.lang.*\nabstract class $name $extends $body\n")
-            }
+        fun writeBase(
+            name: String,
+            broken: Boolean = false,
+            extends: String = "extends Specification",
+            prefix: String = "",
+        ): Path = src.resolve("$name.groovy").also {
+            val body = if (broken) "{ void m( }" else "{}"
+            Files.writeString(it, "import spock.lang.*\n${prefix}abstract class $name $extends $body\n")
+        }
 
         suspend fun edit(newText: String = "$text\n// edit $version") {
             text = newText
@@ -250,6 +254,20 @@ class SpockTableProviderTest {
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "the broken base's prelude no longer matches the recorded one")
+    }
+
+    @Test
+    fun `a doc comment naming the base cannot hide its extends edit`(): Unit = runBlocking {
+        val doc = "/** Base class BaseSpec, see {@link Object} */\n"
+        val fixture = BrokenBaseFixture()
+        fixture.writeBase("BaseSpec", prefix = doc)
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        fixture.writeBase("BaseSpec", broken = true, extends = "", prefix = doc)
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "the prelude is lexed past the comment and no longer matches")
     }
 
     @Test
