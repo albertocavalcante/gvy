@@ -13,6 +13,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -185,38 +186,49 @@ class RetirementWakeTest {
     @Test
     fun `every waiter on a retired job wakes once with no result`(): Unit = runBlocking {
         val cache = CompilationCacheService()
-        val pending = cache.register(CompletableDeferred()) // never completes: a compile that cannot be interrupted
+        // A compile that ignores cancellation: the job completes only once its blocking body returns
+        val job = scope.async {
+            release.await(HOLD_SECONDS, TimeUnit.SECONDS)
+            CompilationResult.failure(emptyList())
+        }
+        val pending = cache.register(job)
         val waiters = List(WAITERS) { async(Dispatchers.IO) { pending.awaitUnlessRetired() } }
 
         cache.invalidate(uri)
 
         val answers = withTimeout(WAIT_SECONDS * 1_000) { waiters.awaitAll() }
         assertEquals(List(WAITERS) { null }, answers)
-        assertFalse(pending.deferred.isCompleted, "the waiters woke at the signal, not at the job's completion")
+        assertFalse(job.isCompleted, "the waiters woke at the signal, not at the job's completion")
     }
 
     @Test
     fun `a job that completes normally never signals and retains no waiter`(): Unit = runBlocking {
         val job = CompletableDeferred<CompilationResult>()
         val pending = CompilationCacheService().register(job) // held strongly, as a slow co-waiter would
-        var waiter: Deferred<CompilationResult?>? = async(Dispatchers.IO) { pending.awaitUnlessRetired() }
-        job.complete(CompilationResult.failure(emptyList()))
-
-        assertNotNull(checkNotNull(waiter).await())
+        val returnedWaiter = awaitedWaiter(pending) { job.complete(CompilationResult.failure(emptyList())) }
         assertFalse(pending.retired.isCompleted, "a normal completion must not signal a retirement")
 
-        val retainedWaiter = WeakReference(checkNotNull(waiter))
-        waiter = null
         var control: Any? = Any()
         val collector = WeakReference(checkNotNull(control))
         control = null
         repeat(GC_ATTEMPTS) {
-            if (collector.get() == null && retainedWaiter.get() == null) return@runBlocking
+            if (collector.get() == null && returnedWaiter.get() == null) return@runBlocking
             System.gc()
             Thread.sleep(GC_PAUSE_MILLIS)
         }
         assumeTrue(collector.get() == null, "the JVM did not collect within $GC_ATTEMPTS attempts")
-        assertNull(retainedWaiter.get(), "the retirement signal still references a waiter that already returned")
+        assertNull(returnedWaiter.get(), "the retirement signal still references a waiter that already returned")
+    }
+
+    /** Runs a waiter to a normal answer; once this returns, only [pending] could still reference it. */
+    private suspend fun awaitedWaiter(
+        pending: PendingCompilation,
+        complete: () -> Unit,
+    ): WeakReference<Deferred<CompilationResult?>> = coroutineScope {
+        val waiter = async(Dispatchers.IO) { pending.awaitUnlessRetired() }
+        complete()
+        assertNotNull(waiter.await())
+        WeakReference(waiter)
     }
 
     private companion object {

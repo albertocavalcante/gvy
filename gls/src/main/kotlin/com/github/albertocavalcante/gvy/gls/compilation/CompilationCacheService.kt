@@ -168,9 +168,8 @@ class CompilationCacheService(
         return detached
     }
 
-    /** Cancels the jobs [detach] returned; call it outside the fence. */
-    internal fun cancelDetached(detached: Map<URI, PendingCompilation>) =
-        detached.values.forEach { it.retire() }
+    /** Wakes the waiters of the jobs [detach] returned, then cancels them; call it outside the fence (#1429). */
+    internal fun cancelDetached(detached: Map<URI, PendingCompilation>) = detached.values.forEach { it.retire() }
 
     /**
      * Gets cache statistics for monitoring and debugging.
