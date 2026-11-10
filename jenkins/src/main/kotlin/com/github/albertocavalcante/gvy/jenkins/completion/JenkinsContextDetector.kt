@@ -132,52 +132,42 @@ object JenkinsContextDetector {
     /**
      * Analyze block structure up to the cursor. Text after the cursor on its own line is ignored, so
      * `allOf { | }` (auto-closed by the editor) or a one-line `when { ...; | } }` keeps its blocks.
+     *
+     * Every `{` gets one stack slot: its block name when a tracked pattern opens it, `null` for
+     * untracked braces (`if (...) {`, `timeout(...) {`, `parallel {`, `docker {`). Each `}` then pops
+     * exactly the brace it closes, so a child that closes inside an untracked block cannot leave a
+     * stale entry behind (#1290).
      */
     private fun analyzeBlockStructure(lines: List<String>, lineNumber: Int, column: Int): List<String> {
-        val blockStack = mutableListOf<String>()
-        var braceDepth = 0
+        val braceStack = mutableListOf<String?>()
 
         for (i in 0 until minOf(lineNumber + 1, lines.size)) {
             val line = if (i == lineNumber) lines[i].take(column.coerceAtLeast(0)) else lines[i]
             // Strings and comments can contain `always {` or unbalanced braces (`echo '}'`).
             // Line-based: strings and block comments spanning lines are not handled (#1281).
             val cleanLine = GroovyCodeCleaner.removeCommentsAndStrings(line)
+            val openers = blockOpeningsByBrace(cleanLine)
 
-            addBlockOpenings(cleanLine, blockStack)
-
-            braceDepth += cleanLine.count { it == '{' } - cleanLine.count { it == '}' }
-            trimBlockStackToDepth(blockStack, braceDepth)
-        }
-
-        return blockStack.toList()
-    }
-
-    /**
-     * Add any block openings (including post conditions) found in the line to the stack, in the
-     * order they appear.
-     */
-    private fun addBlockOpenings(line: String, blockStack: MutableList<String>) {
-        val matches = mutableListOf<Pair<Int, String>>()
-        for ((blockName, pattern) in BLOCK_PATTERNS) {
-            pattern.findAll(line).forEach { match ->
-                matches.add(match.range.first to blockName)
+            cleanLine.forEachIndexed { index, char ->
+                when (char) {
+                    '{' -> braceStack.add(openers[index])
+                    '}' -> braceStack.removeLastOrNull()
+                }
             }
         }
-        POST_CONDITION_PATTERN.findAll(line).forEach { match ->
-            matches.add(match.range.first to match.groupValues[1])
-        }
-        // Sort by position and add to stack
-        matches.sortBy { it.first }
-        matches.forEach { blockStack.add(it.second) }
+
+        return braceStack.filterNotNull()
     }
 
     /**
-     * Trim block stack when braces close.
+     * Tracked block names (including post conditions) keyed by the index of the `{` that opens them.
+     * Every pattern ends with `\{`, so a match's last index is its brace.
      */
-    private fun trimBlockStackToDepth(blockStack: MutableList<String>, braceDepth: Int) {
-        while (braceDepth < blockStack.size && blockStack.isNotEmpty()) {
-            blockStack.removeAt(blockStack.size - 1)
+    private fun blockOpeningsByBrace(line: String): Map<Int, String> = buildMap {
+        for ((blockName, pattern) in BLOCK_PATTERNS) {
+            pattern.findAll(line).forEach { match -> put(match.range.last, blockName) }
         }
+        POST_CONDITION_PATTERN.findAll(line).forEach { match -> put(match.range.last, match.groupValues[1]) }
     }
 
     /**
