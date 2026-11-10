@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
+import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.fixtures.VisibleSub
 import org.junit.jupiter.api.Test
 import java.util.Date
 import kotlin.test.assertEquals
@@ -20,5 +21,16 @@ class ReflectedInstanceMethodsTest {
         val names = reflectedInstanceMethods(StringBuilder::class.java).map { it.name }.toSet()
 
         assertTrue(names.containsAll(listOf("length", "charAt", "setLength", "capacity")), "found $names")
+    }
+
+    @Test
+    fun `a visibility bridge is kept beside an unrelated overload of the same arity`() {
+        val foo = reflectedInstanceMethods(VisibleSub::class.java).filter { it.name == "foo" }
+
+        assertTrue(foo.any { it.isBridge }, "fixture must expose foo(int) as a bridge: $foo")
+        assertEquals(
+            setOf(listOf<Class<*>>(Int::class.javaPrimitiveType!!), listOf<Class<*>>(String::class.java)),
+            foo.map { it.parameterTypes.toList() }.toSet(),
+        )
     }
 }

@@ -562,14 +562,19 @@ private fun simpleTypeName(type: String): String =
 
 private val reflectionLogger = KotlinLogging.logger {}
 
+/** A typed sibling the [bridge] forwards to: same name and arity, each parameter assignable to the bridge's. */
+private fun java.lang.reflect.Method.bridgedBy(bridge: java.lang.reflect.Method): Boolean =
+    name == bridge.name && parameterCount == bridge.parameterCount &&
+        parameterTypes.indices.all { bridge.parameterTypes[it].isAssignableFrom(parameterTypes[it]) }
+
 internal fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Method> = try {
     val instance = type.methods.filter {
         java.lang.reflect.Modifier.isPublic(it.modifiers) && !java.lang.reflect.Modifier.isStatic(it.modifiers)
     }
     // A generic bridge (`compareTo(Object)` beside `compareTo(Date)`) is the same member under its erasure.
     // A visibility bridge (StringBuilder.length() over its package-private base) is the only copy: keep it.
-    val typed = instance.filterNot { it.isBridge }.mapTo(mutableSetOf()) { it.name to it.parameterCount }
-    instance.filterNot { it.isBridge && (it.name to it.parameterCount) in typed }
+    val typed = instance.filterNot { it.isBridge }
+    instance.filterNot { bridge -> bridge.isBridge && typed.any { it.bridgedBy(bridge) } }
 } catch (error: NoClassDefFoundError) {
     reflectionLogger.debug(error) { "Incomplete classpath methods for ${type.name}" }
     emptyList()
