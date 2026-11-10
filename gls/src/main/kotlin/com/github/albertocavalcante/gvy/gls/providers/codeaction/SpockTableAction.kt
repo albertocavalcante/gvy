@@ -61,7 +61,7 @@ internal object SpockTableAction {
         val lines = request.content.lines()
         val module = request.module ?: return emptyList()
         val source = SpockSourceContext.from(module, request.isPartial)
-        val recalled = request.verdicts?.exchange(request.uri, module, source, request.content).orEmpty()
+        val recalled = request.verdicts?.exchange(module, source).orEmpty()
         return source.classes
             .filter { !it.classNode.isScriptSafe() }
             .filter {

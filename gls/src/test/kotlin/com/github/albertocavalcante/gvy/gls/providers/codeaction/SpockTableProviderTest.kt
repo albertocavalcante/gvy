@@ -183,10 +183,11 @@ class SpockTableProviderTest {
             useSpockClasspath(sources = listOf(src))
         }
 
-        fun writeBase(name: String, broken: Boolean = false): Path = src.resolve("$name.groovy").also {
-            val body = if (broken) "{ void m( }" else "{}"
-            Files.writeString(it, "import spock.lang.*\nabstract class $name extends Specification $body\n")
-        }
+        fun writeBase(name: String, broken: Boolean = false, extends: String = "extends Specification"): Path =
+            src.resolve("$name.groovy").also {
+                val body = if (broken) "{ void m( }" else "{}"
+                Files.writeString(it, "import spock.lang.*\nabstract class $name $extends $body\n")
+            }
 
         suspend fun edit(newText: String = "$text\n// edit $version") {
             text = newText
@@ -195,8 +196,8 @@ class SpockTableProviderTest {
             compilationService.compile(fileUri, text)
         }
 
-        suspend fun hasAction(): Boolean = provider.provideCodeActions(
-            params().apply { textDocument = TextDocumentIdentifier(fileUri.toString()) },
+        suspend fun hasAction(paramsLine: Int = 5): Boolean = provider.provideCodeActions(
+            params(line = paramsLine).apply { textDocument = TextDocumentIdentifier(fileUri.toString()) },
         ).any { it.title == "Align Spock data table" }
     }
 
@@ -222,6 +223,33 @@ class SpockTableProviderTest {
         fixture.edit(fixture.text.replace("extends BaseSpec", "extends OtherBaseSpec"))
 
         assertTrue(!fixture.hasAction(), "the superclass spelling changed, so nothing is reused")
+    }
+
+    @Test
+    fun `an extends edit behind an annotation closure is noticed while the base is broken`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit("import spock.lang.Requires\n@Requires({ true })\n" + fixture.text)
+        assertTrue(fixture.hasAction(paramsLine = 7), "clean compile")
+
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit(fixture.text.replace("extends BaseSpec", "extends MissingBaseSpec"))
+
+        assertTrue(!fixture.hasAction(paramsLine = 7), "the superclass spelling changed behind a closure")
+    }
+
+    @Test
+    fun `a base edited off Specification before it broke is not trusted`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        // The base stops extending Specification and the spec recompiles cleanly, with no code action asked.
+        fixture.writeBase("BaseSpec", extends = "")
+        fixture.edit()
+        fixture.writeBase("BaseSpec", broken = true, extends = "")
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "the broken base's prelude no longer matches the recorded one")
     }
 
     @Test

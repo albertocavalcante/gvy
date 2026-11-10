@@ -7,6 +7,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Main provider for code actions (quick fixes) in Groovy files.
@@ -29,6 +31,15 @@ class CodeActionProvider(
 
     /** Drops the remembered Spock verdicts of a closed document (#1387). */
     fun forgetDocument(uri: URI) = verdictMemory.forget(uri.toString())
+
+    /** A source's current text by normalized path: the open buffer when there is one, else the file. */
+    private fun currentSourceText(path: String): String? {
+        val file = runCatching { Path.of(path) }.getOrNull() ?: return null
+        documentProvider.getSnapshot(file.toUri())?.let { return it.content }
+        return runCatching {
+            file.takeIf { Files.isRegularFile(it) && Files.size(it) <= MAX_SOURCE_BYTES }?.let(Files::readString)
+        }.getOrNull()
+    }
     private val lintFixAction = LintFixAction()
 
     /**
@@ -59,10 +70,11 @@ class CodeActionProvider(
                             params.context.only,
                             snapshot.version,
                             isPartial = !compiled.parseResult.isSuccessful,
-                            verdicts = SpockVerdictMemory.Access(
-                                verdictMemory,
+                            verdicts = verdictMemory.access(
+                                params.textDocument.uri,
                                 compilationService.workspaceManager.fingerprintFor(uri),
                                 compiled.parseResult.outcome,
+                                ::currentSourceText,
                             ),
                         ),
                     ),
@@ -95,3 +107,5 @@ class CodeActionProvider(
         return actions
     }
 }
+
+private const val MAX_SOURCE_BYTES = 1_000_000L
