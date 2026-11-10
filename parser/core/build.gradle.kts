@@ -25,8 +25,6 @@ dependencies {
     // Testing
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
-    // Provides @ASTTest, to prove the analysis policy keeps its closures from running
-    testImplementation(libs.groovy.test)
     testImplementation(libs.assertj.core)
     testRuntimeOnly(libs.junit.platform.launcher)
     // kotlin-logging needs SLF4J impl at test runtime

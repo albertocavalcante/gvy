@@ -4,6 +4,7 @@ import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.classgen.GeneratorContext
 import org.codehaus.groovy.control.CompilationFailedException
@@ -51,15 +52,18 @@ object AnalysisCompilerPolicy {
  * Removes [AnalysisCompilerPolicy.CODE_EXECUTING_ANNOTATIONS] from every annotated node of a class at
  * CONVERSION, i.e. before SEMANTIC_ANALYSIS collects local transforms. Matches the fully qualified name, the
  * simple name (an unresolved reference or star import) and any `import ... as Alias`.
+ *
+ * `@AnnotationCollector([ASTTest]) @interface Alias` would reintroduce the annotation when `@Alias` is
+ * expanded at SEMANTIC_ANALYSIS. Every collector is therefore sanitised at its own declaration: the blocked
+ * entries are removed from its `value` list, so no use of it (in this file, another workspace source, or a
+ * collector that collects it) can expand into a blocked annotation. Its own `@ASTTest` annotations are removed
+ * like any other.
  */
 internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePhase.CONVERSION) {
     @Throws(CompilationFailedException::class)
-    override fun call(
-        source: SourceUnit,
-        context: org.codehaus.groovy.classgen.GeneratorContext,
-        classNode: ClassNode,
-    ) {
+    override fun call(source: SourceUnit, context: GeneratorContext, classNode: ClassNode) {
         val names = blockedNames(classNode)
+        if (classNode.isAnnotationDefinition) sanitizeCollector(classNode, names)
         object : ClassCodeVisitorSupport() {
             override fun getSourceUnit(): SourceUnit = source
 
@@ -79,35 +83,25 @@ internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePh
         classNode.module?.imports?.forEach { import ->
             if (import.className in blocked && import.alias != null) names.add(import.alias)
         }
-        addCollectorAliases(classNode, names)
         return names
     }
 
-    /**
-     * `@AnnotationCollector([ASTTest]) @interface Alias` makes `@Alias` expand into `@ASTTest` later, at
-     * SEMANTIC_ANALYSIS, so the alias has to be stripped too. Collectors declared in sources of the same
-     * compilation (the file itself or other workspace sources) are visible here, transitively.
-     */
-    private fun addCollectorAliases(classNode: ClassNode, names: MutableSet<String>) {
-        val declared = classNode.compileUnit?.classes.orEmpty() + classNode.module?.classes.orEmpty()
-        val collectors = declared.distinct().filter { it.isAnnotationDefinition }
-        var changed = true
-        while (changed) {
-            changed = false
-            for (collector in collectors) {
-                if (collector.name in names || collector.nameWithoutPackage in names) continue
-                if (collectedSimpleNames(collector).any { it in names || it.substringAfterLast('.') in names }) {
-                    changed = names.add(collector.name) or names.add(collector.nameWithoutPackage)
+    private fun sanitizeCollector(collector: ClassNode, names: Set<String>) {
+        collector.annotations
+            .filter { it.classNode.nameWithoutPackage == "AnnotationCollector" }
+            .forEach { annotation ->
+                val value = annotation.getMember("value") ?: return@forEach
+                if (value is ListExpression) {
+                    value.expressions.removeAll { entryName(it) in names }
+                } else if (entryName(value) in names) {
+                    annotation.members.remove("value")
                 }
             }
-        }
     }
 
-    private fun collectedSimpleNames(collector: ClassNode): List<String> = collector.annotations
-        .filter { it.classNode.nameWithoutPackage == "AnnotationCollector" }
-        .mapNotNull { it.getMember("value") }
-        .flatMap { value -> if (value is ListExpression) value.expressions else listOf(value) }
-        // Before resolution the entries are variable / property expressions, afterwards class expressions;
-        // `text` is the (qualified) name in every case.
-        .map { it.text }
+    /**
+     * Name written for a collected annotation. Before resolution the entry is a variable or property
+     * expression, afterwards a class expression; `Name.class` is a property expression ending in `.class`.
+     */
+    private fun entryName(entry: Expression): String = entry.text.removeSuffix(".class")
 }

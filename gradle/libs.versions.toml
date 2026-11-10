@@ -63,7 +63,6 @@ groovy-console = { module = "org.apache.groovy:groovy-console", version.ref = "g
 groovy-json = { module = "org.apache.groovy:groovy-json", version.ref = "groovy" }
 groovy-groovydoc = { module = "org.apache.groovy:groovy-groovydoc", version.ref = "groovy" }
 groovy-macro = { module = "org.apache.groovy:groovy-macro", version.ref = "groovy" }
-groovy-test = { module = "org.apache.groovy:groovy-test", version.ref = "groovy" }
 
 # Grape/Grab dependency resolution (required for @Grab annotations in Groovy)
 ivy = { module = "org.apache.ivy:ivy", version.ref = "ivy" }

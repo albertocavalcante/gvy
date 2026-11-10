@@ -12,116 +12,171 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 /**
- * `@ASTTest` runs its closure inside the compiler JVM when `groovy-test` is on the compiled project's
- * classpath (typical for Spock projects). Analysis must never execute source text from the workspace.
+ * `@ASTTest` (shipped in the core `groovy` jar) runs its closure inside the compiler JVM whenever the compiled
+ * project has Groovy on its classpath. Analysis must never execute source text from the workspace. The closures
+ * below only write a marker file into a temp directory; every test asserts that the marker was NOT written.
  */
 class AstTestExecutionTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private fun jarOf(className: String): Path =
-        Path.of(Class.forName(className).protectionDomain.codeSource.location.toURI())
+    private val phases = listOf(Phases.CONVERSION, Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)
 
-    private fun parse(code: String, phase: Int) = GroovyParserFacade().parse(
+    private fun groovyJar(): Path =
+        Path.of(Class.forName("groovy.lang.Closure").protectionDomain.codeSource.location.toURI())
+
+    private fun parse(
+        code: String,
+        phase: Int,
+        sourceRoots: List<Path> = emptyList(),
+        uri: URI = URI.create("file:///A.groovy"),
+    ) = GroovyParserFacade().parse(
         ParseRequest(
-            uri = URI.create("file:///A.groovy"),
+            uri = uri,
             content = code,
-            classpath = listOf(jarOf("groovy.lang.Closure"), jarOf("groovy.transform.ASTTest")),
+            classpath = listOf(groovyJar()),
+            sourceRoots = sourceRoots,
             compilePhase = phase,
         ),
     )
 
-    private fun probe(marker: Path, annotation: String, imports: String = "") = """
-        $imports
-        $annotation(phase=org.codehaus.groovy.control.CompilePhase.SEMANTIC_ANALYSIS,
-            value={ new File('${marker.toString().replace("\\", "/")}').text = 'x' })
-        class A {}
-    """.trimIndent()
+    /** `{ new File('<marker>').text = 'x' }` for a marker named [name]; the returned path must not exist afterwards. */
+    private fun closure(name: String): Pair<String, Path> {
+        val marker = tempDir.resolve(name)
+        return "{ new File('${marker.toString().replace("\\", "/")}').text = 'x' }" to marker
+    }
 
-    @Test
-    fun `ASTTest closure does not run at any analysis phase`() {
-        for (phase in listOf(Phases.CONVERSION, Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)) {
-            val marker = tempDir.resolve("pwned-$phase")
-            val result = parse(probe(marker, "@groovy.transform.ASTTest"), phase)
+    /** Parses [template] (with `CLOSURE` replaced by a marker-writing closure) at every phase; nothing may run. */
+    private fun assertNotExecuted(name: String, template: String) {
+        for (phase in phases) {
+            val (closure, marker) = closure("$name-$phase")
+            val result = parse(template.replace("CLOSURE", closure), phase)
 
-            assertFalse(marker.exists(), "@ASTTest closure executed at phase $phase")
-            assertNotNull(result.ast, "the AST must survive the stripped annotation (phase $phase)")
+            assertFalse(marker.exists(), "$name: @ASTTest closure executed at phase $phase")
+            assertNotNull(result.ast, "$name: the AST must survive (phase $phase)")
         }
     }
 
     @Test
-    fun `ASTTest does not run through a simple name or an alias`() {
-        val simple = tempDir.resolve("simple")
-        parse(probe(simple, "@ASTTest", "import groovy.transform.ASTTest"), Phases.SEMANTIC_ANALYSIS)
-        val star = tempDir.resolve("star")
-        parse(probe(star, "@ASTTest", "import groovy.transform.*"), Phases.SEMANTIC_ANALYSIS)
-        val aliased = tempDir.resolve("aliased")
-        parse(probe(aliased, "@T", "import groovy.transform.ASTTest as T"), Phases.SEMANTIC_ANALYSIS)
+    fun `plain ASTTest on a class`() = assertNotExecuted(
+        "plain",
+        "@groovy.transform.ASTTest(phase=org.codehaus.groovy.control.CompilePhase.SEMANTIC_ANALYSIS," +
+            " value=CLOSURE)\nclass A {}",
+    )
 
-        assertFalse(simple.exists(), "simple-name @ASTTest executed")
-        assertFalse(star.exists(), "star-imported @ASTTest executed")
-        assertFalse(aliased.exists(), "aliased @ASTTest executed")
+    @Test
+    fun `simple name, star import and alias`() {
+        assertNotExecuted("simple", "import groovy.transform.ASTTest\n@ASTTest(value=CLOSURE)\nclass A {}")
+        assertNotExecuted("star", "import groovy.transform.*\n@ASTTest(value=CLOSURE)\nclass A {}")
+        assertNotExecuted("alias", "import groovy.transform.ASTTest as T\n@T(value=CLOSURE)\nclass A {}")
     }
 
     @Test
-    fun `ASTTest on members and locals does not run`() {
-        val marker = tempDir.resolve("members")
-        val path = marker.toString().replace("\\", "/")
-        val closure = "{ new File('$path').text = 'x' }"
-        val code = """
-            class A {
-                @groovy.transform.ASTTest(value=$closure) int field
-                @groovy.transform.ASTTest(value=$closure) void m(@groovy.transform.ASTTest(value=$closure) int p) {
-                    @groovy.transform.ASTTest(value=$closure) def local = 1
-                }
+    fun `members, parameters and locals`() = assertNotExecuted(
+        "members",
+        """
+        class A {
+            @groovy.transform.ASTTest(value=CLOSURE) int field
+            @groovy.transform.ASTTest(value=CLOSURE) void m(@groovy.transform.ASTTest(value=CLOSURE) int p) {
+                @groovy.transform.ASTTest(value=CLOSURE) def local = 1
             }
-        """.trimIndent()
-
-        parse(code, Phases.SEMANTIC_ANALYSIS)
-
-        assertFalse(marker.exists(), "@ASTTest on a member or local executed")
-    }
-
-    private fun collector(name: String, collects: String) = """
-        import groovy.transform.AnnotationCollector
-        import groovy.transform.ASTTest
-        @AnnotationCollector([$collects])
-        @interface $name {}
-    """.trimIndent()
+        }
+        """.trimIndent(),
+    )
 
     @Test
-    fun `ASTTest does not run through an AnnotationCollector alias in the same file`() {
-        val marker = tempDir.resolve("collector-same-file")
-        val path = marker.toString().replace("\\", "/")
-
-        parse(
-            collector("Boom", "ASTTest") + "\n@Boom(value={ new File('$path').text = 'x' })\nclass A {}",
-            Phases.SEMANTIC_ANALYSIS,
+    fun `closure parameter, catch parameter and type use`() {
+        assertNotExecuted(
+            "closure-param",
+            "def c = { @groovy.transform.ASTTest(value=CLOSURE) int x -> x }\nclass A {}",
         )
-
-        assertFalse(marker.exists(), "@ASTTest expanded from an @AnnotationCollector alias executed")
+        assertNotExecuted(
+            "catch-param",
+            "class A { void m() { try { } catch (@groovy.transform.ASTTest(value=CLOSURE) Exception e) { } } }",
+        )
+        assertNotExecuted("type-use", "class A { List<@groovy.transform.ASTTest(value=CLOSURE) String> l }")
     }
 
     @Test
-    fun `ASTTest does not run through a transitive collector declared in another workspace source`() {
-        val marker = tempDir.resolve("collector-workspace")
-        val path = marker.toString().replace("\\", "/")
-        val root = tempDir.resolve("src").also { Files.createDirectories(it) }
-        Files.writeString(root.resolve("Boom.groovy"), collector("Boom", "ASTTest"))
-        Files.writeString(root.resolve("Bigger.groovy"), collector("Bigger", "Boom"))
-        val code = "@Bigger(value={ new File('$path').text = 'x' })\nclass A {}"
-        val file = root.resolve("A.groovy").also { Files.writeString(it, code) }
-
-        GroovyParserFacade().parse(
-            ParseRequest(
-                uri = file.toUri(),
-                content = code,
-                classpath = listOf(jarOf("groovy.lang.Closure"), jarOf("groovy.transform.ASTTest")),
-                sourceRoots = listOf(root),
-                compilePhase = Phases.SEMANTIC_ANALYSIS,
-            ),
+    fun `enum constant body, anonymous class and trait`() {
+        assertNotExecuted(
+            "enum-body",
+            "enum E { X { @groovy.transform.ASTTest(value=CLOSURE) void m() { } } ; void m() { } }",
         )
+        assertNotExecuted(
+            "anonymous",
+            "class A { def r = new Runnable() { @groovy.transform.ASTTest(value=CLOSURE) void run() { } } }",
+        )
+        assertNotExecuted("trait", "trait T { @groovy.transform.ASTTest(value=CLOSURE) void m() { } }")
+    }
 
-        assertFalse(marker.exists(), "@ASTTest expanded from a transitive collector executed")
+    private fun collector(entries: String, extra: String = "") =
+        "import groovy.transform.AnnotationCollector\nimport groovy.transform.AnnotationCollectorMode\n" +
+            "import groovy.transform.ASTTest\nimport groovy.transform.ASTTest as T\n" +
+            "@AnnotationCollector(value=[$entries]$extra)\n@interface Boom {}\n"
+
+    @Test
+    fun `AnnotationCollector alias forms`() {
+        val use = "\n@Boom(value=CLOSURE)\nclass A {}"
+        assertNotExecuted("collector-simple", collector("ASTTest") + use)
+        assertNotExecuted("collector-qualified", collector("groovy.transform.ASTTest") + use)
+        assertNotExecuted("collector-alias", collector("T") + use)
+        assertNotExecuted("collector-class-literal", collector("ASTTest.class") + use)
+        assertNotExecuted("collector-qualified-class-literal", collector("groovy.transform.ASTTest.class") + use)
+    }
+
+    @Test
+    fun `AnnotationCollector in every mode`() {
+        val use = "\n@Boom(value=CLOSURE)\nclass A {}"
+        val modes = listOf(
+            "DUPLICATE",
+            "PREFER_COLLECTOR",
+            "PREFER_COLLECTOR_MERGED",
+            "PREFER_EXPLICIT",
+            "PREFER_EXPLICIT_MERGED",
+        )
+        for (mode in modes) {
+            assertNotExecuted("collector-$mode", collector("ASTTest", ", mode=AnnotationCollectorMode.$mode") + use)
+        }
+    }
+
+    @Test
+    fun `AnnotationCollector declared after its use or nested in a class`() {
+        assertNotExecuted(
+            "collector-after-use",
+            "@Boom(value=CLOSURE)\nclass A {}\n" + collector("ASTTest"),
+        )
+        assertNotExecuted(
+            "collector-nested",
+            "import groovy.transform.AnnotationCollector\nimport groovy.transform.ASTTest\n" +
+                "class Outer {\n @AnnotationCollector([ASTTest]) @interface Boom {}\n" +
+                " @Boom(value=CLOSURE) void m() { }\n}",
+        )
+    }
+
+    @Test
+    fun `AnnotationCollector that carries ASTTest as a plain annotation`() = assertNotExecuted(
+        "collector-direct",
+        "import groovy.transform.AnnotationCollector\nimport groovy.transform.ASTTest\n" +
+            "@AnnotationCollector @ASTTest(value=CLOSURE) @interface Boom {}\n@Boom\nclass A {}",
+    )
+
+    @Test
+    fun `transitive collectors declared in other workspace sources`() {
+        for (phase in listOf(Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)) {
+            val (closure, marker) = closure("workspace-$phase")
+            val root = tempDir.resolve("src-$phase").also { Files.createDirectories(it) }
+            Files.writeString(root.resolve("Boom.groovy"), collector("ASTTest"))
+            Files.writeString(
+                root.resolve("Bigger.groovy"),
+                "import groovy.transform.AnnotationCollector\n@AnnotationCollector([Boom])\n@interface Bigger {}",
+            )
+            val code = "@Bigger(value=$closure)\nclass A {}"
+            val file = root.resolve("A.groovy").also { Files.writeString(it, code) }
+
+            parse(code, phase, sourceRoots = listOf(root), uri = file.toUri())
+
+            assertFalse(marker.exists(), "transitive workspace collector executed at phase $phase")
+        }
     }
 }
