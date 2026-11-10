@@ -25,6 +25,9 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.Declarative
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
+import com.github.albertocavalcante.nativeapi.ParserDiagnostic
+import com.github.albertocavalcante.nativeapi.ParserPosition
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -108,7 +111,9 @@ object CompletionProvider {
             // If simple insertion failed and it was a clean insertion, try adding 'def'.
             // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
             // but "class Foo { BrazilWorldCup2026 }" is not.
-            if (isClean && !result1.isSuccessful) {
+            // Retry only when an error touches the inserted dummy (a bare name in a class body or static
+            // scope). An error elsewhere, such as an unresolved type, fails both copies alike.
+            if (isClean && !result1.isSuccessful && dummyCausedError(result1.diagnostics, line, character)) {
                 context.ensureActive()
                 val content2 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)
@@ -174,6 +179,18 @@ object CompletionProvider {
             )
         }
     }
+
+    /** Whether an error diagnostic overlaps the dummy inserted at [line]:[character] (0-based). */
+    private fun dummyCausedError(diagnostics: List<ParserDiagnostic>, line: Int, character: Int): Boolean {
+        val start = ParserPosition(line, character)
+        val end = ParserPosition(line, character + DUMMY_IDENTIFIER.length)
+        return diagnostics.any {
+            it.severity == ParserSeverity.ERROR && !it.range.end.isBefore(start) && !end.isBefore(it.range.start)
+        }
+    }
+
+    private fun ParserPosition.isBefore(other: ParserPosition): Boolean =
+        line < other.line || (line == other.line && character < other.character)
 
     /**
      * Provides best-effort completions when compilation or AST extraction fails.
