@@ -366,19 +366,23 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     private suspend fun awaitShared(uri: URI, identity: CompilationIdentity): Awaited {
         val pending = scheduleCompilation(waiterScope, uri, identity)
-        return try {
-            Awaited.Done(pending.deferred.await())
+        val cause = try {
+            // A retirement wakes this waiter at once, not after the stale compile returns (#1429)
+            pending.awaitUnlessRetired()?.let { return Awaited.Done(it) }
+            null
         } catch (e: CancellationException) {
-            currentCoroutineContext().ensureActive()
-            ensureRunning()
-            val documentUnchanged = documentProvider?.getSnapshot(uri) === identity.document
-            val ownerCancelled = ownership.isCurrent(pending.ticket) && documentUnchanged
-            logger.debug(e) {
-                "Compilation of $uri was ${if (ownerCancelled) "cancelled by its owner" else "retired"}; " +
-                    "resolving its current inputs again"
-            }
-            if (ownerCancelled) Awaited.OwnerCancelled else Awaited.Retired
+            e
         }
+        // Woken by the retirement signal or by the job's cancellation: both are classified alike (#1390)
+        currentCoroutineContext().ensureActive()
+        ensureRunning()
+        val documentUnchanged = documentProvider?.getSnapshot(uri) === identity.document
+        val ownerCancelled = ownership.isCurrent(pending.ticket) && documentUnchanged
+        logger.debug(cause) {
+            "Compilation of $uri was ${if (ownerCancelled) "cancelled by its owner" else "retired"}; " +
+                "resolving its current inputs again"
+        }
+        return if (ownerCancelled) Awaited.OwnerCancelled else Awaited.Retired
     }
 
     /**
