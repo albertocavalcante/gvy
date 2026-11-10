@@ -146,7 +146,8 @@ class CompilationCacheService(
      */
     fun invalidate(uri: URI) {
         cache.invalidate(uri)
-        compilationJobs.remove(uri)?.deferred?.cancel()
+        // Removed before its waiters wake, so none can select it again (#1429)
+        compilationJobs.remove(uri)?.retire()
     }
 
     /**
@@ -169,7 +170,7 @@ class CompilationCacheService(
 
     /** Cancels the jobs [detach] returned; call it outside the fence. */
     internal fun cancelDetached(detached: Map<URI, PendingCompilation>) =
-        detached.values.forEach { it.deferred.cancel() }
+        detached.values.forEach { it.retire() }
 
     /**
      * Gets cache statistics for monitoring and debugging.
