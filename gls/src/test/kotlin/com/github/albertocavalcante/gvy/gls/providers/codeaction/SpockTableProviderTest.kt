@@ -430,6 +430,26 @@ class SpockTableProviderTest {
     }
 
     @Test
+    fun `a base that extends a nested class is recalled through its prelude`(): Unit = runBlocking {
+        // BaseSpec's text spells its superclass Holder.SpecBase while the compiled AST can give Holder$SpecBase;
+        // the prelude must still be recorded, or the broken base could never be recalled.
+        val fixture = BrokenBaseFixture()
+        Files.writeString(
+            fixture.src.resolve("Holder.groovy"),
+            "import spock.lang.*\nclass Holder { static abstract class SpecBase extends Specification {} }\n",
+        )
+        fixture.writeBase("BaseSpec", extends = "extends Holder.SpecBase")
+        useSpockClasspath(sources = listOf(fixture.src))
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict: ${diagnosis(fixture)}")
+
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY, extends = "extends Holder.SpecBase")
+        fixture.edit()
+
+        assertTrue(fixture.hasAction(), "the broken base's remembered verdict applies: ${diagnosis(fixture)}")
+    }
+
+    @Test
     fun `a lex error after the base header still recalls the verdict`(): Unit = runBlocking {
         val fixture = BrokenBaseFixture()
         fixture.edit(fixture.text)

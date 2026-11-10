@@ -4,8 +4,8 @@ import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import groovyjarjarantlr4.v4.runtime.CharStreams
-import io.github.oshai.kotlinlogging.KotlinLogging
 import groovyjarjarantlr4.v4.runtime.Token
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.groovy.parser.antlr4.GroovyLangLexer
 import org.apache.groovy.parser.antlr4.GroovySyntaxError
 import org.codehaus.groovy.ast.ClassHelper
@@ -52,8 +52,10 @@ import java.util.IdentityHashMap
  * compile and the record is hashed as if compiled. When a base's file stops lexing after the base's header,
  * only the class names before that point are known: a class added after the lex error, say one shadowing
  * `Specification`, cannot deny reuse until the file lexes again, so the recall may disagree with what the
- * fixed file will mean. That is acceptable for a whitespace-only, reversible alignment; nothing else reads
- * this memory.
+ * fixed file will mean. Written names compare with `$` unified to `.`, so a top-level class literally named
+ * `A$B` and a class `B` nested in `A` look alike; they share the binary name `A$B` and one compile cannot
+ * hold both, so this only equates two spellings of one class. That is acceptable for a whitespace-only,
+ * reversible alignment; nothing else reads this memory.
  */
 internal class SpockVerdictMemory {
     /**
@@ -127,14 +129,25 @@ internal class SpockVerdictMemory {
                 return emptySet()
             }
             val imports = importsOf(module)
-            val verdicts = source.classes.filter { it.status == SpecificationStatus.UNCERTAIN }
-                .associate { context -> context.classNode.name to denial(record, context.classNode, module, imports) }
-            decide { verdicts.entries.joinToString("; ") { (name, denial) -> "$name: ${denial ?: "recalled"}" } }
-            return verdicts.filterValues { it == null }.keys
+            val candidates = source.classes.filter { it.status == SpecificationStatus.UNCERTAIN }.map { it.classNode }
+            val recalled = candidates.filter { recallable(record, it, module, imports) }.mapTo(HashSet()) { it.name }
+            decide {
+                candidates.joinToString("; ") { node ->
+                    "${node.name}: " + if (node.name in recalled) "recalled" else denial(record, node, module, imports)
+                }
+            }
+            return recalled
         }
 
-        /** Null when [node]'s remembered SPECIFICATION applies, else the first check that denies it. */
-        private fun denial(record: Record, node: ClassNode, module: ModuleNode, imports: String): String? {
+        /** Whether [node]'s remembered SPECIFICATION applies; checks stop at the first that fails. */
+        private fun recallable(record: Record, node: ClassNode, module: ModuleNode, imports: String): Boolean {
+            val remembered = record.classes[node.name] ?: return false
+            return remembered.declaration == declaration(node, imports) && sameBaseDegraded(remembered) &&
+                remembered.bases.all { baseDifference(it, module, imports) == null }
+        }
+
+        /** Why [node] was not recalled, built only for the DEBUG log. */
+        private fun denial(record: Record, node: ClassNode, module: ModuleNode, imports: String): String {
             val remembered = record.classes[node.name] ?: return "not remembered (recorded: ${record.classes.keys})"
             val current = declaration(node, imports)
             return when {
@@ -143,7 +156,8 @@ internal class SpockVerdictMemory {
                 !sameBaseDegraded(remembered) ->
                     "base not degraded: bases=${remembered.bases.map { "${it.name}@${it.source}" }} " +
                         "excluded=${outcome.excludedSources.map { it.source }} stubbed=${outcome.stubbedClasses}"
-                else -> baseDifference(remembered, module, imports)
+                else -> remembered.bases.firstNotNullOfOrNull { baseDifference(it, module, imports)?.invoke() }
+                    ?: "denied"
             }
         }
 
@@ -177,26 +191,24 @@ internal class SpockVerdictMemory {
          * Every link must still be what the clean compile saw. An in-file link compares its declaration in the
          * current module; a link in another file compares its prelude hash and its package's file set, since a
          * new file there can shadow a star-imported name. Anything that cannot be computed denies reuse. Null
-         * when every remembered base is unchanged, else what changed for the first one that did.
+         * when [base] is unchanged, else a lazily built description of what changed, for the DEBUG log.
          */
-        private fun baseDifference(remembered: Remembered, module: ModuleNode, imports: String): String? =
-            remembered.bases.firstNotNullOfOrNull { base ->
-                if (base.source == null) {
-                    val current = module.classes.firstOrNull { it.name == base.name }?.let { declaration(it, imports) }
-                    "local base ${base.name}: recorded=[${base.localDeclaration}] current=[$current]"
-                        .takeUnless { base.localDeclaration != null && base.localDeclaration == current }
-                } else {
-                    val prelude = readSource(base.source)?.let { preludeOf(it, base.name)?.hash }
-                    val files = listPackage(base.source, base.packageName)
-                    when {
-                        base.prelude == null || base.prelude != prelude ->
-                            "prelude of ${base.name}: recorded=${base.prelude} current=$prelude"
-                        base.packageFiles == null || base.packageFiles != files ->
-                            "package files of ${base.name}: recorded=${base.packageFiles} current=$files"
-                        else -> null
-                    }
-                }
+        private fun baseDifference(base: Base, module: ModuleNode, imports: String): (() -> String)? {
+            if (base.source == null) {
+                val current = module.classes.firstOrNull { it.name == base.name }?.let { declaration(it, imports) }
+                if (base.localDeclaration != null && base.localDeclaration == current) return null
+                return { "local base ${base.name}: recorded=[${base.localDeclaration}] current=[$current]" }
             }
+            val prelude = readSource(base.source)?.let { preludeOf(it, base.name)?.hash }
+            if (base.prelude == null || base.prelude != prelude) {
+                return { "prelude of ${base.name}: recorded=${base.prelude} current=$prelude" }
+            }
+            val files = listPackage(base.source, base.packageName)
+            if (base.packageFiles == null || base.packageFiles != files) {
+                return { "package files of ${base.name}: recorded=${base.packageFiles} current=$files" }
+            }
+            return null
+        }
 
         private fun chain(node: ClassNode, module: ModuleNode, imports: String): Chain {
             val bases = mutableListOf<Base>()
@@ -235,8 +247,12 @@ internal class SpockVerdictMemory {
     /** A base's prelude hash and the `extends` name its text declares (null for none). */
     class Prelude(val hash: String, val extendsName: String?) {
         /** Whether the text agrees with the compiled AST's written superclass; no `extends` means Object. */
-        fun extendsMatches(written: String?): Boolean =
-            if (extendsName == null) written == null || written in OBJECT_SPELLINGS else extendsName == written
+        fun extendsMatches(written: String?): Boolean = if (extendsName == null) {
+            written == null || written in OBJECT_SPELLINGS
+        } else {
+            // The text spells a nested superclass `Outer.X`; the compiled AST can give `Outer$X`.
+            written != null && spelling(extendsName) == spelling(written)
+        }
     }
 
     /**
