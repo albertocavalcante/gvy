@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import kotlin.test.assertNotNull
 
 class JenkinsParsingIntegrationTest {
 
@@ -25,8 +26,12 @@ class JenkinsParsingIntegrationTest {
         val classpath = context.buildClasspath(emptyList())
 
         // Verify stubs existence
-        val stubsDir = JenkinsStubsLocation.directoryFor(stubsCacheRoot, workspace)
-        assertTrue(classpath.contains(stubsDir), "Classpath should contain stubs dir")
+        // Plugin stubs are one content-keyed set under the workspace's stubs directory (#1367).
+        val setsDir = JenkinsStubsLocation.directoryFor(stubsCacheRoot, workspace).resolve("sets")
+        val stubsDir = assertNotNull(
+            classpath.singleOrNull { it.parent == setsDir },
+            "Classpath should contain a stub set under $setsDir: $classpath",
+        )
         assertTrue(
             stubsDir.resolve("org/jenkinsci/plugins/workflow/cps/CpsScript.groovy").toFile().exists(),
             "CpsScript stub missing",

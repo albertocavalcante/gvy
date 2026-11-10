@@ -25,28 +25,36 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
 
     fun generateStubs(metadata: MergedJenkinsMetadata, outputDir: Path) {
         logger.info { "Generating Jenkins stubs in $outputDir" }
-        outputDir.createDirectories()
-
-        // 1. Generate CpsScript for 'pipeline' support
-        // This is critical for Declarative Pipeline and Scripted Pipeline
-        generateCpsScript(metadata, outputDir)
-
-        // 2. Generate other common types if needed
-        // For now, we mainly need the base types that global variables rely on
-        generateEnvAction(outputDir)
-        generateRunWrapper(outputDir)
-        generateDocker(outputDir)
+        writeSet(render(metadata), outputDir)
     }
 
-    private fun generateCpsScript(metadata: MergedJenkinsMetadata, outputDir: Path) {
-        val className = CPS_SCRIPT
+    /**
+     * The plugin stub sources for [metadata], by qualified class name. Pure: the same metadata always renders
+     * the same sources, which is what [JenkinsStubSets] keys its directories by.
+     */
+    internal fun render(metadata: MergedJenkinsMetadata): Map<String, String> = linkedMapOf(
+        // CpsScript carries the steps, for Declarative and Scripted Pipeline; the others are fixed base types
+        // that global variables rely on.
+        CPS_SCRIPT to cpsScript(metadata),
+        ENV_ACTION_IMPL to ENV_ACTION_SOURCE,
+        RUN_WRAPPER to RUN_WRAPPER_SOURCE,
+        DOCKER to DOCKER_SOURCE,
+    )
+
+    /** Writes rendered [files] (qualified name to source) under [outputDir]. */
+    internal fun writeSet(files: Map<String, String>, outputDir: Path) {
+        outputDir.createDirectories()
+        files.forEach { (qualifiedName, content) -> writeStub(outputDir, qualifiedName, content) }
+    }
+
+    private fun cpsScript(metadata: MergedJenkinsMetadata): String {
         val methodStubs = StringBuilder()
 
         metadata.steps.values.sortedBy { it.name }.forEach { step ->
             generateStepMethods(step, methodStubs)
         }
 
-        val content = """
+        return """
             package org.jenkinsci.plugins.workflow.cps
 
             // No `import groovy.lang.Script` (or Closure): both are default imports, and a fully qualified
@@ -66,13 +74,11 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
 
                 // Allow dynamic method invocation for other steps
                 def methodMissing(String name, args) {}
-                
+
                 // Allow property access
                 def propertyMissing(String name) {}
             }
         """.trimIndent()
-
-        writeStub(outputDir, className, content)
     }
 
     private fun generateStepMethods(step: MergedStepMetadata, builder: StringBuilder) {
@@ -105,65 +111,6 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
                 builder.append("\n    def $name($typedParams, Closure body) {}")
             }
         }
-    }
-
-    private fun generateEnvAction(outputDir: Path) {
-        val className = ENV_ACTION_IMPL
-        val content = """
-            package org.jenkinsci.plugins.workflow.cps
-            
-            class EnvActionImpl {
-                // Allow array access: env['VAR']
-                Object getAt(String key) { return null }
-                void putAt(String key, Object value) {}
-                
-                // Allow property access: env.VAR
-                def propertyMissing(String name) { return null }
-            }
-        """.trimIndent()
-        writeStub(outputDir, className, content)
-    }
-
-    private fun generateRunWrapper(outputDir: Path) {
-        val className = RUN_WRAPPER
-        val content = """
-            package org.jenkinsci.plugins.workflow.support.steps.build
-            
-            class RunWrapper implements Serializable {
-                String result
-                String currentResult
-                int number
-                String displayName
-                String description
-                long duration
-                long startTimeInMillis
-                String absoluteUrl
-                
-                RunWrapper getPreviousBuild() { return null }
-                RunWrapper getNextBuild() { return null }
-            }
-        """.trimIndent()
-        writeStub(outputDir, className, content)
-    }
-
-    private fun generateDocker(outputDir: Path) {
-        val className = DOCKER
-        val content = """
-             package org.jenkinsci.plugins.docker.workflow
-             
-             class Docker implements Serializable {
-                 Image image(String id) { return new Image() }
-                 
-                 class Image implements Serializable {
-                     void inside(String args = null, Closure body) {}
-                     void run(String args = null) {}
-                     void push(String tag = null) {}
-                 }
-                 
-                 void withRegistry(String url, String credentialsId = null, Closure body) {}
-             }
-        """.trimIndent()
-        writeStub(outputDir, className, content)
     }
 
     /**
@@ -211,6 +158,53 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
         private const val ENV_ACTION_IMPL = "org.jenkinsci.plugins.workflow.cps.EnvActionImpl"
         private const val RUN_WRAPPER = "org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper"
         private const val DOCKER = "org.jenkinsci.plugins.docker.workflow.Docker"
+
+        private val ENV_ACTION_SOURCE = """
+            package org.jenkinsci.plugins.workflow.cps
+
+            class EnvActionImpl {
+                // Allow array access: env['VAR']
+                Object getAt(String key) { return null }
+                void putAt(String key, Object value) {}
+
+                // Allow property access: env.VAR
+                def propertyMissing(String name) { return null }
+            }
+        """.trimIndent()
+
+        private val RUN_WRAPPER_SOURCE = """
+            package org.jenkinsci.plugins.workflow.support.steps.build
+
+            class RunWrapper implements Serializable {
+                String result
+                String currentResult
+                int number
+                String displayName
+                String description
+                long duration
+                long startTimeInMillis
+                String absoluteUrl
+
+                RunWrapper getPreviousBuild() { return null }
+                RunWrapper getNextBuild() { return null }
+            }
+        """.trimIndent()
+
+        private val DOCKER_SOURCE = """
+             package org.jenkinsci.plugins.docker.workflow
+
+             class Docker implements Serializable {
+                 Image image(String id) { return new Image() }
+
+                 class Image implements Serializable {
+                     void inside(String args = null, Closure body) {}
+                     void run(String args = null) {}
+                     void push(String tag = null) {}
+                 }
+
+                 void withRegistry(String url, String credentialsId = null, Closure body) {}
+             }
+        """.trimIndent()
 
         /** Every class [generateStubs] writes. */
         private val GENERATED_CLASSES = listOf(CPS_SCRIPT, ENV_ACTION_IMPL, RUN_WRAPPER, DOCKER)

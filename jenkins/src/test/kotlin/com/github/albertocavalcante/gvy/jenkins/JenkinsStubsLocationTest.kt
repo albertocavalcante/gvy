@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubSets
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -47,7 +48,8 @@ class JenkinsStubsLocationTest {
             .buildClasspath(emptyList())
 
         val stubsDir = stubsDirOf(classpath)
-        assertEquals(JenkinsStubsLocation.directoryFor(cacheRoot, workspace), stubsDir)
+        // Plugin stubs are one content-keyed set under the workspace's stubs directory (#1367).
+        assertEquals(JenkinsStubsLocation.directoryFor(cacheRoot, workspace).resolve("sets"), stubsDir.parent)
         assertTrue(
             Files.isRegularFile(stubsDir.resolve("org/jenkinsci/plugins/workflow/cps/CpsScript.groovy")),
             "CpsScript stub missing in $stubsDir",
@@ -66,6 +68,7 @@ class JenkinsStubsLocationTest {
 
         assertEquals(first, second)
         val files = Files.walk(second).use { paths -> paths.filter(Files::isRegularFile).toList() }
+            .filterNot { it.fileName.toString() == JenkinsStubSets.COMPLETE_MARKER }
         assertTrue(files.isNotEmpty(), "Expected generated stubs in $second")
         assertTrue(files.all { it.fileName.toString().endsWith(".groovy") }, "Leftover non-stub files: $files")
     }

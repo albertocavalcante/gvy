@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.jenkins
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
+import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubGenerator
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
@@ -11,6 +12,8 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.readText
+import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
@@ -49,6 +52,7 @@ class JenkinsPerFileMetadataTest {
     private fun context(
         config: JenkinsConfiguration = JenkinsConfiguration(),
         scanner: (List<Path>) -> BundledJenkinsMetadata = ::scan,
+        generator: JenkinsStubGenerator = JenkinsStubGenerator(),
     ) = JenkinsContext(
         configuration = config,
         workspaceRoot = tempDir,
@@ -58,10 +62,13 @@ class JenkinsPerFileMetadataTest {
             base
         },
         classpathScanner = scanner,
-        stubHooks = StubHooks(cacheRoot = tempDir.resolve("stubs")),
+        stubHooks = StubHooks(cacheRoot = tempDir.resolve("stubs"), generator = generator),
     )
 
-    private fun manager(scanner: (List<Path>) -> BundledJenkinsMetadata = ::scan): JenkinsWorkspaceManager {
+    private fun manager(
+        scanner: (List<Path>) -> BundledJenkinsMetadata = ::scan,
+        generator: JenkinsStubGenerator = JenkinsStubGenerator(),
+    ): JenkinsWorkspaceManager {
         val libraries = listOf("a", "b").map { name ->
             val jar = Files.createFile(tempDir.resolve("$name.jar"))
             SharedLibrary(name, jar.toString())
@@ -72,7 +79,7 @@ class JenkinsPerFileMetadataTest {
             tempDir,
             JenkinsPluginManager(),
             tempDir.resolve("stubs"),
-            context(config, scanner),
+            context(config, scanner, generator),
         )
     }
 
@@ -110,13 +117,15 @@ class JenkinsPerFileMetadataTest {
     fun `an older compile of the same file that finishes last does not replace the newer classpath`() {
         val aStarted = CountDownLatch(1)
         val releaseA = CountDownLatch(1)
-        val manager = manager { classpath ->
-            if (classpath.any { it.fileName.toString() == "a.jar" }) {
-                aStarted.countDown()
-                releaseA.await(30, TimeUnit.SECONDS)
-            }
-            scan(classpath)
-        }
+        val manager = manager(
+            scanner = { classpath ->
+                if (classpath.any { it.fileName.toString() == "a.jar" }) {
+                    aStarted.countDown()
+                    releaseA.await(30, TimeUnit.SECONDS)
+                }
+                scan(classpath)
+            },
+        )
         val file = jenkinsfile("edited")
         val pool = Executors.newSingleThreadExecutor()
         try {
@@ -132,6 +141,46 @@ class JenkinsPerFileMetadataTest {
             releaseA.countDown()
             pool.shutdownNow()
         }
+    }
+
+    /** The generated `CpsScript` stub on [classpath], whatever directory holds it. */
+    private fun cpsScriptOn(classpath: List<Path>): String =
+        classpath.map { it.resolve(CPS_SCRIPT_STUB) }.single { Files.isRegularFile(it) }.readText()
+
+    private fun assertScopedStubs(compileAFirst: Boolean) {
+        val manager = manager()
+        val compileA = { manager.getClasspathForFile(jenkinsfile("a"), "@Library('a') _\nnode {}") }
+        val compileB = { manager.getClasspathForFile(jenkinsfile("b"), "@Library('b') _\nnode {}") }
+
+        val (classpathA, classpathB) = if (compileAFirst) {
+            compileA() to compileB()
+        } else {
+            compileB().let { b -> compileA() to b }
+        }
+
+        assertTrue("def aStep(" in cpsScriptOn(classpathA) && "bStep" !in cpsScriptOn(classpathA))
+        assertTrue("def bStep(" in cpsScriptOn(classpathB) && "aStep" !in cpsScriptOn(classpathB))
+    }
+
+    @Test
+    fun `each Jenkinsfile compiles against its own step stubs when A compiles first`() = assertScopedStubs(true)
+
+    @Test
+    fun `each Jenkinsfile compiles against its own step stubs when B compiles first`() = assertScopedStubs(false)
+
+    @Test
+    fun `a stub set that cannot be written falls back to the bundled set, never another file's`() {
+        val manager = manager(
+            generator = JenkinsStubGenerator { file, content ->
+                if ("aStep" in content) throw java.nio.file.AccessDeniedException(file.toString())
+                file.writeText(content)
+            },
+        )
+        manager.getClasspathForFile(jenkinsfile("b"), "@Library('b') _\nnode {}")
+
+        val classpathA = manager.getClasspathForFile(jenkinsfile("a"), "@Library('a') _\nnode {}")
+
+        assertTrue("aStep" !in cpsScriptOn(classpathA) && "bStep" !in cpsScriptOn(classpathA))
     }
 
     @Test
@@ -174,5 +223,6 @@ class JenkinsPerFileMetadataTest {
 
     private companion object {
         val TEST_JAR = Regex("a|b|x|cp\\d+")
+        const val CPS_SCRIPT_STUB = "org/jenkinsci/plugins/workflow/cps/CpsScript.groovy"
     }
 }
