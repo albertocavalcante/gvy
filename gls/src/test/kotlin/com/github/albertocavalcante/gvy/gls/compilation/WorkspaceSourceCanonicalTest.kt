@@ -324,4 +324,21 @@ class WorkspaceSourceCanonicalTest {
 
         assertEquals(emptyList(), manager.getWorkspaceSources())
     }
+
+    @Test
+    fun `a created file symlink inside a root joins, as the scan accepts it`() {
+        // Jenkins shared libraries link single files: `src/A.groovy -> ../shared/A.groovy`. Only a directory link
+        // can carry a walk outside; a file link is read wherever it points, by the scan and by events alike.
+        val manager = manager()
+        val shared = write(base.resolve("shared/A.groovy"))
+        val src = Files.createDirectories(base.resolve("ws/src"))
+        val scanned = Files.createSymbolicLink(src.resolve("Scanned.groovy"), shared)
+        manager.updateWorkspaceModel(base.resolve("ws"), emptyList(), listOf(src))
+        assertEquals(listOf(scanned), manager.getWorkspaceSources(), "the scan lists a file link")
+
+        val created = Files.createSymbolicLink(src.resolve("Created.groovy"), shared)
+        manager.applySourceChanges(listOf(created), emptyList())
+
+        assertEquals(listOf(created, scanned), manager.getWorkspaceSources(), "and so does an event")
+    }
 }
