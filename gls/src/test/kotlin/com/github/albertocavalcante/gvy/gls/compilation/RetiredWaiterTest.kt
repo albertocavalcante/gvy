@@ -11,11 +11,12 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asContextElement
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -27,7 +28,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -54,7 +54,7 @@ class RetiredWaiterTest {
     private var afterParse: () -> Unit = {}
 
     /** Invoked before every parse; a compile cancelled meanwhile then aborts inside the parse, publishing nothing. */
-    private var beforeParse: () -> Unit = {}
+    private var beforeParse: (ParseRequest) -> Unit = {}
     private val parsed = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
     private val documents = DocumentProvider()
     private val service = GroovyCompilationService(
@@ -62,7 +62,7 @@ class RetiredWaiterTest {
         workerSessionDecorator = { delegate ->
             object : WorkerSession {
                 override fun parse(request: ParseRequest): ParseResult =
-                    beforeParse().let { delegate.parse(request) }.also {
+                    beforeParse(request).let { delegate.parse(request) }.also {
                         parsed.computeIfAbsent(request.content) { AtomicInteger() }.incrementAndGet()
                         if (armed.compareAndSet(true, false)) {
                             entered.countDown()
@@ -169,56 +169,82 @@ class RetiredWaiterTest {
     }
 
     /**
-     * Owners of shared compiles of one open buffer, each started the moment the previous one ends cancelled,
-     * like debounced diagnostics superseded by typing. Each owner's parse waits at [gate] until the test
-     * releases it, so a waiter is always parked on the newest owner before that owner is cancelled.
+     * Owners of shared compiles of one open buffer, each superseded by the next like debounced diagnostics
+     * superseded by typing. Every owner has its own gate, found through [ownerIndex] in its parse, so a release
+     * frees exactly that owner's parse; a parse that is not an owner's (the waiter's own job) is never gated.
      */
     private inner class Owners(
         private val uri: URI,
         private val text: () -> String,
-        /** Runs when an owner ends cancelled, before its successor starts (for example the user's next edit). */
+        /** Runs when an owner is cancelled, before its successor starts (for example the user's next edit). */
         private val beforeReplacement: () -> Unit = {},
     ) {
-        val gate = Semaphore(0)
+        inner class Owner(val scope: CoroutineScope) {
+            val parsing = CompletableDeferred<Unit>()
+            val release = CountDownLatch(1)
+            lateinit var job: Deferred<CompilationResult>
+        }
 
-        /** One permit per owner parse that has reached the gate, so a release always frees a waiting parse. */
-        val arrived = Semaphore(0)
-        val scopes = CopyOnWriteArrayList<CoroutineScope>()
-        val jobs = CopyOnWriteArrayList<Deferred<CompilationResult>>()
+        val owners = CopyOnWriteArrayList<Owner>()
+        val count: Int get() = owners.size
 
         fun start() {
-            val owner = CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add)
-            val job = service.compileAsync(owner, uri, text()).also(jobs::add)
-            // Registered before any waiter awaits this job, so the next owner exists before the waiter resumes.
-            job.invokeOnCompletion { failure ->
-                if (failure is CancellationException) {
-                    beforeReplacement()
-                    start()
-                }
-            }
+            val tag = ownerIndex.asContextElement(owners.size)
+            val owner = Owner(CoroutineScope(SupervisorJob() + Dispatchers.IO + tag))
+            owners += owner // before the compile starts, so its parse finds its gate
+            owner.job = service.compileAsync(owner.scope, uri, text())
         }
 
+        /** Parses that belong to no owner; any one means the harness lost lockstep with the waiter. */
+        val strays = CopyOnWriteArrayList<String>()
+
+        /** Called from inside a parse: an owner's parse reports itself and waits for its own release. */
+        fun gate(request: ParseRequest) {
+            val index = ownerIndex.get()
+            if (index == null) {
+                // Recorded and reported at the next round: a third cause must not hide as a slow test
+                strays += "${request.uri} ${request.content.take(STRAY_PREVIEW)} on ${Thread.currentThread().name}"
+                return
+            }
+            val owner = owners[index]
+            owner.parsing.complete(Unit)
+            check(owner.release.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "parse never released" }
+        }
+
+        fun releaseNewest() = owners.last().release.countDown()
+
+        fun releaseAll() = owners.forEach { it.release.countDown() }
+
         /**
-         * Cancels the newest owner, lets its parse finish, and returns once the waiter has re-resolved.
-         * [settleMillis] stalls this thread after the release, as a loaded CI machine may: the owner can then
-         * finish before this waits for it.
+         * Cancels the newest owner and returns once the waiter has re-resolved onto its successor.
+         * [settleMillis] stalls this thread after the release, as a loaded CI machine may (run 42800948915).
          */
         suspend fun cancelNewest(settleMillis: Long = 0) {
-            val job = jobs.last()
-            // Cancel only once its parse is running: a job cancelled before it starts would leave a spare permit
-            check(withContext(Dispatchers.IO) { arrived.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS) }) { "no parse" }
-            // Registered while the owner is provably incomplete (its parse waits at the gate), so it runs after
-            // every handler registered before it: the successor's start, then the waiter's resume. join() alone
-            // is not enough: it returns once the job is final, before those handlers have run (run 42800948915).
+            assertNoStrays()
+            val owner = owners.last()
+            // Cancel only once its parse is running, so the cancellation aborts that parse
+            checkNotNull(withTimeoutOrNull(WAIT_SECONDS * 1_000) { owner.parsing.await() }) { "no parse" }
+            // Registered while the owner is provably incomplete (its parse is held), so it is queued, not run now
             val handled = CompletableDeferred<Unit>()
-            job.invokeOnCompletion { handled.complete(Unit) }
-            scopes.last().cancel()
-            gate.release()
+            owner.job.invokeOnCompletion { handled.complete(Unit) }
+            owner.scope.cancel()
+            // The successor exists before the cancelled owner can finish, so the waiter always finds it
+            beforeReplacement()
+            start()
+            owner.release.countDown()
             if (settleMillis > 0) Thread.sleep(settleMillis)
-            // Resumes on this loop behind the waiter, which re-resolves onto the successor before it suspends
+            // Relies on runBlocking's FIFO event loop: the waiter's await handler was registered before
+            // [handled]'s, so its resume is dispatched to this loop first, and it re-resolves onto the successor
+            // without suspending until it awaits it. Only then does this coroutine resume.
             handled.await()
+            assertNoStrays()
         }
+
+        fun assertNoStrays() = check(strays.isEmpty()) { "un-owned parse(s); the waiter compiled on its own: $strays" }
     }
+
+    /** Which [Owners.Owner] a parse belongs to, carried into the owner's compile coroutine. */
+    private val ownerIndex = ThreadLocal<Int?>()
 
     /** A navigation request on the runBlocking loop; its own job, so a failure stays in the test's assertion. */
     private fun CoroutineScope.waitOn(uri: URI) =
@@ -227,10 +253,7 @@ class RetiredWaiterTest {
     private fun gatedOwners(uri: URI, beforeReplacement: () -> Unit = {}, text: () -> String): Owners {
         armed.set(false)
         val owners = Owners(uri, text, beforeReplacement)
-        beforeParse = {
-            owners.arrived.release()
-            check(owners.gate.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS)) { "parse never released" }
-        }
+        beforeParse = owners::gate
         return owners
     }
 
@@ -245,10 +268,11 @@ class RetiredWaiterTest {
 
         // More owner cancellations than the retirement bound of 3; the waiter's document never changes
         repeat(4) { owners.cancelNewest() }
-        owners.gate.release()
+        owners.releaseNewest()
 
         assertEquals("class Hover {}", waiter.await()?.sourceText, "the waiter must get the next owner's result")
-        assertEquals(5, owners.jobs.size, "the waiter rode each superseding owner instead of giving up")
+        assertEquals(5, owners.count, "the waiter rode each superseding owner instead of giving up")
+        owners.assertNoStrays()
     }
 
     @Test
@@ -272,7 +296,8 @@ class RetiredWaiterTest {
             }
 
             assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
-            owners.gate.release(owners.jobs.size)
+            owners.releaseAll()
+            owners.assertNoStrays()
         }
 
     @Test
@@ -290,7 +315,8 @@ class RetiredWaiterTest {
         }
 
         assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
-        owners.gate.release(owners.jobs.size)
+        owners.releaseAll()
+        owners.assertNoStrays()
     }
 
     /**
@@ -315,7 +341,8 @@ class RetiredWaiterTest {
             }
 
             assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
-            owners.gate.release(owners.jobs.size)
+            owners.releaseAll()
+            owners.assertNoStrays()
         }
 
     @Test
@@ -333,7 +360,8 @@ class RetiredWaiterTest {
 
         assertFailsWith<CancellationException> { withTimeout(WAIT_SECONDS * 1_000) { waiter.await() } }
         assertTrue(waiter.isCancelled, "a cancelled request must end, not keep re-resolving")
-        owners.gate.release(owners.jobs.size)
+        owners.releaseAll()
+        owners.assertNoStrays()
     }
 
     private companion object {
@@ -344,5 +372,8 @@ class RetiredWaiterTest {
         /** Longer than [SETTLE_MILLIS], so the successor is still starting when the test thread resumes. */
         const val SLOW_SUCCESSOR_MILLIS = 50L
         const val SETTLE_MILLIS = 20L
+
+        /** Characters of a stray parse's text shown in the failure. */
+        const val STRAY_PREVIEW = 40
     }
 }
