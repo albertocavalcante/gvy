@@ -2,7 +2,9 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -46,7 +48,7 @@ class ClosedSourceCacheTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private val documents = DocumentProvider()
     private val compilation =
-        GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined, documentProvider = documents)
+        spyk(GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined, documentProvider = documents))
     private val textDocuments = GroovyTextDocumentService(
         scope,
         compilation,
@@ -166,8 +168,15 @@ class ClosedSourceCacheTest {
         )
     }
 
-    /** Notifies [types] for one closed file through a paused source queue, then reads it before the queue runs. */
-    private fun assertRetiredBeforeQueueRuns(name: String, vararg types: FileChangeType): Unit = runBlocking {
+    /**
+     * Notifies [types] for one closed file through a paused source queue, reads it before the queue runs, then
+     * drains the queue and runs [afterDrain].
+     */
+    private fun assertRetiredBeforeQueueRuns(
+        name: String,
+        vararg types: FileChangeType,
+        afterDrain: (Path) -> Unit = {},
+    ): Unit = runBlocking {
         val paused = ArrayDeque<Runnable>()
         val queued = GroovyWorkspaceService(
             compilation,
@@ -175,6 +184,7 @@ class ClosedSourceCacheTest {
             scope,
             sourceChangeDispatcher = Executor { paused.addLast(it) }.asCoroutineDispatcher(),
         )
+        compilation.updateWorkspaceModel(tempDir, emptyList(), listOf(tempDir))
         val file = tempDir.resolve("$name.groovy")
         Files.writeString(file, "class Before {}")
         val uri = file.toUri()
@@ -187,6 +197,9 @@ class ClosedSourceCacheTest {
         assertFalse(paused.isEmpty(), "the rest of the work is still queued")
         assertFalse("Before" in classNames(compilation.getAst(uri)), "old parse served while the queue waits")
         assertEquals("class After {}", compilation.ensureCompiled(uri)?.sourceText)
+
+        while (paused.isNotEmpty()) paused.removeFirst().run()
+        afterDrain(file)
     }
 
     @Test
@@ -195,7 +208,12 @@ class ClosedSourceCacheTest {
 
     @Test
     fun `an atomic save reported as deleted and created is retired before its queued work runs`() =
-        assertRetiredBeforeQueueRuns("Atomic", FileChangeType.Deleted, FileChangeType.Created)
+        assertRetiredBeforeQueueRuns("Atomic", FileChangeType.Deleted, FileChangeType.Created) { file ->
+            // Never left retired without a refresh: still listed, and rebuilt from the new disk text.
+            assertTrue(compilation.workspaceManager.getWorkspaceSources().contains(file), "still listed")
+            coVerify { compilation.refreshSemanticFromDisk(match { file.toUri() in it }) }
+            assertEquals("class After {}", compilation.ensureCompiled(file.toUri())?.sourceText)
+        }
 
     private fun open(uri: String, content: String) =
         DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, content))
