@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.documentation
 
+import com.github.albertocavalcante.gvy.semantics.native.displayName
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -124,7 +125,7 @@ object SignatureFormatter {
         }
 
         // Class name
-        append(classNode.simpleNameWithoutPackage())
+        append(classNode.declarationName())
 
         // Generic type parameters
         if (classNode.genericsTypes != null && classNode.genericsTypes.isNotEmpty()) {
@@ -316,12 +317,8 @@ object SignatureFormatter {
     }
 }
 
-/**
- * Extension function to get class name without package, correctly handling nested classes.
- * This overrides the default ClassNode.nameWithoutPackage which doesn't handle nested classes with $.
- */
-private fun ClassNode.simpleNameWithoutPackage(): String = if (isArray) {
-    componentType.simpleNameWithoutPackage() + "[]" // an array's own name is a JVM descriptor
-} else {
-    name.substringAfterLast('.').substringAfterLast('$')
-}
+/** A type reference as source writes it (`String[]`, `Outer.Inner`); one rule for every display site. */
+private fun ClassNode.simpleNameWithoutPackage(): String = displayName()
+
+/** A class declaration's own name: `class Inner` is declared without its outer class. */
+private fun ClassNode.declarationName(): String = name.substringAfterLast('.').substringAfterLast('$')

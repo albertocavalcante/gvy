@@ -63,6 +63,27 @@ class ArrayTypeDisplayTest {
         assertTrue("String;" !in text && "[I" !in text, text)
     }
 
+    @Test
+    fun `nested array types read the same in the hover code block and its Type line`(): Unit = runBlocking {
+        val nestedUri = URI.create("file:///Nested.groovy")
+        val nested = "class Outer {\n    static class Inner {}\n    Inner[] wrap(Inner[] xs) { xs }\n}\n"
+        documents.put(nestedUri, nested, 1)
+        assertTrue(compilation.compile(nestedUri, nested).isSuccess)
+        val position = Position(2, nested.lines()[2].indexOf("wrap") + 1)
+
+        val text = assertNotNull(
+            HoverProvider(
+                compilation,
+                documents,
+                HoverContentGenerator(resolver),
+            ).provideHover(nestedUri.toString(), position),
+        ).contents.right.value
+
+        assertTrue("Outer.Inner[] wrap(Outer.Inner[] xs)" in text, text)
+        assertTrue("**Return Type**: Outer.Inner[]" in text, text)
+        assertTrue("$" !in text, text)
+    }
+
     private suspend fun compile() {
         documents.put(uri, source, 1)
         assertTrue(compilation.compile(uri, source).isSuccess)
