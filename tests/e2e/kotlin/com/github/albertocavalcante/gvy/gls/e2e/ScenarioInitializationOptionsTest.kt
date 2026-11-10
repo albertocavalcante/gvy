@@ -1,12 +1,14 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import kotlin.test.assertTrue
 
 /**
- * Guards scenario `initializationOptions` against keys the server never reads.
+ * Guards scenario settings (`initializationOptions` and `workspace/didChangeConfiguration`) against keys the server never reads.
  *
  * The server silently ignores unknown options, so a typo such as `groovy.engine.type` (the real key is
  * `groovy.languageServer.engine`) leaves a scenario running on the default engine while claiming otherwise.
@@ -16,28 +18,54 @@ import kotlin.test.assertTrue
  */
 class ScenarioInitializationOptionsTest {
     @Test
-    fun `scenarios only use initialization option keys the server reads`() {
-        val definitions = ScenarioLoader().loadAll(Path.of(resolveScenarioDir()))
-        val unknown = unknownKeysByScenario(definitions)
+    fun `scenarios only use option keys the server reads`() {
+        val unknown = settingsByScenario().flatMap { (scenario, settings) ->
+            settings.keys.filterNot { it in KNOWN_SERVER_KEYS }.map { "  $scenario: $it" }
+        }
 
         assertTrue(
             unknown.isEmpty(),
-            "Scenarios use initializationOptions keys the server never reads (they are silently ignored):\n" +
-                unknown.joinToString("\n") { "  ${it.first}: ${it.second}" } +
-                "\nKnown keys: ${KNOWN_SERVER_KEYS.sorted()}",
+            "Scenarios use initializationOptions/didChangeConfiguration keys the server never reads " +
+                "(they are silently ignored):\n${unknown.joinToString("\n")}\nKnown keys: ${KNOWN_SERVER_KEYS.sorted()}",
         )
     }
 
-    private fun unknownKeysByScenario(definitions: List<ScenarioDefinition>): List<Pair<String, String>> =
-        definitions.flatMap { definition ->
-            definition.scenario.steps
-                .filterIsInstance<ScenarioStep.Initialize>()
-                .flatMap { (it.initializationOptions as? JsonObject)?.keys.orEmpty() }
-                .filterNot { it in KNOWN_SERVER_KEYS }
-                .map { key -> definition.source.substringAfterLast('/') to key }
+    @Test
+    fun `scenarios only select engines the server knows`() {
+        // EngineType.fromString silently falls back to Core, so a typo such as "nativ" would go unnoticed.
+        val accepted = EngineType.entries.map { it.id.lowercase() }
+        val bad = settingsByScenario().mapNotNull { (scenario, settings) ->
+            val value = settings[ENGINE_KEY] ?: return@mapNotNull null
+            val text = (value as? JsonPrimitive)?.takeIf { it.isString }?.content
+            if (text?.lowercase() in accepted) null else "  $scenario: $ENGINE_KEY=$value"
         }
 
+        assertTrue(bad.isEmpty(), "Unknown engine values (accepted: $accepted):\n${bad.joinToString("\n")}")
+    }
+
+    /** Every settings object a scenario sends: `initialize` options and `workspace/didChangeConfiguration` settings. */
+    private fun settingsByScenario(): List<Pair<String, JsonObject>> {
+        val definitions = ScenarioLoader().loadAll(Path.of(resolveScenarioDir()))
+        return definitions.flatMap { definition ->
+            val name = definition.source.substringAfterLast('/')
+            definition.scenario.steps.mapNotNull { step ->
+                when (step) {
+                    is ScenarioStep.Initialize -> step.initializationOptions as? JsonObject
+                    is ScenarioStep.SendNotification ->
+                        if (step.method == "workspace/didChangeConfiguration") {
+                            (step.params as? JsonObject)?.get("settings") as? JsonObject
+                        } else {
+                            null
+                        }
+                    else -> null
+                }?.let { name to it }
+            }
+        }
+    }
+
     private companion object {
+        const val ENGINE_KEY = "groovy.languageServer.engine"
+
         val KNOWN_SERVER_KEYS = setOf(
             // ServerConfiguration.fromMap
             "groovy.languageServer.engine",
