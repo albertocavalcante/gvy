@@ -37,6 +37,14 @@ internal data class SpockTableRequest(
  * (#1211: a heuristic alone cannot justify a source-changing edit). UNCERTAIN classes, for example a
  * star-imported `Specification` without Spock on the compile classpath, get no action until target
  * evidence can decide them (#1285 step 2, #1211 row 5).
+ *
+ * Known gap: a degraded compile loses the action for specs proven only by resolution (a star-imported
+ * `Specification`, a base from a jar or another workspace file). The parser retries at CONVERSION, where
+ * nothing resolves, when a class degrades into a Script or the compiler fails without a collected error
+ * (for example a classpath missing the Groovy runtime). Ordinary collected errors keep the resolved AST,
+ * and syntax errors leave no compiled snapshot at all. Specs spelled `extends spock.lang.Specification`
+ * or with an explicit import stay confident. Reusing the last confident verdict from a successful compile
+ * is tracked separately (#1387).
  */
 internal object SpockTableAction {
     private const val MAX_COLUMNS = 256
