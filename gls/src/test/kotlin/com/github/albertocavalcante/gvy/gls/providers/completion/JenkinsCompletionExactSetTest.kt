@@ -340,7 +340,9 @@ class JenkinsCompletionExactSetTest {
 
         assertTrue("label:" in node.labels(), "node(|) offers label:")
         assertTrue("returnStdout:" in sh.labels(), "sh(|) offers returnStdout:")
-||||||| parent of a1f4bf95 (fix(jenkins): complete directive entry keys inside their directive)
+    }
+
+    @Test
     fun `string parameter arguments offer the string parameter keys`(): Unit = runTest {
         val code = "pipeline {\n    agent any\n    parameters {\n        string()\n    }\n}"
         val items = completeAt(code, line = 3, character = 15)
