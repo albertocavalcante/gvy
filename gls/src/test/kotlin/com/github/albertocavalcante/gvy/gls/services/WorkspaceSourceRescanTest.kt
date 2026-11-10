@@ -109,6 +109,19 @@ class WorkspaceSourceRescanTest {
     }
 
     @Test
+    fun `a replace reported as created then deleted drops a file that is gone`() {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val gone = src.resolve("Gone.groovy").also { Files.writeString(it, "class Gone {}\n") }
+        src()
+        assertTrue(compilation.workspaceManager.getWorkspaceSources().contains(gone), "precondition")
+
+        Files.delete(gone)
+        notify(gone to FileChangeType.Created, gone to FileChangeType.Deleted)
+
+        assertFalse(compilation.workspaceManager.getWorkspaceSources().contains(gone), "the file is gone, so it leaves")
+    }
+
+    @Test
     fun `a closed-file compile uses a model read after it claims its ticket`(): Unit = runBlocking {
         // Interleave deterministically: the on-demand DISK compile reads the model for its cache lookups, then a
         // created file is published and the caches cleared, and only then does the compile claim and run.

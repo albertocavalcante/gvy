@@ -34,7 +34,7 @@ import java.nio.file.Path
  * symbol indexing, AST access, engine lifecycle, and orchestration.
  */
 @Suppress("LongParameterList") // all defaulted; the session decorator is a test seam for compile timing
-class GroovyCompilationService(
+class GroovyCompilationService internal constructor(
     parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     documentProvider: DocumentProvider? = null,
@@ -43,9 +43,28 @@ class GroovyCompilationService(
     compilationCacheMaxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
     /** Wraps every parser session, so a test can hold a compile at an exact point. */
     workerSessionDecorator: (WorkerSession) -> WorkerSession = { it },
-    /** The workspace model's owner; a seam so a test can interleave a model change deterministically. */
-    workspaceManager: WorkspaceManager = WorkspaceManager(),
+    /** The workspace model's owner; an internal seam so a test can interleave a model change deterministically. */
+    workspaceManager: WorkspaceManager,
 ) {
+    constructor(
+        parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
+        ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        documentProvider: DocumentProvider? = null,
+        sourceNavigator: SourceNavigator? = null,
+        engineConfig: EngineConfiguration = EngineConfiguration(),
+        compilationCacheMaxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
+        workerSessionDecorator: (WorkerSession) -> WorkerSession = { it },
+    ) : this(
+        parentClassLoader,
+        ioDispatcher,
+        documentProvider,
+        sourceNavigator,
+        engineConfig,
+        compilationCacheMaxEntries,
+        workerSessionDecorator,
+        WorkspaceManager(),
+    )
+
     private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
 
