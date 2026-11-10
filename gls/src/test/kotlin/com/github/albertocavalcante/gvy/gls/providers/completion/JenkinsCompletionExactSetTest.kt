@@ -415,6 +415,42 @@ class JenkinsCompletionExactSetTest {
         assertEquals(setOf("name:", "choices:", "description:"), choice.labels(CompletionItemKind.Property))
     }
 
+    @Test
+    fun `env member access offers env properties but no steps, globals or map keys`(): Unit = runTest {
+        val items = completeAt("node {\n    env.\n}", line = 1, character = 8)
+
+        assertNoDuplicateLabels(items)
+        val envProperties = requireNotNull(metadata.globalVariables["env"]).properties.keys
+        assertTrue(envProperties.isNotEmpty())
+        assertTrue(envProperties.all { it in items.labels(CompletionItemKind.Property) }, "All env properties")
+        assertJenkinsStatementItemsAbsent(items)
+    }
+
+    @Test
+    fun `currentBuild member access offers its properties but no steps, globals or map keys`(): Unit = runTest {
+        val items = completeAt("node {\n    currentBuild.\n}", line = 1, character = 17)
+
+        assertNoDuplicateLabels(items)
+        val properties = requireNotNull(metadata.globalVariables["currentBuild"]).properties.keys
+        assertTrue(properties.all { it in items.labels() }, "All currentBuild properties")
+        assertJenkinsStatementItemsAbsent(items)
+    }
+
+    @Test
+    fun `a partially typed member after env dot offers no steps`(): Unit = runTest {
+        val items = completeAt("node {\n    env.BR\n}", line = 1, character = 10)
+
+        assertJenkinsStatementItemsAbsent(items)
+    }
+
+    /** Steps, global variables and step map keys are statement or argument completions, never members. */
+    private fun assertJenkinsStatementItemsAbsent(items: List<CompletionItem>) {
+        val labels = items.labels()
+        assertEquals(emptySet(), labels intersect metadata.steps.keys, "Steps after '.'")
+        assertEquals(emptySet(), labels intersect metadata.globalVariables.keys, "Global variables after '.'")
+        assertEquals(emptyList(), items.map { it.label }.filter { it.endsWith(":") }, "Map keys after '.'")
+    }
+
     private companion object {
         /** `when` conditions from the declarative schema, valid in `when {}` and its combinators. */
         val WHEN_CONDITIONS = setOf(

@@ -3,9 +3,11 @@ package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
+import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider.ContextType
 import com.github.albertocavalcante.gvy.gls.providers.completion.CursorPositionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.detectCursorPositionContext
+import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAccessDot
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
 import org.eclipse.lsp4j.CompletionItem
@@ -39,6 +41,17 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
 
         val metadata = context.jenkinsMetadata
             ?: return CompletionStrategy.notApplicable("JenkinsCompletion")
+
+        // After `env.` or `currentBuild.` only members make sense, and MemberAccessCompletionStrategy supplies
+        // the Jenkins global-variable properties. Steps, globals and map keys would complete to invalid code
+        // such as `env.sh`. A member-access context without a real dot (`sh 'ls' |`, parsed as
+        // `sh('ls').<dummy>`) is still a statement position and keeps its `, key:` completions.
+        val base = context.baseContext
+        if (context.contextType is ContextType.MemberAccess &&
+            followsMemberAccessDot(base.content, base.line, base.character)
+        ) {
+            return CompletionStrategy.notApplicable("JenkinsCompletion")
+        }
 
         val items = buildJenkinsCompletions(context, metadata)
         return CompletionStrategy.found(items)
