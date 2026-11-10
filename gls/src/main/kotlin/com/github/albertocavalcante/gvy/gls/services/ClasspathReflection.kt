@@ -105,3 +105,39 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
             }
         }
 }
+
+private val safeReflectionLogger = KotlinLogging.logger {}
+
+/**
+ * Runs reflection on a class from the user's classpath. A missing dependency type, or a loader closed by a
+ * classpath update while the caller still held the class, surfaces as a [LinkageError] (e.g.
+ * `NoClassDefFoundError`) or [TypeNotPresentException]: degrade to [fallback] and log at debug instead of
+ * failing the request.
+ */
+internal inline fun <T> reflectSafely(crossinline what: () -> String, fallback: T, block: () -> T): T = try {
+    block()
+} catch (error: LinkageError) {
+    reportIncompleteReflection(what(), error)
+    fallback
+} catch (error: TypeNotPresentException) {
+    reportIncompleteReflection(what(), error)
+    fallback
+}
+
+// Bounded: past the cap further distinct failures stay at debug instead of growing the set.
+private const val MAX_WARNED_REFLECTION = 1024
+private val warnedReflection = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+/**
+ * A missing class (a dependency absent, or its loader closed) is expected and logged at debug. Other linkage
+ * failures (IncompatibleClassChangeError, ExceptionInInitializerError) point at a broken classpath: warn once.
+ */
+internal fun reportIncompleteReflection(what: String, error: Throwable) {
+    if (error is NoClassDefFoundError || error is TypeNotPresentException) {
+        safeReflectionLogger.debug(error) { "Incomplete classpath reflection: $what" }
+    } else if (warnedReflection.size < MAX_WARNED_REFLECTION && warnedReflection.add(what)) {
+        safeReflectionLogger.warn(error) { "Classpath reflection failed: $what" }
+    } else {
+        safeReflectionLogger.debug(error) { "Classpath reflection failed: $what" }
+    }
+}

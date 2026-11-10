@@ -8,7 +8,6 @@ import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
-import java.net.URI
 import java.nio.file.Files
 import kotlin.io.path.writeText
 import kotlin.test.AfterTest
@@ -152,8 +151,8 @@ class WorkspaceCompilerTest {
         assertTrue(result.success, "Workspace compilation should succeed")
         assertEquals(2, result.modules.size)
 
-        // Verify we can retrieve the resolved module
-        val derivedModule = workspaceCompiler.getResolvedModule(derivedClass.toUri())
+        // Verify the resolved module is part of the result
+        val derivedModule = result.modules[derivedClass.toUri()]
         assertNotNull(derivedModule, "Should have DerivedClass module")
 
         // Verify the class structure
@@ -263,15 +262,6 @@ class WorkspaceCompilerTest {
         val nameField = testClass.fields.find { it.name == "name" }
         assertNotNull(nameField, "Should find name field")
         assertEquals("java.lang.String", nameField.type.name, "Field type should be resolved")
-    }
-
-    @Test
-    fun `getResolvedModule returns null for unknown URI`(): Unit = runTest {
-        val unknownUri = URI.create("file:///unknown.groovy")
-
-        val module = workspaceCompiler.getResolvedModule(unknownUri)
-
-        assertNull(module, "Should return null for unknown URI")
     }
 
     @Test

@@ -412,5 +412,6 @@ private class RecordingClasspathReflection : ClasspathReflection {
 private fun setCurrentClassLoader(service: ClasspathService, classLoader: ClassLoader) {
     val field = ClasspathService::class.java.getDeclaredField("currentClassLoader")
     field.isAccessible = true
-    field.set(service, classLoader)
+    @Suppress("UNCHECKED_CAST")
+    (field.get(service) as java.util.concurrent.atomic.AtomicReference<ClassLoader>).set(classLoader)
 }

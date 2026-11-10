@@ -299,7 +299,8 @@ class GroovyCompilationService(
     ) {
         val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories, targets)
         if (changed) {
-            classpathService.updateClasspath(dependencies)
+            // The published model's classpath: the same snapshot every compile now reads
+            classpathService.updateClasspath(workspaceManager.current().classpath)
             gdkProvider.initialize()
             clearCaches()
         }

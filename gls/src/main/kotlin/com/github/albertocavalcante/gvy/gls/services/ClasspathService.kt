@@ -11,6 +11,7 @@ import java.nio.file.Paths
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListSet
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Service to manage the classpath and load classes/methods from the user's project and the JDK.
@@ -22,11 +23,31 @@ class ClasspathService(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Start with the system classloader to access JDK and Groovy runtime
-    private var currentClassLoader: ClassLoader = ClassLoader.getSystemClassLoader()
+    // Start with the system classloader to access JDK and Groovy runtime. Replaced atomically. A replaced loader
+    // stays open for one more update, so reflection already in flight on it can finish, and is then closed:
+    // that releases its jar files; its metaspace is freed by GC once none of its classes are reachable (H2).
+    private val currentClassLoader = AtomicReference<ClassLoader>(ClassLoader.getSystemClassLoader())
+
+    // Guarded by this: the loader replaced by the latest update, closed by the next one.
+    private var retiredClassLoader: ClassLoader? = null
+
+    // One solver per classpath generation: its cache (unsolved names included) never outlives the loader it
+    // was built for. Callers hold [typeSolverFacade], which always asks the current generation.
+    private val generationSolver = AtomicReference<TypeSolver>(solverFor(ClassLoader.getSystemClassLoader()))
+
+    /** What long-lived resolvers hold: each lookup goes to the solver of the current classpath generation. */
+    private val typeSolverFacade = object : TypeSolver {
+        override var parent: TypeSolver? = null
+
+        override fun tryToSolveType(name: String) = generationSolver.get().tryToSolveType(name)
+
+        override fun toString(): String = "ClasspathTypeSolver(${generationSolver.get()})"
+    }
+
+    @Volatile
     private var classpathEntries: List<String> = emptyList()
     private val reflection: ClasspathReflection =
-        reflectionProvider ?: JvmClasspathReflection { currentClassLoader }
+        reflectionProvider ?: JvmClasspathReflection { currentClassLoader.get() }
 
     // Class index for type parameter completion: SimpleName -> List<FullyQualifiedName>
     private val classIndex = ClassIndex()
@@ -38,26 +59,46 @@ class ClasspathService(
      *
      * @param paths List of paths to add to the classpath
      */
-    fun updateClasspath(paths: List<Path>) {
-        val oldClassLoader = currentClassLoader
-        val oldClasspathEntries = classpathEntries
-        try {
+    fun updateClasspath(paths: List<Path>) = synchronized(this) { replaceClasspath(paths) }
+
+    private fun replaceClasspath(paths: List<Path>) {
+        val next = try {
             logger.info { "Updating classpath with ${paths.size} paths" }
             val urls = paths.map { it.toUri().toURL() }.toTypedArray()
-            // Parent is null to strictly separate (or system to inherit JDK/Groovy)
-            // We likely want system as parent to get the GDK classes
-            currentClassLoader = URLClassLoader(urls, ClassLoader.getSystemClassLoader())
-            classpathEntries = paths.map { it.toString() }
-
-            // Invalidate index when classpath changes
-            isIndexed.set(false)
-            classIndex.clear()
-            qualifiedNameIndex.clear()
-        } catch (e: Exception) {
+            // System as parent, to inherit the JDK and the GDK classes
+            URLClassLoader(urls, ClassLoader.getSystemClassLoader())
+        } catch (e: java.net.MalformedURLException) {
+            // Nothing was replaced: the previous classloader and entries stay consistent
             logger.error(e) { "Failed to update classpath" }
-            // Restore previous classloader to maintain consistent state
-            currentClassLoader = oldClassLoader
-            classpathEntries = oldClasspathEntries
+            return
+        }
+        val previous = currentClassLoader.getAndSet(next)
+        generationSolver.set(solverFor(next))
+        classpathEntries = paths.map { it.toString() }
+
+        // Invalidate index when classpath changes
+        isIndexed.set(false)
+        classIndex.clear()
+        qualifiedNameIndex.clear()
+        retiredClassLoader?.let(::close)
+        retiredClassLoader = previous
+    }
+
+    /** Closes the current and retired classloaders (server shutdown); the service falls back to the system loader. */
+    fun close() = synchronized(this) {
+        retiredClassLoader?.let(::close)
+        retiredClassLoader = null
+        close(currentClassLoader.getAndSet(ClassLoader.getSystemClassLoader()))
+        generationSolver.set(solverFor(ClassLoader.getSystemClassLoader()))
+    }
+
+    private fun close(loader: ClassLoader) {
+        // Never the system loader; classes it already loaded stay usable after close.
+        val closable = loader as? URLClassLoader ?: return
+        try {
+            closable.close()
+        } catch (e: java.io.IOException) {
+            logger.warn(e) { "Failed to close the replaced classpath loader" }
         }
     }
 
@@ -94,7 +135,7 @@ class ClasspathService(
             return classpathEntries
         }
 
-        val urlEntries = (currentClassLoader as? URLClassLoader)
+        val urlEntries = (currentClassLoader.get() as? URLClassLoader)
             ?.urLs
             ?.mapNotNull { url ->
                 if (url.protocol != "file") {
@@ -193,11 +234,13 @@ class ClasspathService(
     fun loadClass(className: String): Class<*>? = reflection.loadClass(className)
 
     /**
-     * Returns a TypeSolver backed by the current classloader.
+     * Returns a TypeSolver that resolves against the current classpath generation at each lookup (a fresh cache
+     * per generation), so callers may keep it for the whole session.
      */
-    fun getTypeSolver(): TypeSolver = CombinedTypeSolver(
-        ReflectionTypeSolver(classLoader = currentClassLoader, jreOnly = false),
-    )
+    fun getTypeSolver(): TypeSolver = typeSolverFacade
+
+    private fun solverFor(loader: ClassLoader): TypeSolver =
+        CombinedTypeSolver(ReflectionTypeSolver(classLoader = loader, jreOnly = false))
 
     internal class ClassIndex {
         private val index = ConcurrentHashMap<String, MutableSet<String>>()
