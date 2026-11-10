@@ -5,8 +5,8 @@ import com.github.albertocavalcante.gvy.gls.Version
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
-import com.github.albertocavalcante.gvy.gls.providers.rename.ALWAYS_SKIPPED
 import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionResolver
@@ -17,10 +17,12 @@ import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.onClosed
 import kotlinx.coroutines.launch
 import org.eclipse.lsp4j.DidChangeConfigurationParams
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
@@ -53,18 +55,25 @@ class GroovyWorkspaceService(
     /**
      * Source and folder events, applied one notification at a time in arrival order, off the LSP notification
      * thread: a folder event can walk a whole subtree (#1424). A later notification never overtakes an earlier one.
-     * The consumer ends with [coroutineScope]; batches still queued at shutdown are dropped.
+     * The consumer ends with [coroutineScope]; batches still queued at shutdown are dropped. If an [Error] ends it
+     * early, the queue is closed with that cause, so every later notification logs what it dropped.
      */
     private val sourceChanges = Channel<List<FileEvent>>(Channel.UNLIMITED)
 
     init {
-        coroutineScope.launch(sourceChangeDispatcher) {
+        val consumer = coroutineScope.launch(sourceChangeDispatcher) {
             for (batch in sourceChanges) {
                 // One failed notification must not stop the queue for every later one.
                 runCatching { handleSourceFileChanges(batch) }.onFailure { failure ->
                     rethrowIfCancellationOrError(failure)
                     logger.warn(failure) { "Failed to apply ${batch.size} watched source changes" }
                 }
+            }
+        }
+        consumer.invokeOnCompletion { cause ->
+            sourceChanges.close(cause)
+            if (cause != null && cause !is CancellationException) {
+                logger.error(cause) { "Watched source queue stopped: source changes apply again after a restart" }
             }
         }
     }
@@ -109,7 +118,8 @@ class GroovyWorkspaceService(
         logger.debug { "Watched files changed: ${params.changes?.size ?: 0} changes" }
 
         // A source root's folder watcher reports everything under it; what the scans skip changes nothing.
-        val relevant = params.changes.orEmpty().filterNot { underSkippedDirectory(it.uri) }
+        val roots = compilationService.workspaceManager.getSourceRoots().map { it.toAbsolutePath().normalize() }
+        val relevant = params.changes.orEmpty().filterNot { isSkipped(it.uri, roots) }
         if (relevant.isEmpty()) return
         textDocumentService?.invalidateWorkspaceFiles()
 
@@ -139,10 +149,15 @@ class GroovyWorkspaceService(
             jenkinsCapabilities?.reloadGdsl()
         }
 
-        // Handle source file changes for incremental indexing, and folder events under the source roots (#1424)
-        // Any other path may be a folder under a source root.
-        val queued = changes[FileType.SOURCE].orEmpty() + changes[FileType.OTHER].orEmpty()
-        if (queued.isNotEmpty()) sourceChanges.trySend(queued)
+        // Handle source file changes for incremental indexing, and folder events under the source roots (#1424).
+        // Any other path may be a folder under a source root; only its creation or deletion matters.
+        // A changed closed file's parse is retired now, an in-memory fence, so no reader gets the old parse while
+        // the queued work waits. An open buffer keeps its own parse, and its event has nothing left to do.
+        val queued = changes[FileType.SOURCE].orEmpty().filter { event ->
+            event.type != FileChangeType.Changed ||
+                uriOf(event.uri)?.let { compilationService.onClosedSourceChanged(it, keepIfUnchanged = false) } != null
+        } + changes[FileType.OTHER].orEmpty().filter { it.type != FileChangeType.Changed }
+        if (queued.isNotEmpty()) enqueue(queued)
 
         // Build file changes are handled by BuildToolFileWatcher in DependencyManager
     }
@@ -154,6 +169,8 @@ class GroovyWorkspaceService(
      * - Deleted files and folders: leave the source list and the index
      *
      * Any path may be a folder (a folder named `lib.groovy` too): the source list decides from the disk.
+     * A changed file was already retired when its notification arrived; it is retired again here, which also
+     * skips it if its buffer was reopened while the batch waited.
      */
     private fun handleSourceFileChanges(changes: List<FileEvent>) {
         val sources = changes.filter { classifyFileChange(it.uri) == FileType.SOURCE }
@@ -199,9 +216,21 @@ class GroovyWorkspaceService(
 
     private fun uriOf(uri: String): URI? = runCatching { URI.create(uri) }.getOrNull()
 
-    /** A cheap string check, before any disk read, for paths under a directory the workspace walks skip. */
-    private fun underSkippedDirectory(uri: String): Boolean =
-        ALWAYS_SKIPPED.any { uri.contains("/$it/") || uri.endsWith("/$it") }
+    private fun enqueue(batch: List<FileEvent>) {
+        sourceChanges.trySend(batch).onClosed { cause ->
+            if (cause == null || cause is CancellationException) {
+                logger.debug { "Dropped ${batch.size} watched source changes after shutdown" }
+            } else {
+                logger.error(cause) { "Dropped ${batch.size} watched source changes: the source queue stopped" }
+            }
+        }
+    }
+
+    /** Path checks only, before any disk read: under a source root, inside a directory the source scan skips. */
+    private fun isSkipped(uri: String, roots: List<Path>): Boolean {
+        val path = filePath(uri)?.toAbsolutePath()?.normalize() ?: return false
+        return roots.any { path.startsWith(it) } && !isScannedUnder(path, roots)
+    }
 
     private fun List<FileEvent>.pathsOf(type: FileChangeType): List<Path> =
         filter { it.type == type }.mapNotNull { filePath(it.uri) }

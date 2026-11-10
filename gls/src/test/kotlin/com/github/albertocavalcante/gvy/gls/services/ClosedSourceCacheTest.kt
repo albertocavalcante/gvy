@@ -25,6 +25,7 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
@@ -163,6 +164,31 @@ class ClosedSourceCacheTest {
                 disabledProviders = setOf("codenarc", "custom-rules", "unused-imports"),
             ),
         )
+    }
+
+    @Test
+    fun `a changed closed file is retired before its queued work runs`(): Unit = runBlocking {
+        val paused = ArrayDeque<Runnable>()
+        val queued = GroovyWorkspaceService(
+            compilation,
+            compilation.symbolIndexingService,
+            scope,
+            sourceChangeDispatcher = Executor { paused.addLast(it) }.asCoroutineDispatcher(),
+        )
+        val file = tempDir.resolve("Queued.groovy")
+        Files.writeString(file, "class Before {}")
+        val uri = file.toUri()
+        assertEquals("class Before {}", compilation.ensureCompiled(uri)?.sourceText)
+
+        Files.writeString(file, "class After {}")
+        queued.didChangeWatchedFiles(
+            DidChangeWatchedFilesParams(listOf(FileEvent(uri.toString(), FileChangeType.Changed))),
+        )
+
+        // Nothing queued has run: the retirement itself happened on the notification.
+        assertFalse(paused.isEmpty(), "the rest of the work is still queued")
+        assertFalse("Before" in classNames(compilation.getAst(uri)), "old parse served while the queue waits")
+        assertEquals("class After {}", compilation.ensureCompiled(uri)?.sourceText)
     }
 
     private fun open(uri: String, content: String) =

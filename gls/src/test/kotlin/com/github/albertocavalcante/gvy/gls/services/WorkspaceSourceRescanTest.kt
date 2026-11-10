@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.clearMocks
+import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.spyk
 import io.mockk.verify
@@ -37,7 +38,9 @@ class WorkspaceSourceRescanTest {
     lateinit var tempDir: Path
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
-    private val compilation = spyk(GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined))
+    private val documents = DocumentProvider()
+    private val compilation =
+        spyk(GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined, documentProvider = documents))
     private val workspace = GroovyWorkspaceService(
         compilation,
         compilation.symbolIndexingService,
@@ -50,10 +53,10 @@ class WorkspaceSourceRescanTest {
 
     private fun jarOf(type: Class<*>): Path = Path.of(type.protectionDomain.codeSource.location.toURI())
 
-    private fun src(): Path {
-        val src = Files.createDirectories(tempDir.resolve("src"))
+    private fun src(workspace: Path = tempDir): Path {
+        val src = Files.createDirectories(workspace.resolve("src"))
         compilation.updateWorkspaceModel(
-            tempDir,
+            workspace,
             listOf(jarOf(spock.lang.Specification::class.java), jarOf(groovy.lang.GroovyObject::class.java)),
             listOf(src),
         )
@@ -338,15 +341,24 @@ class WorkspaceSourceRescanTest {
         verify(exactly = 0) { compilation.onWorkspaceSourcesChanged(any(), any()) }
     }
 
-    @Test
-    fun `notifications apply off the caller thread, in arrival order`() {
-        val tasks = ArrayDeque<Runnable>()
-        val queued = GroovyWorkspaceService(
+    private val tasks = ArrayDeque<Runnable>()
+
+    /** A workspace service whose source queue runs only when [drain] is called. */
+    private val queued by lazy {
+        GroovyWorkspaceService(
             compilation,
             compilation.symbolIndexingService,
             scope,
             sourceChangeDispatcher = Executor { tasks.addLast(it) }.asCoroutineDispatcher(),
         )
+    }
+
+    private fun drain() {
+        while (tasks.isNotEmpty()) tasks.removeFirst().run()
+    }
+
+    @Test
+    fun `notifications apply off the caller thread, in arrival order`() {
         val src = src()
         val pkg = src.resolve("pkg")
         write(pkg.resolve("A.groovy"), "class A {}\n")
@@ -358,8 +370,48 @@ class WorkspaceSourceRescanTest {
         queued.didChangeWatchedFiles(event(FileChangeType.Created))
         assertEquals(emptyList(), sources(), "a folder walk must not run on the notification thread")
         queued.didChangeWatchedFiles(event(FileChangeType.Deleted))
-        while (tasks.isNotEmpty()) tasks.removeFirst().run()
+        drain()
 
         assertEquals(emptyList(), sources(), "the delete was applied after the create")
+    }
+
+    @Test
+    fun `a buffer reopened before its queued change applies is neither indexed nor refreshed from disk`() {
+        val src = src()
+        val file = write(src.resolve("Reopened.groovy"), "class Reopened {}\n")
+        queued.didChangeWatchedFiles(
+            DidChangeWatchedFilesParams(listOf(FileEvent(file.toUri().toString(), FileChangeType.Created))),
+        )
+        documents.put(file.toUri(), "class Reopened { int buffer }\n")
+        clearMocks(compilation, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+
+        drain()
+
+        assertTrue(sources().contains(file), "the file still joins the source list")
+        coVerify(exactly = 0) { compilation.refreshSemanticFromDisk(any()) }
+        assertFalse(indexed(file), "the open buffer, not the disk, decides its index")
+    }
+
+    @Test
+    fun `the source scan skips the directories watched-file events skip`() {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val kept = write(src.resolve("pkg/Kept.groovy"), "class Kept {}\n")
+        write(src.resolve("node_modules/pkg/Vendored.groovy"), "class Vendored {}\n")
+        write(src.resolve("pkg/.gradle/Cached.groovy"), "class Cached {}\n")
+        src()
+
+        assertEquals(listOf(kept), sources(), "a rebuild scan and the incremental list must agree")
+    }
+
+    @Test
+    fun `a workspace checked out under a skipped directory name still gets its events`() {
+        val src = src(Files.createDirectories(tempDir.resolve("node_modules/.gradle/workspace")))
+        val pkg = src.resolve("pkg")
+        val found = write(pkg.resolve("Found.groovy"), "class Found {}\n")
+        assertEquals(emptyList(), sources(), "precondition")
+
+        notify(pkg to FileChangeType.Created)
+
+        assertEquals(listOf(found), sources(), "only the path below the source root is checked")
     }
 }

@@ -4,6 +4,8 @@ import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
+import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
+import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
@@ -171,7 +173,7 @@ class WorkspaceManager(
             }
             val keptKeys = kept.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
             val roots = current.sourceRoots.map { it.toAbsolutePath().normalize() }
-            val added = found.filter { it !in keptKeys && roots.any { root -> it.startsWith(root) } }.distinct()
+            val added = found.filter { it !in keptKeys && isScannedUnder(it, roots) }.distinct()
             val next = if (added.isEmpty()) kept else ordered(kept + added, roots)
             if (next == current.sources) {
                 current
@@ -194,8 +196,9 @@ class WorkspaceManager(
         return result
     }
 
+    /** The paths a scan of [roots] would reach: under a root and outside the skipped directories below it. */
     private fun underRoots(paths: Collection<Path>, roots: List<Path>): List<Path> =
-        paths.map { it.toAbsolutePath().normalize() }.filter { path -> roots.any { path.startsWith(it) } }.distinct()
+        paths.map { it.toAbsolutePath().normalize() }.filter { isScannedUnder(it, roots) }.distinct()
 
     /** The Groovy sources in each folder, each walked once even when a parent folder is also listed. */
     private fun walkFolders(folders: List<Path>): List<Path> {
@@ -416,13 +419,22 @@ class WorkspaceManager(
 /**
  * The Groovy sources under [root], following file symbolic links as `Files.isRegularFile` does. An entry that
  * cannot be read or vanishes mid-walk (a branch switch, a build cleaning its output) is skipped instead of
- * aborting the whole workspace update (#1314). [beforeVisit] runs before each file is classified (a test seam).
+ * aborting the whole workspace update (#1314). Directories in [ALWAYS_SKIPPED_DIRECTORIES] below [root] are not
+ * entered, the rule watched-file events follow too (#1424). [beforeVisit] runs before each file is classified
+ * (a test seam).
  */
 internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}): List<Path> {
     val found = mutableListOf<Path>()
     Files.walkFileTree(
         root,
         object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
+                if (dir != root && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
+                    FileVisitResult.SKIP_SUBTREE
+                } else {
+                    FileVisitResult.CONTINUE
+                }
+
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
                 beforeVisit(file)
                 // The walk does not follow links: a symlinked source is a link whose target is a regular file.

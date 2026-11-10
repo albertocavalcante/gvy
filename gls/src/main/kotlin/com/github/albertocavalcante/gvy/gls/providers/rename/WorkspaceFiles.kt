@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceScanner
+import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
 import java.io.IOException
 import java.net.URI
 import java.nio.file.FileVisitResult
@@ -79,9 +80,6 @@ internal class Walked(
     val directories: Map<Path, FileTime> = emptyMap(),
 )
 
-/** Directories that never hold project sources, at any depth; watched-file events under them are dropped too. */
-internal val ALWAYS_SKIPPED = setOf(".git", ".hg", ".svn", ".gradle", ".idea", "node_modules")
-
 /** Build output directories: skipped only where they are build output, not where they are a package name. */
 private val BUILD_OUTPUTS = setOf("build", "out", "target")
 
@@ -155,7 +153,7 @@ internal fun walkWorkspace(
             val name = dir.fileName?.toString() ?: return false
             return when {
                 dir in roots || sourceRoots.any(dir::startsWith) -> false
-                name in ALWAYS_SKIPPED -> true
+                name in ALWAYS_SKIPPED_DIRECTORIES -> true
                 name in BUILD_OUTPUTS -> isModuleOrWorkspaceRoot(dir.parent) && !holdsSources(dir)
                 else -> false
             }
