@@ -170,7 +170,15 @@ private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf(
     "pipeline", "agent", "stages", "stage", "post", "options", "when", "triggers", "parameters", "tools",
 )
 
-/** Receivers whose members are the pipeline steps: `steps.sh` in shared libraries and `this.sh`. */
+/**
+ * Receivers whose members are the pipeline steps: `steps.sh` in shared libraries and `this.sh`.
+ *
+ * Deliberate limits:
+ * - `script.` (a common shared-library parameter name for the pipeline object) is not a step receiver:
+ *   an `Object`-typed parameter named `script` could be anything.
+ * - `this.steps.|` gets no steps: its qualifier is a property expression, not a name.
+ * - `steps.` offers the steps only, not global variables such as `steps.env`.
+ */
 private val STEP_RECEIVERS = setOf("steps", "this")
 
 /** `when` condition combinators: their bodies hold `when` conditions, so they behave as `when` itself. */
