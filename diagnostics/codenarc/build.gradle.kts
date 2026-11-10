@@ -5,6 +5,7 @@ plugins {
 
 dependencies {
     implementation(project(":diagnostics:api"))
+    implementation(project(":parser:api"))
     implementation(project(":parser:native"))
 
     // LSP4J - Language Server Protocol implementation

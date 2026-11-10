@@ -134,7 +134,7 @@ class WorkspaceRulesetExecutionTest {
     @Test
     fun `an ignored workspace ruleset is reported to the resolver's caller`() {
         val workspace = tempDir.resolve("ws2").also { Files.createDirectories(it) }
-        Files.writeString(workspace.resolve(".codenarc"), "ruleset { TrailingWhitespace }")
+        Files.writeString(workspace.resolve(".codenarc"), "ruleset { evaluate 'println 1' }")
 
         val resolved = HierarchicalRulesetResolver().resolve(context(workspace))
 

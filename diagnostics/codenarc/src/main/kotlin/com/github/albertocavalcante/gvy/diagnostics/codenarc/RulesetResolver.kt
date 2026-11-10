@@ -1,10 +1,14 @@
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
 import com.github.albertocavalcante.gvy.diagnostics.api.WorkspaceContext
+import com.github.albertocavalcante.gvy.diagnostics.codenarc.WorkspaceRulesetInterpreter.Result
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.security.MessageDigest
+import java.util.HexFormat
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
@@ -82,6 +86,16 @@ class HierarchicalRulesetResolver(
     companion object {
         private val logger = KotlinLogging.logger {}
 
+        private const val MAX_CACHED_INTERPRETATIONS = 32
+        private const val LOAD_FACTOR = 0.75f
+
+        /** Interpretation outcomes by content hash; shared so rebuilding a resolver does not re-parse rulesets. */
+        private val interpretations = object :
+            LinkedHashMap<String, Result>(MAX_CACHED_INTERPRETATIONS, LOAD_FACTOR, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Result>) =
+                size > MAX_CACHED_INTERPRETATIONS
+        }
+
         // Workspace configuration files in order of precedence
         private val WORKSPACE_CONFIG_FILES = listOf(
             ".codenarc",
@@ -106,14 +120,15 @@ class HierarchicalRulesetResolver(
         // Find properties file first
         val propertiesFile = resolvePropertiesFile(context)
 
-        // Try to resolve ruleset content
-        val rulesetContent = resolveRulesetContent(context)
+        // Workspace rulesets are interpreted (never evaluated); fall back to the project defaults
+        val (workspaceRuleset, ignored) = context.root?.let(::interpretWorkspaceRulesets) ?: (null to emptyList())
+        val rulesetContent = workspaceRuleset ?: resolveRulesetContent(context)
 
         return RulesetConfiguration(
             rulesetContent = rulesetContent.content,
             propertiesFile = propertiesFile,
             source = rulesetContent.source,
-            ignoredWorkspaceRulesets = context.root?.let(::findWorkspaceRulesets).orEmpty(),
+            ignoredWorkspaceRulesets = ignored,
         ).also {
             logger.info { "Resolved ruleset: source=${it.source}, properties=${it.propertiesFile}" }
         }
@@ -123,8 +138,6 @@ class HierarchicalRulesetResolver(
      * Resolves the ruleset content from various sources.
      */
     private fun resolveRulesetContent(context: WorkspaceContext): ResolvedRuleset {
-        // 1. Workspace ruleset files are intentionally not loaded (see findWorkspaceRulesets)
-
         // 2. Try server configuration override (future enhancement)
         // val serverOverride = loadFromServerConfig(context.serverConfig)
 
@@ -205,18 +218,46 @@ class HierarchicalRulesetResolver(
     }
 
     /**
-     * Workspace Groovy-DSL ruleset files that are present. They are never loaded: CodeNarc evaluates such a
-     * file as a Groovy script (including `evaluate`, `ruleset('file:x.groovy')` and `rule('file:x.groovy')`,
-     * which load further Groovy), so a ruleset that arrives with an untrusted workspace would run arbitrary
-     * code inside the server. Allow-listing the DSL cannot be made safe; interpreting a validated AST into a
-     * CodeNarc RuleSet without ever evaluating it is tracked as a follow-up.
+     * Workspace Groovy-DSL ruleset files are never handed to CodeNarc as Groovy (it would evaluate them, including
+     * `evaluate`, `ruleset('file:x.groovy')` and `rule('file:x.groovy')`). [WorkspaceRulesetInterpreter] reads the
+     * declarative subset and produces an equivalent XML ruleset instead; a file outside that subset is ignored.
      */
-    private fun findWorkspaceRulesets(workspaceRoot: Path): List<String> =
-        WORKSPACE_CONFIG_FILES.filter { workspaceRoot.resolve(it).isRegularFile() }.also { ignored ->
-            ignored.filter { warned.add("$workspaceRoot/$it") }.forEach {
-                logger.warn { "Ignoring workspace CodeNarc ruleset $it: workspace rulesets are not evaluated" }
+    private fun interpretWorkspaceRulesets(workspaceRoot: Path): Pair<ResolvedRuleset?, List<String>> {
+        var accepted: ResolvedRuleset? = null
+        val ignored = mutableListOf<String>()
+        for (name in WORKSPACE_CONFIG_FILES) {
+            val file = workspaceRoot.resolve(name)
+            if (!file.isRegularFile()) continue
+            val result = interpretCached(file)
+            when (result) {
+                is WorkspaceRulesetInterpreter.Result.Accepted -> {
+                    if (accepted == null) accepted = ResolvedRuleset(result.xml, "workspace:$name")
+                }
+                is WorkspaceRulesetInterpreter.Result.Rejected -> {
+                    ignored.add(name)
+                    if (warned.add("$workspaceRoot/$name")) {
+                        logger.warn { "Ignoring workspace CodeNarc ruleset $name: ${result.reason}" }
+                    }
+                }
             }
         }
+        return accepted to ignored
+    }
+
+    /**
+     * Interprets [file], reading it only if it is small enough (the size is checked before any bytes are read) and
+     * remembering the outcome by content hash so an unchanged ruleset is not parsed again on every analysis.
+     */
+    private fun interpretCached(file: Path): Result = runCatching {
+        if (Files.size(file) > WorkspaceRulesetInterpreter.MAX_FILE_BYTES) {
+            return@runCatching Result.Rejected("larger than ${WorkspaceRulesetInterpreter.MAX_FILE_BYTES} bytes")
+        }
+        val text = file.readText()
+        val key = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
+        synchronized(interpretations) {
+            interpretations.getOrPut(key) { WorkspaceRulesetInterpreter.interpret(text) }
+        }
+    }.getOrElse { Result.Rejected("unreadable: ${it.message}") }
 
     /**
      * Loads the appropriate default ruleset based on project type.

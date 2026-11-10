@@ -144,7 +144,7 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
         //       which is deleted along with analysisDir in the finally block after analysis completes.
         // TODO: Remove file-based ruleset loading entirely by configuring CodeNarc in-memory (if supported).
         logger.warn(e) { "Failed to cache CodeNarc ruleset file; falling back to per-analysis ruleset" }
-        analysisDir.resolve("ruleset.groovy").also { tmpRuleset ->
+        analysisDir.resolve("ruleset.${rulesetExtension(rulesetContent)}").also { tmpRuleset ->
             Files.write(tmpRuleset, rulesetContent.toByteArray(StandardCharsets.UTF_8))
         }
     }
@@ -167,7 +167,7 @@ internal class RulesetFileCache(private val cacheDir: Path) {
         // by CodeNarc, to eliminate temp file IO entirely.
         val hash = sha256Hex(rulesetContent)
         return cachedFilesByHash.computeIfAbsent(hash) {
-            val cachedRulesetPath = cacheDir.resolve("$hash.groovy")
+            val cachedRulesetPath = cacheDir.resolve("$hash.${rulesetExtension(rulesetContent)}")
             if (Files.exists(cachedRulesetPath)) {
                 return@computeIfAbsent cachedRulesetPath
             }
@@ -212,3 +212,7 @@ internal class RulesetFileCache(private val cacheDir: Path) {
  * Exception thrown when CodeNarc analysis fails.
  */
 class CodeAnalysisException(message: String, cause: Throwable? = null) : Exception(message, cause)
+
+/** Generated workspace rulesets are XML; CodeNarc picks its loader (XML or Groovy DSL) from the file extension. */
+internal fun rulesetExtension(rulesetContent: String): String =
+    if (rulesetContent.trimStart().startsWith("<?xml")) "xml" else "groovy"

@@ -14,6 +14,7 @@ dependencies {
 
     detektPlugins(libs.detekt.formatting)
 
+    testImplementation(libs.groovy.core)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
