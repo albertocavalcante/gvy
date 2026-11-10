@@ -76,18 +76,10 @@ class LocalSymbolResolutionStrategy(private val astVisitor: GroovyAstModel, priv
             return resolveClassNode(context.targetNode, context)
         }
 
+        // No Error is caught: a StackOverflowError is a recursion bug, never "not found" (#1311). Since #1378 no
+        // hierarchy walk on this path recurses, and the request boundary fails only this request.
         val definition = try {
             context.targetNode.resolveToDefinition(astVisitor, symbolTable, strict = false)
-        } catch (e: StackOverflowError) {
-            logger.debug(e) { "Stack overflow during local resolution, likely circular reference" }
-            // NOTE: The legacy resolver surfaced a dedicated exception with additional context. In the new pipeline,
-            // we keep the resolution non-fatal and return a typed error code for debugging.
-            // TODO: Capture the resolution path deterministically (without relying on StackOverflowError) so we can
-            // provide actionable circular reference details.
-            return SymbolResolutionStrategy.notFound(
-                "Error[CIRCULAR_REFERENCE]: stack overflow during local resolution",
-                STRATEGY_NAME,
-            )
         } catch (e: IllegalArgumentException) {
             logger.debug(e) { "Invalid argument during local resolution: ${e.message}" }
             return SymbolResolutionStrategy.notFound("Invalid argument: ${e.message}", STRATEGY_NAME)
