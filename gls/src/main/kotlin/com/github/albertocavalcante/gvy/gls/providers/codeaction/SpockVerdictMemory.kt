@@ -32,8 +32,9 @@ import java.util.IdentityHashMap
  * - every link above the class is unchanged. A link in the spec's own file must have the same declaration
  *   in the current module. A link in another file must have the same prelude (the file's package and imports,
  *   each enclosing class's header and its own header, found with the Groovy lexer and matched by enclosing
- *   class, so edits to unrelated classes in the file do not count and comments,
- *   strings and same-named nested classes cannot stand in) and the same package file set across every source
+ *   class, so edits to unrelated classes in the file do not count and comments, strings and same-named nested
+ *   classes cannot stand in; plus every class name declared in the file, since a new class there can shadow a
+ *   star-imported name) and the same package file set across every source
  *   root, since a new file in that package, even under another root, can shadow a star-imported name.
  *   Anything that cannot be computed denies reuse; these checks can only deny. They catch a base edited to
  *   stop extending `Specification` and then broken, whether or not the table action ran in between.
@@ -228,10 +229,13 @@ internal class SpockVerdictMemory {
         var extendsName: String? = null
             private set
 
+        /** Every class name declared in the file, top-level and nested, wherever it appears. */
+        val declaredNames = mutableListOf<String>()
+
         /**
          * What identifies the target: the file's tokens before its first top-level declaration (package,
-         * imports), each enclosing class's header, and the target's header. Tokens of unrelated classes and
-         * bodies are left out, so an edit elsewhere in the file does not change it.
+         * imports), each enclosing class's header, and the target's header. Bodies and unrelated headers are left
+         * out, so an edit elsewhere in the file does not change it; declared class names are added separately.
          */
         val identity: String
             get() {
@@ -275,6 +279,7 @@ internal class SpockVerdictMemory {
 
         private fun declare(name: String) {
             keyword = false
+            declaredNames += name
             val directlyInside = depth == (enclosing.lastOrNull()?.second?.plus(1) ?: 0)
             inHeader = name == path.last() && directlyInside && enclosing.map { it.first } == path.dropLast(1)
             pendingClass = name.takeUnless { inHeader }
@@ -293,6 +298,22 @@ internal class SpockVerdictMemory {
             segment.clear()
         }
 
+        /**
+         * After the target's header: only collect declared names, so a class added after the target that
+         * shadows a name (for example `Specification` under a star import) still changes the identity.
+         */
+        fun collectName(token: Token) {
+            val wasAfterDot = afterDot
+            afterDot = token.type == GroovyLangLexer.DOT
+            when {
+                keyword -> {
+                    keyword = false
+                    declaredNames += token.text
+                }
+                token.type in DECLARATION_KEYWORDS && !wasAfterDot -> keyword = true
+            }
+        }
+
         private fun header(token: Token) {
             when {
                 token.type == GroovyLangLexer.EXTENDS -> {
@@ -305,12 +326,14 @@ internal class SpockVerdictMemory {
         }
     }
 
+    // Not private so tests can exercise the prelude scan directly; the class itself is internal.
     companion object {
         private val DECLARATION_KEYWORDS = setOf(
             GroovyLangLexer.CLASS,
             GroovyLangLexer.INTERFACE,
             GroovyLangLexer.TRAIT,
             GroovyLangLexer.ENUM,
+            GroovyLangLexer.RECORD,
         )
         private val NAME_TOKENS = setOf(
             GroovyLangLexer.Identifier,
@@ -338,9 +361,9 @@ internal class SpockVerdictMemory {
         /**
          * The identity of the class named [fqn] in [text], hashed (see [PreludeScanner.identity]), with its
          * written `extends` name; null when the declaration is not found or the text does not lex. Comments and
-         * string literals are not significant, so they can neither end the prelude nor change the hash. Tokens
-         * are pulled lazily and the scan stops at the target's body `{`; a broken body that comes before the
-         * target in the file is lexed, and if that fails the prelude is null, which denies reuse.
+         * string literals are not significant, so they can neither end the prelude nor change the hash. The whole
+         * file is lexed, so every declared class name is included (see [scanPrelude]); a file that does not lex,
+         * for example with an unterminated string, has no prelude, which denies reuse.
          */
         fun preludeOf(text: String, fqn: String): Prelude? {
             if (text.length > MAX_SOURCE_CHARS) return null
@@ -350,16 +373,29 @@ internal class SpockVerdictMemory {
                 .getOrNull()
         }
 
+        /**
+         * Lexes the whole file: the target's identity up to its body, then only the declared class names, so
+         * a name-shadowing class anywhere in the file counts but bodies never do.
+         */
         private fun scanPrelude(lexer: GroovyLangLexer, path: List<String>): Prelude? {
             val scanner = PreludeScanner(path)
+            var identity: String? = null
+            var extendsName: String? = null
             var token = lexer.nextToken()
             while (token.type != Token.EOF) {
                 if (token.channel == Token.DEFAULT_CHANNEL && token.type != GroovyLangLexer.NL) {
-                    if (scanner.accept(token)) return Prelude(sha256(scanner.identity), scanner.extendsName)
+                    when {
+                        identity != null -> scanner.collectName(token)
+                        scanner.accept(token) -> {
+                            identity = scanner.identity
+                            extendsName = scanner.extendsName
+                        }
+                    }
                 }
                 token = lexer.nextToken()
             }
-            return null
+            val names = scanner.declaredNames.sorted().joinToString(",")
+            return identity?.let { Prelude(sha256("$it | classes: $names"), extendsName) }
         }
 
         private fun sha256(text: String): String =

@@ -189,9 +189,10 @@ class SpockTableProviderTest {
             broken: Boolean = false,
             extends: String = "extends Specification",
             prefix: String = "",
+            suffix: String = "",
         ): Path = src.resolve("$name.groovy").also {
             val body = if (broken) "{ void m( }" else "{}"
-            Files.writeString(it, "import spock.lang.*\n${prefix}abstract class $name $extends $body\n")
+            Files.writeString(it, "import spock.lang.*\n${prefix}abstract class $name $extends $body\n$suffix")
         }
 
         suspend fun edit(newText: String = "$text\n// edit $version") {
@@ -358,19 +359,28 @@ class SpockTableProviderTest {
         // Positive control for the test above: Outer2.Inner is unchanged, so its prelude still matches while
         // Outers.groovy fails to compile. Matching by short name would hash Outer1.Inner's changed header.
         val fixture = BrokenBaseFixture()
-        val outers = { outer1Super: String ->
+        val outers = { outer1Inner: String ->
             "import spock.lang.*\n" +
-                "class Outer1 { static abstract class Inner extends $outer1Super {} }\n" +
+                "class Outer1 { static abstract class Inner extends $outer1Inner }\n" +
                 "class Outer2 { static abstract class Inner extends Specification {} }\n"
         }
-        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("Specification"))
+        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("Specification {}"))
         useSpockClasspath(sources = listOf(fixture.src))
         fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
         assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
 
-        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("MissingOuter1Base"))
+        // A syntax break plus a header change: the file is excluded for certain (the compile degrades), and
+        // matching by short name would see Outer1.Inner's changed header.
+        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("MissingOuter1Base { void m( }"))
         fixture.edit()
 
+        val degraded = compilationService.getCompiledSnapshot(fixture.fileUri)?.parseResult?.outcome
+        assertTrue(
+            degraded != null && (degraded.excludedSources.isNotEmpty() || degraded.stubbedClasses.isNotEmpty()),
+            "the compile must degrade, so the verdict comes from memory: ${diagnosis(fixture)}",
+        )
+        val status = diagnosis(fixture)
+        assertTrue(status.startsWith("status=UNCERTAIN"), "TableSpec must be UNCERTAIN: $status")
         assertTrue(fixture.hasAction(), "Outer2.Inner is unchanged, so its verdict is recalled: ${diagnosis(fixture)}")
     }
 
@@ -390,6 +400,30 @@ class SpockTableProviderTest {
             "primary=${target?.isPrimaryClassNode} outer=${target?.outerClass?.name} " +
             "module=${target?.module?.context?.name} inUnit=$inUnit outcome=${parsed.outcome} " +
             "diagnostics=${parsed.diagnostics.map { it.message.take(100) }}"
+    }
+
+    @Test
+    fun `a class added above the base that shadows Specification is noticed`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        fixture.writeBase("BaseSpec", broken = true, prefix = "class Specification {}\n")
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "a new class named Specification in the base's file changes its identity")
+    }
+
+    @Test
+    fun `a class added below the base that shadows Specification is noticed`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        fixture.writeBase("BaseSpec", broken = true, suffix = "class Specification {}\n")
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "declared names are collected from the whole file, not just before the base")
     }
 
     @Test
