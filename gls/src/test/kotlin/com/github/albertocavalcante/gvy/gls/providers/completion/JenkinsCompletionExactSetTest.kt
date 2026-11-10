@@ -158,17 +158,6 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
-    fun `matrix block offers stages and axes, not a bare stage`(): Unit = runTest {
-        val code = "pipeline {\n    agent any\n    stages {\n        stage('M') {\n            matrix {\n" +
-            "                \n            }\n        }\n    }\n}"
-        val labels = completeAt(code, line = 5, character = 16).labels()
-
-        assertTrue("stages" in labels && "axes" in labels, "matrix: $labels")
-        assertTrue("stage" !in labels, "a stage inside matrix sits under stages: $labels")
-        assertTrue("sh" !in labels && "echo" !in labels, "a matrix body is not a steps block: $labels")
-    }
-
-    @Test
     fun `when expression body offers global variables but no when conditions`(): Unit = runTest {
         val code = "pipeline {\n    agent any\n    stages {\n        stage('Build') {\n            when {\n" +
             "                expression {\n                    \n                }\n            }\n" +

@@ -29,7 +29,8 @@
       "name": "agent",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "innerInstructions": [
         "any",
@@ -49,7 +50,6 @@
       "allowedIn": [
         "pipeline",
         "stage",
-        "parallel",
         "matrix"
       ],
       "innerInstructions": [
@@ -72,16 +72,14 @@
         "post",
         "parallel",
         "matrix",
-        "stages"
+        "stages",
+        "input"
       ]
     },
     {
       "name": "steps",
       "allowedIn": [
-        "stage",
-        "parallel",
-        "matrix",
-        "post_condition"
+        "stage"
       ],
       "completionCategories": [
         "step"
@@ -90,8 +88,7 @@
     {
       "name": "parallel",
       "allowedIn": [
-        "stage",
-        "matrix"
+        "stage"
       ],
       "innerInstructions": [
         "stage"
@@ -125,6 +122,15 @@
       ]
     },
     {
+      "name": "excludes",
+      "allowedIn": [
+        "matrix"
+      ],
+      "innerInstructions": [
+        "exclude"
+      ]
+    },
+    {
       "name": "axis",
       "allowedIn": [
         "axes"
@@ -146,7 +152,8 @@
       "name": "post",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "innerInstructions": [
         "always",
@@ -276,7 +283,8 @@
     {
       "name": "when",
       "allowedIn": [
-        "stage"
+        "stage",
+        "matrix"
       ],
       "innerInstructions": [
         "branch",
@@ -303,14 +311,16 @@
       "name": "environment",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ]
     },
     {
       "name": "options",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "completionCategories": [
         "declarative_option"
@@ -332,7 +342,23 @@
       "name": "tools",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
+      ]
+    },
+    {
+      "name": "input",
+      "allowedIn": [
+        "stage",
+        "matrix"
+      ],
+      "innerInstructions": [
+        "message",
+        "id",
+        "ok",
+        "submitter",
+        "submitterParameter",
+        "parameters"
       ]
     }
   ]

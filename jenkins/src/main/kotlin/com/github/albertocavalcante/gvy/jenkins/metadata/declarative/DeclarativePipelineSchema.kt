@@ -78,6 +78,11 @@ object DeclarativePipelineSchema {
     @Serializable
     private data class PluginInfo(val artifactId: String, val version: String, val jenkinsBaseline: String? = null)
 
+    /**
+     * One schema block. [allowedIn] is documentation only: completion and the block detector read
+     * [innerInstructions] and [completionCategories]. It is kept equal to `jenkins-enrichment.json`, whose
+     * `allowedIn` drives hover (`DeclarativePipelineSchemaTest` checks they agree).
+     */
     @Serializable
     private data class Block(
         val name: String,
