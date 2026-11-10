@@ -43,6 +43,8 @@ import kotlin.io.path.isDirectory
 class WorkspaceManager internal constructor(
     private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
     private val caseInsensitive: (root: Path) -> Boolean,
+    @Suppress("UnusedPrivateProperty")
+    private val normalisesNames: Boolean = false,
 ) {
     constructor(
         fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =

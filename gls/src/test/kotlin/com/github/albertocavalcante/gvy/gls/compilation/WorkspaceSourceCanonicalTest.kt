@@ -17,18 +17,21 @@ class WorkspaceSourceCanonicalTest {
 
     private val base: Path by lazy { tempDir.toRealPath() }
 
-    private fun manager(caseInsensitive: Boolean = false) =
-        WorkspaceManager(ConfigurationFingerprint::compute) { caseInsensitive }
+    private fun manager(caseInsensitive: Boolean = false, normalisesNames: Boolean = false) =
+        WorkspaceManager(ConfigurationFingerprint::compute, { caseInsensitive }, normalisesNames)
 
     private fun write(path: Path, text: String = "class X {}\n"): Path = path.also {
         Files.createDirectories(it.parent)
         Files.writeString(it, text)
     }
 
-    /** `ws/src` is a link to `real/src`; the model's root is the link spelling unless [rootIsReal]. */
+    /**
+     * `ws/src` is a link to `ws/real/src`, inside the workspace `ws`; the model's root is the link spelling unless
+     * [rootIsReal].
+     */
     private fun linked(manager: WorkspaceManager, rootIsReal: Boolean = false): Pair<Path, Path> {
-        val real = Files.createDirectories(base.resolve("real/src"))
-        val link = Files.createDirectories(base.resolve("ws")).resolve("src")
+        val real = Files.createDirectories(base.resolve("ws/real/src"))
+        val link = base.resolve("ws/src")
         Files.createSymbolicLink(link, real)
         manager.updateWorkspaceModel(base.resolve("ws"), emptyList(), listOf(if (rootIsReal) real else link))
         return link to real
@@ -50,7 +53,7 @@ class WorkspaceSourceCanonicalTest {
     @Test
     fun `a file deleted under a symlinked root, reported by its real path, leaves the list`() {
         val manager = manager()
-        val real = Files.createDirectories(base.resolve("real/src"))
+        val real = Files.createDirectories(base.resolve("ws/real/src"))
         write(real.resolve("A.groovy"))
         val (link, _) = linked(manager)
         assertEquals(listOf(link.resolve("A.groovy")), manager.getWorkspaceSources(), "precondition")
@@ -181,9 +184,74 @@ class WorkspaceSourceCanonicalTest {
     @Test
     fun `a symlinked source root is scanned through the link`() {
         val manager = manager()
-        write(base.resolve("real/src/pkg/A.groovy"))
+        write(base.resolve("ws/real/src/pkg/A.groovy"))
         val (link, _) = linked(manager)
 
         assertEquals(listOf(link.resolve("pkg/A.groovy")), manager.getWorkspaceSources())
+    }
+
+    /** A workspace `ws` whose source root `ws/src` is a link to [target]. */
+    private fun linkedTo(manager: WorkspaceManager, target: Path): Path {
+        val workspace = Files.createDirectories(base.resolve("ws"))
+        val link = Files.createSymbolicLink(workspace.resolve("src"), target)
+        manager.updateWorkspaceModel(workspace, emptyList(), listOf(link))
+        return link
+    }
+
+    @Test
+    fun `a source root linking outside the workspace is not followed`() {
+        val manager = manager()
+        // The shape of a cloned `src -> /` or `src -> ~`: a target outside the workspace's real path.
+        val outside = write(base.resolve("elsewhere/Secret.groovy")).parent
+        val link = linkedTo(manager, outside)
+        assertEquals(emptyList(), manager.getWorkspaceSources(), "scan")
+
+        write(outside.resolve("Later.groovy"))
+        manager.applySourceChanges(listOf(outside.resolve("Later.groovy"), link.resolve("Later.groovy")), emptyList())
+        assertEquals(emptyList(), manager.getWorkspaceSources(), "events are not rebased through it either")
+    }
+
+    @Test
+    fun `a source root linking to the workspace or an ancestor of it is not followed`() {
+        listOf("ws" to { b: Path -> b.resolve("ws") }, "ancestor" to { b: Path -> b }).forEach { (label, target) ->
+            val manager = manager()
+            val workspace = Files.createDirectories(base.resolve("ws"))
+            write(workspace.resolve("Top.groovy"))
+            val link = linkedTo(manager, target(base))
+
+            assertEquals(emptyList(), manager.getWorkspaceSources(), label)
+            Files.delete(link)
+        }
+    }
+
+    @Test
+    fun `a broken source root link lists nothing and does not fail the scan`() {
+        val manager = manager()
+        linkedTo(manager, base.resolve("ws/missing"))
+
+        assertEquals(emptyList(), manager.getWorkspaceSources())
+    }
+
+    @Test
+    fun `the probe says sensitive when the flipped name is a different directory`() {
+        val root = Files.createDirectories(base.resolve("Twin"))
+        val twin = base.resolve("tWIN")
+        if (Files.exists(twin)) return // a case-insensitive disk: the twin cannot exist separately
+        Files.createDirectories(twin)
+
+        assertEquals(false, probeCaseInsensitive(root))
+    }
+
+    @Test
+    fun `on a platform that normalises names a case-sensitive root still matches another normalisation`() {
+        // APFS ignores Unicode normalisation even on case-sensitive volumes.
+        val manager = manager(caseInsensitive = false, normalisesNames = true)
+        val nfd = "Cafe\u0301.groovy"
+        val src = caseRoot(manager, nfd, "A.groovy")
+
+        Files.delete(src.resolve(nfd))
+        manager.applySourceChanges(emptyList(), listOf(src.resolve("Caf\u00e9.groovy"), src.resolve("a.groovy")))
+
+        assertEquals(listOf(src.resolve("A.groovy")), manager.getWorkspaceSources(), "case still matters")
     }
 }
