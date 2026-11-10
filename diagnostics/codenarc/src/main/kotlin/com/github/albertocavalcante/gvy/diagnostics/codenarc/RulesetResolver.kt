@@ -220,7 +220,12 @@ class HierarchicalRulesetResolver(
 
         return try {
             val content = configFile.readText()
-            if (content.isNotEmpty()) {
+            val rejection = if (content.isNotEmpty()) WorkspaceRulesetValidator.rejection(content) else null
+            if (rejection != null) {
+                // CodeNarc evaluates DSL rulesets as Groovy; never run code that came with the workspace
+                logger.warn { "Ignoring workspace CodeNarc ruleset $configFileName: $rejection" }
+                null
+            } else if (content.isNotEmpty()) {
                 logger.info { "Loaded CodeNarc ruleset from workspace file: $configFileName" }
                 ResolvedRuleset(content, "workspace:$configFileName")
             } else {
