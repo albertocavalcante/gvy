@@ -4,22 +4,30 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -44,20 +52,24 @@ class RetiredWaiterTest {
 
     /** Invoked after every parse, before the compile publishes. */
     private var afterParse: () -> Unit = {}
+
+    /** Invoked before every parse; a compile cancelled meanwhile then aborts inside the parse, publishing nothing. */
+    private var beforeParse: () -> Unit = {}
     private val parsed = java.util.concurrent.ConcurrentHashMap<String, AtomicInteger>()
     private val documents = DocumentProvider()
     private val service = GroovyCompilationService(
         documentProvider = documents,
         workerSessionDecorator = { delegate ->
             object : WorkerSession {
-                override fun parse(request: ParseRequest): ParseResult = delegate.parse(request).also {
-                    parsed.computeIfAbsent(request.content) { AtomicInteger() }.incrementAndGet()
-                    if (armed.compareAndSet(true, false)) {
-                        entered.countDown()
-                        check(released.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "never released" }
+                override fun parse(request: ParseRequest): ParseResult =
+                    beforeParse().let { delegate.parse(request) }.also {
+                        parsed.computeIfAbsent(request.content) { AtomicInteger() }.incrementAndGet()
+                        if (armed.compareAndSet(true, false)) {
+                            entered.countDown()
+                            check(released.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "never released" }
+                        }
+                        afterParse()
                     }
-                    afterParse()
-                }
             }
         },
     )
@@ -156,7 +168,142 @@ class RetiredWaiterTest {
         assertEquals(null, service.getWorkspaceSymbolIndex()?.getDocument(file.toUri()), "old text was published")
     }
 
+    /**
+     * Owners of shared compiles of one open buffer, each started the moment the previous one ends cancelled,
+     * like debounced diagnostics superseded by typing. Each owner's parse waits at [gate] until the test
+     * releases it, so a waiter is always parked on the newest owner before that owner is cancelled.
+     */
+    private inner class Owners(
+        private val uri: URI,
+        private val text: () -> String,
+        /** Runs when an owner ends cancelled, before its successor starts (for example the user's next edit). */
+        private val beforeReplacement: () -> Unit = {},
+    ) {
+        val gate = Semaphore(0)
+
+        /** One permit per owner parse that has reached the gate, so a release always frees a waiting parse. */
+        val arrived = Semaphore(0)
+        val scopes = CopyOnWriteArrayList<CoroutineScope>()
+        val jobs = CopyOnWriteArrayList<Deferred<CompilationResult>>()
+
+        fun start() {
+            val owner = CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add)
+            val job = service.compileAsync(owner, uri, text()).also(jobs::add)
+            // Registered before any waiter awaits this job, so the next owner exists before the waiter resumes.
+            job.invokeOnCompletion { failure ->
+                if (failure is CancellationException) {
+                    beforeReplacement()
+                    start()
+                }
+            }
+        }
+
+        /** Cancels the newest owner, lets its parse finish, and returns once the waiter has re-resolved. */
+        suspend fun cancelNewest() {
+            val job = jobs.last()
+            // Cancel only once its parse is running: a job cancelled before it starts would leave a spare permit
+            check(withContext(Dispatchers.IO) { arrived.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS) }) { "no parse" }
+            scopes.last().cancel()
+            gate.release()
+            job.join()
+            yield()
+        }
+    }
+
+    /** A navigation request on the runBlocking loop; its own job, so a failure stays in the test's assertion. */
+    private fun CoroutineScope.waitOn(uri: URI) =
+        async(SupervisorJob(), start = CoroutineStart.UNDISPATCHED) { service.ensureCompiled(uri) }
+
+    private fun gatedOwners(uri: URI, beforeReplacement: () -> Unit = {}, text: () -> String): Owners {
+        armed.set(false)
+        val owners = Owners(uri, text, beforeReplacement)
+        beforeParse = {
+            owners.arrived.release()
+            check(owners.gate.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS)) { "parse never released" }
+        }
+        return owners
+    }
+
+    @Test
+    fun `owner cancellations of a shared compile do not exhaust a co-waiter's retries (#1343)`(): Unit = runBlocking {
+        val uri = tempDir.resolve("Hover.groovy").toUri()
+        service.onDocumentOpened(uri)
+        documents.put(uri, "class Hover {}", 1)
+        val owners = gatedOwners(uri) { "class Hover {}" }
+        owners.start()
+        val waiter = waitOn(uri)
+
+        // More owner cancellations than the retirement bound of 3; the waiter's document never changes
+        repeat(4) { owners.cancelNewest() }
+        owners.gate.release()
+
+        assertEquals("class Hover {}", waiter.await()?.sourceText, "the waiter must get the next owner's result")
+        assertEquals(5, owners.jobs.size, "the waiter rode each superseding owner instead of giving up")
+    }
+
+    @Test
+    fun `a waiter whose own document changes on every owner cancellation still gets ContentModified`(): Unit =
+        runBlocking {
+            val uri = tempDir.resolve("Typing.groovy").toUri()
+            service.onDocumentOpened(uri)
+            var version = 1
+            documents.put(uri, "class Typing1 {}", version)
+            // The waiter's own document changes with every superseded owner, before the waiter re-resolves
+            val owners = gatedOwners(uri, beforeReplacement = {
+                version++
+                documents.put(uri, "class Typing$version {}", version)
+            }) { documents.getSnapshot(uri)!!.content }
+            owners.start()
+            val waiter = waitOn(uri)
+
+            val error = assertFailsWith<ResponseErrorException> {
+                repeat(MAX_RESOLUTIONS) { owners.cancelNewest() }
+                withTimeout(WAIT_SECONDS * 1_000) { waiter.await() }
+            }
+
+            assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+            owners.gate.release(owners.jobs.size)
+        }
+
+    @Test
+    fun `owner cancellations are bounded so a waiter never loops forever`(): Unit = runBlocking {
+        val uri = tempDir.resolve("Endless.groovy").toUri()
+        service.onDocumentOpened(uri)
+        documents.put(uri, "class Endless {}", 1)
+        val owners = gatedOwners(uri) { "class Endless {}" }
+        owners.start()
+        val waiter = waitOn(uri)
+
+        val error = assertFailsWith<ResponseErrorException> {
+            repeat(MAX_OWNER_CANCELLATIONS) { owners.cancelNewest() }
+            withTimeout(WAIT_SECONDS * 1_000) { waiter.await() }
+        }
+
+        assertEquals(ResponseErrorCode.ContentModified.value, error.responseError.code)
+        owners.gate.release(owners.jobs.size)
+    }
+
+    @Test
+    fun `a cancelled request stops re-resolving after an owner cancellation`(): Unit = runBlocking {
+        val uri = tempDir.resolve("Gone.groovy").toUri()
+        service.onDocumentOpened(uri)
+        documents.put(uri, "class Gone {}", 1)
+        val owners = gatedOwners(uri) { "class Gone {}" }
+        owners.start()
+        val waiter = waitOn(uri)
+
+        owners.cancelNewest()
+        waiter.cancel() // the client cancels the request while it waits on the next owner
+        owners.cancelNewest()
+
+        assertFailsWith<CancellationException> { withTimeout(WAIT_SECONDS * 1_000) { waiter.await() } }
+        assertTrue(waiter.isCancelled, "a cancelled request must end, not keep re-resolving")
+        owners.gate.release(owners.jobs.size)
+    }
+
     private companion object {
         const val WAIT_SECONDS = 10L
+        const val MAX_RESOLUTIONS = 3
+        const val MAX_OWNER_CANCELLATIONS = 10
     }
 }

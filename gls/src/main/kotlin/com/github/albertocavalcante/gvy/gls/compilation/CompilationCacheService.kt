@@ -88,7 +88,15 @@ class CompilationCacheService(
         uri: URI,
         identity: CompilationIdentity,
         create: () -> Deferred<CompilationResult>,
-    ): Deferred<CompilationResult> {
+    ): Deferred<CompilationResult> = registerPending(uri, identity, ticket = null, create).deferred
+
+    /** As [registerCompilation], returning the selected job with the [ticket] a newly created job runs under. */
+    internal fun registerPending(
+        uri: URI,
+        identity: CompilationIdentity,
+        ticket: ArtifactOwnership.Ticket?,
+        create: () -> Deferred<CompilationResult>,
+    ): PendingCompilation {
         var created = false
         var selected: PendingCompilation? = null
         compilationJobs.compute(uri) { _, existing ->
@@ -96,7 +104,7 @@ class CompilationCacheService(
                 selected = existing
                 existing
             } else {
-                val replacement = PendingCompilation(identity, create())
+                val replacement = PendingCompilation(identity, create(), ticket)
                 selected = replacement
                 created = true
                 // An already cancelled creator must not evict another caller's live work.
@@ -107,7 +115,7 @@ class CompilationCacheService(
         if (created) {
             compilation.deferred.invokeOnCompletion { compilationJobs.remove(uri, compilation) }
         }
-        return compilation.deferred
+        return compilation
     }
 
     /**
