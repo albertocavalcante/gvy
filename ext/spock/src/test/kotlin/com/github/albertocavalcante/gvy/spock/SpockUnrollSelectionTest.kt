@@ -254,6 +254,21 @@ class SpockUnrollSelectionTest {
     }
 
     @Test
+    fun `a nested class shadowing an imported Unroll makes the annotation uncertain`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            class S extends spock.lang.Specification {
+                static class Unroll {}
+                @Unroll('shadowed #a')
+                def feature() { expect: a
+                    where: a << [1] }
+            }
+            """.trimIndent()
+        assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.ANNOTATION_IDENTITY), select(source))
+    }
+
+    @Test
     fun `non constant annotation values are uncertain`() {
         assertEquals(
             UnrollSelection.Uncertain(UnrollUncertainty.NON_CONSTANT_VALUE),

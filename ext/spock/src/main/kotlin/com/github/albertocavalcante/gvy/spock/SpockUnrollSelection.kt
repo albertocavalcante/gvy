@@ -187,7 +187,7 @@ object SpockUnrollSelection {
     ) {
         companion object {
             fun of(node: AnnotatedNode, module: ModuleNode): Annotations {
-                val bindings = node.annotations.map { it to binding(it.classNode, module) }
+                val bindings = node.annotations.map { it to binding(node, it.classNode, module) }
                 val unroll = bindings.filter { it.second == Binding.UNROLL }.map { it.first }
                 val rollup = bindings.any { it.second == Binding.ROLLUP }
                 val problem = when {
@@ -211,21 +211,30 @@ object SpockUnrollSelection {
 
     private enum class Binding { UNROLL, ROLLUP, OTHER, UNCERTAIN }
 
-    /** Same conservative binding as [SpockSourceContext]: star-import-only spellings stay uncertain. */
-    private fun binding(type: ClassNode, module: ModuleNode): Binding {
-        val name = type.name
-        val qualified = when {
-            '.' in name -> name
-            else -> module.getImport(name)?.className
-        }
-        return when {
-            qualified == UNROLL -> Binding.UNROLL
-            qualified == ROLLUP -> Binding.ROLLUP
-            qualified != null || type.isResolved -> Binding.OTHER
-            module.classes.any { it.nameWithoutPackage == name } -> Binding.OTHER
-            name in setOf("Unroll", "Rollup") && module.starImports.any { it.packageName == "spock.lang." } ->
-                Binding.UNCERTAIN
-            else -> Binding.OTHER
+    /**
+     * The shared [SpockNameBinder] binding of an annotation spelling, seen from the annotated element.
+     * A compiler-resolved type is trusted as is. The inherited-scope rule is not applied: the declaring
+     * spec always extends a superclass, so it would make every bare `@Unroll` uncertain. A nested
+     * `Unroll` class declared in that superclass therefore remains an undetected shadow.
+     */
+    private fun binding(element: AnnotatedNode, type: ClassNode, module: ModuleNode): Binding {
+        if (type.isResolved) return byName(type.name)
+        val scope = element as? ClassNode ?: (element as? MethodNode)?.declaringClass
+        val enclosing = generateSequence(scope) { it.outerClass }.toList()
+        val bound = SpockNameBinder(module).bind(type.name, enclosing, annotationTargets, checkInheritedScope = false)
+        return when (bound) {
+            is NameBinding.Qualified -> byName(bound.name)
+            is NameBinding.Imported -> byName(bound.fqn)
+            is NameBinding.StarImportOnly, is NameBinding.Ambiguous -> Binding.UNCERTAIN
+            is NameBinding.ModuleClass, NameBinding.Unbound -> Binding.OTHER
         }
     }
+
+    private fun byName(fqn: String): Binding = when (fqn.replace('$', '.')) {
+        UNROLL -> Binding.UNROLL
+        ROLLUP -> Binding.ROLLUP
+        else -> Binding.OTHER
+    }
+
+    private val annotationTargets = setOf(UNROLL, ROLLUP)
 }
