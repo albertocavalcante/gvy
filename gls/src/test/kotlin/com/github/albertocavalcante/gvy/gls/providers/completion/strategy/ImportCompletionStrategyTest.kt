@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.CompletionItem
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import java.net.URI
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -164,6 +165,29 @@ class ImportCompletionStrategyTest {
 
         assertNotNull(versionItem, "Should suggest static constant VERSION from workspace class")
         assertNotNull(addItem, "Should suggest static method add from workspace class")
+    }
+
+    @Test
+    fun `workspace static members show array types with brackets`(): Unit = runBlocking {
+        val workspaceClassUri = URI.create("file:///ArrayUtils.groovy")
+        val workspaceCode = """
+            class ArrayUtils {
+                static final int[] NUMBERS = [1] as int[]
+                static String[][] GRID
+                static String[] split(String[] items, int[][] grid) { items }
+            }
+        """.trimIndent()
+        fixture.documentProvider.put(workspaceClassUri, workspaceCode)
+        fixture.compilationService.compile(workspaceClassUri, workspaceCode)
+        val code = "import static ArrayUtils.\n\nclass Sample {}"
+        fixture.documentProvider.put(fixture.uri, code)
+
+        val details = completionsAt(0, 25).associate { it.label to it.detail }
+
+        assertEquals("String[] split(String[], int[][])", details["split"], "found $details")
+        assertTrue(details["NUMBERS"]?.contains("int[]") == true, "found $details")
+        assertTrue(details["GRID"]?.contains("String[][]") == true, "found $details")
+        assertTrue(details.values.none { it?.contains(";") == true || it?.contains("[I") == true }, "found $details")
     }
 
     @Test

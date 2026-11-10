@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.native.displayName
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
@@ -43,7 +44,7 @@ internal object ExpressionNodeRenderer {
                 else -> semanticResolver.formatSemanticType(type)
             }
         } else {
-            node.type.nameWithoutPackage
+            node.type.displayName()
         }
 
         code("groovy") { "$displayType ${node.name}" }
@@ -79,7 +80,7 @@ internal object ExpressionNodeRenderer {
     fun MarkdownBuilder.renderPropertyExpression(node: PropertyExpression, _moduleNode: ModuleNode?) {
         val propertyName = node.propertyAsString ?: node.property.text
         val objectExpr = node.objectExpression
-        val objectType = objectExpr.type.nameWithoutPackage
+        val objectType = objectExpr.type.displayName()
 
         val displayExpr = buildString {
             append(objectExpr.text.takeIf { it.isNotBlank() } ?: "this")
@@ -96,7 +97,7 @@ internal object ExpressionNodeRenderer {
             )
 
             // Try to resolve the property type
-            val propertyType = node.type.nameWithoutPackage
+            val propertyType = node.type.displayName()
             if (propertyType != "java.lang.Object") {
                 keyValue("Property Type" to propertyType)
             }
@@ -108,8 +109,8 @@ internal object ExpressionNodeRenderer {
             code("groovy") { node.operation.text }
             keyValue(
                 "Operator" to node.operation.text,
-                "Left Type" to node.leftExpression.type.nameWithoutPackage,
-                "Right Type" to node.rightExpression.type.nameWithoutPackage,
+                "Left Type" to node.leftExpression.type.displayName(),
+                "Right Type" to node.rightExpression.type.displayName(),
             )
         }
     }
@@ -131,7 +132,7 @@ internal object ExpressionNodeRenderer {
 
     fun MarkdownBuilder.renderListExpression(node: ListExpression) {
         val elementCount = node.expressions.size
-        val listType = node.type.nameWithoutPackage
+        val listType = node.type.displayName()
 
         section("List Literal") {
             code("groovy") {
@@ -148,7 +149,7 @@ internal object ExpressionNodeRenderer {
 
             if (elementCount > 0) {
                 val elementTypes = node.expressions
-                    .map { it.type.nameWithoutPackage }
+                    .map { it.type.displayName() }
                     .distinct()
                     .joinToString(", ")
                 keyValue("Element Types" to elementTypes)
@@ -158,7 +159,7 @@ internal object ExpressionNodeRenderer {
 
     fun MarkdownBuilder.renderMapExpression(node: MapExpression) {
         val entryCount = node.mapEntryExpressions.size
-        val mapType = node.type.nameWithoutPackage
+        val mapType = node.type.displayName()
 
         section("Map Literal") {
             code("groovy") {
@@ -181,11 +182,11 @@ internal object ExpressionNodeRenderer {
 
             if (entryCount > 0) {
                 val keyTypes = node.mapEntryExpressions
-                    .map { it.keyExpression.type.nameWithoutPackage }
+                    .map { it.keyExpression.type.displayName() }
                     .distinct()
                     .joinToString(", ")
                 val valueTypes = node.mapEntryExpressions
-                    .map { it.valueExpression.type.nameWithoutPackage }
+                    .map { it.valueExpression.type.displayName() }
                     .distinct()
                     .joinToString(", ")
 
@@ -210,7 +211,7 @@ internal object ExpressionNodeRenderer {
             code("groovy") { node.text }
             keyValue(
                 "Value" to (node.value?.toString() ?: "null"),
-                "Type" to node.type.nameWithoutPackage,
+                "Type" to node.type.displayName(),
             )
         }
     }
@@ -223,5 +224,5 @@ internal object ExpressionNodeRenderer {
     }
 
     private fun ClosureExpression.parametersString(): String =
-        parameters?.joinToString(", ") { "${it.type.nameWithoutPackage} ${it.name}" } ?: ""
+        parameters?.joinToString(", ") { "${it.type.displayName()} ${it.name}" } ?: ""
 }

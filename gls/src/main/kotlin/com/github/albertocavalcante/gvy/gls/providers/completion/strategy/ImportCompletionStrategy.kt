@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
+import com.github.albertocavalcante.gvy.semantics.native.displayName
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.Position
@@ -176,8 +177,8 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
             .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
             .forEach { method ->
-                val returnType = method.returnType?.nameWithoutPackage ?: "def"
-                val params = method.parameters.joinToString(", ") { it.type.nameWithoutPackage }
+                val returnType = method.returnType?.displayName() ?: "def"
+                val params = method.parameters.joinToString(", ") { it.type.displayName() }
                 builder.add(
                     CompletionItem().apply {
                         label = method.name
@@ -210,7 +211,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
             .filter { Modifier.isStatic(it.modifiers) && Modifier.isPublic(it.modifiers) }
             .filter { memberPrefix.isNullOrEmpty() || it.name.startsWith(memberPrefix) }
             .forEach { field ->
-                val type = field.type?.nameWithoutPackage ?: "def"
+                val type = field.type?.displayName() ?: "def"
                 builder.add(
                     CompletionItem().apply {
                         label = field.name
@@ -249,7 +250,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
             .filter { property -> property.name !in staticFieldNames }
             .filter { property -> memberPrefix.isNullOrEmpty() || property.name.startsWith(memberPrefix) }
             .forEach { property ->
-                val type = property.type?.nameWithoutPackage ?: "def"
+                val type = property.type?.displayName() ?: "def"
                 builder.add(
                     CompletionItem().apply {
                         label = property.name

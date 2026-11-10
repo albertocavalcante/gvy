@@ -369,6 +369,30 @@ class ColdLocalCompletionTest {
     }
 
     @Test
+    fun `array parameters and return types of local methods display as Type brackets`(): Unit = runBlocking {
+        val source = """
+            class Names { String[] split(String[] items, int[][] grid) { items } }
+            new Names().spl
+        """.trimIndent()
+
+        val split = complete(source).single { it.label == "split" && it.detail?.contains("items") == true }
+
+        assertEquals("split(\${1:String[] items}, \${2:int[][] grid})", split.insertText)
+        assertEquals("String[] split(String[] items, int[][] grid)", split.detail)
+    }
+
+    @Test
+    fun `array parameters of in-scope methods display as Type brackets`(): Unit = runBlocking {
+        val source = "class Names {\n  String[] split(String[] items, int[][] grid) { items }\n  void m() { spl } }"
+
+        val split = complete(source, Position(2, source.lines()[2].indexOf(" } }")))
+            .single { it.label == "split" && it.detail?.contains("items") == true }
+
+        assertEquals("split(\${1:String[] items}, \${2:int[][] grid})", split.insertText)
+        assertEquals("String[] split(String[] items, int[][] grid)", split.detail)
+    }
+
+    @Test
     fun `an overload that is not a generic override keeps the inherited method`(): Unit = runBlocking {
         val source = """
             class Names extends ArrayList<String> { boolean add(Integer i) { true } }

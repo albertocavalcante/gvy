@@ -48,7 +48,7 @@ object SymbolExtractor {
             variables.add(
                 VariableSymbol(
                     name = param.name,
-                    type = param.type.nameWithoutPackage,
+                    type = param.type.displayName(),
                     kind = VariableKind.PARAMETER,
                     line = param.lineNumber - 1,
                 ),
@@ -166,13 +166,13 @@ object SymbolExtractor {
             val parameters = methodNode.parameters.map { param ->
                 ParameterInfo(
                     name = param.name,
-                    type = param.type.nameWithoutPackage,
+                    type = param.type.displayName(),
                 )
             }
 
             MethodSymbol(
                 name = methodNode.name,
-                returnType = methodNode.returnType.nameWithoutPackage,
+                returnType = methodNode.returnType.displayName(),
                 parameters = parameters,
                 line = methodNode.lineNumber - 1,
                 column = methodNode.columnNumber - 1,
@@ -189,7 +189,7 @@ object SymbolExtractor {
         return classNode.fields.map { fieldNode ->
             FieldSymbol(
                 name = fieldNode.name,
-                type = fieldNode.type.nameWithoutPackage,
+                type = fieldNode.type.displayName(),
                 isPrivate = Modifier.isPrivate(fieldNode.modifiers),
                 isPublic = Modifier.isPublic(fieldNode.modifiers),
                 isProtected = Modifier.isProtected(fieldNode.modifiers),
