@@ -89,8 +89,8 @@ class JenkinsMetadataMemoizationTest {
     fun `repeated requests load the bundled metadata once and reuse the merged view`() {
         val context = context()
 
-        val first = context.getAllMetadata()
-        repeat(50) { assertSame(first, context.getAllMetadata()) }
+        val first = context.getAllMetadata(null)
+        repeat(50) { assertSame(first, context.getAllMetadata(null)) }
 
         assertEquals(1, baseLoads.get())
         assertEquals(setOf("echo", "sh"), first.steps.keys)
@@ -106,7 +106,7 @@ class JenkinsMetadataMemoizationTest {
             val futures = (1..threads).map {
                 pool.submit<MergedJenkinsMetadata> {
                     start.await()
-                    context.getAllMetadata()
+                    context.getAllMetadata(null)
                 }
             }
             start.countDown()
@@ -125,13 +125,13 @@ class JenkinsMetadataMemoizationTest {
         val cpB = listOf(tempDir.resolve("b.jar"))
         val context = context(scanResult = { cp -> if (cp == cpA) dynamic("fromA") else dynamic("fromB") })
 
-        val before = context.getAllMetadata()
+        val before = context.getAllMetadata(null)
         context.scanClasspath(cpA)
-        val afterA = context.getAllMetadata()
+        val afterA = context.getAllMetadata(cpA)
         context.scanClasspath(cpA) // unchanged classpath: no rescan, no rebuild
-        val afterSameA = context.getAllMetadata()
+        val afterSameA = context.getAllMetadata(cpA)
         context.scanClasspath(cpB)
-        val afterB = context.getAllMetadata()
+        val afterB = context.getAllMetadata(cpB)
 
         assertEquals(setOf("echo", "sh"), before.steps.keys)
         assertEquals(setOf("echo", "sh", "fromA"), afterA.steps.keys)
@@ -148,10 +148,12 @@ class JenkinsMetadataMemoizationTest {
             scanResult = { cp -> if (cp == cpA) dynamic("fromA") else error("corrupt jar") },
         )
 
+        val broken = listOf(tempDir.resolve("broken.jar"))
         context.scanClasspath(cpA)
-        context.scanClasspath(listOf(tempDir.resolve("broken.jar")))
+        context.scanClasspath(broken)
 
-        assertEquals(setOf("echo", "sh", "fromA"), context.getAllMetadata().steps.keys)
+        assertEquals(setOf("echo", "sh", "fromA"), context.getAllMetadata(cpA).steps.keys)
+        assertEquals(setOf("echo", "sh"), context.getAllMetadata(broken).steps.keys, "no scanned steps for it")
     }
 
     @Test
@@ -178,11 +180,11 @@ class JenkinsMetadataMemoizationTest {
         )
 
         val first = context(config = durableOnly)
-        assertEquals(setOf("sh"), first.getAllMetadata().steps.keys)
-        assertEquals(setOf("sh"), first.getAllMetadata().steps.keys)
+        assertEquals(setOf("sh"), first.getAllMetadata(null).steps.keys)
+        assertEquals(setOf("sh"), first.getAllMetadata(null).steps.keys)
 
         val second = context(config = basicOnly)
-        assertEquals(setOf("echo"), second.getAllMetadata().steps.keys)
+        assertEquals(setOf("echo"), second.getAllMetadata(null).steps.keys)
     }
 
     @Test
@@ -197,7 +199,7 @@ class JenkinsMetadataMemoizationTest {
             tempDir,
         )
 
-        val entries = manager.getAllMetadata().directiveEntries
+        val entries = manager.getAllMetadata(UNCOMPILED).directiveEntries
 
         assertEquals(setOf("jdk", "maven"), entries.getValue("tools").keys, "gradle needs the gradle plugin")
         assertEquals(setOf("cron", "pollSCM", "upstream"), entries.getValue("triggers").keys)
@@ -214,7 +216,7 @@ class JenkinsMetadataMemoizationTest {
             ),
             tempDir,
         )
-        val durableSteps = manager.getAllMetadata().steps
+        val durableSteps = manager.getAllMetadata(UNCOMPILED).steps
         assertTrue("sh" in durableSteps, "sh comes from workflow-durable-task-step")
         assertTrue("echo" !in durableSteps, "echo is filtered out without workflow-basic-steps")
 
@@ -226,7 +228,7 @@ class JenkinsMetadataMemoizationTest {
                 ),
             ),
         )
-        val basicSteps = updated.getAllMetadata().steps
+        val basicSteps = updated.getAllMetadata(UNCOMPILED).steps
         assertTrue("echo" in basicSteps, "echo comes from workflow-basic-steps")
         assertTrue("sh" !in basicSteps, "sh is filtered out after the plugin set changed")
     }
@@ -235,7 +237,7 @@ class JenkinsMetadataMemoizationTest {
     fun `default context returns the same merged view on repeated requests`() {
         val context = JenkinsContext(JenkinsConfiguration(), tempDir)
 
-        assertSame(context.getAllMetadata(), context.getAllMetadata())
+        assertSame(context.getAllMetadata(null), context.getAllMetadata(null))
     }
 
     @Test
@@ -243,6 +245,11 @@ class JenkinsMetadataMemoizationTest {
         val a = JenkinsContext(JenkinsConfiguration(), tempDir.resolve("a"))
         val b = JenkinsContext(JenkinsConfiguration(), tempDir.resolve("b"))
 
-        assertSame(a.getAllMetadata(), b.getAllMetadata())
+        assertSame(a.getAllMetadata(null), b.getAllMetadata(null))
+    }
+
+    private companion object {
+        /** A Jenkinsfile never compiled: its view has bundled metadata only. */
+        val UNCOMPILED: java.net.URI = java.net.URI.create("file:///workspace/Jenkinsfile")
     }
 }

@@ -120,7 +120,8 @@ class JenkinsContext internal constructor(
         val scanned = scanClasspath(scanKey)
         warnAboutLegacyStubsDir()
         classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, ::shouldGenerateStubs) {
-            scanned?.let { withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata) } ?: getAllMetadata()
+            // A failed scan has no library steps of its own: bundled and GDSL only, never another file's scan.
+            scanned?.let { withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata) } ?: getAllMetadata(null)
         }
 
         return ScopedClasspath(classpath, scanKey)
@@ -343,10 +344,10 @@ class JenkinsContext internal constructor(
     }
 
     /**
-     * Recent scans by classpath, least recently used first, plus the newest request's scan ([latest]).
-     * Immutable: [scanClasspath] replaces the whole cache, so readers never see a partial update.
+     * Recent scans by classpath, least recently used first. Immutable: [scanClasspath] replaces the whole
+     * cache, so readers never see a partial update.
      */
-    private class ScanCache(val byClasspath: Map<List<Path>, ScanSnapshot>, val latest: ScanSnapshot?) {
+    private class ScanCache(val byClasspath: Map<List<Path>, ScanSnapshot>) {
         /** [scan] for its classpath unless a newer request's scan is there; the LRU entry beyond the bound goes. */
         fun with(scan: ScanSnapshot): ScanCache {
             val existing = byClasspath[scan.classpath]
@@ -356,8 +357,7 @@ class JenkinsContext internal constructor(
                 put(scan.classpath, kept)
                 while (size > MAX_SCANNED_CLASSPATHS) remove(keys.first())
             }
-            val newest = if (latest == null || latest.generation < scan.generation) scan else latest
-            return ScanCache(entries, newest)
+            return ScanCache(entries)
         }
 
         /** Marks [classpath] as most recently used. */
@@ -368,7 +368,7 @@ class JenkinsContext internal constructor(
                 remove(classpath)
                 put(classpath, entry)
             }
-            return ScanCache(entries, latest)
+            return ScanCache(entries)
         }
     }
 
@@ -379,7 +379,7 @@ class JenkinsContext internal constructor(
     private class MergedSnapshot(val gdsl: GdslSnapshot?, val metadata: MergedJenkinsMetadata)
 
     /** Replaced in [scanClasspath] without the context lock; per classpath, the newest request wins. */
-    private val scans = AtomicReference(ScanCache(emptyMap(), latest = null))
+    private val scans = AtomicReference(ScanCache(emptyMap()))
 
     /** Hands out scan request generations, in the order requests start. */
     private val scanRequests = AtomicLong()
@@ -392,21 +392,17 @@ class JenkinsContext internal constructor(
     private var unscannedView: MergedSnapshot? = null
 
     /**
-     * Get combined metadata (bundled + dynamic), optionally filtered by installed plugins.
+     * Combined metadata (bundled + GDSL + the library steps scanned from [classpath]) for a file compiled with
+     * [classpath] (#1242): its own scanned library steps, never another file's. Null, or a classpath that was
+     * never scanned or was evicted, gives the view without scanned steps until the file's next compile scans
+     * it again. Reads take no lock and write nothing but memos.
      *
-     * Completion and hover call this per request, so the result is memoized: it is rebuilt only
-     * when a classpath scan or a GDSL (re)load publishes new metadata. Configuration (plugins, GDSL
-     * paths) is fixed per context; a configuration change creates a new context and therefore a new view.
+     * Completion and hover call this per request, so each view is memoized: it is rebuilt only when its scan
+     * or a GDSL (re)load publishes new metadata. Configuration (plugins, GDSL paths) is fixed per context; a
+     * configuration change creates a new context and therefore a new view.
      *
      * HEURISTIC: If plugins.txt exists, filter to only show steps from installed plugins.
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
-     */
-    fun getAllMetadata(): MergedJenkinsMetadata = viewOf(scans.get().latest)
-
-    /**
-     * Metadata for a file compiled with [classpath] (#1242): its own scanned library steps, never another
-     * file's. A classpath that was never scanned, or was evicted, gets the view without scanned steps until
-     * the file's next compile scans it again. Reads take no lock and write nothing but memos.
      */
     fun getAllMetadata(classpath: List<Path>?): MergedJenkinsMetadata =
         viewOf(classpath?.let { scans.get().byClasspath[it] })
@@ -462,9 +458,9 @@ class JenkinsContext internal constructor(
      * Jenkinsfile sees its own library steps through [getAllMetadata] for its classpath (#1242); a known
      * classpath is not rescanned. Every Jenkinsfile compile, completion included, reaches this, so the scan
      * runs without any lock (#1241): a request for another classpath never waits for a scan in progress.
-     * Each request takes a generation before it scans; per classpath, and for the classpath-less view, a
-     * scan replaces only an older generation, so the newest request wins whatever order scans finish in, and
-     * readers always see exactly one scan.
+     * Each request takes a generation before it scans; per classpath a scan replaces only an older
+     * generation, so the newest request wins whatever order scans finish in, and readers always see exactly
+     * one scan.
      *
      * @return this request's own scan result (even when a newer request has been published since), or null
      *   if the scanner failed.
@@ -475,9 +471,7 @@ class JenkinsContext internal constructor(
      */
     fun scanClasspath(classpath: List<Path>): BundledJenkinsMetadata? {
         val cached = scans.get().byClasspath[classpath]
-        // Skip only when no newer request has started: otherwise an older scan still in flight would become
-        // the newest view after this (newer) request returned.
-        if (cached != null && cached.generation == scanRequests.get()) {
+        if (cached != null) {
             logger.debug { "Classpath unchanged (${classpath.size} entries), skipping scan" }
             scans.updateAndGet { it.touched(classpath) }
             return cached.metadata
@@ -485,15 +479,14 @@ class JenkinsContext internal constructor(
 
         val generation = scanRequests.incrementAndGet()
         val snapshot = classpath.toList()
-        // A known classpath is republished under this request's generation, without rescanning.
-        val metadata = cached?.metadata ?: try {
+        val metadata = try {
             logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
             classpathScanner(snapshot)
         } catch (e: Exception) {
             logger.error(e) { "Failed to scan classpath" }
             return null
         }
-        val scanned = ScanSnapshot(generation, snapshot, metadata).also { it.view = cached?.view }
+        val scanned = ScanSnapshot(generation, snapshot, metadata)
         scans.updateAndGet { it.with(scanned) }
         return metadata
     }

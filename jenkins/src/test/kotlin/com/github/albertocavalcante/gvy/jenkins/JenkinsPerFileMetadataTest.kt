@@ -7,9 +7,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /**
  * Scanned library steps belong to the Jenkinsfile whose classpath loads them (#1242): completion and hover in
@@ -42,7 +46,10 @@ class JenkinsPerFileMetadataTest {
             .map { it + "Step" }.toTypedArray(),
     ).also { scans.incrementAndGet() }
 
-    private fun context(config: JenkinsConfiguration = JenkinsConfiguration()) = JenkinsContext(
+    private fun context(
+        config: JenkinsConfiguration = JenkinsConfiguration(),
+        scanner: (List<Path>) -> BundledJenkinsMetadata = ::scan,
+    ) = JenkinsContext(
         configuration = config,
         workspaceRoot = tempDir,
         pluginManager = JenkinsPluginManager(),
@@ -50,11 +57,11 @@ class JenkinsPerFileMetadataTest {
             baseLoads.incrementAndGet()
             base
         },
-        classpathScanner = ::scan,
+        classpathScanner = scanner,
         stubHooks = StubHooks(cacheRoot = tempDir.resolve("stubs")),
     )
 
-    private fun manager(): JenkinsWorkspaceManager {
+    private fun manager(scanner: (List<Path>) -> BundledJenkinsMetadata = ::scan): JenkinsWorkspaceManager {
         val libraries = listOf("a", "b").map { name ->
             val jar = Files.createFile(tempDir.resolve("$name.jar"))
             SharedLibrary(name, jar.toString())
@@ -65,7 +72,7 @@ class JenkinsPerFileMetadataTest {
             tempDir,
             JenkinsPluginManager(),
             tempDir.resolve("stubs"),
-            context(config),
+            context(config, scanner),
         )
     }
 
@@ -98,6 +105,34 @@ class JenkinsPerFileMetadataTest {
 
     @Test
     fun `each Jenkinsfile sees only its own library steps when B compiles first`() = assertScopedSteps(false)
+
+    @Test
+    fun `an older compile of the same file that finishes last does not replace the newer classpath`() {
+        val aStarted = CountDownLatch(1)
+        val releaseA = CountDownLatch(1)
+        val manager = manager { classpath ->
+            if (classpath.any { it.fileName.toString() == "a.jar" }) {
+                aStarted.countDown()
+                releaseA.await(30, TimeUnit.SECONDS)
+            }
+            scan(classpath)
+        }
+        val file = jenkinsfile("edited")
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            // The old text loads library a and is slow; the edit switches to library b and finishes first.
+            val oldCompile = pool.submit { manager.getClasspathForFile(file, "@Library('a') _\nnode {}") }
+            assertTrue(aStarted.await(10, TimeUnit.SECONDS), "old compile is scanning")
+            manager.getClasspathForFile(file, "@Library('b') _\nnode {}")
+            releaseA.countDown()
+            oldCompile.get(10, TimeUnit.SECONDS)
+
+            assertEquals(setOf("bStep"), manager.libraryStepsFor(file))
+        } finally {
+            releaseA.countDown()
+            pool.shutdownNow()
+        }
+    }
 
     @Test
     fun `a Jenkinsfile that was never compiled has no scanned library steps`() {

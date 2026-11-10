@@ -7,6 +7,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Manages Jenkins workspace context separately from regular Groovy sources.
@@ -41,10 +42,18 @@ class JenkinsWorkspaceManager internal constructor(
 
     private val libraryCache = ConcurrentHashMap<URI, CacheEntry>()
 
+    /** A file's scan key and the request that recorded it; an older request never overwrites a newer one. */
+    private class TrackedClasspath(val request: Long, val scanKey: List<Path>)
+
+    /** Hands out classpath request numbers, in the order compiles ask for a classpath. */
+    private val classpathRequests = AtomicLong()
+
     /** The scan key of the classpath each Jenkinsfile was last compiled with, for [getAllMetadata]; LRU-bounded. */
-    private val classpathByUri = object : LinkedHashMap<URI, List<Path>>(INITIAL_URI_CAPACITY, LOAD_FACTOR, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<URI, List<Path>>) = size > MAX_TRACKED_FILES
-    }
+    private val classpathByUri =
+        object : LinkedHashMap<URI, TrackedClasspath>(INITIAL_URI_CAPACITY, LOAD_FACTOR, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<URI, TrackedClasspath>) =
+                size > MAX_TRACKED_FILES
+        }
 
     /**
      * Checks if the given URI represents a Jenkins pipeline file.
@@ -103,8 +112,16 @@ class JenkinsWorkspaceManager internal constructor(
         }
 
         // Build classpath from references AND project dependencies
+        // Taken before building: when two compiles of this file overlap, the later request's classpath is kept
+        // even if the earlier (slower) one finishes last.
+        val request = classpathRequests.incrementAndGet()
         val scoped = jenkinsContext.buildScopedClasspath(libraries, projectDependencies)
-        synchronized(classpathByUri) { classpathByUri[uri] = scoped.scanKey }
+        synchronized(classpathByUri) {
+            val recorded = classpathByUri[uri]
+            if (recorded == null || recorded.request < request) {
+                classpathByUri[uri] = TrackedClasspath(request, scoped.scanKey)
+            }
+        }
         val classpath = scoped.entries
 
         // Extract library sources for navigation
@@ -165,16 +182,12 @@ class JenkinsWorkspaceManager internal constructor(
     fun getGlobalVariables(): List<GlobalVariable> = varsProvider.getGlobalVariables()
 
     /**
-     * Get combined metadata (bundled + dynamic) from context.
-     */
-    fun getAllMetadata() = jenkinsContext.getAllMetadata()
-
-    /**
      * Metadata for the Jenkinsfile [uri]: bundled and GDSL metadata plus the library steps scanned from the
      * classpath it was last compiled with, never another file's (#1242). Before its first compile (or after
      * its classpath was evicted) it has no scanned steps.
      */
-    fun getAllMetadata(uri: URI) = jenkinsContext.getAllMetadata(synchronized(classpathByUri) { classpathByUri[uri] })
+    fun getAllMetadata(uri: URI) =
+        jenkinsContext.getAllMetadata(synchronized(classpathByUri) { classpathByUri[uri]?.scanKey })
 
     private companion object {
         /** Jenkinsfiles whose classpath is remembered; each entry is a short list of paths. */
