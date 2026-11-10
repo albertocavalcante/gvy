@@ -254,4 +254,61 @@ class WorkspaceSourceCanonicalTest {
 
         assertEquals(listOf(src.resolve("A.groovy")), manager.getWorkspaceSources(), "case still matters")
     }
+
+    @Test
+    fun `events under a refused link root are dropped, files and folders alike`() {
+        val manager = manager()
+        val outside = Files.createDirectories(base.resolve("elsewhere"))
+        val link = linkedTo(manager, outside)
+        write(outside.resolve("pkg/Deep.groovy"))
+        write(outside.resolve("Top.groovy"))
+
+        manager.applySourceChanges(listOf(link.resolve("pkg"), link.resolve("Top.groovy")), emptyList())
+        manager.applySourceChanges(listOf(outside.resolve("pkg"), outside.resolve("Top.groovy")), emptyList())
+
+        assertEquals(emptyList(), manager.getWorkspaceSources())
+    }
+
+    @Test
+    fun `a root reached through a linked ancestor that leaves the workspace is refused`() {
+        val manager = manager()
+        // `src/main -> /usr/share`-style: the root itself is no link, but its real path is outside the workspace.
+        val outside = Files.createDirectories(base.resolve("elsewhere"))
+        write(outside.resolve("groovy/Leak.groovy"))
+        val workspace = Files.createDirectories(base.resolve("ws/src"))
+        Files.createSymbolicLink(workspace.resolve("main"), outside)
+        val root = workspace.resolve("main/groovy")
+        manager.updateWorkspaceModel(base.resolve("ws"), emptyList(), listOf(root))
+        assertEquals(emptyList(), manager.getWorkspaceSources(), "scan")
+
+        write(outside.resolve("groovy/New.groovy"))
+        manager.applySourceChanges(listOf(root.resolve("New.groovy")), emptyList())
+        assertEquals(emptyList(), manager.getWorkspaceSources(), "events")
+    }
+
+    @Test
+    fun `a root lexically outside the workspace without links is still scanned`() {
+        val manager = manager()
+        // A build's `srcDir '../shared'`: trusted by the build, not reached through a link.
+        val shared = write(base.resolve("shared/src/Shared.groovy")).parent
+        manager.updateWorkspaceModel(Files.createDirectories(base.resolve("ws")), emptyList(), listOf(shared))
+
+        assertEquals(listOf(shared.resolve("Shared.groovy")), manager.getWorkspaceSources())
+    }
+
+    @Test
+    fun `a created path through a directory link inside an allowed root is dropped`() {
+        val manager = manager()
+        val outside = Files.createDirectories(base.resolve("elsewhere"))
+        write(outside.resolve("Evil.groovy"))
+        write(outside.resolve("pkg/Nested.groovy"))
+        val src = Files.createDirectories(base.resolve("ws/src"))
+        val evil = Files.createSymbolicLink(src.resolve("evil"), outside)
+        manager.updateWorkspaceModel(base.resolve("ws"), emptyList(), listOf(src))
+        assertEquals(emptyList(), manager.getWorkspaceSources(), "the scan does not follow links inside a root")
+
+        manager.applySourceChanges(listOf(evil.resolve("Evil.groovy"), evil.resolve("pkg"), evil), emptyList())
+
+        assertEquals(emptyList(), manager.getWorkspaceSources(), "nor do events")
+    }
 }
