@@ -369,7 +369,11 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
         assertEquals(true, "ação" in names("trait T { int ação = 0; def go() { ação } }"))
         assertEquals(true, "cnt" in names("trait T_ { int cnt = 0; def go() { cnt } }"), "trait name ending in _")
         assertEquals(true, "cnt" in names("package a__b\ntrait T { int cnt = 0; def go() { cnt } }"))
-        assertEquals(true, "\$cnt" in names("trait T { int \$cnt = 0; def go() { \$cnt } }"))
+        // A trait field named `$cnt` crashes Groovy 4's own semantic analysis, so the helper mapping is checked
+        // on the names the transform would generate instead.
+        assertEquals(listOf("\$cnt"), DispatchNames.traitField("T__\$cnt\$get").map { it.first })
+        assertEquals(listOf("_cnt", "cnt"), DispatchNames.traitField("T___cnt\$set").map { it.first })
+        assertEquals(listOf("b__c", "c"), DispatchNames.traitField("a_T__b__c\$get").map { it.first })
         assertEquals(true, "cnt" in names("trait T { static int cnt = 0; static go() { cnt } }"), "static field")
         assertEquals(true, names("trait T { int cnt = 0; def go() { cnt++ } }").containsAll(setOf("getCnt", "setCnt")))
     }
