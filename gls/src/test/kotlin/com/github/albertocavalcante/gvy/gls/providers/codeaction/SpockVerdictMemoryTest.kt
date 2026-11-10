@@ -9,8 +9,9 @@ import org.junit.jupiter.api.Test
 import java.net.URI
 import java.nio.file.Path
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class SpockVerdictMemoryTest {
@@ -45,13 +46,13 @@ class SpockVerdictMemoryTest {
             "class Outer2 { static abstract class Inner extends Specification {} }\n"
         val after = "import spock.lang.*\n" + outer1 + "class Outer2 { static abstract class Inner { void m( } }\n"
 
-        val target = SpockVerdictMemory.preludeOf(before, "Outer2\$Inner")
-        assertEquals("Specification", target?.extendsName)
-        assertNotEquals(target?.hash, SpockVerdictMemory.preludeOf(after, "Outer2\$Inner")?.hash)
-        assertEquals(
-            SpockVerdictMemory.preludeOf(before, "Outer1\$Inner")?.hash,
-            SpockVerdictMemory.preludeOf(after, "Outer1\$Inner")?.hash,
-        )
+        val target = assertNotNull(SpockVerdictMemory.preludeOf(before, "Outer2\$Inner"))
+        val targetAfter = assertNotNull(SpockVerdictMemory.preludeOf(after, "Outer2\$Inner"))
+        assertEquals("Specification", target.extendsName)
+        assertNotEquals(target.hash, targetAfter.hash)
+        val sibling = assertNotNull(SpockVerdictMemory.preludeOf(before, "Outer1\$Inner"))
+        val siblingAfter = assertNotNull(SpockVerdictMemory.preludeOf(after, "Outer1\$Inner"))
+        assertEquals(sibling.hash, siblingAfter.hash)
     }
 
     @Test
