@@ -28,7 +28,11 @@ class CodeNarcDiagnosticProvider(
     private val compilationAccessor: CompilationAccessor? = null,
     private val rulesetResolver: RulesetResolver = HierarchicalRulesetResolver(),
     private val codeAnalyzer: CodeAnalyzer = DefaultCodeAnalyzer(),
+    /** Called once per ignored workspace ruleset file, e.g. to show a message to the user. */
+    private val onWorkspaceRulesetIgnored: (String) -> Unit = {},
 ) : DiagnosticProvider {
+
+    private val notifiedIgnored = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -71,6 +75,7 @@ class CodeNarcDiagnosticProvider(
         // Resolve the appropriate ruleset configuration
         val rulesetConfig = rulesetResolver.resolve(workspaceContext)
         logger.debug { "Using ruleset from: ${rulesetConfig.source}" }
+        rulesetConfig.ignoredWorkspaceRulesets.filter { notifiedIgnored.add(it) }.forEach(onWorkspaceRulesetIgnored)
 
         // Execute CodeNarc analysis directly with ruleset content
         val results = codeAnalyzer.analyze(

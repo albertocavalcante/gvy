@@ -38,6 +38,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.future.future
 import kotlinx.coroutines.launch
+import org.eclipse.lsp4j.MessageParams
+import org.eclipse.lsp4j.MessageType
 import org.eclipse.lsp4j.CallHierarchyIncomingCall
 import org.eclipse.lsp4j.CallHierarchyIncomingCallsParams
 import org.eclipse.lsp4j.CallHierarchyItem
@@ -168,7 +170,19 @@ class GroovyTextDocumentService(
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
-            val codeNarcProvider = CodeNarcDiagnosticProvider(workspaceContext)
+            val codeNarcProvider = CodeNarcDiagnosticProvider(
+                workspaceContext,
+                onWorkspaceRulesetIgnored = { ruleset ->
+                    client()?.showMessage(
+                        MessageParams().apply {
+                            type = MessageType.Info
+                            message = "The workspace CodeNarc ruleset '$ruleset' uses features that are not " +
+                                "supported for security reasons (rulesets are never evaluated as Groovy), so " +
+                                "the default ruleset is used."
+                        },
+                    )
+                },
+            )
             val codeNarcAdapter = DiagnosticProviderAdapter(
                 delegate = codeNarcProvider,
                 id = "codenarc",

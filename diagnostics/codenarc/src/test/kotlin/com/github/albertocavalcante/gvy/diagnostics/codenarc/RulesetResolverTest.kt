@@ -227,7 +227,9 @@ class RulesetResolverTest {
     }
 
     @Test
-    fun `workspace ruleset is never loaded and Jenkins detection still applies`(@TempDir tempDir: Path) {
+    fun `a declarative workspace ruleset is interpreted and takes precedence over Jenkins detection`(
+        @TempDir tempDir: Path,
+    ) {
         Files.createFile(tempDir.resolve("Jenkinsfile"))
         Files.createDirectory(tempDir.resolve("vars"))
         Files.writeString(tempDir.resolve("vars/buildPlugin.groovy"), "def call() {}\n")
@@ -236,13 +238,13 @@ class RulesetResolverTest {
 
         val config = resolver.resolve(createWorkspaceContext(tempDir, enabled = true))
 
-        assertEquals("resource:codenarc/rulesets/frameworks/jenkins.groovy", config.source)
-        assertFalse(config.rulesetContent.contains(customRuleset))
-        assertEquals(listOf("codenarc.groovy"), config.ignoredWorkspaceRulesets)
+        assertEquals("workspace:codenarc.groovy", config.source)
+        assertTrue(config.rulesetContent.contains("<ruleset-ref path=\"rulesets/basic.xml\"/>"))
+        assertTrue(config.ignoredWorkspaceRulesets.isEmpty())
     }
 
     @Test
-    fun `should ignore a workspace codenarc file and report it`(@TempDir tempDir: Path) {
+    fun `should use a declarative workspace codenarc file as generated XML`(@TempDir tempDir: Path) {
         // Given: Workspace with .codenarc file
         val customRuleset = """
             ruleset {
@@ -255,10 +257,10 @@ class RulesetResolverTest {
         val context = createWorkspaceContext(tempDir, enabled = true)
         val config = resolver.resolve(context)
 
-        // Then: the workspace file is never evaluated (CodeNarc runs it as Groovy); the default is used
-        assertTrue(config.source.startsWith("resource:"), "Expected a bundled ruleset, got: ${config.source}")
-        assertFalse(config.rulesetContent.contains("Custom workspace ruleset"))
-        assertEquals(listOf(".codenarc"), config.ignoredWorkspaceRulesets)
+        // Then: the file is interpreted (never evaluated as Groovy) into an equivalent XML ruleset
+        assertEquals("workspace:.codenarc", config.source)
+        assertTrue(config.rulesetContent.startsWith("<?xml"), config.rulesetContent)
+        assertTrue(config.rulesetContent.contains("<description>Custom workspace ruleset</description>"))
     }
 
     @Test

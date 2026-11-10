@@ -30,12 +30,12 @@ class IgnoredWorkspaceRulesetNoticeTest {
     @Test
     fun `the notice is attached to the ignored ruleset file only`() = runBlocking {
         val ruleset = tempDir.resolve("codenarc.groovy")
-        Files.writeString(ruleset, "ruleset { TrailingWhitespace }")
+        Files.writeString(ruleset, "ruleset { evaluate 'println 1' }")
         val other = tempDir.resolve("Other.groovy")
         Files.writeString(other, "class Other {}\n")
         val provider = provider(tempDir)
 
-        val onRuleset = provider.analyze("ruleset { TrailingWhitespace }\n", ruleset.toUri())
+        val onRuleset = provider.analyze("ruleset { evaluate 'println 1' }\n", ruleset.toUri())
         val onOther = provider.analyze("class Other {}\n", other.toUri())
 
         val notices = onRuleset.filter { it.severity == DiagnosticSeverity.Information && "ignored" in it.message }
@@ -44,5 +44,29 @@ class IgnoredWorkspaceRulesetNoticeTest {
             onOther.none { it.severity == DiagnosticSeverity.Information && "ignored" in it.message },
             "other files must not carry the notice, got ${onOther.map { it.message }}",
         )
+    }
+
+    @Test
+    fun `the user is told once per ignored ruleset file`() = runBlocking {
+        Files.writeString(tempDir.resolve("codenarc.groovy"), "ruleset { evaluate 'println 1' }")
+        val other = tempDir.resolve("Other.groovy")
+        Files.writeString(other, "class Other {}\n")
+        val told = mutableListOf<String>()
+        val provider = CodeNarcDiagnosticProvider(
+            object : WorkspaceContext {
+                override val root: Path = tempDir
+                override fun getConfiguration() = object : DiagnosticConfiguration {
+                    override val isEnabled = true
+                    override val propertiesFile: String? = null
+                    override val autoDetectConfig = true
+                }
+            },
+            onWorkspaceRulesetIgnored = { told.add(it) },
+        )
+
+        provider.analyze("class Other {}\n", other.toUri())
+        provider.analyze("class Other {}\n", other.toUri())
+
+        assertEquals(listOf("codenarc.groovy"), told)
     }
 }
