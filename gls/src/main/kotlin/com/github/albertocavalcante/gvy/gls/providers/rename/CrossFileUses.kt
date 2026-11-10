@@ -12,6 +12,7 @@ import java.net.URI
  * - [truncated]: the scan stopped at the first few files; there may be more.
  * - [unverifiable]: the workspace exceeds the scan limits, so no verdict about other files is possible. A
  *   workspace over the limits therefore refuses every member and class rename.
+ * - [unreadable]: directories or files that could not be read, whose contents are unknown.
  */
 internal data class CrossFileUses(
     val used: List<URI> = emptyList(),
@@ -19,13 +20,19 @@ internal data class CrossFileUses(
     val unsaved: List<URI> = emptyList(),
     val truncated: Boolean = false,
     val unverifiable: Boolean = false,
+    val unreadable: List<URI> = emptyList(),
 ) {
-    val isEmpty: Boolean get() = used.isEmpty() && mentioned.isEmpty() && unsaved.isEmpty() && !unverifiable
+    val isEmpty: Boolean get() =
+        used.isEmpty() && mentioned.isEmpty() && unsaved.isEmpty() && !unverifiable && unreadable.isEmpty()
 
     /** E.g. `'foo' may be used in 3 other files (A.groovy, B.groovy, C.groovy); renaming across files ...`. */
     fun message(name: String): String {
         if (unverifiable) {
-            return "the workspace is too large to verify that no other file uses '$name'; " +
+            return "the workspace is too large to verify that no other file uses '$name' (scan limit reached); " +
+                "renaming across files is not supported yet"
+        }
+        if (unreadable.isNotEmpty()) {
+            return "'$name' may be used in ${unreadable.named()}, which cannot be read; " +
                 "renaming across files is not supported yet"
         }
         val parts = buildList {

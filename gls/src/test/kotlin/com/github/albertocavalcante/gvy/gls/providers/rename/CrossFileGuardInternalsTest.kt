@@ -34,11 +34,13 @@ class CrossFileGuardInternalsTest {
         val guard = CrossFileUseGuard(
             index = index,
             openBuffers = { emptyMap() },
-            workspaceSources = {
-                job.cancel()
-                sources
-            },
-            workspaceRoot = { tempDir },
+            layout = WorkspaceLayout(
+                sources = {
+                    job.cancel()
+                    sources
+                },
+                roots = { listOf(tempDir) },
+            ),
             diskText = cache,
         )
         job = launch { outcome = guard.usesOutside(tempDir.resolve("A.groovy").toUri(), target(), "A") }
@@ -64,13 +66,13 @@ class CrossFileGuardInternalsTest {
     @Test
     fun `the cache is cleared when the workspace root changes`() {
         val cache = WorkspaceTextCache()
-        cache.rebind(tempDir)
+        cache.rebind(listOf(tempDir))
         files(2).forEach { cache.read(it, 1_000) }
         assertEquals(2, cache.size)
 
-        cache.rebind(tempDir)
+        cache.rebind(listOf(tempDir))
         assertEquals(2, cache.size, "same root keeps the entries")
-        cache.rebind(tempDir.resolve("other"))
+        cache.rebind(listOf(tempDir.resolve("other")))
         assertEquals(0, cache.size)
         assertEquals(0, cache.chars)
     }
@@ -108,5 +110,56 @@ class CrossFileGuardInternalsTest {
         val text = assertIs<DiskText.Text>(cache.read(file, 1_000)).text
         assertTrue("class L {}" in text)
         assertEquals(1, cache.size, "the file is cached")
+    }
+
+    @Test
+    fun `a walk is reused within the ttl and repeated after it`() {
+        var now = 0L
+        val cache = WorkspaceWalkCache(ttlMillis = 10_000, clock = { now })
+        val walk = { Walked(emptyList(), overflow = false) }
+
+        cache.get("k", walk)
+        now = 9_999
+        cache.get("k", walk)
+        assertEquals(1, cache.walks)
+        now = 10_000
+        cache.get("k", walk)
+        assertEquals(2, cache.walks)
+        cache.get("other key", walk)
+        assertEquals(3, cache.walks, "a different request is not served the old walk")
+    }
+
+    @Test
+    fun `invalidating drops the walk, including one that was running`() {
+        val cache = WorkspaceWalkCache()
+        val walk = { Walked(emptyList(), overflow = false) }
+        cache.get("k", walk)
+        cache.invalidate()
+        cache.get("k", walk)
+        assertEquals(2, cache.walks)
+
+        cache.get("racing") {
+            cache.invalidate() // a watcher event arrives while the walk runs
+            walk()
+        }
+        cache.get("racing", walk)
+        assertEquals(4, cache.walks, "the racing walk was not cached")
+    }
+
+    @Test
+    fun `with no workspace root open file buffers are candidates and other documents are not`() = runBlocking {
+        val index = checkNotNull(GroovyCompilationService().getWorkspaceSymbolIndex())
+        val caller = tempDir.resolve("B.groovy").toUri()
+        val buffers = mapOf(
+            caller to "class B { def run(x) { x.A() } }",
+            java.net.URI.create("untitled:Untitled-1") to "println 'A'",
+            tempDir.resolve("notes.txt").toUri() to "A",
+        )
+        val layout = WorkspaceLayout(sources = { emptyList() }, roots = { emptyList() })
+        val guard = CrossFileUseGuard(index, { buffers }, layout)
+
+        val uses = guard.usesOutside(tempDir.resolve("A.groovy").toUri(), target(), "A")
+
+        assertEquals(listOf(caller), uses.mentioned)
     }
 }

@@ -15,10 +15,16 @@ import java.net.URI
 import java.nio.file.Path
 
 /** How much of the workspace one cross-file check may read before it gives up and refuses. */
-internal data class ScanLimits(val maxFiles: Int = MAX_FILES, val maxChars: Long = MAX_CHARS) {
+internal data class ScanLimits(
+    val maxFiles: Int = MAX_FILES,
+    val maxChars: Long = MAX_CHARS,
+    val maxWalkEntries: Int = MAX_WALK_ENTRIES,
+) {
     companion object {
-        const val MAX_FILES = 2_000
+        /** Generous because the real bound is the characters read; a mixed repository has many small files. */
+        const val MAX_FILES = 20_000
         const val MAX_CHARS = 32L * 1024 * 1024
+        const val MAX_WALK_ENTRIES = 200_000
     }
 }
 
@@ -44,6 +50,9 @@ private const val MAX_REPORTED = 3
  * size). Past [limits], or when the walk is too large, the check refuses instead of guessing. A refusal means
  * "may be used"; the absence of one is not proof that no other file uses the symbol.
  *
+ * Not covered: symlinked directories (the walk does not follow links, which could loop), files in `.git`,
+ * `node_modules` and similar directories, and build output directly under a workspace or module root.
+ *
  * Files are compared by real path, not URI spelling: the index keys files by `Path.toUri()` while editors send
  * their own spelling (`file:///c:/…` vs `file:///C:/…`, percent-encoded characters), and the document being
  * renamed must never count as another file.
@@ -51,13 +60,13 @@ private const val MAX_REPORTED = 3
 internal class CrossFileUseGuard(
     private val index: WorkspaceSymbolIndex,
     private val openBuffers: () -> Map<URI, String>,
-    private val workspaceSources: () -> List<Path>,
-    private val workspaceRoot: () -> Path?,
+    private val layout: WorkspaceLayout,
+    private val walks: WorkspaceWalkCache = WorkspaceWalkCache(),
     private val diskText: WorkspaceTextCache = WorkspaceTextCache(),
     private val limits: ScanLimits = ScanLimits(),
 ) {
     /** Known sources keyed for one workspace root; the source list is replaced, never mutated, on refresh. */
-    private class KeyedSources(val list: List<Path>, val rootKey: Path?, val byKey: Map<Path, Path>)
+    private class KeyedSources(val list: List<Path>, val rootKeys: List<Path>, val byKey: Map<Path, Path>)
 
     @Volatile
     private var keyedSources: KeyedSources? = null
@@ -67,9 +76,9 @@ internal class CrossFileUseGuard(
         val symbolId = symbolIdOf(definition) ?: return CrossFileUses()
         return withContext(Dispatchers.IO) {
             val context = currentCoroutineContext()
-            val root = workspaceRoot()
-            val keys = FileKeys(root)
-            diskText.rebind(root)
+            val roots = layout.roots()
+            val keys = FileKeys(roots)
+            diskText.rebind(roots)
             val self = keys.of(documentUri)
             val used = index.findReferenceDocuments(symbolId).keys
                 .filter { keys.of(it) != self }.sortedBy { it.toString() }
@@ -77,12 +86,16 @@ internal class CrossFileUseGuard(
 
             val snapshot = index.implementationSnapshot
             val buffers = openBuffers()
+            val walked = walkedFiles(keys) { context.ensureActive() }
             val found = CandidateCollector(keys, limits.maxFiles)
-                .collect(sourcesKeyed(keys), snapshot.keys + buffers.keys) { context.ensureActive() }
+                .collect(sourcesKeyed(keys), snapshot.keys + buffers.keys, walked)
             val usedKeys = used.mapNotNullTo(HashSet(), keys::of)
             val candidates = found.files.filterKeys { it != self && it !in usedKeys }
-            if (found.overflow || candidates.size > limits.maxFiles) {
+            if (found.overflow) {
                 return@withContext CrossFileUses(used = used, unverifiable = true)
+            }
+            if (found.unreadable.isNotEmpty()) {
+                return@withContext CrossFileUses(used = used, unreadable = found.unreadable.map(Path::toUri))
             }
             val scan = Scan(
                 word = NameMatcher.pattern(name, definition),
@@ -94,13 +107,22 @@ internal class CrossFileUseGuard(
         }
     }
 
+    private fun walkedFiles(keys: FileKeys, active: () -> Unit): Walked {
+        if (keys.rootKeys.isEmpty()) return Walked(emptyList(), overflow = false)
+        val sourceRootKeys = layout.sourceRoots().map(keys::of)
+        val request = listOf(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries)
+        return walks.get(request) {
+            walkWorkspace(keys.rootKeys, sourceRootKeys, limits.maxFiles, limits.maxWalkEntries, active)
+        }
+    }
+
     /** Resolves the known sources' keys once per source list (they cost a filesystem call each). */
     private fun sourcesKeyed(keys: FileKeys): Map<Path, Path> {
-        val list = workspaceSources()
-        keyedSources?.takeIf { it.list === list && it.rootKey == keys.rootKey }?.let { return it.byKey }
+        val list = layout.sources()
+        keyedSources?.takeIf { it.list === list && it.rootKeys == keys.rootKeys }?.let { return it.byKey }
         val byKey = LinkedHashMap<Path, Path>()
         list.forEach { byKey.putIfAbsent(keys.of(it), it) }
-        keyedSources = KeyedSources(list, keys.rootKey, byKey)
+        keyedSources = KeyedSources(list, keys.rootKeys, byKey)
         return byKey
     }
 

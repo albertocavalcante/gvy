@@ -12,7 +12,10 @@ import org.codehaus.groovy.ast.PropertyNode
  * letters differs between JDKs (`x.$foo()` and `x.café()` must match on every runtime).
  */
 internal object NameMatcher {
-    private const val IDENTIFIER_PART = "[\\p{javaJavaIdentifierPart}$]"
+    private const val IDENTIFIER_PART = "\\p{javaJavaIdentifierPart}"
+
+    /** `$` is excluded from the boundary so that `"$greet"` (GString shorthand) and `x$greet` still match. */
+    private const val BOUNDARY_PART = "[$IDENTIFIER_PART&&[^$]]"
     private val ACCESSOR_PREFIXES = listOf("get", "set", "is")
 
     fun pattern(name: String, definition: ASTNode): Regex {
@@ -24,7 +27,7 @@ internal object NameMatcher {
             is MethodNode -> propertyNamesOfAccessor(name).toCollection(spellings)
         }
         val alternatives = spellings.joinToString("|") { Regex.escape(it) }
-        return Regex("(?<!$IDENTIFIER_PART)(?:$alternatives)(?!$IDENTIFIER_PART)")
+        return Regex("(?<!$BOUNDARY_PART)(?:$alternatives)(?!$BOUNDARY_PART)")
     }
 
     /** Groovy capitalizes `label` as `Label`, but leaves `aB` alone (`getaB`); bean tools give `getAB`. */

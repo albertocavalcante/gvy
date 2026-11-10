@@ -26,7 +26,7 @@ internal sealed interface DiskText {
  *
  * Bounded by entry count and by total characters, evicting least-recently-used. A file modified within
  * [RECENT_MILLIS] is never served from the cache, because coarse modification times cannot tell a rewrite from
- * the cached version. Cleared when the workspace root changes. Thread-safe.
+ * the cached version. Cleared when the workspace roots change. Thread-safe.
  */
 internal class WorkspaceTextCache(
     private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
@@ -38,15 +38,15 @@ internal class WorkspaceTextCache(
 
     private val entries = LinkedHashMap<Path, Entry>(INITIAL_CAPACITY, LOAD_FACTOR, true)
     private var totalChars = 0L
-    private var root: Path? = null
+    private var roots: List<Path> = emptyList()
 
     val size: Int get() = synchronized(entries) { entries.size }
     val chars: Long get() = synchronized(entries) { totalChars }
 
     /** Drops everything when the workspace changed under the cache. */
-    fun rebind(workspaceRoot: Path?) = synchronized(entries) {
-        if (workspaceRoot != root) {
-            root = workspaceRoot
+    fun rebind(workspaceRoots: List<Path>) = synchronized(entries) {
+        if (workspaceRoots != roots) {
+            roots = workspaceRoots
             entries.clear()
             totalChars = 0
         }
@@ -89,7 +89,7 @@ internal class WorkspaceTextCache(
     }
 
     companion object {
-        const val DEFAULT_MAX_ENTRIES = 2_000
+        const val DEFAULT_MAX_ENTRIES = 20_000
         const val DEFAULT_MAX_CHARS = 64L * 1024 * 1024
         const val RECENT_MILLIS = 2_000L
         private const val INITIAL_CAPACITY = 64

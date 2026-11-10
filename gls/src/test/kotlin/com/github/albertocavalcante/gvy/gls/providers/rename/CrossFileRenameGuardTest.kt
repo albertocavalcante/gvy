@@ -8,10 +8,12 @@ import org.codehaus.groovy.ast.ClassNode
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
+import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -24,7 +26,11 @@ class CrossFileRenameGuardTest {
 
     private val documents = DocumentProvider()
     private val service = GroovyCompilationService(documentProvider = documents)
-    private val provider by lazy { RenameProvider(service, documents) }
+    private var extraRoots = emptyList<Path>()
+    private val walks = WorkspaceWalkCache()
+    private val provider by lazy {
+        RenameProvider(service, documents, extraRoots = { extraRoots }, walks = walks)
+    }
 
     private fun write(name: String, content: String): URI {
         val file = tempDir.resolve("src").resolve(name)
@@ -62,7 +68,7 @@ class CrossFileRenameGuardTest {
     private fun refusal(block: suspend () -> Unit): String {
         val error = runCatching { runBlocking { block() } }.exceptionOrNull()
         val response = assertNotNull(error as? ResponseErrorException, "expected a refusal, got $error").responseError
-        assertEquals(ResponseErrorCode.RequestFailed.value, response.code)
+        assertEquals(ResponseErrorCode.RequestFailed.value, response.code, response.message)
         return response.message
     }
 
@@ -265,6 +271,7 @@ class CrossFileRenameGuardTest {
         ).forEach { (name, text) ->
             val file = tempDir.resolve(name)
             Files.writeString(file, text)
+            walks.invalidate() // files created outside the editor are seen once a watcher event arrives
             assertRefused(uri, a, "greet", name)
             Files.delete(file)
         }
@@ -335,12 +342,14 @@ class CrossFileRenameGuardTest {
         val java = tempDir.resolve("src/main/java/B.java")
         Files.createDirectories(java.parent)
         Files.writeString(java, "class B { Object run() { return new A().greet(); } }\n")
+        walks.invalidate()
         assertRefused(uri, a, "greet", "B.java")
         Files.delete(java)
 
         val step = tempDir.resolve("vars/step.groovy")
         Files.createDirectories(step.parent)
         Files.writeString(step, "def call(x) { x.greet() }\n")
+        walks.invalidate()
         assertRefused(uri, a, "greet", "step.groovy")
     }
 
@@ -390,6 +399,82 @@ class CrossFileRenameGuardTest {
         val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
 
         assertTrue("at least 3 other files" in message, message)
+    }
+
+    @Test
+    fun `a package named build inside the source root is not skipped`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        val pkg = tempDir.resolve("src/main/groovy/com/acme/build/B.groovy")
+        Files.createDirectories(pkg.parent)
+        Files.writeString(pkg, "package com.acme.build\nclass B {\n    def run(x) { x.greet() }\n}\n")
+
+        assertRefused(uri, a, "greet", "B.groovy")
+    }
+
+    @Test
+    fun `build output at the workspace root or a module root is skipped`(): Unit = runBlocking {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        listOf("build/Gen.groovy", "mod/out/Gen2.groovy").forEach {
+            val file = tempDir.resolve(it)
+            Files.createDirectories(file.parent)
+            Files.writeString(file, "class Gen { def run(x) { x.greet() } }\n")
+        }
+        Files.writeString(tempDir.resolve("mod/build.gradle"), "// module marker\n")
+
+        assertRenames(uri, a, "greet")
+    }
+
+    @Test
+    fun `a second workspace folder is checked too`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        val folder = Files.createTempDirectory("second-folder")
+        Files.writeString(folder.resolve("B.groovy"), "class B {\n    def run(x) { x.greet() }\n}\n")
+        extraRoots = listOf(folder)
+
+        assertRefused(uri, a, "greet", "B.groovy")
+    }
+
+    @Test
+    fun `the directory walk is reused until it is invalidated`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        val position = positionOf(a, "greet")
+        runBlocking {
+            provider.providePrepareRename(uri.toString(), position)
+            provider.providePrepareRename(uri.toString(), position)
+        }
+        assertEquals(1, walks.walks, "the second prepareRename does not re-walk")
+
+        Files.writeString(tempDir.resolve("Jenkinsfile"), "node { new A().greet() }\n") // no watcher covers this
+        runBlocking { provider.providePrepareRename(uri.toString(), position) }
+        assertEquals(1, walks.walks, "a new Jenkinsfile can go unseen until the walk expires")
+
+        walks.invalidate()
+        assertRefused(uri, a, "greet", "Jenkinsfile")
+        assertEquals(2, walks.walks)
+    }
+
+    @Test
+    fun `a GString shorthand reference is refused`() = assertRenameRefused(
+        mapOf(
+            "A.groovy" to a,
+            "B.groovy" to "println \"\$greet\"\nprintln \"\${1}-\$greet.length\"\n",
+        ),
+        "A.groovy", "greet",
+    )
+
+    @Test
+    fun `a directory that cannot be read refuses instead of being skipped`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        val locked = Files.createDirectories(tempDir.resolve("locked"))
+        Files.writeString(locked.resolve("B.groovy"), "class B { def run(x) { x.greet() } }\n")
+        val permissions = runCatching { Files.setPosixFilePermissions(locked, emptySet()) }
+        try {
+            Assumptions.assumeTrue(permissions.isSuccess && !Files.isReadable(locked), "directory stays readable")
+            val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
+            assertTrue("cannot be read" in message && "locked" in message, message)
+        } finally {
+            runCatching { Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x")) }
+        }
     }
 
     @Test

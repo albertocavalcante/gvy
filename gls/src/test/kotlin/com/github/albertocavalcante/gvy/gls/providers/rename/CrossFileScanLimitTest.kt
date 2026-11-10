@@ -59,6 +59,12 @@ class CrossFileScanLimitTest {
     }
 
     @Test
+    fun `more walk entries than the cap is refused as too large to verify`() {
+        val message = assertNotNull(renameMessage(ScanLimits(maxWalkEntries = 2)))
+        assertTrue("too large to verify that no other file uses 'greet' (scan limit reached)" in message, message)
+    }
+
+    @Test
     fun `a workspace within the caps is not refused`() {
         assertEquals(null, renameMessage(ScanLimits(maxFiles = 10, maxChars = 1_000_000)))
     }
