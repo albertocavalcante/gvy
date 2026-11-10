@@ -140,7 +140,19 @@ class JenkinsCompletionExactSetTest {
 
         assertNoDuplicateLabels(items)
         assertEquals(
-            setOf("agent", "environment", "matrix", "options", "parallel", "post", "stages", "steps", "tools", "when"),
+            setOf(
+                "agent",
+                "environment",
+                "input",
+                "matrix",
+                "options",
+                "parallel",
+                "post",
+                "stages",
+                "steps",
+                "tools",
+                "when",
+            ),
             items.labels(),
         )
     }

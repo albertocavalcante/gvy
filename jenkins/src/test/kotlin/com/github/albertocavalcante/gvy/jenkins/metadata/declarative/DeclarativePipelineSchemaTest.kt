@@ -82,14 +82,54 @@ class DeclarativePipelineSchemaTest {
         }
     }
 
+    /** `allowedIn` of every section and directive in a bundled JSON resource. */
+    private fun allowedIn(resource: String, blocksAreArrays: Boolean): Map<String, List<String>> {
+        val text = requireNotNull(javaClass.classLoader.getResource(resource)).readText()
+        val root = Json.parseToJsonElement(text).jsonObject
+        return listOf("sections", "directives").flatMap { kind ->
+            val blocks = root.getValue(kind)
+            if (blocksAreArrays) {
+                blocks.jsonArray.map { it.jsonObject.getValue("name").jsonPrimitive.content to it.jsonObject }
+            } else {
+                blocks.jsonObject.entries.map { (name, block) -> name to block.jsonObject }
+            }
+        }.associate { (name, block) ->
+            name to (block["allowedIn"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList())
+        }
+    }
+
+    private val schemaAllowedIn get() = allowedIn("schemas/declarative-pipeline-schema.json", blocksAreArrays = true)
+
     @Test
     fun `a stage is allowed in stages and parallel, not directly in matrix`() {
-        val resource = requireNotNull(javaClass.classLoader.getResource("schemas/declarative-pipeline-schema.json"))
-        val stage = Json.parseToJsonElement(resource.readText()).jsonObject.getValue("sections").jsonArray
-            .map { it.jsonObject }
-            .single { it.getValue("name").jsonPrimitive.content == "stage" }
-        val allowedIn = stage.getValue("allowedIn").jsonArray.map { it.jsonPrimitive.content }
+        assertEquals(
+            listOf("stages", "parallel"),
+            schemaAllowedIn["stage"],
+            "a stage inside matrix sits under its stages",
+        )
+    }
 
-        assertEquals(listOf("stages", "parallel"), allowedIn, "a stage inside matrix sits under its stages")
+    @Test
+    fun `steps, stages and parallel are allowed only where Jenkins allows them`() {
+        assertEquals(listOf("stage"), schemaAllowedIn["steps"])
+        assertEquals(listOf("pipeline", "stage", "matrix"), schemaAllowedIn["stages"])
+        assertEquals(listOf("stage"), schemaAllowedIn["parallel"])
+    }
+
+    @Test
+    fun `allowedIn agrees with the enrichment that drives hover`() {
+        val enrichment = allowedIn("jenkins-enrichment.json", blocksAreArrays = false)
+        val schema = schemaAllowedIn
+
+        enrichment.filterValues { it.isNotEmpty() }.forEach { (name, allowed) ->
+            assertEquals(allowed, schema[name], "allowedIn of $name")
+        }
+    }
+
+    @Test
+    fun `a stage offers input, and input and excludes are schema blocks`() {
+        assertTrue("input" in schema.getInnerInstructions("stage"))
+        assertTrue(schema.containsBlock("input") && "parameters" in schema.getInnerInstructions("input"))
+        assertTrue(schema.containsBlock("excludes") && "exclude" in schema.getInnerInstructions("excludes"))
     }
 }
