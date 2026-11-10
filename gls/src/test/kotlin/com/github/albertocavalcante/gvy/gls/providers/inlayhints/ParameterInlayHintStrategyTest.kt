@@ -197,6 +197,7 @@ class ParameterInlayHintStrategyTest {
         every { compilationService.getAstModel(testUri) } returns callResult.astModel
         every { compilationService.getAst(testUri) } returns callResult.ast
         every { compilationService.getAllSymbolStorages() } returns mapOf(fooUri to workspaceIndex)
+        stubClassLookup(compilationService, fooUri, workspaceIndex)
 
         context = createContext(
             InlayHintsConfiguration(parameterHints = true),
@@ -236,6 +237,7 @@ class ParameterInlayHintStrategyTest {
         every { compilationService.getAstModel(testUri) } returns callResult.astModel
         every { compilationService.getAst(testUri) } returns callResult.ast
         every { compilationService.getAllSymbolStorages() } returns mapOf(fooUri to workspaceIndex)
+        stubClassLookup(compilationService, fooUri, workspaceIndex)
 
         mockResolverTypeForConstructor("Foo")
 
@@ -270,6 +272,7 @@ class ParameterInlayHintStrategyTest {
         every { compilationService.getAstModel(testUri) } returns callResult.astModel
         every { compilationService.getAst(testUri) } returns callResult.ast
         every { compilationService.getAllSymbolStorages() } returns emptyMap()
+        stubClassLookup(compilationService)
         every { compilationService.classpathService } returns classpathService
         every { classpathService.getMethods("java.util.ArrayList") } returns listOf(
             ReflectedMethod(
