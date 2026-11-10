@@ -8,6 +8,8 @@ import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import java.util.Collections
+import java.util.IdentityHashMap
 
 /**
  * Resolves symbols to their definitions using registry data.
@@ -80,16 +82,8 @@ class SymbolResolver(private val registry: SymbolRegistry) {
      * Find a field in the enclosing class.
      */
     private fun findFieldInEnclosingClass(variableExpr: VariableExpression, visitor: GroovyAstModel): Variable? {
-        // Walk up the AST to find the enclosing class
-        var current = visitor.getParent(variableExpr)
-        while (current != null && current !is ClassNode) {
-            current = visitor.getParent(current)
-        }
-
-        val enclosingClass = current
-        if (enclosingClass !is ClassNode) {
-            return null
-        }
+        val enclosingClass = ancestors(variableExpr, visitor).firstOrNull { it is ClassNode } as? ClassNode
+            ?: return null
 
         // Look for the field in the class
         return enclosingClass.findFieldSafe(variableExpr.name)
@@ -111,27 +105,25 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         candidate.lineNumber < reference.lineNumber ||
             (candidate.lineNumber == reference.lineNumber && candidate.columnNumber < reference.columnNumber)
 
-    private fun buildScopeChain(node: ASTNode, visitor: GroovyAstModel): List<ASTNode> {
-        val scopes = mutableListOf<ASTNode>()
-        var current = visitor.getParent(node)
-        while (current != null) {
-            if (isScopeBoundary(current)) {
-                scopes.add(current)
-            }
-            current = visitor.getParent(current)
-        }
-        return scopes
-    }
+    private fun buildScopeChain(node: ASTNode, visitor: GroovyAstModel): List<ASTNode> =
+        ancestors(node, visitor).filter(::isScopeBoundary).toList()
 
-    private fun findEnclosingScope(node: ASTNode, visitor: GroovyAstModel): ASTNode? {
+    private fun findEnclosingScope(node: ASTNode, visitor: GroovyAstModel): ASTNode? =
+        ancestors(node, visitor).firstOrNull(::isScopeBoundary)
+
+    /**
+     * [node]'s ancestors, nearest first, ending at the root, at the first node seen twice, or after
+     * [MAX_PARENT_DEPTH] steps: a cycle in the model's parent links must not hang resolution (#1411).
+     */
+    private fun ancestors(node: ASTNode, visitor: GroovyAstModel): Sequence<ASTNode> = sequence {
+        val seen = Collections.newSetFromMap(IdentityHashMap<ASTNode, Boolean>())
         var current = visitor.getParent(node)
-        while (current != null) {
-            if (isScopeBoundary(current)) {
-                return current
-            }
+        var depth = 0
+        while (current != null && depth < MAX_PARENT_DEPTH && seen.add(current)) {
+            yield(current)
             current = visitor.getParent(current)
+            depth++
         }
-        return null
     }
 
     private fun isScopeBoundary(node: ASTNode): Boolean = node is MethodNode ||
@@ -166,4 +158,9 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         val column: Int,
         val isBeforeReference: Boolean,
     )
+
+    private companion object {
+        /** Far deeper than any real nesting; only a malformed model reaches it. */
+        const val MAX_PARENT_DEPTH = 4096
+    }
 }

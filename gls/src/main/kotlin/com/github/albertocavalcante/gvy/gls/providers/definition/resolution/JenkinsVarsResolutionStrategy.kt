@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
+import com.github.albertocavalcante.groovyparser.ast.methodsSafe
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -201,7 +202,7 @@ class JenkinsVarsResolutionStrategy(
             (type?.let { sequenceOf(it) } ?: fallbackScripts()).any { it.declaresMember(name, includeMethods) }
 
         private fun ClassNode.declaresMember(name: String, includeMethods: Boolean): Boolean =
-            (includeMethods && getMethods(name).isNotEmpty()) ||
+            (includeMethods && methodsSafe(name).isNotEmpty()) ||
                 getDeclaredField(name) != null ||
                 getProperty(name) != null
     }
