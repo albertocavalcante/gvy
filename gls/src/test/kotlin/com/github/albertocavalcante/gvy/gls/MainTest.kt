@@ -135,7 +135,11 @@ class MainTest {
 
         assertEquals(1, result.exitCode)
         val stderr = errBuffer.toString()
-        assertTrue(stderr.contains("groovy.resolveDependencies"), "stderr: $stderr")
+        // The logger also writes the stack trace to stderr; assert on the user-facing line only.
+        assertTrue(
+            stderr.contains("Error executing command 'groovy.resolveDependencies': Unknown command"),
+            "stderr: $stderr",
+        )
         assertTrue(stderr.contains("Supported commands: groovy.version"), "stderr: $stderr")
     }
 
