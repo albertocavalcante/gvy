@@ -10,13 +10,37 @@ export interface LogSink {
   error(message: string): void;
 }
 
+/** Routes one stderr line; `flush` emits a line still held for pairing. */
+export interface StderrRouter {
+  (line: string): void;
+  flush(): void;
+}
+
 type Level = "trace" | "debug" | "info" | "warn" | "error";
 
 // The server logs `HH:mm:ss.SSS [thread] LEVEL logger -- message` (gls logback.xml).
-const SERVER_LINE = /^\d{2}:\d{2}:\d{2}\.\d{3} \[.*?\] (TRACE|DEBUG|INFO|WARN|ERROR)\b/u;
+const SERVER_LINE =
+  /^\d{2}:\d{2}:\d{2}\.\d{3} \[.*?\] (TRACE|DEBUG|INFO|WARN|ERROR)\b/u;
 // Logback's own status output before configuration: `HH:mm:ss,SSS |-LEVEL in ...`.
 const LOGBACK_STATUS = /^\d{2}:\d{2}:\d{2},\d{3} \|-(INFO|WARN|ERROR) in\b/u;
 const JVM_WARNING = /^WARNING:/u;
+
+// lsp4j logs through java.util.logging, which the server does not bridge to
+// Logback. Its default SimpleFormatter writes each record on two lines:
+// `Nov 10, 2026 3:00:00 PM source method`, then `LEVEL: message`.
+// NOTE: Only the English level names are recognized; other locales keep the
+// pre-pairing behavior (both lines are errors).
+const JUL_HEADER = /^\S+ \d{1,2}, \d{4} \d{1,2}:\d{2}:\d{2} \S+ \S/u;
+const JUL_LEVEL = /^(SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST): /u;
+const JUL_LEVELS: Record<string, Level> = {
+  SEVERE: "error",
+  WARNING: "warn",
+  INFO: "info",
+  CONFIG: "info",
+  FINE: "debug",
+  FINER: "trace",
+  FINEST: "trace",
+};
 
 function levelOf(line: string): Level | undefined {
   const server = SERVER_LINE.exec(line) ?? LOGBACK_STATUS.exec(line);
@@ -28,36 +52,71 @@ function levelOf(line: string): Level | undefined {
 
 // Stack trace parts that follow an exception header.
 const CONTINUATION = /^(\s|at |Caused by:|Suppressed:|\.\.\. \d+ more)/u;
+// `Throwable.toString()` of a logged exception: `pkg.Name[: message]`. It
+// rejects `Exception in thread ...`, which reports an uncaught crash.
+const EXCEPTION_LINE = /^[\w$.]+(Exception|Error|Throwable)(: |$)/u;
 
 /**
  * Routes each server stderr line to the matching log severity. The
  * language client would log every stderr line as an error, which makes a
- * healthy session look like a failing one. Only stack trace continuations
- * (indented lines, `at`, `Caused by:`, `Suppressed:`, `... N more`) and the
- * exception line right after a WARN/ERROR header keep that header's level.
- * Any other line without a server level (JVM fatal errors, uncaught
+ * healthy session look like a failing one. Stack trace continuations
+ * (indented lines, `at`, `Caused by:`, `Suppressed:`, `... N more`) and an
+ * exception line right after a log header keep that header's level. A
+ * java.util.logging header takes the level of the `LEVEL:` line after it.
+ * Any other line without a level (JVM fatal errors, uncaught
  * `Exception in thread`, launcher errors) stays an error, even right after
- * healthy INFO output.
+ * healthy output.
  */
-export function createStderrRouter(sink: LogSink): (line: string) => void {
+export function createStderrRouter(sink: LogSink): StderrRouter {
   let current: Level = "error";
   let exceptionLineNext = false;
-  return (line) => {
+  let julHeader: string | undefined;
+
+  const emit = (level: Level, line: string) => sink[level](line);
+  const flush = () => {
+    if (julHeader !== undefined) {
+      emit("error", julHeader);
+      julHeader = undefined;
+    }
+  };
+
+  const route = (line: string) => {
     if (line.trim() === "") {
+      return;
+    }
+    if (julHeader !== undefined) {
+      const julLevel = JUL_LEVEL.exec(line)?.[1];
+      if (julLevel !== undefined) {
+        current = JUL_LEVELS[julLevel];
+        exceptionLineNext = true;
+        emit(current, julHeader);
+        julHeader = undefined;
+        emit(current, line);
+        return;
+      }
+      flush();
+    }
+    if (JUL_HEADER.test(line)) {
+      julHeader = line;
       return;
     }
     const level = levelOf(line);
     if (level) {
       current = level;
-      exceptionLineNext = level === "warn" || level === "error";
-    } else if (CONTINUATION.test(line) || exceptionLineNext) {
+      exceptionLineNext = true;
+    } else if (
+      CONTINUATION.test(line) ||
+      (exceptionLineNext && EXCEPTION_LINE.test(line))
+    ) {
       // Keep `current`.
       exceptionLineNext = false;
     } else {
       current = "error";
+      exceptionLineNext = false;
     }
-    sink[current](line);
+    emit(current, line);
   };
+  return Object.assign(route, { flush });
 }
 
 /** Feeds complete stderr lines of the server process to `sink`. */
@@ -70,5 +129,6 @@ export function pipeServerStderr(input: Readable, sink: LogSink): void {
       terminal: false,
       historySize: 0,
     })
-    .on("line", route);
+    .on("line", route)
+    .on("close", route.flush);
 }
