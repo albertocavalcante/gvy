@@ -13,11 +13,20 @@ import org.codehaus.groovy.ast.expr.ConstantExpression
  * literal. Every pattern offset, including the end offset, has a source offset; a range ending
  * before an escape ends at the escape's first character.
  */
-class UnrollLiteral internal constructor(val sourceRange: IntRange, private val offsets: IntArray) {
-    /** Null when [patternOffset] is outside this literal's pattern (for example, from another pattern). */
+class UnrollLiteral internal constructor(
+    val sourceRange: IntRange,
+    /** The decoded pattern this literal maps; ranges must come from parsing exactly this value. */
+    val value: String,
+    private val offsets: IntArray,
+) {
+    /** Null when [patternOffset] is outside this literal's pattern; in-bounds offsets are not checked. */
     fun sourceOffset(patternOffset: Int): Int? = offsets.getOrNull(patternOffset)
 
-    /** The source span covering pattern offsets [range] (exclusive end), or null when out of range. */
+    /**
+     * The source span covering pattern offsets [range] (exclusive end), or null when out of bounds.
+     * Only bounds are checked: a range parsed from a different pattern can still return a wrong span,
+     * so callers must parse [value] itself.
+     */
     fun sourceRange(range: IntRange): IntRange? {
         val start = offsets.getOrNull(range.first) ?: return null
         val end = offsets.getOrNull(range.last + 1) ?: return null
@@ -107,7 +116,7 @@ class SpockUnrollSource(private val source: String) {
         val bodyEnd = raw.length - delimiter.length
         val decoder = LiteralDecoder(raw, bodyStart, bodyEnd, base, slashy = delimiter == "/")
         val value = decoder.run() ?: return null
-        return value to UnrollLiteral(base until base + raw.length, decoder.offsets())
+        return value to UnrollLiteral(base until base + raw.length, value, decoder.offsets())
     }
 
     private class LiteralDecoder(

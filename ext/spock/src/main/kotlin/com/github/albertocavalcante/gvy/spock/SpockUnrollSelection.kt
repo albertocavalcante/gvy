@@ -51,10 +51,10 @@ sealed interface UnrollSelection {
         val annotationValue: ConstantExpression?,
         val requiresUnrollByDefault: Boolean,
     ) : UnrollSelection {
-        /** Configuration that decides this pattern's outcome; expression failure handling always applies. */
+        /** Configuration that decides this pattern's outcome; expression failures only matter with placeholders. */
         val dependsOn: Set<UnrollConfigurationKey>
             get() = buildSet {
-                add(UnrollConfigurationKey.VALIDATE_EXPRESSIONS)
+                if (SpockUnrollPattern.parse(text).isNotEmpty()) add(UnrollConfigurationKey.VALIDATE_EXPRESSIONS)
                 if (requiresUnrollByDefault) add(UnrollConfigurationKey.UNROLL_BY_DEFAULT)
             }
     }
@@ -79,15 +79,24 @@ object SpockUnrollSelection {
     private const val UNROLL = "spock.lang.Unroll"
     private const val ROLLUP = "spock.lang.Rollup"
 
-    fun select(method: MethodNode, module: ModuleNode): UnrollSelection {
-        if (!hasWhereBlock(method)) return UnrollSelection.NotParameterized
-        val feature = Annotations.of(method, module)
-        val spec = Annotations.of(method.declaringClass, module)
-        // Spock rejects the whole spec when any element it visits carries both annotations.
-        if (conflictInSpec(method.declaringClass, module)) {
-            return UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS)
+    /** One-off selection; providers selecting every feature of a file should reuse [forModule]. */
+    fun select(method: MethodNode, module: ModuleNode): UnrollSelection = forModule(module).select(method)
+
+    /** A selector for one module that computes each spec chain's conflict scan once. */
+    fun forModule(module: ModuleNode): ModuleSelector = ModuleSelector(module)
+
+    class ModuleSelector internal constructor(private val module: ModuleNode) {
+        private val conflicts = IdentityHashMap<ClassNode, Boolean>()
+
+        fun select(method: MethodNode): UnrollSelection {
+            if (!hasWhereBlock(method)) return UnrollSelection.NotParameterized
+            val feature = Annotations.of(method, module)
+            val spec = Annotations.of(method.declaringClass, module)
+            // Spock rejects the whole spec when any element it visits carries both annotations.
+            val conflict = conflicts.getOrPut(method.declaringClass) { conflictInSpec(method.declaringClass, module) }
+            if (conflict) return UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS)
+            return feature.problem ?: decide(method, feature, spec)
         }
-        return feature.problem ?: decide(method, feature, spec)
     }
 
     private fun decide(method: MethodNode, feature: Annotations, spec: Annotations): UnrollSelection {
@@ -129,9 +138,10 @@ object SpockUnrollSelection {
     }
 
     /**
-     * Mirrors `visitSpec`: the spec, its parameterized features, then its super spec. Only super specs
-     * declared in this module are visited; a conflict in a subclass spec that runs these features
-     * is not detected.
+     * Mirrors `visitSpec`: the spec, its parameterized features, then its super spec. Not detected
+     * (missed detection, never a wrong conflict): super specs declared outside this module, a super
+     * spec spelled as a bare nested name (`extends Inner` meaning `Outer$Inner`), and a conflicting
+     * subclass spec that runs these features.
      */
     private fun conflictInSpec(spec: ClassNode, module: ModuleNode): Boolean {
         val visited = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())

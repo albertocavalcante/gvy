@@ -207,6 +207,22 @@ class SpockSpecificationContextTest {
     }
 
     @Test
+    fun `dotted names starting with a bare segment stay uncertain in inherited scopes`() {
+        val result = classify(
+            """
+            class Base { static class Inner extends spock.lang.Specification {} }
+            class Parent { static class Base { static class Inner {} } }
+            class Outer extends Parent {
+                static class S extends Base.Inner {}
+                static class Q extends spock.lang.Specification {}
+            }
+            """.trimIndent(),
+        )
+        assertEquals(UNCERTAIN to INHERITED_NESTED_SCOPE, result["Outer\$S"], "Parent.Base.Inner may bind first")
+        assertEquals(SPECIFICATION to QUALIFIED_SUPERCLASS, result["Outer\$Q"])
+    }
+
+    @Test
     fun `qualified nested superclass spellings resolve to the module class`() {
         val result = classify(
             """
@@ -306,6 +322,10 @@ class SpockSpecificationContextTest {
         assertEquals("SecondSpec", anonymous?.classNode?.outerClass?.name, "Anonymous classes own their bodies")
         // Pre-resolution `Object` is a bare name; SecondSpec's superclass could supply a nested `Object`.
         assertEquals(UNCERTAIN to INHERITED_NESTED_SCOPE, anonymous?.let { it.status to it.evidence })
+        assertEquals("SecondSpec", context.declaredOwnerAt(13, 20)?.classNode?.name, "Declared owner skips anonymous")
+        assertEquals(SPECIFICATION, context.declaredOwnerAt(13, 20)?.status)
+        assertEquals("FirstSpec", context.declaredOwnerAt(3, 8)?.classNode?.name)
+        assertNull(context.declaredOwnerAt(0, 0))
         assertNull(context.ownerAt(0, 0), "Imports are outside every class")
         assertNull(context.ownerAt(5, 1), "The column after a closing brace is outside the class")
     }
@@ -394,9 +414,15 @@ class SpockSpecificationContextTest {
                 mapOf(
                     "Outer" to (NOT_SPECIFICATION to NO_SUPERCLASS),
                     "Outer\$Base" to resolvedSpec,
-                    // The superclass is the binary name `Outer$Base`: pins `$` to `.` normalisation.
+                    // The compiler bound the superclass to the module's primary `Outer$Base` node.
                     "Outer\$A" to (SPECIFICATION to MODULE_BASE),
                 ),
+            ),
+            Arguments.of(
+                "class Base extends spock.lang.Specification {}\nclass Parent {}\n" +
+                    "class Outer extends Parent {\n static class S extends Base {}\n}",
+                // Compiler-bound bases stay confident even where the source rule would be uncertain.
+                mapOf("Outer\$S" to (SPECIFICATION to MODULE_BASE)),
             ),
         )
     }
