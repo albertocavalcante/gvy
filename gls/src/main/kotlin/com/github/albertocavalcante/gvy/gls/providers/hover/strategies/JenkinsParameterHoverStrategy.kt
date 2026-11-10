@@ -16,6 +16,7 @@ import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.MapEntryExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
@@ -55,11 +56,8 @@ class JenkinsParameterHoverStrategy(
         astModel: GroovyAstModel,
         metadata: MergedJenkinsMetadata,
     ): Hover? {
-        if (!isMapKey(key, astModel)) return null
         val name = key.value as? String ?: return null
-        val call = generateSequence(astModel.getParent(key)) { astModel.getParent(it) }
-            .takeWhile { it !is ClosureExpression }
-            .firstOrNull { it is MethodCallExpression } as? MethodCallExpression ?: return null
+        val call = callOwningArgumentKey(key, astModel) ?: return null
         val callName = call.methodAsString ?: return null
         val parameter = parametersOf(callName, enclosingCallName(call, astModel), metadata)?.get(name) ?: return null
 
@@ -67,15 +65,24 @@ class JenkinsParameterHoverStrategy(
     }
 
     /**
-     * True when [key] is the key of a map entry. The AST model may link a key straight to its map
-     * (`NamedArgumentListExpression`) or through its `MapEntryExpression`.
+     * The call whose named arguments [key] belongs to, or null. The key's map must be the call's own
+     * argument list (`sh(returnStdout: true)`) or a map passed directly as an argument (`sh([...])`), so
+     * a key of a nested map value (`step(opt: [file: 'x'])`) or of a map literal elsewhere does not pick
+     * up the call's parameters. The AST model may link a key straight to its map or through its
+     * `MapEntryExpression`.
      */
-    private fun isMapKey(key: ConstantExpression, astModel: GroovyAstModel): Boolean =
-        when (val parent = astModel.getParent(key)) {
-            is MapEntryExpression -> parent.keyExpression === key
-            is MapExpression -> parent.mapEntryExpressions.any { it.keyExpression === key }
-            else -> false
+    private fun callOwningArgumentKey(key: ConstantExpression, astModel: GroovyAstModel): MethodCallExpression? {
+        val map = when (val parent = astModel.getParent(key)) {
+            is MapEntryExpression -> parent.takeIf { it.keyExpression === key }?.let { astModel.getParent(it) }
+            is MapExpression -> parent.takeIf { map -> map.mapEntryExpressions.any { it.keyExpression === key } }
+            else -> null
+        } as? MapExpression ?: return null
+        return when (val owner = astModel.getParent(map)) {
+            is MethodCallExpression -> owner
+            is TupleExpression -> astModel.getParent(owner) as? MethodCallExpression
+            else -> null
         }
+    }
 
     /**
      * Parameters of [callName]: a directive entry wins inside its directive (`string` in `parameters {}` is
@@ -109,7 +116,8 @@ class JenkinsParameterHoverStrategy(
 
     private fun globalVariableHover(node: VariableExpression, metadata: MergedJenkinsMetadata): Hover? {
         // A declared local or parameter shadows the global; only unresolved names are Jenkins globals.
-        if (node.accessedVariable != null && node.accessedVariable !is DynamicVariable) return null
+        // Mid-typing, compilation can stop before scope analysis and leave accessedVariable unset; do not guess then.
+        if (node.accessedVariable !is DynamicVariable) return null
         val global = metadata.getGlobalVariable(node.name) ?: return null
         return hover(globalVariableMarkdown(global), node)
     }
