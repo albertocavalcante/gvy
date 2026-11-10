@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvi
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportInfo
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportParser
+import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAccessDot
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
@@ -46,6 +47,12 @@ internal class MemberAccessCompletionStrategy(
         // Only handle MemberAccess contexts
         val memberAccessContext = context.contextType as? ContextType.MemberAccess
             ?: return CompletionStrategy.notApplicable("MemberAccessCompletionStrategy")
+
+        // `sh 'ls' |` parses (with the dummy identifier) as `sh('ls').<dummy>` but has no dot to complete after.
+        val base = context.baseContext
+        if (!followsMemberAccessDot(base.content, base.line, base.character)) {
+            return CompletionStrategy.notApplicable("MemberAccessCompletionStrategy")
+        }
 
         val items = completions {
             handleMemberAccessContext(

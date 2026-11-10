@@ -10,7 +10,13 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
+import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextEdit
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 
 internal object JenkinsCompletionProvider {
 
@@ -131,8 +137,22 @@ internal object JenkinsCompletionProvider {
         astModel: GroovyAstModel,
         metadata: MergedJenkinsMetadata,
     ) {
-        val methodCall = CompletionContextDetector.findEnclosingMethodCall(nodeAtCursor, astModel)
+        // After a complete command-expression argument the dummy identifier turns `sh 'ls' |` into the
+        // property access `sh('ls').<dummy>`. That receiver is the step call only when there is no real dot;
+        // after `sh(...).trim|` or `readFile('x').|` the receiver call is not a step being configured.
+        val afterDot = followsMemberAccessDot(ctx.content, ctx.line, ctx.character)
+        val methodCall = generateSequence(nodeAtCursor) { astModel.getParent(it) }
+            .firstNotNullOfOrNull { node ->
+                callOrReceiverCall(node) { receiver ->
+                    // The receiver is the step being configured only for a paren-less command expression
+                    // (`sh 'ls' |`); `sh('ls') |` and `sh(...).x|` are complete / member-access cases.
+                    !afterDot && isCommandAt(ctx, receiver)
+                }
+            }
         val callName = methodCall?.methodAsString ?: return
+
+        // Never edit the inside of a string literal (e.g. `sh 'ls|'`).
+        if (CompletionContextDetector.isInsideStringLiteral(ctx.content, ctx.line, ctx.character)) return
 
         // Collect already specified argument map keys if present
         val existingKeys = mutableSetOf<String>()
@@ -146,12 +166,45 @@ internal object JenkinsCompletionProvider {
             }
         }
 
+        val isCommand = CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, callName)
         val bundledParamCompletions = JenkinsStepCompletionProvider.getParameterCompletions(
             callName,
             existingKeys,
             metadata,
-            CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, callName),
+            isCommand,
         )
-        bundledParamCompletions.forEach(::add)
+        val typedWord = if (isCommand) typedWordBeforeCursor(ctx) else null
+        bundledParamCompletions.forEach { item ->
+            // A partially typed option (`sh 'ls' ret|`) must be replaced together with the `, ` separator.
+            if (!typedWord.isNullOrEmpty()) {
+                val range = Range(
+                    Position(ctx.line, ctx.character - typedWord.length),
+                    Position(ctx.line, ctx.character),
+                )
+                item.filterText = item.label
+                item.textEdit = Either.forLeft(TextEdit(range, item.insertText))
+            }
+            add(item)
+        }
+    }
+
+    private fun typedWordBeforeCursor(ctx: CompletionContext): String {
+        val lineText = ctx.content.lines().getOrNull(ctx.line).orEmpty()
+        val prefix = lineText.take(ctx.character.coerceIn(0, lineText.length))
+        return prefix.takeLastWhile { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '_' }
+    }
+
+    private fun isCommandAt(ctx: CompletionContext, call: MethodCallExpression): Boolean {
+        val name = call.methodAsString ?: return false
+        return CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, name)
+    }
+
+    private fun callOrReceiverCall(
+        node: ASTNode,
+        acceptReceiver: (MethodCallExpression) -> Boolean,
+    ): MethodCallExpression? {
+        if (node is MethodCallExpression) return node
+        val receiver = (node as? PropertyExpression)?.objectExpression as? MethodCallExpression
+        return receiver?.takeIf(acceptReceiver)
     }
 }
