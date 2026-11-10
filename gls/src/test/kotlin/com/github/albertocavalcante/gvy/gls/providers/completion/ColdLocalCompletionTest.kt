@@ -324,7 +324,139 @@ class ColdLocalCompletionTest {
         assertEquals(2, choose.size, "found ${labels(items)}")
         assertTrue(choose.all { it.insertText == "choose(\${1:Date value})" })
         assertTrue(choose.all { it.detail == "String choose(Date value)" })
+        assertEquals(
+            setOf("java.util.Date", "java.sql.Date"),
+            choose.map { it.labelDetails?.description }.toSet(),
+            "Colliding simple names carry a package hint",
+        )
     }
+
+    @Test
+    fun `a unique simple signature carries no package hint`(): Unit = runBlocking {
+        val greet = complete(memberSource).single { it.label == "greet" && it.kind == CompletionItemKind.Method }
+
+        assertNull(greet.labelDetails)
+    }
+
+    @Test
+    fun `members of an indexed parent's own indexed parent are offered`(): Unit = runBlocking {
+        // A (this buffer) extends B extends C; B and C live in another, indexed file.
+        val parents = URI.create("file:///Parents.groovy")
+        val source = "class C { String deep() { '' } }\nclass B extends C { String middle() { '' } }"
+        assertTrue(compilation.compile(parents, source).isSuccess)
+
+        val items = complete("class A extends B {}\nnew A().de")
+
+        assertTrue(items.any { it.label == "middle" && it.kind == CompletionItemKind.Method }, "found ${labels(items)}")
+        assertEquals(
+            listOf("deep()"),
+            items.filter { it.label == "deep" && it.kind == CompletionItemKind.Method }.map { it.insertText },
+            "found ${labels(items)}",
+        )
+    }
+
+    @Test
+    fun `a local generic override hides the erased interface method`(): Unit = runBlocking {
+        val source = """
+            class K implements Comparable<K> { int compareTo(K o) { 0 } }
+            new K().comp
+        """.trimIndent()
+
+        val items = complete(source)
+
+        val compareTo = items.filter { it.label == "compareTo" && it.kind == CompletionItemKind.Method }
+        assertEquals(listOf("compareTo(\${1:K o})"), compareTo.map { it.insertText }, "found ${labels(items)}")
+    }
+
+    @Test
+    fun `an overload that is not a generic override keeps the inherited method`(): Unit = runBlocking {
+        val source = """
+            class Names extends ArrayList<String> { boolean add(Integer i) { true } }
+            new Names().ad
+        """.trimIndent()
+
+        val add = methods(complete(source), "add")
+
+        assertTrue("add(\${1:Integer i})" in add, "found $add")
+        assertTrue("add(\${1:Object})" in add, "ArrayList.add(E) is add(String) here, not add(Integer): $add")
+    }
+
+    @Test
+    fun `an indexed parent's generic override hides the erased interface method`(): Unit = runBlocking {
+        indexParents("class B implements Comparable<B> { int compareTo(B o) { 0 } }")
+
+        val compareTo = methods(complete("class A extends B {}\nnew A().comp"), "compareTo")
+
+        assertEquals(listOf("compareTo(\${1:B})"), compareTo)
+    }
+
+    @Test
+    fun `a binary ancestor of an indexed parent is reflected once`(): Unit = runBlocking {
+        indexParents("class B extends ArrayList<String> {}")
+
+        val add = methods(complete("class A extends B {}\nnew A().ad"), "add")
+
+        assertEquals(listOf("add(\${1:Object})"), add.filter { !it.contains(",") }, "found $add")
+    }
+
+    @Test
+    fun `a held class reached through the index uses buffer declarations`(): Unit = runBlocking {
+        indexParents("class C { String stale() { '' } }\nclass B extends C {}")
+        val source = "class C { String fresh() { '' } }\nclass A extends B {}\nnew A().f"
+
+        val labels = complete(source).filter { it.kind == CompletionItemKind.Method }.map { it.label }
+
+        assertTrue("fresh" in labels, "found $labels")
+        assertTrue("stale" !in labels, "the published copy of a held class must not leak: $labels")
+    }
+
+    @Test
+    fun `the superclass chain wins over an interface reached earlier`(): Unit = runBlocking {
+        // Indexed B extends indexed Mid extends Deep, and implements Getter. The buffer holds Deep and
+        // Getter, so their return types are known: walking Getter before Deep would offer `Object get()`.
+        val held = "interface Getter { Object get() }\nclass Deep { String get() { '' } }"
+        indexParents("$held\nclass Mid extends Deep {}\nclass B extends Mid implements Getter {}")
+
+        val get = complete("$held\nclass A extends B {}\nnew A().ge").filter { it.label == "get" }
+
+        assertEquals(listOf("String get()"), get.map { it.detail })
+    }
+
+    @Test
+    fun `private members of an indexed ancestor are not offered`(): Unit = runBlocking {
+        indexParents("class B { private String secret() { '' }; String open() { '' } }")
+
+        val labels = complete("class A extends B {}\nnew A().o").map { it.label }
+
+        assertTrue("open" in labels, "found $labels")
+        assertTrue("secret" !in labels, "found $labels")
+    }
+
+    @Test
+    fun `a reflected bridge method is not offered beside its typed target`(): Unit = runBlocking {
+        val compareTo = methods(complete("class D extends Date {}\nnew D().comp"), "compareTo")
+
+        assertEquals(listOf("compareTo(\${1:Date})"), compareTo, "Date.compareTo(Object) is a bridge")
+    }
+
+    @Test
+    fun `a held class reached through the index walks its external superclass first`(): Unit = runBlocking {
+        // A (buffer) extends B (indexed), which extends C and implements Getter; C and Getter are held.
+        // C extends Deep (indexed only). Deep's get must be met before the held Getter's `Object get()`.
+        val held = "interface Getter { Object get() }\nclass C extends Deep {}"
+        indexParents("class Deep { String get() { '' } }\n$held\nclass B extends C implements Getter {}")
+
+        val get = complete("$held\nclass A extends B {}\nnew A().ge").filter { it.label == "get" }
+
+        assertEquals(listOf("def get()"), get.map { it.detail }, "found ${labels(get)}")
+    }
+
+    private suspend fun indexParents(source: String) {
+        assertTrue(compilation.compile(URI.create("file:///Parents.groovy"), source).isSuccess)
+    }
+
+    private fun methods(items: List<CompletionItem>, name: String): List<String> =
+        items.filter { it.label == name && it.kind == CompletionItemKind.Method }.map { it.insertText.orEmpty() }
 
     private fun labels(items: List<CompletionItem>) = items.map { "${it.label}|${it.insertText}|${it.detail}" }
 

@@ -81,6 +81,82 @@ class ImplementationMethodSignaturesTest {
     private fun parameterTypes(document: ImplementationDocument) =
         ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
 
+    @Test
+    fun `supertypes and overrides are empty for classes the document does not own`() {
+        val document = genericDocument(kParameter = "K")
+
+        assertNull(ImplementationMethodSignatures.supertypes(document, "java/lang/Comparable#"))
+        assertTrue(ImplementationMethodSignatures.genericOverrides(document, "java/lang/Comparable#").isEmpty())
+        assertEquals(
+            SourceSupertypes(null, listOf("java/lang/Comparable#")),
+            ImplementationMethodSignatures.supertypes(document, "K#"),
+        )
+    }
+
+    @Test
+    fun `a source method overriding through a substituted type variable is reported by its erasure`() {
+        val overrides = ImplementationMethodSignatures.genericOverrides(genericDocument(kParameter = "K"), "K#")
+
+        assertEquals(setOf("compareTo" to listOf("java.lang.Object")), overrides)
+    }
+
+    @Test
+    fun `an overload whose types differ after substitution is not an override`() {
+        val document = genericDocument(kParameter = "java.lang.Integer")
+
+        assertTrue(ImplementationMethodSignatures.genericOverrides(document, "K#").isEmpty())
+    }
+
+    // class K implements Comparable<K> { int compareTo(<kParameter> o) }
+    private fun genericDocument(kParameter: String): ImplementationDocument {
+        val comparable = "java/lang/Comparable#"
+        val variable = ImplementationTypeReference("T", isVariable = true)
+        return ImplementationDocument(
+            SemanticDocument(uri, emptyList(), emptyList()),
+            "source",
+            listOf(ImplementationClass("K#", range)),
+            mapOf(
+                "K#" to ImplementationType(
+                    isInterface = false,
+                    isAbstract = false,
+                    superclass = null,
+                    interfaces = listOf(comparable),
+                    methods = listOf(
+                        ImplementationMethod(
+                            "K#compareTo(K).",
+                            "compareTo",
+                            listOf(kParameter),
+                            range,
+                            false,
+                            false,
+                            false,
+                        ),
+                    ),
+                    parentArguments = mapOf(comparable to listOf(ImplementationTypeReference("K"))),
+                ),
+                comparable to ImplementationType(
+                    isInterface = true,
+                    isAbstract = true,
+                    superclass = null,
+                    interfaces = emptyList(),
+                    methods = listOf(
+                        ImplementationMethod(
+                            "java/lang/Comparable#compareTo(Object).",
+                            "compareTo",
+                            listOf("java.lang.Object"),
+                            null,
+                            isAbstract = true,
+                            isStatic = false,
+                            isPrivate = false,
+                            parameterReferences = listOf(variable),
+                        ),
+                    ),
+                    parameterDefaults = mapOf("T" to "java.lang.Object"),
+                ),
+            ),
+        )
+    }
+
     private fun method(parameter: String): ImplementationMethod =
         ImplementationMethod(symbol, "choose", listOf(parameter), range, false, false, false)
 }

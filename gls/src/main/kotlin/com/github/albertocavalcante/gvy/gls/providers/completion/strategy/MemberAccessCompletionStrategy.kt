@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
+import com.github.albertocavalcante.gvy.gls.dsl.completion.MethodSignatureKey
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionContext
@@ -14,6 +15,8 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAc
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationMethodSignatures
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
@@ -23,6 +26,8 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionItemLabelDetails
 
 /**
  * Completion strategy for member access contexts (e.g., "myList." or "env.").
@@ -62,7 +67,7 @@ internal class MemberAccessCompletionStrategy(
             )
         }
 
-        return CompletionStrategy.found(items)
+        return CompletionStrategy.found(items.withPackageHints())
     }
 
     /**
@@ -103,7 +108,8 @@ internal class MemberAccessCompletionStrategy(
         }
 
         // Held declarations are authoritative for this buffer, including unsaved changes.
-        val local = LocalCompletionMembers(module).lookup(rawType)
+        val held = LocalCompletionMembers(module)
+        val local = held.lookup(rawType)
         if (local == null) {
             addSharedMembers(rawType, ctx)
             return
@@ -113,9 +119,11 @@ internal class MemberAccessCompletionStrategy(
         // sources while overloads differing only by package stay separate under simple display names.
         local.methods.forEach { addCandidate(it) }
         addWorkspaceMembers(local.fields)
-        workspaceSymbolIndex?.let { index -> addExactIndexedMembers(local.externalTypes, index) }
+        val walk = addInheritedMembers(local, held, workspaceSymbolIndex)
         addQualifiedGdkMethods(rawType)
-        local.externalTypes.forEach { addQualifiedClasspathMethods(it) }
+        // Facts are built only when a generic binary ancestor could need them (never for Object alone).
+        val genericOverrides by lazy { walk.genericOverrides.flatMapTo(mutableSetOf()) { it.value } }
+        walk.binaryTypes.forEach { type -> addQualifiedClasspathMethods(type) { genericOverrides } }
     }
 
     /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
@@ -134,34 +142,39 @@ internal class MemberAccessCompletionStrategy(
         addClasspathMethods(rawType, compilationService)
     }
 
-    private fun CompletionsBuilder.addExactIndexedMembers(classNames: List<String>, index: WorkspaceSymbolIndex) {
-        classNames.forEach { name ->
-            val owner = "${name.replace('.', '/')}#"
-            // Symbols and qualified facts come from the same captured document.
-            val document = index.findImplementationDocument(owner)
-            if (document == null) {
-                addWorkspaceMembers(index.getAllMembers(name.replace('.', '/'), includeInherited = true))
-                return@forEach
-            }
-            val exact = ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
-            val members = document.document.symbols.filter {
-                it.owner == owner && it.kind in INDEXED_MEMBER_KINDS
-            }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
-            addWorkspaceMembers(members.filter { it.kind != SymbolKind.METHOD })
-            members.filter { it.kind == SymbolKind.METHOD }.forEach { member ->
-                val alternatives = exact[member.symbolId] ?: listOf(member.signature.completionParameters())
-                alternatives.forEach { types ->
-                    addCandidate(
-                        MethodCandidate(
-                            name = member.name,
-                            returnType = member.type?.let { formatType(it) } ?: "def",
-                            parameters = types.map { CandidateParameter(it, simpleTypeName(it)) },
-                            doc = "Method: ${member.name}(${types.joinToString(", ")})",
-                        ),
-                    )
-                }
-            }
+    /**
+     * Adds members that [local]'s class inherits from outside the held chain: indexed workspace
+     * ancestors, across files, in the same superclass-first order as the held walk. A held class reached
+     * through the index uses its buffer declarations, never the published copy. Returns the binary
+     * ancestors left for classpath reflection and the reflected methods source overrides generically.
+     */
+    private fun CompletionsBuilder.addInheritedMembers(
+        local: LocalCompletionMembers.Result,
+        held: LocalCompletionMembers,
+        index: WorkspaceSymbolIndex?,
+    ): InheritedWalk {
+        val overrides = mutableListOf(local.genericOverrides)
+        if (index == null) return InheritedWalk(local.externalTypes, overrides)
+        val pending = ArrayDeque(local.externalTypes)
+        val visited = local.visited.toMutableSet()
+        val binary = mutableListOf<String>()
+        val methods = mutableListOf<MethodCandidate>()
+        val members = mutableListOf<MemberInfo>()
+        while (pending.isNotEmpty()) {
+            val name = pending.removeFirst()
+            if (!visited.add(name)) continue
+            val step = inheritedStep(name, held, index)
+            methods += step.methods
+            members += step.members
+            step.genericOverrides?.let(overrides::add)
+            visited += step.covered
+            step.parents.interfaces.forEach(pending::addLast)
+            step.parents.superclass?.let(pending::addFirst)
+            if (step.binary) binary += name
         }
+        methods.forEach { addCandidate(it) }
+        addWorkspaceMembers(members)
+        return InheritedWalk(binary, overrides)
     }
 
     private fun CompletionsBuilder.addQualifiedGdkMethods(className: String) {
@@ -179,11 +192,18 @@ internal class MemberAccessCompletionStrategy(
         }
     }
 
-    private fun CompletionsBuilder.addQualifiedClasspathMethods(className: String) {
+    /** Reflected methods that a source method already overrides through generics are left out. */
+    private fun CompletionsBuilder.addQualifiedClasspathMethods(
+        className: String,
+        genericOverrides: () -> Set<Pair<String, List<String>>>,
+    ) {
         val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
         types.forEach { type ->
             val reflected = compilationService.classpathService.loadClass(type) ?: return@forEach
-            reflectedInstanceMethods(reflected).forEach { method ->
+            reflectedInstanceMethods(reflected).filterNot {
+                it.isGenericInstantiation() &&
+                    (it.name to it.parameterTypes.map { parameter -> parameter.typeName }) in genericOverrides()
+            }.forEach { method ->
                 addCandidate(
                     MethodCandidate(
                         name = method.name,
@@ -542,16 +562,127 @@ private fun simpleTypeName(type: String): String =
 
 private val reflectionLogger = KotlinLogging.logger {}
 
-private fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Method> = try {
-    type.methods.filter {
+/** A typed sibling the [bridge] forwards to: same name and arity, each parameter assignable to the bridge's. */
+private fun java.lang.reflect.Method.bridgedBy(bridge: java.lang.reflect.Method): Boolean =
+    name == bridge.name && parameterCount == bridge.parameterCount &&
+        parameterTypes.indices.all { bridge.parameterTypes[it].isAssignableFrom(parameterTypes[it]) }
+
+internal fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Method> = try {
+    val instance = type.methods.filter {
         java.lang.reflect.Modifier.isPublic(it.modifiers) && !java.lang.reflect.Modifier.isStatic(it.modifiers)
     }
+    // A generic bridge (`compareTo(Object)` beside `compareTo(Date)`) is the same member under its erasure.
+    // A visibility bridge (StringBuilder.length() over its package-private base) is the only copy: keep it.
+    val typed = instance.filterNot { it.isBridge }
+    instance.filterNot { bridge -> bridge.isBridge && typed.any { it.bridgedBy(bridge) } }
 } catch (error: NoClassDefFoundError) {
     reflectionLogger.debug(error) { "Incomplete classpath methods for ${type.name}" }
     emptyList()
 } catch (error: SecurityException) {
     reflectionLogger.debug(error) { "Cannot reflect completion methods for ${type.name}" }
     emptyList()
+}
+
+/** Fields and exact method candidates that [owner] declares itself in its indexed [document]. */
+private fun indexedDocumentMembers(
+    document: ImplementationDocument,
+    owner: String,
+): Pair<List<MemberInfo>, List<MethodCandidate>> {
+    // Every indexed member here is inherited, so private declarations are not reachable.
+    val exact = ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
+    val privateAlternatives = ImplementationMethodSignatures.privateParameterTypesBySymbol(document, owner)
+    val members = document.document.symbols.filter {
+        it.owner == owner && it.kind in INDEXED_MEMBER_KINDS
+    }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
+    val methods = members.filter { it.kind == SymbolKind.METHOD }.flatMap { member ->
+        val alternatives = exact[member.symbolId]?.filterNot { it in privateAlternatives[member.symbolId].orEmpty() }
+            ?: listOf(member.signature.completionParameters())
+        alternatives.map { types ->
+            MethodCandidate(
+                name = member.name,
+                returnType = member.type?.let { formatType(it) } ?: "def",
+                parameters = types.map { CandidateParameter(it, simpleTypeName(it)) },
+                doc = "Method: ${member.name}(${types.joinToString(", ")})",
+            )
+        }
+    }
+    return members.filter { it.kind != SymbolKind.METHOD } to methods
+}
+
+/** What one ancestor contributes. Its superclass is walked before its interfaces, as in the held walk. */
+private class InheritedStep(
+    val methods: List<MethodCandidate> = emptyList(),
+    val members: List<MemberInfo> = emptyList(),
+    val genericOverrides: Lazy<Set<Pair<String, List<String>>>>? = null,
+    val covered: Set<String> = emptySet(),
+    val parents: Parents = Parents(),
+    val binary: Boolean = false,
+)
+
+/** The superclass, walked next, and the interfaces, walked after everything already queued. */
+private data class Parents(val superclass: String? = null, val interfaces: List<String> = emptyList())
+
+/**
+ * A held class reached through the index uses its buffer declarations, never the published copy.
+ * Symbols and qualified facts of an indexed class come from the same captured document.
+ */
+private fun inheritedStep(name: String, held: LocalCompletionMembers, index: WorkspaceSymbolIndex): InheritedStep {
+    held.lookup(name, inherited = true)?.let { buffer ->
+        return InheritedStep(
+            methods = buffer.methods,
+            members = buffer.fields,
+            genericOverrides = buffer.genericOverrides,
+            covered = buffer.visited,
+            parents = Parents(
+                buffer.externalSuperclass,
+                buffer.externalTypes - setOfNotNull(buffer.externalSuperclass),
+            ),
+        )
+    }
+    val owner = "${name.replace('.', '/')}#"
+    val document = index.findImplementationDocument(owner)
+        ?: return InheritedStep(
+            members = index.getAllMembers(name.replace('.', '/'), includeInherited = true),
+            binary = true,
+        )
+    val (fields, methods) = indexedDocumentMembers(document, owner)
+    val parents = ImplementationMethodSignatures.supertypes(document, owner)
+    return InheritedStep(
+        methods = methods,
+        members = fields,
+        genericOverrides = lazy { ImplementationMethodSignatures.genericOverrides(document, owner) },
+        parents = Parents(
+            parents?.superclass?.toClassName(),
+            parents?.interfaces.orEmpty().map { it.toClassName() },
+        ),
+    )
+}
+
+/** Binary ancestors for classpath reflection, and the reflected methods source overrides generically. */
+private class InheritedWalk(
+    val binaryTypes: List<String>,
+    val genericOverrides: List<Lazy<Set<Pair<String, List<String>>>>>,
+)
+
+/** Only a method whose declaring type is generic can be a generic override's erased twin. */
+private fun java.lang.reflect.Method.isGenericInstantiation(): Boolean =
+    genericParameterTypes.any { it is java.lang.reflect.TypeVariable<*> }
+
+private fun String.toClassName(): String = removeSuffix("#").replace('/', '.')
+
+/**
+ * Methods whose simple display collides (for example `choose(Date)` from `java.util` and `java.sql`)
+ * get the qualified parameter list as a label hint so the user can tell them apart.
+ */
+private fun List<CompletionItem>.withPackageHints(): List<CompletionItem> {
+    val collisions = filter { it.data is MethodSignatureKey }
+        .groupBy { it.label to it.detail }
+        .values.filter { group -> group.map { it.data }.distinct().size > 1 }
+    collisions.flatten().forEach { item ->
+        val signature = (item.data as MethodSignatureKey).signature
+        item.labelDetails = CompletionItemLabelDetails().apply { description = signature.replace(",", ", ") }
+    }
+    return this
 }
 
 private val INDEXED_MEMBER_KINDS = setOf(SymbolKind.METHOD, SymbolKind.FIELD, SymbolKind.PROPERTY)
@@ -593,18 +724,34 @@ private fun ASTNode.contains(line: Int, column: Int): Boolean {
 }
 
 /** A request-local member view; it never writes shared semantic metadata. */
-private class LocalCompletionMembers(module: ModuleNode?) {
+private class LocalCompletionMembers(private val module: ModuleNode?) {
     private val classes = module?.classes.orEmpty().associateBy { it.name }
 
-    data class Result(val methods: List<MethodCandidate>, val fields: List<MemberInfo>, val externalTypes: List<String>)
+    // Request-local hierarchy facts of the held buffer, built only when a lookup needs them.
+    private val facts by lazy { module?.let(ImplementationFacts::build) }
 
-    fun lookup(type: String): Result? {
+    data class Result(
+        val methods: List<MethodCandidate>,
+        val fields: List<MemberInfo>,
+        val externalTypes: List<String>,
+        /** The first class-chain ancestor outside the buffer; walked before external interfaces. */
+        val externalSuperclass: String?,
+        /** Held class names this walk covered. */
+        val visited: Set<String>,
+        /** Reflected `name` to erased parameters that the held chain overrides through generics. */
+        val genericOverrides: Lazy<Set<Pair<String, List<String>>>>,
+    )
+
+    /** Members of held [type] and its held ancestors; [inherited] also hides [type]'s own private members. */
+    fun lookup(type: String, inherited: Boolean = false): Result? {
         val first = heldClass(type) ?: return null
         val pending = ArrayDeque<ClassNode>().apply { add(first) }
         val visited = mutableSetOf<String>()
         val methods = linkedMapOf<String, MethodCandidate>()
         val fields = linkedMapOf<String, MemberInfo>()
         val external = linkedSetOf<String>()
+        val heldNames = mutableSetOf<String>()
+        var externalSuperclass: String? = null
         while (pending.isNotEmpty()) {
             val next = pending.removeFirst()
             val held = heldClass(next.name)
@@ -612,15 +759,26 @@ private class LocalCompletionMembers(module: ModuleNode?) {
             if (held == null) {
                 external.add(next.name)
             } else {
-                val inherited = held !== first
-                ownMethods(held, inherited).forEach { (identity, method) -> methods.putIfAbsent(identity, method) }
-                ownFields(held, inherited).forEach { (identity, field) -> fields.putIfAbsent(identity, field) }
+                heldNames += held.name
+                val hidePrivate = inherited || held !== first
+                ownMethods(held, hidePrivate).forEach { (identity, method) -> methods.putIfAbsent(identity, method) }
+                ownFields(held, hidePrivate).forEach { (identity, field) -> fields.putIfAbsent(identity, field) }
                 // The class chain precedes interface declarations, even at a greater depth.
                 held.interfaces.forEach(pending::addLast)
                 held.superClass?.let(pending::addFirst)
+                val parent = held.superClass?.takeIf { !held.isInterface && heldClass(it.name) == null }
+                if (externalSuperclass == null) externalSuperclass = parent?.name
             }
         }
-        return Result(methods.values.toList(), fields.values.toList(), external.toList())
+        val owner = "${first.name.replace('.', '/')}#"
+        return Result(
+            methods.values.toList(),
+            fields.values.toList(),
+            external.toList(),
+            externalSuperclass,
+            heldNames,
+            lazy { facts?.let { ImplementationMethodSignatures.genericOverrides(it, owner) }.orEmpty() },
+        )
     }
 
     private fun ownMethods(node: ClassNode, inherited: Boolean): List<Pair<String, MethodCandidate>> =
