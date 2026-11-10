@@ -22,10 +22,32 @@ import java.net.URI
  * This index delegates to [GroovySemanticDB] for underlying storage and keeps no state of its own, so it is
  * thread-safe exactly as the database is.
  *
+ * Workspace-wide reads leave out [shadowed] documents: listed copies that a buffer open under another spelling
+ * stands for (#1446), so a file answers once, from the buffer. Reads of one named document are not filtered.
+ *
  * @property semanticDb The underlying semantic database storing per-file information
  */
 @Suppress("TooManyFunctions") // Index facade keeps lookup and publication APIs together.
-class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLookup {
+class WorkspaceSymbolIndex(
+    private val semanticDb: GroovySemanticDB,
+    private val shadowed: () -> Set<URI> = { emptySet() },
+) : MemberLookup {
+
+    /** The definition of [symbolId] in a document not [shadowed]: the database's first one when none is. */
+    private fun definition(symbolId: String): Pair<URI, SymbolInfo>? {
+        val hidden = shadowed()
+        return if (hidden.isEmpty()) {
+            semanticDb.findSymbolDefinition(symbolId)
+        } else {
+            semanticDb.findAllSymbolDefinitions(symbolId).firstOrNull { it.first !in hidden }
+        }
+    }
+
+    /** Every stored document that is not [shadowed]. */
+    private fun visibleDocuments(): Collection<SemanticDocument> {
+        val hidden = shadowed()
+        return semanticDb.getAllDocuments().filterKeys { it !in hidden }.values
+    }
 
     /**
      * Get the semantic document for a URI.
@@ -44,7 +66,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      * @param symbolId The symbol ID in SemanticDB format (e.g., "com/example/MyClass#")
      * @return The symbol information, or null if not found
      */
-    fun findSymbol(symbolId: String): SymbolInfo? = semanticDb.findSymbolDefinition(symbolId)?.second
+    fun findSymbol(symbolId: String): SymbolInfo? = definition(symbolId)?.second
 
     /**
      * Find the definition location of a symbol.
@@ -53,7 +75,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      * @return The LSP Location of the definition, or null if not found
      */
     fun findDefinition(symbolId: String): Location? {
-        val (uri, symbolInfo) = semanticDb.findSymbolDefinition(symbolId) ?: return null
+        val (uri, symbolInfo) = definition(symbolId) ?: return null
         return Location(uri.toString(), rangeToLspRange(symbolInfo.range))
     }
 
@@ -65,25 +87,42 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      * @return List of all locations where this symbol is used
      */
     fun findReferences(symbolId: String): List<Location> {
-        val occurrences = semanticDb.findAllOccurrences(symbolId)
+        val hidden = shadowed()
+        val occurrences = semanticDb.findAllOccurrences(symbolId).filter { it.first !in hidden }
         return occurrences.map { (uri, occurrence) ->
             Location(uri.toString(), rangeToLspRange(occurrence.range))
         }
     }
 
     /** Reference occurrences with the exact source text used to build their ranges. */
-    fun findReferenceSnapshots(symbolId: String): List<IndexedOccurrence> = semanticDb.findOccurrenceSnapshots(symbolId)
+    fun findReferenceSnapshots(symbolId: String): List<IndexedOccurrence> {
+        val hidden = shadowed()
+        return semanticDb.findOccurrenceSnapshots(symbolId).filter { it.uri !in hidden }
+    }
 
     /** One snapshot per matching document; callers can reuse its source index for every occurrence. */
-    fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot> =
-        semanticDb.findReferenceDocuments(symbolId)
+    fun findReferenceDocuments(symbolId: String): Map<URI, SemanticDocumentSnapshot> {
+        val hidden = shadowed()
+        return semanticDb.findReferenceDocuments(symbolId).filterKeys { it !in hidden }
+    }
 
     /** Hierarchy, source and semantic ranges from one atomic database read. */
-    val implementationSnapshot: Map<URI, ImplementationDocument> get() = semanticDb.implementationSnapshot
+    val implementationSnapshot: Map<URI, ImplementationDocument> get() {
+        val hidden = shadowed()
+        val snapshot = semanticDb.implementationSnapshot
+        return if (hidden.isEmpty()) snapshot else snapshot.filterKeys { it !in hidden }
+    }
 
     /** The single indexed document defining [symbolId], without copying the rest of the workspace. */
-    fun findImplementationDocument(symbolId: String): ImplementationDocument? =
-        semanticDb.findImplementationDocument(symbolId)
+    fun findImplementationDocument(symbolId: String): ImplementationDocument? {
+        val hidden = shadowed()
+        if (hidden.isEmpty()) return semanticDb.findImplementationDocument(symbolId)
+        // A shadowed copy is a second definition the database would refuse: pick among the visible ones, which
+        // copies every document, but only while a buffer shadows one.
+        val uri = semanticDb.findAllSymbolDefinitions(symbolId).map { it.first }.distinct()
+            .filter { it !in hidden }.singleOrNull() ?: return null
+        return semanticDb.implementationSnapshot[uri]
+    }
 
     /**
      * Get the superclass of a class: always null for now, since [SymbolInfo] does not track inheritance yet.
@@ -180,8 +219,8 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
         findSymbol(classSymbolId) ?: return null // an unknown class has no members
 
         // Find all symbols in the workspace that belong to this class
-        val allDocuments = semanticDb.getAllDocuments()
-        val methods = allDocuments.values.flatMap { doc ->
+        val allDocuments = visibleDocuments()
+        val methods = allDocuments.flatMap { doc ->
             doc.symbols.filter { symbol ->
                 symbol.owner == classSymbolId &&
                     symbol.kind == SymbolKind.METHOD &&
@@ -223,8 +262,8 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
         findSymbol(classSymbolId) ?: return emptyList() // an unknown class has no members
 
         // Find all symbols owned by this class
-        val allDocuments = semanticDb.getAllDocuments()
-        val directMembers = allDocuments.values.flatMap { doc ->
+        val allDocuments = visibleDocuments()
+        val directMembers = allDocuments.flatMap { doc ->
             doc.symbols.filter { symbol ->
                 symbol.owner == classSymbolId &&
                     (

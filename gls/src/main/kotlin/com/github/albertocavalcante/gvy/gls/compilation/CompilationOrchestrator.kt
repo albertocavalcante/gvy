@@ -53,6 +53,8 @@ data class CompilationOrchestratorDependencies(
      * stops waiting without cancelling the work other waiters share.
      */
     val waiterScope: CoroutineScope = CoroutineScope(SupervisorJob() + ioDispatcher),
+    /** Listed copies an open buffer under another spelling stands for (#1446): not compiled beside it. */
+    val shadowed: () -> Set<URI> = { emptySet() },
 )
 
 class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies) {
@@ -68,6 +70,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private val semanticIndexer = dependencies.semanticIndexer
     private val dependencyGraph = dependencies.dependencyGraph
     private val waiterScope = dependencies.waiterScope
+    private val shadowed = dependencies.shadowed
     private val ownership = cacheService.ownership
 
     private val logger = KotlinLogging.logger {}
@@ -508,14 +511,20 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         uri: URI,
         workspace: WorkspaceModel,
         logBounded: Boolean = false,
-    ): List<Path> = if (dependencyGraph?.hasInfo(uri) == true) {
-        val boundedUris = dependencyGraph.getCompilationSources(uri)
-        if (logBounded) {
-            logger.debug { "Using bounded workspace sources for $uri: ${boundedUris.size} files" }
+    ): List<Path> {
+        val sources = if (dependencyGraph?.hasInfo(uri) == true) {
+            val boundedUris = dependencyGraph.getCompilationSources(uri)
+            if (logBounded) {
+                logger.debug { "Using bounded workspace sources for $uri: ${boundedUris.size} files" }
+            }
+            workspaceManager.getBoundedWorkspaceSources(boundedUris, workspace)
+        } else {
+            workspace.sources
         }
-        workspaceManager.getBoundedWorkspaceSources(boundedUris, workspace)
-    } else {
-        workspace.sources
+        // A buffer open under another spelling already carries its file: its listed disk copy would be a second
+        // definition of every class in it (#1446).
+        val hidden = shadowed()
+        return if (hidden.isEmpty()) sources else sources.filterNot { it.toUri() in hidden }
     }
 
     /**

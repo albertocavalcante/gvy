@@ -419,9 +419,16 @@ class GroovyTextDocumentService(
             // A reentrant reopen retires this close, including its cleanup of untitled-buffer indices:
             // the refresh owns only the generation this close started.
             compilationService.onClosedSourceChanged(uri)?.let { closed ->
-                coroutineScope.launch {
-                    compilationService.symbolIndexingService.refreshAfterClose(uri, closed)
-                    compilationService.refreshSemanticFromDisk(listOf(uri))
+                if (compilationService.listedSpellingOf(uri) != null) {
+                    // Opened under another spelling than the listed one (#1446): the listed copy stands for the
+                    // file again, so this spelling's facts go rather than being rebuilt from the same disk file.
+                    // Dropped here, on the notification thread, so a reopen that follows cannot lose its own.
+                    compilationService.invalidateCache(uri)
+                } else {
+                    coroutineScope.launch {
+                        compilationService.symbolIndexingService.refreshAfterClose(uri, closed)
+                        compilationService.refreshSemanticFromDisk(listOf(uri))
+                    }
                 }
             }
         }

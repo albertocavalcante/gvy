@@ -88,11 +88,21 @@ class GroovyCompilationService internal constructor(
 
     // One publication fence for every artifact derived from a file (#1184)
     private val ownership = ArtifactOwnership()
+
+    // Listed copies a buffer open under another spelling stands for (#1446): kept out of compiles and queries.
+    private val shadows = ListedShadows(documentProvider, workspaceManager)
     private val cacheService =
         CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen, ownership = ownership)
     val workspaceManager = workspaceManager
     private val symbolIndexer =
-        SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager, ownership, isOpen)
+        SymbolIndexingService(
+            ioDispatcher,
+            workerSessionManager,
+            workspaceManager,
+            ownership,
+            isOpen,
+            shadows::shadowed,
+        )
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
     val workspaceScanner = WorkspaceScanner()
     val classpathService = ClasspathService()
@@ -101,7 +111,7 @@ class GroovyCompilationService internal constructor(
     // Semantic database and workspace symbol index for cross-file resolution
     // These must be created before WorkspaceCompiler to ensure the same instance is shared
     private val semanticDb = GroovySemanticDB()
-    private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb)
+    private val workspaceSymbolIndex = WorkspaceSymbolIndex(semanticDb, shadows::shadowed)
     private val semanticIndexer = SemanticIndexer(workspaceSymbolIndex, isOpen)
     private val semanticSnapshotGuard = SemanticSnapshotGuard { workspaceSymbolIndex.implementationSnapshot }
 
@@ -141,6 +151,7 @@ class GroovyCompilationService internal constructor(
             semanticIndexer = semanticIndexer,
             dependencyGraph = dependencyGraph,
             documentProvider = documentProvider,
+            shadowed = shadows::shadowed,
         ),
     )
 
@@ -220,6 +231,12 @@ class GroovyCompilationService internal constructor(
      * @return The workspace symbol index, or null if not available
      */
     fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex
+
+    /**
+     * The listed spelling of [uri] when the client names the file otherwise (#1446): a buffer open under it
+     * shadows that listed copy. Null when [uri] is listed as it is, or names no file.
+     */
+    fun listedSpellingOf(uri: URI): URI? = shadows.listedUri(uri)
 
     /** The compile phase the semantic document of [uri] was built at, or null when none is stored. */
     fun semanticPhaseOf(uri: URI): Int? = semanticIndexer.phaseOf(uri)
