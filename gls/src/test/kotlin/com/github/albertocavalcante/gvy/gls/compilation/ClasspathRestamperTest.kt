@@ -9,9 +9,13 @@ import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.build.TargetDependencySnapshot
 import com.github.albertocavalcante.gvy.build.TargetDependencyState
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -19,11 +23,15 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.ZERO
 import kotlin.time.Duration.Companion.hours
 
 /**
@@ -102,6 +110,47 @@ class ClasspathRestamperTest {
     }
 
     @Test
+    fun `an event during a directory walk is walked again once that walk ends`(): Unit = runBlocking {
+        val classes = Files.createDirectories(root.resolve("build/classes"))
+        val type = write(classes.resolve("p/B.class"), 3, 1_000_000)
+        observe(evidence(classes))
+        val walks = AtomicInteger()
+        val walking = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val live = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        // The first walk reads the tree, then stalls: an event arriving meanwhile describes a later state
+        val restamper = ClasspathRestamper(compilation, live, interval = 1.hours, debounce = ZERO, walk = { path ->
+            val stamp = ArtifactStamp.of(path)
+            if (walks.incrementAndGet() == 1) {
+                walking.countDown()
+                release.await(WAIT_SECONDS, TimeUnit.SECONDS)
+            }
+            stamp
+        })
+        try {
+            write(type, 5, 2_000_000)
+            restamper.onWatchedPaths(listOf(type))
+            assertTrue(walking.await(WAIT_SECONDS, TimeUnit.SECONDS), "the first walk never started")
+
+            write(type, 7, 3_000_000) // the build's last write lands while the first walk is still running
+            restamper.onWatchedPaths(listOf(type))
+            release.countDown()
+
+            withTimeout(WAIT_SECONDS * 1_000) {
+                while (observedStamp() != ArtifactStamp.of(classes)) delay(POLL_MILLIS)
+            }
+            assertEquals(2, walks.get(), "the event during the walk must cause exactly one more walk")
+        } finally {
+            release.countDown()
+            live.cancel()
+        }
+    }
+
+    private fun observedStamp(): ArtifactStamp? =
+        (compilation.workspaceManager.current().targets as TargetDependencyEvidence.Scoped)
+            .snapshots.single().artifacts.single().stamp
+
+    @Test
     fun `a tick that finds nothing changed keeps the model`(): Unit = runBlocking {
         observe(evidence(write(root.resolve("lib/dep.jar"), 3, 1_000_000)))
         val model = compilation.workspaceManager.current()
@@ -147,5 +196,10 @@ class ClasspathRestamperTest {
 
         assertEquals(listOf(inside.toAbsolutePath().normalize()), restamper().watchedDirectories(root))
         assertEquals(emptyList(), restamper().watchedDirectories(null))
+    }
+
+    private companion object {
+        const val WAIT_SECONDS = 10L
+        const val POLL_MILLIS = 10L
     }
 }
