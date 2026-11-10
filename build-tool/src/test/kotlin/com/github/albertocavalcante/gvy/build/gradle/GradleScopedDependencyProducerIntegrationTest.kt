@@ -132,12 +132,15 @@ class GradleScopedDependencyProducerIntegrationTest {
 
     /**
      * Older Gradle versions download their distribution, so they run only when requested, for example
-     * `GVY_SCOPED_TEST_GRADLE_VERSIONS=7.3.3,8.5`. CI does not set it (#1376).
+     * `GVY_SCOPED_TEST_GRADLE_VERSIONS=7.3.3,8.14.6`. The Gradle Compatibility workflow sets it weekly to 7.3.3,
+     * the latest 8.14.x and the latest release (#1376). Set but naming no version is a broken job, not a skip.
      */
     @Test
     fun `a project dependency resolves on the requested older Gradle versions`() {
-        val versions = System.getenv("GVY_SCOPED_TEST_GRADLE_VERSIONS")?.split(',')?.map(String::trim).orEmpty()
-        assumeTrue(versions.isNotEmpty(), "Set GVY_SCOPED_TEST_GRADLE_VERSIONS to run")
+        val requested = System.getenv(VERSIONS_VARIABLE)
+        assumeTrue(requested != null, "Set $VERSIONS_VARIABLE to run")
+        val versions = requireNotNull(requested).split(',').map(String::trim).filter(String::isNotEmpty)
+        assertTrue(versions.isNotEmpty(), "$VERSIONS_VARIABLE is set but names no Gradle version: '$requested'")
         versions.forEach { version -> assertProjectDependencyObserved(producer(version), PARALLEL, version) }
     }
 
@@ -304,6 +307,7 @@ class GradleScopedDependencyProducerIntegrationTest {
         const val INSTALLATION_PROPERTY = "gvy.gradle.scoped.test.installation"
         const val BLOCKING_MILLIS = 10_000L
         const val PARALLEL = "org.gradle.parallel=true"
+        const val VERSIONS_VARIABLE = "GVY_SCOPED_TEST_GRADLE_VERSIONS"
         const val CONFIGURATION_CACHE = "org.gradle.configuration-cache=true"
         const val ISOLATED_PROJECTS = "org.gradle.unsafe.isolated-projects=true"
         val PROVENANCE = DependencyProvenance("offline-integration-observation", 8)

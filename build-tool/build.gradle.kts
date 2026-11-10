@@ -73,6 +73,12 @@ abstract class ScopedGradleTestArguments : CommandLineArgumentProvider {
 
 tasks.test {
     useJUnitPlatform()
+    // The older-Gradle check reads this variable; as an input it keeps a skipped run's cached result from
+    // standing in for a run that should have tested those versions (#1376)
+    inputs.property(
+        "scopedGradleVersions",
+        providers.environmentVariable("GVY_SCOPED_TEST_GRADLE_VERSIONS").orElse(""),
+    )
     jvmArgumentProviders.add(
         objects.newInstance<ScopedGradleTestArguments>().apply {
             gradle.gradleHomeDir?.let { installation.set(it) }
