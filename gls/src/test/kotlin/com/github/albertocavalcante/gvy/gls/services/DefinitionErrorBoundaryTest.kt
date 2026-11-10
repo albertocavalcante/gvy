@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
+import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
@@ -29,13 +31,15 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
  * A fatal [Error] escaping a definition request (#1311 lets a StackOverflowError propagate) fails that request
- * with an internal error and leaves the server working. The request runs as it does in the server: a
+ * with an internal error and leaves the server working, whether it is raised in the request's compile or inside
+ * a resolution strategy. The request runs as it does in the server: a
  * `future` in a SupervisorJob scope (GroovyLanguageServer), answered through LSP4J's [RemoteEndpoint].
  */
 class DefinitionErrorBoundaryTest {
@@ -60,10 +64,24 @@ class DefinitionErrorBoundaryTest {
         },
     )
 
+    /** When armed, the next source lookup overflows inside ClasspathResolutionStrategy, a definition strategy. */
+    private val navigatorArmed = AtomicBoolean(false)
+    private val navigator = object : SourceNavigator by SourceNavigationService() {
+        override suspend fun navigateToSource(classpathUri: URI, className: String): SourceNavigator.SourceResult =
+            if (navigatorArmed.compareAndSet(true, false)) {
+                throw StackOverflowError("simulated deep recursion in a strategy")
+            } else {
+                SourceNavigator.SourceResult.BinaryOnly(classpathUri, className, "test")
+            }
+    }
+
     /** The server's own request scope: `CoroutineScope(dispatcher + SupervisorJob())` in GroovyLanguageServer. */
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val service =
-        GroovyTextDocumentService(scope, compilation, GroovyTextDocumentServiceOptions(documentProvider = documents))
+    private val service = GroovyTextDocumentService(
+        scope,
+        compilation,
+        GroovyTextDocumentServiceOptions(documentProvider = documents, sourceNavigator = navigator),
+    )
     private val responses = LinkedBlockingQueue<Message>()
     private val endpoint = RemoteEndpoint({ responses.put(it) }, ServiceEndpoints.toEndpoint(service))
 
@@ -87,12 +105,27 @@ class DefinitionErrorBoundaryTest {
     @Test
     fun `a stack overflow fails only its own definition request`() {
         documents.put(boom, "class Boom {}", 1)
+        assertOnlyFirstRequestFails { definition("1", boom, 0, 6) }
+    }
+
+    @Test
+    fun `a stack overflow inside a definition strategy fails only its own request`() {
+        armed.set(false)
+        val imports = URI.create("file:///boundary/Imports.groovy")
+        documents.put(imports, "import java.util.ArrayList\n\nclass Imports {}\n", 1)
+        navigatorArmed.set(true)
+        assertOnlyFirstRequestFails { definition("1", imports, 0, IMPORTED_CLASS_COLUMN) }
+        assertFalse(navigatorArmed.get(), "the request never reached the overflowing strategy")
+    }
+
+    /** [first] must fail with an internal error; a following request is served, and nothing else is hurt. */
+    private fun assertOnlyFirstRequestFails(first: () -> ResponseMessage) {
         documents.put(ok, okSource, 1)
         val uncaught = CopyOnWriteArrayList<Throwable>()
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { _, e -> uncaught += e }
         try {
-            val failed = definition("1", boom, 0, 6)
+            val failed = first()
             assertEquals(ResponseErrorCode.InternalError.value, failed.error?.code, "the overflow must fail it")
 
             val answered = definition("2", ok, 3, 8)
@@ -110,5 +143,8 @@ class DefinitionErrorBoundaryTest {
 
     private companion object {
         const val WAIT_SECONDS = 30L
+
+        /** Inside `ArrayList` in `import java.util.ArrayList`. */
+        const val IMPORTED_CLASS_COLUMN = 20
     }
 }
