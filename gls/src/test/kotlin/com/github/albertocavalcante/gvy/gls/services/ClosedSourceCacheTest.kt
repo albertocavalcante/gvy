@@ -175,7 +175,7 @@ class ClosedSourceCacheTest {
     private fun assertRetiredBeforeQueueRuns(
         name: String,
         vararg types: FileChangeType,
-        afterDrain: (Path) -> Unit = {},
+        afterDrain: suspend (Path) -> Unit = {},
     ): Unit = runBlocking {
         val paused = ArrayDeque<Runnable>()
         val queued = GroovyWorkspaceService(
