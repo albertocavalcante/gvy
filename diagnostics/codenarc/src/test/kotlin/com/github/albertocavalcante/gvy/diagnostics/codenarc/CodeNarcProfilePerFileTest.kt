@@ -144,6 +144,84 @@ class CodeNarcProfilePerFileTest {
         assertEquals(2, detections.get(), "a new build file is detected")
     }
 
+    /** A resolver whose project detections are counted. */
+    private fun countingResolver(detections: AtomicInteger) = HierarchicalRulesetResolver(
+        projectTypeDetector = object : ProjectTypeDetector {
+            private val real = DefaultProjectTypeDetector()
+            override fun detect(workspaceRoot: Path) = real.detect(workspaceRoot).also { detections.incrementAndGet() }
+            override fun detectBuildType(workspaceRoot: Path) = real.detectBuildType(workspaceRoot)
+            override fun isSharedLibrary(workspaceRoot: Path) = real.isSharedLibrary(workspaceRoot)
+        },
+    )
+
+    @Test
+    fun `editing the root build file re-detects the project`() {
+        gradleAppWithJenkinsfile()
+        val detections = AtomicInteger()
+        val counting = countingResolver(detections)
+        val app = root.resolve("src/main/groovy/App.groovy").toUri()
+        counting.resolve(context, app)
+        counting.resolve(context, app)
+
+        val buildFile = root.resolve("build.gradle")
+        buildFile.writeText(
+            "plugins { id 'groovy' }\ndependencies { testImplementation 'org.spockframework:spock-core' }\n",
+        )
+        Files.setLastModifiedTime(buildFile, FileTime.from(Instant.now().plusSeconds(60))) // a coarse clock
+        counting.resolve(context, app)
+
+        assertEquals(2, detections.get(), "a changed build file is read again; the root directory did not change")
+    }
+
+    @Test
+    fun `reloading the rulesets clears the cached detection`() {
+        gradleAppWithJenkinsfile()
+        val detections = AtomicInteger()
+        val counting = countingResolver(detections)
+        val app = root.resolve("src/main/groovy/App.groovy").toUri()
+        counting.resolve(context, app)
+        counting.resolve(context, app)
+
+        counting.reloadRulesets()
+        counting.resolve(context, app)
+
+        assertEquals(2, detections.get())
+    }
+
+    @Test
+    fun `in a shared library, non-standard source sets keep the default profile`() {
+        file("vars/buildPlugin.groovy", "def call() {}\n")
+        file("src/org/example/Helper.groovy")
+        file("src/functionalTest/groovy/FunctionalSpec.groovy")
+        file("src/jmh/java/Bench.java", "class Bench {}\n")
+        file("src/intTest/kotlin/IntTest.kt", "class IntTest\n")
+        file("src/it/groovy/MavenIt.groovy")
+
+        assertEquals(JENKINS, sourceFor("src/org/example/Helper.groovy"))
+        assertEquals(DEFAULT, sourceFor("src/functionalTest/groovy/FunctionalSpec.groovy"))
+        assertEquals(DEFAULT, sourceFor("src/jmh/java/Bench.java"))
+        assertEquals(DEFAULT, sourceFor("src/intTest/kotlin/IntTest.kt"))
+        assertEquals(DEFAULT, sourceFor("src/it/groovy/MavenIt.groovy"))
+    }
+
+    @Test
+    fun `a workspace opened through a symlink still matches shared library files`() {
+        val real = root.resolve("real").createDirectories()
+        real.resolve("vars").createDirectories().resolve("buildPlugin.groovy").writeText("def call() {}\n")
+        real.resolve("src/org/example").createDirectories().resolve("Helper.groovy").writeText("class Helper {}\n")
+        val link = Files.createSymbolicLink(root.resolve("link"), real)
+        fun contextAt(workspace: Path) = object : WorkspaceContext {
+            override val root: Path = workspace
+            override fun getConfiguration() = context.getConfiguration()
+        }
+
+        val viaLink = resolver.resolve(contextAt(link), real.resolve("vars/buildPlugin.groovy").toUri())
+        val viaReal = resolver.resolve(contextAt(real), link.resolve("src/org/example/Helper.groovy").toUri())
+
+        assertEquals(JENKINS, viaLink.source, "root opened through the symlink, file by its real path")
+        assertEquals(JENKINS, viaReal.source, "root by its real path, file through the symlink")
+    }
+
     @Test
     fun `end to end, an ordinary source keeps the normal rules next to a Jenkinsfile`() = runBlocking {
         gradleAppWithJenkinsfile()

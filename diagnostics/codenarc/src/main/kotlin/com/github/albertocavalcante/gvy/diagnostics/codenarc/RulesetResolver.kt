@@ -101,8 +101,9 @@ class HierarchicalRulesetResolver(
     )
 
     /**
-     * Detection per workspace root. Re-detected when the root or its `vars/` directory changes (a build file,
-     * `Jenkinsfile` or `vars` script appearing or disappearing), instead of walking the tree on every analysis.
+     * Detection per workspace root, instead of walking the tree on every analysis. Re-detected when the root, its
+     * `vars/` directory or a file detection reads changes ([DETECTION_INPUTS]: a build or settings file's
+     * contents, a `Jenkinsfile` or `vars` script appearing or disappearing), or on [reloadRulesets].
      */
     private val detections = java.util.concurrent.ConcurrentHashMap<Path, Detection>()
 
@@ -118,6 +119,21 @@ class HierarchicalRulesetResolver(
 
         /** `src/` children that are Gradle or Maven source sets, not shared library code. */
         private val BUILD_SOURCE_SETS = setOf("main", "test", "integrationTest", "testFixtures")
+
+        /** Language directories that mark `src/<name>` as a source set ([isSourceSet]). */
+        private val SOURCE_LANGUAGES = listOf("groovy", "java", "kotlin")
+
+        /** Root files and directories project detection reads; a change to any re-detects ([detect]). */
+        private val DETECTION_INPUTS = listOf(
+            "vars",
+            "Jenkinsfile",
+            "build.gradle",
+            "build.gradle.kts",
+            "settings.gradle",
+            "settings.gradle.kts",
+            "pom.xml",
+            "grails-app",
+        )
         private const val LOAD_FACTOR = 0.75f
 
         /** Interpretation outcomes by content hash; shared so rebuilding a resolver does not re-parse rulesets. */
@@ -310,8 +326,8 @@ class HierarchicalRulesetResolver(
         defaults.computeIfAbsent(projectType, ::loadDefault)
 
     private fun detect(root: Path): Detection {
-        val fingerprint = listOf(root, root.resolve("vars")).map { dir ->
-            runCatching { Files.getLastModifiedTime(dir).toMillis() }.getOrDefault(-1L)
+        val fingerprint = (listOf(root) + DETECTION_INPUTS.map(root::resolve)).map { input ->
+            runCatching { Files.getLastModifiedTime(input).toMillis() }.getOrDefault(-1L)
         }
         detections[root]?.takeIf { it.fingerprint == fingerprint }?.let { return it }
         return Detection(
@@ -329,14 +345,34 @@ class HierarchicalRulesetResolver(
     private fun isJenkinsSource(root: Path, file: URI, detection: Detection): Boolean {
         if (isJenkinsPipelineFile(file)) return true
         if (!detection.sharedLibrary) return false
-        val relative = runCatching { root.toAbsolutePath().normalize().relativize(Paths.get(file).normalize()) }
-            .getOrNull()?.map { it.toString() } ?: return false
+        val relative = relativeToRoot(root, file) ?: return false
         return when (relative.firstOrNull()) {
             VARS_DIR -> true
-            SRC_DIR -> relative.getOrNull(1) !in BUILD_SOURCE_SETS
+            SRC_DIR -> relative.size > 2 && !isSourceSet(root.resolve(SRC_DIR).resolve(relative[1]))
             else -> false
         }
     }
+
+    /**
+     * [file]'s path segments under [root], or null outside it. Real paths on both sides, so a symlinked root
+     * (`/Volumes/T9/...` reached through another path) still matches; the plain paths when a file is unsaved.
+     */
+    private fun relativeToRoot(root: Path, file: URI): List<String>? {
+        val path = runCatching { Paths.get(file) }.getOrNull() ?: return null
+        fun Path.canonical(): Path = runCatching { toRealPath() }.getOrElse { toAbsolutePath().normalize() }
+        val canonicalRoot = root.canonical()
+        val canonicalFile = path.parent?.canonical()?.resolve(path.fileName) ?: path.canonical()
+        if (!canonicalFile.startsWith(canonicalRoot)) return null
+        return canonicalRoot.relativize(canonicalFile).map { it.toString() }
+    }
+
+    /**
+     * `src/<name>` is a Gradle or Maven source set (`src/main`, `src/functionalTest`, `src/jmh`, Maven `src/it`),
+     * not shared library package code, when it is a known source set or holds a `groovy/`, `java/` or `kotlin/`
+     * language directory.
+     */
+    private fun isSourceSet(dir: Path): Boolean =
+        dir.fileName.toString() in BUILD_SOURCE_SETS || SOURCE_LANGUAGES.any { Files.isDirectory(dir.resolve(it)) }
 
     private fun loadDefault(projectType: ProjectType): ResolvedRuleset {
         // Try custom DSL rulesets first
