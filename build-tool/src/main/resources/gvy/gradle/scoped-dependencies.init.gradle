@@ -38,26 +38,37 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
     Object buildAll(String name, Project requested) {
         def targets = []
         requested.rootProject.allprojects.each { project ->
-            targets.addAll(withProjectLock(project) { locked ->
-                def observed = []
-                locked.extensions.findByType(SourceSetContainer)?.each { sourceSet ->
-                    observed << observe(locked, sourceSet)
-                }
-                observed
-            })
+            def names = []
+            def observed = []
+            def completed = withProjectLock(project) { locked ->
+                def sourceSets = locked.extensions.findByType(SourceSetContainer)
+                names.addAll(sourceSets?.names ?: [])
+                sourceSets?.each { sourceSet -> observed << observe(locked, sourceSet) }
+            }
+            targets.addAll(observed)
+            if (!completed) {
+                // Failed outside observe(): each known source set it did not reach is reported UNRESOLVED.
+                // When even the names are unknown, the project's targets stay absent, which means unknown.
+                def reached = observed*.sourceSet as Set
+                names.findAll { !(it in reached) }.each { targets << unresolved(project, it) }
+            }
         }
         new GvyScopedWorkspace(buildDirectory: requested.rootProject.projectDir.absolutePath, targets: targets)
     }
 
-    private static GvyScopedTarget observe(Project project, sourceSet) {
-        def target = new GvyScopedTarget(
+    private static GvyScopedTarget unresolved(Project project, String sourceSet) {
+        new GvyScopedTarget(
             projectPath: project.path,
             projectDirectory: project.projectDir.absolutePath,
-            sourceSet: sourceSet.name,
+            sourceSet: sourceSet,
             state: 'UNRESOLVED',
             sourceRoots: [],
             artifacts: []
         )
+    }
+
+    private static GvyScopedTarget observe(Project project, sourceSet) {
+        def target = unresolved(project, sourceSet.name)
         try {
             // Inside the guard: lazily configured roots can fail for one target without erasing siblings.
             target.sourceRoots = sourceSet.allSource.srcDirs.collect { it.absolutePath }
@@ -87,25 +98,36 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
      * feature-detected (respondsTo, then a dynamic call through the public interface, because the
      * implementation class is not public): when it is missing or refuses before running the action, the
      * project is resolved directly, which is the previous behaviour and works without parallel mode.
-     * Per-target failures inside the action are already isolated by observe(); only errors and
-     * cancellation propagate.
+     * Per-target failures inside the action are isolated by observe(); a failure outside it reports the
+     * project's unreached source sets as UNRESOLVED. Only errors and cancellation propagate.
+     * Returns whether [action] completed; a failure never escapes into sibling projects.
      */
-    private static List withProjectLock(Project project, Closure<List> action) {
+    private static boolean withProjectLock(Project project, Closure action) {
         def owner = projectState(project)
-        if (owner == null) return action(project)
         def ran = false
-        def result = []
         try {
-            owner.applyToMutableState({ locked ->
+            if (owner == null) {
                 ran = true
-                result = action(locked)
-            } as java.util.function.Consumer)
+                action(project)
+            } else {
+                owner.applyToMutableState({ locked ->
+                    ran = true
+                    action(locked)
+                } as java.util.function.Consumer)
+            }
+            return true
         } catch (Exception failure) {
             rethrowCancellationOrError(failure)
-            if (!ran) return action(project)
-            // The action started and failed outside observe(): its targets stay absent, never fabricated.
+            if (ran) return false
         }
-        result
+        // The lock refused before running the action: resolve directly, the previous behaviour.
+        try {
+            action(project)
+            true
+        } catch (Exception failure) {
+            rethrowCancellationOrError(failure)
+            false
+        }
     }
 
     /** The project's ProjectState when it offers applyToMutableState(Consumer), else null (feature detection). */
