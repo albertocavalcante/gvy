@@ -20,7 +20,18 @@ import java.io.StringWriter
 internal object ParserDiagnosticConverter {
     private val logger = KotlinLogging.logger {}
 
-    fun convert(errorCollector: ErrorCollector, allowedLocators: Set<String>): List<ParserDiagnostic> {
+    /** Diagnostic code of the notice for a project-jar transform that analysis deliberately does not run. */
+    const val PROJECT_TRANSFORM_NOT_RUN = "project-transform-not-run"
+
+    /** Groovy's message when `@GroovyASTTransformationClass` names a class the transform loader cannot load. */
+    private val MISSING_TRANSFORM =
+        Regex("Could not find class for Transformation Processor (\\S+) declared by (\\S+)")
+
+    fun convert(
+        errorCollector: ErrorCollector,
+        allowedLocators: Set<String>,
+        isProjectClass: (String) -> Boolean = { false },
+    ): List<ParserDiagnostic> {
         val diagnostics = mutableListOf<ParserDiagnostic>()
 
         errorCollector.errors?.forEach { message ->
@@ -39,7 +50,7 @@ internal object ParserDiagnosticConverter {
                     if (allowedLocators.isNotEmpty()) {
                         return@forEach
                     }
-                    diagnostics += convertGenericMessage(message)
+                    diagnostics += convertGenericMessage(message, isProjectClass = isProjectClass)
                 }
             }
         }
@@ -75,13 +86,29 @@ internal object ParserDiagnosticConverter {
     private fun convertGenericMessage(
         message: Message,
         severity: ParserSeverity = ParserSeverity.ERROR,
-    ): ParserDiagnostic = ParserDiagnostic(
-        range = positionOf(message),
-        severity = severity,
-        message = textOf(message),
-        source = "groovy-parser",
-        code = "compilation-error",
-    )
+        isProjectClass: (String) -> Boolean = { false },
+    ): ParserDiagnostic {
+        val text = textOf(message)
+        val missing = MISSING_TRANSFORM.matchEntire(text)
+        if (missing != null && isProjectClass(missing.groupValues[1])) {
+            // Not an error in the user's code: the transform lives in a project jar the server deliberately never runs
+            return ParserDiagnostic(
+                range = positionOf(message),
+                severity = ParserSeverity.INFORMATION,
+                message = "Transform ${missing.groupValues[1]} (declared by ${missing.groupValues[2]}) comes from " +
+                    "the project classpath and is not run during analysis",
+                source = "groovy-parser",
+                code = PROJECT_TRANSFORM_NOT_RUN,
+            )
+        }
+        return ParserDiagnostic(
+            range = positionOf(message),
+            severity = severity,
+            message = text,
+            source = "groovy-parser",
+            code = "compilation-error",
+        )
+    }
 
     /** The user-visible text of a compiler message; `Message` subclasses do not override `toString`. */
     internal fun textOf(message: Message): String = when (message) {

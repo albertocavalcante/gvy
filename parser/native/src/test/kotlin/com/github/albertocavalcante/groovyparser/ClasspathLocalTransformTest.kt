@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import groovy.lang.GroovyShell
 import org.codehaus.groovy.control.CompilationUnit
@@ -57,6 +58,7 @@ class ClasspathLocalTransformTest {
                 "probe/MarkTransform.class",
                 "probe/Boom.class",
                 "probe/MarkProcessor.class",
+                "probe/BadMark.class",
             )
             for (name in names) {
                 out.putNextEntry(JarEntry(name))
@@ -157,6 +159,44 @@ class ClasspathLocalTransformTest {
         }
     }
 
+    private fun diagnosticsAtSemanticAnalysis(source: String) = GroovyParserFacade().parse(
+        ParseRequest(
+            uri = URI.create("file:///A.groovy"),
+            content = source,
+            classpath = listOf(groovyJar(), transformJar()),
+            compilePhase = Phases.SEMANTIC_ANALYSIS,
+        ),
+    ).diagnostics
+
+    @Test
+    fun `a jar-only transform is reported as information, not as an error`() {
+        val marker = tempDir.resolve("diag-marker")
+        System.setProperty(MARKER_PROPERTY, marker.toString())
+
+        val diagnostics = diagnosticsAtSemanticAnalysis(directSource)
+
+        assertTrue(diagnostics.none { it.severity == ParserSeverity.ERROR }, diagnostics.map { it.message }.toString())
+        val notice = diagnostics.single { it.severity == ParserSeverity.INFORMATION }
+        assertTrue("probe.MarkTransform" in notice.message, notice.message)
+        assertTrue("not run" in notice.message, notice.message)
+        assertFalse(marker.exists(), "the transform ran")
+    }
+
+    @Test
+    fun `a collector processor from a jar is reported as information too`() {
+        val diagnostics = diagnosticsAtSemanticAnalysis(processorSource)
+
+        assertTrue(diagnostics.none { it.severity == ParserSeverity.ERROR }, diagnostics.map { it.message }.toString())
+    }
+
+    @Test
+    fun `a transform class that exists nowhere is still an error`() {
+        val diagnostics = diagnosticsAtSemanticAnalysis("@probe.BadMark\nclass A {}")
+
+        val error = diagnostics.single { it.severity == ParserSeverity.ERROR }
+        assertTrue("probe.DoesNotExist" in error.message, error.message)
+    }
+
     private companion object {
         const val MARKER_PROPERTY = "gvy.test.local.transform.marker"
 
@@ -174,6 +214,20 @@ import java.lang.annotation.Target
 @Target([ElementType.TYPE])
 @GroovyASTTransformationClass("probe.MarkTransform")
 @interface Mark {}
+            """.trimIndent(),
+            "BadMark" to """
+package probe
+
+import org.codehaus.groovy.transform.GroovyASTTransformationClass
+import java.lang.annotation.ElementType
+import java.lang.annotation.Retention
+import java.lang.annotation.RetentionPolicy
+import java.lang.annotation.Target
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target([ElementType.TYPE])
+@GroovyASTTransformationClass("probe.DoesNotExist")
+@interface BadMark {}
             """.trimIndent(),
             "MarkTransform" to """
 package probe
