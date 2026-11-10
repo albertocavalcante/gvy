@@ -204,6 +204,12 @@ data class BundledJenkinsMetadata(
      * Agent types (any, none, label, docker, etc.)
      */
     val agentTypes: Map<String, AgentTypeMetadata> = emptyMap(),
+
+    /**
+     * Entries of declarative directives whose contents are calls (`triggers { cron(...) }`,
+     * `parameters { string(...) }`, `tools { maven '...' }`), keyed by directive name.
+     */
+    val directiveEntries: Map<String, Map<String, DeclarativeOptionMetadata>> = emptyMap(),
 ) {
     /**
      * Query for a step by name.

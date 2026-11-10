@@ -26,6 +26,8 @@ data class MergedJenkinsMetadata(
     val sections: Map<String, SectionEnrichment>,
     val directives: Map<String, DirectiveEnrichment>,
     val declarativeOptions: Map<String, MergedDeclarativeOption> = emptyMap(),
+    /** Call-shaped entries of `triggers`, `parameters` and `tools`, keyed by directive name. */
+    val directiveEntries: Map<String, Map<String, MergedDeclarativeOption>> = emptyMap(),
 ) {
     /**
      * Retrieve step metadata by name.

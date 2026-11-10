@@ -52,6 +52,9 @@ object MetadataMerger {
             postConditions = mergeAndSort(a.postConditions, b.postConditions),
             declarativeOptions = mergeAndSort(a.declarativeOptions, b.declarativeOptions),
             agentTypes = mergeAndSort(a.agentTypes, b.agentTypes),
+            directiveEntries = (a.directiveEntries.keys + b.directiveEntries.keys).associateWith { directive ->
+                mergeAndSort(a.directiveEntries[directive].orEmpty(), b.directiveEntries[directive].orEmpty())
+            },
         )
     }
 
@@ -169,7 +172,8 @@ object MetadataMerger {
             globalVariables = mergeGlobalVariables(bundled, enrichment),
             sections = enrichment.sections,
             directives = enrichment.directives,
-            declarativeOptions = mergeDeclarativeOptions(bundled),
+            declarativeOptions = mergeDeclarativeOptions(bundled.declarativeOptions),
+            directiveEntries = bundled.directiveEntries.mapValues { (_, entries) -> mergeDeclarativeOptions(entries) },
         )
 
     private fun mergeSteps(
@@ -224,25 +228,26 @@ object MetadataMerger {
         )
     }
 
-    private fun mergeDeclarativeOptions(bundled: BundledJenkinsMetadata): Map<String, MergedDeclarativeOption> =
-        bundled.declarativeOptions.mapValues { (optionName, option) ->
-            val mergedParams = option.parameters.mapValues { (paramName, param) ->
-                MergedParameter(
-                    name = paramName,
-                    type = param.type,
-                    defaultValue = param.default,
-                    description = param.documentation,
-                    required = param.required,
-                    validValues = null,
-                    examples = emptyList(),
-                )
-            }
-
-            MergedDeclarativeOption(
-                name = option.name.ifEmpty { optionName },
-                plugin = option.plugin,
-                parameters = mergedParams,
-                documentation = option.documentation,
+    private fun mergeDeclarativeOptions(
+        options: Map<String, DeclarativeOptionMetadata>,
+    ): Map<String, MergedDeclarativeOption> = options.mapValues { (optionName, option) ->
+        val mergedParams = option.parameters.mapValues { (paramName, param) ->
+            MergedParameter(
+                name = paramName,
+                type = param.type,
+                defaultValue = param.default,
+                description = param.documentation,
+                required = param.required,
+                validValues = null,
+                examples = emptyList(),
             )
         }
+
+        MergedDeclarativeOption(
+            name = option.name.ifEmpty { optionName },
+            plugin = option.plugin,
+            parameters = mergedParams,
+            documentation = option.documentation,
+        )
+    }
 }

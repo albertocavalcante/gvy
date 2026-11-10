@@ -98,7 +98,10 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
         }
     }
 
-    /** Agent types, options, post conditions and sub-directives for the declarative block at the cursor. */
+    /**
+     * Agent types, options, post conditions, directive entries (`cron`, `string`, `maven`, ...) and
+     * sub-directives for the declarative block at the cursor.
+     */
     private fun CompletionsBuilder.addDeclarativeBlockCompletions(
         blockContext: JenkinsBlockContext,
         metadata: MergedJenkinsMetadata,
@@ -112,6 +115,16 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
         }
         if (DeclarativePipelineSchema.CompletionCategory.POST_CONDITION in categories) {
             addJenkinsPostConditionCompletions()
+        }
+        blockContext.currentBlock?.let { metadata.directiveEntries[it] }?.values?.forEach { entry ->
+            completion {
+                label(entry.name)
+                kind(CompletionItemKind.Function)
+                detail("Jenkins ${blockContext.currentBlock} entry (${entry.plugin})")
+                entry.documentation?.let(::documentation)
+                insertText(entry.name)
+                sortText("0-entry-${entry.name}")
+            }
         }
         blockContext.innerInstructions.forEach { instruction ->
             completion {
@@ -130,11 +143,13 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
  * expressions. Global variables are not offered at their block level.
  *
  * Deliberately not listed: `steps`, post-condition bodies and `script` (steps), `environment`
- * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), `parameters`, `triggers`,
- * `tools` and `libraries`, whose contents are not modeled yet (#1246), and `matrix`, `parallel`,
- * `axes`, which the block detector does not track yet (#1290).
+ * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), `libraries`, whose
+ * contents are not modeled yet, and `matrix`, `parallel`, `axes`, which the block detector does
+ * not track yet (#1290).
  */
-private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf("pipeline", "agent", "stages", "stage", "post", "options", "when")
+private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf(
+    "pipeline", "agent", "stages", "stage", "post", "options", "when", "triggers", "parameters", "tools",
+)
 
 /** `when` condition combinators: their bodies hold `when` conditions, so they behave as `when` itself. */
 private val WHEN_COMBINATORS = setOf("allOf", "anyOf", "not")

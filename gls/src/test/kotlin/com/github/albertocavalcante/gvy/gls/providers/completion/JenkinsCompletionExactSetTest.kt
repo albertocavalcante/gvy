@@ -252,6 +252,31 @@ class JenkinsCompletionExactSetTest {
         assertTrue(metadata.globalVariables.keys.all { it in items.labels(CompletionItemKind.Variable) })
     }
 
+    @Test
+    fun `triggers block offers exactly the trigger entries`(): Unit = runTest {
+        val items = completeAt("pipeline {\n    agent any\n    triggers {\n        \n    }\n}", line = 3, character = 8)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("cron", "pollSCM", "upstream"), items.labels())
+    }
+
+    @Test
+    fun `parameters block offers exactly the parameter types`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    parameters {\n        \n    }\n}"
+        val items = completeAt(code, line = 3, character = 8)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("booleanParam", "choice", "password", "string", "text"), items.labels())
+    }
+
+    @Test
+    fun `tools block offers exactly the tool types`(): Unit = runTest {
+        val items = completeAt("pipeline {\n    agent any\n    tools {\n        \n    }\n}", line = 3, character = 8)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("gradle", "jdk", "maven"), items.labels())
+    }
+
     private companion object {
         /** `when` conditions from the declarative schema, valid in `when {}` and its combinators. */
         val WHEN_CONDITIONS = setOf(
