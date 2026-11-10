@@ -54,8 +54,9 @@ internal object GradleWrapperDistributions {
     /**
      * Links each of [distributions] that is installed in [hostHome] into [isolatedHome].
      *
-     * Returns the names the isolated home now shares. Never creates anything in the host home and
-     * never fails the caller: a distribution that cannot be linked is downloaded by Gradle as before.
+     * Returns the names the isolated home now shares. This code never creates anything in the host home
+     * (Gradle still writes its lock files there) and never fails the caller: a distribution that cannot be
+     * linked is downloaded by Gradle as before.
      */
     fun share(hostHome: Path, isolatedHome: Path, distributions: Set<String>): List<String> =
         distributions.filter { name ->
