@@ -178,7 +178,7 @@ class ClasspathLocalTransformTest {
         assertTrue(diagnostics.none { it.severity == ParserSeverity.ERROR }, diagnostics.map { it.message }.toString())
         val notice = diagnostics.single { it.severity == ParserSeverity.INFORMATION }
         assertTrue("probe.MarkTransform" in notice.message, notice.message)
-        assertTrue("not run" in notice.message, notice.message)
+        assertTrue("later checks for this file were skipped" in notice.message, notice.message)
         assertFalse(marker.exists(), "the transform ran")
     }
 

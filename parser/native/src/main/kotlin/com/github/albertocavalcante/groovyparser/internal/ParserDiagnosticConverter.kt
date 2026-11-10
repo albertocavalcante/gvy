@@ -6,6 +6,7 @@ import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.control.ErrorCollector
 import org.codehaus.groovy.control.Janitor
+import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.messages.ExceptionMessage
 import org.codehaus.groovy.control.messages.LocatedMessage
 import org.codehaus.groovy.control.messages.Message
@@ -47,10 +48,15 @@ internal object ParserDiagnosticConverter {
                 }
 
                 else -> {
-                    if (allowedLocators.isNotEmpty()) {
-                        return@forEach
+                    val notice = projectTransformNotice(message, isProjectClass)
+                    when {
+                        // Attributable to one of the requested sources, so it is safe to show against this request
+                        notice != null && (allowedLocators.isEmpty() || ownerMatches(message, allowedLocators)) ->
+                            diagnostics += notice
+
+                        allowedLocators.isNotEmpty() -> return@forEach
+                        else -> diagnostics += convertGenericMessage(message)
                     }
-                    diagnostics += convertGenericMessage(message, isProjectClass = isProjectClass)
                 }
             }
         }
@@ -86,28 +92,38 @@ internal object ParserDiagnosticConverter {
     private fun convertGenericMessage(
         message: Message,
         severity: ParserSeverity = ParserSeverity.ERROR,
-        isProjectClass: (String) -> Boolean = { false },
-    ): ParserDiagnostic {
-        val text = textOf(message)
-        val missing = MISSING_TRANSFORM.matchEntire(text)
-        if (missing != null && isProjectClass(missing.groupValues[1])) {
-            // Not an error in the user's code: the transform lives in a project jar the server deliberately never runs
-            return ParserDiagnostic(
-                range = positionOf(message),
-                severity = ParserSeverity.INFORMATION,
-                message = "Transform ${missing.groupValues[1]} (declared by ${missing.groupValues[2]}) comes from " +
-                    "the project classpath and is not run during analysis",
-                source = "groovy-parser",
-                code = PROJECT_TRANSFORM_NOT_RUN,
-            )
-        }
+    ): ParserDiagnostic = ParserDiagnostic(
+        range = positionOf(message),
+        severity = severity,
+        message = textOf(message),
+        source = "groovy-parser",
+        code = "compilation-error",
+    )
+
+    /**
+     * Not an error in the user's code: the transform lives in a project jar the server deliberately never runs. The
+     * unit also stops after SEMANTIC_ANALYSIS because of this message, so the notice says that later checks are
+     * skipped; an Information notice alone would make the file look fully checked.
+     */
+    private fun projectTransformNotice(message: Message, isProjectClass: (String) -> Boolean): ParserDiagnostic? {
+        val missing = (message as? SimpleMessage)?.let { MISSING_TRANSFORM.matchEntire(textOf(it)) }
+        if (missing == null || !isProjectClass(missing.groupValues[1])) return null
         return ParserDiagnostic(
             range = positionOf(message),
-            severity = severity,
-            message = text,
+            severity = ParserSeverity.INFORMATION,
+            message = "Transform ${missing.groupValues[1]} (declared by ${missing.groupValues[2]}) comes from the " +
+                "project classpath and is not run during analysis; later checks for this file were skipped",
             source = "groovy-parser",
-            code = "compilation-error",
+            code = PROJECT_TRANSFORM_NOT_RUN,
         )
+    }
+
+    /** Whether a `SimpleMessage` was reported on one of [locators]; its owner field has no public accessor. */
+    private fun ownerMatches(message: Message, locators: Set<String>): Boolean {
+        val owner = runCatching {
+            SimpleMessage::class.java.getDeclaredField("owner").apply { isAccessible = true }.get(message)
+        }.getOrNull()
+        return matchesLocator((owner as? SourceUnit)?.name, locators)
     }
 
     /** The user-visible text of a compiler message; `Message` subclasses do not override `toString`. */
