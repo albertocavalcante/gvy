@@ -259,7 +259,8 @@ class GroovyCompilationService internal constructor(
     }
 
     /**
-     * Applies one file-watch notification's created and deleted sources to the workspace model (#1422).
+     * Applies one file-watch notification's created and deleted paths, files or folders, to the workspace model
+     * (#1422, #1424), returning the sources it added and removed so the caller can index and purge them.
      * When the source list changed, the caches are cleared once: the fingerprint covers the classpath and
      * roots, not the source list, so cached results would otherwise keep the old list's resolution.
      *
@@ -267,15 +268,10 @@ class GroovyCompilationService internal constructor(
      * its ticket before it reads the model, so any compile that read the old list holds a ticket from
      * before the retirement and cannot publish; a compile after it reads the new list.
      */
-    fun onWorkspaceSourcesChanged(
-        created: Collection<Path>,
-        deleted: Collection<Path>,
-        createdDirectories: Collection<Path> = emptyList(),
-        deletedPrefixes: Collection<Path> = emptyList(),
-    ): Boolean {
-        val changed = workspaceManager.applySourceChanges(created, deleted, createdDirectories, deletedPrefixes)
-        if (changed) clearCaches()
-        return changed
+    fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
+        val change = workspaceManager.applySourceChanges(created, deleted)
+        if (change.changed) clearCaches()
+        return change
     }
 
     /** Retires [uri]'s artifacts, as [clearCaches] does for every file. */

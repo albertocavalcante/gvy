@@ -25,7 +25,10 @@ private const val REGISTRATION_ID_PREFIX = "groovy-lsp-source-root-watchers-"
  *
  * Needs LSP 3.17 relative patterns: a bare `**` glob would watch the whole workspace, build output included.
  * Without them no folder watcher is registered, and a folder change is picked up at the next model rebuild.
- * When the roots change, the old registration is removed before a new one, under a fresh id, is added.
+ * A root that is the workspace root itself (a project with no build tool) is not watched either: everything in
+ * the workspace, `.git` and build output included, would be reported.
+ * When the roots change, the old registration is removed before a new one, under a fresh id, is added; a
+ * registration the client refused is forgotten, so the next sync tries again.
  */
 internal class SourceRootWatcherRegistrar {
     private val logger = KotlinLogging.logger {}
@@ -47,9 +50,10 @@ internal class SourceRootWatcherRegistrar {
         reconcile(client)
     }
 
-    /** Watches exactly [sourceRoots]; the same roots in any order change nothing. */
-    fun sync(sourceRoots: List<Path>) = synchronized(lock) {
-        roots = sourceRoots.mapTo(LinkedHashSet()) { it.toAbsolutePath().normalize() }
+    /** Watches exactly [sourceRoots] except [workspaceRoot]; the same roots in any order change nothing. */
+    fun sync(sourceRoots: List<Path>, workspaceRoot: Path? = null) = synchronized(lock) {
+        val excluded = workspaceRoot?.toAbsolutePath()?.normalize()
+        roots = sourceRoots.map { it.toAbsolutePath().normalize() }.filterTo(LinkedHashSet()) { it != excluded }
         client?.let(::reconcile)
     }
 
@@ -70,15 +74,29 @@ internal class SourceRootWatcherRegistrar {
         }
         val registration = Registration(id, WATCHED_FILES_METHOD, DidChangeWatchedFilesRegistrationOptions(watchers))
         registrationId = id
-        request("register $id") { client.registerCapability(RegistrationParams(listOf(registration))) }
+        request("register $id", onFailure = { forget(id) }) {
+            client.registerCapability(RegistrationParams(listOf(registration)))
+        }
         logger.info { "Requested folder watchers under ${watchers.size} source roots" }
     }
 
+    /** A refused registration was never active: nothing to unregister, and the same roots must be tried again. */
+    private fun forget(id: String) = synchronized(lock) {
+        if (registrationId == id) {
+            registrationId = null
+            registered = emptySet()
+        }
+    }
+
     /** Sends a client request without letting its failure, synchronous or not, reach the model update caller. */
-    private fun request(what: String, send: () -> CompletableFuture<Void>) {
+    private fun request(what: String, onFailure: () -> Unit = {}, send: () -> CompletableFuture<Void>) {
+        val failed = { error: Throwable ->
+            logger.warn { "Failed to $what: ${error.message}" }
+            onFailure()
+        }
         runCatching(send)
-            .onFailure { logger.warn { "Failed to $what: ${it.message}" } }
+            .onFailure(failed)
             .getOrNull()
-            ?.exceptionally { error -> null.also { logger.warn { "Failed to $what: ${error.message}" } } }
+            ?.exceptionally { error -> null.also { failed(error) } }
     }
 }

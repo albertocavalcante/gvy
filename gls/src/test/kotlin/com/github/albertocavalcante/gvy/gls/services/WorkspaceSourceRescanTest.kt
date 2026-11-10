@@ -12,6 +12,7 @@ import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
@@ -23,6 +24,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -36,7 +38,12 @@ class WorkspaceSourceRescanTest {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private val compilation = spyk(GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined))
-    private val workspace = GroovyWorkspaceService(compilation, compilation.symbolIndexingService, scope)
+    private val workspace = GroovyWorkspaceService(
+        compilation,
+        compilation.symbolIndexingService,
+        scope,
+        sourceChangeDispatcher = Dispatchers.Unconfined,
+    )
 
     @AfterEach
     fun tearDown() = scope.cancel()
@@ -271,5 +278,88 @@ class WorkspaceSourceRescanTest {
         notify(src.resolve("pkg") to FileChangeType.Deleted, src.resolve("pkg") to FileChangeType.Created)
 
         assertEquals(listOf(kept), sources())
+    }
+
+    private fun indexed(file: Path) = compilation.symbolIndexingService.getSymbolIndex(file.toUri()) != null
+
+    @Test
+    fun `sources found in a created folder are indexed`() {
+        val src = src()
+        val found = write(src.resolve("pkg/Found.groovy"), "class Found {}\n")
+        assertFalse(indexed(found), "precondition")
+
+        notify(src.resolve("pkg") to FileChangeType.Created)
+
+        assertTrue(indexed(found), "a moved-in file must reach workspace symbols, not only the compile")
+    }
+
+    @Test
+    fun `sources under a deleted folder leave the index`(): Unit = runBlocking {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val gone = write(src.resolve("pkg/Gone.groovy"), "class Gone {}\n")
+        src()
+        compilation.symbolIndexingService.indexAllWorkspaceSources(listOf(gone.toUri()))
+        assertTrue(indexed(gone), "precondition")
+        clearMocks(compilation, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+
+        src.resolve("pkg").toFile().deleteRecursively()
+        notify(src.resolve("pkg") to FileChangeType.Deleted)
+
+        assertFalse(indexed(gone))
+        verify(exactly = 1) { compilation.invalidateCache(gone.toUri()) }
+    }
+
+    @Test
+    fun `a folder named like a source is scanned when created and pruned when deleted`() {
+        val src = src()
+        val folder = src.resolve("lib.groovy")
+        val inner = write(folder.resolve("Inner.groovy"), "class Inner {}\n")
+
+        notify(folder to FileChangeType.Created)
+        assertEquals(listOf(inner), sources(), "created")
+
+        folder.toFile().deleteRecursively()
+        notify(folder to FileChangeType.Deleted)
+        assertEquals(emptyList(), sources(), "deleted")
+    }
+
+    @Test
+    fun `events under directories the scans skip are dropped before any work`() {
+        val src = src()
+        val vendored = write(src.resolve("node_modules/pkg/Vendored.groovy"), "class Vendored {}\n")
+        clearMocks(compilation, answers = false, recordedCalls = true, childMocks = false, verificationMarks = true)
+
+        notify(
+            src.resolve("node_modules/pkg") to FileChangeType.Created,
+            src.resolve(".git/index") to FileChangeType.Created,
+        )
+
+        assertFalse(sources().contains(vendored), "${sources()}")
+        verify(exactly = 0) { compilation.onWorkspaceSourcesChanged(any(), any()) }
+    }
+
+    @Test
+    fun `notifications apply off the caller thread, in arrival order`() {
+        val tasks = ArrayDeque<Runnable>()
+        val queued = GroovyWorkspaceService(
+            compilation,
+            compilation.symbolIndexingService,
+            scope,
+            sourceChangeDispatcher = Executor { tasks.addLast(it) }.asCoroutineDispatcher(),
+        )
+        val src = src()
+        val pkg = src.resolve("pkg")
+        write(pkg.resolve("A.groovy"), "class A {}\n")
+        val event = { type: FileChangeType ->
+            DidChangeWatchedFilesParams(listOf(FileEvent(pkg.toUri().toString(), type)))
+        }
+
+        // The folder stays on disk: applied in order the delete wins, reversed the create would.
+        queued.didChangeWatchedFiles(event(FileChangeType.Created))
+        assertEquals(emptyList(), sources(), "a folder walk must not run on the notification thread")
+        queued.didChangeWatchedFiles(event(FileChangeType.Deleted))
+        while (tasks.isNotEmpty()) tasks.removeFirst().run()
+
+        assertEquals(emptyList(), sources(), "the delete was applied after the create")
     }
 }

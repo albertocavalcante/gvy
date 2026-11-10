@@ -79,8 +79,8 @@ internal class Walked(
     val directories: Map<Path, FileTime> = emptyMap(),
 )
 
-/** Directories that never hold project sources, at any depth. */
-private val ALWAYS_SKIPPED = setOf(".git", ".hg", ".svn", ".gradle", ".idea", "node_modules")
+/** Directories that never hold project sources, at any depth; watched-file events under them are dropped too. */
+internal val ALWAYS_SKIPPED = setOf(".git", ".hg", ".svn", ".gradle", ".idea", "node_modules")
 
 /** Build output directories: skipped only where they are build output, not where they are a package name. */
 private val BUILD_OUTPUTS = setOf("build", "out", "target")

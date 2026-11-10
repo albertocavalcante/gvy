@@ -22,10 +22,15 @@ import kotlin.test.assertNotEquals
 class SourceRootWatcherRegistrarTest {
     private val registered = mutableListOf<RegistrationParams>()
     private val unregistered = mutableListOf<UnregistrationParams>()
+    private var refuse = false
     private val client = mockk<LanguageClient> {
         every { registerCapability(any()) } answers {
             registered += firstArg<RegistrationParams>()
-            CompletableFuture.completedFuture(null)
+            if (refuse) {
+                CompletableFuture.failedFuture(IllegalStateException("refused"))
+            } else {
+                CompletableFuture.completedFuture(null)
+            }
         }
         every { unregisterCapability(any()) } answers {
             unregistered += firstArg<UnregistrationParams>()
@@ -127,5 +132,32 @@ class SourceRootWatcherRegistrarTest {
 
         assertEquals(1, registered.size)
         assertEquals(1, unregistered.size)
+    }
+
+    @Test
+    fun `the workspace root itself is never watched`() {
+        val workspace = Path.of("/ws").toAbsolutePath()
+        val registrar = SourceRootWatcherRegistrar()
+        registrar.attach(client, capabilities())
+        registrar.sync(listOf(workspace), workspace)
+
+        assertEquals(emptyList(), registered, "a no-build-tool root would report .git and build output")
+
+        registrar.sync(listOf(workspace, rootA), workspace)
+        assertEquals(listOf(rootA.toUri().toString()), watchedBases(registered.single()))
+    }
+
+    @Test
+    fun `a refused registration is retried on the next sync and never unregistered`() {
+        val registrar = SourceRootWatcherRegistrar()
+        registrar.attach(client, capabilities())
+        refuse = true
+        registrar.sync(listOf(rootA))
+        refuse = false
+
+        registrar.sync(listOf(rootA))
+
+        assertEquals(2, registered.size, "the same roots are registered again after a refusal")
+        assertEquals(emptyList(), unregistered, "a refused id was never active")
     }
 }

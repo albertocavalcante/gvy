@@ -247,7 +247,7 @@ class ProjectStartupManager(
 
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
         compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
-        sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots())
+        sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots(), workspaceRoot)
 
         // Set strategy registry on workspace manager
         compilationService.workspaceManager.setStrategyRegistry(strategyRegistry)
@@ -357,7 +357,7 @@ class ProjectStartupManager(
                         sourceDirectories = resolution.sourceDirectories,
                         targets = resolution.targetDependencies,
                     )
-                    sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots())
+                    sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots(), context.workspaceRoot)
                     context.textDocumentServiceRefresh()
 
                     context.progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")

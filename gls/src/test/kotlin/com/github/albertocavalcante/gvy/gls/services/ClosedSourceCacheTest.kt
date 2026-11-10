@@ -55,7 +55,12 @@ class ClosedSourceCacheTest {
             client = { mockk<LanguageClient>(relaxed = true) },
         ),
     )
-    private val workspace = GroovyWorkspaceService(compilation, compilation.symbolIndexingService, scope)
+    private val workspace = GroovyWorkspaceService(
+        compilation,
+        compilation.symbolIndexingService,
+        scope,
+        sourceChangeDispatcher = Dispatchers.Unconfined,
+    )
 
     @AfterEach
     fun tearDown() = scope.cancel()
