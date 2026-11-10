@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -149,6 +150,11 @@ internal class WorkspaceIndexer(
         progressReporter: ProgressReporter,
         onStatusUpdate: StatusUpdateCallback,
     ) {
+        if (throwable is CancellationException) {
+            // End the client's work-done progress first, or its indicator stays open; then stay cancelled (#1311)
+            progressReporter.cancel()
+            throw throwable
+        }
         rethrowIfCancellationOrError(throwable)
         logger.error(throwable) { "Workspace indexing failed" }
         progressReporter.completeWithError("Failed to index workspace: ${throwable.message}")

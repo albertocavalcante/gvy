@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.sources
 import com.github.albertocavalcante.gvy.build.MavenSourceArtifactResolver
 import com.github.albertocavalcante.gvy.build.SourceArtifactResolver
 import com.github.albertocavalcante.gvy.gls.documentation.Documentation
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
 import java.nio.file.Files
@@ -208,6 +209,8 @@ class SourceNavigationService(
                     return sourceJar
                 }
             } catch (e: Exception) {
+                // A cancelled request must end cancelled, not fall back to an adjacent jar or "no source" (#1311)
+                rethrowIfCancellationOrError(e)
                 logger.debug { "Failed to resolve source JAR from Maven: ${e.message}" }
             }
         } else {
