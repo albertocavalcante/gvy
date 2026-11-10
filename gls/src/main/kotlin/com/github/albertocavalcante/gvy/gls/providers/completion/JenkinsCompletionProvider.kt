@@ -187,7 +187,7 @@ internal object JenkinsCompletionProvider {
             isCommand,
             // Only a statement directly in the directive block is one of its entries; a nested call such as
             // `string(defaultValue: string(|))` keeps the step's own keys.
-            directive?.takeIf { isClosureStatement(methodCall, astModel) },
+            directive?.takeIf { isDirectiveStatement(methodCall, it, astModel) },
         )
         val typedWord = if (isCommand) typedWordBeforeCursor(ctx) else null
         bundledParamCompletions.forEach { item ->
@@ -216,13 +216,17 @@ internal object JenkinsCompletionProvider {
     }
 
     /**
-     * True when [call] is a statement of a closure body (`parameters { string(...) }`), not nested in
-     * another expression.
+     * True when [call] is a statement directly in the [directive] block's closure
+     * (`parameters { string(...) }`), not nested in another expression or in an inner closure such as
+     * `['a'].collect { string(...) }`.
      */
-    private fun isClosureStatement(call: MethodCallExpression, astModel: GroovyAstModel): Boolean {
+    private fun isDirectiveStatement(call: MethodCallExpression, directive: String, astModel: GroovyAstModel): Boolean {
         val statement = astModel.getParent(call) as? ExpressionStatement ?: return false
         val block = astModel.getParent(statement) as? BlockStatement ?: return false
-        return astModel.getParent(block) is ClosureExpression
+        val closure = astModel.getParent(block) as? ClosureExpression ?: return false
+        val owner = generateSequence(astModel.getParent(closure)) { astModel.getParent(it) }
+            .firstOrNull { it is MethodCallExpression } as? MethodCallExpression
+        return owner?.methodAsString == directive
     }
 
     private fun callOrReceiverCall(

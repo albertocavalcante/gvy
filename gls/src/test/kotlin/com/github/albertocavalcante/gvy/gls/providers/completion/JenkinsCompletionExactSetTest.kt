@@ -373,6 +373,29 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
+    fun `a call in an inner closure of a directive entry keeps its own step keys`(): Unit = runTest {
+        val line = "        choice(name: 'C', choices: ['a'].collect { string() })"
+        val code = "pipeline {\n    agent any\n    parameters {\n$line\n    }\n}"
+        val items = completeAt(code, line = 3, character = line.indexOf("string(") + 7)
+
+        val keys = items.labels(CompletionItemKind.Property)
+        assertTrue("credentialsId:" in keys, "string() in collect {} is the credentials binding step: $keys")
+        assertTrue("trim:" !in keys, "an inner closure is not the parameters {} block: $keys")
+    }
+
+    @Test
+    fun `parenthesised and command-form entries both get directive keys`(): Unit = runTest {
+        val paren = "        string(name: 'A', )"
+        val command = "        string name: 'A', "
+        val wrap = { line: String -> "pipeline {\n    agent any\n    parameters {\n$line\n    }\n}" }
+        val parenItems = completeAt(wrap(paren), line = 3, character = paren.indexOf(", )") + 2)
+        val commandItems = completeAt(wrap(command), line = 3, character = command.length)
+
+        assertTrue("trim:" in parenItems.labels(), "string(name: 'A', |) offers trim:")
+        assertTrue("trim:" in commandItems.labels(), "string name: 'A', | offers trim:")
+    }
+
+    @Test
     fun `trigger and tool entries offer their own keys`(): Unit = runTest {
         val pollScm =
             completeAt(
