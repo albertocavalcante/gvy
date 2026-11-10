@@ -139,6 +139,53 @@ class WorkspaceManager(
         return changed
     }
 
+    /**
+     * Applies sources created or deleted after the model was built (#1422), publishing one new model.
+     * A created path joins only when it is a Groovy source under a current source root, the rule the scan
+     * uses; a deleted path leaves the list. Each root's sources stay sorted, as [scanSources] orders them.
+     * Classpath, roots, targets and so the fingerprint are unchanged. Returns whether the list changed.
+     */
+    fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): Boolean {
+        var changed = false
+        update { current ->
+            val gone = deleted.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val known = current.sources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val roots = current.sourceRoots.map { it.toAbsolutePath().normalize() }
+            val added = created.map { it.toAbsolutePath().normalize() }
+                .filter { it !in known && it !in gone && isGroovySource(it) }
+                .filter { path -> roots.any { root -> path.startsWith(root) } }
+                .distinct()
+            val kept = current.sources.filterNot { it.toAbsolutePath().normalize() in gone }
+            val next = if (added.isEmpty()) kept else ordered(kept + added, roots)
+            changed = next != current.sources
+            if (!changed) {
+                current
+            } else {
+                WorkspaceModel(
+                    current.root,
+                    current.classpath,
+                    current.sourceRoots,
+                    next,
+                    current.targets,
+                    computeFingerprint = fingerprintComputer,
+                )
+            }
+        }
+        return changed
+    }
+
+    /** Sources grouped by their first containing root in root order, each group sorted, as a scan yields them. */
+    private fun ordered(sources: List<Path>, roots: List<Path>): List<Path> {
+        val byRoot = sources.groupBy { source ->
+            roots.indexOfFirst { source.toAbsolutePath().normalize().startsWith(it) }
+        }
+        return byRoot.keys.sortedBy { if (it < 0) Int.MAX_VALUE else it }.flatMap { byRoot.getValue(it).sorted() }
+    }
+
+    /** The scan's rule: a `.groovy` regular file, or a link to one. */
+    private fun isGroovySource(path: Path): Boolean =
+        path.extension.equals("groovy", ignoreCase = true) && Files.isRegularFile(path)
+
     /** Builds the next model outside any reader's view (including disk walks) and publishes it whole. */
     private inline fun update(next: (WorkspaceModel) -> WorkspaceModel) {
         synchronized(updateLock) { model.set(next(model.get())) }

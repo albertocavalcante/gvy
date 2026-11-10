@@ -237,6 +237,21 @@ class GroovyCompilationService(
         invalidateClassLoader()
     }
 
+    /**
+     * Applies one file-watch notification's created and deleted sources to the workspace model (#1422).
+     * When the source list changed, the caches are cleared once: the fingerprint covers the classpath and
+     * roots, not the source list, so cached results would otherwise keep the old list's resolution.
+     *
+     * Order matters: the new model is published before [clearCaches] retires every ticket. A compile takes
+     * its ticket before it reads the model, so any compile that read the old list holds a ticket from
+     * before the retirement and cannot publish; a compile after it reads the new list.
+     */
+    fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): Boolean {
+        val changed = workspaceManager.applySourceChanges(created, deleted)
+        if (changed) clearCaches()
+        return changed
+    }
+
     /** Retires [uri]'s artifacts, as [clearCaches] does for every file. */
     fun invalidateCache(uri: URI) = semanticSnapshotGuard.invalidate {
         ownership.retire(uri) {

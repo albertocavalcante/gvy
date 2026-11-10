@@ -28,6 +28,7 @@ import org.eclipse.lsp4j.WorkspaceSymbolParams
 import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
+import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
 /**
@@ -130,6 +131,13 @@ class GroovyWorkspaceService(
         val changed = changes.filter { it.type == FileChangeType.Changed }
         val deleted = changes.filter { it.type == FileChangeType.Deleted }
 
+        // One model update and at most one cache clear per notification, however many files it carries.
+        val sourcesChanged = compilationService.onWorkspaceSourcesChanged(
+            created.mapNotNull { filePath(it.uri) },
+            deleted.mapNotNull { filePath(it.uri) },
+        )
+        if (sourcesChanged) textDocumentService?.rerunDiagnosticsOnOpenFiles()
+
         // Handle deleted files - remove from cache
         deleted.forEach { event ->
             try {
@@ -161,6 +169,8 @@ class GroovyWorkspaceService(
             }
         }
     }
+
+    private fun filePath(uri: String): Path? = runCatching { Path.of(URI.create(uri)) }.getOrNull()
 
     private enum class FileType(val suffixes: List<String>) {
         CODENARC(listOf(".codenarc", "codenarc.xml", "codenarc.groovy", "codenarc.properties")),
