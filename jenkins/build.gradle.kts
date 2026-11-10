@@ -32,6 +32,7 @@ dependencies {
     // HTML to Markdown conversion for vars documentation
     implementation(libs.flexmark.html2md)
 
+    implementation(project(":parser:api"))
     api(project(":common"))
     api(project(":dsl:gdsl"))
     api(project(":build-tool"))

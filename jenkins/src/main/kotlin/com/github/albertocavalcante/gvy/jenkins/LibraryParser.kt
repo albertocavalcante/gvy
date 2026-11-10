@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.groovyparser.api.AnalysisCompilerPolicy
 import com.github.albertocavalcante.gvy.common.text.ShebangUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.AnnotationNode
@@ -99,7 +100,7 @@ class LibraryParser {
     }
 
     private fun parseToAst(source: String): ModuleNode {
-        val config = CompilerConfiguration()
+        val config = CompilerConfiguration().also(AnalysisCompilerPolicy::apply)
         val unit = CompilationUnit(config)
         val preprocessed = ShebangUtils.replaceShebangWithEmptyLine(source)
         val sourceUnit = SourceUnit("Jenkinsfile", preprocessed, config, null, unit.errorCollector)

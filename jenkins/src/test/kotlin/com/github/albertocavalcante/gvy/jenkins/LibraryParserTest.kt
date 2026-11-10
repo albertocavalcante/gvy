@@ -365,4 +365,20 @@ class LibraryParserEdgeCasesTest {
         assertEquals(1, libraries.size)
         assertEquals("valid-lib", libraries[0].name)
     }
+
+    @Test
+    fun shouldStillParseLibrariesWhenGrabCannotResolveIvy() {
+        // @Grab needs Ivy, which is not shipped; analysis must not run the Grab transform at all
+        val jenkinsfile = """
+            @Grab('org.apache.commons:commons-lang3:3.14.0')
+            @Library('pipeline-library')
+            import com.example.Pipeline
+
+            node { echo 'hello' }
+        """.trimIndent()
+
+        val libraries = LibraryParser().parseLibraries(jenkinsfile)
+
+        assertEquals(listOf("pipeline-library"), libraries.map { it.name })
+    }
 }
