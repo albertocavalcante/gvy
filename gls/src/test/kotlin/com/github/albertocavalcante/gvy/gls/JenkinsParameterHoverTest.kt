@@ -219,6 +219,40 @@ class JenkinsParameterHoverTest {
     }
 
     @Test
+    fun `stages in parallel and matrix blocks keep their section hover`(): Unit = runBlocking {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('P') {",
+            "            parallel {",
+            "                stage('a') { steps { echo 'a' } }",
+            "            }",
+            "        }",
+            "        stage('M') {",
+            "            matrix {",
+            "                agent any",
+            "                stages {",
+            "                    stage('m') { steps { echo 'm' } }",
+            "                }",
+            "            }",
+            "        }",
+            "    }",
+            "}",
+        )
+        val code = lines.joinToString("\n")
+        val inParallel = hoverText(code, line = 5, character = lines[5].indexOf("stage") + 2)
+        val matrixAgent = hoverText(code, line = 10, character = lines[10].indexOf("agent") + 2)
+        val matrixStages = hoverText(code, line = 11, character = lines[11].indexOf("stages") + 2)
+        val inMatrix = hoverText(code, line = 12, character = lines[12].indexOf("stage") + 2)
+
+        assertTrue(inParallel?.contains("Declarative section `stage`") == true, "stage in parallel: $inParallel")
+        assertTrue(matrixAgent?.contains("Declarative section `agent`") == true, "agent in matrix: $matrixAgent")
+        assertTrue(matrixStages?.contains("Declarative section `stages`") == true, "stages in matrix: $matrixStages")
+        assertTrue(inMatrix?.contains("Declarative section `stage`") == true, "stage in matrix stages: $inMatrix")
+    }
+
+    @Test
     fun `a declarative hover range covers the name, not the whole block`(): Unit = runBlocking {
         val code = "pipeline {\n    agent any\n    stages {\n    }\n}"
         val pipeline = hoverAt(code, line = 0, character = 2)

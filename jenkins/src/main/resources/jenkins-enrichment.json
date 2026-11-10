@@ -487,7 +487,8 @@
       "description": "Specifies where the entire pipeline or a stage runs.",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "innerInstructions": [
         "any",
@@ -501,7 +502,9 @@
     "stages": {
       "description": "Group of one or more stages.",
       "allowedIn": [
-        "pipeline"
+        "pipeline",
+        "stage",
+        "matrix"
       ],
       "innerInstructions": [
         "stage"
@@ -511,7 +514,8 @@
     "stage": {
       "description": "A stage block within Declarative Pipeline.",
       "allowedIn": [
-        "stages"
+        "stages",
+        "parallel"
       ],
       "innerInstructions": [
         "steps",
@@ -535,7 +539,8 @@
       "description": "Post-build actions, run in a specific order based on conditions.",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "innerInstructions": [
         "always",
@@ -553,7 +558,8 @@
       "description": "Define environment variables for the pipeline or a stage.",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#environment"
     },
@@ -561,7 +567,8 @@
       "description": "Configure pipeline or stage options.",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#options"
     },
@@ -575,7 +582,8 @@
     "when": {
       "description": "Conditional execution of a stage.",
       "allowedIn": [
-        "stage"
+        "stage",
+        "matrix"
       ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#when"
     },
@@ -583,7 +591,8 @@
       "description": "Configure tools (e.g. JDK, Maven) for the pipeline or a stage.",
       "allowedIn": [
         "pipeline",
-        "stage"
+        "stage",
+        "matrix"
       ],
       "documentationUrl": "https://www.jenkins.io/doc/book/pipeline/syntax/#tools"
     }
