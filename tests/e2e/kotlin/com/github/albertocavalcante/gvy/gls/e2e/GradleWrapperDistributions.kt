@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.e2e
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
+import java.io.UncheckedIOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -20,9 +21,10 @@ import kotlin.io.path.isRegularFile
  *
  * Only the fixtures' own `wrapper/dists/<name>` folders are linked, never the whole `wrapper/dists`:
  * a daemon's distribution cleanup deletes versions older than its own that its (isolated) home has
- * not used, which would otherwise reach into the host's other distributions. Fixtures pin the
- * daemon's own version, which that cleanup never removes. Daemons, caches and init scripts stay
- * isolated.
+ * not used, which would otherwise reach into the host's other distributions. This relies on every
+ * fixture pinning the repository's single Gradle version (enforced by GradleWrapperDistributionsTest):
+ * a daemon of a newer fixture version could clean an older linked host distribution through its
+ * link. Daemons, caches and init scripts stay isolated.
  */
 internal object GradleWrapperDistributions {
     private val logger = KotlinLogging.logger {}
@@ -40,14 +42,44 @@ internal object GradleWrapperDistributions {
             ?.let { Paths.get(it) }
             ?: Paths.get(System.getProperty("user.home"), ".gradle")
 
+    /**
+     * Creates the isolated Gradle user [home], then runs [share] on it.
+     *
+     * Returns null only when the home itself cannot be created. A failing [share] is logged and the
+     * isolated home is still returned: falling back to the host home would silently undo isolation.
+     */
+    @Suppress("TooGenericExceptionCaught") // Sharing is an optimisation; any failure must leave isolation intact.
+    fun prepareIsolatedHome(home: Path, share: (Path) -> Unit): Path? {
+        try {
+            Files.createDirectories(home)
+        } catch (e: IOException) {
+            logger.warn { "Failed to prepare isolated Gradle user home at $home: ${e.message}" }
+            return null
+        }
+        try {
+            share(home)
+        } catch (e: Exception) {
+            logger.warn { "Not sharing Gradle distributions with $home; Gradle will download them: ${e.message}" }
+        }
+        return home
+    }
+
     /** Distribution folder names (e.g. `gradle-9.8.2-bin`) that the fixture wrappers under [workspaces] install. */
     fun fixtureDistributions(workspaces: Path): Set<String> {
         if (!Files.isDirectory(workspaces)) return emptySet()
-        return Files.walk(workspaces).use { paths ->
-            paths.filter { it.isRegularFile() && it.endsWith(WRAPPER_PROPERTIES) }
-                .toList()
-                .mapNotNull { distributionName(it) }
-                .toSet()
+        return try {
+            Files.walk(workspaces).use { paths ->
+                paths.filter { it.isRegularFile() && it.endsWith(WRAPPER_PROPERTIES) }
+                    .toList()
+                    .mapNotNull { distributionName(it) }
+                    .toSet()
+            }
+        } catch (e: IOException) {
+            logger.warn { "Cannot read fixture Gradle wrappers under $workspaces: ${e.message}" }
+            emptySet()
+        } catch (e: UncheckedIOException) {
+            logger.warn { "Cannot read fixture Gradle wrappers under $workspaces: ${e.message}" }
+            emptySet()
         }
     }
 
@@ -55,8 +87,8 @@ internal object GradleWrapperDistributions {
      * Links each of [distributions] that is installed in [hostHome] into [isolatedHome].
      *
      * Returns the names the isolated home now shares. This code never creates anything in the host home
-     * (Gradle still writes its lock files there) and never fails the caller: a distribution that cannot be
-     * linked is downloaded by Gradle as before.
+     * (Gradle still writes its lock files there). A distribution that cannot be linked is skipped and
+     * downloaded by Gradle as before; [prepareIsolatedHome] contains any other failure.
      */
     fun share(hostHome: Path, isolatedHome: Path, distributions: Set<String>): List<String> =
         distributions.filter { name ->

@@ -75,9 +75,31 @@ class GradleWrapperDistributionsTest {
         )
     }
 
+    @Test
+    fun `an unreadable fixture wrapper shares nothing instead of throwing`() {
+        val wrapper = Files.createDirectories(temp.resolve("workspaces/a/gradle/wrapper"))
+            .resolve("gradle-wrapper.properties")
+        wrapper.writeText("distributionUrl=https\\://services.gradle.org/distributions/gradle-1.2-bin.zip\n")
+        assumeTrue(wrapper.toFile().setReadable(false) && !Files.isReadable(wrapper), "cannot revoke read access")
+
+        assertEquals(emptySet(), GradleWrapperDistributions.fixtureDistributions(temp.resolve("workspaces")))
+    }
+
+    @Test
+    fun `a failing share step keeps the isolated home`() {
+        val home = temp.resolve("isolated-home")
+
+        val prepared = GradleWrapperDistributions.prepareIsolatedHome(home) { throw IllegalStateException("boom") }
+
+        assertEquals(home, prepared, "the server must not fall back to the host Gradle home")
+        assertTrue(Files.isDirectory(home))
+    }
+
     /**
      * Sharing only avoids a download when the fixtures pin the distribution the repository build
-     * already installs (and CI restores from its Gradle cache). Bump fixtures with the wrapper.
+     * already installs (and CI restores from its Gradle cache). It is also only safe while every
+     * fixture pins that single version: a newer-version daemon could otherwise clean an older linked
+     * host distribution. Bump fixtures with the wrapper.
      */
     @Test
     fun `fixtures pin the repository Gradle distribution`() {

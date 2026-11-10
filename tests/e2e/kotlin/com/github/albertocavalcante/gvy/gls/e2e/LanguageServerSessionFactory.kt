@@ -140,13 +140,7 @@ class LanguageServerSessionFactory {
             else -> Paths.get("").toAbsolutePath().resolve("build/e2e-gradle-home-$uniqueSuffix")
         }
 
-        return runCatching {
-            Files.createDirectories(target)
-            shareFixtureDistributions(target)
-            target
-        }.onFailure {
-            logger.warn { "Failed to prepare isolated Gradle user home at $target: ${it.message}" }
-        }.getOrNull()
+        return GradleWrapperDistributions.prepareIsolatedHome(target, ::shareFixtureDistributions)
     }
 
     /** Reuses the host's installed fixture Gradle distributions instead of downloading them per JVM. */
