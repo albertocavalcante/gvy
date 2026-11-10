@@ -138,14 +138,18 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
     private fun importedReference(importNode: ImportNode, shared: ClassNode): ClassNode? {
         val line = importNode.lineNumber
         val text = currentModule?.let { sourceLine(it, line) } ?: return null
-        val start = text.indexOf(importNode.className, startIndex = (importNode.columnNumber - 1).coerceAtLeast(0))
+        // Parser columns count code points; String indices count UTF-16 units
+        val codePoints = text.codePointCount(0, text.length)
+        val from = text.offsetByCodePoints(0, (importNode.columnNumber - 1).coerceIn(0, codePoints))
+        val start = text.indexOf(importNode.className, startIndex = from)
         if (start < 0) return null
+        val end = start + importNode.className.length
         return ClassHelper.makeWithoutCaching(shared.name).also { reference ->
             reference.setRedirect(shared)
             reference.lineNumber = line
-            reference.columnNumber = start + 1
+            reference.columnNumber = text.codePointCount(0, start) + 1
             reference.lastLineNumber = line
-            reference.lastColumnNumber = start + 1 + importNode.className.length
+            reference.lastColumnNumber = text.codePointCount(0, end) + 1
         }
     }
 
