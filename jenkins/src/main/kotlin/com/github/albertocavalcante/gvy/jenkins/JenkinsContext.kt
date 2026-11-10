@@ -30,6 +30,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.atomic.AtomicReference
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 
@@ -329,8 +330,8 @@ class JenkinsContext internal constructor(
     /** Merged view computed for one scan and GDSL snapshot (null = that source contributes nothing). */
     private class MergedSnapshot(val scan: ScanSnapshot?, val gdsl: GdslSnapshot?, val metadata: MergedJenkinsMetadata)
 
-    @Volatile
-    private var scanSnapshot: ScanSnapshot? = null
+    /** Replaced by compare-and-set in [scanClasspath], so a scan never needs the context lock. */
+    private val scanSnapshot = AtomicReference<ScanSnapshot?>(null)
 
     @Volatile
     private var gdslSnapshot: GdslSnapshot? = null
@@ -349,7 +350,7 @@ class JenkinsContext internal constructor(
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
      */
     fun getAllMetadata(): MergedJenkinsMetadata {
-        val scan = scanSnapshot
+        val scan = scanSnapshot.get()
         val gdsl = gdslSnapshot
         mergedSnapshot?.takeIf { it.scan === scan && it.gdsl === gdsl }?.let { return it.metadata }
 
@@ -455,24 +456,33 @@ class JenkinsContext internal constructor(
     /**
      * Parse and scan classpath for Jenkins metadata.
      *
-     * Rescans only when the classpath differs from the last scan. The production scanner
-     * ([JenkinsClasspathScanner.scan]) never throws: an unreadable jar yields empty metadata, which is
-     * published like any other result. Only an injected scanner that throws leaves the previous
-     * snapshot in place.
+     * Rescans only when the classpath differs from the last published scan. Every Jenkinsfile compile,
+     * completion included, reaches this, so the scan runs without any lock (#1241): a request for another
+     * classpath never waits for a scan in progress. The scan is pure; its result is published with a
+     * compare-and-set against the snapshot it started from. If another scan published meanwhile, this
+     * result is discarded rather than replacing the newer one, so readers always see exactly one scan.
+     *
+     * The production scanner ([JenkinsClasspathScanner.scan]) never throws: an unreadable jar yields empty
+     * metadata, which is published like any other result. Only an injected scanner that throws leaves the
+     * previous snapshot in place.
      */
-    @Synchronized
     fun scanClasspath(classpath: List<Path>) {
-        if (scanSnapshot?.classpath == classpath) {
+        val observed = scanSnapshot.get()
+        if (observed?.classpath == classpath) {
             logger.debug { "Classpath unchanged (${classpath.size} entries), skipping scan" }
             return
         }
 
-        try {
+        val snapshot = classpath.toList()
+        val metadata = try {
             logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
-            val snapshot = classpath.toList()
-            scanSnapshot = ScanSnapshot(snapshot, classpathScanner(snapshot))
+            classpathScanner(snapshot)
         } catch (e: Exception) {
             logger.error(e) { "Failed to scan classpath" }
+            return
+        }
+        if (!scanSnapshot.compareAndSet(observed, ScanSnapshot(snapshot, metadata))) {
+            logger.debug { "Discarded a classpath scan: another scan was published while it ran" }
         }
     }
 
