@@ -121,11 +121,13 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
          */
         fun isExcludedDirectory(root: Path, dir: Path): Boolean {
             val name = dir.name
-            if (name.startsWith(".")) return true
-            if (name !in BUILD_OUTPUT_DIRECTORIES) return false
+            return name.startsWith(".") || (name in BUILD_OUTPUT_DIRECTORIES && isBuildOutput(root, dir))
+        }
+
+        private fun isBuildOutput(root: Path, dir: Path): Boolean {
             val parent = dir.parent ?: return false
-            if (root.relativize(parent).any { it.toString() in SOURCE_SEGMENTS }) return false
-            return parent == root || BUILD_FILES.any { Files.exists(parent.resolve(it)) }
+            val underSources = root.relativize(parent).any { it.toString() in SOURCE_SEGMENTS }
+            return !underSources && (parent == root || BUILD_FILES.any { Files.exists(parent.resolve(it)) })
         }
     }
 }
