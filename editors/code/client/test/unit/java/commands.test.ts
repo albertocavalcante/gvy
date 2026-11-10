@@ -32,6 +32,7 @@ interface MockVscode {
     Separator: number;
   };
   ConfigurationTarget: {
+    Global: number;
     Workspace: number;
   };
   ProgressLocation: {
@@ -120,7 +121,8 @@ describe("Java Commands", () => {
         Separator: -1,
       },
       ConfigurationTarget: {
-        Workspace: 1,
+        Global: 1,
+        Workspace: 2,
       },
       ProgressLocation: {
         Notification: 15,
@@ -501,7 +503,7 @@ describe("Java Commands", () => {
         assert.isFalse(result);
       });
 
-      it("should update workspace settings when JDK selected", async () => {
+      it("should update user settings when JDK selected", async () => {
         const mockJdks = [
           {
             path: "/jdk17",
@@ -530,7 +532,7 @@ describe("Java Commands", () => {
           config.update.calledWith(
             "languageServer.javaHome",
             "/jdk17",
-            mockVscode.ConfigurationTarget.Workspace,
+            mockVscode.ConfigurationTarget.Global,
           ),
         );
       });

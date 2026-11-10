@@ -12,7 +12,6 @@
  */
 
 import * as vscode from "vscode";
-import { settingsTarget } from "../configuration/target";
 import { getRuntime } from "jdk-utils";
 import {
   findAllJdks,
@@ -84,7 +83,7 @@ export async function configureJava(
 /**
  * Configures the Language Server runtime Java.
  * Shows a picker with detected JDKs and allows manual path selection.
- * Sets the selected JDK path in workspace settings (groovy.languageServer.javaHome).
+ * Sets the selected JDK path in user settings (groovy.languageServer.javaHome).
  *
  * @param requiredVersion Optional version to prioritize (e.g., from toolchain error)
  * @returns true if a JDK was selected and configured, false otherwise
@@ -132,7 +131,7 @@ async function configureLspJava(requiredVersion?: number): Promise<boolean> {
 /**
  * Configures the Project Build JDK.
  * Shows all detected JDKs without LSP filtering - any JDK version can be used
- * for project builds. Sets groovy.project.javaHome in workspace settings.
+ * for project builds. Sets groovy.project.javaHome in user settings.
  *
  * @param minimumVersion Optional minimum version required by the project
  * @returns true if a JDK was selected and configured, false otherwise
@@ -269,8 +268,8 @@ async function browseAndSetProjectJavaHome(): Promise<boolean> {
 }
 
 /**
- * Sets the LSP Java home in workspace settings and offers to restart the server.
- * Updates groovy.languageServer.javaHome in .vscode/settings.json (workspace scope).
+ * Sets the LSP Java home in user settings and offers to restart the server.
+ * The setting is machine-scoped: a workspace cannot choose the JDK that launches the server.
  *
  * @param jdkPath Absolute path to the JDK home directory
  * @param version Major Java version number
@@ -281,11 +280,15 @@ async function setLspJavaHomeAndRestart(
   version: number,
 ): Promise<boolean> {
   const config = vscode.workspace.getConfiguration("groovy");
-  await config.update("languageServer.javaHome", jdkPath, settingsTarget());
+  await config.update(
+    "languageServer.javaHome",
+    jdkPath,
+    vscode.ConfigurationTarget.Global,
+  );
 
   const restartAction = "Restart Server";
   const result = await vscode.window.showInformationMessage(
-    `Language Server Java set to Java ${version} in workspace settings. Restart the server to apply.`,
+    `Language Server Java set to Java ${version} in user settings. Restart the server to apply.`,
     restartAction,
   );
 
@@ -297,8 +300,8 @@ async function setLspJavaHomeAndRestart(
 }
 
 /**
- * Sets the Project Build Java home in workspace settings.
- * Updates groovy.project.javaHome in .vscode/settings.json (workspace scope).
+ * Sets the Project Build Java home in user settings.
+ * The setting is machine-scoped: a workspace cannot choose the JDK that runs its builds and tests.
  *
  * @param jdkPath Absolute path to the JDK home directory
  * @param version Major Java version number
@@ -309,7 +312,11 @@ async function setProjectJavaHome(
   version: number,
 ): Promise<boolean> {
   const config = vscode.workspace.getConfiguration("groovy");
-  await config.update("project.javaHome", jdkPath, settingsTarget());
+  await config.update(
+    "project.javaHome",
+    jdkPath,
+    vscode.ConfigurationTarget.Global,
+  );
 
   vscode.window.showInformationMessage(
     `Project build JDK set to Java ${version}. Tests will use this JDK.`,
