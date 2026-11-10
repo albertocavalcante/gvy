@@ -149,7 +149,14 @@ class WorkspaceManager(
         classpath: List<Path>,
         sourceRoots: List<Path>,
         targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
-    ) = WorkspaceModel(root, classpath, sourceRoots, scanSources(sourceRoots.distinct()), targets, fingerprintComputer)
+    ) = WorkspaceModel(
+        root,
+        classpath,
+        sourceRoots,
+        scanSources(sourceRoots.distinct()),
+        targets,
+        computeFingerprint = fingerprintComputer,
+    )
 
     /** Structural comparison of target facts; provenance (generation) alone is not a change. */
     private fun sameTargetFacts(current: TargetDependencyEvidence, next: TargetDependencyEvidence): Boolean =

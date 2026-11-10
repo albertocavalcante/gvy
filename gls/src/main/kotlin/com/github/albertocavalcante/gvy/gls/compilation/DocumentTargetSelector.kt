@@ -8,6 +8,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.InvalidPathException
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 
 /** Which build target, if any, a document compiles against. */
 sealed interface TargetSelection {
@@ -39,20 +40,23 @@ sealed interface TargetSelection {
  * symbolic links and, on case-insensitive file systems, spelling), else the absolute normalised path.
  * Relative roots resolve against the target's project directory.
  */
-internal class DocumentTargetSelector(evidence: TargetDependencyEvidence) {
+internal class DocumentTargetSelector(
+    evidence: TargetDependencyEvidence,
+    private val canonicalise: (Path) -> Path = ::canonical,
+) {
     private val scoped = evidence as? TargetDependencyEvidence.Scoped
     private val owners: List<Pair<TargetDependencySnapshot, List<Path>>> = scoped?.snapshots.orEmpty()
         .filter { it.role == DependencyRole.COMPILE }
         .map { snapshot ->
             val project = snapshot.target.projectDirectory
             snapshot to snapshot.sourceRoots.map { root ->
-                canonical(if (root.isAbsolute) root else project.resolve(root))
+                canonicalise(if (root.isAbsolute) root else project.resolve(root))
             }
         }
 
     fun select(path: Path?): TargetSelection {
         if (scoped == null) return TargetSelection.LegacyOnly
-        val document = path?.let(::canonical) ?: return TargetSelection.Unowned
+        val document = path?.let(::canonicalDocument) ?: return TargetSelection.Unowned
         val matches = owners.filter { (_, roots) -> roots.any(document::startsWith) }.map { it.first }
         return when {
             matches.isEmpty() -> TargetSelection.Unowned
@@ -62,7 +66,17 @@ internal class DocumentTargetSelector(evidence: TargetDependencyEvidence) {
         }
     }
 
+    // Canonicalisation is filesystem I/O; each document is canonicalised once per selector, i.e. once per
+    // workspace model (a new model has a new selector). Bounded: past the cap, lookups canonicalise directly.
+    private val canonicalDocuments = ConcurrentHashMap<Path, Path>()
+
+    private fun canonicalDocument(path: Path): Path = canonicalDocuments[path] ?: canonicalise(path).also { canonical ->
+        if (canonicalDocuments.size < MAX_CACHED_DOCUMENTS) canonicalDocuments.putIfAbsent(path, canonical)
+    }
+
     companion object {
+        private const val MAX_CACHED_DOCUMENTS = 4096
+
         fun select(path: Path?, evidence: TargetDependencyEvidence): TargetSelection =
             DocumentTargetSelector(evidence).select(path)
 
