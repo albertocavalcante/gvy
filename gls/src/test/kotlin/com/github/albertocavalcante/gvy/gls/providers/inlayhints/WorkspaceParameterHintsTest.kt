@@ -98,6 +98,25 @@ class WorkspaceParameterHintsTest {
     }
 
     @Test
+    fun `a variable reassigned in the same scope keeps the same-name merge`(): Unit = runBlocking {
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
+        index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
+
+        // Only the two constructor hints: the initializer's class must not decide `send`, which stays ambiguous.
+        val sameScope = hintsFor("def u = new a.Util('x')\n    u = new b.Util('y')\n    u.send('z')")
+        assertEquals(listOf("first:", "other:"), sameScope.sorted())
+    }
+
+    @Test
+    fun `a variable reassigned inside a closure keeps the same-name merge`(): Unit = runBlocking {
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
+        index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
+
+        val inClosure = hintsFor("def u = new a.Util('x')\n    def swap = { u = new b.Util('y') }\n    u.send('z')")
+        assertEquals(listOf("first:", "other:"), inClosure.sorted(), "a closure that reassigns the local also counts")
+    }
+
+    @Test
     fun `without an exact owner the same-named classes are still considered`(): Unit = runBlocking {
         index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n}\n")
 

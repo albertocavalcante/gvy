@@ -212,6 +212,7 @@ internal object InlayHintsCandidates {
         // owner can win (#1374).
         val constructed = objectExpr as? ConstructorCallExpression
             ?: ((objectExpr as? VariableExpression)?.accessedVariable as? VariableExpression)
+                ?.takeUnless { it in context.reassignedLocals } // a later `u = new b.Util()` wins
                 ?.let { declared -> context.astModel.getParent(declared) as? DeclarationExpression }
                 ?.rightExpression as? ConstructorCallExpression
         val written = constructed?.type?.name?.takeIf { it.endsWith(".$refined") }
