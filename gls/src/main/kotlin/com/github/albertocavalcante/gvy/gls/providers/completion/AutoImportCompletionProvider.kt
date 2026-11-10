@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.utils.ImportUtils
@@ -75,22 +75,17 @@ object AutoImportCompletionProvider {
         existingImports: Set<String>,
         candidates: MutableList<TypeCandidate>,
     ) {
-        val workspaceIndex = compilationService.getAllSymbolStorages()
-        workspaceIndex.forEach { (indexUri, index) ->
-            index.getSymbols(indexUri).filterIsInstance<Symbol.Class>()
-                .filter { it.name.startsWith(prefix, ignoreCase = true) }
-                .forEach { symbol ->
-                    val fqn = symbol.fullyQualifiedName
-                    if (fqn !in existingImports) {
-                        candidates.add(
-                            TypeCandidate(
-                                simpleName = symbol.name,
-                                fqn = fqn,
-                                source = TypeSource.WORKSPACE,
-                            ),
-                        )
-                    }
-                }
+        compilationService.symbolIndexingService.findClasses(ClassNameQuery.Prefix(prefix)).forEach { symbol ->
+            val fqn = symbol.fullyQualifiedName
+            if (fqn !in existingImports) {
+                candidates.add(
+                    TypeCandidate(
+                        simpleName = symbol.name,
+                        fqn = fqn,
+                        source = TypeSource.WORKSPACE,
+                    ),
+                )
+            }
         }
     }
 

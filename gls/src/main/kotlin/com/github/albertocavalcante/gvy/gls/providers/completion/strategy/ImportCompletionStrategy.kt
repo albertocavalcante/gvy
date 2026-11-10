@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import org.eclipse.lsp4j.CompletionItem
@@ -328,17 +329,10 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
      * Finds workspace class symbols by fully qualified name or simple name.
      */
     private fun findWorkspaceClassSymbols(className: String): List<Symbol.Class> {
-        val matches = mutableListOf<Symbol.Class>()
         val isFqn = className.contains('.')
-        compilationService.getAllSymbolStorages().forEach { (uri, index) ->
-            index.getSymbols(uri)
-                .filterIsInstance<Symbol.Class>()
-                .filter { symbol ->
-                    if (isFqn) symbol.fullyQualifiedName == className else symbol.name == className
-                }
-                .forEach { matches.add(it) }
-        }
-        return matches
+        return compilationService.symbolIndexingService
+            .findClasses(ClassNameQuery.Exact(className.substringAfterLast('.')))
+            .filter { symbol -> !isFqn || symbol.fullyQualifiedName == className }
     }
 
     /**

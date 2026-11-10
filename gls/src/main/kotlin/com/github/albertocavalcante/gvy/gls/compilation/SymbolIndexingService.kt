@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
@@ -57,10 +58,21 @@ class SymbolIndexingService(
     }
 
     /** An index together with the hash of the content it was built from, built before it is committed. */
-    internal class Prepared(val contentHash: String, val index: SymbolIndex)
+    internal class Prepared(val contentHash: String, val index: SymbolIndex) {
+        /** Classes this file declares; feeds the class-name lookup (#861). */
+        val classes: List<Symbol.Class> by lazy {
+            index.getUris().flatMap(index::getSymbols).filterIsInstance<Symbol.Class>()
+        }
+    }
 
     private val logger = KotlinLogging.logger {}
     private val entries = ConcurrentHashMap<URI, Prepared>()
+
+    // Every change to [entries] goes through [classNames] so the two stay consistent.
+    private val classNames = WorkspaceClassNames()
+
+    /** Recorded class-name keys, for tests that prove removals leave nothing behind. */
+    internal val classNameKeys: Set<String> get() = classNames.keys()
 
     /** Gets the stored symbol index for a file, or null if none has been built. */
     fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index
@@ -70,7 +82,7 @@ class SymbolIndexingService(
 
     /** Stores [prepared] for [uri]. Only call inside an [ArtifactOwnership.commit] of a current ticket. */
     internal fun install(uri: URI, prepared: Prepared) {
-        entries[uri] = prepared
+        classNames.replace(uri, prepared.classes) { entries.put(uri, prepared)?.classes }
     }
 
     /** Whether the stored index of [uri] was built from exactly [snapshot]'s text; older text is not current. */
@@ -102,6 +114,14 @@ class SymbolIndexingService(
         .associateTo(LinkedHashMap()) { it.key to it.value.index }
 
     /**
+     * Workspace classes matching [query], ordered by file. Reads only the files that declare a matching
+     * name instead of scanning every file's symbols (#861); each result is checked against the file's
+     * current entry, so a racing replacement never surfaces a class the file no longer declares.
+     */
+    fun findClasses(query: ClassNameQuery): List<Symbol.Class> =
+        classNames.files(query).sorted().flatMap { entries[it]?.classes.orEmpty() }.filter(query::matches)
+
+    /**
      * Indexes a single workspace file for symbol resolution.
      * Lightweight operation that parses and builds SymbolIndex without full compilation.
      * Re-indexes when the file's content changed since it was last indexed, and drops the entry
@@ -120,7 +140,7 @@ class SymbolIndexingService(
 
         if (!Files.isRegularFile(path)) {
             logger.debug { "File does not exist or is not a regular file: $uri" }
-            commitFromDisk(ticket) { entries.remove(uri) }
+            commitFromDisk(ticket) { classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes } }
             return null
         }
 
@@ -167,7 +187,7 @@ class SymbolIndexingService(
      * @param uri The URI to invalidate
      */
     fun invalidate(uri: URI) {
-        entries.remove(uri)
+        classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes }
     }
 
     /**
@@ -179,7 +199,7 @@ class SymbolIndexingService(
      */
     suspend fun refreshAfterClose(uri: URI, ticket: ArtifactOwnership.Ticket = ownership.begin(uri)) {
         if (UriPathConverter.toPath(uri) == null) {
-            commitFromDisk(ticket) { entries.remove(uri) }
+            commitFromDisk(ticket) { classNames.replace(uri, emptyList()) { entries.remove(uri)?.classes } }
         } else {
             indexFile(uri, ticket)
         }
@@ -190,7 +210,7 @@ class SymbolIndexingService(
      * Used when workspace configuration changes significantly.
      */
     fun clear() {
-        entries.clear()
+        classNames.clear { entries.clear() }
     }
 
     // Private helper methods

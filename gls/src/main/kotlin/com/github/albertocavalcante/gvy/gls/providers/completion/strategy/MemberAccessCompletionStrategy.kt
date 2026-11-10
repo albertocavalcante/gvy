@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.MethodSignatureKey
@@ -251,25 +251,13 @@ internal class MemberAccessCompletionStrategy(
         return candidates.toList()
     }
 
-    /**
-     * Scans workspace symbols for class matches by simple name.
-     * This is a fallback for completion and may be costly without caching.
-     */
+    /** Workspace classes with this simple name, from the indexed name lookup rather than a full scan (#861). */
     private fun findWorkspaceClassFqnsBySimpleName(
         simpleName: String,
         compilationService: GroovyCompilationService,
-    ): List<String> {
-        // TODO(#861): Cache workspace symbol lookups for completion.
-        //   See: https://github.com/albertocavalcante/gvy/issues/861
-        val matches = linkedSetOf<String>()
-        compilationService.getAllSymbolStorages().forEach { (uri, index) ->
-            index.getSymbols(uri)
-                .filterIsInstance<Symbol.Class>()
-                .filter { it.name == simpleName }
-                .forEach { matches.add(it.fullyQualifiedName) }
-        }
-        return matches.toList()
-    }
+    ): List<String> = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+        .mapTo(linkedSetOf()) { it.fullyQualifiedName }
+        .toList()
 
     /**
      * Finds the enclosing block for the cursor position.
