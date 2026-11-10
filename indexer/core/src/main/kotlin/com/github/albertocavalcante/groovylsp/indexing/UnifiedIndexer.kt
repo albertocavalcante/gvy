@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovylsp.indexing
 
+import com.github.albertocavalcante.groovyparser.api.AnalysisCompilerPolicy
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassNode
@@ -20,7 +21,7 @@ class UnifiedIndexer(
         writers.forEach { it.visitDocumentStart(path, content) }
 
         runCatching {
-            val config = CompilerConfiguration()
+            val config = CompilerConfiguration().also(AnalysisCompilerPolicy::apply)
             // Run in migration mode / lenient if possible, or just standard
             GroovyClassLoader().use { classLoader ->
                 val unit = CompilationUnit(config, null, classLoader)

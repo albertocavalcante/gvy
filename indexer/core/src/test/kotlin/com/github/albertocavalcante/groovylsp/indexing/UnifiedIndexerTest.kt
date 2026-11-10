@@ -55,4 +55,20 @@ class UnifiedIndexerTest {
         )
         assertTrue(writer.events.contains("END"))
     }
+
+    @Test
+    fun `should index a class whose file uses Grab without Ivy`() {
+        val code = """
+            @Grab('org.apache.commons:commons-lang3:3.14.0')
+            class Foo {
+                void bar() {}
+            }
+        """.trimIndent()
+
+        val writer = MockWriter()
+        UnifiedIndexer(listOf(writer)).indexDocument("Foo.groovy", code)
+
+        assertTrue(writer.events.contains("END"))
+        assertTrue(writer.events.any { it.startsWith("DEF ") && it.contains("Foo#") })
+    }
 }
