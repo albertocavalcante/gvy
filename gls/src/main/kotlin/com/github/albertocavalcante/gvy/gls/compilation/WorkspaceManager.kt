@@ -16,6 +16,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.text.Normalizer
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
@@ -37,10 +40,23 @@ import kotlin.io.path.isDirectory
  * need several values from the same configuration read [current] once.
  */
 @Suppress("TooManyFunctions")
-class WorkspaceManager(
-    private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
-        ConfigurationFingerprint::compute,
+class WorkspaceManager internal constructor(
+    private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
+    private val caseInsensitive: (root: Path) -> Boolean,
+    private val normalisesNames: Boolean = PLATFORM_NORMALISES_NAMES,
 ) {
+    constructor(
+        fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
+            ConfigurationFingerprint::compute,
+    ) : this(fingerprintComputer, ::probeCaseInsensitive)
+
+    // Disk probes, once per existing root path: whether names under the root compare case-insensitively (#1424).
+    private val caseInsensitiveRoots = ConcurrentHashMap<Path, Boolean>()
+
+    // Roots refused at the trust boundary, each warned about once. It only grows: a root fixed later stays quiet
+    // for the session, but whether to follow it is decided afresh on every scan and notification.
+    private val refusedLinks: MutableSet<Path> = ConcurrentHashMap.newKeySet()
+
     private val logger = KotlinLogging.logger {}
 
     private val model = AtomicReference(emptyModel(null))
@@ -151,37 +167,52 @@ class WorkspaceManager(
      * created in one notification is decided by the disk. Each root's sources stay sorted, as [scanSources]
      * orders them. Classpath, roots, targets and so the fingerprint are unchanged.
      *
-     * Every disk read (the stats and folder walks) happens before the update lock; the merge re-checks the roots.
+     * A path spelled through a symlinked root's real path, or in another case or Unicode normalisation under a
+     * case-insensitive root, matches the listed entry ([Spelling]); a case-only rename keeps the new spelling.
+     *
+     * Every disk read (the spellings, case probes, stats and folder walks) happens before the update lock; the
+     * merge re-checks the roots.
      */
     fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
-        val startRoots = current().sourceRoots.map { it.toAbsolutePath().normalize() }
-        val createdKeys = underRoots(created, startRoots)
-        val deletedKeys = underRoots(deleted, startRoots).toSet()
-        if (createdKeys.isEmpty() && deletedKeys.isEmpty()) return SourceListChange.NONE
+        // Disk work first, outside the update lock: spellings, case probes, stats and folder walks.
+        val start = current()
+        val spelling = Spelling(start.sourceRoots.map { it.toAbsolutePath().normalize() }, start.root)
+        val createdPaths = created.mapNotNull(spelling::inRoot).distinct().filter(spelling::isContained)
+        val deletedPaths = deleted.mapNotNull(spelling::inRoot).distinct()
+        if (createdPaths.isEmpty() && deletedPaths.isEmpty()) return SourceListChange.NONE
 
-        val existing = createdKeys.filterTo(HashSet(), ::isGroovySource)
-        val folders = createdKeys.filter { it !in existing && Files.isDirectory(it) }
-        val found = existing + walkFolders(folders)
+        val existing = createdPaths.filter(::isGroovySource)
+        val folders = createdPaths.filter { it !in existing && Files.isDirectory(it) }
+        val found = (existing + walkFolders(folders)).distinctBy(spelling::key)
+        val existingKeys = existing.mapTo(HashSet(), spelling::key)
+        val deletedKeys = deletedPaths.mapTo(HashSet(), spelling::key)
         var result = SourceListChange.NONE
         update { current ->
-            val listed = current.sources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
-            val gone = deletedKeys - existing
-            val prefixes = deletedKeys.filterTo(HashSet()) { it !in listed }
-            val kept = current.sources.filterNot { source ->
-                val key = source.toAbsolutePath().normalize()
-                key in gone || hasAncestorIn(key, prefixes)
+            val listedKeys = current.sources.mapTo(HashSet()) { spelling.key(it.toAbsolutePath().normalize()) }
+            val gone = deletedKeys - existingKeys
+            val prefixes = deletedKeys.filterTo(HashSet()) { it !in listedKeys }
+            // A path both deleted and created in one notification takes the created spelling: a case-only rename.
+            val renamed = found.filter { spelling.key(it) in deletedKeys }.associateBy(spelling::key)
+            val kept = current.sources.mapNotNull { source ->
+                val path = source.toAbsolutePath().normalize()
+                val key = spelling.key(path)
+                when {
+                    key in gone || spelling.hasAncestorIn(path, prefixes) -> null
+                    else -> renamed[key] ?: source
+                }
             }
-            val keptKeys = kept.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val keptKeys = kept.mapTo(HashSet()) { spelling.key(it.toAbsolutePath().normalize()) }
             val roots = current.sourceRoots.map { it.toAbsolutePath().normalize() }
-            val added = found.filter { it !in keptKeys && isScannedUnder(it, roots) }.distinct()
+            val added = found.filter { spelling.key(it) !in keptKeys && isScannedUnder(it, roots) }
             val next = if (added.isEmpty()) kept else ordered(kept + added, roots)
             if (next == current.sources) {
                 current
             } else {
-                val nextKeys = next.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+                val before = current.sources.toSet()
+                val after = next.toSet()
                 result = SourceListChange(
-                    added = added.filter { it !in listed },
-                    removed = listed.filter { it !in nextKeys }.sorted(),
+                    added = next.filter { it !in before },
+                    removed = current.sources.filter { it !in after }.map { it.toAbsolutePath().normalize() }.sorted(),
                 )
                 WorkspaceModel(
                     current.root,
@@ -196,9 +227,118 @@ class WorkspaceManager(
         return result
     }
 
-    /** The paths a scan of [roots] would reach: under a root and outside the skipped directories below it. */
-    private fun underRoots(paths: Collection<Path>, roots: List<Path>): List<Path> =
-        paths.map { it.toAbsolutePath().normalize() }.filter { isScannedUnder(it, roots) }.distinct()
+    /** The probe for [root], run on its [canonical] directory; cached only once the root exists. */
+    private fun isCaseInsensitive(root: Path, canonical: Path): Boolean = caseInsensitiveRoots[root]
+        ?: caseInsensitive(canonical).also { if (Files.isDirectory(root)) caseInsensitiveRoots[root] = it }
+
+    /**
+     * Where [root] may be scanned from, or null when the trust boundary refuses it: a root that is itself a link
+     * is scanned at its target only inside the workspace ([followedLink]), and a root lexically inside the
+     * workspace whose real path leaves it (an ancestor link, `src/main -> /usr/share`) is refused. A root lexically
+     * outside the workspace without links (a build's `srcDir '../shared'`) is the build's choice and is scanned.
+     * Links are only followed inside the workspace, even for a root declared outside it: the model does not record
+     * where a root came from, so a link cannot be trusted by origin (#1424).
+     */
+    private fun scanStart(root: Path, workspaceRoot: Path?): Path? {
+        val workspace = workspaceRoot?.toAbsolutePath()?.normalize()
+        val absolute = root.toAbsolutePath().normalize()
+        return when {
+            Files.isSymbolicLink(absolute) -> followedLink(absolute, workspace)
+            workspace == null || !absolute.startsWith(workspace) -> absolute
+            DocumentTargetSelector.canonical(absolute).startsWith(realWorkspace(workspace)) -> absolute
+            else -> null.also { refuse(absolute, "resolves outside the workspace through a linked ancestor") }
+        }
+    }
+
+    private fun realWorkspace(workspace: Path): Path =
+        realPathOrNull(workspace) ?: DocumentTargetSelector.canonical(workspace)
+
+    /**
+     * The directory a source root that is itself a symbolic link may be scanned at: its real target, only when
+     * that lies strictly under the workspace's real path. A cloned repository's `src -> /` or `src -> ~`, a link to
+     * the workspace or an ancestor of it, or a broken link is refused (warned about once) and lists nothing, so a
+     * scan never walks outside the workspace through a link. Null for a refused link or a root that is no link.
+     */
+    private fun followedLink(root: Path, workspaceRoot: Path?): Path? {
+        val target = realPathOrNull(root) ?: return null.also { if (Files.isSymbolicLink(root)) refuse(root, "broken") }
+        val workspace = workspaceRoot?.let(::realWorkspace)
+        val trusted = workspace != null && target != workspace && target.startsWith(workspace)
+        if (!trusted) refuse(root, "points outside the workspace: $target")
+        return target.takeIf { trusted }
+    }
+
+    private fun refuse(root: Path, why: String) {
+        if (refusedLinks.add(root)) logger.warn { "Not following source root link $root: $why" }
+    }
+
+    /**
+     * How one notification's paths are spelled against [roots] (#1424). An event path is translated into the
+     * spelling of the root holding it, so the list keeps the scan's spelling: a lexical match is free, and only a
+     * miss (a symlinked root's real path, another case) is canonicalised, once per path, and rebased onto the
+     * root whose canonical form holds it. Membership compares [key]s: under a case-insensitive root the path is
+     * NFC-normalised and lowercased with `Locale.ROOT`, which approximates the file system's own folding (ß and
+     * the dotless i fold differently) and is accepted. Built before the update lock; [key] does no disk work.
+     */
+    private inner class Spelling(private val roots: List<Path>, workspaceRoot: Path?) {
+        // A root that is a link the trust boundary refuses takes no events at all: walking under it would cross it.
+        private val starts = roots.associateWith { scanStart(it, workspaceRoot) }
+        private val refused = starts.filterValues { it == null }.keys
+        private val canonicalRoots = roots.map { root ->
+            when {
+                root in refused -> root
+                Files.isSymbolicLink(root) -> starts.getValue(root) ?: root
+                else -> DocumentTargetSelector.canonical(root)
+            }
+        }
+        private val insensitive = roots.indices.associate { index ->
+            roots[index] to isCaseInsensitive(roots[index], canonicalRoots[index])
+        }
+
+        fun inRoot(path: Path): Path? {
+            val absolute = path.toAbsolutePath().normalize()
+            val translated = if (isScannedUnder(absolute, roots)) absolute else rebased(absolute)
+            return translated?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
+        }
+
+        // Parent directories' real paths, looked up once per notification: a branch switch creates many siblings.
+        private val canonicalDirectories = HashMap<Path, Path>()
+
+        /**
+         * Whether a created [path] really lies in its root's directory. A directory link inside an allowed root
+         * (`src/evil -> /`) passes every lexical check, and a stat or walk through it would follow it; the scan
+         * never enters such a link, so neither do events. A directory is checked by its own real path, anything
+         * else by its parent's: a single file link (`src/A.groovy -> ../shared/A.groovy`, as Jenkins shared
+         * libraries use) is read wherever it points, as the scan and `main` read it.
+         */
+        fun isContained(path: Path): Boolean {
+            val index = roots.indices.filter { path.startsWith(roots[it]) }.maxByOrNull { roots[it].nameCount }
+            val directory = if (Files.isDirectory(path)) path else path.parent
+            return index != null && directory != null &&
+                canonicalDirectories.getOrPut(directory) { DocumentTargetSelector.canonical(directory) }
+                    .startsWith(canonicalRoots[index])
+        }
+
+        private fun rebased(absolute: Path): Path? {
+            val canonical = DocumentTargetSelector.canonical(absolute)
+            val index = canonicalRoots.indices
+                .filter { roots[it] !in refused && canonical.startsWith(canonicalRoots[it]) }
+                .maxByOrNull { canonicalRoots[it].nameCount } ?: return null
+            val rebased = roots[index].resolve(canonicalRoots[index].relativize(canonical))
+            return rebased.takeIf { isScannedUnder(it, roots) }
+        }
+
+        fun key(path: Path): String {
+            val owner = roots.filter { path.startsWith(it) }.maxByOrNull { it.nameCount }
+            val text = path.toString()
+            val foldsCase = owner != null && insensitive[owner] == true
+            val normalised = if (foldsCase || normalisesNames) Normalizer.normalize(text, Normalizer.Form.NFC) else text
+            return if (foldsCase) normalised.lowercase(Locale.ROOT) else normalised
+        }
+
+        /** Whether a proper ancestor of [path] has a key in [prefixes]: [path] lies strictly under it. */
+        fun hasAncestorIn(path: Path, prefixes: Set<String>): Boolean =
+            prefixes.isNotEmpty() && generateSequence(path.parent) { it.parent }.any { key(it) in prefixes }
+    }
 
     /** The Groovy sources in each folder, each walked once even when a parent folder is also listed. */
     private fun walkFolders(folders: List<Path>): List<Path> {
@@ -237,7 +377,7 @@ class WorkspaceManager(
         root,
         classpath,
         sourceRoots,
-        scanSources(sourceRoots.distinct()),
+        scanSources(sourceRoots.distinct(), root),
         targets,
         computeFingerprint = fingerprintComputer,
     )
@@ -305,10 +445,12 @@ class WorkspaceManager(
         return sourceRoots.toList()
     }
 
-    private fun scanSources(sourceRoots: List<Path>): List<Path> {
+    private fun scanSources(sourceRoots: List<Path>, workspaceRoot: Path?): List<Path> {
         val workspaceSources = sourceRoots.flatMap { sourceRoot ->
             if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
-            collectGroovySources(sourceRoot).sorted()
+            // A refused root lists nothing; an accepted link root is walked at its checked target.
+            val start = scanStart(sourceRoot, workspaceRoot) ?: return@flatMap emptyList<Path>()
+            collectGroovySources(sourceRoot, start = start).sorted()
         }
 
         logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }
@@ -423,13 +565,15 @@ class WorkspaceManager(
  * entered, the rule watched-file events follow too (#1424). [beforeVisit] runs before each file is classified
  * (a test seam).
  */
-internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}): List<Path> {
+internal fun collectGroovySources(root: Path, start: Path = root, beforeVisit: (Path) -> Unit = {}): List<Path> {
+    // A walk does not follow links: a root that is itself a link is walked at the [start] its caller trusts, and
+    // what it finds is spelled through the root (#1424).
     val found = mutableListOf<Path>()
     Files.walkFileTree(
-        root,
+        start,
         object : SimpleFileVisitor<Path>() {
             override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
-                if (dir != root && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
+                if (dir != start && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
                     FileVisitResult.SKIP_SUBTREE
                 } else {
                     FileVisitResult.CONTINUE
@@ -454,7 +598,16 @@ internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}):
             }
         },
     )
-    return found
+    return if (start == root) found else found.map { root.resolve(start.relativize(it)) }
+}
+
+/** The real path of [path], or null when it does not exist or cannot be resolved (a broken link). */
+private fun realPathOrNull(path: Path): Path? = try {
+    path.toRealPath()
+} catch (_: IOException) {
+    null
+} catch (_: SecurityException) {
+    null
 }
 
 private val scanLogger = KotlinLogging.logger {}
@@ -475,3 +628,26 @@ data class SourceListChange(val added: List<Path>, val removed: List<Path>) {
         val NONE = SourceListChange(emptyList(), emptyList())
     }
 }
+
+/**
+ * Whether names under [root] compare case-insensitively, probed by flipping the case of the root's last segment
+ * and asking whether that names the same directory. A segment with no letters cannot be probed and is treated
+ * as case-sensitive, as is any probe the file system refuses.
+ */
+internal fun probeCaseInsensitive(root: Path): Boolean {
+    val name = root.fileName?.toString() ?: return false
+    val flipped = name.map { if (it.isUpperCase()) it.lowercaseChar() else it.uppercaseChar() }.joinToString("")
+    if (flipped == name) return false
+    val alias = root.resolveSibling(flipped)
+    return try {
+        Files.exists(alias) && Files.isSameFile(root, alias)
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
+}
+
+/** macOS file systems (APFS, HFS+) ignore Unicode normalisation in names, even on case-sensitive volumes. */
+private val PLATFORM_NORMALISES_NAMES: Boolean =
+    System.getProperty("os.name").orEmpty().startsWith("Mac", ignoreCase = true)
