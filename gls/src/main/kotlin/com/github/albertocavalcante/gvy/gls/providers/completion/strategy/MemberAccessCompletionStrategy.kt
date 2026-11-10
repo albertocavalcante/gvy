@@ -121,7 +121,9 @@ internal class MemberAccessCompletionStrategy(
         addWorkspaceMembers(local.fields)
         val walk = addInheritedMembers(local, held, workspaceSymbolIndex)
         addQualifiedGdkMethods(rawType)
-        walk.binaryTypes.forEach { addQualifiedClasspathMethods(it, walk.genericOverrides) }
+        // Facts are built only when a generic binary ancestor could need them (never for Object alone).
+        val genericOverrides by lazy { walk.genericOverrides.flatMapTo(mutableSetOf()) { it.value } }
+        walk.binaryTypes.forEach { type -> addQualifiedClasspathMethods(type) { genericOverrides } }
     }
 
     /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
@@ -151,7 +153,7 @@ internal class MemberAccessCompletionStrategy(
         held: LocalCompletionMembers,
         index: WorkspaceSymbolIndex?,
     ): InheritedWalk {
-        val overrides = local.genericOverrides.toMutableSet()
+        val overrides = mutableListOf(local.genericOverrides)
         if (index == null) return InheritedWalk(local.externalTypes, overrides)
         val pending = ArrayDeque(local.externalTypes)
         val visited = local.visited.toMutableSet()
@@ -164,7 +166,7 @@ internal class MemberAccessCompletionStrategy(
             val step = inheritedStep(name, held, index)
             methods += step.methods
             members += step.members
-            overrides += step.genericOverrides
+            step.genericOverrides?.let(overrides::add)
             visited += step.covered
             step.parents.interfaces.forEach(pending::addLast)
             step.parents.superclass?.let(pending::addFirst)
@@ -193,13 +195,14 @@ internal class MemberAccessCompletionStrategy(
     /** Reflected methods that a source method already overrides through generics are left out. */
     private fun CompletionsBuilder.addQualifiedClasspathMethods(
         className: String,
-        genericOverrides: Set<Pair<String, List<String>>>,
+        genericOverrides: () -> Set<Pair<String, List<String>>>,
     ) {
         val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
         types.forEach { type ->
             val reflected = compilationService.classpathService.loadClass(type) ?: return@forEach
             reflectedInstanceMethods(reflected).filterNot {
-                (it.name to it.parameterTypes.map { type -> type.typeName }) in genericOverrides
+                it.isGenericInstantiation() &&
+                    (it.name to it.parameterTypes.map { parameter -> parameter.typeName }) in genericOverrides()
             }.forEach { method ->
                 addCandidate(
                     MethodCandidate(
@@ -560,8 +563,10 @@ private fun simpleTypeName(type: String): String =
 private val reflectionLogger = KotlinLogging.logger {}
 
 private fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Method> = try {
+    // A bridge (`compareTo(Object)` beside `compareTo(Date)`) is the same member under its erasure.
     type.methods.filter {
-        java.lang.reflect.Modifier.isPublic(it.modifiers) && !java.lang.reflect.Modifier.isStatic(it.modifiers)
+        java.lang.reflect.Modifier.isPublic(it.modifiers) && !java.lang.reflect.Modifier.isStatic(it.modifiers) &&
+            !it.isBridge
     }
 } catch (error: NoClassDefFoundError) {
     reflectionLogger.debug(error) { "Incomplete classpath methods for ${type.name}" }
@@ -601,7 +606,7 @@ private fun indexedDocumentMembers(
 private class InheritedStep(
     val methods: List<MethodCandidate> = emptyList(),
     val members: List<MemberInfo> = emptyList(),
-    val genericOverrides: Set<Pair<String, List<String>>> = emptySet(),
+    val genericOverrides: Lazy<Set<Pair<String, List<String>>>>? = null,
     val covered: Set<String> = emptySet(),
     val parents: Parents = Parents(),
     val binary: Boolean = false,
@@ -621,7 +626,10 @@ private fun inheritedStep(name: String, held: LocalCompletionMembers, index: Wor
             members = buffer.fields,
             genericOverrides = buffer.genericOverrides,
             covered = buffer.visited,
-            parents = Parents(interfaces = buffer.externalTypes),
+            parents = Parents(
+                buffer.externalSuperclass,
+                buffer.externalTypes - setOfNotNull(buffer.externalSuperclass),
+            ),
         )
     }
     val owner = "${name.replace('.', '/')}#"
@@ -635,7 +643,7 @@ private fun inheritedStep(name: String, held: LocalCompletionMembers, index: Wor
     return InheritedStep(
         methods = methods,
         members = fields,
-        genericOverrides = ImplementationMethodSignatures.genericOverrides(document, owner),
+        genericOverrides = lazy { ImplementationMethodSignatures.genericOverrides(document, owner) },
         parents = Parents(
             parents?.superclass?.toClassName(),
             parents?.interfaces.orEmpty().map { it.toClassName() },
@@ -644,7 +652,14 @@ private fun inheritedStep(name: String, held: LocalCompletionMembers, index: Wor
 }
 
 /** Binary ancestors for classpath reflection, and the reflected methods source overrides generically. */
-private class InheritedWalk(val binaryTypes: List<String>, val genericOverrides: Set<Pair<String, List<String>>>)
+private class InheritedWalk(
+    val binaryTypes: List<String>,
+    val genericOverrides: List<Lazy<Set<Pair<String, List<String>>>>>,
+)
+
+/** Only a method whose declaring type is generic can be a generic override's erased twin. */
+private fun java.lang.reflect.Method.isGenericInstantiation(): Boolean =
+    genericParameterTypes.any { it is java.lang.reflect.TypeVariable<*> }
 
 private fun String.toClassName(): String = removeSuffix("#").replace('/', '.')
 
@@ -712,10 +727,12 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
         val methods: List<MethodCandidate>,
         val fields: List<MemberInfo>,
         val externalTypes: List<String>,
+        /** The first class-chain ancestor outside the buffer; walked before external interfaces. */
+        val externalSuperclass: String?,
         /** Held class names this walk covered. */
         val visited: Set<String>,
         /** Reflected `name` to erased parameters that the held chain overrides through generics. */
-        val genericOverrides: Set<Pair<String, List<String>>>,
+        val genericOverrides: Lazy<Set<Pair<String, List<String>>>>,
     )
 
     /** Members of held [type] and its held ancestors; [inherited] also hides [type]'s own private members. */
@@ -727,6 +744,7 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
         val fields = linkedMapOf<String, MemberInfo>()
         val external = linkedSetOf<String>()
         val heldNames = mutableSetOf<String>()
+        var externalSuperclass: String? = null
         while (pending.isNotEmpty()) {
             val next = pending.removeFirst()
             val held = heldClass(next.name)
@@ -741,17 +759,18 @@ private class LocalCompletionMembers(private val module: ModuleNode?) {
                 // The class chain precedes interface declarations, even at a greater depth.
                 held.interfaces.forEach(pending::addLast)
                 held.superClass?.let(pending::addFirst)
+                val parent = held.superClass?.takeIf { !held.isInterface && heldClass(it.name) == null }
+                if (externalSuperclass == null) externalSuperclass = parent?.name
             }
         }
-        val overrides = facts?.let {
-            ImplementationMethodSignatures.genericOverrides(it, "${first.name.replace('.', '/')}#")
-        }
+        val owner = "${first.name.replace('.', '/')}#"
         return Result(
             methods.values.toList(),
             fields.values.toList(),
             external.toList(),
+            externalSuperclass,
             heldNames,
-            overrides.orEmpty(),
+            lazy { facts?.let { ImplementationMethodSignatures.genericOverrides(it, owner) }.orEmpty() },
         )
     }
 

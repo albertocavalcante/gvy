@@ -396,7 +396,7 @@ class ColdLocalCompletionTest {
 
         val add = methods(complete("class A extends B {}\nnew A().ad"), "add")
 
-        assertEquals(1, add.count { !it.contains(",") && it != "add()" }, "one single-argument add: $add")
+        assertEquals(listOf("add(\${1:Object})"), add.filter { !it.contains(",") }, "found $add")
     }
 
     @Test
@@ -430,6 +430,25 @@ class ColdLocalCompletionTest {
 
         assertTrue("open" in labels, "found $labels")
         assertTrue("secret" !in labels, "found $labels")
+    }
+
+    @Test
+    fun `a reflected bridge method is not offered beside its typed target`(): Unit = runBlocking {
+        val compareTo = methods(complete("class D extends Date {}\nnew D().comp"), "compareTo")
+
+        assertEquals(listOf("compareTo(\${1:Date})"), compareTo, "Date.compareTo(Object) is a bridge")
+    }
+
+    @Test
+    fun `a held class reached through the index walks its external superclass first`(): Unit = runBlocking {
+        // A (buffer) extends B (indexed), which extends C and implements Getter; C and Getter are held.
+        // C extends Deep (indexed only). Deep's get must be met before the held Getter's `Object get()`.
+        val held = "interface Getter { Object get() }\nclass C extends Deep {}"
+        indexParents("class Deep { String get() { '' } }\n$held\nclass B extends C implements Getter {}")
+
+        val get = complete("$held\nclass A extends B {}\nnew A().ge").filter { it.label == "get" }
+
+        assertEquals(listOf("def get()"), get.map { it.detail }, "found ${labels(get)}")
     }
 
     private suspend fun indexParents(source: String) {
