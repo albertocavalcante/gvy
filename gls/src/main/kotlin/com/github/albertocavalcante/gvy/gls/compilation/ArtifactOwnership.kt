@@ -65,7 +65,7 @@ class ArtifactOwnership {
      * order must outlive the tickets. It stays bounded without that: only buffer commits add entries, and a
      * buffer's close or reopen retires the file, which removes its entry.
      */
-    private val committedOrders = HashMap<URI, BufferOrder>()
+    private var committedOrders = HashMap<URI, BufferOrder>()
     private val logger = KotlinLogging.logger {}
 
     internal fun begin(uri: URI): Ticket = acquire(uri) {}.first
@@ -135,7 +135,7 @@ class ArtifactOwnership {
             epoch++
             // Swapped, not cleared: O(1) under the monitor. The old epoch's tickets are stale by epoch already.
             states = HashMap()
-            committedOrders.clear()
+            committedOrders = HashMap()
             cleanup()
         }
     }

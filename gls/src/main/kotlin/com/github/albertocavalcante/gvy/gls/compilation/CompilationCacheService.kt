@@ -153,19 +153,23 @@ class CompilationCacheService(
      * Clears all cached data and cancels every compilation job.
      * Used when workspace configuration changes significantly.
      */
-    fun clear() = detach().forEach { it.cancel() }
+    fun clear() = cancelDetached(detach())
 
     /**
-     * Drops all cached data and the pending jobs in O(1), returning those jobs for the caller to cancel. A global
-     * clear calls this inside the fence and cancels the jobs after it, so their cancellation handlers never run
-     * while the fence is held (#1342).
+     * Drops all cached data and the pending jobs in O(1), returning the detached job map itself for the caller to
+     * pass to [cancelDetached]. A global clear calls this inside the fence and cancels after it, so neither the
+     * jobs' iteration nor their cancellation handlers run while the fence is held (#1342).
      */
-    internal fun detach(): Collection<Deferred<CompilationResult>> {
+    internal fun detach(): Map<URI, PendingCompilation> {
         cache.clear()
         val detached = compilationJobs
         compilationJobs = ConcurrentHashMap()
-        return detached.values.map { it.deferred }
+        return detached
     }
+
+    /** Cancels the jobs [detach] returned; call it outside the fence. */
+    internal fun cancelDetached(detached: Map<URI, PendingCompilation>) =
+        detached.values.forEach { it.deferred.cancel() }
 
     /**
      * Gets cache statistics for monitoring and debugging.

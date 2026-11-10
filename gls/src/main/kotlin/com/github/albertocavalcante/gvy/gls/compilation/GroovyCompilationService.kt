@@ -23,7 +23,6 @@ import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import org.codehaus.groovy.control.Phases
 import java.net.URI
@@ -255,7 +254,7 @@ class GroovyCompilationService internal constructor(
      * wasted work, because its ticket belongs to the retired epoch and can never commit.
      */
     fun clearCaches() = semanticSnapshotGuard.invalidate {
-        var retired: Collection<Deferred<CompilationResult>> = emptyList()
+        var retired: Map<URI, PendingCompilation> = emptyMap()
         // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
         ownership.retireAll {
             retired = cacheService.detach()
@@ -264,7 +263,7 @@ class GroovyCompilationService internal constructor(
         }
         // Cancelled outside the fence: their cancellation handlers may take tickets. A retired job still running
         // after this returns is only wasted work, because its old-epoch ticket can never commit.
-        retired.forEach { it.cancel() }
+        cacheService.cancelDetached(retired)
         invalidateClassLoader()
     }
 
