@@ -112,4 +112,20 @@ describe("package.json manifest", () => {
       serverDefaults,
     );
   });
+
+  it("keeps GDSL execution settings out of workspace control", () => {
+    // GDSL scripts run arbitrary Groovy in the server. A cloned repository's .vscode/settings.json
+    // must not be able to enable execution or choose which scripts run.
+    const properties = manifest.contributes.configuration.properties;
+    for (const key of [
+      "groovy.jenkins.gdslExecution.enabled",
+      "groovy.jenkins.gdslPaths",
+    ]) {
+      assert.ok(properties[key], `${key} is not contributed`);
+      assert.ok(
+        ["machine", "application"].includes(properties[key].scope),
+        `${key} must be machine- or application-scoped, not ${properties[key].scope ?? "window"}`,
+      );
+    }
+  });
 });

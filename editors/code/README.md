@@ -159,10 +159,11 @@ For Jenkins shared libraries:
     }
   ],
 
-  // GDSL files for DSL enhancements
+  // GDSL files for DSL enhancements (user or remote settings only)
   "groovy.jenkins.gdslPaths": ["/path/to/jenkins.gdsl"],
 
-  // Execute GDSL scripts (disabled by default for security)
+  // Execute GDSL scripts (disabled by default for security; user or remote settings only,
+  // so a workspace's .vscode/settings.json cannot turn it on)
   "groovy.jenkins.gdslExecution.enabled": true,
 
   // Optional: Jenkins plugin discovery overrides

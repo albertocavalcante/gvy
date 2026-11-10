@@ -742,17 +742,19 @@
           "markdownDescription": "Jenkins shared libraries configuration. Each library provides custom pipeline steps and DSL extensions.\n\nExample:\n```json\n[\n  {\n    \"name\": \"my-pipeline-lib\",\n    \"jar\": \"/path/to/my-pipeline-lib.jar\",\n    \"sourcesJar\": \"/path/to/my-pipeline-lib-sources.jar\"\n  }\n]\n```"
         },
         "groovy.jenkins.gdslPaths": {
+          "scope": "machine",
           "type": "array",
           "items": {
             "type": "string"
           },
           "default": [],
-          "markdownDescription": "Paths to IntelliJ GDSL files for DSL enhancements. GDSL files provide dynamic method and property contributions for pipeline DSLs.\n\nExample: `[\"/path/to/jenkins.gdsl\"]`"
+          "markdownDescription": "Paths to IntelliJ GDSL files for DSL enhancements. GDSL files provide dynamic method and property contributions for pipeline DSLs. Can only be set in user (or remote machine) settings, because the scripts run in the server.\n\nExample: `[\"/path/to/jenkins.gdsl\"]`"
         },
         "groovy.jenkins.gdslExecution.enabled": {
+          "scope": "machine",
           "type": "boolean",
           "default": false,
-          "markdownDescription": "Enable execution of GDSL scripts. Disabled by default for security because GDSL runs arbitrary Groovy code. Only enable for trusted workspaces."
+          "markdownDescription": "Enable execution of GDSL scripts. Disabled by default for security because GDSL runs arbitrary Groovy code. Can only be set in user (or remote machine) settings, never by a workspace."
         },
         "groovy.jenkins.pluginsTxtPath": {
           "type": "string",
