@@ -12,8 +12,12 @@ import com.github.albertocavalcante.gvy.gls.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.extension
 import kotlin.io.path.name
 import kotlin.io.path.readText
@@ -59,23 +63,71 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
             .getOrThrow()
 
     private fun indexFiles(root: Path, indexer: UnifiedIndexer) {
-        Files.walk(root).use { stream ->
-            stream.filter { path ->
-                path.extension in FileExtensions.EXTENSIONS ||
-                    path.name in FileExtensions.FILENAMES
-            }
-                .forEach { path ->
-                    runCatching {
-                        val relativePath = root.relativize(path).toString()
-                        val content = path.readText()
-                        indexer.indexDocument(relativePath, content)
+        Files.walkFileTree(
+            root,
+            object : SimpleFileVisitor<Path>() {
+                override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
+                    if (dir != root && isExcludedDirectory(root, dir)) {
+                        FileVisitResult.SKIP_SUBTREE
+                    } else {
+                        FileVisitResult.CONTINUE
                     }
-                        .onFailure { throwable ->
-                            rethrowIfCancellationOrError(throwable)
-                            // Keep indexing other files; log for debugging.
-                            logger.warn(throwable) { "Failed to index file $path" }
-                        }
+
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (!attrs.isDirectory &&
+                        (file.extension in FileExtensions.EXTENSIONS || file.name in FileExtensions.FILENAMES)
+                    ) {
+                        indexFile(root, file, indexer)
+                    }
+                    return FileVisitResult.CONTINUE
                 }
+
+                override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
+                    if (file == root) throw exc
+                    logger.warn(exc) { "Skipping unreadable path $file" }
+                    return FileVisitResult.CONTINUE
+                }
+            },
+        )
+    }
+
+    private fun indexFile(root: Path, path: Path, indexer: UnifiedIndexer) {
+        runCatching {
+            val relativePath = root.relativize(path).toString()
+            val content = path.readText()
+            indexer.indexDocument(relativePath, content)
+        }
+            .onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                // Keep indexing other files; log for debugging.
+                logger.warn(throwable) { "Failed to index file $path" }
+            }
+    }
+
+    private companion object {
+        /** Build output directory names; only excluded where they are real build outputs (see below). */
+        val BUILD_OUTPUT_DIRECTORIES = setOf("build", "out", "target", "node_modules")
+
+        /** Source layout segments under which a directory named build/out/target is a package, not an output. */
+        val SOURCE_SEGMENTS = setOf("src", "vars")
+
+        val BUILD_FILES =
+            listOf("build.gradle", "build.gradle.kts", "pom.xml", "settings.gradle", "settings.gradle.kts")
+
+        /**
+         * Hidden directories (.git, .gradle, .idea, .jenkins-stubs, ...) are skipped at any depth. Build output
+         * names are skipped only as a direct child of the workspace root or of a project directory (one holding a
+         * build file), and never under src/ or vars/, where they are legitimate package names.
+         */
+        fun isExcludedDirectory(root: Path, dir: Path): Boolean {
+            val name = dir.name
+            return name.startsWith(".") || (name in BUILD_OUTPUT_DIRECTORIES && isBuildOutput(root, dir))
+        }
+
+        private fun isBuildOutput(root: Path, dir: Path): Boolean {
+            val parent = dir.parent ?: return false
+            val underSources = root.relativize(parent).any { it.toString() in SOURCE_SEGMENTS }
+            return !underSources && (parent == root || BUILD_FILES.any { Files.exists(parent.resolve(it)) })
         }
     }
 }
