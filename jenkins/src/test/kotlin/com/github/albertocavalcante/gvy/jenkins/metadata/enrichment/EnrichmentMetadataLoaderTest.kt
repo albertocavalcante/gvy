@@ -166,8 +166,8 @@ class EnrichmentMetadataLoaderTest {
         val loader = EnrichmentMetadataLoader()
         val enrichment = loader.load()
 
-        // jenkins-enrichment.json has 6 sections: pipeline, agent, stages, stage, steps, post
-        assertEquals(6, enrichment.sections.size)
+        // jenkins-enrichment.json has 9 sections: pipeline, agent, stages, stage, steps, post, parallel, matrix, axes
+        assertEquals(9, enrichment.sections.size)
 
         val pipelineSection = enrichment.sections["pipeline"]
         assertNotNull(pipelineSection)
@@ -185,8 +185,8 @@ class EnrichmentMetadataLoaderTest {
         val loader = EnrichmentMetadataLoader()
         val enrichment = loader.load()
 
-        // jenkins-enrichment.json has 5 directives: environment, options, parameters, when, tools
-        assertEquals(5, enrichment.directives.size)
+        // jenkins-enrichment.json has 7 directives: environment, options, parameters, when, tools, triggers, input
+        assertEquals(7, enrichment.directives.size)
 
         val environmentDirective = enrichment.directives["environment"]
         assertNotNull(environmentDirective)

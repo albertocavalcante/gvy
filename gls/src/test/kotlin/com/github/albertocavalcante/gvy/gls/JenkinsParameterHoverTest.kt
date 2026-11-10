@@ -253,6 +253,82 @@ class JenkinsParameterHoverTest {
     }
 
     @Test
+    fun `a stage inside a scripted parallel map keeps the step hover`(): Unit = runBlocking {
+        val line = "                parallel(a: { stage('x') { echo 'x' } })"
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('B') {\n            steps {\n" +
+            "$line\n            }\n        }\n    }\n}"
+        val text = hoverText(code, line = 5, character = line.indexOf("stage") + 2)
+
+        assertTrue(text == null || !text.contains("Declarative section"), "stage in a parallel map value: $text")
+    }
+
+    @Test
+    fun `triggers, input, matrix, parallel and axes have declarative hover`(): Unit = runBlocking {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    triggers { cron('H 4 * * 1-5') }",
+            "    stages {",
+            "        stage('I') {",
+            "            input { message 'Go?' }",
+            "            steps { echo 'i' }",
+            "        }",
+            "        stage('P') {",
+            "            parallel {",
+            "                stage('a') { steps { echo 'a' } }",
+            "            }",
+            "        }",
+            "        stage('M') {",
+            "            matrix {",
+            "                axes { axis { name 'OS'; values 'linux' } }",
+            "                stages { stage('m') { steps { echo 'm' } } }",
+            "            }",
+            "        }",
+            "    }",
+            "}",
+        )
+        val code = lines.joinToString("\n")
+        fun at(line: Int, word: String) = lines[line].indexOf(word) + 2
+
+        assertContains(hoverText(code, 2, at(2, "triggers")), "Declarative directive `triggers`")
+        assertContains(hoverText(code, 5, at(5, "input")), "Declarative directive `input`")
+        assertContains(hoverText(code, 9, at(9, "parallel")), "Declarative section `parallel`")
+        assertContains(hoverText(code, 14, at(14, "matrix")), "Declarative section `matrix`")
+        assertContains(hoverText(code, 15, at(15, "axes")), "Declarative section `axes`")
+    }
+
+    @Test
+    fun `the input step inside steps keeps the step hover`(): Unit = runBlocking {
+        val line = "                input message: 'Go?'"
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('B') {\n            steps {\n" +
+            "$line\n            }\n        }\n    }\n}"
+        val text = hoverText(code, line = 5, character = line.indexOf("input") + 2)
+
+        assertTrue(text == null || !text.contains("Declarative directive"), "input step: $text")
+    }
+
+    @Test
+    fun `a dynamic call name gets no Jenkins hover`(): Unit = runBlocking {
+        val line = "    \"\${'sh'}\"('make')"
+        val text = hoverText("node {\n$line\n}", line = 1, character = line.indexOf("sh") + 1)
+
+        assertTrue(text == null || !text.contains("Jenkins Step"), "dynamic call: $text")
+    }
+
+    @Test
+    fun `a step inside a plain closure keeps the step hover`(): Unit = runBlocking {
+        val line = "                    [1, 2].each { sh 'make' }"
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('B') {\n            steps {\n" +
+            "                script {\n$line\n                }\n            }\n        }\n    }\n}"
+        val text = hoverText(code, line = 6, character = line.indexOf("sh") + 1)
+
+        assertContains(text, "Jenkins Step: `sh`")
+    }
+
+    private fun assertContains(text: String?, expected: String) =
+        assertTrue(text?.contains(expected) == true, "expected '$expected' in: $text")
+
+    @Test
     fun `a declarative hover range covers the name, not the whole block`(): Unit = runBlocking {
         val code = "pipeline {\n    agent any\n    stages {\n    }\n}"
         val pipeline = hoverAt(code, line = 0, character = 2)
