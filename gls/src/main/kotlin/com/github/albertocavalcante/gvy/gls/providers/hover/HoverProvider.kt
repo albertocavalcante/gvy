@@ -24,6 +24,7 @@ import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.Declarati
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.FieldDeclarationHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.GenericHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.ImportHoverStrategy
+import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.JenkinsParameterHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.JenkinsStepHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.LiteralHoverStrategy
 import com.github.albertocavalcante.gvy.gls.providers.hover.strategies.MethodCallHoverStrategy
@@ -80,6 +81,7 @@ class HoverProvider(
             return listOfNotNull(
                 // Jenkins step hover has high priority for method calls in Jenkins files
                 jenkinsCapabilities?.let { JenkinsStepHoverStrategy(it, modeResolver) },
+                jenkinsCapabilities?.let { JenkinsParameterHoverStrategy(it, modeResolver) },
                 MethodDeclarationHoverStrategy(),
                 ClassDeclarationHoverStrategy(),
                 FieldDeclarationHoverStrategy(),
@@ -322,6 +324,7 @@ class HoverProvider(
             moduleNode = module,
             contentGenerator = contentGenerator,
             documentUri = documentUri,
+            astModel = snapshot?.parseResult?.astModel ?: compilationService.getAstModel(documentUri),
         )
 
         // Use strategy pattern to generate base hover

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.Hover
@@ -42,9 +43,11 @@ interface HoverStrategy {
  * @property moduleNode The module containing the node (if available)
  * @property contentGenerator The service for generating hover content
  * @property documentUri The URI of the document containing the node
+ * @property astModel Parent/child index of the document, when available (needed to see a node's context)
  */
 data class HoverContext(
     val moduleNode: ModuleNode?,
     val contentGenerator: HoverContentGenerator,
     val documentUri: java.net.URI,
+    val astModel: GroovyAstModel? = null,
 )
