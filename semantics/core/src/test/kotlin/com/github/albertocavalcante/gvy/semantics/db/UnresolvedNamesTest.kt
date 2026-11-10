@@ -247,11 +247,75 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
     }
 
     @Test
-    @DisplayName("a trait, alone or implemented, is not a dynamic site")
+    @DisplayName("a trait is not a dynamic site, and its body's uncertain uses are recorded")
     fun traits() {
-        assertEquals(false, "*" in names("trait T { def run() { this.target } }"))
+        val alone = names("trait T { def run() { this.target } }")
+        assertEquals(false, "*" in alone)
+        assertEquals(true, "target" in alone)
         val implemented = "trait T { def target() {} }\nclass C implements T { def run() { target() } }"
         assertEquals(false, "*" in names(implemented))
+    }
+
+    @Test
+    @DisplayName("every kind of use inside a trait body is recorded")
+    fun traitBody() {
+        val body = names("trait T { def go(o) { o.zork(); unknownName; this.bar(); o.qux = 1; o + o } }")
+        assertEquals(true, body.containsAll(setOf("zork", "unknownName", "bar", "qux", "setQux", "plus")))
+        assertEquals(true, "target" in names("trait T { static def go(o) { o.target() } }"))
+        assertEquals(true, "target" in names("trait T { def go(o) { new P(target: 1) } }\nclass P { String target }"))
+        assertEquals(emptySet<String>(), body.filter { '$' in it }.toSet())
+    }
+
+    @Test
+    @DisplayName("an anonymous class body, and a closure inside it, are recorded without symbols or occurrences")
+    fun anonymousClassBody() {
+        val code = "class C { def run() { new Runnable() { void run() { Object x = null; x.zork() } } } }"
+        assertEquals(true, "zork" in names(code))
+        val closure = "class C { def run() { new Runnable() { void run() { def o = null; [1].each { o.zork2() } } } } }"
+        assertEquals(true, "zork2" in names(closure))
+        val doc = build(code)
+        assertEquals(emptyList<SymbolInfo>(), doc.symbols.filter { it.name == "x" })
+    }
+
+    @Test
+    @DisplayName("an accessor-shaped call records the property it may stand for; a static star import's field too")
+    fun accessorCalls() {
+        val found = names("class C { def run(Object o) { o.getTarget(); o.setUrlName(1); o.getURL() } }")
+        assertEquals(true, found.containsAll(setOf("target", "urlName", "URL", "uRL")))
+        val star = "import static C.*\nclass C { static String target }\nclass D { def m() { target } }"
+        assertEquals(true, "target" in names(star))
+    }
+
+    // Parameter defaults and instance initializers are attributed like the same expression in a method body.
+
+    @Test
+    @DisplayName("a call in a parameter default gets the id and range it would get in a body")
+    fun callInDefault() {
+        val doc = build("class C {\n    def foo() {}\n    def m(x = foo()) {}\n    def n() { foo() }\n}")
+        val calls = doc.occurrences.filter { it.role == OccurrenceRole.CALL && it.symbol == "C#foo()." }
+        assertEquals(setOf(Range(2, 14, 2, 17), Range(3, 14, 3, 17)), calls.map { it.range }.toSet())
+    }
+
+    @Test
+    @DisplayName("an earlier parameter used in a default is the parameter's id")
+    fun parameterInDefault() {
+        val doc = build("class C {\n    def m(int x, y = x) {}\n}")
+        val refs = doc.occurrences.filter { it.role == OccurrenceRole.REFERENCE }
+        assertEquals(listOf("C#m(int,Object).(x)" to Range(1, 21, 1, 22)), refs.map { it.symbol to it.range })
+    }
+
+    @Test
+    @DisplayName("a call and a field read in an instance initializer are attributed")
+    fun initializerOccurrences() {
+        val doc = build("class C {\n    int f\n    def foo() {}\n    {\n        foo()\n        f\n    }\n}")
+        val init = doc.occurrences.filter { it.range.startLine >= 4 }.map { Triple(it.symbol, it.role, it.range) }
+        assertEquals(
+            listOf(
+                Triple("C#foo().", OccurrenceRole.CALL, Range(4, 8, 4, 11)),
+                Triple("C#f.", OccurrenceRole.REFERENCE, Range(5, 8, 5, 9)),
+            ),
+            init,
+        )
     }
 
     @Test

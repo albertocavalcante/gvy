@@ -40,7 +40,7 @@ internal class OperatorSites(
     override fun visitStaticMethodCallExpression(call: StaticMethodCallExpression) {
         // Groovy rewrites static-import and static-context implicit-this calls into this node. Its source
         // range is not just the name, so no occurrence is made; the name is recorded as unattributed.
-        if (DispatchNames.isSource(call)) unresolved.name(call.method)
+        if (unresolved.isSource(call)) unresolved.callee(call.method)
         unresolved.addAll(DispatchNames.namedArguments(call.arguments))
         super.visitStaticMethodCallExpression(call)
     }
@@ -58,13 +58,14 @@ internal class OperatorSites(
     }
 
     override fun visitConstructorOrMethod(node: MethodNode, isConstructor: Boolean) {
+        if (generatedHelperMethod(node, unresolved.inTraitHelper)) return
         node.parameters?.filter { it.hasInitialExpression() }?.forEach { it.initialExpression.visit(this) }
         super.visitConstructorOrMethod(node, isConstructor)
     }
 
     override fun visitForLoop(forLoop: ForStatement) {
         // `for (x in o)` calls o.iterator(); a literal list or range, and the classic for(;;), do not.
-        if (DispatchNames.isSource(forLoop) && !isLiteralIteration(forLoop.collectionExpression)) {
+        if (unresolved.isSource(forLoop) && !isLiteralIteration(forLoop.collectionExpression)) {
             unresolved.dispatch("iterator")
         }
         super.visitForLoop(forLoop)
@@ -75,7 +76,7 @@ internal class OperatorSites(
 
     override fun visitCaseStatement(statement: CaseStatement) {
         // `case k:` calls k.isCase(switchValue); a constant or a class has no user-defined isCase.
-        if (DispatchNames.isSource(statement) && statement.expression !is ConstantExpression &&
+        if (unresolved.isSource(statement) && statement.expression !is ConstantExpression &&
             statement.expression !is ClassExpression
         ) {
             unresolved.dispatch("isCase")
@@ -84,7 +85,7 @@ internal class OperatorSites(
     }
 
     override fun visitCastExpression(expression: CastExpression) {
-        if (expression.isCoerce && DispatchNames.isSource(expression)) unresolved.dispatch("asType")
+        if (expression.isCoerce && unresolved.isSource(expression)) unresolved.dispatch("asType")
         super.visitCastExpression(expression)
     }
 
@@ -123,3 +124,6 @@ internal class OperatorSites(
         super.visitAnnotations(node)
     }
 }
+
+/** A method the compiler added to a trait's helper class (`methodMissing`, `$init$`): it has no source position. */
+internal fun generatedHelperMethod(node: MethodNode, inTraitHelper: Boolean) = inTraitHelper && node.lineNumber < 1

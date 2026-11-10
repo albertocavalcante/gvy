@@ -1,14 +1,10 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
-import org.codehaus.groovy.ast.ASTNode
-import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassHelper
-import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.Variable
-import org.codehaus.groovy.ast.expr.AnnotationConstantExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.Expression
-import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.NamedArgumentListExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
@@ -51,8 +47,58 @@ internal object DispatchNames {
         return if (nullCheck || (isNumeric(left) && isNumeric(right))) emptyList() else binary[type].orEmpty()
     }
 
-    /** Whether [node] was written in the source: the compiler's own nodes have no position. */
-    fun isSource(node: ASTNode): Boolean = node.lineNumber > 0
+    private const val OBJECT = "java.lang.Object"
+    private const val TRAIT_HELPER = "\$Trait\$"
+
+    /** Groovy's own implementations, which only consult the metaclass or a script's binding. */
+    private val standardDispatchers = setOf(
+        "groovy.lang.GroovyObject",
+        "groovy.lang.GroovyObjectSupport",
+        "groovy.lang.Script",
+    )
+
+    /** The class holding a trait's method bodies; the compiler makes it, and its nodes carry no positions. */
+    fun isTraitHelper(type: ClassNode): Boolean = TRAIT_HELPER in type.name && !type.isInterface
+
+    /** Whether any of [classes] or a supertype of one answers calls or reads by itself (see [GroovyDispatch]). */
+    fun dispatchesDynamically(classes: List<ClassNode>): Boolean = classes.any(::hasDispatchHook)
+
+    private fun hasDispatchHook(type: ClassNode): Boolean {
+        val chain = superclassChain(type) ?: return false
+        return (chain + chain.flatMap { it.allInterfaces }).any {
+            it.name !in standardDispatchers && !isGenerated(it) && GroovyDispatch.dispatchesByItself(it)
+        }
+    }
+
+    /** [type] and its superclasses below Object, or null for a generated class or a cyclic hierarchy. */
+    private fun superclassChain(type: ClassNode): List<ClassNode>? {
+        if (isGenerated(type)) return null
+        val chain = ArrayList<ClassNode>()
+        val seen = HashSet<String>()
+        var node: ClassNode? = type.redirect()
+        while (node != null && node.name != OBJECT) {
+            // A class that extends itself is a compile error, and the dispatch helpers would follow it forever.
+            if (!seen.add(node.name)) return null
+            chain += node
+            node = node.superClass?.redirect()
+        }
+        return chain
+    }
+
+    private fun isGenerated(type: ClassNode) = type.isSynthetic || TRAIT_HELPER in type.name
+
+    private val accessorPrefix = Regex("^(get|set|is)(\\p{Lu}.*)$")
+
+    /**
+     * The property an accessor-shaped call may stand for: `getTarget`/`isTarget`/`setTarget` give `target`
+     * (the JavaBeans spelling, which keeps `URL`, and Groovy's `uRL` are both returned).
+     */
+    fun propertyOf(method: String): Set<String> {
+        val rest = accessorPrefix.matchEntire(method)?.groupValues?.get(2) ?: return emptySet()
+        // `URL` stays `URL` for the JavaBeans rule; Groovy's own spelling lowercases the first letter alone.
+        val bean = if (rest.length > 1 && rest[1].isUpperCase()) rest else rest.replaceFirstChar(Char::lowercaseChar)
+        return setOf(bean, rest.replaceFirstChar(Char::lowercaseChar))
+    }
 
     /** Whether [expression] is statically a number, whose operators are the language's own. */
     fun isNumeric(expression: Expression): Boolean = when (expression) {
@@ -92,31 +138,5 @@ internal object DispatchNames {
                 }
             }.flatten()
         }
-    }
-
-    /** The member names written in [annotations], nested annotations included: `@A(v = 1)` names `v`. */
-    fun annotationMembers(annotations: Collection<AnnotationNode>): Set<String> {
-        val found = HashSet<String>()
-        fun collect(annotation: AnnotationNode) {
-            found += annotation.members.keys
-            annotation.members.values.forEach { value ->
-                val nested = if (value is ListExpression) value.expressions else listOf(value)
-                nested.filterIsInstance<AnnotationConstantExpression>().forEach { collect(it.value as AnnotationNode) }
-            }
-        }
-        annotations.forEach(::collect)
-        return found
-    }
-
-    /** The annotations on the declarations of [module] (the visitor reaches those inside method bodies). */
-    fun declaredAnnotations(module: ModuleNode): List<AnnotationNode> {
-        val methods = module.methods + module.classes.flatMap { it.methods }
-        val parameters = methods.flatMap { it.parameters.toList() }
-        val members = module.classes.flatMap { type ->
-            type.annotations + type.fields.flatMap { it.annotations } +
-                type.properties.flatMap { it.annotations + it.field.annotations }
-        }
-        return members + methods.flatMap { it.annotations } + parameters.flatMap { it.annotations } +
-            module.`package`?.annotations.orEmpty()
     }
 }

@@ -27,7 +27,11 @@ import java.net.URI
  *     (`methodMissing`, `propertyMissing`, `invokeMethod`, `getProperty`, `setProperty`, `GroovyInterceptable`,
  *     `@Delegate`, `@Mixin`), see [GroovyDispatch.dispatchesByItself].
  *
- *   Code the compiler generated (no source position) and traits' helper classes add nothing.
+ *   - the property an accessor-shaped unattributed call may stand for, the other direction: `o.getTarget()`
+ *     records `getTarget` and `target` (both the JavaBeans spelling, which keeps `URL`, and `uRL`).
+ *
+ *   Bodies of trait methods and of anonymous classes are collected too (they get no symbols or occurrences);
+ *   names the compiler generated (no source position, or a `$` name inside a trait helper) add nothing.
  */
 data class SemanticDocument(
     val uri: URI,

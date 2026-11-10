@@ -68,8 +68,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             extractMethod(methodNode, null)
         }
 
-        unresolved.dispatchesDynamically(moduleNode.classes)
-        unresolved.annotations(DispatchNames.declaredAnnotations(moduleNode))
+        if (DispatchNames.dispatchesDynamically(moduleNode.classes)) unresolved.dispatch(UnresolvedNames.WILDCARD)
+        unresolved.annotations(AnnotationMembers.declared(moduleNode))
 
         return SemanticDocument(uri, symbols, occurrences, unresolved.toSet())
     }
@@ -139,16 +139,20 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         return SymbolOccurrence(createClassSymbolId(resolved), nodeToRange(type) ?: range, OccurrenceRole.TYPE_REF)
     }
 
+    private fun isNotIndexed(classNode: ClassNode) =
+        classNode.isSynthetic || classNode is InnerClassNode && classNode.isAnonymous
+
     /**
      * Extract class symbol and all its members
      */
     private fun extractClass(classNode: ClassNode) {
-        // Skip synthetic/generated classes
-        if (classNode.isSynthetic || classNode is InnerClassNode && classNode.isAnonymous) {
+        // Synthetic and anonymous classes (#1130) and a trait's helper class get no symbols or occurrences, but
+        // their bodies still use names, so the uncertain uses in them are collected.
+        val range = nodeToRange(classNode)
+        if (range == null || isNotIndexed(classNode)) {
+            visitBody(classNode, record = false)
             return
         }
-
-        val range = nodeToRange(classNode) ?: return
         val symbolId = createClassSymbolId(classNode)
 
         val kind = when {
@@ -201,17 +205,24 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             extractMethod(methodNode, classNode)
         }
 
-        visitBody(classNode)
+        visitBody(classNode, record = true)
     }
 
     /** Visit the class body to extract occurrences (method calls, field accesses, etc.) and uncertain uses. */
-    private fun visitBody(classNode: ClassNode) {
+    private fun visitBody(classNode: ClassNode, record: Boolean) {
+        unresolved.inTraitHelper = DispatchNames.isTraitHelper(classNode)
         val operators = OperatorSites(unresolved, assigned)
         classNode.visitContents(operators)
         classNode.objectInitializerStatements.forEach { it.visit(operators) }
-        val visitor = OccurrenceVisitor(classNode)
+        // A class that is not recorded still has its uses collected, into sinks that are thrown away.
+        val visitor = if (record) {
+            OccurrenceVisitor(classNode, symbols, occurrences)
+        } else {
+            OccurrenceVisitor(classNode, mutableListOf(), mutableListOf())
+        }
         classNode.visitContents(visitor)
         visitor.visitInitializers(classNode.objectInitializerStatements)
+        unresolved.inTraitHelper = false
     }
 
     /**
@@ -340,7 +351,11 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
      * The scopes also carry the declared or inferred type used to attribute calls to a receiver.
      */
     @Suppress("TooManyFunctions") // Groovy's visitor contract requires one override per relevant syntax node.
-    private inner class OccurrenceVisitor(private val currentClass: ClassNode) : ClassCodeVisitorSupport() {
+    private inner class OccurrenceVisitor(
+        private val currentClass: ClassNode,
+        private val symbols: MutableList<SymbolInfo>,
+        private val occurrences: MutableList<SymbolOccurrence>,
+    ) : ClassCodeVisitorSupport() {
 
         private val scopes = ArrayDeque<MutableMap<String, LocalBinding>>()
 
@@ -400,6 +415,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitConstructorOrMethod(node: MethodNode, isConstructor: Boolean) {
+            if (generatedHelperMethod(node, unresolved.inTraitHelper)) return
             val savedOwner = scopeOwnerId
             val savedStatic = staticContext
             scopeOwnerId = createMethodSymbolId(currentClass, node)
@@ -493,7 +509,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             ) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
             }
-            if (DispatchNames.isSource(call)) unresolved.call(call, stored)
+            if (unresolved.isSource(call)) unresolved.call(call, stored)
             if (resolver.isDelegateNeutralCall(call)) {
                 (call.arguments as? TupleExpression)?.expressions.orEmpty()
                     .filterIsInstance<ClosureExpression>()
@@ -548,7 +564,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                     }
                 if (range != null && symbolId != null) {
                     occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
-                } else if (DispatchNames.isSource(expression)) {
+                } else if (unresolved.isSource(expression)) {
                     unresolved.member(expression.name, accessOf(expression))
                 }
             }
@@ -560,7 +576,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             if (Types.ofType(type, Types.ASSIGNMENT_OPERATOR)) {
                 assigned[expression.leftExpression] = type != Types.ASSIGN
             }
-            if (DispatchNames.isSource(expression)) recordOperator(type, expression)
+            if (unresolved.isSource(expression)) recordOperator(type, expression)
             super.visitBinaryExpression(expression)
         }
 
@@ -596,7 +612,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             }
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
-            } else if (DispatchNames.isSource(expression)) {
+            } else if (unresolved.isSource(expression)) {
                 unresolved.member(expression.propertyAsString, accessOf(expression))
             }
             super.visitPropertyExpression(expression)
