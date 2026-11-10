@@ -1277,4 +1277,30 @@ class WorkspaceSymbolIndexTest {
             )
         }
     }
+
+    @Test
+    fun `updating and removing a document keeps the index in step with no hierarchy state of its own`() {
+        // The index's dead hierarchy caches are gone (#1434): update and remove go straight to the database.
+        val classSymbol = SymbolInfo(
+            symbol = "com/example/MyClass#",
+            kind = SymbolKind.CLASS,
+            range = Range(0, 0, 10, 1),
+            name = "MyClass",
+            owner = null,
+        )
+        val doc = SemanticDocument(testUri1, listOf(classSymbol), emptyList())
+
+        index.updateDocument(testUri1, doc)
+        assertNotNull(index.findSymbol("com/example/MyClass#"), "updated")
+        assertNull(index.getSuperclass("com/example/MyClass"))
+        assertEquals(emptyList<String>(), index.getInterfaces("com/example/MyClass"))
+
+        index.removeDocument(testUri1)
+        assertNull(index.findSymbol("com/example/MyClass#"), "removed")
+        assertNull(index.getSuperclass("com/example/MyClass"))
+
+        index.updateDocument(testUri1, doc)
+        index.clear()
+        assertNull(index.findSymbol("com/example/MyClass#"), "cleared")
+    }
 }

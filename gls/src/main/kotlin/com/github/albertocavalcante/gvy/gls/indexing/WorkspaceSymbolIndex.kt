@@ -14,26 +14,18 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Workspace-wide symbol index that aggregates semantic information from all files.
  * Provides fast lookup for symbols, references, class hierarchy, and member resolution.
  *
- * This index delegates to [GroovySemanticDB] for underlying storage and maintains
- * additional caches for efficient workspace-wide queries.
- *
- * Thread-safe implementation using ConcurrentHashMap for concurrent LSP operations.
+ * This index delegates to [GroovySemanticDB] for underlying storage and keeps no state of its own, so it is
+ * thread-safe exactly as the database is.
  *
  * @property semanticDb The underlying semantic database storing per-file information
  */
 @Suppress("TooManyFunctions") // Index facade keeps lookup and publication APIs together.
 class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLookup {
-
-    // Cache for class hierarchy information (will be populated when Phase 0 is extended)
-    // For now, these remain empty as SymbolInfo doesn't track inheritance yet
-    private val superclassCache = ConcurrentHashMap<String, String>()
-    private val interfacesCache = ConcurrentHashMap<String, List<String>>()
 
     /**
      * Get the semantic document for a URI.
@@ -94,50 +86,28 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
         semanticDb.findImplementationDocument(symbolId)
 
     /**
-     * Get the superclass of a class.
+     * Get the superclass of a class: always null for now, since [SymbolInfo] does not track inheritance yet.
      *
-     * Note: Currently returns null as SymbolInfo doesn't track inheritance yet.
-     * This will be implemented when Phase 0 is extended with class hierarchy information.
+     * If inheritance lands with a cache in front of it (#1434), keep it from serving a pre-clear hierarchy: read
+     * the cache holder once before reading the semantic DB and write results only into that holder, and on
+     * [clear] swap in a fresh DB before a fresh cache holder. A lookup that raced the clear then fills a holder
+     * nobody reads any more. Add a test racing a lookup against [clear].
      *
      * @param classFqn The fully qualified class name (e.g., "com/example/MyClass")
-     * @return The FQN of the superclass, or null if none or not found
+     * @return The FQN of the superclass; null until inheritance is tracked
      */
-    fun getSuperclass(classFqn: String): String? {
-        // Check cache first
-        val cached = superclassCache[classFqn]
-        if (cached != null) return cached
-
-        // Look up class symbol
-        val classSymbolId = "$classFqn#"
-        val classSymbol = findSymbol(classSymbolId) ?: return null
-
-        // TODO: Extract superclass info when SymbolInfo is extended
-        // For now, return null as we don't have this information
-        return null
-    }
+    @Suppress("UnusedParameter", "FunctionOnlyReturningConstant") // A stub until SymbolInfo carries inheritance.
+    fun getSuperclass(classFqn: String): String? = null
 
     /**
-     * Get the interfaces implemented by a class.
-     *
-     * Note: Currently returns empty list as SymbolInfo doesn't track inheritance yet.
-     * This will be implemented when Phase 0 is extended with class hierarchy information.
+     * Get the interfaces implemented by a class: always empty for now, since [SymbolInfo] does not track
+     * inheritance yet. A cache added with inheritance follows the same rules as for [getSuperclass].
      *
      * @param classFqn The fully qualified class name (e.g., "com/example/MyClass")
-     * @return List of interface FQNs, or empty list if none or not found
+     * @return List of interface FQNs; empty until inheritance is tracked
      */
-    fun getInterfaces(classFqn: String): List<String> {
-        // Check cache first
-        val cached = interfacesCache[classFqn]
-        if (cached != null) return cached
-
-        // Look up class symbol
-        val classSymbolId = "$classFqn#"
-        val classSymbol = findSymbol(classSymbolId) ?: return emptyList()
-
-        // TODO: Extract interfaces info when SymbolInfo is extended
-        // For now, return empty list as we don't have this information
-        return emptyList()
-    }
+    @Suppress("UnusedParameter") // A stub until SymbolInfo carries inheritance.
+    fun getInterfaces(classFqn: String): List<String> = emptyList()
 
     /**
      * Get the full inheritance chain for a class (including transitive superclasses).
@@ -207,7 +177,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
     override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? {
         // Look up the class to get all its members
         val classSymbolId = "$classFqn#"
-        val classSymbol = findSymbol(classSymbolId) ?: return null
+        findSymbol(classSymbolId) ?: return null // an unknown class has no members
 
         // Find all symbols in the workspace that belong to this class
         val allDocuments = semanticDb.getAllDocuments()
@@ -250,7 +220,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      */
     override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> {
         val classSymbolId = "$classFqn#"
-        val classSymbol = findSymbol(classSymbolId) ?: return emptyList()
+        findSymbol(classSymbolId) ?: return emptyList() // an unknown class has no members
 
         // Find all symbols owned by this class
         val allDocuments = semanticDb.getAllDocuments()
@@ -300,42 +270,20 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
         implementations: ImplementationFacts.Snapshot,
     ) {
         semanticDb.updateDocument(uri, doc, sourceText, implementations)
-
-        // Clear caches for updated classes
-        doc.symbols.filter { it.kind == SymbolKind.CLASS || it.kind == SymbolKind.INTERFACE }
-            .forEach { classSymbol ->
-                val classFqn = extractClassFqn(classSymbol.symbol)
-                superclassCache.remove(classFqn)
-                interfacesCache.remove(classFqn)
-            }
     }
 
-    /**
-     * Drops every document in O(1): the database swaps in an empty graph under its write lock (#1342). The
-     * hierarchy caches are only ever removed from, never filled, so resetting them is O(1) too and races nothing.
-     */
+    /** Drops every document in O(1): the database swaps in an empty graph under its write lock (#1342). */
     fun clear() {
         semanticDb.clear()
-        superclassCache.clear()
-        interfacesCache.clear()
     }
 
     /**
      * Remove a document from the index.
-     * This delegates to the underlying SemanticDB and clears relevant caches.
+     * This delegates to the underlying SemanticDB.
      *
      * @param uri The document URI
      */
     fun removeDocument(uri: URI) {
-        // Get the document before removing to clear caches
-        val doc = semanticDb.getDocument(uri)
-        doc?.symbols?.filter { it.kind == SymbolKind.CLASS || it.kind == SymbolKind.INTERFACE }
-            ?.forEach { classSymbol ->
-                val classFqn = extractClassFqn(classSymbol.symbol)
-                superclassCache.remove(classFqn)
-                interfacesCache.remove(classFqn)
-            }
-
         semanticDb.removeDocument(uri)
     }
 
