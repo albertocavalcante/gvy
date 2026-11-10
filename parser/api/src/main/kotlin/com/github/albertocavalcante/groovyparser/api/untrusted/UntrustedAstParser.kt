@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.groovyparser.api.untrusted
 
+import groovyjarjarantlr4.v4.runtime.Token
+import org.apache.groovy.parser.antlr4.GroovyLangLexer
+import org.apache.groovy.parser.antlr4.GroovyLexer
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
@@ -9,6 +12,7 @@ import org.codehaus.groovy.control.ErrorCollector
 import org.codehaus.groovy.control.MultipleCompilationErrorsException
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.control.messages.SyntaxErrorMessage
+import java.io.StringReader
 
 /**
  * Limits applied to untrusted Groovy before and after it is parsed. Defaults suit a small hand-written config
@@ -24,8 +28,6 @@ data class UntrustedParseLimits(
 
 private const val DEFAULT_MAX_CHARS = 64 * 1024
 private const val DEFAULT_MAX_STATEMENTS = 2_000
-private const val TRIPLE = 3
-private const val COMMENT_OPEN = 2
 
 /** Result of [UntrustedAstParser.parse]. */
 sealed interface UntrustedParseResult {
@@ -43,8 +45,9 @@ sealed interface UntrustedParseResult {
  *   `@ASTTest`, ...) can execute and no class is generated or loaded; only parse and convert are performed.
  *   Applying `AnalysisCompilerPolicy` is therefore unnecessary here.
  * - The text is bounded before the parser sees it: a character cap and a nesting cap (the Groovy parser needs
- *   minutes of CPU for thousands of nested closures and overflows its stack on deeper input). The nesting scan
- *   counts `{`, `(` and `[` outside string literals and comments; slashy strings are not recognised.
+ *   minutes of CPU for thousands of nested closures and overflows its stack on deeper input). Nesting is counted
+ *   from Groovy's own lexer, so GString interpolation, slashy strings and comments are handled exactly as the
+ *   parser sees them.
  * - After parsing, statements are counted recursively (closures included) against [UntrustedParseLimits.maxStatements].
  * - `CompilationFailedException` and `StackOverflowError` become a [UntrustedParseResult.Rejected].
  *
@@ -110,48 +113,32 @@ object UntrustedAstParser {
         return count
     }
 
-    /** Deepest `{` / `(` / `[` nesting in [text], ignoring string literals and comments. */
+    /**
+     * Deepest `{` / `(` / `[` nesting in [text], counted from Groovy's own lexer so that GString interpolation
+     * (`"${ ... }"`), slashy and dollar-slashy strings, triple-quoted strings and comments are tokenised exactly
+     * as the parser will see them (a hand-written scan is unsound for those). Lexing is linear and does not
+     * recurse, so it is safe on hostile input; unlexable input simply ends the scan.
+     */
     private fun maxNesting(text: String): Int {
+        val lexer = GroovyLangLexer(StringReader(text))
+        lexer.removeErrorListeners()
         var depth = 0
         var max = 0
-        var i = 0
-        while (i < text.length) {
-            val skipTo = skippedEnd(text, i)
-            if (skipTo > i) {
-                i = skipTo
-                continue
+        while (true) {
+            val token = lexer.nextToken()
+            when {
+                token.type == Token.EOF -> return max
+                opens(token) -> max = maxOf(max, ++depth)
+                closes(token.type) -> depth = maxOf(0, depth - 1)
             }
-            when (text[i]) {
-                '{', '(', '[' -> max = maxOf(max, ++depth)
-                '}', ')', ']' -> depth = maxOf(0, depth - 1)
-            }
-            i++
-        }
-        return max
-    }
-
-    /** End index (exclusive) of the string literal or comment starting at [i], or [i] if none starts there. */
-    private fun skippedEnd(text: String, i: Int): Int {
-        val c = text[i]
-        val triple = c in "'\"" && text.startsWith("$c$c$c", i)
-        return when {
-            text.startsWith("//", i) -> text.indexOf('\n', i).let { if (it < 0) text.length else it }
-            text.startsWith("/*", i) -> endOf(text, "*/", i + COMMENT_OPEN)
-            triple -> endOf(text, "$c$c$c", i + TRIPLE)
-            c == '\'' || c == '"' -> endOfQuoted(text, i, c)
-            else -> i
         }
     }
 
-    /** Index just past the next [terminator] at or after [from], or the end of [text] if it never closes. */
-    private fun endOf(text: String, terminator: String, from: Int): Int =
-        text.indexOf(terminator, from).let { if (it < 0) text.length else it + terminator.length }
+    private fun opens(token: Token): Boolean = token.type in OPENERS ||
+        (token.type == GroovyLexer.GStringPart && token.text.endsWith("{"))
 
-    private fun endOfQuoted(text: String, start: Int, quote: Char): Int {
-        var j = start + 1
-        while (j < text.length && text[j] != quote && text[j] != '\n') {
-            j += if (text[j] == '\\') 2 else 1
-        }
-        return minOf(j + 1, text.length)
-    }
+    private fun closes(type: Int): Boolean = type in CLOSERS
+
+    private val OPENERS = setOf(GroovyLexer.LPAREN, GroovyLexer.LBRACE, GroovyLexer.LBRACK)
+    private val CLOSERS = setOf(GroovyLexer.RPAREN, GroovyLexer.RBRACE, GroovyLexer.RBRACK)
 }

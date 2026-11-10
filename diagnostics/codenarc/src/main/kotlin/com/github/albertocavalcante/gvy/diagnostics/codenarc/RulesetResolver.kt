@@ -1,10 +1,14 @@
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
 import com.github.albertocavalcante.gvy.diagnostics.api.WorkspaceContext
+import com.github.albertocavalcante.gvy.diagnostics.codenarc.WorkspaceRulesetInterpreter.Result
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.security.MessageDigest
+import java.util.HexFormat
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
@@ -81,6 +85,16 @@ class HierarchicalRulesetResolver(
 
     companion object {
         private val logger = KotlinLogging.logger {}
+
+        private const val MAX_CACHED_INTERPRETATIONS = 32
+        private const val LOAD_FACTOR = 0.75f
+
+        /** Interpretation outcomes by content hash; shared so rebuilding a resolver does not re-parse rulesets. */
+        private val interpretations = object :
+            LinkedHashMap<String, Result>(MAX_CACHED_INTERPRETATIONS, LOAD_FACTOR, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Result>) =
+                size > MAX_CACHED_INTERPRETATIONS
+        }
 
         // Workspace configuration files in order of precedence
         private val WORKSPACE_CONFIG_FILES = listOf(
@@ -214,8 +228,7 @@ class HierarchicalRulesetResolver(
         for (name in WORKSPACE_CONFIG_FILES) {
             val file = workspaceRoot.resolve(name)
             if (!file.isRegularFile()) continue
-            val result = runCatching { WorkspaceRulesetInterpreter.interpret(file.readText()) }
-                .getOrElse { WorkspaceRulesetInterpreter.Result.Rejected("unreadable: ${it.message}") }
+            val result = interpretCached(file)
             when (result) {
                 is WorkspaceRulesetInterpreter.Result.Accepted -> {
                     if (accepted == null) accepted = ResolvedRuleset(result.xml, "workspace:$name")
@@ -230,6 +243,21 @@ class HierarchicalRulesetResolver(
         }
         return accepted to ignored
     }
+
+    /**
+     * Interprets [file], reading it only if it is small enough (the size is checked before any bytes are read) and
+     * remembering the outcome by content hash so an unchanged ruleset is not parsed again on every analysis.
+     */
+    private fun interpretCached(file: Path): Result = runCatching {
+        if (Files.size(file) > WorkspaceRulesetInterpreter.MAX_FILE_BYTES) {
+            return@runCatching Result.Rejected("larger than ${WorkspaceRulesetInterpreter.MAX_FILE_BYTES} bytes")
+        }
+        val text = file.readText()
+        val key = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
+        synchronized(interpretations) {
+            interpretations.getOrPut(key) { WorkspaceRulesetInterpreter.interpret(text) }
+        }
+    }.getOrElse { Result.Rejected("unreadable: ${it.message}") }
 
     /**
      * Loads the appropriate default ruleset based on project type.

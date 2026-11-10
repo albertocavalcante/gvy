@@ -21,7 +21,15 @@ internal fun rule(name: String, properties: Map<String, String>, out: StringBuil
     out.append("  </rule>\n")
 }
 
+/**
+ * Rule properties whose value is a regular expression. A regex from an untrusted workspace can be catastrophic
+ * (ReDoS) and would run on the analysis thread, so workspace rulesets may not set them.
+ */
+private fun isRegexProperty(name: String): Boolean =
+    name.endsWith("regex", ignoreCase = true) || name.endsWith("FilesMatching") || name.endsWith("Pattern")
+
 internal fun property(key: String, value: String, indent: String, out: StringBuilder) {
+    if (isRegexProperty(key)) fail("regular-expression properties are not allowed in workspace rulesets: $key")
     out.append(indent).append("<property name=\"").append(xml(key)).append("\" value=\"")
         .append(xml(value)).append("\"/>\n")
 }

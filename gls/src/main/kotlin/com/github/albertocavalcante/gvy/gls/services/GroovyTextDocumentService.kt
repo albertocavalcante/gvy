@@ -151,6 +151,8 @@ class GroovyTextDocumentService(
     }
     private val diagnosticsOrchestrator by diagnosticsOrchestratorDelegate
 
+    private val notifiedIgnoredRulesets = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     @Synchronized
     fun updateConfiguration(configuration: ServerConfiguration) {
         serverConfiguration = configuration
@@ -173,14 +175,17 @@ class GroovyTextDocumentService(
             val codeNarcProvider = CodeNarcDiagnosticProvider(
                 workspaceContext,
                 onWorkspaceRulesetIgnored = { ruleset ->
-                    client()?.showMessage(
-                        MessageParams().apply {
-                            type = MessageType.Info
-                            message = "The workspace CodeNarc ruleset '$ruleset' uses features that are not " +
-                                "supported for security reasons (rulesets are never evaluated as Groovy), so " +
-                                "the default ruleset is used."
-                        },
-                    )
+                    // Service scope: updateConfiguration rebuilds the provider, which must not repeat the message
+                    if (notifiedIgnoredRulesets.add(ruleset)) {
+                        client()?.showMessage(
+                            MessageParams().apply {
+                                type = MessageType.Info
+                                message = "The workspace CodeNarc ruleset '$ruleset' uses features that are not " +
+                                    "supported for security reasons (workspace rulesets are never evaluated " +
+                                    "as Groovy) and is ignored."
+                            },
+                        )
+                    }
                 },
             )
             val codeNarcAdapter = DiagnosticProviderAdapter(

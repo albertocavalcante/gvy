@@ -122,8 +122,8 @@ class CodeNarcDiagnosticProvider(
             listOf(
                 Diagnostic(
                     Range(Position(0, 0), Position(0, 0)),
-                    "This CodeNarc ruleset is ignored: rulesets from the workspace are Groovy scripts and are " +
-                        "not evaluated for security reasons. The default ruleset is used.",
+                    "This CodeNarc ruleset is ignored: it uses features that are not supported for security " +
+                        "reasons (workspace rulesets are never evaluated as Groovy).",
                     DiagnosticSeverity.Information,
                     "CodeNarc",
                 ),

@@ -111,4 +111,30 @@ class WorkspaceRulesetInterpreterTest {
 
         assertEquals(1, diagnostics.count { "TrailingWhitespace" in (it.code?.left ?: "") }, diagnostics.toString())
     }
+
+    @Test
+    fun `rejects regular-expression properties that could ReDoS the analysis`() {
+        for (property in listOf("regex", "classNameRegex", "doNotApplyToFilesMatching", "applyToFilesMatching")) {
+            val ruleset = "ruleset { IllegalRegex { $property = '(a+)+$' } }"
+            assertTrue(rejected(ruleset).contains("regular-expression"), "$property must be rejected")
+        }
+    }
+
+    @Test
+    fun `an oversized ruleset file is rejected without being read as text`() {
+        val file = tempDir.resolve("ws3").also { Files.createDirectories(it) }.resolve("codenarc.groovy")
+        Files.write(file, ByteArray((WorkspaceRulesetInterpreter.MAX_FILE_BYTES + 1).toInt()) { 'a'.code.toByte() })
+        val resolved = HierarchicalRulesetResolver().resolve(
+            object : WorkspaceContext {
+                override val root: Path = file.parent
+                override fun getConfiguration() = object : DiagnosticConfiguration {
+                    override val isEnabled = true
+                    override val propertiesFile: String? = null
+                    override val autoDetectConfig = true
+                }
+            },
+        )
+
+        assertEquals(listOf("codenarc.groovy"), resolved.ignoredWorkspaceRulesets)
+    }
 }

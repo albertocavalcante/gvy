@@ -83,4 +83,40 @@ class UntrustedAstParserTest {
             UntrustedAstParser.parse(big, "t", UntrustedParseLimits(maxChars = 200_000)) is UntrustedParseResult.Parsed,
         )
     }
+
+    private fun assertBoundedQuickly(label: String, source: String) {
+        val started = System.nanoTime()
+        val result = rejected(source)
+        val millis = (System.nanoTime() - started) / 1_000_000
+
+        assertTrue(
+            result.reason.startsWith("nested deeper"),
+            "$label: expected the nesting cap, got '${result.reason}'",
+        )
+        assertTrue(millis < 5_000, "$label took $millis ms")
+    }
+
+    @Test
+    fun `nesting inside GString interpolation is counted`() {
+        assertBoundedQuickly("gstring", "x = \"\${" + "(".repeat(1000) + ")".repeat(1000) + "}\"")
+        val tripleGString = "x = \"\"\"\${" + "{->".repeat(500) + "}".repeat(500) + "}\"\"\""
+        assertBoundedQuickly("triple gstring", tripleGString)
+    }
+
+    @Test
+    fun `a quote inside a slashy string does not hide the nesting that follows`() {
+        assertBoundedQuickly("slashy", "x = /'/; [" + "[".repeat(1000) + "]".repeat(1000) + "]")
+        assertBoundedQuickly("dollar slashy", "x = \$/'/\$; [" + "[".repeat(1000) + "]".repeat(1000) + "]")
+    }
+
+    @Test
+    fun `many moderately nested blocks stay cheap`() {
+        val block = "a" + "{ ".repeat(8) + "}".repeat(8) + "\n"
+        val source = "ruleset {\n" + block.repeat(500) + "}"
+
+        val started = System.nanoTime()
+        UntrustedAstParser.parse(source, "t", UntrustedParseLimits(maxChars = 200_000, maxStatements = 100_000))
+
+        assertTrue((System.nanoTime() - started) / 1_000_000 < 10_000)
+    }
 }

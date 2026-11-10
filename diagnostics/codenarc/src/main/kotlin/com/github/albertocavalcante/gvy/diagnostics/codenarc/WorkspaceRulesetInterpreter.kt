@@ -27,6 +27,9 @@ internal class Rejection(message: String) : RuntimeException(message, null, fals
  * filesystem or `file:` references, imports, extra classes or methods) rejects the whole file.
  */
 internal object WorkspaceRulesetInterpreter {
+    /** Largest ruleset file read at all (bytes); well above [UntrustedParseLimits.maxChars] for multi-byte text. */
+    const val MAX_FILE_BYTES = 256L * 1024
+
     private val LIMITS = UntrustedParseLimits()
     private val CLASSPATH_RULESET = Regex("rulesets/[A-Za-z0-9_-]+\\.xml")
 
