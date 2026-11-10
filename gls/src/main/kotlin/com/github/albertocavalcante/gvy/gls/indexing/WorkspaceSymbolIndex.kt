@@ -311,6 +311,16 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
     }
 
     /**
+     * Drops every document in O(1): the database swaps in an empty graph under its write lock (#1342). The
+     * hierarchy caches are only ever removed from, never filled, so resetting them is O(1) too and races nothing.
+     */
+    fun clear() {
+        semanticDb.clear()
+        superclassCache.clear()
+        interfacesCache.clear()
+    }
+
+    /**
      * Remove a document from the index.
      * This delegates to the underlying SemanticDB and clears relevant caches.
      *

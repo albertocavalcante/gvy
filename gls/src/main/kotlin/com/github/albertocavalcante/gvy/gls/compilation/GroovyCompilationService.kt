@@ -248,13 +248,22 @@ class GroovyCompilationService internal constructor(
     /**
      * Retires every file's artifacts: work that started earlier can no longer publish, and pending jobs are
      * cancelled. Nothing new can be published between the separate removals.
+     *
+     * Under the fence this only swaps references, so it is O(1) whatever the workspace size (#1342). The retired
+     * pending jobs are cancelled after the fence is released; one that is still running when this returns is only
+     * wasted work, because its ticket belongs to the retired epoch and can never commit.
      */
     fun clearCaches() = semanticSnapshotGuard.invalidate {
+        var retired: Map<URI, PendingCompilation> = emptyMap()
+        // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
         ownership.retireAll {
-            cacheService.clear()
+            retired = cacheService.detach()
             symbolIndexer.clear()
             semanticIndexer.clear()
         }
+        // Cancelled outside the fence: their cancellation handlers may take tickets. A retired job still running
+        // after this returns is only wasted work, because its old-epoch ticket can never commit.
+        cacheService.cancelDetached(retired)
         invalidateClassLoader()
     }
 

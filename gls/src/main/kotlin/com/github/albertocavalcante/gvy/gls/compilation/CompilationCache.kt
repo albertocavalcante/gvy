@@ -31,14 +31,16 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         private set
 
     // access-ordered: iteration runs from least to most recently used
-    private val entries = LinkedHashMap<URI, CacheEntry>(INITIAL_CAPACITY, LOAD_FACTOR, true)
+    // Every access holds [lock] (not the map itself, which [clear] replaces), so a swap is never observed midway
+    private val lock = Any()
+    private var entries = newEntries()
     private var evictions = 0L
 
     /**
      * Gets cached result if content AND configuration fingerprint match.
      * Returns null if not cached or if either content or fingerprint has changed.
      */
-    fun get(uri: URI, content: String, configFingerprint: String): ParseResult? = synchronized(entries) {
+    fun get(uri: URI, content: String, configFingerprint: String): ParseResult? = synchronized(lock) {
         val entry = entries[uri] ?: return null
         if (entry.content == content && entry.configFingerprint == configFingerprint) entry.parseResult else null
     }
@@ -47,7 +49,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
      * The entry for [uri] with the source it was compiled from, if it was compiled under [configFingerprint].
      * For readers without the current text; the entry itself must be retired when that text changes.
      */
-    fun getWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? = synchronized(entries) {
+    fun getWithContent(uri: URI, configFingerprint: String): Pair<String, ParseResult>? = synchronized(lock) {
         entries[uri]?.takeIf { it.configFingerprint == configFingerprint }?.let { it.content to it.parseResult }
     }
 
@@ -59,25 +61,26 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     }
 
     fun invalidate(uri: URI) {
-        synchronized(entries) { entries.remove(uri) }
+        synchronized(lock) { entries.remove(uri) }
     }
 
     fun clear() {
-        synchronized(entries) { entries.clear() }
+        // O(1): the old map is left to the garbage collector (#1342)
+        synchronized(lock) { entries = newEntries() }
     }
 
     /** Snapshot of the cached URIs, least recently used first. */
-    fun keys(): Set<URI> = synchronized(entries) { LinkedHashSet(entries.keys) }
+    fun keys(): Set<URI> = synchronized(lock) { LinkedHashSet(entries.keys) }
 
     /** Changes the cap and evicts immediately if the cache is now over it. */
     fun resize(newMaxEntries: Int) {
-        synchronized(entries) {
+        synchronized(lock) {
             maxEntries = newMaxEntries.coerceAtLeast(1)
             evictOverflow(keep = null)
         }
     }
 
-    fun getStatistics(): Map<String, Any> = synchronized(entries) {
+    fun getStatistics(): Map<String, Any> = synchronized(lock) {
         mapOf(
             "cachedResults" to entries.size,
             "maxEntries" to maxEntries,
@@ -86,7 +89,7 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
     }
 
     private fun store(uri: URI, entry: CacheEntry) {
-        synchronized(entries) {
+        synchronized(lock) {
             entries[uri] = entry
             // Never evict what was just stored: callers read it back right away (e.g. go-to-definition
             // compiles a closed file, then fetches its AST), and when open documents fill the cap the
@@ -117,4 +120,6 @@ class CompilationCache(maxEntries: Int = DEFAULT_MAX_ENTRIES, private val isOpen
         private const val INITIAL_CAPACITY = 64
         private const val LOAD_FACTOR = 0.75f
     }
+
+    private fun newEntries() = LinkedHashMap<URI, CacheEntry>(INITIAL_CAPACITY, LOAD_FACTOR, true)
 }

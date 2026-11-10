@@ -24,13 +24,14 @@ class GroovySemanticDB {
         val implementations: ImplementationFacts.Snapshot,
     )
 
-    private val documents = HashMap<URI, StoredDocument>()
+    // All three are read and replaced only under [lock], so a reader sees one whole graph, never a mix
+    private var documents = HashMap<URI, StoredDocument>()
 
     // symbolId -> definitions, grouped by file in the order the files were stored
-    private val symbolIndex = SymbolIndex<SymbolInfo>()
+    private var symbolIndex = SymbolIndex<SymbolInfo>()
 
     // symbolId -> occurrences, grouped by file
-    private val occurrenceIndex = SymbolIndex<SymbolOccurrence>()
+    private var occurrenceIndex = SymbolIndex<SymbolOccurrence>()
 
     /**
      * Get semantic document for a URI
@@ -158,13 +159,15 @@ class GroovySemanticDB {
         getDocument(uri)?.occurrences?.find { it.range.contains(line, column) }
 
     /**
-     * Clear all documents
+     * Drops every document by swapping in an empty graph under the write lock: O(1) whatever the size, and a reader
+     * holding the read lock sees either the old graph or the new one, never a mix (#1342). The old graph is left
+     * to the garbage collector.
      */
     fun clear() {
         lock.write {
-            documents.clear()
-            symbolIndex.clear()
-            occurrenceIndex.clear()
+            documents = HashMap()
+            symbolIndex = SymbolIndex()
+            occurrenceIndex = SymbolIndex()
         }
     }
 
@@ -219,8 +222,6 @@ private class SymbolIndex<T> {
 
     fun all(id: String): List<Pair<URI, T>> =
         bySymbol[id]?.flatMap { (uri, entries) -> entries.map { uri to it } } ?: emptyList()
-
-    fun clear() = bySymbol.clear()
 }
 
 /**

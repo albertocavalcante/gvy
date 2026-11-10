@@ -66,9 +66,10 @@ class SymbolIndexingService(
     }
 
     private val logger = KotlinLogging.logger {}
-    private val entries = ConcurrentHashMap<URI, Prepared>()
 
-    // Every change to [entries] goes through [classNames] so the two stay consistent.
+    // Every change to [entries] goes through [classNames] so the two stay consistent; [clear] swaps it under the same
+    // lock that every write holds, so a write never lands in the map a clear just replaced (#1342).
+    @Volatile private var entries = ConcurrentHashMap<URI, Prepared>()
     private val classNames = WorkspaceClassNames()
 
     /** Recorded class-name keys, for tests that prove removals leave nothing behind. */
@@ -221,7 +222,7 @@ class SymbolIndexingService(
      */
     fun clear() {
         unparseable.clear()
-        classNames.clear { entries.clear() }
+        classNames.clear { entries = ConcurrentHashMap() }
     }
 
     // Private helper methods

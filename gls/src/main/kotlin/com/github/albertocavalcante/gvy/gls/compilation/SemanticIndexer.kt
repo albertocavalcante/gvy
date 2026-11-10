@@ -12,6 +12,9 @@ import java.util.HexFormat
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 /** SHA-256 of [content], the key that says two compiles saw the same text. */
 internal fun contentHash(content: String): String =
@@ -62,23 +65,35 @@ class SemanticIndexer(
     }
 
     private val logger = KotlinLogging.logger {}
-    private val entries = ConcurrentHashMap<URI, State>()
+
+    /*
+     * Replaced, never emptied, by [clear] (#1342). Every write re-reads it under [swap]'s read lock, which [clear]
+     * holds for writing while it swaps both this map and the index's graph: a write that began before the swap
+     * finishes on the old map and old graph first, and a later one sees only the new pair. Reads stay lock-free;
+     * they see the old or the new map, and a pre-clear publication can never match an entry of the new one.
+     */
+    @Volatile private var entries = ConcurrentHashMap<URI, State>()
+    private val swap = ReentrantReadWriteLock()
     private val tickets = AtomicLong()
 
     /** Acquire before reading/enqueueing source. Removal invalidates every outstanding publication. */
     internal fun begin(uri: URI): Publication {
-        val state = checkNotNull(
-            entries.compute(uri) { _, existing ->
-                (existing ?: State()).also { it.publications++ }
-            },
-        )
+        val state = swap.read {
+            checkNotNull(
+                entries.compute(uri) { _, existing ->
+                    (existing ?: State()).also { it.publications++ }
+                },
+            )
+        }
         return Publication(uri, state, tickets.incrementAndGet()) {
-            entries.computeIfPresent(uri) { _, current ->
-                if (current === state) {
-                    current.publications--
-                    current.takeUnless { it.publications == 0 && it.entry == null }
-                } else {
-                    current
+            swap.read {
+                entries.computeIfPresent(uri) { _, current ->
+                    if (current === state) {
+                        current.publications--
+                        current.takeUnless { it.publications == 0 && it.entry == null }
+                    } else {
+                        current
+                    }
                 }
             }
         }
@@ -111,12 +126,15 @@ class SemanticIndexer(
         val hash = contentHash(content)
         if (!replaces(entries[uri], publication, hash, phase, fromBuffer)) return
         val built = buildOrNull(ast, uri)
-        entries.computeIfPresent(uri) { _, state ->
-            if (replaces(state, publication, hash, phase, fromBuffer)) {
-                state.entry = Entry(hash, phase).takeIf { store(uri, built, content) }
-                state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+        // Stores into the index while holding the read lock, so a clear cannot swap the graph mid-store
+        swap.read {
+            entries.computeIfPresent(uri) { _, state ->
+                if (replaces(state, publication, hash, phase, fromBuffer)) {
+                    state.entry = Entry(hash, phase).takeIf { store(uri, built, content) }
+                    state.highestTicket = maxOf(state.highestTicket, publication.ticket)
+                }
+                state
             }
-            state
         }
     }
 
@@ -187,24 +205,35 @@ class SemanticIndexer(
      * read the old text can then no longer publish after that refresh.
      */
     internal fun retirePublications(uri: URI) {
-        entries.computeIfPresent(uri) { _, state ->
-            state.entry?.let { kept ->
-                State().also {
-                    it.entry = kept
-                    it.highestTicket = state.highestTicket
+        swap.read {
+            entries.computeIfPresent(uri) { _, state ->
+                state.entry?.let { kept ->
+                    State().also {
+                        it.entry = kept
+                        it.highestTicket = state.highestTicket
+                    }
                 }
             }
         }
     }
 
     fun remove(uri: URI) {
-        entries.compute(uri) { _, _ ->
-            index.removeDocument(uri)
-            null
+        swap.read {
+            entries.compute(uri) { _, _ ->
+                index.removeDocument(uri)
+                null
+            }
         }
     }
 
+    /**
+     * Drops every document and retires every outstanding publication in O(1): swaps in an empty map and an
+     * empty index graph together under the write lock, after any in-flight write has finished (#1342).
+     */
     fun clear() {
-        entries.keys.toList().forEach(::remove)
+        swap.write {
+            entries = ConcurrentHashMap()
+            index.clear()
+        }
     }
 }
