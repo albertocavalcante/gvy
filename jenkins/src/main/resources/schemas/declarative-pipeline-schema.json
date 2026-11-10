@@ -48,6 +48,7 @@
       "name": "stages",
       "allowedIn": [
         "pipeline",
+        "stage",
         "parallel",
         "matrix"
       ],
@@ -59,8 +60,7 @@
       "name": "stage",
       "allowedIn": [
         "stages",
-        "parallel",
-        "matrix"
+        "parallel"
       ],
       "innerInstructions": [
         "steps",
@@ -71,7 +71,8 @@
         "when",
         "post",
         "parallel",
-        "matrix"
+        "matrix",
+        "stages"
       ]
     },
     {
@@ -103,10 +104,15 @@
       ],
       "innerInstructions": [
         "axes",
-        "stage"
-      ],
-      "completionCategories": [
-        "step"
+        "excludes",
+        "stages",
+        "agent",
+        "environment",
+        "input",
+        "options",
+        "post",
+        "tools",
+        "when"
       ]
     },
     {
