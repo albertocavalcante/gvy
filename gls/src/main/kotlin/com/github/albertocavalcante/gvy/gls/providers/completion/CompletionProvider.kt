@@ -25,13 +25,14 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.Declarative
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.native.SymbolExtractor
+import com.github.albertocavalcante.nativeapi.ParserDiagnostic
+import com.github.albertocavalcante.nativeapi.ParserPosition
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
-import org.codehaus.groovy.ast.expr.ConstantExpression
-import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.Position
@@ -110,9 +111,9 @@ object CompletionProvider {
             // If simple insertion failed and it was a clean insertion, try adding 'def'.
             // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
             // but "class Foo { BrazilWorldCup2026 }" is not.
-            // Skip the retry when the dummy already parsed as an expression: an unrelated error elsewhere
-            // (an unresolved type, say) fails both copies alike, and `def` cannot describe the cursor better.
-            if (isClean && !result1.isSuccessful && !parsedAsExpression(astModel1)) {
+            // Retry only when an error touches the inserted dummy (a bare name in a class body or static
+            // scope). An error elsewhere, such as an unresolved type, fails both copies alike.
+            if (isClean && !result1.isSuccessful && dummyCausedError(result1.diagnostics, line, character)) {
                 context.ensureActive()
                 val content2 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)
@@ -179,14 +180,17 @@ object CompletionProvider {
         }
     }
 
-    /** Whether the inserted dummy identifier survived parsing as a variable, property or method name. */
-    private fun parsedAsExpression(astModel: GroovyAstModel?): Boolean = astModel?.getAllNodes().orEmpty().any {
-        when (it) {
-            is VariableExpression -> it.name.contains(DUMMY_IDENTIFIER)
-            is ConstantExpression -> (it.value as? String)?.contains(DUMMY_IDENTIFIER) == true
-            else -> false
+    /** Whether an error diagnostic overlaps the dummy inserted at [line]:[character] (0-based). */
+    private fun dummyCausedError(diagnostics: List<ParserDiagnostic>, line: Int, character: Int): Boolean {
+        val start = ParserPosition(line, character)
+        val end = ParserPosition(line, character + DUMMY_IDENTIFIER.length)
+        return diagnostics.any {
+            it.severity == ParserSeverity.ERROR && !it.range.end.isBefore(start) && !end.isBefore(it.range.start)
         }
     }
+
+    private fun ParserPosition.isBefore(other: ParserPosition): Boolean =
+        line < other.line || (line == other.line && character < other.character)
 
     /**
      * Provides best-effort completions when compilation or AST extraction fails.

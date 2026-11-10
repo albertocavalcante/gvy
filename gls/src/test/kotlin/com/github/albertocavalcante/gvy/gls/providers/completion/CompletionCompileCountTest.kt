@@ -33,13 +33,30 @@ class CompletionCompileCountTest {
     }
 
     @Test
-    fun `a bare class body still retries with def`(): Unit = runBlocking {
-        val source = "class Greeter {\n    \n}"
+    fun `a bare class body retries with def and completes from that AST`(): Unit = runBlocking {
+        val source = "class Other {}\nclass Greeter {\n    \n}"
 
-        val items = complete(source, line = 1, character = 4)
+        val items = complete(source, line = 2, character = 4)
 
-        assertTrue(items.isNotEmpty(), "class-body completion keeps working")
-        coVerify(atLeast = 2) { compilation.compileTransient(uri, any(), any()) }
+        assertTrue(
+            items.any { it.label == "Other" && it.kind == CompletionItemKind.Class },
+            "only the def copy yields an AST here: ${items.map { it.label }}",
+        )
+        coVerify(exactly = 1) { compilation.compileTransient(uri, match { it.contains(DEF_DUMMY) }, any()) }
+    }
+
+    @Test
+    fun `a dummy rejected in a static scope retries with def`(): Unit = runBlocking {
+        // Groovy reports the bare name itself ("Apparent variable ... in a static scope").
+        val source = "class A { static void m() {  } }"
+
+        complete(source, line = 0, character = source.indexOf("{  }") + 2)
+
+        coVerify(exactly = 1) { compilation.compileTransient(uri, match { it.contains(DEF_DUMMY) }, any()) }
+    }
+
+    private companion object {
+        const val DEF_DUMMY = "def ${CompletionProvider.DUMMY_IDENTIFIER}"
     }
 
     private suspend fun complete(
