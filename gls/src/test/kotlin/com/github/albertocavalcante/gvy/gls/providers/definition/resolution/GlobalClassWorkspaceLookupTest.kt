@@ -49,12 +49,42 @@ class GlobalClassWorkspaceLookupTest {
     }
 
     @Test
-    fun `files are tried in URI order as before`(): Unit = runBlocking {
+    fun `a qualified reference resolves to its own class, not the first same-name class`(): Unit = runBlocking {
+        val first = file("a.groovy", "package a\nclass Shared {}")
+        val second = file("b.groovy", "package b\nclass Shared {}")
+        listOf(second, first).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(second to "b.Shared", resolve("b.Shared"))
+        assertEquals(first to "a.Shared", resolve("a.Shared"))
+    }
+
+    @Test
+    fun `without a full-name match the simple name decides in URI order as before`(): Unit = runBlocking {
         val second = file("b.groovy", "package b\nclass Shared {}")
         val first = file("a.groovy", "package a\nclass Shared {}")
         listOf(second, first).forEach { compilation.symbolIndexingService.indexFile(it) }
 
-        assertEquals(first to "a.Shared", resolve("Shared"))
+        assertEquals(first to "a.Shared", resolve("c.Shared"))
+    }
+
+    @Test
+    fun `an unqualified reference prefers the default-package class it names`(): Unit = runBlocking {
+        // A bare name is the full name of a default-package class.
+        val packaged = file("a.groovy", "package a\nclass Shared {}")
+        val bare = file("z.groovy", "class Shared {}")
+        listOf(packaged, bare).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(bare to "Shared", resolve("Shared"))
+        assertEquals(packaged to "a.Shared", resolve("a.Shared"))
+    }
+
+    @Test
+    fun `a qualified nested class resolves to its own package`(): Unit = runBlocking {
+        val first = file("a.groovy", "package a\nclass Outer { static class Inner {} }")
+        val second = file("b.groovy", "package b\nclass Outer { static class Inner {} }")
+        listOf(first, second).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(second to "b.Outer\$Inner", resolve("b.Outer\$Inner"))
     }
 
     @Test

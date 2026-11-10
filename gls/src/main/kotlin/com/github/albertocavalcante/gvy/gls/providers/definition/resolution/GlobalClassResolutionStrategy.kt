@@ -30,12 +30,12 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         // Extract simple name from potentially fully-qualified name for matching
         val simpleClassName = className.substringAfterLast('.')
 
-        // Workspace classes with this simple name, in file order, from the indexed lookup rather than a scan
-        // of every file (#1312). As before, the simple name decides the match (a fully qualified name's own
-        // class always shares it) and each file offers its first such class.
-        val candidates = compilationService.symbolIndexingService
-            .findClasses(ClassNameQuery.Exact(simpleClassName))
-            .distinctBy { it.uri }
+        // Workspace classes with this simple name, in file order (#1312). A class whose fully qualified name
+        // is exactly the reference wins (#1336): `b.Shared` must not open `a.Shared`. Without such a class, the
+        // simple name decides and each file offers its first match, as before.
+        val matches = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleClassName))
+        val candidates = matches.filter { it.fullyQualifiedName == className }
+            .ifEmpty { matches.distinctBy { it.uri } }
         for (matchingSymbol in candidates) {
             val uri = matchingSymbol.uri
             // Found it in the index, now load the actual ClassNode from AST
