@@ -190,8 +190,9 @@ class SpockTableProviderTest {
             extends: String = "extends Specification",
             prefix: String = "",
             suffix: String = "",
+            brokenBody: String = "{ void m( }",
         ): Path = src.resolve("$name.groovy").also {
-            val body = if (broken) "{ void m( }" else "{}"
+            val body = if (broken) brokenBody else "{}"
             Files.writeString(it, "import spock.lang.*\n${prefix}abstract class $name $extends $body\n$suffix")
         }
 
@@ -404,11 +405,14 @@ class SpockTableProviderTest {
 
     @Test
     fun `a class added above the base that shadows Specification is noticed`(): Unit = runBlocking {
+        // Helper is already above BaseSpec, so adding Specification beside it leaves BaseSpec's own header
+        // segment unchanged: only the declared-name list can tell the files apart.
         val fixture = BrokenBaseFixture()
+        fixture.writeBase("BaseSpec", prefix = "class Helper {}\n")
         fixture.edit(fixture.text)
         assertTrue(fixture.hasAction(), "clean compile records the verdict")
 
-        fixture.writeBase("BaseSpec", broken = true, prefix = "class Specification {}\n")
+        fixture.writeBase("BaseSpec", broken = true, prefix = "class Helper {}\nclass Specification {}\n")
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "a new class named Specification in the base's file changes its identity")
@@ -424,6 +428,19 @@ class SpockTableProviderTest {
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "declared names are collected from the whole file, not just before the base")
+    }
+
+    @Test
+    fun `a lex error after the base header still recalls the verdict`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        // A half-typed string in the body: the file neither compiles nor lexes past that point.
+        fixture.writeBase("BaseSpec", broken = true, brokenBody = "{ void m() { def s = \"half typed\n } }")
+        fixture.edit()
+
+        assertTrue(fixture.hasAction(), "the base's identity was read before the lex error: ${diagnosis(fixture)}")
     }
 
     @Test

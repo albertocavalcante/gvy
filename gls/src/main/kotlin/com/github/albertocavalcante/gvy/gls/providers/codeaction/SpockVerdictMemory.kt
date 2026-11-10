@@ -376,13 +376,19 @@ internal class SpockVerdictMemory {
         /**
          * Lexes the whole file: the target's identity up to its body, then only the declared class names, so
          * a name-shadowing class anywhere in the file counts but bodies never do.
+         *
+         * A lex error before the end of the target's header gives no prelude, which denies reuse. A lex error
+         * after it (a half-typed string in a body, say) keeps the names gathered so far: the text past that
+         * point is not valid Groovy, so no compile can bind a name to a class declared there until the file
+         * lexes again, and that compile records a fresh verdict. Local classes in bodies and `[class: …]`
+         * map keys are collected as declared names too, which can only make an edit deny reuse.
          */
         private fun scanPrelude(lexer: GroovyLangLexer, path: List<String>): Prelude? {
             val scanner = PreludeScanner(path)
             var identity: String? = null
             var extendsName: String? = null
-            var token = lexer.nextToken()
-            while (token.type != Token.EOF) {
+            var token = nextOrNull(lexer)
+            while (token != null && token.type != Token.EOF) {
                 if (token.channel == Token.DEFAULT_CHANNEL && token.type != GroovyLangLexer.NL) {
                     when {
                         identity != null -> scanner.collectName(token)
@@ -392,11 +398,16 @@ internal class SpockVerdictMemory {
                         }
                     }
                 }
-                token = lexer.nextToken()
+                token = nextOrNull(lexer)
             }
             val names = scanner.declaredNames.sorted().joinToString(",")
             return identity?.let { Prelude(sha256("$it | classes: $names"), extendsName) }
         }
+
+        /** The next token, or null when the text stops lexing; real errors other than syntax errors propagate. */
+        private fun nextOrNull(lexer: GroovyLangLexer): Token? = runCatching { lexer.nextToken() }
+            .onFailure { failure -> if (failure is Error && failure !is GroovySyntaxError) throw failure }
+            .getOrNull()
 
         private fun sha256(text: String): String =
             MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
