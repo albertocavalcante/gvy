@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
@@ -19,6 +20,7 @@ import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.FileChangeType
 import org.eclipse.lsp4j.FileEvent
+import org.eclipse.lsp4j.WorkspaceSymbolParams
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -103,7 +105,7 @@ class WorkspaceSourceRescanTest {
 
         notify(*files.map { it to FileChangeType.Created }.toTypedArray())
 
-        verify(exactly = 1) { compilation.clearCaches() }
+        verify(exactly = 1) { compilation.clearCompileCaches() }
         assertTrue(compilation.workspaceManager.getWorkspaceSources().containsAll(files))
     }
 
@@ -207,7 +209,7 @@ class WorkspaceSourceRescanTest {
 
         assertTrue(sources().containsAll(nested), "${sources()}")
         assertEquals(2, sources().size, "${sources()}")
-        verify(exactly = 1) { compilation.clearCaches() }
+        verify(exactly = 1) { compilation.clearCompileCaches() }
     }
 
     @Test
@@ -253,7 +255,7 @@ class WorkspaceSourceRescanTest {
         notify(jenkinsfile to FileChangeType.Deleted)
 
         assertEquals(before, sources(), "nothing lives under a file, so nothing leaves")
-        verify(exactly = 0) { compilation.clearCaches() }
+        verify(exactly = 0) { compilation.clearCompileCaches() }
     }
 
     @Test
@@ -267,7 +269,7 @@ class WorkspaceSourceRescanTest {
         notify(src.resolve("old") to FileChangeType.Deleted, moved to FileChangeType.Created)
 
         assertEquals(listOf(moved.resolve("A.groovy")), sources())
-        verify(exactly = 1) { compilation.clearCaches() }
+        verify(exactly = 1) { compilation.clearCompileCaches() }
     }
 
     @Test
@@ -294,6 +296,58 @@ class WorkspaceSourceRescanTest {
         notify(src.resolve("pkg") to FileChangeType.Created)
 
         assertTrue(indexed(found), "a moved-in file must reach workspace symbols, not only the compile")
+    }
+
+    private fun classesNamed(name: String) =
+        compilation.symbolIndexingService.findClasses(ClassNameQuery.Exact(name)).map { it.name }
+
+    private fun workspaceSymbols(query: String) =
+        workspace.symbol(WorkspaceSymbolParams(query)).get().left.map { it.name }
+
+    @Test
+    fun `a created source keeps every closed file already indexed`(): Unit = runBlocking {
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val alpha = write(src.resolve("Alpha.groovy"), "class Alpha {}\n")
+        val beta = write(src.resolve("Beta.groovy"), "class Beta {}\n")
+        src()
+        compilation.indexAllWorkspaceSources(listOf(alpha.toUri(), beta.toUri()))
+        compilation.getWorkspaceCompiler().compileWorkspace()
+        val semantic = assertNotNull(compilation.getWorkspaceSymbolIndex())
+        assertEquals(listOf("Alpha"), classesNamed("Alpha"), "precondition")
+        assertNotNull(semantic.getDocument(beta.toUri()), "precondition")
+
+        val gamma = write(src.resolve("Gamma.groovy"), "class Gamma {}\n")
+        notify(gamma to FileChangeType.Created)
+
+        assertTrue(sources().contains(gamma), "precondition: the source list changed")
+        assertEquals(listOf("Alpha"), classesNamed("Alpha"), "a closed file left the class lookup")
+        assertEquals(listOf("Beta"), classesNamed("Beta"), "a closed file left the class lookup")
+        assertEquals(listOf("Gamma"), classesNamed("Gamma"), "the created file is indexed")
+        assertTrue(workspaceSymbols("Alpha").contains("Alpha"), "workspace symbols: ${workspaceSymbols("Alpha")}")
+        assertTrue(workspaceSymbols("Beta").contains("Beta"), "workspace symbols: ${workspaceSymbols("Beta")}")
+        assertNotNull(semantic.getDocument(alpha.toUri()), "a closed file left the semantic index")
+        assertNotNull(semantic.getDocument(beta.toUri()), "a closed file left the semantic index")
+    }
+
+    @Test
+    fun `a source created while open as a buffer keeps every closed file already indexed`(): Unit = runBlocking {
+        // The editor sequence: a new file is opened unsaved, then saved, so its Created event finds a buffer.
+        val src = Files.createDirectories(tempDir.resolve("src"))
+        val outers = write(src.resolve("Outers.groovy"), "class Outer1 {}\nclass Outer2 {}\n")
+        src()
+        compilation.indexAllWorkspaceSources(listOf(outers.toUri()))
+        assertEquals(listOf("Outer2"), workspaceSymbols("Outer2"), "precondition")
+        val fresh = src.resolve("Fresh.groovy")
+        val text = "class Fresh { String hi() { 'hi' } }\n"
+        documents.put(fresh.toUri(), text)
+        compilation.compile(fresh.toUri(), text)
+
+        write(fresh, text)
+        notify(fresh to FileChangeType.Created)
+
+        assertTrue(sources().contains(fresh), "precondition: the source list changed")
+        assertEquals(listOf("Outer2"), workspaceSymbols("Outer2"), "the closed file left workspace symbols")
+        assertEquals(listOf("Outer2"), classesNamed("Outer2"), "the closed file left the class lookup")
     }
 
     @Test

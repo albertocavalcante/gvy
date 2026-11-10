@@ -54,6 +54,8 @@ class SemanticIndexer(
         val identity: Any,
         /** Order in which publications began (callers read or capture their source around [begin]). */
         val ticket: Long,
+        /** The [retireAllPublications] generation it began in; any later one makes it stale. */
+        val generation: Long,
         private val finish: () -> Unit,
     ) : AutoCloseable {
         private val closed = AtomicBoolean()
@@ -76,16 +78,20 @@ class SemanticIndexer(
     private val swap = ReentrantReadWriteLock()
     private val tickets = AtomicLong()
 
+    // Read under [swap]'s read lock, bumped under its write lock: see [retireAllPublications]
+    @Volatile private var generation = 0L
+
     /** Acquire before reading/enqueueing source. Removal invalidates every outstanding publication. */
     internal fun begin(uri: URI): Publication {
-        val state = swap.read {
-            checkNotNull(
+        val (state, began) = swap.read {
+            val state = checkNotNull(
                 entries.compute(uri) { _, existing ->
                     (existing ?: State()).also { it.publications++ }
                 },
             )
+            state to generation
         }
-        return Publication(uri, state, tickets.incrementAndGet()) {
+        return Publication(uri, state, tickets.incrementAndGet(), began) {
             swap.read {
                 entries.computeIfPresent(uri) { _, current ->
                     if (current === state) {
@@ -152,8 +158,8 @@ class SemanticIndexer(
         } else {
             publication.ticket > (state?.highestTicket ?: 0L)
         }
-        return state === publication.identity && !publication.isClosed && (fromBuffer || !isOpen(publication.uri)) &&
-            supersedes
+        return state === publication.identity && publication.generation == generation && !publication.isClosed &&
+            (fromBuffer || !isOpen(publication.uri)) && supersedes
     }
 
     /**
@@ -215,6 +221,15 @@ class SemanticIndexer(
                 }
             }
         }
+    }
+
+    /**
+     * Makes every outstanding publication stale while keeping every stored document, in O(1) (#1342): the inputs a
+     * compile reads besides its own text (the source list, a re-stamped classpath entry) changed, so a compile that
+     * read the old ones must not publish, but no file's document is dropped. Waits for in-flight writes, as [clear].
+     */
+    internal fun retireAllPublications() {
+        swap.write { generation++ }
     }
 
     fun remove(uri: URI) {

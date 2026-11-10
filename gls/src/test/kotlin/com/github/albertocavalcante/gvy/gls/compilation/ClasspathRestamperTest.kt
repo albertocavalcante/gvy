@@ -151,6 +151,33 @@ class ClasspathRestamperTest {
             .snapshots.single().artifacts.single().stamp
 
     @Test
+    fun `a re-stamp keeps every closed file already indexed`(): Unit = runBlocking {
+        val classes = Files.createDirectories(root.resolve("build/classes"))
+        val type = write(classes.resolve("p/B.class"), 3, 1_000_000)
+        val alpha = main.resolve("Alpha.groovy").also { Files.writeString(it, "class Alpha {}\n") }
+        val beta = main.resolve("Beta.groovy").also { Files.writeString(it, "class Beta {}\n") }
+        observe(evidence(classes))
+        compilation.indexAllWorkspaceSources(listOf(alpha.toUri(), beta.toUri()))
+        compilation.getWorkspaceCompiler().compileWorkspace()
+        val semantic = checkNotNull(compilation.getWorkspaceSymbolIndex())
+        val named = { name: String ->
+            compilation.symbolIndexingService.findClasses(ClassNameQuery.Exact(name)).map { it.name }
+        }
+        assertEquals(listOf("Alpha"), named("Alpha"), "precondition")
+        assertTrue(semantic.getDocument(beta.toUri()) != null, "precondition")
+        val restamper = restamper()
+
+        write(type, 5, 2_000_000)
+        restamper.onWatchedPaths(listOf(type))
+
+        assertTrue(restamper.drain(), "precondition: the rewritten class was noticed")
+        assertEquals(listOf("Alpha"), named("Alpha"), "a closed file left the class lookup")
+        assertEquals(listOf("Beta"), named("Beta"), "a closed file left the class lookup")
+        assertTrue(semantic.getDocument(alpha.toUri()) != null, "a closed file left the semantic index")
+        assertTrue(semantic.getDocument(beta.toUri()) != null, "a closed file left the semantic index")
+    }
+
+    @Test
     fun `a tick that finds nothing changed keeps the model`(): Unit = runBlocking {
         observe(evidence(write(root.resolve("lib/dep.jar"), 3, 1_000_000)))
         val model = compilation.workspaceManager.current()
