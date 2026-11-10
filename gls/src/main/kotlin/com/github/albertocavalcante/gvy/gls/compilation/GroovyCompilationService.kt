@@ -250,21 +250,23 @@ class GroovyCompilationService internal constructor(
      * cancelled. Nothing new can be published between the separate removals.
      *
      * Under the fence this only swaps references, so it is O(1) whatever the workspace size (#1342). The retired
-     * pending jobs are cancelled after the fence is released; one that is still running when this returns is only
-     * wasted work, because its ticket belongs to the retired epoch and can never commit.
+     * pending jobs' waiters are woken and the jobs cancelled once no lock is held (#1429); one that is still
+     * running when this returns is only wasted work, because its ticket belongs to the retired epoch.
      */
-    fun clearCaches() = semanticSnapshotGuard.invalidate {
+    fun clearCaches() {
         var retired: Map<URI, PendingCompilation> = emptyMap()
-        // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
-        ownership.retireAll {
-            retired = cacheService.detach()
-            symbolIndexer.clear()
-            semanticIndexer.clear()
+        semanticSnapshotGuard.invalidate {
+            // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
+            ownership.retireAll {
+                retired = cacheService.detach()
+                symbolIndexer.clear()
+                semanticIndexer.clear()
+            }
+            invalidateClassLoader()
         }
-        // Cancelled outside the fence: their cancellation handlers may take tickets. A retired job still running
-        // after this returns is only wasted work, because its old-epoch ticket can never commit.
+        // Woken and cancelled once no lock is held and the class loader is gone: a waiter may resume inline and
+        // re-resolve at once (#1429). A retired job still running is only wasted work: its ticket cannot commit.
         cacheService.cancelDetached(retired)
-        invalidateClassLoader()
     }
 
     /**
@@ -284,12 +286,17 @@ class GroovyCompilationService internal constructor(
     }
 
     /** Retires [uri]'s artifacts, as [clearCaches] does for every file. */
-    fun invalidateCache(uri: URI) = semanticSnapshotGuard.invalidate {
-        ownership.retire(uri) {
-            cacheService.invalidate(uri)
-            symbolIndexer.invalidate(uri)
-            semanticIndexer.remove(uri)
+    fun invalidateCache(uri: URI) {
+        var retired: PendingCompilation? = null
+        semanticSnapshotGuard.invalidate {
+            ownership.retire(uri) {
+                retired = cacheService.detach(uri)
+                symbolIndexer.invalidate(uri)
+                semanticIndexer.remove(uri)
+            }
         }
+        // Woken once no lock is held: an inline waiter re-resolving inside the cleanup would lose its facts (#1429)
+        retired?.retire()
         logger.debug { "Invalidated cache for: $uri" }
     }
 
@@ -318,12 +325,16 @@ class GroovyCompilationService internal constructor(
             }
         }
         val fingerprint = workspaceManager.fingerprintFor(uri)
-        return ownership.retireClosed(uri, isOpen) {
+        var retired: PendingCompilation? = null
+        val ticket = ownership.retireClosed(uri, isOpen) {
             if (disk == null || cacheService.getCachedWithContent(uri, fingerprint)?.first != disk) {
-                cacheService.invalidate(uri)
+                retired = cacheService.detach(uri)
             }
             semanticIndexer.retirePublications(uri)
         }
+        // Woken after the fence, as [invalidateCache] does (#1429)
+        retired?.retire()
+        return ticket
     }
 
     /** Stops background work owned by the compilation service (server shutdown). */

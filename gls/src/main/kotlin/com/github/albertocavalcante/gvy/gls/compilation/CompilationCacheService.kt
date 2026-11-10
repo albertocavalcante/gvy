@@ -145,9 +145,17 @@ class CompilationCacheService(
      * @param uri The URI to invalidate
      */
     fun invalidate(uri: URI) {
+        detach(uri)?.retire()
+    }
+
+    /**
+     * Drops [uri]'s cached parse and its pending job, returning that job for the caller to [PendingCompilation.retire]
+     * once it holds no lock: a waiter can resume inline and must not re-resolve inside a fence's cleanup (#1429).
+     * Removed before its waiters wake, so none can select it again.
+     */
+    internal fun detach(uri: URI): PendingCompilation? {
         cache.invalidate(uri)
-        // Removed before its waiters wake, so none can select it again (#1429)
-        compilationJobs.remove(uri)?.retire()
+        return compilationJobs.remove(uri)
     }
 
     /**
@@ -168,7 +176,7 @@ class CompilationCacheService(
         return detached
     }
 
-    /** Wakes the waiters of the jobs [detach] returned, then cancels them; call it outside the fence (#1429). */
+    /** Wakes the waiters of the jobs [detach] returned, then cancels them; call it holding no lock (#1429). */
     internal fun cancelDetached(detached: Map<URI, PendingCompilation>) = detached.values.forEach { it.retire() }
 
     /**
