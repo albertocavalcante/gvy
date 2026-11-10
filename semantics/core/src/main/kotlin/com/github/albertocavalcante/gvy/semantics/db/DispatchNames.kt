@@ -89,7 +89,9 @@ internal object DispatchNames {
 
     private val accessorPrefix = Regex("^(get|set|is)(\\p{Lu}.*)$")
 
-    private val traitFieldHelper = Regex("^.*__(\\w+)\\$(get|set)$")
+    // The owner part is the trait's name with dots as `_`, so the first `__` ends it; the field may contain `__`
+    // or non-ASCII letters (`a__b`, `ação`).
+    private val traitFieldHelper = Regex("^.*?__([^$]+)\\$(get|set)$")
 
     /**
      * The trait field behind the helper the trait transform calls for it (`T__cnt$get`, `T__cnt$set`), with how
