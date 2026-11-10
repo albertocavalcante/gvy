@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageSession
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
@@ -10,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.services.ClasspathService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.worker.InProcessWorkerSession
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
@@ -22,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.codehaus.groovy.control.Phases
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 
 /**
@@ -250,10 +253,25 @@ class GroovyCompilationService(
      * are retired. Symbol and semantic facts are kept until refreshed from disk under the returned ticket.
      * Returns null, retiring nothing, when a buffer is open again.
      */
-    fun onClosedSourceChanged(uri: URI): ArtifactOwnership.Ticket? = ownership.retireClosed(uri, isOpen) {
-        cacheService.invalidate(uri)
-        semanticIndexer.retirePublications(uri)
+    fun onClosedSourceChanged(uri: URI): ArtifactOwnership.Ticket? {
+        // Read outside the fence. A buffer closed unchanged keeps its parse: it already describes the file.
+        val disk = UriPathConverter.toPath(uri)?.let { path ->
+            runCatching { Files.readString(path) }.getOrElse { error ->
+                rethrowIfCancellationOrError(error)
+                null
+            }
+        }
+        val fingerprint = workspaceManager.getConfigurationFingerprint()
+        return ownership.retireClosed(uri, isOpen) {
+            if (disk == null || cacheService.getCachedWithContent(uri, fingerprint)?.first != disk) {
+                cacheService.invalidate(uri)
+            }
+            semanticIndexer.retirePublications(uri)
+        }
     }
+
+    /** Stops background work owned by the compilation service (server shutdown). */
+    fun shutdown() = orchestrator.shutdown()
 
     /**
      * Re-derives the semantic document of [uri] from disk: after its buffer was closed, or after the file

@@ -15,6 +15,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -118,6 +119,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     private fun originOf(uri: URI): Origin {
         val open = documentProvider?.getSnapshot(uri) != null
         return if (open) Origin.BUFFER else Origin.UNMANAGED
+    }
+
+    /** Stops compiles started for waiters (server shutdown); later waiters fail fast. */
+    fun shutdown() {
+        waiterScope.cancel()
     }
 
     /**

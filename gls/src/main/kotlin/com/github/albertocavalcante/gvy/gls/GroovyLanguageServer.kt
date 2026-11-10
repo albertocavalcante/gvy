@@ -318,6 +318,7 @@ class GroovyLanguageServer(
                 poolShutdown.cancel(true)
             }
 
+            compilationService.shutdown()
             coroutineScope.cancel()
         } catch (e: CancellationException) {
             logger.debug(e) { "Coroutine scope cancelled during shutdown" }

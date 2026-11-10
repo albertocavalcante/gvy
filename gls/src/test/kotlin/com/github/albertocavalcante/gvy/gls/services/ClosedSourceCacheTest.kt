@@ -6,6 +6,7 @@ import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ModuleNode
@@ -20,11 +21,17 @@ import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /**
  * Content-less readers (`getAst`, `getParseResult`, `ensureCompiled`) have no text to compare a cache entry
@@ -86,8 +93,63 @@ class ClosedSourceCacheTest {
         assertEquals("class After {}", compilation.ensureCompiled(uri)?.sourceText)
     }
 
+    @Test
+    fun `closing an unchanged buffer keeps its parse for navigation`(): Unit = runBlocking {
+        val file = tempDir.resolve("Same.groovy")
+        Files.writeString(file, "class Same {}")
+        val uri = file.toUri()
+        textDocuments.didOpen(open(uri.toString(), "class Same {}"))
+        compilation.ensureCompiled(uri)
+        val parsed = assertNotNull(compilation.getParseResult(uri))
+
+        textDocuments.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(uri.toString())))
+
+        assertSame(parsed, compilation.getParseResult(uri), "the buffer matched the disk; no reparse is needed")
+    }
+
+    @Test
+    fun `a close cleanup that runs after a reopen keeps the reopened buffer's facts`(): Unit = runBlocking {
+        // The service's background work runs on one thread that is held until the reopen has compiled.
+        val held = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        val gated = CoroutineScope(SupervisorJob() + executor.asCoroutineDispatcher())
+        try {
+            executor.execute { held.await(WAIT_SECONDS, TimeUnit.SECONDS) }
+            val service = GroovyTextDocumentService(
+                gated,
+                compilation,
+                GroovyTextDocumentServiceOptions(
+                    documentProvider = documents,
+                    serverConfiguration = parserOnlyConfiguration(),
+                    client = { mockk<LanguageClient>(relaxed = true) },
+                ),
+            )
+            val uri = URI.create("untitled:Scratch")
+            service.didOpen(open(uri.toString(), "class Original {}"))
+            compilation.compile(uri, "class Original {}")
+            service.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(uri.toString()))) // cleanup queued
+            service.didOpen(open(uri.toString(), "class Reopened {}"))
+            compilation.compile(uri, "class Reopened {}")
+
+            held.countDown()
+            executor.submit {}.get(WAIT_SECONDS, TimeUnit.SECONDS) // the queued close cleanup has run
+
+            val index = assertNotNull(compilation.getSymbolStorage(uri), "the old close removed the reopened index")
+            assertTrue("Reopened" in index.getSymbols(uri).map { it.name })
+            assertNotNull(compilation.getCompiledSnapshot(uri), "the old close retired the reopened parse")
+        } finally {
+            held.countDown()
+            gated.cancel()
+            executor.shutdownNow()
+        }
+    }
+
     private fun classNames(ast: Any?): List<String> =
         (ast as? ModuleNode)?.classes?.map { it.nameWithoutPackage }.orEmpty()
+
+    private companion object {
+        const val WAIT_SECONDS = 10L
+    }
 
     private fun parserOnlyConfiguration(): ServerConfiguration {
         val base = ServerConfiguration()
