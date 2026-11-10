@@ -24,7 +24,7 @@ internal class CompilationIdentity(
 internal class PendingCompilation(
     val identity: CompilationIdentity,
     val deferred: Deferred<CompilationResult>,
-    val ticket: ArtifactOwnership.Ticket? = null,
+    val ticket: ArtifactOwnership.Ticket,
 ) {
     // A registered LAZY coroutine is shareable before it becomes active.
     val isPending: Boolean get() = !deferred.isCompleted && !deferred.isCancelled

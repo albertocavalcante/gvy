@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.lang.ref.ReferenceQueue
+import java.lang.ref.WeakReference
 import java.net.URI
 
 /**
@@ -22,12 +24,29 @@ internal class BufferOrder(val incarnation: Any, val version: Int, val isCurrent
  * Retirement and its cleanup, and every [commit], run under one monitor: a check and its write cannot
  * interleave with an invalidation, and no ticket can be issued between invalidation's separate removal steps.
  * Keep the work inside short and non-suspending; build indexes before committing them.
+ *
+ * Each file's generation lives in a [FileState] that only its tickets reference strongly; the fence holds it
+ * weakly (#1341). Cleanup therefore depends on the garbage collector: once every ticket of a file is
+ * unreachable its state is collected and dropped at the next fence operation, so the fence holds state only for
+ * files with work in flight, not for every file ever retired. A retirement with no live ticket has nothing to
+ * fence and records nothing. No ABA: a live ticket keeps its own state reachable, and a state created later is a
+ * different object, so an old ticket can never become current again.
  */
 class ArtifactOwnership {
+    /** One file's generation. Referenced strongly only by its tickets, so it lives exactly as long as they do. */
+    internal class FileState {
+        var stamp = 0L
+    }
+
+    private class StateReference(val uri: URI, state: FileState, queue: ReferenceQueue<FileState>) :
+        WeakReference<FileState>(state, queue)
+
     /** Ownership of [uri]'s artifacts as of one generation. */
     class Ticket internal constructor(
         val uri: URI,
         internal val epoch: Long,
+        // Holds the file's state reachable for as long as this ticket is
+        internal val state: FileState,
         internal val stamp: Long,
         internal val order: BufferOrder? = null,
     )
@@ -36,10 +55,16 @@ class ArtifactOwnership {
     private var epoch = 0L
     private var lastStamp = 0L
 
-    // Only files retired since the last global retirement are listed; the others are at stamp 0.
-    private val stamps = HashMap<URI, Long>()
+    // Weak: an entry outlives its file's work only until the collector clears it (see the class KDoc)
+    private var states = HashMap<URI, StateReference>()
+    private val collected = ReferenceQueue<FileState>()
 
-    // The buffer order of each file's last accepted write; dropped with the file's stamp, so a reopen restarts it.
+    /*
+     * The buffer order of each file's last accepted write (#1383). Deliberately not in [FileState]: a ticket
+     * taken after a file's state was collected can still carry an older buffer snapshot captured earlier, so the
+     * order must outlive the tickets. It stays bounded without that: only buffer commits add entries, and a
+     * buffer's close or reopen retires the file, which removes its entry.
+     */
     private val committedOrders = HashMap<URI, BufferOrder>()
     private val logger = KotlinLogging.logger {}
 
@@ -86,7 +111,9 @@ class ArtifactOwnership {
      * Returns the first ticket of the new generation, for follow-up work owned by this retirement.
      */
     internal fun retire(uri: URI, cleanup: () -> Unit = {}): Ticket = synchronized(monitor) {
-        stamps[uri] = ++lastStamp
+        expungeLocked()
+        // Without a live state no ticket for [uri] is outstanding, so there is nothing to fence
+        liveStateLocked(uri)?.let { it.stamp = ++lastStamp }
         committedOrders.remove(uri)
         cleanup()
         ticketFor(uri)
@@ -106,20 +133,47 @@ class ArtifactOwnership {
     internal fun retireAll(cleanup: () -> Unit) {
         synchronized(monitor) {
             epoch++
-            stamps.clear()
+            // Swapped, not cleared: O(1) under the monitor. The old epoch's tickets are stale by epoch already.
+            states = HashMap()
             committedOrders.clear()
             cleanup()
         }
     }
 
     /** Files the fence currently holds generation state for (#1341). */
-    internal val trackedFileCount: Int get() = synchronized(monitor) { stamps.size }
+    internal val trackedFileCount: Int get() = synchronized(monitor) {
+        expungeLocked()
+        states.size
+    }
 
-    /** Test hook: what the garbage collector does once nothing references [uri]'s state (#1341). */
-    internal fun clearUnreferencedStateForTesting(uri: URI) = Unit
+    /**
+     * Test hook: does what the garbage collector does once nothing references [uri]'s state. Only call it when no
+     * ticket for [uri] is reachable, as the collector would.
+     */
+    internal fun clearUnreferencedStateForTesting(uri: URI) {
+        synchronized(monitor) { states[uri] }?.let { reference ->
+            reference.clear()
+            reference.enqueue()
+        }
+    }
 
-    private fun ticketFor(uri: URI, order: BufferOrder? = null) = Ticket(uri, epoch, stamps[uri] ?: 0L, order)
+    private fun ticketFor(uri: URI, order: BufferOrder? = null): Ticket {
+        expungeLocked()
+        val state = liveStateLocked(uri) ?: FileState().also { states[uri] = StateReference(uri, it, collected) }
+        return Ticket(uri, epoch, state, state.stamp, order)
+    }
+
+    private fun liveStateLocked(uri: URI): FileState? = states[uri]?.get()
+
+    /** Drops the entries of collected states: O(collected since the last call), never a scan of the map. */
+    private fun expungeLocked() {
+        while (true) {
+            val cleared = collected.poll() as StateReference? ?: return
+            // A newer state may already hold the slot (or the map was swapped by retireAll): remove only this one
+            states.remove(cleared.uri, cleared)
+        }
+    }
 
     private fun isCurrentLocked(ticket: Ticket): Boolean =
-        ticket.epoch == epoch && ticket.stamp == (stamps[ticket.uri] ?: 0L)
+        ticket.epoch == epoch && liveStateLocked(ticket.uri) === ticket.state && ticket.stamp == ticket.state.stamp
 }

@@ -103,7 +103,11 @@ class SymbolIndexingService(
         astModelProvider: () -> GroovyAstModel?,
     ): SymbolIndex? {
         val hash = contentHash(content)
-        entries[ticket.uri]?.takeIf { it.contentHash == hash }?.let { return it.index }
+        entries[ticket.uri]?.takeIf { it.contentHash == hash }?.let { stored ->
+            // A matching index answers only a current ticket, so a non-null result always means "committed or
+            // already current for this ticket" (#1399)
+            return stored.index.takeIf { ownership.isCurrent(ticket) }
+        }
         val astModel = astModelProvider() ?: return null
         val prepared = build(hash, astModel)
         return prepared.index.takeIf { ownership.commit(ticket) { install(ticket.uri, prepared) } }

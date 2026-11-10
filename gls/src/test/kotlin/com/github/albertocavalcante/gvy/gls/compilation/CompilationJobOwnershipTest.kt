@@ -230,13 +230,14 @@ class CompilationJobOwnershipTest {
         val uri = URI.create("file:///Pending.groovy")
         val identity = CompilationIdentity("class Pending {}", "classpath-v1", null)
         val lazyWork = async(start = CoroutineStart.LAZY) { CompilationResult.failure(emptyList()) }
-        val registered = cache.registerCompilation(uri, identity) { lazyWork }
+        val registered = cache.registerPending(uri, identity, cache.ownership.begin(uri)) { lazyWork }.deferred
         assertFalse(registered.isActive)
 
-        val reused = cache.registerCompilation(
+        val reused = cache.registerPending(
             uri,
             CompilationIdentity("class Pending {}", "classpath-v1", null),
-        ) { error("Compatible pending work must not be constructed twice") }
+            cache.ownership.begin(uri),
+        ) { error("Compatible pending work must not be constructed twice") }.deferred
 
         assertSame(registered, reused)
         reused.await()

@@ -84,17 +84,11 @@ class CompilationCacheService(
      * [create] must only construct work; starting it and external lifecycle callbacks belong outside
      * the map operation. Late handler attachment also cleans up an already finished/cancelled job.
      */
-    internal fun registerCompilation(
-        uri: URI,
-        identity: CompilationIdentity,
-        create: () -> Deferred<CompilationResult>,
-    ): Deferred<CompilationResult> = registerPending(uri, identity, ticket = null, create).deferred
-
-    /** As [registerCompilation], returning the selected job with the [ticket] a newly created job runs under. */
     internal fun registerPending(
         uri: URI,
         identity: CompilationIdentity,
-        ticket: ArtifactOwnership.Ticket?,
+        /** The fence ticket a newly created job runs under; a selected existing job keeps its own. */
+        ticket: ArtifactOwnership.Ticket,
         create: () -> Deferred<CompilationResult>,
     ): PendingCompilation {
         var created = false
