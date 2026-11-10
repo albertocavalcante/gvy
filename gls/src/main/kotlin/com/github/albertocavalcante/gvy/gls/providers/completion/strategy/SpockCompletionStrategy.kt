@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockDataVariables
 import com.github.albertocavalcante.gvy.spock.SpockDetector
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 
@@ -24,6 +25,7 @@ import org.eclipse.lsp4j.CompletionItemKind
  * 4. The cursor is not in a comment or string literal
  */
 internal class SpockCompletionStrategy : CompletionStrategy {
+    private val logger = KotlinLogging.logger {}
 
     override suspend fun complete(context: CompletionStrategyContext): CompletionResult {
         val base = context.baseContext
@@ -57,6 +59,21 @@ internal class SpockCompletionStrategy : CompletionStrategy {
      * verdict or a missing AST keeps the previous text heuristic. A cursor in script code also falls
      * back, but only because Groovy gives the synthetic script class no source position, so
      * `declaredOwnerAt` finds no owner there; it is not an explicit script check.
+     *
+     * Retained fallback (#1211 boundaries), [SpockDetector.isLikelySpockSpec]:
+     * - Purpose: keep block-label completion for files the AST cannot classify, including script code
+     *   and edits whose compile has no AST.
+     * - Missing evidence: a declared owner with a confident verdict.
+     * - Known failure modes: text markers (a `spock.` import or `given:`-style labels outside comments and
+     *   strings) can enable labels in a non-spec file, and a spec with no markers gets none.
+     * - Permitted outputs: completion suggestions only; never diagnostics or edits.
+     * - Tests: `uncertain classes keep today's heuristic` and the text-heuristic cases in
+     *   `SpockBlockCompletionTest`.
+     * - Replacement: target evidence for UNCERTAIN owners (#1285 step 2, #1211 row 5), and partial-AST
+     *   recovery for the no-AST case.
+     *
+     * Limitation: the strategy sees only `moduleNode`, not the compile result, so the source context is
+     * built with `isPartial = false` even when the parse reported errors.
      */
     private fun isSpecificationAt(context: CompletionStrategyContext, source: SpockSourceContext.Available?): Boolean {
         val base = context.baseContext
@@ -64,7 +81,9 @@ internal class SpockCompletionStrategy : CompletionStrategy {
         return when (owner?.status) {
             SpecificationStatus.SPECIFICATION -> true
             SpecificationStatus.NOT_SPECIFICATION -> false
-            SpecificationStatus.UNCERTAIN, null -> SpockDetector.isLikelySpockSpec(base.uri, base.content)
+            SpecificationStatus.UNCERTAIN, null -> SpockDetector.isLikelySpockSpec(base.uri, base.content).also {
+                logger.trace { "Spock completion fallback at ${base.uri}:${base.line} (${owner?.evidence}): $it" }
+            }
         }
     }
 

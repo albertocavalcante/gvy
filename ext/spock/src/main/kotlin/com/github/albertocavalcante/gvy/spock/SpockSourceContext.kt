@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.spock
 
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.nativeapi.ParseResult
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.InnerClassNode
@@ -95,11 +96,31 @@ data class SpockClassContext(
      * UNCERTAIN keeps the previous class-level [SpockDetector.isSpockSpec], so behaviour changes only where
      * the source alone proves the answer. [module] must be the module this context was built from;
      * [specClassNode], when a caller has loaded `spock.lang.Specification`, is passed to that fallback.
+     *
+     * Retained fallback (#1211 boundaries):
+     * - Purpose: keep read-only feedback (completion data variables, definition, test discovery) for
+     *   classes the source cannot classify.
+     * - Missing evidence: the superclass binding, typically a star-import-only name or a base outside the
+     *   compile; target/classpath evidence (#1285 step 2, #1211 row 5) would decide it.
+     * - Known failure modes: the detector matches the simple name `Specification` once `spock.lang` is
+     *   imported, so an unrelated class named `Specification` can be accepted.
+     * - Permitted outputs: read-only feedback only. Never a diagnostic or a source edit; edits require
+     *   [SpecificationStatus.SPECIFICATION] (see the table action).
+     * - Tests: the "uncertain ... keeps the previous detector" cases in each consumer's tests.
+     * - Replacement: decide UNCERTAIN classes from target evidence, then remove this branch.
+     *
+     * Each fallback decision is traced (logger `SpockClassContext`, level TRACE) with class, evidence and result.
      */
     fun isSpecification(module: ModuleNode, specClassNode: ClassNode? = null): Boolean = when (status) {
         SpecificationStatus.SPECIFICATION -> true
         SpecificationStatus.NOT_SPECIFICATION -> false
-        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(classNode, module, specClassNode)
+        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(classNode, module, specClassNode).also { result ->
+            fallbackLogger.trace { "Spock fallback: ${classNode.name} is UNCERTAIN ($evidence); detector says $result" }
+        }
+    }
+
+    private companion object {
+        val fallbackLogger = KotlinLogging.logger("SpockClassContext")
     }
 }
 

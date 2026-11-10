@@ -12,7 +12,12 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -103,7 +108,7 @@ class SpockTableProviderTest {
     }
 
     @Test
-    fun `an uncertain external base keeps the previous detector`(): Unit = runBlocking {
+    fun `an uncertain external base gets no table action`(): Unit = runBlocking {
         val source = content.replace("spock.lang.Specification", "BaseSpec")
         documents.put(uri, source, 1)
         compilationService.compile(uri, source)
@@ -111,6 +116,133 @@ class SpockTableProviderTest {
         val actions = provider.provideCodeActions(params())
 
         assertTrue(actions.none { it.title == "Align Spock data table" })
+    }
+
+    @Test
+    fun `an uncertain class gets no table action because the edit changes source`(): Unit = runBlocking {
+        // Without Spock on the compile classpath, `import spock.lang.*` alone cannot prove the base.
+        val withoutSpock = object : ClassLoader(SpockTableProviderTest::class.java.classLoader) {
+            override fun loadClass(name: String, resolve: Boolean): Class<*> {
+                if (name.startsWith("spock.")) throw ClassNotFoundException(name)
+                return super.loadClass(name, resolve)
+            }
+
+            override fun getResource(name: String) = if (name.startsWith("spock/")) null else super.getResource(name)
+        }
+        val service = GroovyCompilationService(withoutSpock)
+        val source = "import spock.lang.*\n" +
+            content.replace("class TableSpec extends spock.lang.Specification", "class TableSpec extends Specification")
+        val starProvider = CodeActionProvider(
+            service,
+            documents,
+            object : Formatter {
+                override fun format(text: String): String = text
+            },
+        )
+        try {
+            documents.put(uri, source, 1)
+            service.compile(uri, source)
+
+            val actions = starProvider.provideCodeActions(params(line = 6))
+
+            assertTrue(actions.none { it.title == "Align Spock data table" })
+        } finally {
+            service.clearCaches()
+        }
+    }
+
+    @TempDir
+    lateinit var workspace: Path
+
+    private val starImported = "import spock.lang.*\n" +
+        content.replace("class TableSpec extends spock.lang.Specification", "class TableSpec extends Specification")
+
+    private fun jarOf(type: Class<*>): Path = Path.of(type.protectionDomain.codeSource.location.toURI())
+
+    /** Spock and the Groovy runtime on the workspace compile classpath, as a resolved Gradle project has them. */
+    private fun useSpockClasspath(vararg extra: Path, withGroovy: Boolean = true) {
+        val runtime = listOfNotNull(jarOf(groovy.lang.GroovyObject::class.java).takeIf { withGroovy })
+        compilationService.updateWorkspaceModel(
+            workspace,
+            listOf(jarOf(spock.lang.Specification::class.java)) + runtime + extra,
+            emptyList(),
+        )
+    }
+
+    @Test
+    fun `a clean star-import spec keeps the table action`(): Unit = runBlocking {
+        useSpockClasspath()
+        documents.put(uri, starImported, 1)
+        compilationService.compile(uri, starImported)
+
+        val actions = provider.provideCodeActions(params(line = 6))
+
+        assertTrue(actions.any { it.title == "Align Spock data table" })
+    }
+
+    @Test
+    fun `a spec extending a base from a jar keeps the table action`(): Unit = runBlocking {
+        useSpockClasspath(baseSpecJar())
+        val source = content.replace("extends spock.lang.Specification", "extends com.example.JarBaseSpec")
+        documents.put(uri, source, 1)
+        compilationService.compile(uri, source)
+
+        val actions = provider.provideCodeActions(params())
+
+        assertTrue(actions.any { it.title == "Align Spock data table" })
+    }
+
+    @Test
+    fun `an ordinary compile error elsewhere keeps the action because resolution survives`(): Unit = runBlocking {
+        // A collected semantic error does not trigger the CONVERSION retry, so the hierarchy stays resolved.
+        val broken = starImported.replaceFirst(
+            "    def \"feature\"() {",
+            "    def broken() {\n        def x = 1\n        def x = 2\n    }\n    def \"feature\"() {",
+        )
+        useSpockClasspath()
+        documents.put(uri, broken, 1)
+        compilationService.compile(uri, broken)
+
+        val actions = provider.provideCodeActions(params(line = 10))
+
+        assertTrue(actions.any { it.title == "Align Spock data table" })
+    }
+
+    @Test
+    fun `a degraded compile withholds the action for a spec proven only by resolution`(): Unit = runBlocking {
+        // Without the Groovy runtime, loading the jar base fails the compile without a collected error,
+        // so the facade retries at CONVERSION, where nothing resolves (documented on SpockTableAction).
+        useSpockClasspath(baseSpecJar(), withGroovy = false)
+        val source = content.replace("extends spock.lang.Specification", "extends com.example.JarBaseSpec")
+        documents.put(uri, source, 1)
+        compilationService.compile(uri, source)
+
+        val actions = provider.provideCodeActions(params())
+
+        assertTrue(actions.none { it.title == "Align Spock data table" })
+    }
+
+    /** `com.example.JarBaseSpec extends spock.lang.Specification`, compiled into a jar. */
+    private fun baseSpecJar(): Path {
+        val classes = Files.createDirectories(workspace.resolve("classes"))
+        val config = org.codehaus.groovy.control.CompilerConfiguration().apply { targetDirectory = classes.toFile() }
+        org.codehaus.groovy.control.CompilationUnit(config, null, groovy.lang.GroovyClassLoader(javaClass.classLoader))
+            .apply {
+                addSource(
+                    "JarBaseSpec.groovy",
+                    "package com.example\nabstract class JarBaseSpec extends spock.lang.Specification {}\n",
+                )
+                compile()
+            }
+        val jar = workspace.resolve("base.jar")
+        JarOutputStream(Files.newOutputStream(jar)).use { out ->
+            Files.walk(classes).filter(Files::isRegularFile).forEach { file ->
+                out.putNextEntry(JarEntry(classes.relativize(file).toString().replace('\\', '/')))
+                Files.copy(file, out)
+                out.closeEntry()
+            }
+        }
+        return jar
     }
 
     private fun params(line: Int = 5) = CodeActionParams().apply {

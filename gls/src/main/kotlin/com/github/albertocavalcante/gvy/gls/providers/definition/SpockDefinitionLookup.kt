@@ -14,9 +14,16 @@ import org.eclipse.lsp4j.Position
 
 /** Source-backed lookup only; never evaluates a data provider or an unroll expression. */
 internal object SpockDefinitionLookup {
-    fun find(module: ModuleNode, content: String, position: Position, origin: ASTNode? = null): ASTNode? {
+    /** [isPartial] is true when the compile that produced [module] reported errors. */
+    fun find(
+        module: ModuleNode,
+        content: String,
+        position: Position,
+        origin: ASTNode? = null,
+        isPartial: Boolean = false,
+    ): ASTNode? {
         val line = content.lines().getOrNull(position.line) ?: return null
-        val source = SpockSourceContext.from(module, isPartial = false)
+        val source = SpockSourceContext.from(module, isPartial)
         return source.classes.filter { !it.classNode.isScript && it.isSpecification(module) }
             .flatMap { it.classNode.methods }
             .filter { it.containsPosition(position.line, position.character) }

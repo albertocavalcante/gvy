@@ -54,6 +54,7 @@ class CodeActionProvider(
                             params.range,
                             params.context.only,
                             snapshot.version,
+                            isPartial = !compiled.parseResult.isSuccessful,
                         ),
                     ),
                 )
