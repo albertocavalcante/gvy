@@ -30,6 +30,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
@@ -105,10 +106,11 @@ class JenkinsContext internal constructor(
         classpath.addSharedLibrarySrcDir(logger, workspaceRoot)
         classpath.addRegisteredPluginJars(logger, pluginManager)
 
-        scanClasspath(classpath)
+        // Stubs follow this classpath's own scan, even if a newer request has been published meanwhile.
+        val scanned = scanClasspath(classpath)
         warnAboutLegacyStubsDir()
         classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, ::shouldGenerateStubs) {
-            getAllMetadata()
+            scanned?.let { withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata) } ?: getAllMetadata()
         }
 
         return classpath
@@ -321,8 +323,11 @@ class JenkinsContext internal constructor(
     /** Bundled base for this context, loaded on first use and never rebuilt. */
     private val bundledMetadata: MergedJenkinsMetadata by lazy(bundledMetadataLoader)
 
-    /** Result of the latest successful classpath scan; replaced atomically by [scanClasspath]. */
-    private class ScanSnapshot(val classpath: List<Path>, val metadata: BundledJenkinsMetadata)
+    /**
+     * Result of one classpath scan; [generation] is the request's place in line, taken before it scanned.
+     * Replaced atomically by [scanClasspath].
+     */
+    private class ScanSnapshot(val generation: Long, val classpath: List<Path>, val metadata: BundledJenkinsMetadata)
 
     /** Metadata declared by the configured GDSL files; replaced atomically by [loadGdslMetadata]. */
     private class GdslSnapshot(val metadata: BundledJenkinsMetadata)
@@ -330,8 +335,11 @@ class JenkinsContext internal constructor(
     /** Merged view computed for one scan and GDSL snapshot (null = that source contributes nothing). */
     private class MergedSnapshot(val scan: ScanSnapshot?, val gdsl: GdslSnapshot?, val metadata: MergedJenkinsMetadata)
 
-    /** Replaced by compare-and-set in [scanClasspath], so a scan never needs the context lock. */
+    /** Replaced in [scanClasspath] without the context lock; the newest request wins. */
     private val scanSnapshot = AtomicReference<ScanSnapshot?>(null)
+
+    /** Hands out scan request generations, in the order requests start. */
+    private val scanRequests = AtomicLong()
 
     @Volatile
     private var gdslSnapshot: GdslSnapshot? = null
@@ -458,32 +466,41 @@ class JenkinsContext internal constructor(
      *
      * Rescans only when the classpath differs from the last published scan. Every Jenkinsfile compile,
      * completion included, reaches this, so the scan runs without any lock (#1241): a request for another
-     * classpath never waits for a scan in progress. The scan is pure; its result is published with a
-     * compare-and-set against the snapshot it started from. If another scan published meanwhile, this
-     * result is discarded rather than replacing the newer one, so readers always see exactly one scan.
+     * classpath never waits for a scan in progress. Each request takes a generation before it scans and
+     * publishes only over an older generation, so the newest request wins whatever order scans finish in,
+     * and readers always see exactly one scan.
+     *
+     * @return this request's own scan result (even when a newer request has been published since), or null
+     *   if the scanner failed.
      *
      * The production scanner ([JenkinsClasspathScanner.scan]) never throws: an unreadable jar yields empty
      * metadata, which is published like any other result. Only an injected scanner that throws leaves the
      * previous snapshot in place.
      */
-    fun scanClasspath(classpath: List<Path>) {
+    fun scanClasspath(classpath: List<Path>): BundledJenkinsMetadata? {
         val observed = scanSnapshot.get()
         if (observed?.classpath == classpath) {
             logger.debug { "Classpath unchanged (${classpath.size} entries), skipping scan" }
-            return
+            return observed.metadata
         }
 
+        val generation = scanRequests.incrementAndGet()
         val snapshot = classpath.toList()
         val metadata = try {
             logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
             classpathScanner(snapshot)
         } catch (e: Exception) {
             logger.error(e) { "Failed to scan classpath" }
-            return
+            return null
         }
-        if (!scanSnapshot.compareAndSet(observed, ScanSnapshot(snapshot, metadata))) {
-            logger.debug { "Discarded a classpath scan: another scan was published while it ran" }
+        val scanned = ScanSnapshot(generation, snapshot, metadata)
+        val published = scanSnapshot.updateAndGet { current ->
+            if (current == null || current.generation < generation) scanned else current
         }
+        if (published !== scanned) {
+            logger.debug { "Kept a newer classpath scan over this one (request $generation)" }
+        }
+        return metadata
     }
 
     /**

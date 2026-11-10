@@ -82,37 +82,60 @@ class JenkinsScanConcurrencyTest {
         }
     }
 
-    @Test
-    fun `a scan that lost the race does not replace the snapshot published meanwhile`() {
-        val slow = listOf(tempDir.resolve("slow.jar"))
-        val fast = listOf(tempDir.resolve("fast.jar"))
-        val slowStarted = CountDownLatch(1)
-        val releaseSlow = CountDownLatch(1)
+    /**
+     * Two requests, cp1 then cp2, overlap. The scanner for [first] waits until the scanner for [second] has
+     * started, so the request order is fixed; [holdFirst] picks which scan finishes last.
+     */
+    private fun overlappingScans(holdFirst: Boolean): Triple<JenkinsContext, Set<String>, Set<String>> {
+        val first = listOf(tempDir.resolve("cp1.jar"))
+        val second = listOf(tempDir.resolve("cp2.jar"))
+        val firstStarted = CountDownLatch(1)
+        val secondStarted = CountDownLatch(1)
+        val release = CountDownLatch(1)
         val context = context { cp ->
-            if (cp == slow) {
-                slowStarted.countDown()
-                releaseSlow.await(30, TimeUnit.SECONDS)
-                dynamic("fromSlow")
+            if (cp == first) {
+                firstStarted.countDown()
+                assertTrue(secondStarted.await(10, TimeUnit.SECONDS), "second scan started")
+                if (holdFirst) release.await(30, TimeUnit.SECONDS)
+                dynamic("fromCp1")
             } else {
-                dynamic("fromFast")
+                secondStarted.countDown()
+                if (!holdFirst) release.await(30, TimeUnit.SECONDS)
+                dynamic("fromCp2")
             }
         }
         val pool = Executors.newFixedThreadPool(2)
         try {
-            val slowScan = pool.submit { context.scanClasspath(slow) }
-            assertTrue(slowStarted.await(10, TimeUnit.SECONDS), "slow scan started")
-            val fastScan = pool.submit { context.scanClasspath(fast) }
-            runCatching { fastScan.get(5, TimeUnit.SECONDS) } // published while the slow scan still runs
-            releaseSlow.countDown()
-            slowScan.get(10, TimeUnit.SECONDS)
-            fastScan.get(10, TimeUnit.SECONDS)
-
-            // The slow scan started from the older snapshot, so it is discarded instead of replacing the newer one.
-            assertEquals(setOf("fromFast"), context.getAllMetadata().steps.keys)
+            val firstScan = pool.submit<Set<String>> { context.scanClasspath(first)?.steps?.keys.orEmpty() }
+            // The first request is scanning, so it took its place in line before the second one starts.
+            assertTrue(firstStarted.await(10, TimeUnit.SECONDS), "first scan started")
+            val secondScan = pool.submit<Set<String>> { context.scanClasspath(second)?.steps?.keys.orEmpty() }
+            val early = if (holdFirst) secondScan else firstScan
+            early.get(10, TimeUnit.SECONDS) // the scan that is not held publishes first
+            release.countDown()
+            return Triple(context, firstScan.get(10, TimeUnit.SECONDS), secondScan.get(10, TimeUnit.SECONDS))
         } finally {
-            releaseSlow.countDown()
+            release.countDown()
             pool.shutdownNow()
         }
+    }
+
+    @Test
+    fun `the newer request wins when it finishes last`() {
+        val (context, firstResult, secondResult) = overlappingScans(holdFirst = false)
+
+        assertEquals(setOf("fromCp2"), context.getAllMetadata().steps.keys)
+        assertEquals(setOf("fromCp1"), firstResult)
+        assertEquals(setOf("fromCp2"), secondResult)
+    }
+
+    @Test
+    fun `an older request that finishes last does not replace the newer one`() {
+        val (context, firstResult, secondResult) = overlappingScans(holdFirst = true)
+
+        assertEquals(setOf("fromCp2"), context.getAllMetadata().steps.keys)
+        assertEquals(setOf("fromCp1"), firstResult, "the older caller still gets its own classpath's scan")
+        assertEquals(setOf("fromCp2"), secondResult)
     }
 
     @Test
