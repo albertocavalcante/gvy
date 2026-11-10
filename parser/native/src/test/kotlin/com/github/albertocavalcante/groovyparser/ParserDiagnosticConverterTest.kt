@@ -151,4 +151,33 @@ class ParserDiagnosticConverterTest {
         assertEquals(300, message.length)
         assertTrue(!message.contains("Frame"), message)
     }
+
+    private val missingTransform = "Could not find class for Transformation Processor a.B declared by c.D"
+
+    private fun withLocators(name: String, locators: Set<String>, isProject: Boolean) = ParserDiagnosticConverter
+        .convert(
+            ErrorCollector(configuration).also { it.addError(SimpleMessage(missingTransform, source(name))) },
+            locators,
+        ) { isProject }
+
+    @Test
+    fun `a project transform notice is kept when its source is one of the requested ones`() {
+        val diagnostics = withLocators("Good.groovy", setOf("Good.groovy"), isProject = true)
+
+        val notice = diagnostics.single()
+        assertEquals(ParserSeverity.INFORMATION, notice.severity)
+        assertTrue("later checks for this file were skipped" in notice.message, notice.message)
+    }
+
+    @Test
+    fun `a project transform message from another source is still dropped`() {
+        assertTrue(withLocators("Other.groovy", setOf("Good.groovy"), isProject = true).isEmpty())
+    }
+
+    @Test
+    fun `a missing transform that is not on the project classpath is not turned into a notice`() {
+        assertTrue(withLocators("Good.groovy", setOf("Good.groovy"), isProject = false).isEmpty())
+        val unscoped = withLocators("Good.groovy", emptySet(), isProject = false).single()
+        assertEquals(ParserSeverity.ERROR, unscoped.severity)
+    }
 }

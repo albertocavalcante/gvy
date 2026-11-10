@@ -110,6 +110,12 @@ private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequ
 }
 
 /**
+ * True when the project class path can supply [name]. Only loads it (no initialisation, no script lookup), so no
+ * project code runs; used to tell "a transform from a project jar that analysis never runs" from a real typo.
+ */
+private fun GroovyClassLoader.hasClass(name: String): Boolean = runCatching { loadClass(name, false, true) }.isSuccess
+
+/**
  * Lightweight, LSP-free parser facade that produces Groovy ASTs and diagnostics.
  */
 class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader()) {
@@ -398,9 +404,13 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
         val ast = extractAst(compilationUnit, request.sourceUnitName)
         val diagnostics =
-            ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates).toMutableList()
+            ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates) { name ->
+                classLoader.hasClass(name)
+            }.toMutableList()
 
-        if (compilationFailed && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
+        // A failure explained only by "this project transform is not run" is already reported; no synthetic error
+        val explained = diagnostics.any { it.code == ParserDiagnosticConverter.PROJECT_TRANSFORM_NOT_RUN }
+        if (compilationFailed && !explained && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
             // ErrorCollector.getLastError throws when nothing was collected, so read the list instead.
             val lastCollected = compilationUnit.errorCollector.errors.orEmpty().lastOrNull()?.toString()
             val errorMessage = failureMessage ?: lastCollected ?: "Unknown error"
