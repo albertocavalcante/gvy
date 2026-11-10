@@ -330,7 +330,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
                     SemanticToken(it.line, it.start, it.length, TokenTypeResolver.TokenTypes.PARAMETER, modifiers),
                 )
             }
-            if (param.type.name != "java.lang.Object") {
+            if (param.type.name != "java.lang.Object" && !isSharedDefaultType(param.type)) {
                 parameterRanges.type(param)?.let {
                     tokens.add(
                         SemanticToken(

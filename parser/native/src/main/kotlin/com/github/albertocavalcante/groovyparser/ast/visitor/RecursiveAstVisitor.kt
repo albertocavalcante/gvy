@@ -64,6 +64,7 @@ import org.codehaus.groovy.ast.stmt.SwitchStatement
 import org.codehaus.groovy.ast.stmt.ThrowStatement
 import org.codehaus.groovy.ast.stmt.TryCatchStatement
 import org.codehaus.groovy.ast.stmt.WhileStatement
+import org.codehaus.groovy.control.Janitor
 import java.net.URI
 
 // ...
@@ -73,6 +74,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
     private val logger = KotlinLogging.logger {}
 
     private lateinit var currentUri: URI
+    private var currentModule: ModuleNode? = null
     private val positionQuery = AstPositionQuery(tracker)
 
     override fun getParent(node: ASTNode): ASTNode? = tracker.getParent(node)
@@ -88,6 +90,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
     fun visitModule(module: ModuleNode, uri: URI) {
         currentUri = uri
+        currentModule = module
         tracker.clear()
         if (logger.isDebugEnabled()) {
             logger.debug { "[DEBUG visitModule] module.classes size: ${module.classes.size}" }
@@ -129,17 +132,31 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
 
     /**
      * `import java.util.List` resolves to the JVM-wide shared node, which never belongs to this document. Track a
-     * reference of this document's own instead, positioned where the import names it, so import hover and
-     * definition keep working. A position another file stamped on the shared node meanwhile is not adopted.
+     * reference of this document's own instead, positioned where this import's source text names the class. The
+     * shared node's fields are never read: another compile may restamp them at any moment (#1354).
      */
     private fun importedReference(importNode: ImportNode, shared: ClassNode): ClassNode? {
-        val withinImport = shared.lineNumber == importNode.lineNumber &&
-            shared.columnNumber >= importNode.columnNumber &&
-            (importNode.lastColumnNumber <= 0 || shared.lastColumnNumber <= importNode.lastColumnNumber)
-        if (!withinImport) return null
+        val line = importNode.lineNumber
+        val text = currentModule?.let { sourceLine(it, line) } ?: return null
+        val start = text.indexOf(importNode.className, startIndex = (importNode.columnNumber - 1).coerceAtLeast(0))
+        if (start < 0) return null
         return ClassHelper.makeWithoutCaching(shared.name).also { reference ->
             reference.setRedirect(shared)
-            reference.setSourcePosition(shared)
+            reference.lineNumber = line
+            reference.columnNumber = start + 1
+            reference.lastLineNumber = line
+            reference.lastColumnNumber = start + 1 + importNode.className.length
+        }
+    }
+
+    private fun sourceLine(module: ModuleNode, line: Int): String? {
+        if (line <= 0) return null
+        val source = module.context?.source ?: return null
+        val janitor = Janitor()
+        return try {
+            source.getLine(line, janitor)
+        } finally {
+            janitor.cleanup()
         }
     }
 

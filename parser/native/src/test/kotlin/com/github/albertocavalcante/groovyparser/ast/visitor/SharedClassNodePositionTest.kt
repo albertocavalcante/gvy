@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser.ast.visitor
 
+import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.test.ParserTestFixture
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -54,6 +55,22 @@ class SharedClassNodePositionTest {
 
         assertEquals("Base", (model.getNodeAt(uri, 0, 7) as? ClassNode)?.name)
         assertEquals("Child", (model.getNodeAt(uri, 1, 7) as? ClassNode)?.name)
+    }
+
+    @Test
+    fun `an import reference keeps its own position when another file restamps the shared node`() {
+        val source = "package p\n\nimport java.util.List\nclass Uses {}\n"
+        val parsed = fixture.parse(source, "file:///Uses.groovy", PHASE)
+        // Another compile stamps the shared java.util.List node between this file's compile and its visit
+        fixture.parse("// x\n// y\n// z\n// w\n            import java.util.List\n", "file:///Other.groovy", PHASE)
+        val uri = URI.create("file:///Uses.groovy")
+        val model = RecursiveAstVisitor(NodeRelationshipTracker()).also { it.visitModule(parsed.ast!!, uri) }
+
+        val reference = model.getNodeAt(uri, 2, 17) // LSP 2:17 lies in `List` of line 3
+        assertTrue(reference is ClassNode && reference.name == "java.util.List", "import hover target: $reference")
+        assertFalse(reference === ClassHelper.LIST_TYPE, "the shared node itself must not be indexed")
+        assertEquals(3 to 8, reference.lineNumber to reference.columnNumber, "position from this file's import text")
+        assertNull(model.getNodeAt(uri, 4, 14) as? ClassNode, "nothing at the other file's stamped position")
     }
 
     private fun nodeAt(source: String, uri: String, line: Int, character: Int) =

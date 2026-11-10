@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.semantics.db
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ConstructorNode
 import org.codehaus.groovy.ast.FieldNode
@@ -119,7 +120,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
     private fun importTypeOccurrence(importNode: ImportNode, range: Range): SymbolOccurrence? {
         val type = importNode.type ?: return null
         val resolved = TypeHierarchies().compilerResolved(type) ?: return null
-        return SymbolOccurrence(createClassSymbolId(resolved), nodeToRange(type) ?: range, OccurrenceRole.TYPE_REF)
+        // A shared ClassHelper node carries whichever file last stamped it (#1354): use this import's own range.
+        val typeRange = if (ClassHelper.isCachedType(type)) range else nodeToRange(type) ?: range
+        return SymbolOccurrence(createClassSymbolId(resolved), typeRange, OccurrenceRole.TYPE_REF)
     }
 
     /**
@@ -159,7 +162,10 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             ),
         )
 
-        (listOfNotNull(classNode.unresolvedSuperClass) + classNode.unresolvedInterfaces).forEach { type ->
+        // Shared ClassHelper nodes (every script's groovy.lang.Script) carry a foreign position (#1354): skip them.
+        (listOfNotNull(classNode.unresolvedSuperClass) + classNode.unresolvedInterfaces).filterNot {
+            ClassHelper.isCachedType(it)
+        }.forEach { type ->
             val resolved = TypeHierarchies().compilerResolved(type)
             val referenceRange = nodeToRange(type)
             if (resolved != null && referenceRange != null) {
