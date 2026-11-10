@@ -142,11 +142,26 @@ class LanguageServerSessionFactory {
 
         return runCatching {
             Files.createDirectories(target)
-            GradleWrapperDistributions.share(GradleWrapperDistributions.hostGradleUserHome(), target)
+            shareFixtureDistributions(target)
             target
         }.onFailure {
             logger.warn { "Failed to prepare isolated Gradle user home at $target: ${it.message}" }
         }.getOrNull()
+    }
+
+    /** Reuses the host's installed fixture Gradle distributions instead of downloading them per JVM. */
+    private fun shareFixtureDistributions(gradleUserHome: Path) {
+        val scenarioDir = System.getProperty("groovy.lsp.e2e.scenarioDir")
+            ?: System.getProperty("groovy.lsp.e2e.scenarioDir.marker")?.let { Paths.get(it).parent?.toString() }
+        if (scenarioDir == null) {
+            logger.info { "Scenario directory unknown; fixture Gradle distributions will be downloaded" }
+            return
+        }
+        GradleWrapperDistributions.share(
+            GradleWrapperDistributions.hostGradleUserHome(),
+            gradleUserHome,
+            GradleWrapperDistributions.fixtureDistributions(Paths.get(scenarioDir).resolveSibling("workspaces")),
+        )
     }
 
     private fun createInProcessSession(scenarioName: String): LanguageServerSession {

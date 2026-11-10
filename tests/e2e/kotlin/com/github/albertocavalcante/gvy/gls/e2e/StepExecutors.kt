@@ -506,7 +506,7 @@ internal fun timeoutMessage(method: String, result: WaitResult): String = buildS
     }
     if (method != STATUS_METHOD) {
         result.receivedDuringWait.lastOrNull { it.method == STATUS_METHOD }?.let {
-            append("; last '").append(STATUS_METHOD).append("': ").append(describe(it.payload))
+            append("; last '").append(STATUS_METHOD).append("' during the wait: ").append(describe(it.payload))
         }
     }
 }

@@ -9,6 +9,7 @@ import java.util.Properties
 import kotlin.io.path.exists
 import kotlin.io.path.inputStream
 import kotlin.io.path.isRegularFile
+import kotlin.io.path.writeText
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -17,35 +18,61 @@ class GradleWrapperDistributionsTest {
     @TempDir
     lateinit var temp: Path
 
+    private val host by lazy { temp.resolve("host") }
+    private val isolated by lazy { temp.resolve("isolated") }
+
     @Test
-    fun `isolated home reads and writes the host distributions`() {
-        val host = Files.createDirectories(temp.resolve("host"))
-        val isolated = Files.createDirectories(temp.resolve("isolated"))
+    fun `links only the requested distributions the host has installed`() {
+        val installed = Files.createDirectories(host.resolve("wrapper/dists/gradle-new-bin/hash"))
+        Files.createDirectories(host.resolve("wrapper/dists/gradle-old-bin/hash"))
 
-        assertTrue(GradleWrapperDistributions.share(host, isolated))
-        Files.createDirectories(isolated.resolve("wrapper/dists/gradle-x-bin"))
+        val shared = GradleWrapperDistributions.share(host, isolated, setOf("gradle-new-bin", "gradle-missing-bin"))
 
-        assertTrue(host.resolve("wrapper/dists/gradle-x-bin").exists())
-        assertTrue(GradleWrapperDistributions.share(host, isolated), "sharing again is a no-op")
+        assertEquals(listOf("gradle-new-bin"), shared)
+        assertTrue(isolated.resolve("wrapper/dists/gradle-new-bin/hash").exists())
+        assertTrue(Files.isSameFile(installed, isolated.resolve("wrapper/dists/gradle-new-bin/hash")))
+        assertFalse(isolated.resolve("wrapper/dists/gradle-old-bin").exists(), "other host versions stay unreachable")
+        assertFalse(host.resolve("wrapper/dists/gradle-missing-bin").exists(), "the host home is never written")
+        assertEquals(shared, GradleWrapperDistributions.share(host, isolated, setOf("gradle-new-bin")), "idempotent")
     }
 
     @Test
     fun `existing isolated distributions are left alone`() {
-        val host = Files.createDirectories(temp.resolve("host"))
-        val isolated = temp.resolve("isolated")
-        val own = Files.createDirectories(isolated.resolve("wrapper/dists/gradle-own-bin"))
+        Files.createDirectories(host.resolve("wrapper/dists/gradle-x-bin"))
+        val own = Files.createDirectories(isolated.resolve("wrapper/dists/gradle-x-bin/own"))
 
-        assertFalse(GradleWrapperDistributions.share(host, isolated))
+        assertEquals(emptyList(), GradleWrapperDistributions.share(host, isolated, setOf("gradle-x-bin")))
         assertTrue(own.exists())
-        assertFalse(Files.isSymbolicLink(isolated.resolve("wrapper/dists")))
     }
 
     @Test
-    fun `a home is never linked to itself`() {
-        val home = Files.createDirectories(temp.resolve("home"))
+    fun `a dangling link is replaced`() {
+        Files.createDirectories(host.resolve("wrapper/dists/gradle-x-bin"))
+        val link = Files.createDirectories(isolated.resolve("wrapper/dists")).resolve("gradle-x-bin")
+        Files.createSymbolicLink(link, temp.resolve("gone"))
 
-        assertFalse(GradleWrapperDistributions.share(home, home))
-        assertFalse(Files.isSymbolicLink(home.resolve("wrapper/dists")))
+        assertEquals(listOf("gradle-x-bin"), GradleWrapperDistributions.share(host, isolated, setOf("gradle-x-bin")))
+        assertTrue(Files.isSameFile(link, host.resolve("wrapper/dists/gradle-x-bin")))
+    }
+
+    @Test
+    fun `a home shared with itself is not linked`() {
+        val dist = Files.createDirectories(host.resolve("wrapper/dists/gradle-x-bin"))
+
+        assertEquals(listOf("gradle-x-bin"), GradleWrapperDistributions.share(host, host, setOf("gradle-x-bin")))
+        assertFalse(Files.isSymbolicLink(dist))
+    }
+
+    @Test
+    fun `fixture distributions are named after their wrapper URLs`() {
+        val wrapper = Files.createDirectories(temp.resolve("workspaces/a/gradle/wrapper"))
+            .resolve("gradle-wrapper.properties")
+        wrapper.writeText("distributionUrl=https\\://services.gradle.org/distributions/gradle-1.2-bin.zip\n")
+
+        assertEquals(
+            setOf("gradle-1.2-bin"),
+            GradleWrapperDistributions.fixtureDistributions(temp.resolve("workspaces")),
+        )
     }
 
     /**
