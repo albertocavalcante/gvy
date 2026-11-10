@@ -1,9 +1,17 @@
 package com.github.albertocavalcante.groovyparser.ast
 
+import com.github.albertocavalcante.groovyparser.api.internal.ast.MAX_HIERARCHY_DEPTH
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
+import com.github.albertocavalcante.groovyparser.api.internal.ast.findFieldSafe as sharedFindFieldSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.hasCyclicSuperClassChain as sharedHasCyclicSuperClassChain
+import com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe as sharedImplementsInterfaceSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe as sharedIsDerivedFromSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.isScriptSafe as sharedIsScriptSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.methodsSafe as sharedMethodsSafe
+import com.github.albertocavalcante.groovyparser.api.internal.ast.superClassChain as sharedSuperClassChain
 
 /**
  * Extension functions for ClassNode to provide cleaner type checking.
@@ -28,96 +36,29 @@ fun ClassNode.isDynamic(): Boolean = ClassHelper.isDynamicTyped(this) ||
 fun ClassNode.isDynamicOrObject(): Boolean = isDynamic()
 
 /*
- * Cycle-safe class hierarchy walks (issue #1369).
- *
- * Groovy's own ClassNode.isScript(), isDerivedFrom() and friends walk the superclass chain without a visited set,
- * so `class A extends B {}; class B extends A {}` makes them spin forever. Groovy reports the cycle as a
- * "Cycle detected" error at SEMANTIC_ANALYSIS but still hands the cyclic nodes to us, so every production walk of
- * a possibly user-written hierarchy must go through these helpers instead of the Groovy methods.
+ * Cycle-safe class hierarchy walks (issue #1369). The implementations are shared with parser:core and dsl:gdsl in
+ * parser:api's internal `groovyparser.api.internal.ast` package (#1411); these keep the existing names and imports.
  */
 
-/**
- * The superclass chain starting at [ClassNode.getSuperClass] (this node excluded), ending at the root or just
- * before the first node seen twice. Nodes are tracked by identity, so a cycle that is only visible through
- * redirects or unresolved placeholders (distinct instances, same name) is cut by [maxDepth] instead.
- */
-fun ClassNode.superClassChain(maxDepth: Int = MAX_HIERARCHY_DEPTH): Sequence<ClassNode> = sequence {
-    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ClassNode, Boolean>())
-    seen.add(this@superClassChain)
-    var current = this@superClassChain.superClass
-    var depth = 0
-    while (current != null && depth < maxDepth && seen.add(current)) {
-        yield(current)
-        current = current.superClass
-        depth++
-    }
-}
+/** @see com.github.albertocavalcante.groovyparser.api.internal.ast.superClassChain */
+fun ClassNode.superClassChain(maxDepth: Int = MAX_HIERARCHY_DEPTH): Sequence<ClassNode> =
+    sharedSuperClassChain(maxDepth)
 
-/** True when the superclass chain loops back on itself (or is implausibly deep). */
-fun ClassNode.hasCyclicSuperClassChain(maxDepth: Int = MAX_HIERARCHY_DEPTH): Boolean {
-    var count = 0
-    var last: ClassNode? = null
-    for (node in superClassChain(maxDepth)) {
-        last = node
-        count++
-    }
-    return count >= maxDepth || (last ?: this).superClass != null
-}
+/** @see com.github.albertocavalcante.groovyparser.api.internal.ast.hasCyclicSuperClassChain */
+fun ClassNode.hasCyclicSuperClassChain(maxDepth: Int = MAX_HIERARCHY_DEPTH): Boolean =
+    sharedHasCyclicSuperClassChain(maxDepth)
 
-/** Cycle-safe replacement for [ClassNode.isDerivedFrom]. */
-fun ClassNode.isDerivedFromSafe(other: ClassNode): Boolean = if (hasCyclicSuperClassChain()) {
-    this == other || superClassChain().any { it == other }
-} else {
-    isDerivedFrom(other)
-}
+/** @see com.github.albertocavalcante.groovyparser.api.internal.ast.isDerivedFromSafe */
+fun ClassNode.isDerivedFromSafe(other: ClassNode): Boolean = sharedIsDerivedFromSafe(other)
 
-/**
- * Cycle-safe replacement for [ClassNode.isScript]. Groovy keeps the explicit script flag private and only exposes it
- * through isScript(), which walks the superclass chain, so a cyclic hierarchy is answered "not a script" here.
- */
-fun ClassNode.isScriptSafe(): Boolean = !hasCyclicSuperClassChain() && isScript
+/** @see com.github.albertocavalcante.groovyparser.api.internal.ast.isScriptSafe */
+fun ClassNode.isScriptSafe(): Boolean = sharedIsScriptSafe()
 
-/**
- * Cycle-safe replacement for [ClassNode.getField], which walks the superclass chain with no visited set and never
- * returns for a missing name on a cyclic hierarchy. Acyclic chains are answered by Groovy itself.
- */
-fun ClassNode.findFieldSafe(name: String): FieldNode? = if (hasCyclicSuperClassChain()) {
-    (sequenceOf(this) + superClassChain()).firstNotNullOfOrNull { it.getDeclaredField(name) }
-} else {
-    getField(name)
-}
+/** @see com.github.albertocavalcante.groovyparser.api.internal.ast.findFieldSafe */
+fun ClassNode.findFieldSafe(name: String): FieldNode? = sharedFindFieldSafe(name)
 
-/**
- * Cycle-safe replacement for [ClassNode.getMethods] with a name, which recurses through superclasses with no visited
- * set (an endless, growing list on a cyclic hierarchy). Acyclic chains are answered by Groovy itself.
- */
-fun ClassNode.methodsSafe(name: String): List<MethodNode> = if (hasCyclicSuperClassChain()) {
-    (sequenceOf(this) + superClassChain()).flatMap { it.getDeclaredMethods(name).asSequence() }.toList()
-} else {
-    getMethods(name)
-}
+/** @see com.github.albertocavalcante.groovyparser.api.internal.ast.methodsSafe */
+fun ClassNode.methodsSafe(name: String): List<MethodNode> = sharedMethodsSafe(name)
 
-/**
- * Cycle-safe replacement for [ClassNode.implementsInterface]: true when [other] is among the interfaces of this
- * class, its superclasses or any super-interface (visited by identity, so interface cycles terminate).
- */
-fun ClassNode.implementsInterfaceSafe(other: ClassNode): Boolean {
-    val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ClassNode, Boolean>())
-    val pending = ArrayDeque<ClassNode>()
-    pending.add(this)
-    pending.addAll(superClassChain())
-    var visited = 0
-    while (pending.isNotEmpty() && visited < MAX_HIERARCHY_NODES) {
-        val node = pending.removeFirst()
-        if (!seen.add(node)) continue
-        visited++
-        for (iface in node.interfaces.orEmpty()) {
-            if (iface == other) return true
-            pending.add(iface)
-        }
-    }
-    return false
-}
-
-private const val MAX_HIERARCHY_DEPTH = 256
-private const val MAX_HIERARCHY_NODES = 4096
+/** @see com.github.albertocavalcante.groovyparser.api.internal.ast.implementsInterfaceSafe */
+fun ClassNode.implementsInterfaceSafe(other: ClassNode): Boolean = sharedImplementsInterfaceSafe(other)
