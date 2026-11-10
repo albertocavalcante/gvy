@@ -532,4 +532,24 @@ class JenkinsContextDetectorTest {
             ),
         )
     }
+
+    @Test
+    fun `a half-typed GString interpolation does not swallow the braces after it`() {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('A') {",
+            "            steps {",
+            "                echo \"${'$'}{env.X",
+            "            }",
+            "        }",
+            "    }",
+            "    post {",
+            "        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 10, column = 8)
+
+        assertEquals(listOf("pipeline", "post"), context.enclosingBlocks)
+    }
 }
