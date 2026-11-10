@@ -13,6 +13,10 @@ import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.eclipse.lsp4j.CompletionItemKind
+import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
+import org.eclipse.lsp4j.TextEdit
+import org.eclipse.lsp4j.jsonrpc.messages.Either
 
 internal object JenkinsCompletionProvider {
 
@@ -134,9 +138,11 @@ internal object JenkinsCompletionProvider {
         metadata: MergedJenkinsMetadata,
     ) {
         // After a complete command-expression argument the dummy identifier turns `sh 'ls' |` into the
-        // property access `sh('ls').<dummy>`, so the call may be the receiver of an enclosing property.
+        // property access `sh('ls').<dummy>`. That receiver is the step call only when there is no real dot;
+        // after `sh(...).trim|` or `readFile('x').|` the receiver call is not a step being configured.
+        val afterDot = followsMemberAccessDot(ctx.content, ctx.line, ctx.character)
         val methodCall = generateSequence(nodeAtCursor) { astModel.getParent(it) }
-            .firstNotNullOfOrNull(::callOrReceiverCall)
+            .firstNotNullOfOrNull { callOrReceiverCall(it, allowReceiver = !afterDot) }
         val callName = methodCall?.methodAsString ?: return
 
         // Never edit the inside of a string literal (e.g. `sh 'ls|'`).
@@ -154,17 +160,37 @@ internal object JenkinsCompletionProvider {
             }
         }
 
+        val isCommand = CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, callName)
         val bundledParamCompletions = JenkinsStepCompletionProvider.getParameterCompletions(
             callName,
             existingKeys,
             metadata,
-            CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, callName),
+            isCommand,
         )
-        bundledParamCompletions.forEach(::add)
+        val typedWord = if (isCommand) typedWordBeforeCursor(ctx) else null
+        bundledParamCompletions.forEach { item ->
+            // A partially typed option (`sh 'ls' ret|`) must be replaced together with the `, ` separator.
+            if (!typedWord.isNullOrEmpty()) {
+                val range = Range(
+                    Position(ctx.line, ctx.character - typedWord.length),
+                    Position(ctx.line, ctx.character),
+                )
+                item.filterText = item.label
+                item.textEdit = Either.forLeft(TextEdit(range, item.insertText))
+            }
+            add(item)
+        }
     }
 
-    private fun callOrReceiverCall(node: ASTNode): MethodCallExpression? {
+    private fun typedWordBeforeCursor(ctx: CompletionContext): String {
+        val lineText = ctx.content.lines().getOrNull(ctx.line).orEmpty()
+        val prefix = lineText.take(ctx.character.coerceIn(0, lineText.length))
+        return prefix.takeLastWhile { it.isLetterOrDigit() || it == '_' }
+    }
+
+    private fun callOrReceiverCall(node: ASTNode, allowReceiver: Boolean): MethodCallExpression? {
         if (node is MethodCallExpression) return node
+        if (!allowReceiver) return null
         val receiver = (node as? PropertyExpression)?.objectExpression
         return receiver as? MethodCallExpression
     }

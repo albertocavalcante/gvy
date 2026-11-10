@@ -10,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvi
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportInfo
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportParser
+import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAccessDot
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
@@ -678,16 +679,4 @@ private class LocalCompletionMembers(module: ModuleNode?) {
 
     private fun hasSource(node: ASTNode): Boolean =
         node.lineNumber > 0 && node.columnNumber > 0 && node.lastLineNumber > 0 && node.lastColumnNumber > 0
-}
-
-/**
- * True when the text before the cursor (ignoring the identifier being typed and whitespace, possibly
- * across lines) ends with a `.`, i.e. there is a member-access dot to complete after.
- */
-internal fun followsMemberAccessDot(content: String, line: Int, character: Int): Boolean {
-    val lines = content.lines()
-    if (line !in lines.indices) return false
-    val before = lines.take(line).joinToString("\n") + (if (line > 0) "\n" else "") +
-        lines[line].take(character.coerceIn(0, lines[line].length))
-    return before.trimEnd { it.isLetterOrDigit() || it == '_' || it == '$' }.trimEnd().endsWith('.')
 }

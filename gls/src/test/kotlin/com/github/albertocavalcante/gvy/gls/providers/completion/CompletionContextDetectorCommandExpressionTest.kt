@@ -1,6 +1,5 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion
 
-import com.github.albertocavalcante.gvy.gls.providers.completion.strategy.followsMemberAccessDot
 import org.junit.jupiter.api.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -33,6 +32,15 @@ class CompletionContextDetectorCommandExpressionTest {
 
     @Test
     fun `detects argument containing escaped quote`() = assertTrue(detect("echo 'it\\'s'", "echo"))
+
+    @Test
+    fun `detects triple-quoted argument containing a lone quote`() = assertTrue(detect("sh '''echo 'x' '''", "sh"))
+
+    @Test
+    fun `detects with a partially typed option name after the argument`() {
+        assertTrue(detect("sh 'ls' ret", "sh"))
+        assertFalse(detect("sh 'ls'ret", "sh"))
+    }
 
     @Test
     fun `does not match while the string is still open`() {
@@ -72,6 +80,9 @@ class CompletionContextDetectorCommandExpressionTest {
         assertFalse(inside("sh 'ls' "))
         assertFalse(inside("sh '''ls'''"))
         assertTrue(inside("sh '''ls"))
+        assertTrue(inside("sh '''it's"))
+        assertFalse(inside("sh '''it's ok'''"))
+        assertFalse(inside("echo // it's"))
     }
 
     @Test
@@ -86,5 +97,9 @@ class CompletionContextDetectorCommandExpressionTest {
         assertFalse(dot("sh 'ls' "))
         assertFalse(dot("sh 'ls'"))
         assertFalse(dot("sh"))
+        assertTrue(dot("list. // trailing\n", line = 1, cursor = 0))
+        assertTrue(dot("list. /* c */ ", cursor = 14))
+        assertTrue(dot("println \"http://x\"."))
+        assertFalse(dot("sh 'ls' // see foo."))
     }
 }

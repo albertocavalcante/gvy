@@ -72,6 +72,30 @@ class JenkinsMapKeyStringContextTest {
         assertEquals("returnStdout: ", returnStdout.insertText.substring(0, "returnStdout: ".length))
     }
 
+    @Test
+    fun `after a real dot on a step result no step map keys are offered`(): Unit = runBlocking {
+        val line = "  def v = sh(script: 'ls', returnStdout: true).trim"
+        val items = complete("node {\n$line\n}", Position(1, line.length))
+
+        assertNull(items.find { it.label == "returnStdout:" }, "step options are not members of the result")
+        val line2 = "  def w = readFile('x')."
+        val items2 = complete("node {\n$line2\n}", Position(1, line2.length))
+        assertNull(items2.find { it.label == "returnStdout:" })
+    }
+
+    @Test
+    fun `partially typed option replaces the typed word and keeps the comma`(): Unit = runBlocking {
+        val line = "  sh 'ls' ret"
+        val items = complete("node {\n$line\n}", Position(1, line.length))
+
+        val returnStdout = items.find { it.label == "returnStdout:" }
+        assertNotNull(returnStdout, "returnStdout should be offered for a typed prefix")
+        val edit = returnStdout.textEdit.left
+        assertEquals(Position(1, line.length - 3), edit.range.start)
+        assertEquals(Position(1, line.length), edit.range.end)
+        assertTrue(edit.newText.startsWith(", returnStdout: "), edit.newText)
+    }
+
     private suspend fun complete(content: String, position: Position): List<CompletionItem> {
         serverHandle!!.server.textDocumentService.didOpen(
             DidOpenTextDocumentParams().apply {

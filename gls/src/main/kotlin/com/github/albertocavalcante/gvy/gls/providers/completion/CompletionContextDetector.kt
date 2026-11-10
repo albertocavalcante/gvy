@@ -192,42 +192,12 @@ internal object CompletionContextDetector {
         val lastLineComment = lineBeforeOffset.lastIndexOf("//")
         // Treat as line comment only if the // itself is not inside a string literal
         val inLineComment =
-            lastLineComment != -1 && !isInStringLiteral(lineBeforeOffset, lastLineComment)
+            lastLineComment != -1 && !GroovyCodeScanner.isInsideString(lineBeforeOffset, lastLineComment)
 
         // String literal detection: check if we're currently inside a quoted string on this line
-        val inString = isInStringLiteral(lineBeforeOffset, lineBeforeOffset.length)
+        val inString = GroovyCodeScanner.isInsideString(lineBeforeOffset, lineBeforeOffset.length)
 
         return inBlockComment || inLineComment || inString
-    }
-
-    /**
-     * Heuristic to determine if a given position in the text is inside a string literal.
-     * Scans from the start of the text up to position, toggling state on unescaped quotes.
-     */
-    private fun isInStringLiteral(text: String, position: Int): Boolean {
-        if (text.isEmpty() || position <= 0) return false
-
-        var inSingle = false
-        var inDouble = false
-        var i = 0
-        val end = position.coerceIn(0, text.length)
-
-        while (i < end) {
-            val c = text[i]
-            val prevIsEscape = i > 0 && text[i - 1] == '\\'
-            when (c) {
-                '\'' -> if (!inDouble && !prevIsEscape) {
-                    inSingle = !inSingle
-                }
-
-                '"' -> if (!inSingle && !prevIsEscape) {
-                    inDouble = !inDouble
-                }
-            }
-            i++
-        }
-
-        return inSingle || inDouble
     }
 
     /**
@@ -237,12 +207,13 @@ internal object CompletionContextDetector {
     fun isInsideStringLiteral(content: String, line: Int, character: Int): Boolean {
         val currentLine = content.lines().getOrNull(line) ?: return false
         val safeChar = character.coerceIn(0, currentLine.length)
-        return isInStringLiteral(currentLine, safeChar)
+        return GroovyCodeScanner.isInsideString(currentLine, safeChar)
     }
 
     /**
      * True when the text before the cursor is a paren-less call to [methodName] whose first positional
-     * argument is a complete string literal, e.g. `sh 'ls' |`. Further named options must then be
+     * argument is a complete string literal, e.g. `sh 'ls' |` (optionally followed by a partially typed option
+     * name, `sh 'ls' ret|`). Further named options must then be
      * introduced with a `, ` separator. False inside the literal, after an existing comma, or for
      * parenthesised calls.
      */
@@ -251,14 +222,14 @@ internal object CompletionContextDetector {
         val currentLine = lines.getOrNull(line) ?: return false
         val safeChar = character.coerceIn(0, currentLine.length)
         val prefix = currentLine.substring(0, safeChar)
-        if (isInStringLiteral(prefix, prefix.length)) return false
+        if (GroovyCodeScanner.isInsideString(prefix, prefix.length)) return false
         // The only possible match ends at the cursor, so the captured word is the called method.
         return COMPLETE_STRING_ARGUMENT.find(prefix.trimStart())?.groupValues?.get(1) == methodName
     }
 
     /** `<word> <whitespace> <complete string literal> <whitespace>` anchored at the end of the prefix. */
     private val COMPLETE_STRING_ARGUMENT = Regex(
-        """\b(\w+)\s+(?:'{3}.*?'{3}|"{3}.*?"{3}|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*$""",
+        """\b(\w+)\s+(?:'{3}.*?'{3}|"{3}.*?"{3}|'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")(?:\s+\w+)?\s*$""",
     )
 }
 
