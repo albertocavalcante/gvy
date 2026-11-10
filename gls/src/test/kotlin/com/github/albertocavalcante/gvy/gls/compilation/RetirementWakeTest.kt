@@ -13,7 +13,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
@@ -22,7 +21,6 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
-import java.lang.ref.WeakReference
 import java.net.URI
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Semaphore
@@ -202,37 +200,33 @@ class RetirementWakeTest {
     }
 
     @Test
-    fun `a job that completes normally never signals and retains no waiter`(): Unit = runBlocking {
+    fun `a job that completes normally never signals and leaves no handler on the signal`(): Unit = runBlocking {
         val job = CompletableDeferred<CompilationResult>()
-        val pending = CompilationCacheService().register(job) // held strongly, as a slow co-waiter would
-        val returnedWaiter = awaitedWaiter(pending) { job.complete(CompilationResult.failure(emptyList())) }
-        assertFalse(pending.retired.isCompleted, "a normal completion must not signal a retirement")
+        val pending = CompilationCacheService().register(job)
+        // Undispatched: both select clauses are registered before the job completes
+        val waiter = async(start = CoroutineStart.UNDISPATCHED) { pending.awaitUnlessRetired() }
+        assertTrue(handlersOf(pending.retired).isNotEmpty(), "the waiter never registered on the signal")
 
-        var control: Any? = Any()
-        val collector = WeakReference(checkNotNull(control))
-        control = null
-        repeat(GC_ATTEMPTS) {
-            if (collector.get() == null && returnedWaiter.get() == null) return@runBlocking
-            System.gc()
-            Thread.sleep(GC_PAUSE_MILLIS)
-        }
-        assumeTrue(collector.get() == null, "the JVM did not collect within $GC_ATTEMPTS attempts")
-        assertNull(returnedWaiter.get(), "the retirement signal still references a waiter that already returned")
+        job.complete(CompilationResult.failure(emptyList()))
+
+        assertNotNull(waiter.await())
+        assertFalse(pending.retired.isCompleted, "a normal completion must not signal a retirement")
+        assertEquals("", handlersOf(pending.retired), "the losing select clause stayed registered on the signal")
     }
 
     /**
-     * Runs a waiter to a normal answer; once this returns, only [pending] could still reference it. The waiter
-     * starts undispatched, so both of its select clauses are registered before the job completes. It runs on
-     * the caller's event loop: a parked pool thread may keep its last task reachable.
+     * The completion handlers registered on [signal], read from kotlinx.coroutines' job state (pinned in
+     * libs.versions.toml): empty when its state is `Empty`, the state's description otherwise. Skips the
+     * test if a coroutines upgrade renamed the state. A GC probe proved unreliable here: the test runtime
+     * keeps a finished coroutine reachable whether or not the signal does (#1429).
      */
-    private suspend fun awaitedWaiter(
-        pending: PendingCompilation,
-        complete: () -> Unit,
-    ): WeakReference<Deferred<CompilationResult?>> = coroutineScope {
-        val waiter = async(start = CoroutineStart.UNDISPATCHED) { pending.awaitUnlessRetired() }
-        complete()
-        assertNotNull(waiter.await())
-        WeakReference(waiter)
+    private fun handlersOf(signal: CompletableDeferred<Unit>): String {
+        val field = generateSequence<Class<*>>(signal.javaClass) { it.superclass }
+            .flatMap { it.declaredFields.asSequence() }
+            .firstOrNull { it.name.startsWith("_state") }
+        assumeTrue(field != null, "kotlinx.coroutines no longer keeps a _state field")
+        val state = checkNotNull(field).apply { isAccessible = true }.get(signal)
+        return if (state?.javaClass?.simpleName == "Empty") "" else state.toString()
     }
 
     private companion object {
@@ -243,7 +237,5 @@ class RetirementWakeTest {
         const val MAX_RESOLUTIONS = 3
         const val WAITERS = 4
         val NOT_SIGNALLED = Any()
-        const val GC_ATTEMPTS = 10
-        const val GC_PAUSE_MILLIS = 20L
     }
 }
