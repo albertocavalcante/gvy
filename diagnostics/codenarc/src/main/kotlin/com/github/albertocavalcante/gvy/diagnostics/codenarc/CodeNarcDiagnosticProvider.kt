@@ -81,7 +81,8 @@ class CodeNarcDiagnosticProvider(
         )
 
         // Convert results to LSP diagnostics with triplication fix
-        val diagnostics = convertResultsToDiagnosticsFixed(results, sourceCode, uri)
+        val diagnostics = convertResultsToDiagnosticsFixed(results, sourceCode, uri) +
+            ignoredRulesetNotice(rulesetConfig.ignoredWorkspaceRulesets, uri)
 
         logger.info { "CodeNarc analysis completed for $fileName: ${diagnostics.size} diagnostics" }
         diagnostics
@@ -99,6 +100,30 @@ class CodeNarcDiagnosticProvider(
         logger.error(e) { "Failed to analyze file: $fileName" }
         // Return empty list on failure - LSP should continue functioning
         emptyList()
+    }
+
+    /**
+     * Tells the user why a workspace ruleset has no effect (it is never evaluated, for security). The notice is
+     * attached only to the ignored ruleset file itself, so it does not flood the Problems panel of every file.
+     */
+    private fun ignoredRulesetNotice(ignored: List<String>, uri: URI?): List<Diagnostic> {
+        val root = workspaceContext.root
+        val analysed = uri?.let { runCatching { Paths.get(it).normalize() }.getOrNull() }
+        val isIgnoredFile = root != null && analysed != null &&
+            ignored.any { root.resolve(it).normalize() == analysed }
+        return if (!isIgnoredFile) {
+            emptyList()
+        } else {
+            listOf(
+                Diagnostic(
+                    Range(Position(0, 0), Position(0, 0)),
+                    "This CodeNarc ruleset is ignored: rulesets from the workspace are Groovy scripts and are " +
+                        "not evaluated for security reasons. The default ruleset is used.",
+                    DiagnosticSeverity.Information,
+                    "CodeNarc",
+                ),
+            )
+        }
     }
 
     /**

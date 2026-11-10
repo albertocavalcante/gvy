@@ -227,7 +227,7 @@ class RulesetResolverTest {
     }
 
     @Test
-    fun `explicit workspace ruleset takes precedence over Jenkins detection`(@TempDir tempDir: Path) {
+    fun `workspace ruleset is never loaded and Jenkins detection still applies`(@TempDir tempDir: Path) {
         Files.createFile(tempDir.resolve("Jenkinsfile"))
         Files.createDirectory(tempDir.resolve("vars"))
         Files.writeString(tempDir.resolve("vars/buildPlugin.groovy"), "def call() {}\n")
@@ -236,12 +236,13 @@ class RulesetResolverTest {
 
         val config = resolver.resolve(createWorkspaceContext(tempDir, enabled = true))
 
-        assertEquals("workspace:codenarc.groovy", config.source)
-        assertEquals(customRuleset, config.rulesetContent)
+        assertEquals("resource:codenarc/rulesets/frameworks/jenkins.groovy", config.source)
+        assertFalse(config.rulesetContent.contains(customRuleset))
+        assertEquals(listOf("codenarc.groovy"), config.ignoredWorkspaceRulesets)
     }
 
     @Test
-    fun `should use workspace codenarc file when present`(@TempDir tempDir: Path) {
+    fun `should ignore a workspace codenarc file and report it`(@TempDir tempDir: Path) {
         // Given: Workspace with .codenarc file
         val customRuleset = """
             ruleset {
@@ -254,9 +255,10 @@ class RulesetResolverTest {
         val context = createWorkspaceContext(tempDir, enabled = true)
         val config = resolver.resolve(context)
 
-        // Then: Should use workspace file
-        assertTrue(config.source.contains("workspace"), "Expected workspace ruleset, got: ${config.source}")
-        assertEquals(customRuleset, config.rulesetContent)
+        // Then: the workspace file is never evaluated (CodeNarc runs it as Groovy); the default is used
+        assertTrue(config.source.startsWith("resource:"), "Expected a bundled ruleset, got: ${config.source}")
+        assertFalse(config.rulesetContent.contains("Custom workspace ruleset"))
+        assertEquals(listOf(".codenarc"), config.ignoredWorkspaceRulesets)
     }
 
     @Test
