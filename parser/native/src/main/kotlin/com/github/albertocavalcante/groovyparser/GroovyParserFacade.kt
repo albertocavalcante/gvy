@@ -401,7 +401,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             ParserDiagnosticConverter.convert(compilationUnit.errorCollector, request.locatorCandidates).toMutableList()
 
         if (compilationFailed && diagnostics.none { it.severity == ParserSeverity.ERROR }) {
-            val errorMessage = linkageFailure ?: compilationUnit.errorCollector.lastError?.toString() ?: "Unknown error"
+            // ErrorCollector.getLastError throws when nothing was collected, so read the list instead.
+            val lastCollected = compilationUnit.errorCollector.errors.orEmpty().lastOrNull()?.toString()
+            val errorMessage = linkageFailure ?: lastCollected ?: "Unknown error"
             diagnostics.add(
                 com.github.albertocavalcante.nativeapi.ParserDiagnostic(
                     range = com.github.albertocavalcante.nativeapi.ParserRange.point(0, 0),
