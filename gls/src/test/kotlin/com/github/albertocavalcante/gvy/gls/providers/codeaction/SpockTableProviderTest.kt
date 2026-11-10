@@ -367,6 +367,8 @@ class SpockTableProviderTest {
         useSpockClasspath(sources = listOf(fixture.src))
         fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
         assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
+        // Recorded in the CI log either way: the clean compile's written superclass spelling (#1421).
+        println("NESTED-CONTROL clean: ${diagnosis(fixture)}")
 
         // A syntax break plus a header change: the file is excluded for certain (the compile degrades), and
         // matching by short name would see Outer1.Inner's changed header. The break must still lex, because it
@@ -381,7 +383,10 @@ class SpockTableProviderTest {
         )
         val status = diagnosis(fixture)
         assertTrue(status.startsWith("status=UNCERTAIN"), "TableSpec must be UNCERTAIN: $status")
-        assertTrue(fixture.hasAction(), "Outer2.Inner is unchanged, so its verdict is recalled: ${diagnosis(fixture)}")
+        val recalled = fixture.hasAction()
+        val decision = provider.lastVerdictDecision(fixture.fileUri)
+        println("NESTED-CONTROL degraded: ${diagnosis(fixture)} decision=$decision")
+        assertTrue(recalled, "Outer2.Inner is unchanged, so its verdict is recalled: decision=$decision")
     }
 
     /** How the classifier saw TableSpec's superclass in the last compile (#1420). */

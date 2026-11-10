@@ -32,6 +32,9 @@ class CodeActionProvider(
     /** Drops the remembered Spock verdicts of a closed document (#1387). */
     fun forgetDocument(uri: URI) = verdictMemory.forget(uri.toString())
 
+    /** Why the last degraded table-action request for [uri] recalled or denied each class (diagnostics). */
+    internal fun lastVerdictDecision(uri: URI): String? = verdictMemory.lastDecision(uri.toString())
+
     /**
      * The Groovy and Java files of [packageName] across every workspace source root the compile uses, plus the
      * source's own directory (its file need not sit where its `package` says), on disk or open, as one sorted

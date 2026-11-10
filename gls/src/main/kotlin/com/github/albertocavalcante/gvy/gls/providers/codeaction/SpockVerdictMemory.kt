@@ -80,6 +80,10 @@ internal class SpockVerdictMemory {
     private val lock = Any()
     private val records = HashMap<String, Record>()
     private val epochs = HashMap<String, Long>()
+    private val decisions = HashMap<String, String>()
+
+    /** Why the last degraded request for [uri] recalled or denied each class; for diagnostics and tests. */
+    internal fun lastDecision(uri: String): String? = synchronized(lock) { decisions[uri] }
 
     /**
      * Starts one request for [uri]. By a source's normalized path, [readSource] reads its current text and
@@ -97,6 +101,7 @@ internal class SpockVerdictMemory {
     fun forget(uri: String) {
         synchronized(lock) {
             records.remove(uri)
+            decisions.remove(uri)
             epochs[uri] = (epochs[uri] ?: 0L) + 1
         }
     }
@@ -119,17 +124,34 @@ internal class SpockVerdictMemory {
                 refresh(module, source)
                 return emptySet()
             }
-            val record = synchronized(lock) { records[uri] }?.takeIf { it.fingerprint == fingerprint }
-                ?: return emptySet()
+            val record = synchronized(lock) { records[uri] }
+            if (record == null || record.fingerprint != fingerprint) {
+                decide(if (record == null) "no record" else "fingerprint changed")
+                return emptySet()
+            }
             val imports = importsOf(module)
-            return source.classes.filter { it.status == SpecificationStatus.UNCERTAIN }
-                .mapNotNullTo(HashSet()) { context ->
-                    val remembered = record.classes[context.classNode.name]
-                    context.classNode.name.takeIf {
-                        remembered != null && remembered.declaration == declaration(context.classNode, imports) &&
-                            sameBaseDegraded(remembered) && basesUnchanged(remembered, module, imports)
-                    }
-                }
+            val verdicts = source.classes.filter { it.status == SpecificationStatus.UNCERTAIN }
+                .associate { context -> context.classNode.name to denial(record, context.classNode, module, imports) }
+            decide(verdicts.entries.joinToString("; ") { (name, denial) -> "$name: ${denial ?: "recalled"}" })
+            return verdicts.filterValues { it == null }.keys
+        }
+
+        /** Null when [node]'s remembered SPECIFICATION applies, else the first check that denies it. */
+        private fun denial(record: Record, node: ClassNode, module: ModuleNode, imports: String): String? {
+            val remembered = record.classes[node.name] ?: return "not remembered (recorded: ${record.classes.keys})"
+            val current = declaration(node, imports)
+            return when {
+                remembered.declaration != current ->
+                    "declaration differs: recorded=[${remembered.declaration}] current=[$current]"
+                !sameBaseDegraded(remembered) ->
+                    "base not degraded: bases=${remembered.bases.map { "${it.name}@${it.source}" }} " +
+                        "excluded=${outcome.excludedSources.map { it.source }} stubbed=${outcome.stubbedClasses}"
+                else -> baseDifference(remembered, module, imports)
+            }
+        }
+
+        private fun decide(text: String) {
+            synchronized(lock) { if ((epochs[uri] ?: 0L) == epoch) decisions[uri] = text }
         }
 
         private fun refresh(module: ModuleNode, source: SpockSourceContext.Available) {
@@ -158,15 +180,23 @@ internal class SpockVerdictMemory {
          * current module; a link in another file compares its prelude hash and its package's file set, since a
          * new file there can shadow a star-imported name. Anything that cannot be computed denies reuse.
          */
-        private fun basesUnchanged(remembered: Remembered, module: ModuleNode, imports: String): Boolean =
-            remembered.bases.all { base ->
+        /** Null when every remembered base is unchanged, else what changed for the first one that did. */
+        private fun baseDifference(remembered: Remembered, module: ModuleNode, imports: String): String? =
+            remembered.bases.firstNotNullOfOrNull { base ->
                 if (base.source == null) {
                     val current = module.classes.firstOrNull { it.name == base.name }?.let { declaration(it, imports) }
-                    base.localDeclaration != null && base.localDeclaration == current
+                    "local base ${base.name}: recorded=[${base.localDeclaration}] current=[$current]"
+                        .takeUnless { base.localDeclaration != null && base.localDeclaration == current }
                 } else {
                     val prelude = readSource(base.source)?.let { preludeOf(it, base.name)?.hash }
-                    base.prelude != null && base.prelude == prelude &&
-                        base.packageFiles != null && base.packageFiles == listPackage(base.source, base.packageName)
+                    val files = listPackage(base.source, base.packageName)
+                    when {
+                        base.prelude == null || base.prelude != prelude ->
+                            "prelude of ${base.name}: recorded=${base.prelude} current=$prelude"
+                        base.packageFiles == null || base.packageFiles != files ->
+                            "package files of ${base.name}: recorded=${base.packageFiles} current=$files"
+                        else -> null
+                    }
                 }
             }
 
