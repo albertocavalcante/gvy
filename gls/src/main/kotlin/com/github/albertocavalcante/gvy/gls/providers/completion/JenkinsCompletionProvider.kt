@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.MergedGlobalVariable
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
@@ -142,6 +143,9 @@ internal object JenkinsCompletionProvider {
         // after `sh(...).trim|` or `readFile('x').|` the receiver call is not a step being configured.
         val afterDot = followsMemberAccessDot(ctx.content, ctx.line, ctx.character)
         val methodCall = generateSequence(nodeAtCursor) { astModel.getParent(it) }
+            // Inside a step's closure body (`stage('x') { | }`, `node { | }`) the step's own map keys do
+            // not apply: the body holds statements, not that call's arguments.
+            .takeWhile { it !is ClosureExpression }
             .firstNotNullOfOrNull { node ->
                 callOrReceiverCall(node) { receiver ->
                     // The receiver is the step being configured only for a paren-less command expression
