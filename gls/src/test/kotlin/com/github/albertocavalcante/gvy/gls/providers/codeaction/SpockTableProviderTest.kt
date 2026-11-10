@@ -4,6 +4,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.Formatter
 import kotlinx.coroutines.runBlocking
+import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.CodeActionContext
 import org.eclipse.lsp4j.CodeActionKind
 import org.eclipse.lsp4j.CodeActionParams
@@ -160,11 +161,10 @@ class SpockTableProviderTest {
     private fun jarOf(type: Class<*>): Path = Path.of(type.protectionDomain.codeSource.location.toURI())
 
     /** Spock and the Groovy runtime on the workspace compile classpath, as a resolved Gradle project has them. */
-    private fun useSpockClasspath(vararg extra: Path, withGroovy: Boolean = true) {
-        val runtime = listOfNotNull(jarOf(groovy.lang.GroovyObject::class.java).takeIf { withGroovy })
+    private fun useSpockClasspath(vararg extra: Path) {
         compilationService.updateWorkspaceModel(
             workspace,
-            listOf(jarOf(spock.lang.Specification::class.java)) + runtime + extra,
+            listOf(jarOf(spock.lang.Specification::class.java), jarOf(groovy.lang.GroovyObject::class.java)) + extra,
             emptyList(),
         )
     }
@@ -209,13 +209,14 @@ class SpockTableProviderTest {
     }
 
     @Test
-    fun `a degraded compile withholds the action for a spec proven only by resolution`(): Unit = runBlocking {
-        // Without the Groovy runtime, loading the jar base fails the compile without a collected error,
-        // so the facade retries at CONVERSION, where nothing resolves (documented on SpockTableAction).
-        useSpockClasspath(baseSpecJar(), withGroovy = false)
+    fun `an unresolved CONVERSION AST withholds the action for a spec proven only by resolution`(): Unit = runBlocking {
+        // A degraded compile is retried at CONVERSION, where nothing resolves (documented on SpockTableAction).
+        // Compile at CONVERSION directly, with a complete classpath, so the scenario does not depend on a
+        // classpath that fails to load the base (which also breaks the parser's debug logging, see #1409).
+        useSpockClasspath(baseSpecJar())
         val source = content.replace("extends spock.lang.Specification", "extends com.example.JarBaseSpec")
         documents.put(uri, source, 1)
-        compilationService.compile(uri, source)
+        compilationService.compile(uri, source, compilePhase = Phases.CONVERSION)
 
         val actions = provider.provideCodeActions(params())
 
