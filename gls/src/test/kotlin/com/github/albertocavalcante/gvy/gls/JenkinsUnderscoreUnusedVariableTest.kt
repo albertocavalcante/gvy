@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls
 
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.Diagnostic
+import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializedParams
@@ -20,9 +21,9 @@ import kotlin.test.assertTrue
  * `@Library('lib') _` is the idiomatic Jenkins shared-library header: `_` only carries the annotation.
  * CodeNarc's UnusedVariable must not report it, while real unused variables must still be reported.
  *
- * The tests use `@SuppressWarnings` as the carrier annotation instead of `@Library`: it has the same AST shape
- * (an annotated declaration of `_`) but always resolves, so the compile error for an unresolved `Library`
- * class cannot suppress the CodeNarc run and mask the behaviour under test.
+ * Most cases use `@SuppressWarnings` as the carrier annotation: it has the same AST shape (an annotated
+ * declaration of `_`) and resolves without any Jenkins stubs. The `@Library` case covers the real header,
+ * which compiles now that Jenkins mode provides a `Library` annotation stub.
  */
 class JenkinsUnderscoreUnusedVariableTest {
 
@@ -74,6 +75,21 @@ class JenkinsUnderscoreUnusedVariableTest {
         )
 
         val messages = diagnostics.map { it.message }
+        assertTrue(messages.any { it.contains("[unusedThing]") }, "Real unused variable expected, but was: $messages")
+        assertFalse(messages.any { it.contains("[_]") }, "Underscore must not be reported, but was: $messages")
+    }
+
+    @Test
+    fun `the real Library header underscore is not reported`(): Unit = runBlocking {
+        val diagnostics = diagnosticsAfterCodeNarcRuns(
+            "@Library('lib') _\n\ndef unusedThing = 1\n\npipeline {\n    agent any\n}\n",
+        )
+
+        val messages = diagnostics.map { it.message }
+        assertFalse(
+            diagnostics.any { it.severity == DiagnosticSeverity.Error },
+            "The @Library header must compile cleanly, but was: $messages",
+        )
         assertTrue(messages.any { it.contains("[unusedThing]") }, "Real unused variable expected, but was: $messages")
         assertFalse(messages.any { it.contains("[_]") }, "Underscore must not be reported, but was: $messages")
     }
