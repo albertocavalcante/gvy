@@ -100,9 +100,23 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
     private data class CompilationInput(val uri: URI, val content: String, val claim: Claim)
 
-    /** [incarnation]: for [Origin.BUFFER], the lifecycle the text was read from, captured with that text. */
-    private fun claim(uri: URI, origin: Origin, incarnation: DocumentIncarnation? = null): Claim {
-        val (ticket, publication) = ownership.acquire(uri) { semanticIndexer?.begin(uri) }
+    /**
+     * [incarnation]: for [Origin.BUFFER], the lifecycle the text was read from, captured with that text.
+     * [snapshot]: that buffer state, when known; its version orders this compile's writes (#1383).
+     */
+    private fun claim(
+        uri: URI,
+        origin: Origin,
+        incarnation: DocumentIncarnation? = null,
+        snapshot: DocumentSnapshot? = null,
+    ): Claim {
+        val version = snapshot?.version
+        val order = if (origin == Origin.BUFFER && incarnation != null && version != null) {
+            BufferOrder(incarnation, version) { documentProvider?.getSnapshot(uri) === snapshot }
+        } else {
+            null
+        }
+        val (ticket, publication) = ownership.acquire(uri, order) { semanticIndexer?.begin(uri) }
         val isValid: () -> Boolean = when (origin) {
             Origin.BUFFER -> {
                 { incarnation != null && documentProvider?.getIncarnation(uri) === incarnation }
@@ -126,8 +140,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * Compiles Groovy source code and returns the result.
      */
     suspend fun compile(uri: URI, content: String, compilePhase: Int = Phases.CANONICALIZATION): CompilationResult {
-        val incarnation = documentProvider?.getIncarnation(uri)
-        val claim = claim(uri, if (incarnation != null) Origin.BUFFER else Origin.UNMANAGED, incarnation)
+        val buffer = documentProvider?.getBuffer(uri)
+        val incarnation = buffer?.incarnation
+        // Ordered only when the caller's text is the buffer's: other text has no version of its own
+        val snapshot = buffer?.snapshot?.takeIf { it.content == content }
+        val claim = claim(uri, if (incarnation != null) Origin.BUFFER else Origin.UNMANAGED, incarnation, snapshot)
         return claim.publication.use { compile(uri, content, compilePhase, claim) }
     }
 
@@ -313,7 +330,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     ): PendingCompilation {
         // Acquire before exposing queued work, without nesting semantic and registry map locks.
         val incarnation = identity.incarnation
-        val claim = claim(uri, if (incarnation != null) Origin.BUFFER else Origin.UNMANAGED, incarnation)
+        val claim = claim(
+            uri,
+            if (incarnation != null) Origin.BUFFER else Origin.UNMANAGED,
+            incarnation,
+            identity.document,
+        )
         val publication = claim.publication
         var created = false
         var retainedPublication = false

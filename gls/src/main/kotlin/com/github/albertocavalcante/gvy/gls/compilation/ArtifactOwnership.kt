@@ -1,6 +1,14 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import java.net.URI
+
+/**
+ * The open-buffer version a compile read, for ordering its writes against other compiles of the same buffer
+ * (#1383). [version] is the client's LSP version, monotonic within one [incarnation] (an open/close
+ * lifecycle). [isCurrent] says whether that text is still the buffer's current state.
+ */
+internal class BufferOrder(val incarnation: Any, val version: Int, val isCurrent: () -> Boolean)
 
 /**
  * The publication boundary shared by every artifact derived from a source file: the compilation cache, the
@@ -17,7 +25,12 @@ import java.net.URI
  */
 class ArtifactOwnership {
     /** Ownership of [uri]'s artifacts as of one generation. */
-    class Ticket internal constructor(val uri: URI, internal val epoch: Long, internal val stamp: Long)
+    class Ticket internal constructor(
+        val uri: URI,
+        internal val epoch: Long,
+        internal val stamp: Long,
+        internal val order: BufferOrder? = null,
+    )
 
     private val monitor = Any()
     private var epoch = 0L
@@ -26,18 +39,46 @@ class ArtifactOwnership {
     // Only files retired since the last global retirement are listed; the others are at stamp 0.
     private val stamps = HashMap<URI, Long>()
 
+    // The buffer order of each file's last accepted write; dropped with the file's stamp, so a reopen restarts it.
+    private val committedOrders = HashMap<URI, BufferOrder>()
+    private val logger = KotlinLogging.logger {}
+
     internal fun begin(uri: URI): Ticket = acquire(uri) {}.first
 
-    /** Takes a ticket and runs [alsoAcquire] (another index's own token) atomically with respect to retirement. */
-    internal fun <T> acquire(uri: URI, alsoAcquire: () -> T): Pair<Ticket, T> = synchronized(monitor) {
-        ticketFor(uri) to alsoAcquire()
-    }
+    /**
+     * Takes a ticket and runs [alsoAcquire] (another index's own token) atomically with respect to retirement.
+     * An [order] makes the ticket's writes respect buffer-version order: see [commit].
+     */
+    internal fun <T> acquire(uri: URI, order: BufferOrder? = null, alsoAcquire: () -> T): Pair<Ticket, T> =
+        synchronized(monitor) { ticketFor(uri, order) to alsoAcquire() }
+
+    /** As [acquire] without an order. */
+    internal fun <T> acquire(uri: URI, alsoAcquire: () -> T): Pair<Ticket, T> = acquire(uri, null, alsoAcquire)
 
     internal fun isCurrent(ticket: Ticket): Boolean = synchronized(monitor) { isCurrentLocked(ticket) }
 
-    /** Runs [write] only while [ticket] is current, and says whether it ran. */
+    /**
+     * Runs [write] only while [ticket] is current and, for buffer work, while no newer version of the same
+     * buffer lifecycle has already been written: the newest version wins whatever the completion order
+     * (#1383). The buffer's current text always commits, so a client whose versions go backwards falls back
+     * to commit order instead of stalling. Says whether [write] ran.
+     */
     internal fun commit(ticket: Ticket, write: () -> Unit): Boolean = synchronized(monitor) {
-        isCurrentLocked(ticket).also { if (it) write() }
+        val accepted = isCurrentLocked(ticket) && inOrderLocked(ticket)
+        if (accepted) {
+            write()
+            ticket.order?.let { committedOrders[ticket.uri] = it }
+        }
+        accepted
+    }
+
+    private fun inOrderLocked(ticket: Ticket): Boolean {
+        val order = ticket.order ?: return true
+        val last = committedOrders[ticket.uri]
+        if (last == null || last.incarnation !== order.incarnation || last.version <= order.version) return true
+        if (!order.isCurrent()) return false
+        logger.debug { "${ticket.uri}: version ${order.version} after ${last.version}; accepting the current text" }
+        return true
     }
 
     /**
@@ -46,6 +87,7 @@ class ArtifactOwnership {
      */
     internal fun retire(uri: URI, cleanup: () -> Unit = {}): Ticket = synchronized(monitor) {
         stamps[uri] = ++lastStamp
+        committedOrders.remove(uri)
         cleanup()
         ticketFor(uri)
     }
@@ -65,11 +107,12 @@ class ArtifactOwnership {
         synchronized(monitor) {
             epoch++
             stamps.clear()
+            committedOrders.clear()
             cleanup()
         }
     }
 
-    private fun ticketFor(uri: URI) = Ticket(uri, epoch, stamps[uri] ?: 0L)
+    private fun ticketFor(uri: URI, order: BufferOrder? = null) = Ticket(uri, epoch, stamps[uri] ?: 0L, order)
 
     private fun isCurrentLocked(ticket: Ticket): Boolean =
         ticket.epoch == epoch && ticket.stamp == (stamps[ticket.uri] ?: 0L)
