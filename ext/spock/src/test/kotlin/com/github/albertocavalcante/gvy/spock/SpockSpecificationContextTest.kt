@@ -399,4 +399,5 @@ class SpockSpecificationContextTest {
                 ),
             ),
         )
-    }}
+    }
+}
