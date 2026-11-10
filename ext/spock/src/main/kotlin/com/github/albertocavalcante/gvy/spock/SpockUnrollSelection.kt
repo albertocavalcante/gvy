@@ -82,7 +82,10 @@ object SpockUnrollSelection {
     /** One-off selection; providers selecting every feature of a file should reuse [forModule]. */
     fun select(method: MethodNode, module: ModuleNode): UnrollSelection = forModule(module).select(method)
 
-    /** A selector for one module that computes each spec chain's conflict scan once. */
+    /**
+     * A selector for one module that computes each spec chain's conflict scan once. Not thread-safe;
+     * use it for one pass over a module that does not change meanwhile.
+     */
     fun forModule(module: ModuleNode): ModuleSelector = ModuleSelector(module)
 
     class ModuleSelector internal constructor(private val module: ModuleNode) {
@@ -139,8 +142,8 @@ object SpockUnrollSelection {
 
     /**
      * Mirrors `visitSpec`: the spec, its parameterized features, then its super spec. Not detected
-     * (missed detection, never a wrong conflict): super specs declared outside this module, a super
-     * spec spelled as a bare nested name (`extends Inner` meaning `Outer$Inner`), and a conflicting
+     * (missed detection, never a spurious conflict): super specs declared outside this module, any
+     * super spec of a nested spec spelled with a bare name (`extends Inner`), and a conflicting
      * subclass spec that runs these features.
      */
     private fun conflictInSpec(spec: ClassNode, module: ModuleNode): Boolean {
@@ -156,8 +159,15 @@ object SpockUnrollSelection {
     private fun AnnotatedNode.isConflicting(module: ModuleNode): Boolean =
         Annotations.of(this, module).problem?.reason == UnrollUncertainty.CONFLICTING_ANNOTATIONS
 
+    /**
+     * The in-module super spec, or null when it cannot be identified safely. A bare spelling in a
+     * nested spec might mean a sibling nested class rather than a top-level one, so it is not followed
+     * (missed detection rather than a spurious conflict).
+     */
     private fun moduleSuperclass(node: ClassNode, module: ModuleNode): ClassNode? {
-        val name = node.superClass?.name?.replace('$', '.') ?: return null
+        val spelling = node.superClass?.name ?: return null
+        if (node.outerClass != null && '.' !in spelling && '$' !in spelling) return null
+        val name = spelling.replace('$', '.')
         return module.classes.singleOrNull { candidate ->
             candidate.name.replace('$', '.') == name || candidate.nameWithoutPackage.replace('$', '.') == name
         }

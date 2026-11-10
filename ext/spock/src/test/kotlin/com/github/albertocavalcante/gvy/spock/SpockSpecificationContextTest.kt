@@ -223,6 +223,52 @@ class SpockSpecificationContextTest {
     }
 
     @Test
+    fun `an unresolvable outer superclass keeps compiler-bound bases uncertain`() {
+        val source = "class Base extends spock.lang.Specification {}\n" +
+            "class Outer extends ExtParent {\n static class S extends Base {}\n}"
+        val request = ParseRequest(
+            URI.create("file:///src/Probe.groovy"),
+            source,
+            compilePhase = Phases.SEMANTIC_ANALYSIS,
+        )
+        val parsed = GroovyParserFacade(loaders.first()).parse(request)
+        val context = assertIs<SpockSourceContext.Available>(SpockSourceContext.from(parsed))
+        val s = context.classes.single { it.classNode.name == "Outer\$S" }
+        assertEquals(UNCERTAIN, s.status, "ExtParent may declare a nested Base the compiler cannot see: $s")
+    }
+
+    @Test
+    fun `declared owners skip nested anonymous classes, closures and field initialisers`() {
+        val source =
+            """
+            class FooSpec extends spock.lang.Specification {
+                def field = new Object() {
+                    def a() { 1 }
+                }
+                def "feature"() {
+                    given:
+                    def nested = new Runnable() {
+                        void run() {
+                            def deeper = new Object() {
+                                def b() { 2 }
+                            }
+                        }
+                    }
+                    def closure = { -> new Object() { def c() { 3 } } }
+                    expect: true
+                }
+            }
+            """.trimIndent()
+        val lines = source.lines()
+        val context = assertIs<SpockSourceContext.Available>(contexts(source).first())
+        listOf(2 to "1 }", 9 to "2 }", 13 to "3 }").forEach { (line, marker) ->
+            val column = lines[line].indexOf(marker)
+            assertTrue(context.ownerAt(line, column)?.classNode?.name != "FooSpec", "ownerAt is the anonymous class")
+            assertEquals("FooSpec", context.declaredOwnerAt(line, column)?.classNode?.name, "line $line")
+        }
+    }
+
+    @Test
     fun `qualified nested superclass spellings resolve to the module class`() {
         val result = classify(
             """

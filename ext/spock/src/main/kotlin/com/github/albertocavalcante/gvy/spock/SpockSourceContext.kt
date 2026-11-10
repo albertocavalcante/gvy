@@ -153,15 +153,29 @@ private class SpecificationClassifier(private val module: ModuleNode) {
 
     private fun decide(node: ClassNode): SpockClassContext {
         val superClass = node.superClass
+        val bound = superClass?.let(::compilerBound)
         return when {
             node.isScript -> context(node, SpecificationStatus.NOT_SPECIFICATION, SpecificationEvidence.SCRIPT_CLASS)
             superClass == null || superClass.name == ClassHelper.OBJECT_TYPE.name ->
                 context(node, SpecificationStatus.NOT_SPECIFICATION, SpecificationEvidence.NO_SUPERCLASS)
             superClass.isResolved -> resolved(node, superClass)
-            compilerBound(superClass) != null -> inherit(node, classify(requireNotNull(compilerBound(superClass))))
+            bound != null && enclosingScopesKnown(node) -> inherit(node, classify(bound))
             else -> bySourceName(node, superClass.name)
         }
     }
+
+    /**
+     * True when the compiler could see every scope that might bind [node]'s superclass first: each
+     * enclosing class extends Object, a resolved class, or a class of this module. An unresolvable
+     * (stubbed) outer superclass hides its nested classes from the compiler, so its choice of an
+     * in-file class is not trusted.
+     */
+    private fun enclosingScopesKnown(node: ClassNode): Boolean = generateSequence(node.outerClass) { it.outerClass }
+        .all { outer ->
+            val parent = outer.superClass
+            parent == null || parent.name == ClassHelper.OBJECT_TYPE.name || parent.isResolved ||
+                compilerBound(parent) != null
+        }
 
     private fun resolved(node: ClassNode, superClass: ClassNode): SpockClassContext {
         val isSpecification = generateSequence(superClass) { it.superClass }.any { it.name == SPECIFICATION_FQN }
@@ -215,8 +229,9 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     }
 
     /**
-     * The module class the compiler already bound as this superclass (after resolution the reference
-     * redirects to the primary node). Pre-resolution placeholders are never module classes.
+     * The module class this superclass reference is identical to. A source spelling yields a fresh
+     * placeholder node, so identity means the compiler (after resolution, via redirect) or the parser
+     * itself (for example an enum constant body extending its enum) already bound it.
      */
     private fun compilerBound(superClass: ClassNode): ClassNode? {
         val target = superClass.redirect()

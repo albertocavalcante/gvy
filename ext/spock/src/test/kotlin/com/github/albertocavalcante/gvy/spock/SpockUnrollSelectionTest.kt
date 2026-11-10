@@ -185,6 +185,54 @@ class SpockUnrollSelectionTest {
     }
 
     @Test
+    fun `a cached conflict is reused for every feature of specs sharing a super spec`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            import spock.lang.Rollup
+            @Unroll @Rollup
+            abstract class Base extends spock.lang.Specification {}
+            class One extends Base {
+                def "one #a"() { expect: a
+                    where: a << [1] }
+                def "uno #a"() { expect: a
+                    where: a << [1] }
+            }
+            class Two extends Base {
+                def "two #b"() { expect: b
+                    where: b << [1] }
+            }
+            """.trimIndent()
+        val module = requireNotNull(parser.parse(ParseRequest(URI.create("file:///S.groovy"), source)).ast)
+        val selector = SpockUnrollSelection.forModule(module)
+        val features = module.classes.flatMap { it.methods }.filter { '#' in it.name }
+
+        assertEquals(3, features.size)
+        features.forEach { method ->
+            assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS), selector.select(method))
+        }
+    }
+
+    @Test
+    fun `a nested spec's bare super spelling is not matched to a conflicting top level class`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            import spock.lang.Rollup
+            @Unroll @Rollup
+            class Inner extends spock.lang.Specification {}
+            class Outer {
+                static class Inner extends spock.lang.Specification {}
+                static class S extends Inner {
+                    def "feature #a"() { expect: a
+                        where: a << [1] }
+                }
+            }
+            """.trimIndent()
+        assertIs<UnrollSelection.Pattern>(select(source))
+    }
+
+    @Test
     fun `features without a where block are not parameterized`() {
         val source = "class S extends spock.lang.Specification {\n  def \"feature #a\"() { expect: true }\n}"
         assertSame(UnrollSelection.NotParameterized, select(source))
