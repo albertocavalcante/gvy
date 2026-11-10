@@ -53,7 +53,8 @@ class WorkspaceManager internal constructor(
     // Disk probes, once per existing root path: whether names under the root compare case-insensitively (#1424).
     private val caseInsensitiveRoots = ConcurrentHashMap<Path, Boolean>()
 
-    // Source-root links refused at the trust boundary, each warned about once.
+    // Roots refused at the trust boundary, each warned about once. It only grows: a root fixed later stays quiet
+    // for the session, but whether to follow it is decided afresh on every scan and notification.
     private val refusedLinks: MutableSet<Path> = ConcurrentHashMap.newKeySet()
 
     private val logger = KotlinLogging.logger {}
@@ -176,7 +177,7 @@ class WorkspaceManager internal constructor(
         // Disk work first, outside the update lock: spellings, case probes, stats and folder walks.
         val start = current()
         val spelling = Spelling(start.sourceRoots.map { it.toAbsolutePath().normalize() }, start.root)
-        val createdPaths = created.mapNotNull(spelling::inRoot).distinct()
+        val createdPaths = created.mapNotNull(spelling::inRoot).distinct().filter(spelling::isContained)
         val deletedPaths = deleted.mapNotNull(spelling::inRoot).distinct()
         if (createdPaths.isEmpty() && deletedPaths.isEmpty()) return SourceListChange.NONE
 
@@ -231,6 +232,28 @@ class WorkspaceManager internal constructor(
         ?: caseInsensitive(canonical).also { if (Files.isDirectory(root)) caseInsensitiveRoots[root] = it }
 
     /**
+     * Where [root] may be scanned from, or null when the trust boundary refuses it: a root that is itself a link
+     * is scanned at its target only inside the workspace ([followedLink]), and a root lexically inside the
+     * workspace whose real path leaves it (an ancestor link, `src/main -> /usr/share`) is refused. A root lexically
+     * outside the workspace without links (a build's `srcDir '../shared'`) is the build's choice and is scanned.
+     * Links are only followed inside the workspace, even for a root declared outside it: the model does not record
+     * where a root came from, so a link cannot be trusted by origin (#1424).
+     */
+    private fun scanStart(root: Path, workspaceRoot: Path?): Path? {
+        val workspace = workspaceRoot?.toAbsolutePath()?.normalize()
+        val absolute = root.toAbsolutePath().normalize()
+        return when {
+            Files.isSymbolicLink(absolute) -> followedLink(absolute, workspace)
+            workspace == null || !absolute.startsWith(workspace) -> absolute
+            DocumentTargetSelector.canonical(absolute).startsWith(realWorkspace(workspace)) -> absolute
+            else -> null.also { refuse(absolute, "resolves outside the workspace through a linked ancestor") }
+        }
+    }
+
+    private fun realWorkspace(workspace: Path): Path =
+        realPathOrNull(workspace) ?: DocumentTargetSelector.canonical(workspace)
+
+    /**
      * The directory a source root that is itself a symbolic link may be scanned at: its real target, only when
      * that lies strictly under the workspace's real path. A cloned repository's `src -> /` or `src -> ~`, a link to
      * the workspace or an ancestor of it, or a broken link is refused (warned about once) and lists nothing, so a
@@ -238,7 +261,7 @@ class WorkspaceManager internal constructor(
      */
     private fun followedLink(root: Path, workspaceRoot: Path?): Path? {
         val target = realPathOrNull(root) ?: return null.also { if (Files.isSymbolicLink(root)) refuse(root, "broken") }
-        val workspace = workspaceRoot?.let(::realPathOrNull) ?: workspaceRoot?.let(DocumentTargetSelector::canonical)
+        val workspace = workspaceRoot?.let(::realWorkspace)
         val trusted = workspace != null && target != workspace && target.startsWith(workspace)
         if (!trusted) refuse(root, "points outside the workspace: $target")
         return target.takeIf { trusted }
@@ -258,10 +281,14 @@ class WorkspaceManager internal constructor(
      */
     private inner class Spelling(private val roots: List<Path>, workspaceRoot: Path?) {
         // A root that is a link the trust boundary refuses takes no events at all: walking under it would cross it.
-        private val links = roots.filter(Files::isSymbolicLink).associateWith { followedLink(it, workspaceRoot) }
-        private val refused = links.filterValues { it == null }.keys
+        private val starts = roots.associateWith { scanStart(it, workspaceRoot) }
+        private val refused = starts.filterValues { it == null }.keys
         private val canonicalRoots = roots.map { root ->
-            if (root in links) links[root] ?: root else DocumentTargetSelector.canonical(root)
+            when {
+                root in refused -> root
+                Files.isSymbolicLink(root) -> starts.getValue(root) ?: root
+                else -> DocumentTargetSelector.canonical(root)
+            }
         }
         private val insensitive = roots.indices.associate { index ->
             roots[index] to isCaseInsensitive(roots[index], canonicalRoots[index])
@@ -271,6 +298,16 @@ class WorkspaceManager internal constructor(
             val absolute = path.toAbsolutePath().normalize()
             val translated = if (isScannedUnder(absolute, roots)) absolute else rebased(absolute)
             return translated?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
+        }
+
+        /**
+         * Whether a created [path] really lies in its root's directory. A directory link inside an allowed root
+         * (`src/evil -> /`) passes every lexical check, and a stat or walk through it would follow it; the scan
+         * never follows such a link, so neither do events. One real-path lookup per created path.
+         */
+        fun isContained(path: Path): Boolean {
+            val index = roots.indices.filter { path.startsWith(roots[it]) }.maxByOrNull { roots[it].nameCount }
+            return index != null && DocumentTargetSelector.canonical(path).startsWith(canonicalRoots[index])
         }
 
         private fun rebased(absolute: Path): Path? {
@@ -403,9 +440,9 @@ class WorkspaceManager internal constructor(
     private fun scanSources(sourceRoots: List<Path>, workspaceRoot: Path?): List<Path> {
         val workspaceSources = sourceRoots.flatMap { sourceRoot ->
             if (!Files.exists(sourceRoot)) return@flatMap emptyList<Path>()
-            val start = if (Files.isSymbolicLink(sourceRoot)) followedLink(sourceRoot, workspaceRoot) else null
-            // A refused link is walked as the link itself, which a walk does not follow: it lists nothing.
-            collectGroovySources(sourceRoot, start = start ?: sourceRoot).sorted()
+            // A refused root lists nothing; an accepted link root is walked at its checked target.
+            val start = scanStart(sourceRoot, workspaceRoot) ?: return@flatMap emptyList<Path>()
+            collectGroovySources(sourceRoot, start = start).sorted()
         }
 
         logger.info { "Indexed ${workspaceSources.size} Groovy sources from workspace roots" }

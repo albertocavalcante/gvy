@@ -311,4 +311,17 @@ class WorkspaceSourceCanonicalTest {
 
         assertEquals(emptyList(), manager.getWorkspaceSources(), "nor do events")
     }
+
+    @Test
+    fun `links are only followed inside the workspace, even for a root declared outside it`() {
+        // Deliberate asymmetry: `srcDir '../shared'` is scanned, but `srcDir '../shared-link'` pointing at the same
+        // folder is not, because a link's target is only trusted inside the workspace. Do not "fix" this without
+        // recording where a root came from (#1424).
+        val manager = manager()
+        val shared = write(base.resolve("shared/src/Shared.groovy")).parent
+        val link = Files.createSymbolicLink(base.resolve("shared-link"), shared)
+        manager.updateWorkspaceModel(Files.createDirectories(base.resolve("ws")), emptyList(), listOf(link))
+
+        assertEquals(emptyList(), manager.getWorkspaceSources())
+    }
 }
