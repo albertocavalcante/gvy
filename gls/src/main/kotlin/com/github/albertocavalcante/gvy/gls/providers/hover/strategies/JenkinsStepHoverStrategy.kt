@@ -77,11 +77,7 @@ class JenkinsStepHoverStrategy(
             value = markdownContent
         }
 
-        // Groovy lastColumnNumber is 1-based and EXCLUSIVE; the 0-based exclusive LSP end is lastColumnNumber - 1
-        val hoverRange = Range(
-            Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
-        )
+        val hoverRange = hoverRangeOf(node)
 
         return Hover().apply {
             contents = Either.forRight(markupContent)
@@ -128,15 +124,25 @@ class JenkinsStepHoverStrategy(
         }
 
         // Build hover range from the method call expression
-        // Groovy lastColumnNumber is 1-based and EXCLUSIVE; the 0-based exclusive LSP end is lastColumnNumber - 1
-        val hoverRange = Range(
-            Position(node.lineNumber - 1, node.columnNumber - 1),
-            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
-        )
+        val hoverRange = hoverRangeOf(node)
 
         return Hover().apply {
             contents = Either.forRight(markupContent)
             range = hoverRange
         }
+    }
+
+    /**
+     * Hover range of the call, or null for synthetic nodes without a source position (Groovy reports -1), so
+     * that no negative LSP coordinate is ever emitted. Groovy's `lastColumnNumber` is 1-based and EXCLUSIVE; the
+     * 0-based exclusive LSP end is `lastColumnNumber - 1`.
+     */
+    private fun hoverRangeOf(node: MethodCallExpression): Range? {
+        val positions = listOf(node.lineNumber, node.columnNumber, node.lastLineNumber, node.lastColumnNumber)
+        if (positions.any { it < 1 }) return null
+        return Range(
+            Position(node.lineNumber - 1, node.columnNumber - 1),
+            Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
+        )
     }
 }

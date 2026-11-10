@@ -21,7 +21,25 @@ class RangeTest {
 
         assertThat(range.contains(Position(2, 5))).isTrue()
         assertThat(range.contains(Position(1, 1))).isTrue()
-        assertThat(range.contains(Position(3, 10))).isTrue()
+        assertThat(range.contains(Position(3, 9))).isTrue()
+    }
+
+    @Test
+    fun `range end is exclusive`() {
+        val range = Range(Position(2, 5), Position(2, 15))
+
+        assertThat(range.contains(Position(2, 14))).isTrue()
+        assertThat(range.contains(Position(2, 15))).isFalse()
+        assertThat(Range(Position(1, 1), Position(1, 1)).contains(Position(1, 1))).isFalse()
+    }
+
+    @Test
+    fun `range contains a range that ends at the same position`() {
+        val outer = Range(Position(1, 1), Position(3, 10))
+
+        assertThat(outer.contains(outer)).isTrue()
+        assertThat(outer.contains(Range(Position(2, 1), Position(3, 10)))).isTrue()
+        assertThat(outer.contains(Range(Position(2, 1), Position(3, 11)))).isFalse()
     }
 
     @Test

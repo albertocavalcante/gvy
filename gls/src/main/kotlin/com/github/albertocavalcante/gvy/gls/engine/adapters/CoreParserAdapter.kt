@@ -35,8 +35,11 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
         val targetLine = position.line + 1
         val targetCol = position.character + 1
 
-        // Walk the AST to find the most specific node containing the position
-        return findNodeAt(cu, targetLine, targetCol)?.toUnifiedNode()
+        // Walk the AST to find the most specific node containing the position. A node that really contains it
+        // wins over one that merely ended there; only if none does, accept a cursor right after a node.
+        val node = findNodeAt(cu, targetLine, targetCol, lenientEnd = false)
+            ?: findNodeAt(cu, targetLine, targetCol, lenientEnd = true)
+        return node?.toUnifiedNode()
     }
 
     override fun allSymbols(): List<UnifiedSymbol> {
@@ -52,9 +55,9 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
      * ranges, so we continue searching their children if the node has no range or doesn't
      * contain the position.
      */
-    private fun findNodeAt(node: Node, line: Int, col: Int): Node? {
+    private fun findNodeAt(node: Node, line: Int, col: Int, lenientEnd: Boolean): Node? {
         val range = node.range
-        val contains = range?.let { rangeContains(it, line, col) } ?: false
+        val contains = range?.let { rangeContains(it, line, col, lenientEnd) } ?: false
         val containsWithPointRange = range?.let { contains || pointRangeContains(it, line, col) } ?: false
         val children = node.getChildNodes()
 
@@ -64,7 +67,7 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
 
         // Try to find a more specific child node.
         for (child in children) {
-            val found = findNodeAt(child, line, col)
+            val found = findNodeAt(child, line, col, lenientEnd)
             if (found != null) return found
         }
 
@@ -72,10 +75,16 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
         return if (range != null && containsWithPointRange) node else null
     }
 
-    private fun rangeContains(range: CoreRange, line: Int, col: Int): Boolean {
+    /**
+     * The range end is exclusive (Groovy's `lastColumnNumber`). With [lenientEnd] a position right at the end
+     * still counts, so a cursor immediately after the last character of a node can find it.
+     */
+    private fun rangeContains(range: CoreRange, line: Int, col: Int, lenientEnd: Boolean): Boolean {
         if (line < range.begin.line || line > range.end.line) return false
         if (line == range.begin.line && col < range.begin.column) return false
-        if (line == range.end.line && col > range.end.column) return false
+        if (line == range.end.line && (if (lenientEnd) col > range.end.column else col >= range.end.column)) {
+            return false
+        }
         return true
     }
 
