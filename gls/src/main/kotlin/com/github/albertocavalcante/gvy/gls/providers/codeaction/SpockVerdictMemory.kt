@@ -356,10 +356,18 @@ internal class SpockVerdictMemory {
         /** Superclass and interface spellings as written, for [node] and each enclosing class, plus [imports]. */
         private fun declaration(node: ClassNode, imports: String): String = generateSequence(node) { it.outerClass }
             .joinToString("|") { type ->
-                val superclass = type.getUnresolvedSuperClass(false)?.unresolvedName
-                val interfaces = type.getUnresolvedInterfaces(false).orEmpty().joinToString(",") { it.unresolvedName }
+                val superclass = type.getUnresolvedSuperClass(false)?.unresolvedName?.let(::spelling)
+                val interfaces = type.getUnresolvedInterfaces(false).orEmpty()
+                    .joinToString(",") { spelling(it.unresolvedName) }
                 "${type.name}:$superclass:$interfaces"
             } + "|" + imports
+
+        /**
+         * A written type name with nested-class separators unified. Resolving `Outer.Inner` as a static inner
+         * class can leave `Outer$Inner` as the unresolved name, while the same spelling that fails to resolve
+         * stays `Outer.Inner`; both name the same class, so a clean and a degraded compile must agree.
+         */
+        private fun spelling(name: String): String = name.replace('$', '.')
 
         /**
          * The identity of the class named [fqn] in [text], hashed (see [PreludeScanner.identity]), with its
