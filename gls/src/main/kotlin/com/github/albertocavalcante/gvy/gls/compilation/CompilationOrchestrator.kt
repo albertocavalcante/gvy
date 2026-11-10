@@ -218,6 +218,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         // Parse the source code; the compile aborts between phases if this coroutine is cancelled
         val checkCancelled = cancellationCheck()
+        val locator = symbolIndexer.classLocator(sourcePath)
         val parseResult = workerSessionManager.parse(
             ParseRequest(
                 uri = uri,
@@ -232,7 +233,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 checkCancelled = checkCancelled,
                 // MINIMAL adds no workspace sources; the class index still finds a class declared in a file
                 // named otherwise, one file per name the resolver asks for (#1425).
-                workspaceClassLocator = if (parseMode == ParseMode.MINIMAL) workspaceClassLocator(sourcePath) else null,
+                workspaceClassLocator = locator.takeIf { parseMode == ParseMode.MINIMAL },
             ),
         )
 
@@ -492,19 +493,6 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     }
 
     /**
-     * Files declaring the top-level workspace class [fullyQualifiedName][ParseRequest.workspaceClassLocator]
-     * names, from the symbol index: an exact name match only, so a same-named class in another package is never
-     * added. Before startup indexing has run the index is empty and nothing is found, as before #1425.
-     */
-    private fun workspaceClassLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
-        symbolIndexer.findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
-            .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
-            .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
-            .filter { it != self }
-            .distinct()
-    }
-
-    /**
      * Gets workspace sources, using bounded selection when dependency info is available.
      * Falls back to full workspace sources for files without dependency info.
      *
@@ -594,4 +582,17 @@ private sealed interface Awaited {
      * current and the waiter's document did not change: nothing the waiter depends on moved (#1343).
      */
     data object OwnerCancelled : Awaited
+}
+
+/**
+ * Files declaring the top-level workspace class a [ParseRequest.workspaceClassLocator] names, from the symbol
+ * index: an exact qualified-name match only, so a same-named class in another package is never added, and never
+ * [self]. Before startup indexing has run the index is empty and nothing is found, as before #1425.
+ */
+private fun SymbolIndexingService.classLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
+    findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
+        .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
+        .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
+        .filter { it != self }
+        .distinct()
 }

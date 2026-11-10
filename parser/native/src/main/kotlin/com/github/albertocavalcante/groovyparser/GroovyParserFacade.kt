@@ -18,6 +18,8 @@ import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.ClassNodeResolver
+import org.codehaus.groovy.control.ClassNodeResolver.LookupResult
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
@@ -389,6 +391,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         compilationUnit.addSource(sourceUnit)
 
         addWorkspaceSources(compilationUnit, request, config, classLoader)
+        request.workspaceClassLocator?.let { locator ->
+            compilationUnit.classNodeResolver = LocatingClassNodeResolver(locator, request.excludedSources)
+        }
         stubs?.addTo(compilationUnit, config, classLoader)
 
         // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
@@ -463,23 +468,15 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val classLoader = TransformFilteringClassLoader(parentClassLoader)
         request.classpath.forEach { classLoader.addClasspath(it.toString()) }
         request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
-        val locator = request.workspaceClassLocator
-        if (request.excludedSources.isNotEmpty() || locator != null) {
+        if (request.excludedSources.isNotEmpty()) {
             val excluded = request.excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
             val sources = classLoader.resourceLoader
-            // Groovy asks this loader for each unresolved top-level candidate name and adds the file it returns
-            // as a source of the unit; a file named after the class comes first, then the class locator.
             classLoader.resourceLoader = groovy.lang.GroovyResourceLoader { name ->
-                val byFileName = sources.loadGroovySource(name)?.takeUnless { url -> urlPath(url) in excluded }
-                byFileName ?: locator?.let { locate(it, name, excluded) }
+                sources.loadGroovySource(name)?.takeUnless { url -> urlPath(url) in excluded }
             }
         }
         return classLoader
     }
-
-    /** The first file declaring [name] that is not excluded, as the URL Groovy adds it by. */
-    private fun locate(locator: (String) -> List<Path>, name: String, excluded: Set<Path>): URL? =
-        locator(name).firstOrNull { it.toAbsolutePath().normalize() !in excluded }?.toUri()?.toURL()
 
     /**
      * Creates a compiler configuration with global AST transformations disabled.
@@ -656,5 +653,30 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     } catch (e: CompilationFailedException) {
         logger.debug { "Failed to extract AST: ${e.message}" }
         null
+    }
+}
+
+/**
+ * Groovy's class lookup, then the workspace class index (#1425): a name Groovy cannot find on the classpath or as
+ * a file named after it is looked up by the exact fully qualified name of its top-level class (the part before
+ * any `$`, so `Outer2$Inner` asks for `Outer2`), and the one file declaring it is added to the unit. Groovy then
+ * compiles it and resolves the name from it, as it does for a file it finds by name. Excluded sources are never
+ * added, so a file that failed the unit stays out on the recompile; each file is added at most once.
+ */
+private class LocatingClassNodeResolver(
+    private val locator: (String) -> List<Path>,
+    excludedSources: Set<Path>,
+) : ClassNodeResolver() {
+    private val excluded = excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+    private val added = HashMap<Path, SourceUnit>()
+
+    override fun resolveName(name: String, compilationUnit: CompilationUnit): LookupResult? =
+        super.resolveName(name, compilationUnit) ?: located(name.substringBefore('$'), compilationUnit)
+
+    private fun located(topLevel: String, compilationUnit: CompilationUnit): LookupResult? {
+        val path = locator(topLevel).map { it.toAbsolutePath().normalize() }.firstOrNull { it !in excluded }
+            ?: return null
+        val source = added.getOrPut(path) { compilationUnit.addSource(path.toUri().toURL()) }
+        return LookupResult(source, null)
     }
 }
