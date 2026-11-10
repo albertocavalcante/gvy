@@ -101,20 +101,19 @@ class WatchedSpellingRetireTest {
     }
 
     @Test
-    fun `a change reported in another case on a case-insensitive root retires the listed parse`(): Unit =
-        runBlocking {
-            start(caseInsensitive = true)
-            val src = Files.createDirectories(workspaceRoot.resolve("src"))
-            val file = write(src.resolve("A.groovy"), "class A { int v = 1 }")
-            compilation.updateWorkspaceModel(workspaceRoot, emptyList(), listOf(src))
-            assertNotNull(compilation.ensureCompiled(file.toUri()))
-            write(file, "class A { int v = 2 }")
+    fun `a change reported in another case on a case-insensitive root retires the listed parse`(): Unit = runBlocking {
+        start(caseInsensitive = true)
+        val src = Files.createDirectories(workspaceRoot.resolve("src"))
+        val file = write(src.resolve("A.groovy"), "class A { int v = 1 }")
+        compilation.updateWorkspaceModel(workspaceRoot, emptyList(), listOf(src))
+        assertNotNull(compilation.ensureCompiled(file.toUri()))
+        write(file, "class A { int v = 2 }")
 
-            // On a case-insensitive disk `a.groovy` is the same file; on Linux it need not exist for the event.
-            notify(src.resolve("a.groovy") to FileChangeType.Changed)
+        // On a case-insensitive disk `a.groovy` is the same file; on Linux it need not exist for the event.
+        notify(src.resolve("a.groovy") to FileChangeType.Changed)
 
-            assertNull(compilation.getCompiledSnapshot(file.toUri()), "the listed parse is served")
-        }
+        assertNull(compilation.getCompiledSnapshot(file.toUri()), "the listed parse is served")
+    }
 
     @Test
     fun `files created and changed through the real path are indexed under the listed spelling only`(): Unit =
