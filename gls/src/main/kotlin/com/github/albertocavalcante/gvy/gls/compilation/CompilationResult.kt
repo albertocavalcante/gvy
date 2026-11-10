@@ -26,13 +26,20 @@ data class CompilationResult(
      * The original source text that was compiled.
      */
     val sourceText: String? = null,
+
+    /**
+     * Whether the parser ran to completion over [sourceText]. False for a result built from an exception (a
+     * worker crash, an IO error): that says nothing about the text, so it must not be remembered as
+     * unparseable (#1344).
+     */
+    val parseCompleted: Boolean = false,
 ) {
     companion object {
         /**
          * Creates a successful compilation result.
          */
         fun success(ast: ASTNode, diagnostics: List<Diagnostic> = emptyList(), sourceText: String? = null) =
-            CompilationResult(true, ast, diagnostics, sourceText)
+            CompilationResult(true, ast, diagnostics, sourceText, parseCompleted = true)
 
         /**
          * Creates a failed compilation result.

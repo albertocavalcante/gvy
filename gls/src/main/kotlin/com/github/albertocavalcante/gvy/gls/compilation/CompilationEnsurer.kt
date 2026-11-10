@@ -80,9 +80,12 @@ class CompilationEnsurer(
             // Owned by the compilation service, not this request: cancelling the request leaves the shared
             // compile running for its other waiters; retirements are re-resolved by its retry policy.
             val result = compilationService.ensureCompiled(uri, snapshot)
-            // A buffer without an AST never indexes: remember that text, so later requests skip it
+            // A buffer without an AST never indexes. Remember text the parser actually rejected, so later
+            // requests skip it; a failure the parse never finished (a worker crash) is retried next time.
             if (result.ast == null) {
-                if (documentProvider.getSnapshot(uri) === snapshot) indexing.unparseable.mark(uri, snapshot, ticket)
+                if (result.parseCompleted && documentProvider.getSnapshot(uri) === snapshot) {
+                    indexing.unparseable.mark(uri, snapshot, ticket)
+                }
                 return
             }
             // A compile retired after it finished returns with its writes discarded: try once more. An edited

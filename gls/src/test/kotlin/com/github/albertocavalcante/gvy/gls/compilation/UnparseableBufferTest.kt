@@ -23,6 +23,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -36,16 +37,23 @@ class UnparseableBufferTest {
     private val broken = URI.create("file:///Broken.groovy")
     private val malformed = "class Broken {\n    def x( {\n"
     private val parses = ConcurrentHashMap<String, AtomicInteger>()
+    private val attempts = AtomicInteger()
+
+    /** Makes the worker throw on the next parse of [broken], like a crashed or restarting worker. */
+    private val failNext = AtomicBoolean(false)
     private val documents = DocumentProvider()
     private val service = GroovyCompilationService(
         documentProvider = documents,
         workerSessionDecorator = { delegate ->
             object : WorkerSession {
-                override fun parse(request: ParseRequest): ParseResult = delegate.parse(request).also {
-                    if (request.uri ==
-                        broken
-                    ) {
-                        parses.computeIfAbsent(request.content) { AtomicInteger() }.incrementAndGet()
+                override fun parse(request: ParseRequest): ParseResult {
+                    val counted = request.uri == broken
+                    if (counted) {
+                        attempts.incrementAndGet()
+                        check(!failNext.getAndSet(false)) { "worker session lost" }
+                    }
+                    return delegate.parse(request).also {
+                        if (counted) parses.computeIfAbsent(request.content) { AtomicInteger() }.incrementAndGet()
                     }
                 }
             }
@@ -70,6 +78,18 @@ class UnparseableBufferTest {
 
         assertEquals(null, service.getAst(broken), "the fixture must not parse")
         assertEquals(1, parsesOf(malformed), "N navigation requests must compile the unparseable text once")
+    }
+
+    @Test
+    fun `a worker failure is not remembered, so the next navigation compiles again`() {
+        failNext.set(true)
+        open(malformed)
+
+        navigate(1) // the worker throws: no parse completed, nothing is learned about the text
+        navigate(3) // the next request parses the text for real, and only that is remembered
+
+        assertEquals(2, attempts.get(), "a transient worker failure must not leave navigation skipping the buffer")
+        assertEquals(1, parsesOf(malformed))
     }
 
     @Test
