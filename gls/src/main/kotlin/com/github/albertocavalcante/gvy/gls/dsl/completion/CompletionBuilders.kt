@@ -219,8 +219,7 @@ class MethodCompletionBuilder {
  * Escapes snippet syntax in literal text, so a binary type name such as `Outer$1` is not read as a
  * tabstop: `$`, `}` and `\` each get a backslash.
  */
-private fun escapeSnippet(text: String): String =
-    text.replace("\\", "\\\\").replace("\$", "\\\$").replace("}", "\\}")
+private fun escapeSnippet(text: String): String = text.replace("\\", "\\\\").replace("\$", "\\\$").replace("}", "\\}")
 
 /**
  * Builder for class completions.
