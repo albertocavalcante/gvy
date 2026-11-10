@@ -165,17 +165,26 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     }
 
     /**
-     * True when the compiler could see every scope that might bind [node]'s superclass first: each
-     * enclosing class extends Object, a resolved class, or a class of this module. An unresolvable
-     * (stubbed) outer superclass hides its nested classes from the compiler, so its choice of an
-     * in-file class is not trusted.
+     * True when the compiler could see every nested class that an enclosing class's supertypes might
+     * contribute: each enclosing class's whole supertype hierarchy (superclasses and interfaces) is
+     * Object, resolved, or in-file with a known hierarchy itself. An unresolvable (stubbed) supertype
+     * anywhere up the chain hides its nested classes, so the compiler's choice of an in-file class
+     * is not trusted.
      */
     private fun enclosingScopesKnown(node: ClassNode): Boolean = generateSequence(node.outerClass) { it.outerClass }
-        .all { outer ->
-            val parent = outer.superClass
-            parent == null || parent.name == ClassHelper.OBJECT_TYPE.name || parent.isResolved ||
-                compilerBound(parent) != null
+        .all { outer -> hierarchyKnown(outer, Collections.newSetFromMap(IdentityHashMap())) }
+
+    /** [path] holds the classes on the current walk only, so a cycle is unknown but a diamond is not. */
+    private fun hierarchyKnown(type: ClassNode, path: MutableSet<ClassNode>): Boolean {
+        if (!path.add(type)) return false
+        val supertypes = listOfNotNull(type.superClass) + type.interfaces.orEmpty()
+        val known = supertypes.all { supertype ->
+            supertype.name == ClassHelper.OBJECT_TYPE.name || supertype.isResolved ||
+                compilerBound(supertype)?.let { hierarchyKnown(it, path) } == true
         }
+        path.remove(type)
+        return known
+    }
 
     private fun resolved(node: ClassNode, superClass: ClassNode): SpockClassContext {
         val isSpecification = generateSequence(superClass) { it.superClass }.any { it.name == SPECIFICATION_FQN }
@@ -239,11 +248,15 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     }
 
     /**
-     * True when an enclosing class declares a superclass other than Object. Compared by name, so a
-     * bare pre-resolution `Object` or an enum outer (extending `Enum`) also counts: conservative.
+     * True when an enclosing class declares a superclass other than Object or any interface, whose
+     * nested classes could bind the name first. Compared by name, so a bare pre-resolution `Object`
+     * or an enum outer (extending `Enum`) also counts: conservative.
      */
     private fun inheritsOuterScope(node: ClassNode): Boolean = generateSequence(node.outerClass) { it.outerClass }
-        .any { outer -> outer.superClass != null && outer.superClass.name != ClassHelper.OBJECT_TYPE.name }
+        .any { outer ->
+            (outer.superClass != null && outer.superClass.name != ClassHelper.OBJECT_TYPE.name) ||
+                outer.interfaces.orEmpty().isNotEmpty()
+        }
 
     /** Classes nested directly in one of [node]'s enclosing classes with the bare [name]. */
     private fun enclosingNested(node: ClassNode, name: String): List<ClassNode> {

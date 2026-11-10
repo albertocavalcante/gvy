@@ -237,6 +237,53 @@ class SpockSpecificationContextTest {
         assertEquals(UNCERTAIN, s.status, "ExtParent may declare a nested Base the compiler cannot see: $s")
     }
 
+    private fun semantic(source: String): Map<String, SpockClassContext> {
+        val request = ParseRequest(
+            URI.create("file:///src/Probe.groovy"),
+            source,
+            compilePhase = Phases.SEMANTIC_ANALYSIS,
+        )
+        val parsed = GroovyParserFacade(loaders.first()).parse(request)
+        return assertIs<SpockSourceContext.Available>(SpockSourceContext.from(parsed))
+            .classes.associateBy { it.classNode.name }
+    }
+
+    @Test
+    fun `an unresolvable grandparent or interface of an enclosing class keeps bound bases uncertain`() {
+        val grandparent = semantic(
+            "class Base extends spock.lang.Specification {}\nclass Parent extends ExtGrand {}\n" +
+                "class Outer extends Parent {\n static class S extends Base {}\n}",
+        )
+        assertEquals(UNCERTAIN, grandparent.getValue("Outer\$S").status, "ExtGrand may declare a nested Base")
+
+        val iface = semantic(
+            "class Base extends spock.lang.Specification {}\n" +
+                "class Outer implements ExtIface {\n static class S extends Base {}\n}",
+        )
+        assertEquals(UNCERTAIN, iface.getValue("Outer\$S").status, "ExtIface may declare a nested Base")
+    }
+
+    @Test
+    fun `a fully known in-file hierarchy keeps bound bases confident`() {
+        val result = semantic(
+            "class Base extends spock.lang.Specification {}\nclass Grand {}\nclass Parent extends Grand {}\n" +
+                "class Outer extends Parent {\n static class S extends Base {}\n}",
+        )
+        assertEquals(SPECIFICATION to MODULE_BASE, result.getValue("Outer\$S").pair())
+    }
+
+    @Test
+    fun `groovy resolves bare names to nested classes of an enclosing class's interfaces`() {
+        val source = "interface I { static class Base extends spock.lang.Specification {} }\n" +
+            "class Outer implements I {\n static class S extends Base {}\n}"
+        val request =
+            ParseRequest(URI.create("file:///src/Probe.groovy"), source, compilePhase = Phases.SEMANTIC_ANALYSIS)
+        val parsed = GroovyParserFacade(loaders.first()).parse(request)
+        val s = requireNotNull(parsed.ast).classes.single { it.name == "Outer\$S" }
+        // Pins Groovy 4.0.33 behaviour that justifies counting interfaces as inherited scopes.
+        assertEquals("I\$Base", s.superClass.redirect().name, "${parsed.outcome}")
+    }
+
     @Test
     fun `declared owners skip nested anonymous classes, closures and field initialisers`() {
         val source =
