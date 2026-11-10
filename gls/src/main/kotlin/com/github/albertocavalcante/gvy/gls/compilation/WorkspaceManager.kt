@@ -160,6 +160,32 @@ class WorkspaceManager internal constructor(
     }
 
     /**
+     * Publishes [refreshed], the current target evidence with re-read classpath stamps (#1364), only while the model
+     * still holds exactly [expected]: a dependency observation published meanwhile is newer and is never overwritten
+     * by a re-stamp of the evidence it replaced. Classpath, roots and the source list are kept as they are; no disk
+     * I/O happens here. Returns whether the model changed.
+     */
+    fun restampTargets(expected: TargetDependencyEvidence.Scoped, refreshed: TargetDependencyEvidence.Scoped): Boolean {
+        var published = false
+        update { current ->
+            if (current.targets !== expected) {
+                current
+            } else {
+                published = true
+                WorkspaceModel(
+                    current.root,
+                    current.classpath,
+                    current.sourceRoots,
+                    current.sources,
+                    refreshed,
+                    computeFingerprint = fingerprintComputer,
+                )
+            }
+        }
+        return published
+    }
+
+    /**
      * Applies paths created or deleted after the model was built (#1422, #1424), publishing one new model.
      *
      * A created path under a current source root joins when it is a Groovy source, the rule the scan uses, and a

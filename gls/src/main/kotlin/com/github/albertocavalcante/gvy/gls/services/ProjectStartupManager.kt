@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.gradle.GradleScopedDependencyProducer
+import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.LogLevelConfigurator
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
@@ -74,6 +75,7 @@ typealias StatusUpdateCallback = (Health, Boolean, String?, Int?, Int?, String?,
  * Manages project startup lifecycle: dependency resolution, file watching, and indexing.
  * De-clutters the main LanguageServer class.
  */
+@Suppress("LongParameterList") // the last three are defaulted collaborators and test seams
 class ProjectStartupManager(
     private val compilationService: GroovyCompilationService,
     private val availableBuildTools: List<BuildTool>,
@@ -81,6 +83,8 @@ class ProjectStartupManager(
     private val strategyRegistry: ProjectStrategyRegistry,
     private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
     private val indexingDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    /** Re-stamps classpath entries between observations (#1364); its watched directories follow each model. */
+    private val classpathRestamper: ClasspathRestamper? = null,
 ) {
     private val logger = KotlinLogging.logger {}
     private val groovyVersionResolver = GroovyVersionResolver()
@@ -96,12 +100,18 @@ class ProjectStartupManager(
     private var strategyInitJobs: List<Job> = emptyList()
 
     private val sourceRootWatchers = SourceRootWatcherRegistrar()
+    private val classpathDirectoryWatchers = SourceRootWatcherRegistrar(
+        idPrefix = CLASSPATH_DIRECTORY_WATCHERS,
+        watchKinds = WatchKind.Create + WatchKind.Change + WatchKind.Delete,
+        description = "classpath directories",
+    )
 
     /**
      * Registers file watchers if the client supports it.
      */
     fun registerFileWatchers(client: LanguageClient?, capabilities: ClientCapabilities?) {
         sourceRootWatchers.attach(client, capabilities)
+        if (classpathRestamper != null) classpathDirectoryWatchers.attach(client, capabilities)
         val supportsDynamicRegistration = capabilities
             ?.workspace
             ?.didChangeWatchedFiles
@@ -358,6 +368,9 @@ class ProjectStartupManager(
                         targets = resolution.targetDependencies,
                     )
                     sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots(), context.workspaceRoot)
+                    classpathRestamper?.let { restamper ->
+                        classpathDirectoryWatchers.sync(restamper.watchedDirectories(context.workspaceRoot))
+                    }
                     context.textDocumentServiceRefresh()
 
                     context.progressReporter.complete("✅ Ready: ${resolution.dependencies.size} dependencies loaded")

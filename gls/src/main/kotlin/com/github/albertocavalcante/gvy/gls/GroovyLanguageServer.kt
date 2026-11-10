@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.build.bsp.BspBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
 import com.github.albertocavalcante.gvy.build.maven.MavenBuildTool
+import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerCapabilitiesFactory
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
@@ -135,11 +136,15 @@ class GroovyLanguageServer(
             sourceNavigator = sourceNavigator,
         ),
     )
+
+    /** Notices classpath entries replaced between dependency observations (#1364). */
+    private val classpathRestamper = ClasspathRestamper(compilationService, coroutineScope)
     private val workspaceService = GroovyWorkspaceService(
         compilationService,
         compilationService.symbolIndexingService,
         coroutineScope,
         textDocumentService,
+        classpathRestamper = classpathRestamper,
     )
 
     // Helpers
@@ -159,6 +164,7 @@ class GroovyLanguageServer(
         availableBuildTools,
         coroutineScope,
         strategyRegistry,
+        classpathRestamper = classpathRestamper,
     )
     private val testRequestDelegate =
         TestRequestDelegate(
@@ -282,6 +288,8 @@ class GroovyLanguageServer(
         sendStatus(StatusNotification(health = Health.Ok, quiescent = false, message = "Initializing workspace..."))
 
         startupManager.registerFileWatchers(baseClient, clientCapabilities)
+        // A tick does nothing until target evidence is published, and ends with the server's scope.
+        classpathRestamper.start()
 
         baseClient?.showMessage(
             MessageParams().apply {

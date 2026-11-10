@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.Version
+import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
@@ -41,6 +43,7 @@ import java.util.concurrent.CompletableFuture
 /**
  * Handles all workspace related LSP operations.
  */
+@Suppress("LongParameterList") // all but the first three are defaulted collaborators and test seams
 class GroovyWorkspaceService(
     private val compilationService: GroovyCompilationService,
     private val symbolIndexer: SymbolIndexingService,
@@ -48,6 +51,8 @@ class GroovyWorkspaceService(
     private val textDocumentService: GroovyTextDocumentService? = null,
     private val workerRouter: WorkerRouter = WorkerRouter(defaultWorkerDescriptors()),
     sourceChangeDispatcher: CoroutineDispatcher = Dispatchers.IO,
+    /** Told of every watched path, before any filtering: build output under a classpath directory counts (#1364). */
+    private val classpathRestamper: ClasspathRestamper? = null,
 ) : WorkspaceService {
 
     private val logger = KotlinLogging.logger {}
@@ -116,6 +121,9 @@ class GroovyWorkspaceService(
 
     override fun didChangeWatchedFiles(params: DidChangeWatchedFilesParams) {
         logger.debug { "Watched files changed: ${params.changes?.size ?: 0} changes" }
+        classpathRestamper?.onWatchedPaths(
+            params.changes.orEmpty().mapNotNull { change -> uriOf(change.uri)?.let(UriPathConverter::toPath) },
+        )
 
         // A source root's folder watcher reports everything under it; what the scans skip changes nothing.
         val roots = compilationService.workspaceManager.getSourceRoots().map { it.toAbsolutePath().normalize() }
