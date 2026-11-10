@@ -49,12 +49,63 @@ class GlobalClassWorkspaceLookupTest {
     }
 
     @Test
-    fun `files are tried in URI order as before`(): Unit = runBlocking {
+    fun `a qualified reference resolves to its own class, not the first same-name class`(): Unit = runBlocking {
+        val first = file("a.groovy", "package a\nclass Shared {}")
+        val second = file("b.groovy", "package b\nclass Shared {}")
+        listOf(second, first).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(second to "b.Shared", resolve("b.Shared"))
+        assertEquals(first to "a.Shared", resolve("a.Shared"))
+    }
+
+    @Test
+    fun `without a full-name match the simple name decides in URI order as before`(): Unit = runBlocking {
         val second = file("b.groovy", "package b\nclass Shared {}")
         val first = file("a.groovy", "package a\nclass Shared {}")
         listOf(second, first).forEach { compilation.symbolIndexingService.indexFile(it) }
 
-        assertEquals(first to "a.Shared", resolve("Shared"))
+        assertEquals(first to "a.Shared", resolve("c.Shared"))
+    }
+
+    @Test
+    fun `an exact match that cannot be loaded falls back to the simple-name candidates`(): Unit = runBlocking {
+        val first = file("a.groovy", "package a\nclass Shared {}")
+        val gone = file("b.groovy", "package b\nclass Shared {}")
+        listOf(first, gone).forEach { compilation.symbolIndexingService.indexFile(it) }
+        java.nio.file.Files.delete(java.nio.file.Path.of(gone)) // still indexed, but its AST can no longer load
+
+        assertEquals(first to "a.Shared", resolve("b.Shared"))
+    }
+
+    @Test
+    fun `a bare name in a default-package file prefers the default-package class`(): Unit = runBlocking {
+        val packaged = file("a.groovy", "package a\nclass Shared {}")
+        val bare = file("z.groovy", "class Shared {}")
+        listOf(packaged, bare).forEach { compilation.symbolIndexingService.indexFile(it) }
+        val from = referencingFile("UsesBare.groovy", "class UsesBare {}")
+
+        assertEquals(bare to "Shared", resolve("Shared", from))
+        assertEquals(packaged to "a.Shared", resolve("a.Shared", from))
+    }
+
+    @Test
+    fun `a bare name in a packaged file keeps the URI-order result`(): Unit = runBlocking {
+        // Packaged code cannot use a default-package class, so it must not be preferred.
+        val packaged = file("a.groovy", "package a\nclass Shared {}")
+        val bare = file("z.groovy", "class Shared {}")
+        listOf(packaged, bare).forEach { compilation.symbolIndexingService.indexFile(it) }
+        val from = referencingFile("UsesPackaged.groovy", "package c\nclass UsesPackaged {}")
+
+        assertEquals(packaged to "a.Shared", resolve("Shared", from))
+    }
+
+    @Test
+    fun `a qualified nested class resolves to its own package`(): Unit = runBlocking {
+        val first = file("a.groovy", "package a\nclass Outer { static class Inner {} }")
+        val second = file("b.groovy", "package b\nclass Outer { static class Inner {} }")
+        listOf(first, second).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(second to "b.Outer\$Inner", resolve("b.Outer\$Inner"))
     }
 
     @Test
@@ -88,10 +139,16 @@ class GlobalClassWorkspaceLookupTest {
 
     private fun file(name: String, content: String): URI = tempDir.resolve(name).also { it.writeText(content) }.toUri()
 
-    private suspend fun resolve(name: String): Pair<URI, String>? {
+    private suspend fun referencingFile(name: String, content: String): URI {
+        val uri = tempDir.resolve("src").resolve(name).toUri() // an unsaved buffer outside the indexed files
+        assertTrue(compilation.compile(uri, content).isSuccess)
+        return uri
+    }
+
+    private suspend fun resolve(name: String, from: URI = URI.create("file:///Main.groovy")): Pair<URI, String>? {
         val context = ResolutionContext(
             targetNode = ClassNode(name, 0, ClassHelper.OBJECT_TYPE),
-            documentUri = URI.create("file:///Main.groovy"),
+            documentUri = from,
             position = Position(0, 0),
         )
         return strategy.resolve(context).fold(

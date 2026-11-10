@@ -30,12 +30,17 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         // Extract simple name from potentially fully-qualified name for matching
         val simpleClassName = className.substringAfterLast('.')
 
-        // Workspace classes with this simple name, in file order, from the indexed lookup rather than a scan
-        // of every file (#1312). As before, the simple name decides the match (a fully qualified name's own
-        // class always shares it) and each file offers its first such class.
-        val candidates = compilationService.symbolIndexingService
-            .findClasses(ClassNameQuery.Exact(simpleClassName))
-            .distinctBy { it.uri }
+        // Workspace classes with this simple name, in file order (#1312). A class whose fully qualified name
+        // is exactly the reference wins (#1336): `b.Shared` must not open `a.Shared`. Without such a class, the
+        // simple name decides and each file offers its first match, as before.
+        val matches = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleClassName))
+        val exact = if (className.contains('.') || referencedFromDefaultPackage(context.documentUri)) {
+            matches.filter { it.fullyQualifiedName == className }
+        } else {
+            emptyList()
+        }
+        // Exact matches first; if none loads, the simple-name candidates follow as before.
+        val candidates = (exact + matches.distinctBy { it.uri }).distinct()
         for (matchingSymbol in candidates) {
             val uri = matchingSymbol.uri
             // Found it in the index, now load the actual ClassNode from AST
@@ -54,6 +59,15 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
             "Class $className not found in workspace symbol index",
             STRATEGY_NAME,
         )
+    }
+
+    /**
+     * A bare name is the full name of a default-package class, but only default-package code can use such a
+     * class on the JVM. Packaged (or unknown) referencing files keep the URI-order simple-name result.
+     */
+    private fun referencedFromDefaultPackage(documentUri: java.net.URI): Boolean {
+        val module = compilationService.getAst(documentUri) as? ModuleNode ?: return false
+        return module.packageName.isNullOrBlank()
     }
 
     @Suppress("ReturnCount") // Multiple validation checks require early returns
