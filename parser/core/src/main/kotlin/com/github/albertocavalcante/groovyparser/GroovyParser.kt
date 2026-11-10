@@ -118,7 +118,8 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
     } catch (e: NoClassDefFoundError) {
         // A transform needed a class the server does not ship; keep the rest of the pipeline alive.
         logger.warn(e) { "Compilation hit a missing class" }
-        problems.add(Problem.error("Compilation hit a missing class: NoClassDefFoundError: ${e.message}"))
+        val cause = e.cause?.message?.let { " (caused by: $it)" }.orEmpty()
+        problems.add(Problem.error("Compilation hit a missing class: NoClassDefFoundError: ${e.message}$cause"))
         true
     }
 
