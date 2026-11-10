@@ -361,14 +361,16 @@ class JenkinsContext internal constructor(
     }
 
     /**
-     * Adds GDSL steps and globals the other sources do not know. Bundled and scanned metadata are richer
-     * (enrichment, parameters, plugins), so GDSL never replaces them. GDSL entries are the user's own
-     * configuration, so plugin filtering does not apply to them.
+     * Adds GDSL steps and globals whose names the other sources do not know, as either a step or a global, so
+     * completion never offers a name twice. Bundled and scanned metadata are richer (enrichment, parameters,
+     * plugins), so GDSL never replaces them; a GDSL name declared as both a step and a global stays a step.
+     * GDSL entries are the user's own configuration, so plugin filtering does not apply to them.
      */
     private fun withGdsl(metadata: MergedJenkinsMetadata, gdsl: BundledJenkinsMetadata?): MergedJenkinsMetadata {
         if (gdsl == null) return metadata
-        val newSteps = gdsl.steps.filterKeys { it !in metadata.steps }.mapValues { (_, step) -> step.toMerged() }
-        val newGlobals = gdsl.globalVariables.filterKeys { it !in metadata.globalVariables }
+        val known = metadata.steps.keys + metadata.globalVariables.keys
+        val newSteps = gdsl.steps.filterKeys { it !in known }.mapValues { (_, step) -> step.toMerged() }
+        val newGlobals = gdsl.globalVariables.filterKeys { it !in known && it !in gdsl.steps }
             .mapValues { (_, global) -> global.toMerged() }
         if (newSteps.isEmpty() && newGlobals.isEmpty()) return metadata
         return metadata.copy(steps = metadata.steps + newSteps, globalVariables = metadata.globalVariables + newGlobals)

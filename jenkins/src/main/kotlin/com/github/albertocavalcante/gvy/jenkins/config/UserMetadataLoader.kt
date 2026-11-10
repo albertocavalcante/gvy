@@ -3,6 +3,7 @@
 package com.github.albertocavalcante.gvy.jenkins.config
 
 import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
+import com.github.albertocavalcante.gvy.gdsl.GdslLoader
 import com.github.albertocavalcante.gvy.jenkins.gdsl.JenkinsGdslAdapter
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
@@ -27,6 +28,7 @@ import java.nio.file.Path
 class UserMetadataLoader(private val workspaceRoot: Path) {
     private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
+    private val gdslLoader = GdslLoader()
     private val gdslExecutor = GdslExecutor()
     private val gdslAdapter = JenkinsGdslAdapter()
 
@@ -96,14 +98,15 @@ class UserMetadataLoader(private val workspaceRoot: Path) {
      */
     private fun loadGdslSteps(gdslPath: String): Map<String, JenkinsStepMetadata>? {
         val fullPath = workspaceRoot.resolve(gdslPath)
-
-        if (!Files.exists(fullPath)) {
-            logger.warn { "GDSL file not found: $fullPath" }
+        // The loader refuses missing, non-regular and oversized files before reading them.
+        val loaded = gdslLoader.loadGdslFile(fullPath.toString())
+        val content = loaded.content ?: run {
+            logger.warn { "Could not load GDSL file $fullPath: ${loaded.error}" }
             return null
         }
 
         return try {
-            val parsed = gdslExecutor.executeAndCapture(Files.readString(fullPath), fullPath.toString())
+            val parsed = gdslExecutor.executeAndCapture(content, fullPath.toString())
             if (!parsed.success) {
                 logger.warn { "Failed to read GDSL file $fullPath: ${parsed.error}" }
                 return null

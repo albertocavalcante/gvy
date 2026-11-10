@@ -28,26 +28,31 @@ class GdslLoader {
      * Loads a single GDSL file from the given path.
      */
     @Suppress("TooGenericExceptionCaught")
-    fun loadGdslFile(pathString: String): GdslLoadResult {
-        return try {
-            val path = Paths.get(pathString)
-            if (!Files.exists(path)) {
-                logger.debug { "GDSL file not found: $pathString" }
-                return GdslLoadResult(pathString, error = "File not found: $pathString")
-            }
-
-            if (!Files.isRegularFile(path)) {
-                logger.debug { "GDSL path is not a regular file: $pathString" }
-                return GdslLoadResult(pathString, error = "Not a regular file: $pathString")
-            }
-
+    fun loadGdslFile(pathString: String): GdslLoadResult = try {
+        val path = Paths.get(pathString)
+        val refusal = refusalReason(path)
+        if (refusal != null) {
+            logger.debug { "Not loading GDSL file: $refusal" }
+            GdslLoadResult(pathString, error = "$refusal: $pathString")
+        } else {
             val content = Files.readString(path)
             logger.info { "Loaded GDSL file: $pathString (${content.length} characters)" }
             GdslLoadResult(pathString, content = content)
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to load GDSL file: $pathString" }
-            GdslLoadResult(pathString, error = "Error loading file: ${e.message}")
         }
+    } catch (e: Exception) {
+        logger.warn(e) { "Failed to load GDSL file: $pathString" }
+        GdslLoadResult(pathString, error = "Error loading file: ${e.message}")
+    }
+
+    /**
+     * Why [path] is not read, or null to read it. The size is checked before reading: a huge file would
+     * exhaust memory before the reader's own character limit applies.
+     */
+    private fun refusalReason(path: Path): String? = when {
+        !Files.exists(path) -> "File not found"
+        !Files.isRegularFile(path) -> "Not a regular file"
+        Files.size(path) > GdslExecutor.MAX_SOURCE_SIZE -> "File is larger than ${GdslExecutor.MAX_SOURCE_SIZE} bytes"
+        else -> null
     }
 
     /**

@@ -251,4 +251,33 @@ class JenkinsContextTest {
 
         assertNotNull(context.getAllMetadata().getStep("myStep"))
     }
+
+    @Test
+    fun `a GDSL name never duplicates a known step or global in the other namespace`() {
+        val gdsl = tempDir.resolve("custom.gdsl")
+        Files.writeString(
+            gdsl,
+            """
+            contributor(context()) {
+                property(name: 'sh', type: 'java.lang.String')
+                method(name: 'env', type: 'void')
+                method(name: 'both', type: 'void')
+                property(name: 'both', type: 'java.lang.String')
+            }
+            """.trimIndent(),
+        )
+        val context = JenkinsContext(
+            JenkinsConfiguration(gdslPaths = listOf(gdsl.toString()), gdslExecutionEnabled = true),
+            tempDir,
+        )
+        val before = context.getAllMetadata()
+
+        context.loadGdslMetadata()
+        val after = context.getAllMetadata()
+
+        assertNull(after.getGlobalVariable("sh"))
+        assertEquals(before.getStep("env"), after.getStep("env"))
+        assertNotNull(after.getStep("both"))
+        assertNull(after.getGlobalVariable("both"))
+    }
 }

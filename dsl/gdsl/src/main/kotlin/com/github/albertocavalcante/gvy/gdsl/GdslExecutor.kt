@@ -67,11 +67,18 @@ class GdslExecutor {
         return "GDSL script rejected: ${rejected.reason}${position.orEmpty()}"
     }
 
-    private companion object {
+    companion object {
         /**
-         * A Jenkins `/pipeline-syntax/gdsl` dump has hundreds of `method(...)` statements (a few hundred KB)
-         * and nests about six brackets deep (`contributor { if { method(namedParams: [parameter(...)]) } }`).
+         * Largest GDSL source read, in characters; loaders also refuse files larger than this many bytes
+         * before reading them. A Jenkins `/pipeline-syntax/gdsl` dump is a few hundred KB.
          */
-        val PARSE_LIMITS = UntrustedParseLimits(maxChars = 4 * 1024 * 1024, maxNesting = 32, maxStatements = 100_000)
+        const val MAX_SOURCE_SIZE = 4 * 1024 * 1024
+
+        /**
+         * A Jenkins `/pipeline-syntax/gdsl` dump has hundreds of `method(...)` statements and nests about six
+         * brackets deep (`contributor { if { method(namedParams: [parameter(...)]) } }`).
+         */
+        private val PARSE_LIMITS =
+            UntrustedParseLimits(maxChars = MAX_SOURCE_SIZE, maxNesting = 32, maxStatements = 100_000)
     }
 }
