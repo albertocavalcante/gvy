@@ -98,6 +98,9 @@ class WorkspaceManager(
             if (depsChanged) logger.info { "Updated dependency classpath with ${dependencies.size} dependencies" }
             val sourcesChanged = sourceDirectories.toSet() != current.sourceRoots.toSet()
             val roots = when {
+                // A reordering of the same roots or classpath is not a change: keep the current order, so the
+                // order-sensitive fingerprint agrees with the reported result and nothing diverges silently.
+                sourceDirectories.isNotEmpty() && !sourcesChanged -> current.sourceRoots
                 sourceDirectories.isNotEmpty() -> sourceDirectories.also {
                     logger.info { "Received ${it.distinct().size} source roots from build model" }
                 }
@@ -105,7 +108,7 @@ class WorkspaceManager(
                 else -> current.sourceRoots
             }
             changed = depsChanged || sourcesChanged
-            model(workspaceRoot, dependencies, roots)
+            model(workspaceRoot, if (depsChanged) dependencies else current.classpath, roots)
         }
         return changed
     }
@@ -210,7 +213,11 @@ class WorkspaceManager(
      * @param boundedUris Set of URIs to filter workspace sources by
      * @return List of paths that match the bounded URIs
      */
-    fun getBoundedWorkspaceSources(boundedUris: Set<URI>): List<Path> {
+    fun getBoundedWorkspaceSources(boundedUris: Set<URI>): List<Path> =
+        getBoundedWorkspaceSources(boundedUris, current())
+
+    /** [getBoundedWorkspaceSources] against one [workspace] snapshot a compile already holds. */
+    fun getBoundedWorkspaceSources(boundedUris: Set<URI>, workspace: WorkspaceModel): List<Path> {
         if (boundedUris.isEmpty()) return emptyList()
 
         val boundedPaths = boundedUris.mapNotNull { uri ->
@@ -222,7 +229,7 @@ class WorkspaceManager(
                 }
         }.toSet()
 
-        return current().sources.filter { it in boundedPaths }
+        return workspace.sources.filter { it in boundedPaths }
     }
 
     /**
@@ -245,9 +252,12 @@ class WorkspaceManager(
      * a non-null classpath, that is used. Otherwise falls back to the standard dependency
      * classpath.
      */
-    fun getClasspathForFile(uri: URI, content: String): List<Path> {
+    fun getClasspathForFile(uri: URI, content: String): List<Path> = getClasspathForFile(uri, content, current())
+
+    /** [getClasspathForFile] against one [workspace] snapshot a compile already holds. */
+    fun getClasspathForFile(uri: URI, content: String, workspace: WorkspaceModel): List<Path> {
         // One immutable classpath: a strategy may retain it without seeing later updates
-        val dependencies = current().classpath
+        val dependencies = workspace.classpath
         strategyRegistry?.activeStrategies?.forEach { strategy ->
             val classpath = strategy.getClasspathForFile(uri, content, dependencies)
             if (classpath != null) {

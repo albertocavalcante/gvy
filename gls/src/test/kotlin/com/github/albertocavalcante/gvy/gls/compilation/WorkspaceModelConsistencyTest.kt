@@ -59,20 +59,23 @@ class WorkspaceModelConsistencyTest {
         val pool = Executors.newFixedThreadPool(READERS + 1)
         try {
             pool.execute {
-                start.await()
-                repeat(UPDATES) { i ->
-                    if (i % 2 == 0) {
-                        manager.updateWorkspaceModel(root, depsB, rootsB)
-                    } else {
-                        manager.updateWorkspaceModel(root, depsA, rootsA)
+                try {
+                    start.await()
+                    repeat(UPDATES) { i ->
+                        if (i % 2 == 0) {
+                            manager.updateWorkspaceModel(root, depsB, rootsB)
+                        } else {
+                            manager.updateWorkspaceModel(root, depsA, rootsA)
+                        }
                     }
+                } finally {
+                    stop.set(true) // readers stop even if an update throws
                 }
-                stop.set(true)
             }
             repeat(READERS) {
                 pool.execute {
                     start.await()
-                    while (!stop.get()) {
+                    while (!stop.get() && !Thread.currentThread().isInterrupted) {
                         runCatching {
                             val roots = manager.getSourceRoots().toSet()
                             if (roots != rootsA.toSet() && roots != rootsB.toSet()) {
@@ -97,6 +100,21 @@ class WorkspaceModelConsistencyTest {
         }
 
         assertTrue(failures.isEmpty(), "${failures.size} inconsistent reads, e.g. ${failures.take(3)}")
+    }
+
+    @Test
+    fun `a reordered but equal configuration is unchanged and keeps its fingerprint`() {
+        val root = Files.createDirectories(tempDir.resolve("ordered"))
+        val roots = listOf(Files.createDirectories(root.resolve("a")), Files.createDirectories(root.resolve("b")))
+        val deps = listOf(root.resolve("a.jar"), root.resolve("b.jar"))
+        val manager = WorkspaceManager()
+        manager.updateWorkspaceModel(root, deps, roots)
+        val before = manager.getConfigurationFingerprint()
+
+        val changed = manager.updateWorkspaceModel(root, deps.reversed(), roots.reversed())
+
+        assertEquals(false, changed)
+        assertEquals(before, manager.getConfigurationFingerprint(), "unchanged reported, but the fingerprint moved")
     }
 
     private fun capturing(handed: MutableCollection<List<Path>>) = object : ProjectStrategy {

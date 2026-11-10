@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import java.nio.file.Path
+import java.util.Collections
 
 /**
  * One immutable workspace configuration. A compile reads it once ([WorkspaceManager.current]) and uses that
@@ -19,9 +20,9 @@ class WorkspaceModel internal constructor(
     sources: List<Path>,
     computeFingerprint: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
 ) {
-    val classpath: List<Path> = java.util.Collections.unmodifiableList(classpath.toList())
-    val sourceRoots: List<Path> = java.util.Collections.unmodifiableList(sourceRoots.distinct())
-    val sources: List<Path> = java.util.Collections.unmodifiableList(sources.toList())
+    val classpath: List<Path> = Collections.unmodifiableList(classpath.toList())
+    val sourceRoots: List<Path> = Collections.unmodifiableList(sourceRoots.distinct())
+    val sources: List<Path> = Collections.unmodifiableList(sources.toList())
 
     /** The configuration fingerprint of this model's classpath and source roots (Issue #743), computed once. */
     val fingerprint: String by lazy { computeFingerprint(this.classpath, this.sourceRoots) }

@@ -353,7 +353,10 @@ class CompilationJobOwnershipTest {
             }
             val workspace = mockk<WorkspaceManager>()
             every { workspace.getConfigurationFingerprint() } answers { fingerprint }
-            every { workspace.getClasspathForFile(any(), any()) } returns emptyList()
+            every { workspace.current() } answers {
+                testWorkspace(fingerprint, sourceRoots = emptyList(), sources = emptyList())
+            }
+            every { workspace.getClasspathForFile(any(), any(), any()) } returns emptyList()
             every { workspace.getSourceRoots() } returns emptyList()
             every { workspace.getWorkspaceSources() } returns emptyList()
             orchestrator = CompilationOrchestrator(
