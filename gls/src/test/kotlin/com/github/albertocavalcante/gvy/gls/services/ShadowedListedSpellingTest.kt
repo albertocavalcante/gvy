@@ -217,6 +217,24 @@ class ShadowedListedSpellingTest {
         assertEquals(0, reads, "real-path reads on the first requests after a listing change")
     }
 
+    @Test
+    fun `a buffer opened before the workspace initialises shadows once the roots are discovered`(): Unit = runBlocking {
+        start(caseInsensitive = true)
+        // A Jenkins-style workspace: its bare `src` is discovered as the root when the workspace initialises.
+        val src = Files.createDirectories(workspaceRoot.resolve("src"))
+        val listed = Files.writeString(src.resolve("X.groovy"), TEXT).toUri()
+        val opened = src.resolve("x.groovy").toUri()
+        open(opened) // before any root is known: nothing to shadow yet
+
+        // As ProjectStartupManager.initializeWorkspaces publishes the startup model.
+        compilation.workspaceManager.initializeWorkspace(workspaceRoot)
+        compilation.indexAllWorkspaceSources(listOf(listed))
+        reads = 0
+
+        assertEquals(listOf(opened.toString()), symbolUris("Shadowed").distinct(), "listed under both spellings")
+        assertEquals(0, reads, "real-path reads on the first request after the workspace initialised")
+    }
+
     private companion object {
         const val REQUESTS = 20
         const val TEXT = "class Shadowed { int value }\n"
