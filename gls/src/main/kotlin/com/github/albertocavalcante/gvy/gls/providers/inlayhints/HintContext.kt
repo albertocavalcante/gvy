@@ -11,6 +11,7 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.syntax.Types
 
@@ -60,7 +61,14 @@ data class HintContext(
         astModel.getAllNodes().asSequence()
             .filterIsInstance<BinaryExpression>()
             .filter { it !is DeclarationExpression && Types.isAssignment(it.operation.type) }
-            .mapNotNull { (it.leftExpression as? VariableExpression)?.accessedVariable }
+            .flatMap { assignment ->
+                // `(u, v) = [...]` assigns every variable of the tuple on the left.
+                when (val left = assignment.leftExpression) {
+                    is TupleExpression -> left.expressions.asSequence()
+                    else -> sequenceOf(left)
+                }
+            }
+            .mapNotNull { (it as? VariableExpression)?.accessedVariable }
             .toSet()
     }
 

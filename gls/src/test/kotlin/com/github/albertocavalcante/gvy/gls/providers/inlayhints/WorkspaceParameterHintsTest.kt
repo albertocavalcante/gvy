@@ -108,6 +108,15 @@ class WorkspaceParameterHintsTest {
     }
 
     @Test
+    fun `a variable reassigned by multiple assignment keeps the same-name merge`(): Unit = runBlocking {
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
+        index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
+
+        val tuple = hintsFor("def u = new a.Util('x')\n    def v\n    (u, v) = [new b.Util('y'), 1]\n    u.send('z')")
+        assertEquals(listOf("first:", "other:"), tuple.sorted(), "only constructor hints: send stays ambiguous")
+    }
+
+    @Test
     fun `a variable reassigned inside a closure keeps the same-name merge`(): Unit = runBlocking {
         index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
         index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
