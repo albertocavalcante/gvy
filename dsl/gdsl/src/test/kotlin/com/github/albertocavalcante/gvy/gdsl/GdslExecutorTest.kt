@@ -3,47 +3,28 @@ package com.github.albertocavalcante.gvy.gdsl
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertDoesNotThrow
 
 class GdslExecutorTest {
 
     private val executor = GdslExecutor()
 
     @Nested
-    inner class ExecuteMethod {
+    inner class BundledSamples {
 
         @Test
-        fun `should execute simple GDSL script`() {
-            val script = """
-                def ctx = context(ctype: "java.lang.String")
-                contributor(ctx) {
-                    method(name: "foo", type: "void", params: [:])
-                }
-            """.trimIndent()
-
-            assertDoesNotThrow {
-                executor.execute(script, "test.gdsl")
-            }
-        }
-
-        @Test
-        fun `should execute Spock GDSL sample`() {
+        fun `reads the Spock GDSL sample`() {
             val script = this::class.java.getResource("/bundled-gdsls/spock.gdsl")?.readText()
                 ?: error("Spock GDSL sample not found")
 
-            assertDoesNotThrow {
-                executor.execute(script, "spock.gdsl")
-            }
+            assertThat(executor.executeAndCapture(script, "spock.gdsl").success).isTrue()
         }
 
         @Test
-        fun `should execute Grails GDSL sample`() {
+        fun `reads the Grails GDSL sample`() {
             val script = this::class.java.getResource("/bundled-gdsls/grails.gdsl")?.readText()
                 ?: error("Grails GDSL sample not found")
 
-            assertDoesNotThrow {
-                executor.execute(script, "grails.gdsl")
-            }
+            assertThat(executor.executeAndCapture(script, "grails.gdsl").success).isTrue()
         }
     }
 
@@ -173,15 +154,15 @@ class GdslExecutorTest {
         }
 
         @Test
-        fun `returns error result for runtime exception`() {
+        fun `skips a throw statement instead of running it`() {
             val script = """
                 throw new RuntimeException("Test error")
             """.trimIndent()
 
             val result = executor.executeAndCapture(script, "error.gdsl")
 
-            assertThat(result.success).isFalse()
-            assertThat(result.error).contains("Test error")
+            assertThat(result.success).isTrue()
+            assertThat(result.warnings).singleElement().asString().contains("ThrowStatement")
         }
 
         @Test

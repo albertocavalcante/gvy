@@ -1,20 +1,18 @@
 package com.github.albertocavalcante.gvy.gdsl
 
+import com.github.albertocavalcante.groovyparser.api.untrusted.UntrustedAstParser
+import com.github.albertocavalcante.groovyparser.api.untrusted.UntrustedParseLimits
+import com.github.albertocavalcante.groovyparser.api.untrusted.UntrustedParseResult
 import com.github.albertocavalcante.gvy.gdsl.model.GdslParseResult
-import groovy.lang.GroovyRuntimeException
-import groovy.lang.GroovyShell
 import io.github.oshai.kotlinlogging.KotlinLogging
-import org.codehaus.groovy.control.CompilationFailedException
-import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.runtime.InvokerInvocationException
 
 /**
- * Executes GDSL scripts and captures their contributions.
+ * Reads GDSL scripts and captures their contributions.
  *
- * GDSL (Groovy DSL) scripts define type contributions for IDE completion.
- * This executor runs the scripts using Groovy's script engine with
- * [GdslScript] as the base class, capturing all method and property
- * contributions.
+ * GDSL (Groovy DSL) scripts define type contributions for IDE completion. They are untrusted input,
+ * so they are never executed: the script is parsed without any compile phase running
+ * ([UntrustedAstParser]: no AST transformation, `@Grab` or class loading) and its declarative calls
+ * are interpreted from the AST ([GdslInterpreter]).
  *
  * Example usage:
  * ```kotlin
@@ -29,91 +27,40 @@ class GdslExecutor {
     private val logger = KotlinLogging.logger {}
 
     /**
-     * Executes a GDSL script without capturing results.
+     * Reads a GDSL script and captures all contributions.
      *
-     * @param scriptContent The GDSL script content
-     * @param scriptName Name for error reporting
-     * @throws Exception if script execution fails
-     */
-    fun execute(scriptContent: String, scriptName: String = "script.gdsl") {
-        val shell = createGroovyShell()
-        val failure = runCatching { shell.evaluate(scriptContent, scriptName) }.exceptionOrNull()
-        if (failure != null) {
-            when (failure) {
-                is CompilationFailedException -> logger.error(failure) { "Failed to compile GDSL script: $scriptName" }
-                is InvokerInvocationException -> logger.error(failure) { "GDSL script threw an exception: $scriptName" }
-                is GroovyRuntimeException -> logger.error(failure) { "Failed to execute GDSL script: $scriptName" }
-                else -> logger.error(failure) { "Failed to execute GDSL script: $scriptName" }
-            }
-
-            throw failure
-        }
-
-        logger.info { "Successfully executed GDSL script: $scriptName" }
-    }
-
-    /**
-     * Executes a GDSL script and captures all contributions.
-     *
-     * This method parses and executes the GDSL script, collecting all
-     * method and property contributions made via `contributor` blocks.
+     * Unsupported constructs are skipped and listed in [GdslParseResult.warnings]; a script that is too
+     * large, too deeply nested or not valid Groovy yields [GdslParseResult.error].
      *
      * @param scriptContent The GDSL script content
      * @param scriptName Name for error reporting (default: "script.gdsl")
-     * @return GdslParseResult containing captured methods, properties, and success status
      */
     fun executeAndCapture(scriptContent: String, scriptName: String = "script.gdsl"): GdslParseResult {
-        val shell = createGroovyShell()
-
-        return try {
-            val script = shell.parse(scriptContent, scriptName) as GdslScript
-
-            // Execute the script to trigger contributor() calls.
-            //
-            // NOTE: We intentionally use `runCatching` so we can convert any script runtime failure into
-            // a `GdslParseResult.error(...)` without catching `Exception`/`RuntimeException` directly
-            // (which is forbidden by the repository's Detekt configuration).
-            // TODO: Replace this with explicit, typed exception handling once we decide on the exact
-            // runtime failure contract for GDSL scripts (and can enumerate the exceptions we expect).
-            val runFailure = runCatching { script.run() }.exceptionOrNull()
-            if (runFailure != null) {
-                logger.error { "GDSL script threw an exception: $scriptName" }
-                return GdslParseResult.error(runFailure.message ?: "Script execution failed")
-            }
-
-            // Collect all contributions
-            val methods = script.allMethods
-            val properties = script.allProperties
-
-            logger.info {
-                "Successfully parsed GDSL script: $scriptName " +
-                    "(${methods.size} methods, ${properties.size} properties)"
-            }
-
-            GdslParseResult(
-                methods = methods,
-                properties = properties,
-                success = true,
-            )
-        } catch (e: CompilationFailedException) {
-            logger.error(e) { "Failed to compile GDSL script: $scriptName" }
-            GdslParseResult.error(e.message ?: "Compilation failed")
-        } catch (e: InvokerInvocationException) {
-            logger.error(e) { "GDSL script threw an exception: $scriptName" }
-            GdslParseResult.error(e.message ?: "Script execution failed")
-        } catch (e: GroovyRuntimeException) {
-            logger.error(e) { "Failed to execute GDSL script: $scriptName" }
-            GdslParseResult.error(e.message ?: "Execution failed")
+        val result = when (val parsed = UntrustedAstParser.parse(scriptContent, scriptName, PARSE_LIMITS)) {
+            is UntrustedParseResult.Rejected -> GdslParseResult.error(rejection(parsed))
+            is UntrustedParseResult.Parsed -> GdslInterpreter().interpret(parsed.module)
         }
+        if (!result.success) {
+            logger.warn { "Could not read GDSL script $scriptName: ${result.error}" }
+        } else {
+            result.warnings.forEach { warning -> logger.warn { "GDSL $scriptName: $warning" } }
+            logger.info {
+                "Read GDSL script $scriptName (${result.methods.size} methods, ${result.properties.size} properties)"
+            }
+        }
+        return result
     }
 
-    /**
-     * Creates a configured GroovyShell for GDSL execution.
-     */
-    private fun createGroovyShell(): GroovyShell {
-        val config = CompilerConfiguration().apply {
-            scriptBaseClass = GdslScript::class.java.name
-        }
-        return GroovyShell(javaClass.classLoader, config)
+    private fun rejection(rejected: UntrustedParseResult.Rejected): String {
+        val position = rejected.line?.let { line -> " at line $line" + (rejected.column?.let { ", column $it" } ?: "") }
+        return "GDSL script rejected: ${rejected.reason}${position.orEmpty()}"
+    }
+
+    private companion object {
+        /**
+         * A Jenkins `/pipeline-syntax/gdsl` dump has hundreds of `method(...)` statements (a few hundred KB)
+         * and nests about six brackets deep (`contributor { if { method(namedParams: [parameter(...)]) } }`).
+         */
+        val PARSE_LIMITS = UntrustedParseLimits(maxChars = 4 * 1024 * 1024, maxNesting = 32, maxStatements = 100_000)
     }
 }

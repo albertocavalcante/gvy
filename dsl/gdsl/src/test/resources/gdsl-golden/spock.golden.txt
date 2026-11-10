@@ -1,0 +1,3 @@
+success=true error=null
+method MethodDescriptor(name=expect, returnType=void, parameters=[ParameterDescriptor(name=condition, type=boolean, documentation=null)], namedParameters=[], documentation=null, context={ctype=spock.lang.Specification}, enclosingCall=null)
+property PropertyDescriptor(name=mock, type=java.lang.Object, documentation=null, context={ctype=spock.lang.Specification}, enclosingCall=null)

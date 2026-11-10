@@ -132,7 +132,11 @@ class GdslParseResult private constructor(
     val success: Boolean,
     /** Error message if parsing failed */
     val error: String?,
+    warnings: List<String> = emptyList(),
 ) {
+    /** Constructs that were skipped instead of interpreted (unsupported calls, statements, ...). */
+    val warnings: List<String> = warnings.toList()
+
     /** All method contributions (immutable) */
     val methods: List<MethodDescriptor> = methods.toList()
 
@@ -145,7 +149,8 @@ class GdslParseResult private constructor(
         return methods == other.methods &&
             properties == other.properties &&
             success == other.success &&
-            error == other.error
+            error == other.error &&
+            warnings == other.warnings
     }
 
     override fun hashCode(): Int {
@@ -153,11 +158,12 @@ class GdslParseResult private constructor(
         result = 31 * result + properties.hashCode()
         result = 31 * result + success.hashCode()
         result = 31 * result + (error?.hashCode() ?: 0)
+        result = 31 * result + warnings.hashCode()
         return result
     }
 
     override fun toString(): String =
-        "GdslParseResult(methods=$methods, properties=$properties, success=$success, error=$error)"
+        "GdslParseResult(methods=$methods, properties=$properties, success=$success, error=$error, warnings=$warnings)"
 
     companion object {
         /** Creates a successful result with the given methods and properties */
@@ -166,7 +172,8 @@ class GdslParseResult private constructor(
             properties: List<PropertyDescriptor>,
             success: Boolean = true,
             error: String? = null,
-        ): GdslParseResult = GdslParseResult(methods, properties, success, error)
+            warnings: List<String> = emptyList(),
+        ): GdslParseResult = GdslParseResult(methods, properties, success, error, warnings)
 
         /** Creates an empty successful result */
         fun empty(): GdslParseResult = GdslParseResult(
