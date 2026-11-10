@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
 import com.github.albertocavalcante.gvy.gls.documentation.SignatureFormatter
+import com.github.albertocavalcante.gvy.semantics.native.displayName
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
@@ -67,7 +68,7 @@ internal object MethodCallDisplayFormatter {
     }
 
     fun MarkdownBuilder.renderConstructorCallExpression(node: ConstructorCallExpression) {
-        val className = node.type.nameWithoutPackage
+        val className = node.type.displayName()
         val arguments = displayConstructorArguments(node)
 
         val signature = buildString {

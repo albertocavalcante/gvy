@@ -66,6 +66,17 @@ class SemanticTokensSourcePositionTest {
     }
 
     @Test
+    fun `array type tokens cover the element type name, not a JVM descriptor`() {
+        // `String[]` at 15 (return) and 30 (parameter); an array name such as `String;` was one char too long.
+        val source = "class Sample { String[] split(String[] items) { items } }\n"
+        val tokens = request(source)
+        val typeTokens = tokens.filter { it.start == 15 || it.start == 30 }
+
+        assertEquals(listOf(6, 6), typeTokens.map { it.length }, "found $tokens")
+        expect(tokens, Token(0, 39, 5, GroovySemanticTokenProvider.TokenTypes.PARAMETER))
+    }
+
+    @Test
     fun `unaliased import tokens cover the imported simple name`() {
         expect(
             request("import java.util.List\nclass Sample {}\n"),

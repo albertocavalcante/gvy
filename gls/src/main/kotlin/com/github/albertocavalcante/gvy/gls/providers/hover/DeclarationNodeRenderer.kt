@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.groovylsp.markdown.dsl.MarkdownBuilder
 import com.github.albertocavalcante.gvy.gls.documentation.SignatureFormatter
+import com.github.albertocavalcante.gvy.semantics.native.displayName
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -20,7 +21,7 @@ internal object DeclarationNodeRenderer {
         section("Method") {
             code("groovy") { SignatureFormatter.formatMethod(node) }
             keyValue(
-                "Return Type" to (node.returnType?.nameWithoutPackage ?: "def"),
+                "Return Type" to (node.returnType?.displayName() ?: "def"),
                 "Modifiers" to modifiersString(node),
                 "Owner" to (node.declaringClass?.nameWithoutPackage ?: "unknown"),
             )
@@ -47,7 +48,7 @@ internal object DeclarationNodeRenderer {
 
             if (node.fields.isNotEmpty()) {
                 section("Fields") {
-                    list(node.fields.take(MAX_DISPLAYED_ITEMS).map { "${it.type.nameWithoutPackage} ${it.name}" })
+                    list(node.fields.take(MAX_DISPLAYED_ITEMS).map { "${it.type.displayName()} ${it.name}" })
                     if (node.fields.size > MAX_DISPLAYED_ITEMS) {
                         text("... and ${node.fields.size - MAX_DISPLAYED_ITEMS} more")
                     }
@@ -60,7 +61,7 @@ internal object DeclarationNodeRenderer {
         section("Field") {
             code("groovy") { SignatureFormatter.formatField(node) }
             keyValue(
-                "Type" to node.type.nameWithoutPackage,
+                "Type" to node.type.displayName(),
                 "Modifiers" to modifiersString(node),
                 "Owner" to (node.declaringClass?.nameWithoutPackage ?: "unknown"),
             )
@@ -72,9 +73,9 @@ internal object DeclarationNodeRenderer {
 
     fun MarkdownBuilder.renderPropertyNode(node: PropertyNode) {
         section("Property") {
-            code("groovy") { "${node.type.nameWithoutPackage} ${node.name}" }
+            code("groovy") { "${node.type.displayName()} ${node.name}" }
             keyValue(
-                "Type" to node.type.nameWithoutPackage,
+                "Type" to node.type.displayName(),
                 "Modifiers" to modifiersString(node),
                 "Owner" to (node.declaringClass?.nameWithoutPackage ?: "unknown"),
                 "Getter" to if (node.getterBlock != null) "available" else "none",
@@ -111,5 +112,5 @@ internal object DeclarationNodeRenderer {
     }
 
     private fun parametersString(node: MethodNode): String =
-        node.parameters.joinToString(", ") { "${it.type.nameWithoutPackage} ${it.name}" }
+        node.parameters.joinToString(", ") { "${it.type.displayName()} ${it.name}" }
 }

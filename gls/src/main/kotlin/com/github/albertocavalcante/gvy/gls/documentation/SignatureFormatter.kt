@@ -320,4 +320,8 @@ object SignatureFormatter {
  * Extension function to get class name without package, correctly handling nested classes.
  * This overrides the default ClassNode.nameWithoutPackage which doesn't handle nested classes with $.
  */
-private fun ClassNode.simpleNameWithoutPackage(): String = name.substringAfterLast('.').substringAfterLast('$')
+private fun ClassNode.simpleNameWithoutPackage(): String = if (isArray) {
+    componentType.simpleNameWithoutPackage() + "[]" // an array's own name is a JVM descriptor
+} else {
+    name.substringAfterLast('.').substringAfterLast('$')
+}

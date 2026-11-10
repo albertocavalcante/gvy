@@ -262,7 +262,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
             if (typeName != "Object" && typeName != "void") {
                 addTokenForNode(
                     method.returnType,
-                    typeName.length,
+                    method.returnType.elementName().length,
                     TokenTypeResolver.getTokenTypeForClassNode(method.returnType),
                     0,
                     tokens,
@@ -290,7 +290,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
             if (typeName != "Object") {
                 addTokenForNode(
                     field.type,
-                    typeName.length,
+                    field.type.elementName().length,
                     TokenTypeResolver.getTokenTypeForClassNode(field.type),
                     0,
                     tokens,
@@ -356,7 +356,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
             if (typeName != "Object") {
                 addTokenForNode(
                     param.type,
-                    typeName.length,
+                    param.type.elementName().length,
                     TokenTypeResolver.getTokenTypeForClassNode(param.type),
                     0,
                     tokens,
@@ -700,3 +700,9 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
 
 /** A type reference with a position of its own: not one of the JVM-wide shared nodes (#1354). */
 private fun hasOwnPosition(type: ClassNode): Boolean = type.lineNumber > 0 && !isSharedDefaultType(type)
+
+/**
+ * The name a type token covers when no source text is available: the element type of an array
+ * (`String` for `String[]`), whose own name is a JVM descriptor such as `[Ljava.lang.String;`.
+ */
+private fun ClassNode.elementName(): String = if (isArray) componentType.elementName() else nameWithoutPackage

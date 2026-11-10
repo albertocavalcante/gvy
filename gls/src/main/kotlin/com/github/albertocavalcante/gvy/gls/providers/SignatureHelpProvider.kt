@@ -14,6 +14,7 @@ import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
+import com.github.albertocavalcante.gvy.semantics.native.displayName
 import groovy.lang.Script
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
@@ -389,8 +390,7 @@ private fun MethodNode.toSignatureInformation(): SignatureInformation {
     val paramsInfo = parameters.map { param ->
         val typeName = when {
             param.isDynamicTyped -> "def"
-            param.type.isArray -> param.type.componentType.nameWithoutPackage + "[]"
-            else -> param.type.nameWithoutPackage
+            else -> param.type.displayName()
         }
         val defaultValue = param.initialExpression?.let { expr ->
             val text = expr.text ?: return@let ""
@@ -405,7 +405,7 @@ private fun MethodNode.toSignatureInformation(): SignatureInformation {
     }
 
     val label = buildString {
-        append(returnType.nameWithoutPackage).append(" ")
+        append(returnType.displayName()).append(" ")
         append(name).append("(")
         append(paramsInfo.joinToString(", ") { it.label.left as String })
         append(")")
