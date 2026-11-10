@@ -220,12 +220,16 @@ class RetirementWakeTest {
         assertNull(returnedWaiter.get(), "the retirement signal still references a waiter that already returned")
     }
 
-    /** Runs a waiter to a normal answer; once this returns, only [pending] could still reference it. */
+    /**
+     * Runs a waiter to a normal answer; once this returns, only [pending] could still reference it. The waiter
+     * starts undispatched, so both of its select clauses are registered before the job completes. It runs on
+     * the caller's event loop: a parked pool thread may keep its last task reachable.
+     */
     private suspend fun awaitedWaiter(
         pending: PendingCompilation,
         complete: () -> Unit,
     ): WeakReference<Deferred<CompilationResult?>> = coroutineScope {
-        val waiter = async(Dispatchers.IO) { pending.awaitUnlessRetired() }
+        val waiter = async(start = CoroutineStart.UNDISPATCHED) { pending.awaitUnlessRetired() }
         complete()
         assertNotNull(waiter.await())
         WeakReference(waiter)
