@@ -227,7 +227,7 @@ class ShadowedListedSpellingTest {
         open(opened) // before any root is known: nothing to shadow yet
 
         // As ProjectStartupManager.initializeWorkspaces publishes the startup model.
-        compilation.workspaceManager.initializeWorkspace(workspaceRoot)
+        compilation.initializeWorkspace(workspaceRoot)
         compilation.indexAllWorkspaceSources(listOf(listed))
         reads = 0
 
