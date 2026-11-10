@@ -12,8 +12,12 @@ import com.github.albertocavalcante.gvy.gls.providers.indexing.ExportIndexParams
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
+import java.nio.file.attribute.BasicFileAttributes
 import kotlin.io.path.extension
 import kotlin.io.path.name
 import kotlin.io.path.readText
@@ -59,23 +63,54 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
             .getOrThrow()
 
     private fun indexFiles(root: Path, indexer: UnifiedIndexer) {
-        Files.walk(root).use { stream ->
-            stream.filter { path ->
-                path.extension in FileExtensions.EXTENSIONS ||
-                    path.name in FileExtensions.FILENAMES
-            }
-                .forEach { path ->
-                    runCatching {
-                        val relativePath = root.relativize(path).toString()
-                        val content = path.readText()
-                        indexer.indexDocument(relativePath, content)
+        Files.walkFileTree(
+            root,
+            object : SimpleFileVisitor<Path>() {
+                override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
+                    if (dir != root && isExcludedDirectory(dir.name)) {
+                        FileVisitResult.SKIP_SUBTREE
+                    } else {
+                        FileVisitResult.CONTINUE
                     }
-                        .onFailure { throwable ->
-                            rethrowIfCancellationOrError(throwable)
-                            // Keep indexing other files; log for debugging.
-                            logger.warn(throwable) { "Failed to index file $path" }
-                        }
+
+                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                    if (attrs.isRegularFile &&
+                        (file.extension in FileExtensions.EXTENSIONS || file.name in FileExtensions.FILENAMES)
+                    ) {
+                        indexFile(root, file, indexer)
+                    }
+                    return FileVisitResult.CONTINUE
                 }
+
+                override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
+                    logger.warn(exc) { "Skipping unreadable path $file" }
+                    return FileVisitResult.CONTINUE
+                }
+            },
+        )
+    }
+
+    private fun indexFile(root: Path, path: Path, indexer: UnifiedIndexer) {
+        runCatching {
+            val relativePath = root.relativize(path).toString()
+            val content = path.readText()
+            indexer.indexDocument(relativePath, content)
         }
+            .onFailure { throwable ->
+                rethrowIfCancellationOrError(throwable)
+                // Keep indexing other files; log for debugging.
+                logger.warn(throwable) { "Failed to index file $path" }
+            }
+    }
+
+    private companion object {
+        /** Build/output directories that never contain hand-written sources (hidden dirs are handled separately). */
+        val BUILD_OUTPUT_DIRECTORIES = setOf("build", "out", "target", "node_modules")
+
+        /**
+         * Hidden directories (.git, .gradle, .idea, .jenkins-stubs, ...) and build outputs hold tooling state or
+         * generated code, so exporting them wastes time and adds bogus symbols to the index.
+         */
+        fun isExcludedDirectory(name: String): Boolean = name.startsWith(".") || name in BUILD_OUTPUT_DIRECTORIES
     }
 }
