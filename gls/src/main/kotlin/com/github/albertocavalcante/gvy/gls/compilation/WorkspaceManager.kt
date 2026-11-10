@@ -4,6 +4,8 @@ import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
+import com.github.albertocavalcante.gvy.gls.utils.ALWAYS_SKIPPED_DIRECTORIES
+import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
@@ -140,30 +142,47 @@ class WorkspaceManager(
     }
 
     /**
-     * Applies sources created or deleted after the model was built (#1422), publishing one new model.
-     * A created path joins only when it is a Groovy source under a current source root, the rule the scan
-     * uses; a deleted path leaves the list. Each root's sources stay sorted, as [scanSources] orders them.
-     * Classpath, roots, targets and so the fingerprint are unchanged. Returns whether the list changed.
+     * Applies paths created or deleted after the model was built (#1422, #1424), publishing one new model.
+     *
+     * A created path under a current source root joins when it is a Groovy source, the rule the scan uses, and a
+     * created folder adds the sources a walk of it finds. A deleted path leaves the list; a deleted path that is
+     * not a listed source may have been a folder, so it also removes the sources strictly under it, compared by
+     * component: a deleted `Jenkinsfile` removes nothing and a deleted `pkg` keeps `pkgUtil`. A path deleted and
+     * created in one notification is decided by the disk. Each root's sources stay sorted, as [scanSources]
+     * orders them. Classpath, roots, targets and so the fingerprint are unchanged.
+     *
+     * Every disk read (the stats and folder walks) happens before the update lock; the merge re-checks the roots.
      */
-    fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): Boolean {
-        var changed = false
+    fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
+        val startRoots = current().sourceRoots.map { it.toAbsolutePath().normalize() }
+        val createdKeys = underRoots(created, startRoots)
+        val deletedKeys = underRoots(deleted, startRoots).toSet()
+        if (createdKeys.isEmpty() && deletedKeys.isEmpty()) return SourceListChange.NONE
+
+        val existing = createdKeys.filterTo(HashSet(), ::isGroovySource)
+        val folders = createdKeys.filter { it !in existing && Files.isDirectory(it) }
+        val found = existing + walkFolders(folders)
+        var result = SourceListChange.NONE
         update { current ->
-            val createdKeys = created.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
-            // A path both deleted and created in one notification (a replace-on-save) is decided by the disk.
-            val gone = deleted.map { it.toAbsolutePath().normalize() }
-                .filterTo(HashSet()) { it !in createdKeys || !Files.isRegularFile(it) }
-            val known = current.sources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val listed = current.sources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val gone = deletedKeys - existing
+            val prefixes = deletedKeys.filterTo(HashSet()) { it !in listed }
+            val kept = current.sources.filterNot { source ->
+                val key = source.toAbsolutePath().normalize()
+                key in gone || hasAncestorIn(key, prefixes)
+            }
+            val keptKeys = kept.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
             val roots = current.sourceRoots.map { it.toAbsolutePath().normalize() }
-            val added = created.map { it.toAbsolutePath().normalize() }
-                .filter { it !in known && it !in gone && isGroovySource(it) }
-                .filter { path -> roots.any { root -> path.startsWith(root) } }
-                .distinct()
-            val kept = current.sources.filterNot { it.toAbsolutePath().normalize() in gone }
+            val added = found.filter { it !in keptKeys && isScannedUnder(it, roots) }.distinct()
             val next = if (added.isEmpty()) kept else ordered(kept + added, roots)
-            changed = next != current.sources
-            if (!changed) {
+            if (next == current.sources) {
                 current
             } else {
+                val nextKeys = next.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+                result = SourceListChange(
+                    added = added.filter { it !in listed },
+                    removed = listed.filter { it !in nextKeys }.sorted(),
+                )
                 WorkspaceModel(
                     current.root,
                     current.classpath,
@@ -174,8 +193,23 @@ class WorkspaceManager(
                 )
             }
         }
-        return changed
+        return result
     }
+
+    /** The paths a scan of [roots] would reach: under a root and outside the skipped directories below it. */
+    private fun underRoots(paths: Collection<Path>, roots: List<Path>): List<Path> =
+        paths.map { it.toAbsolutePath().normalize() }.filter { isScannedUnder(it, roots) }.distinct()
+
+    /** The Groovy sources in each folder, each walked once even when a parent folder is also listed. */
+    private fun walkFolders(folders: List<Path>): List<Path> {
+        val set = folders.toSet()
+        return folders.filterNot { hasAncestorIn(it, set) }
+            .flatMap { folder -> collectGroovySources(folder).map { it.toAbsolutePath().normalize() } }
+    }
+
+    /** Whether a proper ancestor of [path] is in [prefixes]: [path] lies strictly under one, by component. */
+    private fun hasAncestorIn(path: Path, prefixes: Set<Path>): Boolean =
+        prefixes.isNotEmpty() && generateSequence(path.parent) { it.parent }.any { it in prefixes }
 
     /** Sources grouped by their first containing root in root order, each group sorted, as a scan yields them. */
     private fun ordered(sources: List<Path>, roots: List<Path>): List<Path> {
@@ -385,13 +419,22 @@ class WorkspaceManager(
 /**
  * The Groovy sources under [root], following file symbolic links as `Files.isRegularFile` does. An entry that
  * cannot be read or vanishes mid-walk (a branch switch, a build cleaning its output) is skipped instead of
- * aborting the whole workspace update (#1314). [beforeVisit] runs before each file is classified (a test seam).
+ * aborting the whole workspace update (#1314). Directories in [ALWAYS_SKIPPED_DIRECTORIES] below [root] are not
+ * entered, the rule watched-file events follow too (#1424). [beforeVisit] runs before each file is classified
+ * (a test seam).
  */
 internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}): List<Path> {
     val found = mutableListOf<Path>()
     Files.walkFileTree(
         root,
         object : SimpleFileVisitor<Path>() {
+            override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
+                if (dir != root && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
+                    FileVisitResult.SKIP_SUBTREE
+                } else {
+                    FileVisitResult.CONTINUE
+                }
+
             override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
                 beforeVisit(file)
                 // The walk does not follow links: a symlinked source is a link whose target is a regular file.
@@ -421,5 +464,14 @@ private fun skipped(entry: Path, exc: IOException) {
         scanLogger.debug { "Skipped a source entry that vanished during the scan: $entry" }
     } else {
         scanLogger.warn { "Skipped an unreadable source entry: $entry (${exc.message})" }
+    }
+}
+
+/** What one file-watch notification did to the source list: the sources it [added] and [removed]. */
+data class SourceListChange(val added: List<Path>, val removed: List<Path>) {
+    val changed: Boolean get() = added.isNotEmpty() || removed.isNotEmpty()
+
+    companion object {
+        val NONE = SourceListChange(emptyList(), emptyList())
     }
 }

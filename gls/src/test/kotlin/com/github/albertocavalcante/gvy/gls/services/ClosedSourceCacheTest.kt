@@ -2,7 +2,9 @@ package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import io.mockk.coVerify
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -25,6 +27,7 @@ import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
@@ -45,7 +48,7 @@ class ClosedSourceCacheTest {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Unconfined)
     private val documents = DocumentProvider()
     private val compilation =
-        GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined, documentProvider = documents)
+        spyk(GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined, documentProvider = documents))
     private val textDocuments = GroovyTextDocumentService(
         scope,
         compilation,
@@ -55,7 +58,12 @@ class ClosedSourceCacheTest {
             client = { mockk<LanguageClient>(relaxed = true) },
         ),
     )
-    private val workspace = GroovyWorkspaceService(compilation, compilation.symbolIndexingService, scope)
+    private val workspace = GroovyWorkspaceService(
+        compilation,
+        compilation.symbolIndexingService,
+        scope,
+        sourceChangeDispatcher = Dispatchers.Unconfined,
+    )
 
     @AfterEach
     fun tearDown() = scope.cancel()
@@ -159,6 +167,53 @@ class ClosedSourceCacheTest {
             ),
         )
     }
+
+    /**
+     * Notifies [types] for one closed file through a paused source queue, reads it before the queue runs, then
+     * drains the queue and runs [afterDrain].
+     */
+    private fun assertRetiredBeforeQueueRuns(
+        name: String,
+        vararg types: FileChangeType,
+        afterDrain: suspend (Path) -> Unit = {},
+    ): Unit = runBlocking {
+        val paused = ArrayDeque<Runnable>()
+        val queued = GroovyWorkspaceService(
+            compilation,
+            compilation.symbolIndexingService,
+            scope,
+            sourceChangeDispatcher = Executor { paused.addLast(it) }.asCoroutineDispatcher(),
+        )
+        compilation.updateWorkspaceModel(tempDir, emptyList(), listOf(tempDir))
+        val file = tempDir.resolve("$name.groovy")
+        Files.writeString(file, "class Before {}")
+        val uri = file.toUri()
+        assertEquals("class Before {}", compilation.ensureCompiled(uri)?.sourceText)
+
+        Files.writeString(file, "class After {}")
+        queued.didChangeWatchedFiles(DidChangeWatchedFilesParams(types.map { FileEvent(uri.toString(), it) }))
+
+        // Nothing queued has run: the retirement itself happened on the notification.
+        assertFalse(paused.isEmpty(), "the rest of the work is still queued")
+        assertFalse("Before" in classNames(compilation.getAst(uri)), "old parse served while the queue waits")
+        assertEquals("class After {}", compilation.ensureCompiled(uri)?.sourceText)
+
+        while (paused.isNotEmpty()) paused.removeFirst().run()
+        afterDrain(file)
+    }
+
+    @Test
+    fun `a changed closed file is retired before its queued work runs`() =
+        assertRetiredBeforeQueueRuns("Changed", FileChangeType.Changed)
+
+    @Test
+    fun `an atomic save reported as deleted and created is retired before its queued work runs`() =
+        assertRetiredBeforeQueueRuns("Atomic", FileChangeType.Deleted, FileChangeType.Created) { file ->
+            // Never left retired without a refresh: still listed, and rebuilt from the new disk text.
+            assertTrue(compilation.workspaceManager.getWorkspaceSources().contains(file), "still listed")
+            coVerify { compilation.refreshSemanticFromDisk(match { file.toUri() in it }) }
+            assertEquals("class After {}", compilation.ensureCompiled(file.toUri())?.sourceText)
+        }
 
     private fun open(uri: String, content: String) =
         DidOpenTextDocumentParams(TextDocumentItem(uri, "groovy", 1, content))
