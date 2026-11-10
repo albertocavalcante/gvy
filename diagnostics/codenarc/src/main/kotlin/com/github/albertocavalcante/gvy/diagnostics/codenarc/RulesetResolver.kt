@@ -35,6 +35,13 @@ interface RulesetResolver {
      * @return The resolved ruleset configuration
      */
     fun resolve(context: WorkspaceContext): RulesetConfiguration
+
+    /**
+     * The ruleset for [file] in [context]'s workspace. A workspace can mix Jenkins pipeline sources with ordinary
+     * Groovy sources, which need different default profiles (#1236). Resolvers without per-file rules use the
+     * workspace's ruleset.
+     */
+    fun resolve(context: WorkspaceContext, file: URI?): RulesetConfiguration = resolve(context)
 }
 
 /**
@@ -71,22 +78,46 @@ class ClasspathResourceLoader : ResourceLoader {
 class HierarchicalRulesetResolver(
     private val projectTypeDetector: ProjectTypeDetector = DefaultProjectTypeDetector(),
     private val resourceLoader: ResourceLoader = ClasspathResourceLoader(),
+    /** True for Jenkins pipeline files (the server passes its configured `jenkins.filePatterns`). */
+    private val isJenkinsPipelineFile: (URI) -> Boolean = ::hasDefaultJenkinsFileName,
 ) : RulesetResolver {
 
     /**
-     * Clears any cached ruleset data and forces re-resolution on next call.
-     * Useful when configuration files change.
+     * Clears cached project detection and default rulesets, forcing re-resolution on the next call. Workspace
+     * ruleset files are read on every call anyway (their interpretation is cached by content).
      */
     fun reloadRulesets() {
         logger.info { "Reload requested for CodeNarc rulesets" }
-        // This method is a placeholder for future cache invalidation logic.
-        // Currently, rulesets are resolved fresh on each call to resolve(), so no cache clearing is needed.
+        detections.clear()
+        defaults.clear()
     }
+
+    /** What a workspace root looks like to ruleset selection, and the directory times it was detected at. */
+    private data class Detection(
+        val fingerprint: List<Long>,
+        val workspaceType: ProjectType,
+        val buildType: ProjectType,
+        val sharedLibrary: Boolean,
+    )
+
+    /**
+     * Detection per workspace root. Re-detected when the root or its `vars/` directory changes (a build file,
+     * `Jenkinsfile` or `vars` script appearing or disappearing), instead of walking the tree on every analysis.
+     */
+    private val detections = java.util.concurrent.ConcurrentHashMap<Path, Detection>()
+
+    /** Default ruleset per profile resource; the content of a classpath resource never changes. */
+    private val defaults = java.util.concurrent.ConcurrentHashMap<ProjectType, ResolvedRuleset>()
 
     companion object {
         private val logger = KotlinLogging.logger {}
 
         private const val MAX_CACHED_INTERPRETATIONS = 32
+        private const val VARS_DIR = "vars"
+        private const val SRC_DIR = "src"
+
+        /** `src/` children that are Gradle or Maven source sets, not shared library code. */
+        private val BUILD_SOURCE_SETS = setOf("main", "test", "integrationTest", "testFixtures")
         private const val LOAD_FACTOR = 0.75f
 
         /** Interpretation outcomes by content hash; shared so rebuilding a resolver does not re-parse rulesets. */
@@ -114,15 +145,23 @@ class HierarchicalRulesetResolver(
     /** Workspace ruleset files already reported, so the warning is logged once rather than on every analysis. */
     private val warned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
-    override fun resolve(context: WorkspaceContext): RulesetConfiguration {
-        logger.debug { "Resolving ruleset configuration for context: $context" }
+    override fun resolve(context: WorkspaceContext): RulesetConfiguration = resolve(context, null)
+
+    /**
+     * Explicit workspace rulesets win for every file. Otherwise [file] gets the Jenkins profile when it is a
+     * Jenkins pipeline file, a shared library `vars/` script or shared library `src/` code, and the workspace's
+     * build-type profile otherwise, even when a root `Jenkinsfile` makes the workspace look like a Jenkins one
+     * (#1236). Without a [file], the workspace's profile.
+     */
+    override fun resolve(context: WorkspaceContext, file: URI?): RulesetConfiguration {
+        logger.debug { "Resolving ruleset configuration for $file in context: $context" }
 
         // Find properties file first
         val propertiesFile = resolvePropertiesFile(context)
 
         // Workspace rulesets are interpreted (never evaluated); fall back to the project defaults
         val (workspaceRuleset, ignored) = context.root?.let(::interpretWorkspaceRulesets) ?: (null to emptyList())
-        val rulesetContent = workspaceRuleset ?: resolveRulesetContent(context)
+        val rulesetContent = workspaceRuleset ?: loadProjectTypeDefault(context, file)
 
         return RulesetConfiguration(
             rulesetContent = rulesetContent.content,
@@ -132,17 +171,6 @@ class HierarchicalRulesetResolver(
         ).also {
             logger.info { "Resolved ruleset: source=${it.source}, properties=${it.propertiesFile}" }
         }
-    }
-
-    /**
-     * Resolves the ruleset content from various sources.
-     */
-    private fun resolveRulesetContent(context: WorkspaceContext): ResolvedRuleset {
-        // 2. Try server configuration override (future enhancement)
-        // val serverOverride = loadFromServerConfig(context.serverConfig)
-
-        // 3. Use project-type defaults
-        return loadProjectTypeDefault(context)
     }
 
     /**
@@ -267,13 +295,50 @@ class HierarchicalRulesetResolver(
      * 2. Try default DSL ruleset
      * 3. Fall back to CodeNarc's bundled XML rulesets (wrapped in minimal DSL)
      */
-    private fun loadProjectTypeDefault(context: WorkspaceContext): ResolvedRuleset {
-        val projectType = if (context.root != null) {
-            projectTypeDetector.detect(context.root!!)
-        } else {
-            ProjectType.PlainGroovy
+    private fun loadProjectTypeDefault(context: WorkspaceContext, file: URI?): ResolvedRuleset {
+        val root = context.root ?: return defaultFor(ProjectType.PlainGroovy)
+        val detection = detect(root)
+        val projectType = when {
+            file == null -> detection.workspaceType
+            isJenkinsSource(root, file, detection) -> ProjectType.JenkinsLibrary
+            else -> detection.buildType
         }
+        return defaultFor(projectType)
+    }
 
+    private fun defaultFor(projectType: ProjectType): ResolvedRuleset =
+        defaults.computeIfAbsent(projectType, ::loadDefault)
+
+    private fun detect(root: Path): Detection {
+        val fingerprint = listOf(root, root.resolve("vars")).map { dir ->
+            runCatching { Files.getLastModifiedTime(dir).toMillis() }.getOrDefault(-1L)
+        }
+        detections[root]?.takeIf { it.fingerprint == fingerprint }?.let { return it }
+        return Detection(
+            fingerprint = fingerprint,
+            workspaceType = projectTypeDetector.detect(root),
+            buildType = projectTypeDetector.detectBuildType(root),
+            sharedLibrary = projectTypeDetector.isSharedLibrary(root),
+        ).also { detections[root] = it }
+    }
+
+    /**
+     * Pipeline files anywhere, and in a shared library its `vars/` scripts and `src/` code (but not Gradle or
+     * Maven source sets such as `src/main` and `src/test`), which Jenkins runs under CPS.
+     */
+    private fun isJenkinsSource(root: Path, file: URI, detection: Detection): Boolean {
+        if (isJenkinsPipelineFile(file)) return true
+        if (!detection.sharedLibrary) return false
+        val relative = runCatching { root.toAbsolutePath().normalize().relativize(Paths.get(file).normalize()) }
+            .getOrNull()?.map { it.toString() } ?: return false
+        return when (relative.firstOrNull()) {
+            VARS_DIR -> true
+            SRC_DIR -> relative.getOrNull(1) !in BUILD_SOURCE_SETS
+            else -> false
+        }
+    }
+
+    private fun loadDefault(projectType: ProjectType): ResolvedRuleset {
         // Try custom DSL rulesets first
         val customResourcePath = when (projectType) {
             is ProjectType.JenkinsLibrary -> "codenarc/rulesets/frameworks/jenkins.groovy"
@@ -340,3 +405,16 @@ class HierarchicalRulesetResolver(
      */
     private data class ResolvedRuleset(val content: String, val source: String)
 }
+
+/**
+ * The built-in Jenkins pipeline file names (`Jenkinsfile`, `Jenkinsfile.*`, `Jenkinsfile-*`, `Jenkinsfile_*`,
+ * `*.jenkinsfile`, `*.Jenkinsfile`), for use without the server's configured `jenkins.filePatterns`.
+ */
+internal fun hasDefaultJenkinsFileName(file: URI): Boolean {
+    val name = runCatching { Paths.get(file).fileName?.toString() }.getOrNull() ?: return false
+    return name == JENKINSFILE ||
+        listOf('.', '-', '_').any { name.startsWith("$JENKINSFILE$it") } ||
+        name.endsWith(".jenkinsfile", ignoreCase = true)
+}
+
+private const val JENKINSFILE = "Jenkinsfile"

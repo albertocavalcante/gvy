@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
+import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
@@ -37,6 +38,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -205,8 +207,11 @@ class GroovyTextDocumentService(
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
+            val jenkinsFiles = JenkinsFileDetector(serverConfiguration.jenkinsConfig.filePatterns)
             val codeNarcProvider = CodeNarcDiagnosticProvider(
                 workspaceContext,
+                // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
+                rulesetResolver = HierarchicalRulesetResolver(isJenkinsPipelineFile = jenkinsFiles::isJenkinsFile),
                 onWorkspaceRulesetIgnored = { ruleset ->
                     // Service scope: updateConfiguration rebuilds the provider, which must not repeat the message
                     if (notifiedIgnoredRulesets.add(ruleset)) {

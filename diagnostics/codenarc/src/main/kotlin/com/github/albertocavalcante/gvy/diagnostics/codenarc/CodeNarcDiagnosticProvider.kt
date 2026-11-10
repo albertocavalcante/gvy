@@ -73,7 +73,8 @@ class CodeNarcDiagnosticProvider(
         logger.debug { "Starting CodeNarc analysis for: $fileName" }
 
         // Resolve the appropriate ruleset configuration
-        val rulesetConfig = rulesetResolver.resolve(workspaceContext)
+        // Per file: a Jenkinsfile and an ordinary Groovy source in one workspace get different profiles (#1236).
+        val rulesetConfig = rulesetResolver.resolve(workspaceContext, uri)
         logger.debug { "Using ruleset from: ${rulesetConfig.source}" }
         rulesetConfig.ignoredWorkspaceRulesets.filter { notifiedIgnored.add(it) }.forEach(onWorkspaceRulesetIgnored)
 
