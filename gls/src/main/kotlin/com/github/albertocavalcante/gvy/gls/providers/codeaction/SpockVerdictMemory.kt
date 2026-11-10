@@ -48,8 +48,11 @@ import java.util.IdentityHashMap
  * seen until the base compiles again. The compile result does not keep other sources' text, so the base is
  * read when the record is written rather than when it was compiled; a prelude whose `extends` disagrees
  * with the compiled AST is not recorded (and so denies), but an edit elsewhere in the prelude between the
- * compile and the record is hashed as if compiled. That is acceptable for a whitespace-only, reversible alignment;
- * nothing else reads this memory.
+ * compile and the record is hashed as if compiled. When a base's file stops lexing after the base's header,
+ * only the class names before that point are known: a class added after the lex error, say one shadowing
+ * `Specification`, cannot deny reuse until the file lexes again, so the recall may disagree with what the
+ * fixed file will mean. That is acceptable for a whitespace-only, reversible alignment; nothing else reads
+ * this memory.
  */
 internal class SpockVerdictMemory {
     /**
