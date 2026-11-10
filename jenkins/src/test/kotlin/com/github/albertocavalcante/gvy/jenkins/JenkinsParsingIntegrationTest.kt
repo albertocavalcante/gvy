@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.jenkins
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.control.CompilerConfiguration
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -77,6 +78,36 @@ class JenkinsParsingIntegrationTest {
             scriptLoader.parseClass(script)
         } catch (e: Exception) {
             throw AssertionError("Failed to parse Jenkinsfile with generated stubs: ${e.message}", e)
+        }
+    }
+
+    @Test
+    fun `Library annotation stub is provided even when the Pipeline plugins are on the classpath`() {
+        val workspace = tempDir.resolve("workspace").also { it.toFile().mkdirs() }
+        val stubsCacheRoot = tempDir.resolve("stubs-cache")
+        val context = JenkinsContext(JenkinsConfiguration(), workspace, stubsCacheRoot = stubsCacheRoot)
+        // The real workflow-cps plugin turns off the CpsScript stubs, but cannot supply the implicit import.
+        val workflowCps = tempDir.resolve("workflow-cps-4000.v0.jar")
+
+        val classpath = context.buildClasspath(emptyList(), projectDependencies = listOf(workflowCps))
+
+        val stubsDir = JenkinsStubsLocation.directoryFor(stubsCacheRoot, workspace)
+        val implicitStubsDir = stubsDir.resolve("implicit")
+        assertTrue(classpath.contains(implicitStubsDir), "Classpath should contain the implicit stubs dir")
+        assertTrue(implicitStubsDir.resolve("Library.groovy").toFile().exists(), "Library annotation stub missing")
+        assertFalse(classpath.contains(stubsDir), "Plugin stubs should stay off the classpath with workflow-cps")
+        assertFalse(
+            stubsDir.resolve("org/jenkinsci/plugins/workflow/cps/CpsScript.groovy").toFile().exists(),
+            "CpsScript stub should not be generated when workflow-cps is on the classpath",
+        )
+        assertFalse(workspace.resolve(".jenkins-stubs").toFile().exists(), "Nothing is written into the workspace")
+
+        val loader = GroovyClassLoader(this.javaClass.classLoader)
+        classpath.forEach { loader.addClasspath(it.toString()) }
+        try {
+            loader.parseClass("@Library(['lib@1.0', 'other']) _\nlibrary 'lib'\n")
+        } catch (e: Exception) {
+            throw AssertionError("Failed to compile @Library with the generated stub: ${e.message}", e)
         }
     }
 }

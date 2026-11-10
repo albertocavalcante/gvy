@@ -524,6 +524,8 @@ private fun MutableList<Path>.tryGenerateStubs(
     shouldGenerateStubs: (List<Path>) -> Boolean,
     getAllMetadata: () -> MergedJenkinsMetadata,
 ) {
+    tryGenerateLibraryAnnotationStub(logger, stubGenerator, stubsDirectory)
+
     runCatching {
         if (!shouldGenerateStubs(this)) return@runCatching
         val stubsDir = stubsDirectory()
@@ -543,3 +545,32 @@ private fun MutableList<Path>.tryGenerateStubs(
         logger.warn(throwable) { "Failed to generate Jenkins stubs" }
     }
 }
+
+/**
+ * Always needed: no plugin jar supplies the implicit `@Library` import (see
+ * [JenkinsStubGenerator.generateLibraryAnnotation]). It lives in its own `implicit` directory so the
+ * plugin stubs stay off the classpath when the real plugins are present. Like the plugin stubs, a
+ * stub left by an earlier run keeps serving when rewriting it fails.
+ */
+private fun MutableList<Path>.tryGenerateLibraryAnnotationStub(
+    logger: KLogger,
+    stubGenerator: JenkinsStubGenerator,
+    stubsDirectory: () -> Path,
+) {
+    runCatching {
+        val implicitStubsDir = stubsDirectory().resolve(IMPLICIT_STUBS_DIR)
+        try {
+            stubGenerator.generateLibraryAnnotation(implicitStubsDir)
+        } catch (e: IOException) {
+            if (!JenkinsStubGenerator.hasLibraryAnnotationStub(implicitStubsDir)) throw e
+            logger.warn(e) { "Failed to regenerate the Jenkins @Library stub; reusing the previous one" }
+        }
+        add(implicitStubsDir)
+    }.onFailure { throwable ->
+        if (throwable is Error) throw throwable
+        logger.warn(throwable) { "Failed to generate the Jenkins @Library annotation stub" }
+    }
+}
+
+/** Subdirectory of the stubs directory holding stubs that are needed even with the real plugins. */
+private const val IMPLICIT_STUBS_DIR = "implicit"

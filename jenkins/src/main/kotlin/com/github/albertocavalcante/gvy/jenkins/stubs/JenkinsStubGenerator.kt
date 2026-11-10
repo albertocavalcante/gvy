@@ -165,15 +165,47 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
         writeStub(outputDir, className, content)
     }
 
+    /**
+     * Generates the `@Library` annotation that Jenkinsfiles use to load shared libraries.
+     *
+     * Jenkins compiles every Pipeline script with `org.jenkinsci.plugins.workflow.libs.Library` as an
+     * implicit import, so `@Library('lib') _` needs no import statement. Without that annotation on the
+     * classpath, Groovy reports "unable to resolve class Library" and the whole file is treated as broken.
+     * The stub is declared in the default package so the bare name resolves the same way without an import.
+     * It does not cover the real package: `import org.jenkinsci.plugins.workflow.libs.Library` still needs
+     * the plugin jar on the classpath.
+     *
+     * Unlike the other stubs, this one is needed even when the real Pipeline plugins are on the classpath,
+     * because their jars cannot supply the implicit import.
+     */
+    fun generateLibraryAnnotation(outputDir: Path) {
+        val content = """
+            import java.lang.annotation.Retention
+            import java.lang.annotation.RetentionPolicy
+
+            /**
+             * Stub for Jenkins `org.jenkinsci.plugins.workflow.libs.Library`, which Pipeline scripts use without
+             * an import. Loads the named shared libraries, optionally pinned with `name@version`.
+             */
+            @Retention(RetentionPolicy.SOURCE)
+            @interface Library {
+                String[] value()
+                boolean changelog() default true
+            }
+        """.trimIndent()
+        writeStub(outputDir, LIBRARY_ANNOTATION, content)
+    }
+
     private fun writeStub(root: Path, qualifiedName: String, content: String) {
-        val packagePath = qualifiedName.substringBeforeLast('.').replace('.', '/')
-        val simpleName = qualifiedName.substringAfterLast('.')
-        val dir = root.resolve(packagePath)
-        dir.createDirectories()
-        writeFile(dir.resolve("$simpleName.groovy"), content)
+        val file = stubPath(root, qualifiedName)
+        file.parent.createDirectories()
+        writeFile(file, content)
     }
 
     companion object {
+        /** Default-package name of the generated `@Library` stub; see [generateLibraryAnnotation]. */
+        private const val LIBRARY_ANNOTATION = "Library"
+
         private const val CPS_SCRIPT = "org.jenkinsci.plugins.workflow.cps.CpsScript"
         private const val ENV_ACTION_IMPL = "org.jenkinsci.plugins.workflow.cps.EnvActionImpl"
         private const val RUN_WRAPPER = "org.jenkinsci.plugins.workflow.support.steps.build.RunWrapper"
@@ -184,7 +216,17 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
 
         /** True when [outputDir] holds a stub file for every class [generateStubs] writes. */
         internal fun hasCompleteStubs(outputDir: Path): Boolean = GENERATED_CLASSES.all { qualifiedName ->
-            Files.isRegularFile(outputDir.resolve(qualifiedName.replace('.', '/') + ".groovy"))
+            Files.isRegularFile(stubPath(outputDir, qualifiedName))
+        }
+
+        /** True when [outputDir] holds the `@Library` stub that [generateLibraryAnnotation] writes. */
+        internal fun hasLibraryAnnotationStub(outputDir: Path): Boolean =
+            Files.isRegularFile(stubPath(outputDir, LIBRARY_ANNOTATION))
+
+        /** Stub source location; a name without a package lands directly in [root] (default package). */
+        private fun stubPath(root: Path, qualifiedName: String): Path {
+            val packagePath = qualifiedName.substringBeforeLast('.', "").replace('.', '/')
+            return root.resolve(packagePath).resolve("${qualifiedName.substringAfterLast('.')}.groovy")
         }
     }
 }
