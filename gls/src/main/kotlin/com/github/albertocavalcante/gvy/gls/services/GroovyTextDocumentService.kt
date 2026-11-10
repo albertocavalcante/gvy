@@ -418,8 +418,9 @@ class GroovyTextDocumentService(
             // A disconnected client must not prevent restoring disk-backed index state after close.
             // A reentrant reopen retires this close, including its cleanup of untitled-buffer indices:
             // the refresh owns only the generation this close started.
+            val shadowedListed = compilationService.onShadowingDocumentClosed(uri)
             compilationService.onClosedSourceChanged(uri)?.let { closed ->
-                if (compilationService.listedSpellingOf(uri) != null) {
+                if (shadowedListed != null) {
                     // Opened under another spelling than the listed one (#1446): the listed copy stands for the
                     // file again, so this spelling's facts go rather than being rebuilt from the same disk file.
                     // Dropped here, on the notification thread, so a reopen that follows cannot lose its own.

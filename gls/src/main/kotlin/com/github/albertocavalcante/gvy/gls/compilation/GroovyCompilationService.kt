@@ -233,10 +233,10 @@ class GroovyCompilationService internal constructor(
     fun getWorkspaceSymbolIndex(): WorkspaceSymbolIndex? = workspaceSymbolIndex
 
     /**
-     * The listed spelling of [uri] when the client names the file otherwise (#1446): a buffer open under it
-     * shadows that listed copy. Null when [uri] is listed as it is, or names no file.
+     * The buffer for [uri] closed: the listed spelling it shadowed, when the client named the file otherwise
+     * (#1446). Null when [uri] is listed as it is, or names no file.
      */
-    fun listedSpellingOf(uri: URI): URI? = shadows.listedUri(uri)
+    fun onShadowingDocumentClosed(uri: URI): URI? = shadows.closed(uri)
 
     /** The compile phase the semantic document of [uri] was built at, or null when none is stored. */
     fun semanticPhaseOf(uri: URI): Int? = semanticIndexer.phaseOf(uri)
@@ -323,6 +323,7 @@ class GroovyCompilationService internal constructor(
      */
     fun onDocumentOpened(uri: URI) {
         ownership.advance(uri)
+        shadows.opened(uri)
     }
 
     /**
