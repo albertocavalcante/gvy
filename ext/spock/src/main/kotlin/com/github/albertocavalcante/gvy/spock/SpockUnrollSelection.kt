@@ -51,10 +51,10 @@ sealed interface UnrollSelection {
         val annotationValue: ConstantExpression?,
         val requiresUnrollByDefault: Boolean,
     ) : UnrollSelection {
-        /** Configuration that decides this pattern's outcome; expression failure handling always applies. */
+        /** Configuration that decides this pattern's outcome; expression failures only matter with placeholders. */
         val dependsOn: Set<UnrollConfigurationKey>
             get() = buildSet {
-                add(UnrollConfigurationKey.VALIDATE_EXPRESSIONS)
+                if (SpockUnrollPattern.parse(text).isNotEmpty()) add(UnrollConfigurationKey.VALIDATE_EXPRESSIONS)
                 if (requiresUnrollByDefault) add(UnrollConfigurationKey.UNROLL_BY_DEFAULT)
             }
     }
@@ -79,15 +79,27 @@ object SpockUnrollSelection {
     private const val UNROLL = "spock.lang.Unroll"
     private const val ROLLUP = "spock.lang.Rollup"
 
-    fun select(method: MethodNode, module: ModuleNode): UnrollSelection {
-        if (!hasWhereBlock(method)) return UnrollSelection.NotParameterized
-        val feature = Annotations.of(method, module)
-        val spec = Annotations.of(method.declaringClass, module)
-        // Spock rejects the whole spec when any element it visits carries both annotations.
-        if (conflictInSpec(method.declaringClass, module)) {
-            return UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS)
+    /** One-off selection; providers selecting every feature of a file should reuse [forModule]. */
+    fun select(method: MethodNode, module: ModuleNode): UnrollSelection = forModule(module).select(method)
+
+    /**
+     * A selector for one module that computes each spec chain's conflict scan once. Not thread-safe;
+     * use it for one pass over a module that does not change meanwhile.
+     */
+    fun forModule(module: ModuleNode): ModuleSelector = ModuleSelector(module)
+
+    class ModuleSelector internal constructor(private val module: ModuleNode) {
+        private val conflicts = IdentityHashMap<ClassNode, Boolean>()
+
+        fun select(method: MethodNode): UnrollSelection {
+            if (!hasWhereBlock(method)) return UnrollSelection.NotParameterized
+            val feature = Annotations.of(method, module)
+            val spec = Annotations.of(method.declaringClass, module)
+            // Spock rejects the whole spec when any element it visits carries both annotations.
+            val conflict = conflicts.getOrPut(method.declaringClass) { conflictInSpec(method.declaringClass, module) }
+            if (conflict) return UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS)
+            return feature.problem ?: decide(method, feature, spec)
         }
-        return feature.problem ?: decide(method, feature, spec)
     }
 
     private fun decide(method: MethodNode, feature: Annotations, spec: Annotations): UnrollSelection {
@@ -129,9 +141,10 @@ object SpockUnrollSelection {
     }
 
     /**
-     * Mirrors `visitSpec`: the spec, its parameterized features, then its super spec. Only super specs
-     * declared in this module are visited; a conflict in a subclass spec that runs these features
-     * is not detected.
+     * Mirrors `visitSpec`: the spec, its parameterized features, then its super spec. Not detected
+     * (missed detection, never a spurious conflict): super specs declared outside this module, any
+     * super spec of a nested spec spelled with a bare name (`extends Inner`), and a conflicting
+     * subclass spec that runs these features.
      */
     private fun conflictInSpec(spec: ClassNode, module: ModuleNode): Boolean {
         val visited = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
@@ -146,8 +159,15 @@ object SpockUnrollSelection {
     private fun AnnotatedNode.isConflicting(module: ModuleNode): Boolean =
         Annotations.of(this, module).problem?.reason == UnrollUncertainty.CONFLICTING_ANNOTATIONS
 
+    /**
+     * The in-module super spec, or null when it cannot be identified safely. A bare spelling in a
+     * nested spec might mean a sibling nested class rather than a top-level one, so it is not followed
+     * (missed detection rather than a spurious conflict).
+     */
     private fun moduleSuperclass(node: ClassNode, module: ModuleNode): ClassNode? {
-        val name = node.superClass?.name?.replace('$', '.') ?: return null
+        val spelling = node.superClass?.name ?: return null
+        if (node.outerClass != null && '.' !in spelling && '$' !in spelling) return null
+        val name = spelling.replace('$', '.')
         return module.classes.singleOrNull { candidate ->
             candidate.name.replace('$', '.') == name || candidate.nameWithoutPackage.replace('$', '.') == name
         }

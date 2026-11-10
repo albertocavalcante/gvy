@@ -207,6 +207,115 @@ class SpockSpecificationContextTest {
     }
 
     @Test
+    fun `dotted names starting with a bare segment stay uncertain in inherited scopes`() {
+        val result = classify(
+            """
+            class Base { static class Inner extends spock.lang.Specification {} }
+            class Parent { static class Base { static class Inner {} } }
+            class Outer extends Parent {
+                static class S extends Base.Inner {}
+                static class Q extends spock.lang.Specification {}
+            }
+            """.trimIndent(),
+        )
+        assertEquals(UNCERTAIN to INHERITED_NESTED_SCOPE, result["Outer\$S"], "Parent.Base.Inner may bind first")
+        assertEquals(SPECIFICATION to QUALIFIED_SUPERCLASS, result["Outer\$Q"])
+    }
+
+    @Test
+    fun `an unresolvable outer superclass keeps compiler-bound bases uncertain`() {
+        val source = "class Base extends spock.lang.Specification {}\n" +
+            "class Outer extends ExtParent {\n static class S extends Base {}\n}"
+        val request = ParseRequest(
+            URI.create("file:///src/Probe.groovy"),
+            source,
+            compilePhase = Phases.SEMANTIC_ANALYSIS,
+        )
+        val parsed = GroovyParserFacade(loaders.first()).parse(request)
+        val context = assertIs<SpockSourceContext.Available>(SpockSourceContext.from(parsed))
+        val s = context.classes.single { it.classNode.name == "Outer\$S" }
+        assertEquals(UNCERTAIN, s.status, "ExtParent may declare a nested Base the compiler cannot see: $s")
+    }
+
+    private fun semantic(source: String): Map<String, SpockClassContext> {
+        val request = ParseRequest(
+            URI.create("file:///src/Probe.groovy"),
+            source,
+            compilePhase = Phases.SEMANTIC_ANALYSIS,
+        )
+        val parsed = GroovyParserFacade(loaders.first()).parse(request)
+        return assertIs<SpockSourceContext.Available>(SpockSourceContext.from(parsed))
+            .classes.associateBy { it.classNode.name }
+    }
+
+    @Test
+    fun `an unresolvable grandparent or interface of an enclosing class keeps bound bases uncertain`() {
+        val grandparent = semantic(
+            "class Base extends spock.lang.Specification {}\nclass Parent extends ExtGrand {}\n" +
+                "class Outer extends Parent {\n static class S extends Base {}\n}",
+        )
+        assertEquals(UNCERTAIN, grandparent.getValue("Outer\$S").status, "ExtGrand may declare a nested Base")
+
+        val iface = semantic(
+            "class Base extends spock.lang.Specification {}\n" +
+                "class Outer implements ExtIface {\n static class S extends Base {}\n}",
+        )
+        assertEquals(UNCERTAIN, iface.getValue("Outer\$S").status, "ExtIface may declare a nested Base")
+    }
+
+    @Test
+    fun `a fully known in-file hierarchy keeps bound bases confident`() {
+        val result = semantic(
+            "class Base extends spock.lang.Specification {}\nclass Grand {}\nclass Parent extends Grand {}\n" +
+                "class Outer extends Parent {\n static class S extends Base {}\n}",
+        )
+        assertEquals(SPECIFICATION to MODULE_BASE, result.getValue("Outer\$S").pair())
+    }
+
+    @Test
+    fun `groovy resolves bare names to nested classes of an enclosing class's interfaces`() {
+        val source = "interface I { static class Base extends spock.lang.Specification {} }\n" +
+            "class Outer implements I {\n static class S extends Base {}\n}"
+        val request =
+            ParseRequest(URI.create("file:///src/Probe.groovy"), source, compilePhase = Phases.SEMANTIC_ANALYSIS)
+        val parsed = GroovyParserFacade(loaders.first()).parse(request)
+        val s = requireNotNull(parsed.ast).classes.single { it.name == "Outer\$S" }
+        // Pins Groovy 4.0.33 behaviour that justifies counting interfaces as inherited scopes.
+        assertEquals("I\$Base", s.superClass.redirect().name, "${parsed.outcome}")
+    }
+
+    @Test
+    fun `declared owners skip nested anonymous classes, closures and field initialisers`() {
+        val source =
+            """
+            class FooSpec extends spock.lang.Specification {
+                def field = new Object() {
+                    def a() { 1 }
+                }
+                def "feature"() {
+                    given:
+                    def nested = new Runnable() {
+                        void run() {
+                            def deeper = new Object() {
+                                def b() { 2 }
+                            }
+                        }
+                    }
+                    def closure = { -> new Object() { def c() { 3 } } }
+                    expect: true
+                }
+            }
+            """.trimIndent()
+        val lines = source.lines()
+        val context = assertIs<SpockSourceContext.Available>(contexts(source).first())
+        listOf(2 to "1 }", 9 to "2 }", 13 to "3 }").forEach { (line, marker) ->
+            val column = lines[line].indexOf(marker)
+            assertTrue(context.ownerAt(line, column)?.classNode?.name != "FooSpec", "ownerAt is the anonymous class")
+            assertEquals("FooSpec", context.declaredOwnerAt(line, column)?.classNode?.name, "line $line")
+        }
+    }
+
+    @Test
     fun `qualified nested superclass spellings resolve to the module class`() {
         val result = classify(
             """
@@ -306,6 +415,10 @@ class SpockSpecificationContextTest {
         assertEquals("SecondSpec", anonymous?.classNode?.outerClass?.name, "Anonymous classes own their bodies")
         // Pre-resolution `Object` is a bare name; SecondSpec's superclass could supply a nested `Object`.
         assertEquals(UNCERTAIN to INHERITED_NESTED_SCOPE, anonymous?.let { it.status to it.evidence })
+        assertEquals("SecondSpec", context.declaredOwnerAt(13, 20)?.classNode?.name, "Declared owner skips anonymous")
+        assertEquals(SPECIFICATION, context.declaredOwnerAt(13, 20)?.status)
+        assertEquals("FirstSpec", context.declaredOwnerAt(3, 8)?.classNode?.name)
+        assertNull(context.declaredOwnerAt(0, 0))
         assertNull(context.ownerAt(0, 0), "Imports are outside every class")
         assertNull(context.ownerAt(5, 1), "The column after a closing brace is outside the class")
     }
@@ -394,9 +507,15 @@ class SpockSpecificationContextTest {
                 mapOf(
                     "Outer" to (NOT_SPECIFICATION to NO_SUPERCLASS),
                     "Outer\$Base" to resolvedSpec,
-                    // The superclass is the binary name `Outer$Base`: pins `$` to `.` normalisation.
+                    // The compiler bound the superclass to the module's primary `Outer$Base` node.
                     "Outer\$A" to (SPECIFICATION to MODULE_BASE),
                 ),
+            ),
+            Arguments.of(
+                "class Base extends spock.lang.Specification {}\nclass Parent {}\n" +
+                    "class Outer extends Parent {\n static class S extends Base {}\n}",
+                // Compiler-bound bases stay confident even where the source rule would be uncertain.
+                mapOf("Outer\$S" to (SPECIFICATION to MODULE_BASE)),
             ),
         )
     }

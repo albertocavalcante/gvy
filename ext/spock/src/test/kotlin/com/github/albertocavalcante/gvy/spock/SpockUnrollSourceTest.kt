@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SpockUnrollSourceTest {
     private val parser = GroovyParserFacade(SpockUnrollSourceTest::class.java.classLoader)
@@ -93,26 +94,36 @@ class SpockUnrollSourceTest {
         assertNull(SpockUnrollSource(source).annotationValue(misplaced))
     }
 
-    /** Either no mapping or the exact placeholder spelling: a mapping is never wrong. */
-    private fun assertNeverWrong(source: String) {
+    /**
+     * The mapping is exact when present, and absent only when the compiler's value differs from the
+     * raw literal body (a spelling the decoder does not model). Either branch can fail.
+     */
+    private fun assertExactOrUnmodelled(source: String, rawBody: String) {
         val method = feature(source)
-        val literal = SpockUnrollSource(source).featureName(method) ?: return
+        val literal = SpockUnrollSource(source).featureName(method)
+        if (literal == null) {
+            assertTrue(method.name != rawBody, "Unprocessed literal must map: ${method.name}")
+            return
+        }
+        assertEquals(method.name, literal.value)
         SpockUnrollPattern.parse(method.name).forEach { placeholder ->
             assertEquals("#x", source.substring(requireNotNull(literal.sourceRange(placeholder.range))))
         }
     }
 
     @Test
-    fun `slashy unicode escapes continuations and CRLF are unmapped or exact`() {
+    fun `slashy unicode escapes are unmapped and continuations or CRLF are exact unless processed`() {
         val unicode = wrap("def /slashy \\u0041 #x/()")
         assertNull(SpockUnrollSource(unicode).featureName(feature(unicode)), "Slashy unicode escapes are not modelled")
-        assertNeverWrong(wrap("def /slashy \\\n #x/()"))
-        assertNeverWrong(wrap("def /slashy\r\n #x/()"))
+        assertExactOrUnmodelled(wrap("def /slashy \\\n #x/()"), "slashy \\\n #x")
+        assertExactOrUnmodelled(wrap("def /slashy\r\n #x/()"), "slashy\r\n #x")
     }
 
     @Test
-    fun `CR-only line separators are unmapped or exact`() {
-        assertNeverWrong(wrap("def \"cr #x\"()").replace("\n", "\r"))
+    fun `CR-only line separators map exactly because lines break only on LF`() {
+        val source = wrap("def \"cr #x\"()").replace("\n", "\r")
+        val literal = assertNotNull(SpockUnrollSource(source).featureName(feature(source)))
+        assertEquals("#x", source.substring(requireNotNull(literal.sourceRange(3 until 5))))
     }
 
     @Test

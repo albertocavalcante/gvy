@@ -153,11 +153,83 @@ class SpockUnrollSelectionTest {
         val annotated = assertIs<UnrollSelection.Pattern>(select(spec(methodAnnotations = "@Unroll('x #a')")))
         assertEquals(setOf(UnrollConfigurationKey.VALIDATE_EXPRESSIONS), annotated.dependsOn)
 
+        val plain = assertIs<UnrollSelection.Pattern>(select(spec(methodAnnotations = "@Unroll('no placeholders')")))
+        assertEquals(emptySet(), plain.dependsOn, "Expression validation is irrelevant without placeholders")
+
         val byDefault = assertIs<UnrollSelection.Pattern>(select(spec()))
         assertEquals(
             setOf(UnrollConfigurationKey.VALIDATE_EXPRESSIONS, UnrollConfigurationKey.UNROLL_BY_DEFAULT),
             byDefault.dependsOn,
         )
+    }
+
+    @Test
+    fun `a module selector agrees with one-off selection for every feature`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            class S extends spock.lang.Specification {
+                @Unroll('one #a')
+                def first() { expect: a
+                    where: a << [1] }
+                def "second #b"() { expect: b
+                    where: b << [1] }
+                def third() { expect: true }
+            }
+            """.trimIndent()
+        val module = requireNotNull(parser.parse(ParseRequest(URI.create("file:///S.groovy"), source)).ast)
+        val selector = SpockUnrollSelection.forModule(module)
+        module.classes.flatMap { it.methods }.forEach { method ->
+            assertEquals(SpockUnrollSelection.select(method, module), selector.select(method), method.name)
+        }
+    }
+
+    @Test
+    fun `a cached conflict is reused for every feature of specs sharing a super spec`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            import spock.lang.Rollup
+            @Unroll @Rollup
+            abstract class Base extends spock.lang.Specification {}
+            class One extends Base {
+                def "one #a"() { expect: a
+                    where: a << [1] }
+                def "uno #a"() { expect: a
+                    where: a << [1] }
+            }
+            class Two extends Base {
+                def "two #b"() { expect: b
+                    where: b << [1] }
+            }
+            """.trimIndent()
+        val module = requireNotNull(parser.parse(ParseRequest(URI.create("file:///S.groovy"), source)).ast)
+        val selector = SpockUnrollSelection.forModule(module)
+        val features = module.classes.flatMap { it.methods }.filter { '#' in it.name }
+
+        assertEquals(3, features.size)
+        features.forEach { method ->
+            assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS), selector.select(method))
+        }
+    }
+
+    @Test
+    fun `a nested spec's bare super spelling is not matched to a conflicting top level class`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            import spock.lang.Rollup
+            @Unroll @Rollup
+            class Inner extends spock.lang.Specification {}
+            class Outer {
+                static class Inner extends spock.lang.Specification {}
+                static class S extends Inner {
+                    def "feature #a"() { expect: a
+                        where: a << [1] }
+                }
+            }
+            """.trimIndent()
+        assertIs<UnrollSelection.Pattern>(select(source))
     }
 
     @Test

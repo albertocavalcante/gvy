@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.spock
 import com.github.albertocavalcante.nativeapi.ParseResult
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.InnerClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -43,6 +44,18 @@ sealed interface SpockSourceContext {
                     .thenByDescending { depth(it.classNode) }
                     .thenBy { span(it.classNode) },
             )
+
+        /**
+         * The nearest declared (named, non-anonymous) class owning the position. Use this to ask
+         * "is this position inside a specification?": an anonymous class body inside a feature
+         * belongs to its enclosing spec for that question, unlike [ownerAt].
+         */
+        fun declaredOwnerAt(line: Int, column: Int): SpockClassContext? {
+            val owner = ownerAt(line, column) ?: return null
+            val declared = generateSequence(owner.classNode) { it.outerClass }
+                .firstOrNull { !(it is InnerClassNode && it.isAnonymous) } ?: return null
+            return classes.firstOrNull { it.classNode === declared }
+        }
 
         private fun contains(node: ClassNode, line: Int, column: Int): Boolean {
             if (node.lineNumber < 1 || node.lastLineNumber < 1) return false
@@ -140,13 +153,37 @@ private class SpecificationClassifier(private val module: ModuleNode) {
 
     private fun decide(node: ClassNode): SpockClassContext {
         val superClass = node.superClass
+        val bound = superClass?.let(::compilerBound)
         return when {
             node.isScript -> context(node, SpecificationStatus.NOT_SPECIFICATION, SpecificationEvidence.SCRIPT_CLASS)
             superClass == null || superClass.name == ClassHelper.OBJECT_TYPE.name ->
                 context(node, SpecificationStatus.NOT_SPECIFICATION, SpecificationEvidence.NO_SUPERCLASS)
             superClass.isResolved -> resolved(node, superClass)
+            bound != null && enclosingScopesKnown(node) -> inherit(node, classify(bound))
             else -> bySourceName(node, superClass.name)
         }
+    }
+
+    /**
+     * True when the compiler could see every nested class that an enclosing class's supertypes might
+     * contribute: each enclosing class's whole supertype hierarchy (superclasses and interfaces) is
+     * Object, resolved, or in-file with a known hierarchy itself. An unresolvable (stubbed) supertype
+     * anywhere up the chain hides its nested classes, so the compiler's choice of an in-file class
+     * is not trusted.
+     */
+    private fun enclosingScopesKnown(node: ClassNode): Boolean = generateSequence(node.outerClass) { it.outerClass }
+        .all { outer -> hierarchyKnown(outer, Collections.newSetFromMap(IdentityHashMap())) }
+
+    /** [path] holds the classes on the current walk only, so a cycle is unknown but a diamond is not. */
+    private fun hierarchyKnown(type: ClassNode, path: MutableSet<ClassNode>): Boolean {
+        if (!path.add(type)) return false
+        val supertypes = listOfNotNull(type.superClass) + type.interfaces.orEmpty()
+        val known = supertypes.all { supertype ->
+            supertype.name == ClassHelper.OBJECT_TYPE.name || supertype.isResolved ||
+                compilerBound(supertype)?.let { hierarchyKnown(it, path) } == true
+        }
+        path.remove(type)
+        return known
     }
 
     private fun resolved(node: ClassNode, superClass: ClassNode): SpockClassContext {
@@ -172,7 +209,8 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         val bindings = distinctBases.size + if (explicit != null) 1 else 0
         return when {
             bindings > 1 -> context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.SHADOWED_NAME)
-            simple && inheritsOuterScope(node) ->
+            // Dotted spellings start with a bare segment too (`Base.Inner`), which the same scope could bind.
+            name != SPECIFICATION_FQN && inheritsOuterScope(node) ->
                 context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.INHERITED_NESTED_SCOPE)
             moduleBases.isNotEmpty() -> inherit(node, classify(moduleBases.first()))
             name == SPECIFICATION_FQN ->
@@ -199,9 +237,26 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         candidate.name.replace('$', '.') == name || candidate.nameWithoutPackage.replace('$', '.') == name
     }
 
-    /** True when an enclosing class declares a superclass other than Object. */
+    /**
+     * The module class this superclass reference is identical to. A source spelling yields a fresh
+     * placeholder node, so identity means the compiler (after resolution, via redirect) or the parser
+     * itself (for example an enum constant body extending its enum) already bound it.
+     */
+    private fun compilerBound(superClass: ClassNode): ClassNode? {
+        val target = superClass.redirect()
+        return module.classes.firstOrNull { it === target }
+    }
+
+    /**
+     * True when an enclosing class declares a superclass other than Object or any interface, whose
+     * nested classes could bind the name first. Compared by name, so a bare pre-resolution `Object`
+     * or an enum outer (extending `Enum`) also counts: conservative.
+     */
     private fun inheritsOuterScope(node: ClassNode): Boolean = generateSequence(node.outerClass) { it.outerClass }
-        .any { outer -> outer.superClass != null && outer.superClass.name != ClassHelper.OBJECT_TYPE.name }
+        .any { outer ->
+            (outer.superClass != null && outer.superClass.name != ClassHelper.OBJECT_TYPE.name) ||
+                outer.interfaces.orEmpty().isNotEmpty()
+        }
 
     /** Classes nested directly in one of [node]'s enclosing classes with the bare [name]. */
     private fun enclosingNested(node: ClassNode, name: String): List<ClassNode> {
