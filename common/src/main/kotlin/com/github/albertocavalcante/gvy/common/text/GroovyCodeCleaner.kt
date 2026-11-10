@@ -181,31 +181,38 @@ object GroovyCodeCleaner {
      * cannot swallow the braces of the lines after it.
      */
     private fun gStringEnd(code: String, from: Int): Int {
-        var depth = 0
         var firstNewline: Int? = null
         var j = from
         while (j < code.length) {
-            val c = code[j]
             when {
-                c == '\\' -> j += 2
-                depth == 0 && c == '$' && code.startsWith("{", j + 1) -> {
-                    depth = 1
-                    j += 2
+                code[j] == '\\' -> j += 2
+                code.startsWith("\${", j) -> {
+                    val (end, newline) = interpolationEnd(code, j + 2)
+                    if (firstNewline == null) firstNewline = newline
+                    j = end
                 }
-                depth > 0 -> {
-                    when (c) {
-                        '{' -> depth++
-                        '}' -> depth--
-                        '\n' -> if (firstNewline == null) firstNewline = j
-                    }
-                    j++
-                }
-                c == '"' -> return j + 1
-                c == '\n' -> return firstNewline ?: j
+                code[j] == '"' -> return j + 1
+                code[j] == '\n' -> return firstNewline ?: j
                 else -> j++
             }
         }
         return firstNewline ?: code.length
+    }
+
+    /** End of a `${...}` body starting after its `${`, and the body's first newline when it spans lines. */
+    private fun interpolationEnd(code: String, from: Int): Pair<Int, Int?> {
+        var depth = 1
+        var newline: Int? = null
+        var j = from
+        while (j < code.length && depth > 0) {
+            when (code[j]) {
+                '{' -> depth++
+                '}' -> depth--
+                '\n' -> if (newline == null) newline = j
+            }
+            j++
+        }
+        return j to newline
     }
 
     /** Characters after which a `/` starts a slashy string; `>` covers a closure's `->`. */
