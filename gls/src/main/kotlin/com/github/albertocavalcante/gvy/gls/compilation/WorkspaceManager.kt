@@ -16,6 +16,9 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.text.Normalizer
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.io.path.extension
 import kotlin.io.path.isDirectory
@@ -39,13 +42,15 @@ import kotlin.io.path.isDirectory
 @Suppress("TooManyFunctions")
 class WorkspaceManager internal constructor(
     private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
-    @Suppress("UnusedPrivateProperty")
     private val caseInsensitive: (root: Path) -> Boolean,
 ) {
     constructor(
         fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
             ConfigurationFingerprint::compute,
-    ) : this(fingerprintComputer, { false })
+    ) : this(fingerprintComputer, ::probeCaseInsensitive)
+
+    // Disk probes, once per root path: whether names under the root compare case-insensitively (#1424).
+    private val caseInsensitiveRoots = ConcurrentHashMap<Path, Boolean>()
 
     private val logger = KotlinLogging.logger {}
 
@@ -157,37 +162,51 @@ class WorkspaceManager internal constructor(
      * created in one notification is decided by the disk. Each root's sources stay sorted, as [scanSources]
      * orders them. Classpath, roots, targets and so the fingerprint are unchanged.
      *
-     * Every disk read (the stats and folder walks) happens before the update lock; the merge re-checks the roots.
+     * A path spelled through a symlinked root's real path, or in another case or Unicode normalisation under a
+     * case-insensitive root, matches the listed entry ([Spelling]); a case-only rename keeps the new spelling.
+     *
+     * Every disk read (the spellings, case probes, stats and folder walks) happens before the update lock; the
+     * merge re-checks the roots.
      */
     fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
-        val startRoots = current().sourceRoots.map { it.toAbsolutePath().normalize() }
-        val createdKeys = underRoots(created, startRoots)
-        val deletedKeys = underRoots(deleted, startRoots).toSet()
-        if (createdKeys.isEmpty() && deletedKeys.isEmpty()) return SourceListChange.NONE
+        // Disk work first, outside the update lock: spellings, case probes, stats and folder walks.
+        val spelling = Spelling(current().sourceRoots.map { it.toAbsolutePath().normalize() })
+        val createdPaths = created.mapNotNull(spelling::inRoot).distinct()
+        val deletedPaths = deleted.mapNotNull(spelling::inRoot).distinct()
+        if (createdPaths.isEmpty() && deletedPaths.isEmpty()) return SourceListChange.NONE
 
-        val existing = createdKeys.filterTo(HashSet(), ::isGroovySource)
-        val folders = createdKeys.filter { it !in existing && Files.isDirectory(it) }
-        val found = existing + walkFolders(folders)
+        val existing = createdPaths.filter(::isGroovySource)
+        val folders = createdPaths.filter { it !in existing && Files.isDirectory(it) }
+        val found = (existing + walkFolders(folders)).distinctBy(spelling::key)
+        val existingKeys = existing.mapTo(HashSet(), spelling::key)
+        val deletedKeys = deletedPaths.mapTo(HashSet(), spelling::key)
         var result = SourceListChange.NONE
         update { current ->
-            val listed = current.sources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
-            val gone = deletedKeys - existing
-            val prefixes = deletedKeys.filterTo(HashSet()) { it !in listed }
-            val kept = current.sources.filterNot { source ->
-                val key = source.toAbsolutePath().normalize()
-                key in gone || hasAncestorIn(key, prefixes)
+            val listedKeys = current.sources.mapTo(HashSet()) { spelling.key(it.toAbsolutePath().normalize()) }
+            val gone = deletedKeys - existingKeys
+            val prefixes = deletedKeys.filterTo(HashSet()) { it !in listedKeys }
+            // A path both deleted and created in one notification takes the created spelling: a case-only rename.
+            val renamed = found.filter { spelling.key(it) in deletedKeys }.associateBy(spelling::key)
+            val kept = current.sources.mapNotNull { source ->
+                val path = source.toAbsolutePath().normalize()
+                val key = spelling.key(path)
+                when {
+                    key in gone || spelling.hasAncestorIn(path, prefixes) -> null
+                    else -> renamed[key] ?: source
+                }
             }
-            val keptKeys = kept.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val keptKeys = kept.mapTo(HashSet()) { spelling.key(it.toAbsolutePath().normalize()) }
             val roots = current.sourceRoots.map { it.toAbsolutePath().normalize() }
-            val added = found.filter { it !in keptKeys && isScannedUnder(it, roots) }.distinct()
+            val added = found.filter { spelling.key(it) !in keptKeys && isScannedUnder(it, roots) }
             val next = if (added.isEmpty()) kept else ordered(kept + added, roots)
             if (next == current.sources) {
                 current
             } else {
-                val nextKeys = next.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+                val before = current.sources.toSet()
+                val after = next.toSet()
                 result = SourceListChange(
-                    added = added.filter { it !in listed },
-                    removed = listed.filter { it !in nextKeys }.sorted(),
+                    added = next.filter { it !in before },
+                    removed = current.sources.filter { it !in after }.map { it.toAbsolutePath().normalize() }.sorted(),
                 )
                 WorkspaceModel(
                     current.root,
@@ -202,9 +221,44 @@ class WorkspaceManager internal constructor(
         return result
     }
 
-    /** The paths a scan of [roots] would reach: under a root and outside the skipped directories below it. */
-    private fun underRoots(paths: Collection<Path>, roots: List<Path>): List<Path> =
-        paths.map { it.toAbsolutePath().normalize() }.filter { isScannedUnder(it, roots) }.distinct()
+    /**
+     * How one notification's paths are spelled against [roots] (#1424). An event path is translated into the
+     * spelling of the root holding it, so the list keeps the scan's spelling: a lexical match is free, and only a
+     * miss (a symlinked root's real path, another case) is canonicalised, once per path, and rebased onto the
+     * root whose canonical form holds it. Membership compares [key]s: under a case-insensitive root the path is
+     * NFC-normalised and lowercased with `Locale.ROOT`, which approximates the file system's own folding (ß and
+     * the dotless i fold differently) and is accepted. Built before the update lock; [key] does no disk work.
+     */
+    private inner class Spelling(private val roots: List<Path>) {
+        private val insensitive = roots.associateWith { root ->
+            caseInsensitiveRoots.getOrPut(root) { caseInsensitive(root) }
+        }
+        private val canonicalRoots by lazy { roots.map { DocumentTargetSelector.canonical(it) } }
+
+        fun inRoot(path: Path): Path? {
+            val absolute = path.toAbsolutePath().normalize()
+            if (isScannedUnder(absolute, roots)) return absolute
+            val canonical = DocumentTargetSelector.canonical(absolute)
+            val index = canonicalRoots.indices.filter { canonical.startsWith(canonicalRoots[it]) }
+                .maxByOrNull { canonicalRoots[it].nameCount } ?: return null
+            val rebased = roots[index].resolve(canonicalRoots[index].relativize(canonical))
+            return rebased.takeIf { isScannedUnder(it, roots) }
+        }
+
+        fun key(path: Path): String {
+            val owner = roots.filter { path.startsWith(it) }.maxByOrNull { it.nameCount }
+            val text = path.toString()
+            return if (owner != null && insensitive[owner] == true) {
+                Normalizer.normalize(text, Normalizer.Form.NFC).lowercase(Locale.ROOT)
+            } else {
+                text
+            }
+        }
+
+        /** Whether a proper ancestor of [path] has a key in [prefixes]: [path] lies strictly under it. */
+        fun hasAncestorIn(path: Path, prefixes: Set<String>): Boolean =
+            prefixes.isNotEmpty() && generateSequence(path.parent) { it.parent }.any { key(it) in prefixes }
+    }
 
     /** The Groovy sources in each folder, each walked once even when a parent folder is also listed. */
     private fun walkFolders(folders: List<Path>): List<Path> {
@@ -430,12 +484,15 @@ class WorkspaceManager internal constructor(
  * (a test seam).
  */
 internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}): List<Path> {
+    // A walk does not follow links, so a root that is itself a link is walked at its target and what it finds
+    // is spelled through the root (#1424); otherwise a symlinked source root would list nothing.
+    val start = linkTarget(root) ?: root
     val found = mutableListOf<Path>()
     Files.walkFileTree(
-        root,
+        start,
         object : SimpleFileVisitor<Path>() {
             override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
-                if (dir != root && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
+                if (dir != start && dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES) {
                     FileVisitResult.SKIP_SUBTREE
                 } else {
                     FileVisitResult.CONTINUE
@@ -460,7 +517,16 @@ internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}):
             }
         },
     )
-    return found
+    return if (start == root) found else found.map { root.resolve(start.relativize(it)) }
+}
+
+/** The real directory a root that is itself a symbolic link points at, or null when it is not a link. */
+private fun linkTarget(root: Path): Path? = try {
+    if (Files.isSymbolicLink(root)) root.toRealPath() else null
+} catch (_: IOException) {
+    null
+} catch (_: SecurityException) {
+    null
 }
 
 private val scanLogger = KotlinLogging.logger {}
@@ -479,5 +545,24 @@ data class SourceListChange(val added: List<Path>, val removed: List<Path>) {
 
     companion object {
         val NONE = SourceListChange(emptyList(), emptyList())
+    }
+}
+
+/**
+ * Whether names under [root] compare case-insensitively, probed by flipping the case of the root's last segment
+ * and asking whether that names the same directory. A segment with no letters cannot be probed and is treated
+ * as case-sensitive, as is any probe the file system refuses.
+ */
+internal fun probeCaseInsensitive(root: Path): Boolean {
+    val name = root.fileName?.toString() ?: return false
+    val flipped = name.map { if (it.isUpperCase()) it.lowercaseChar() else it.uppercaseChar() }.joinToString("")
+    if (flipped == name) return false
+    val alias = root.resolveSibling(flipped)
+    return try {
+        Files.exists(alias) && Files.isSameFile(root, alias)
+    } catch (_: IOException) {
+        false
+    } catch (_: SecurityException) {
+        false
     }
 }

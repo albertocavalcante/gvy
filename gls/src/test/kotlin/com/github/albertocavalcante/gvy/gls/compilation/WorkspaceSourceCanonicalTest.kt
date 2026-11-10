@@ -41,9 +41,10 @@ class WorkspaceSourceCanonicalTest {
         write(real.resolve("A.groovy"))
 
         manager.applySourceChanges(listOf(real.resolve("A.groovy")), emptyList())
-        manager.applySourceChanges(listOf(link.resolve("A.groovy")), emptyList())
+        assertEquals(listOf(link.resolve("A.groovy")), manager.getWorkspaceSources(), "real spelling")
 
-        assertEquals(listOf(link.resolve("A.groovy")), manager.getWorkspaceSources())
+        manager.applySourceChanges(listOf(link.resolve("A.groovy")), emptyList())
+        assertEquals(listOf(link.resolve("A.groovy")), manager.getWorkspaceSources(), "link spelling, once")
     }
 
     @Test
@@ -160,5 +161,29 @@ class WorkspaceSourceCanonicalTest {
         manager.applySourceChanges(emptyList(), listOf(src.resolve(nfc)))
 
         assertEquals(emptyList(), manager.getWorkspaceSources())
+    }
+
+    @Test
+    fun `a root whose name has no letters cannot be probed and is treated as case-sensitive`() {
+        val digits = Files.createDirectories(base.resolve("2026"))
+
+        assertEquals(false, probeCaseInsensitive(digits))
+    }
+
+    @Test
+    fun `the probe agrees with the file system on a root it can probe`() {
+        val root = Files.createDirectories(base.resolve("Probe"))
+        val folds = Files.exists(base.resolve("pROBE"))
+
+        assertEquals(folds, probeCaseInsensitive(root))
+    }
+
+    @Test
+    fun `a symlinked source root is scanned through the link`() {
+        val manager = manager()
+        write(base.resolve("real/src/pkg/A.groovy"))
+        val (link, _) = linked(manager)
+
+        assertEquals(listOf(link.resolve("pkg/A.groovy")), manager.getWorkspaceSources())
     }
 }
