@@ -318,6 +318,21 @@ class SpockTableProviderTest {
     }
 
     @Test
+    fun `a new file shadowing Specification in the base package under another root is noticed`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        val testRoot = Files.createDirectories(workspace.resolve("test-src"))
+        useSpockClasspath(sources = listOf(fixture.src, testRoot))
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        Files.writeString(testRoot.resolve("Specification.groovy"), "class Specification {}\n")
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "the base package's file set across both roots changed")
+    }
+
+    @Test
     fun `closing the document forgets its remembered verdicts`(): Unit = runBlocking {
         val fixture = BrokenBaseFixture()
         fixture.edit(fixture.text)

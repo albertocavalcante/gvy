@@ -32,10 +32,10 @@ import java.util.IdentityHashMap
  * - every link above the class is unchanged. A link in the spec's own file must have the same declaration
  *   in the current module. A link in another file must have the same prelude (its significant tokens from
  *   the file start to the class body, found with the Groovy lexer and matched by enclosing class, so comments,
- *   strings and same-named nested classes cannot stand in) and the same package file set, since a new file
- *   there can shadow a star-imported name. Anything that cannot be computed denies reuse; these checks can only
- *   deny. They catch a base edited to stop extending `Specification` and then broken, whether or not the table
- *   action ran in between.
+ *   strings and same-named nested classes cannot stand in) and the same package file set across every source
+ *   root, since a new file in that package, even under another root, can shadow a star-imported name.
+ *   Anything that cannot be computed denies reuse; these checks can only deny. They catch a base edited to
+ *   stop extending `Specification` and then broken, whether or not the table action ran in between.
  *
  * The record is replaced by the next clean compile the table action sees, recomputed only when the compiled
  * AST changes, and dropped when the document closes; a write from a request that started before the close
@@ -46,8 +46,7 @@ import java.util.IdentityHashMap
  * seen until the base compiles again. The compile result does not keep other sources' text, so the base is
  * read when the record is written rather than when it was compiled; a prelude whose `extends` disagrees
  * with the compiled AST is not recorded (and so denies), but an edit elsewhere in the prelude between the
- * compile and the record is hashed as if compiled. The package file set is the base's directory (plus open
- * buffers there), so a same-package class added under another source root is not seen. That is acceptable for a whitespace-only, reversible alignment;
+ * compile and the record is hashed as if compiled. That is acceptable for a whitespace-only, reversible alignment;
  * nothing else reads this memory.
  */
 internal class SpockVerdictMemory {

@@ -32,20 +32,37 @@ class CodeActionProvider(
     /** Drops the remembered Spock verdicts of a closed document (#1387). */
     fun forgetDocument(uri: URI) = verdictMemory.forget(uri.toString())
 
-    /** The Groovy and Java file names beside a source, on disk or open, as one sorted string. */
+    /**
+     * The Groovy and Java files of a source's package across every workspace source root (the roots the compile
+     * uses), on disk or open, as one sorted string; null when a directory cannot be listed. The package is the
+     * source's directory relative to the root containing it, or just that directory when no root does.
+     */
     private fun packageFileSet(path: String): String? {
-        val directory = runCatching { Path.of(path).parent }.getOrNull() ?: return null
-        val onDisk = runCatching {
-            Files.list(directory).use { entries ->
-                entries.filter { Files.isRegularFile(it) && isSourceFile(it) }.map { it.fileName.toString() }.toList()
-            }
-        }.getOrNull() ?: return null
+        val directory = runCatching { Path.of(path).parent }.getOrNull()?.let(::real) ?: return null
+        val roots = compilationService.workspaceManager.getSourceRoots().map(::real)
+        val relative = roots.firstOrNull { directory.startsWith(it) }?.relativize(directory)
+        val directories = relative?.let { pkg -> roots.map { it.resolve(pkg).normalize() }.distinct() }
+            ?: listOf(directory)
+        val onDisk = directories.map { listSources(it) ?: return null }.flatten()
         val open = documentProvider.getAllUris()
-            .mapNotNull { uri -> runCatching { Path.of(uri) }.getOrNull() }
-            .filter { it.parent == directory && isSourceFile(it) }
-            .map { it.fileName.toString() }
-        return (onDisk + open).toSortedSet().joinToString(",")
+            .mapNotNull { uri -> runCatching { real(Path.of(uri)) }.getOrNull() }
+            .filter { it.parent in directories && isSourceFile(it) }
+        return (onDisk + open).map(Path::toString).toSortedSet().joinToString(",")
     }
+
+    /** The source files directly in [directory]; empty when it does not exist, null when it cannot be read. */
+    private fun listSources(directory: Path): List<Path>? = when {
+        !Files.isDirectory(directory) -> emptyList()
+        else -> runCatching {
+            Files.list(directory).use { entries ->
+                entries.filter { Files.isRegularFile(it) && isSourceFile(it) }.map(::real).toList()
+            }
+        }.getOrNull()
+    }
+
+    /** The real path when it exists, else the absolute normalized path, so roots and sources compare alike. */
+    private fun real(path: Path): Path =
+        runCatching { path.toRealPath() }.getOrElse { path.toAbsolutePath().normalize() }
 
     private fun isSourceFile(path: Path): Boolean =
         path.fileName.toString().let { it.endsWith(".groovy") || it.endsWith(".java") }
