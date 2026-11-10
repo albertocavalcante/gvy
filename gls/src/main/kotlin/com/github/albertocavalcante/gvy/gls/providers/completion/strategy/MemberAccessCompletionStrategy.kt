@@ -562,12 +562,14 @@ private fun simpleTypeName(type: String): String =
 
 private val reflectionLogger = KotlinLogging.logger {}
 
-private fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Method> = try {
-    // A bridge (`compareTo(Object)` beside `compareTo(Date)`) is the same member under its erasure.
-    type.methods.filter {
-        java.lang.reflect.Modifier.isPublic(it.modifiers) && !java.lang.reflect.Modifier.isStatic(it.modifiers) &&
-            !it.isBridge
+internal fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Method> = try {
+    val instance = type.methods.filter {
+        java.lang.reflect.Modifier.isPublic(it.modifiers) && !java.lang.reflect.Modifier.isStatic(it.modifiers)
     }
+    // A generic bridge (`compareTo(Object)` beside `compareTo(Date)`) is the same member under its erasure.
+    // A visibility bridge (StringBuilder.length() over its package-private base) is the only copy: keep it.
+    val typed = instance.filterNot { it.isBridge }.mapTo(mutableSetOf()) { it.name to it.parameterCount }
+    instance.filterNot { it.isBridge && (it.name to it.parameterCount) in typed }
 } catch (error: NoClassDefFoundError) {
     reflectionLogger.debug(error) { "Incomplete classpath methods for ${type.name}" }
     emptyList()
