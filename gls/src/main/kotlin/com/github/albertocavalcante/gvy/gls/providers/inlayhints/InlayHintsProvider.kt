@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.inlayhints
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.InlayHintsConfiguration
@@ -15,6 +14,7 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -198,12 +198,21 @@ internal object InlayHintsCandidates {
                     "receiver",
                 )
 
-        return refineReceiverTypeWithSymbolTable(
+        val refined = refineReceiverTypeWithSymbolTable(
             type,
             objectExpr,
             context,
         )
             ?.takeUnless { InlayHintsTypes.isDynamicType(it) || it == "java.lang.Class" }
+            ?: return null
+        if (refined.contains('.')) return refined
+        // An unresolved workspace class comes back as its simple name. Keep the package the source wrote
+        // (`new a.Util()`) or imported (`import a.Util`), so the exact owner can win (#1374).
+        val written = (objectExpr as? ConstructorCallExpression)?.type?.name
+            ?.takeIf { it.endsWith(".$refined") }
+        val imported = context.moduleNode?.imports.orEmpty()
+            .firstOrNull { it.alias == refined }?.className
+        return written ?: imported ?: refined
     }
 
     fun resolveImplicitThisReceiverType(call: MethodCallExpression, astModel: GroovyAstModel): String? {
@@ -320,13 +329,20 @@ internal object InlayHintsCandidates {
         argCount: Int,
         receiverType: String?,
         isStaticCall: Boolean,
-        workspaceMethods: Map<WorkspaceMethodKey, List<Symbol.Method>>,
+        context: HintContext,
     ): List<CallableSignature> {
         val normalizedReceiverType = receiverType?.let { InlayHintsTypes.normalizeTypeName(it) } ?: return emptyList()
         val receiverSimple = normalizedReceiverType.substringAfterLast('.')
 
         // Owners named exactly like the receiver share its simple name, so one key covers both matches.
-        return workspaceMethods[WorkspaceMethodKey(methodName, receiverSimple)].orEmpty()
+        // A method of the exact receiver class wins over same-named classes in other packages (#1374).
+        val sameName = context.workspaceMethods[WorkspaceMethodKey(methodName, receiverSimple)].orEmpty()
+        val exact = if (context.namesExactly(normalizedReceiverType)) {
+            sameName.filter { it.owner?.name == normalizedReceiverType }
+        } else {
+            emptyList()
+        }
+        return exact.ifEmpty { sameName }
             .asSequence()
             .filter { it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
@@ -401,11 +417,18 @@ internal object InlayHintsCandidates {
     fun findWorkspaceConstructorCandidates(
         typeName: String,
         argCount: Int,
-        compilationService: GroovyCompilationService,
+        context: HintContext,
     ): List<CallableSignature> {
         val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
         val simpleName = normalizedType.substringAfterLast('.')
-        return compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+        // The exact class wins over same-named classes in other packages (#1374).
+        val sameName = context.compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+        val exact = if (context.namesExactly(normalizedType)) {
+            sameName.filter { it.fullyQualifiedName == normalizedType }
+        } else {
+            emptyList()
+        }
+        return exact.ifEmpty { sameName }
             .asSequence()
             .flatMap { classSymbol ->
                 classSymbol.node.declaredConstructors

@@ -46,6 +46,14 @@ data class HintContext(
             }
             .groupBy({ it.first }, { it.second })
     }
+
+    /**
+     * Whether [typeName] is a full class name to match exactly (#1374). A qualified name always is. A bare
+     * name is the full name of a default-package class, but only default-package code can use one, so in
+     * packaged (or unknown) code a bare name stays a simple name.
+     */
+    fun namesExactly(typeName: String): Boolean =
+        typeName.contains('.') || (moduleNode != null && moduleNode.packageName.isNullOrBlank())
 }
 
 /** A workspace method lookup key: the method's name and its declaring class's simple name. */

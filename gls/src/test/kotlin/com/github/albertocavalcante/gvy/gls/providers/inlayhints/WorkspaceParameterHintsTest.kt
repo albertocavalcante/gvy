@@ -44,10 +44,10 @@ class WorkspaceParameterHintsTest {
 
     private var targets = 0
 
-    private suspend fun hintsFor(call: String): List<String> {
+    private suspend fun hintsFor(call: String, imports: String = ""): List<String> {
         val name = "T${targets++}"
         val target = tempDir.resolve("$name.groovy")
-        val source = "class $name {\n  void run() {\n    $call\n  }\n}\n"
+        val source = "${imports}class $name {\n  void run() {\n    $call\n  }\n}\n"
         target.writeText(source)
         compilation.compile(target.toUri(), source)
         return InlayHintsProvider(
@@ -57,6 +57,50 @@ class WorkspaceParameterHintsTest {
         ).provideInlayHints(
             InlayHintParams(TextDocumentIdentifier(target.toUri().toString()), Range(Position(0, 0), Position(20, 0))),
         ).sortedBy { it.position.character }.map { it.label.left } // source order; traversal order varies
+    }
+
+    @Test
+    fun `the exact owner class wins over a same-named class in another package`(): Unit = runBlocking {
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
+        index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
+
+        assertEquals(listOf("first:", "first:"), hintsFor("new a.Util('x').send('y')"))
+        assertEquals(listOf("other:", "other:"), hintsFor("new b.Util('x').send('y')"))
+        assertEquals(
+            listOf("other:", "other:"),
+            hintsFor("def u = new Util('x')\n    u.send('y')", imports = "import b.Util\n"),
+            "an imported simple name keeps its package",
+        )
+    }
+
+    @Test
+    fun `a bare name prefers the default-package class only in default-package code`(): Unit = runBlocking {
+        index("Plain.groovy", "class Util {\n  Util(int size) {}\n  def send(int size) {}\n}\n")
+        index("C.groovy", "package c\nclass Util {\n  Util(int count) {}\n  def send(int count) {}\n}\n")
+
+        assertEquals(listOf("size:", "size:"), hintsFor("new Util(1).send(2)"))
+        // Packaged code cannot use a default-package class. The compiler qualifies `new Util` with the
+        // file's package, but a variable receiver arrives as the bare name: keep the same-name merge for it.
+        assertEquals(listOf("count:", "count:"), hintsFor("new Util(1).send(2)", imports = "package c\n"))
+        // The constructor resolves to c.Util; the bare receiver's merge of both send(int) overloads is ambiguous.
+        assertEquals(listOf("count:"), hintsFor("def u = new Util(1)\n    u.send(2)", imports = "package c\n"))
+    }
+
+    @Test
+    fun `a variable receiver falls back to the same-name merge`(): Unit = runBlocking {
+        // Not recovered yet: the receiver type comes from the initializer as a simple name.
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
+        index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
+
+        assertEquals(listOf("first:"), hintsFor("def u = new a.Util('x')\n    u.send('y')"))
+    }
+
+    @Test
+    fun `without an exact owner the same-named classes are still considered`(): Unit = runBlocking {
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n}\n")
+
+        // `c.Util` does not exist: the simple-name candidates stay, as before.
+        assertEquals(listOf("first:"), hintsFor("new c.Util('x')"))
     }
 
     @Test
