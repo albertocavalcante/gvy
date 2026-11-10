@@ -60,9 +60,12 @@ ruleset {
         priority = 2
     }
 
-    // Variables that are actually unused (potential bugs)
+    // Variables that are actually unused (potential bugs).
+    // A variable named exactly "_" is exempt: in a Jenkinsfile, "@Library('lib') _" declares it only to
+    // carry the annotation, so reporting it is noise on idiomatic code. Other names still warn.
     UnusedVariable {
         priority = 2
+        ignoreVariableNames = '_'
     }
 
     // ===== EXPLICITLY EXCLUDED =====
