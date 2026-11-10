@@ -1,10 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition
 
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
-import com.github.albertocavalcante.gvy.spock.SpecificationStatus
-import com.github.albertocavalcante.gvy.spock.SpockClassContext
 import com.github.albertocavalcante.gvy.spock.SpockDataVariables
-import com.github.albertocavalcante.gvy.spock.SpockDetector
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.DynamicVariable
@@ -20,7 +17,7 @@ internal object SpockDefinitionLookup {
     fun find(module: ModuleNode, content: String, position: Position, origin: ASTNode? = null): ASTNode? {
         val line = content.lines().getOrNull(position.line) ?: return null
         val source = SpockSourceContext.from(module, isPartial = false)
-        return source.classes.filter { !it.classNode.isScript && isSpecification(it, module) }
+        return source.classes.filter { !it.classNode.isScript && it.isSpecification(module) }
             .flatMap { it.classNode.methods }
             .filter { it.containsPosition(position.line, position.character) }
             .firstNotNullOfOrNull { method ->
@@ -28,13 +25,6 @@ internal object SpockDefinitionLookup {
                 val root = headerRoot(method, line, position)
                 if (root != null) variables[root] else bodyReference(origin, variables, position)
             }
-    }
-
-    /** A confident verdict decides (#974); UNCERTAIN keeps the previous class-level detector. */
-    private fun isSpecification(owner: SpockClassContext, module: ModuleNode): Boolean = when (owner.status) {
-        SpecificationStatus.SPECIFICATION -> true
-        SpecificationStatus.NOT_SPECIFICATION -> false
-        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(owner.classNode, module)
     }
 
     private fun headerRoot(method: MethodNode, line: String, position: Position): String? {
