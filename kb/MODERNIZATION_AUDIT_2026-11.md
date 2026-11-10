@@ -219,8 +219,9 @@ Each section is the reviewing agent's finding table, lightly edited. IDs are loc
 Flow observed: lsp4j thread → `GroovyTextDocumentService` wraps handlers in `coroutineScope.future {}` on a server-wide
 `CoroutineScope(Dispatchers.Default + SupervisorJob())` → `DiagnosticsOrchestrator.trigger` (debounced LAZY jobs) →
 `GroovyCompilationService.compileAsync` → `CompilationOrchestrator.scheduleCompilation` →
-`CompilationCacheService.registerCompilation` (CAS on `CompilationIdentity(content, fingerprint, snapshot===)`) →
-`WorkerSessionManager.parse` → `GroovyParserFacade` → cache, `SymbolIndexingService`, `SemanticIndexer.publish`.
+`CompilationCacheService.registerPending` (CAS on `CompilationIdentity(content, fingerprint, snapshot===)`;
+the job keeps its fence ticket) → `WorkerSessionManager.parse` → `GroovyParserFacade` → cache,
+`SymbolIndexingService`, `SemanticIndexer.publish`.
 Publication re-validates snapshot identity, config and job ownership under `publicationLock`.
 
 | ID  | Sev  | File:line                                                                                 | Defect                                                                       | Fix                                           |
@@ -248,7 +249,8 @@ Publication re-validates snapshot identity, config and job ownership under `publ
 | F21 | Low  | `GroovyWorkspaceService.kt:100-106,134-149`                                               | Catch Exception around `URI.create`                                          | Catch IAE only                                |
 | F22 | Low  | `CompilationOrchestrator.kt:372-373`                                                      | All open buffers copied per compile                                          | Lazy accessor                                 |
 
-Verified fine: `registerCompilation` CAS semantics, `DocumentProvider` gating, `SemanticSnapshotGuard`,
+Verified fine: `registerPending` CAS semantics (formerly `registerCompilation`, removed in #1391),
+`DocumentProvider` gating, `SemanticSnapshotGuard`,
 `LanguageEngineManager` locking, `ConfigWatchDebouncer`, `ParentProcessWatchdog`; no `!!` or `lateinit` in scope.
 
 </details>

@@ -177,8 +177,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 } else {
                     logger.debug { "Using cached parse result for: $uri" }
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
-                    symbolIndexer.ensureIndexed(claim.ticket, content) { cachedResult.astModel }
-                    cachedResult.ast?.takeIf { ownership.isCurrent(claim.ticket) }?.let {
+                    // Semantics follow the symbol commit: published only when this ticket's index is current
+                    val indexed = symbolIndexer.ensureIndexed(claim.ticket, content) { cachedResult.astModel } != null
+                    cachedResult.ast?.takeIf { indexed }?.let {
                         publication?.let { token ->
                             semanticIndexer?.publish(token, content, it, cachedResult.outcome.achievedPhase)
                         }
@@ -370,9 +371,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         } catch (e: CancellationException) {
             currentCoroutineContext().ensureActive()
             ensureRunning()
-            val ticket = pending.ticket
             val documentUnchanged = documentProvider?.getSnapshot(uri) === identity.document
-            val ownerCancelled = ticket != null && ownership.isCurrent(ticket) && documentUnchanged
+            val ownerCancelled = ownership.isCurrent(pending.ticket) && documentUnchanged
             logger.debug(e) {
                 "Compilation of $uri was ${if (ownerCancelled) "cancelled by its owner" else "retired"}; " +
                     "resolving its current inputs again"

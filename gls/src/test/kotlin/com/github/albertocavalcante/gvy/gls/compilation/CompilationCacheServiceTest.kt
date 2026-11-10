@@ -147,11 +147,11 @@ class CompilationCacheServiceTest {
     }
 
     @Test
-    fun `registerCompilation stores deferred job`() {
+    fun `registerPending stores deferred job`() {
         val uri = URI.create("file:///test.groovy")
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.registerCompilation(uri, identity) { deferred }
+        cacheService.registerPending(uri, identity, cacheService.ownership.begin(uri)) { deferred }
         val result = cacheService.getActiveCompilation(uri)
 
         assertNotNull(result)
@@ -171,7 +171,7 @@ class CompilationCacheServiceTest {
         val uri = URI.create("file:///test.groovy")
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.registerCompilation(uri, identity) { deferred }
+        cacheService.registerPending(uri, identity, cacheService.ownership.begin(uri)) { deferred }
         deferred.complete(CompilationResult.failure(emptyList()))
         val result = cacheService.getActiveCompilation(uri)
 
@@ -186,7 +186,7 @@ class CompilationCacheServiceTest {
         val deferred = CompletableDeferred<CompilationResult>()
 
         put(uri, content, parseResult)
-        cacheService.registerCompilation(uri, identity) { deferred }
+        cacheService.registerPending(uri, identity, cacheService.ownership.begin(uri)) { deferred }
         cacheService.invalidate(uri)
 
         assertNull(cacheService.getCached(uri, content, FP))
@@ -202,7 +202,7 @@ class CompilationCacheServiceTest {
         val deferred = CompletableDeferred<CompilationResult>()
 
         put(uri, content, parseResult)
-        cacheService.registerCompilation(uri, identity) { deferred }
+        cacheService.registerPending(uri, identity, cacheService.ownership.begin(uri)) { deferred }
         cacheService.clear()
 
         assertNull(cacheService.getCached(uri, content, FP))
@@ -230,7 +230,7 @@ class CompilationCacheServiceTest {
         val uri = URI.create("file:///test.groovy")
         val deferred = CompletableDeferred<CompilationResult>()
 
-        cacheService.registerCompilation(uri, identity) { deferred }
+        cacheService.registerPending(uri, identity, cacheService.ownership.begin(uri)) { deferred }
         val stats = cacheService.getStatistics()
 
         assertEquals(1, stats["activeCompilations"])

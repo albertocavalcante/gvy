@@ -105,6 +105,18 @@ class SymbolIndexingServiceTest {
     }
 
     @Test
+    fun `ensureIndexed returns nothing for a retired ticket even when the stored index matches (#1399)`() {
+        val uri = URI.create("file:///stale.groovy")
+        indexingService.ensureIndexed(ownership.begin(uri), "class A {}") { mockk(relaxed = true) }
+        val stale = ownership.begin(uri)
+        ownership.retire(uri)
+
+        val result = indexingService.ensureIndexed(stale, "class A {}") { error("must not rebuild") }
+
+        assertNull(result, "a retired ticket must not report the index as committed for it")
+    }
+
+    @Test
     fun `ensureIndexed builds once per content and rebuilds when content changes`() {
         val uri = URI.create("file:///test.groovy")
         val astModel = mockk<GroovyAstModel>(relaxed = true)
