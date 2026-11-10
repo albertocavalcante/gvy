@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -48,6 +49,32 @@ class ClasspathLoaderLifecycleTest {
     }
 
     @Test
+    fun `a type the kept solver could not resolve resolves once its jar is added`() {
+        val service = ClasspathService()
+        val solver = service.getTypeSolver()
+        assertTrue(!solver.tryToSolveType("com.example.Gamma").isSolved, "control: not on the classpath yet")
+
+        service.updateClasspath(listOf(jarWithClass("gamma.jar", "Gamma")))
+
+        assertTrue(solver.tryToSolveType("com.example.Gamma").isSolved, "an unresolved lookup was cached for good")
+    }
+
+    @Test
+    fun `the kept solver shows the members of the new jar version`() {
+        val service = ClasspathService()
+        service.updateClasspath(listOf(jarWithClass("v1.jar", "Versioned", "public void before() {}")))
+        val solver = service.getTypeSolver()
+        assertEquals(listOf("before"), methodNames(solver, "com.example.Versioned"))
+
+        service.updateClasspath(listOf(jarWithClass("v2.jar", "Versioned", "public void after() {}")))
+
+        assertEquals(listOf("after"), methodNames(solver, "com.example.Versioned"), "stale members of jar v1")
+    }
+
+    private fun methodNames(solver: com.github.albertocavalcante.groovyparser.resolution.TypeSolver, name: String) =
+        solver.solveType(name).getDeclaredMethods().map { it.name }
+
+    @Test
     fun `a replaced loader stays usable for one more update`() {
         val service = ClasspathService()
         service.updateClasspath(listOf(jar("first.jar", "first.txt")))
@@ -61,14 +88,14 @@ class ClasspathLoaderLifecycleTest {
     }
 
     /** A jar with a compiled `com.example.<name>`. */
-    private fun jarWithClass(jarName: String, className: String): Path {
+    private fun jarWithClass(jarName: String, className: String, body: String = ""): Path {
         val compiler = javax.tools.ToolProvider.getSystemJavaCompiler()
         org.junit.jupiter.api.Assumptions.assumeTrue(compiler != null, "needs a JDK compiler")
         val sources = Files.createDirectories(tempDir.resolve("$jarName-src/com/example"))
         val classes = Files.createDirectories(tempDir.resolve("$jarName-classes"))
         val source = Files.writeString(
             sources.resolve("$className.java"),
-            "package com.example; public class $className {}",
+            "package com.example; public class $className { $body }",
         )
         check(compiler.run(null, null, null, "-d", classes.toString(), source.toString()) == 0) { "javac failed" }
         val path = tempDir.resolve(jarName)

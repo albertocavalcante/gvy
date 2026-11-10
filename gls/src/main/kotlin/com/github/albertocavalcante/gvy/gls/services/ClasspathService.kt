@@ -31,14 +31,17 @@ class ClasspathService(
     // Guarded by this: the loader replaced by the latest update, closed by the next one.
     private var retiredClassLoader: ClassLoader? = null
 
-    /** What long-lived resolvers hold: every lookup goes to the loader that is current at that moment. */
-    private val followingClassLoader = object : ClassLoader(null) {
-        override fun loadClass(name: String, resolve: Boolean): Class<*> = currentClassLoader.get().loadClass(name)
+    // One solver per classpath generation: its cache (unsolved names included) never outlives the loader it
+    // was built for. Callers hold [typeSolverFacade], which always asks the current generation.
+    private val generationSolver = AtomicReference<TypeSolver>(solverFor(ClassLoader.getSystemClassLoader()))
 
-        override fun getResource(name: String): java.net.URL? = currentClassLoader.get().getResource(name)
+    /** What long-lived resolvers hold: each lookup goes to the solver of the current classpath generation. */
+    private val typeSolverFacade = object : TypeSolver {
+        override var parent: TypeSolver? = null
 
-        override fun getResources(name: String): java.util.Enumeration<java.net.URL> =
-            currentClassLoader.get().getResources(name)
+        override fun tryToSolveType(name: String) = generationSolver.get().tryToSolveType(name)
+
+        override fun toString(): String = "ClasspathTypeSolver(${generationSolver.get()})"
     }
 
     @Volatile
@@ -70,6 +73,7 @@ class ClasspathService(
             return
         }
         val previous = currentClassLoader.getAndSet(next)
+        generationSolver.set(solverFor(next))
         classpathEntries = paths.map { it.toString() }
 
         // Invalidate index when classpath changes
@@ -229,12 +233,13 @@ class ClasspathService(
     fun loadClass(className: String): Class<*>? = reflection.loadClass(className)
 
     /**
-     * Returns a TypeSolver that resolves against whichever classloader is current at each lookup, so callers may
-     * keep it for the whole session.
+     * Returns a TypeSolver that resolves against the current classpath generation at each lookup (a fresh cache
+     * per generation), so callers may keep it for the whole session.
      */
-    fun getTypeSolver(): TypeSolver = CombinedTypeSolver(
-        ReflectionTypeSolver(classLoader = followingClassLoader, jreOnly = false),
-    )
+    fun getTypeSolver(): TypeSolver = typeSolverFacade
+
+    private fun solverFor(loader: ClassLoader): TypeSolver =
+        CombinedTypeSolver(ReflectionTypeSolver(classLoader = loader, jreOnly = false))
 
     internal class ClassIndex {
         private val index = ConcurrentHashMap<String, MutableSet<String>>()

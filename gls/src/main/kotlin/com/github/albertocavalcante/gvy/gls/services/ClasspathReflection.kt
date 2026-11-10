@@ -117,9 +117,23 @@ private val safeReflectionLogger = KotlinLogging.logger {}
 internal inline fun <T> reflectSafely(crossinline what: () -> String, fallback: T, block: () -> T): T = try {
     block()
 } catch (error: LinkageError) {
-    safeReflectionLogger.debug(error) { "Incomplete classpath reflection: ${what()}" }
+    reportIncompleteReflection(what(), error)
     fallback
 } catch (error: TypeNotPresentException) {
-    safeReflectionLogger.debug(error) { "Incomplete classpath reflection: ${what()}" }
+    reportIncompleteReflection(what(), error)
     fallback
+}
+
+private val warnedReflection = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+/**
+ * A missing class (a dependency absent, or its loader closed) is expected and logged at debug. Other linkage
+ * failures (IncompatibleClassChangeError, ExceptionInInitializerError) point at a broken classpath: warn once.
+ */
+internal fun reportIncompleteReflection(what: String, error: Throwable) {
+    if (error is NoClassDefFoundError || error is TypeNotPresentException) {
+        safeReflectionLogger.debug(error) { "Incomplete classpath reflection: $what" }
+    } else if (warnedReflection.add(what)) {
+        safeReflectionLogger.warn(error) { "Classpath reflection failed: $what" }
+    }
 }
