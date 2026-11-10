@@ -9,8 +9,36 @@ import java.net.URI
  * @property uri The file URI this document represents
  * @property symbols All symbols defined in this file (classes, methods, fields, etc.)
  * @property occurrences All symbol usages in this file (references, calls, etc.)
+ * @property unresolvedNames The uncertain uses in this file: names it uses that the index did not attribute to a
+ *   declaration, and `"*"` when a site's name is not known statically. A rename of `n` may skip this file only
+ *   when neither `n` nor `"*"` is here. It holds:
+ *   - the name of every call, property read, bare name, attribute read, spread read, method pointer, static call
+ *     (static imports and static-context calls, whose members are also named by the import) and annotation member
+ *     left unattributed, whatever the reason;
+ *   - accessor forms of an unattributed property use: `p.name` records `name` and, as a read, `getName` and
+ *     `isName`, as a write `setName` (both for `p.name += 1`), so renaming a getter or setter finds it; the keys
+ *     of named arguments (`new P(target: 1)`) record the key and its setter;
+ *   - the method an operator dispatches to (`+` is `plus`, `<`/`==` is `compareTo`/`equals`, `in`/`case` is
+ *     `isCase`, `for (x in o)` is `iterator`, `++` is `next`, `-a` is `negative`, `as` is `asType`, `o[i]` is
+ *     `getAt`/`putAt`), unless both operands are numbers or one is `null`;
+ *   - a constant name given to `invokeMethod`/`getProperty`/`setProperty`/`respondsTo`/`hasProperty`;
+ *   - `"*"` for a computed member name, a computed name given to those methods, an index on an object that is not
+ *     known to be a Map, List or array, and a class whose hierarchy answers calls or reads by itself
+ *     (`methodMissing`, `propertyMissing`, `invokeMethod`, `getProperty`, `setProperty`, `GroovyInterceptable`,
+ *     `@Delegate`, `@Mixin`), see [GroovyDispatch.dispatchesByItself].
+ *
+ *   - the property an accessor-shaped unattributed call may stand for, the other direction: `o.getTarget()`
+ *     records `getTarget` and `target` (both the JavaBeans spelling, which keeps `URL`, and `uRL`).
+ *
+ *   Bodies of trait methods and of anonymous classes are collected too (they get no symbols or occurrences);
+ *   names the compiler generated (no source position, or a `$` name inside a trait helper) add nothing.
  */
-data class SemanticDocument(val uri: URI, val symbols: List<SymbolInfo>, val occurrences: List<SymbolOccurrence>) {
+data class SemanticDocument(
+    val uri: URI,
+    val symbols: List<SymbolInfo>,
+    val occurrences: List<SymbolOccurrence>,
+    val unresolvedNames: Set<String> = emptySet(),
+) {
     /**
      * Find a symbol by its unique ID
      */

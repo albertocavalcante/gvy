@@ -190,6 +190,20 @@ class SemanticIndexerTest {
         assertNull(index.getDocument(uri), "the older text must not come back")
     }
 
+    @Test
+    fun `phaseOf reports the stored compile phase and is null once the file is removed`() {
+        assertNull(indexer.phaseOf(uri))
+
+        indexer.update(uri, "class P {}", parse("class P {}"), phase = Phases.SEMANTIC_ANALYSIS)
+        assertEquals(Phases.SEMANTIC_ANALYSIS, indexer.phaseOf(uri))
+
+        indexer.update(uri, "class P {}", parse("class P {}"), phase = Phases.CANONICALIZATION)
+        assertEquals(Phases.CANONICALIZATION, indexer.phaseOf(uri))
+
+        indexer.remove(uri)
+        assertNull(indexer.phaseOf(uri))
+    }
+
     private companion object {
         const val LATCH_SECONDS = 10L
         const val REMOVE_SECONDS = 3L

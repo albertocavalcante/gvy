@@ -12,19 +12,27 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.PropertyNode
+import org.codehaus.groovy.ast.expr.AttributeExpression
+import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ClosureExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
+import org.codehaus.groovy.ast.expr.MethodPointerExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.CatchStatement
 import org.codehaus.groovy.ast.stmt.ForStatement
+import org.codehaus.groovy.ast.stmt.Statement
 import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.syntax.Types
 import java.net.URI
+import java.util.IdentityHashMap
 
 /**
  * AST visitor that extracts semantic information from a compiled ModuleNode.
@@ -35,6 +43,10 @@ import java.net.URI
 class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val uri: URI) {
     private val symbols = mutableListOf<SymbolInfo>()
     private val occurrences = mutableListOf<SymbolOccurrence>()
+    private val unresolved = UnresolvedNames()
+
+    // Assignment targets: false for a plain write (`x = 1`), true for a read-modify-write (`x += 1`, `x++`).
+    private val assigned = IdentityHashMap<Expression, Boolean>()
 
     /**
      * Build the semantic document by walking the entire AST
@@ -56,7 +68,10 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             extractMethod(methodNode, null)
         }
 
-        return SemanticDocument(uri, symbols, occurrences)
+        if (DispatchNames.dispatchesDynamically(moduleNode.classes)) unresolved.dispatch(UnresolvedNames.WILDCARD)
+        unresolved.annotations(AnnotationMembers.declared(moduleNode))
+
+        return SemanticDocument(uri, symbols, occurrences, unresolved.toSet())
     }
 
     /**
@@ -92,6 +107,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
      * Extract static import symbol
      */
     private fun extractStaticImport(importNode: ImportNode) {
+        // A static import names a member, which its uses (`helper()`, or `tgt()` for an alias) never show.
+        unresolved.addAll(listOfNotNull(importNode.fieldName, importNode.alias))
         val range = nodeToRange(importNode) ?: return
         val symbolId = createStaticImportSymbolId(importNode)
         val name = importNode.fieldName ?: importNode.alias ?: importNode.className
@@ -122,16 +139,20 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         return SymbolOccurrence(createClassSymbolId(resolved), nodeToRange(type) ?: range, OccurrenceRole.TYPE_REF)
     }
 
+    private fun isNotIndexed(classNode: ClassNode) =
+        classNode.isSynthetic || classNode is InnerClassNode && classNode.isAnonymous
+
     /**
      * Extract class symbol and all its members
      */
     private fun extractClass(classNode: ClassNode) {
-        // Skip synthetic/generated classes
-        if (classNode.isSynthetic || classNode is InnerClassNode && classNode.isAnonymous) {
+        // Synthetic and anonymous classes (#1130) and a trait's helper class get no symbols or occurrences, but
+        // their bodies still use names, so the uncertain uses in them are collected.
+        val range = nodeToRange(classNode)
+        if (range == null || isNotIndexed(classNode)) {
+            visitBody(classNode, record = false)
             return
         }
-
-        val range = nodeToRange(classNode) ?: return
         val symbolId = createClassSymbolId(classNode)
 
         val kind = when {
@@ -184,9 +205,24 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             extractMethod(methodNode, classNode)
         }
 
-        // Visit the class body to extract occurrences (method calls, field accesses, etc.)
-        val visitor = OccurrenceVisitor(classNode)
+        visitBody(classNode, record = true)
+    }
+
+    /** Visit the class body to extract occurrences (method calls, field accesses, etc.) and uncertain uses. */
+    private fun visitBody(classNode: ClassNode, record: Boolean) {
+        unresolved.inTraitHelper = DispatchNames.isTraitHelper(classNode)
+        val operators = OperatorSites(unresolved, assigned)
+        classNode.visitContents(operators)
+        classNode.objectInitializerStatements.forEach { it.visit(operators) }
+        // A class that is not recorded still has its uses collected, into sinks that are thrown away.
+        val visitor = if (record) {
+            OccurrenceVisitor(classNode, symbols, occurrences, record = true)
+        } else {
+            OccurrenceVisitor(classNode, mutableListOf(), mutableListOf(), record = false)
+        }
         classNode.visitContents(visitor)
+        visitor.visitInitializers(classNode.objectInitializerStatements)
+        unresolved.inTraitHelper = false
     }
 
     /**
@@ -315,7 +351,13 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
      * The scopes also carry the declared or inferred type used to attribute calls to a receiver.
      */
     @Suppress("TooManyFunctions") // Groovy's visitor contract requires one override per relevant syntax node.
-    private inner class OccurrenceVisitor(private val currentClass: ClassNode) : ClassCodeVisitorSupport() {
+    private inner class OccurrenceVisitor(
+        private val currentClass: ClassNode,
+        private val symbols: MutableList<SymbolInfo>,
+        private val occurrences: MutableList<SymbolOccurrence>,
+        // False for a class that gets no symbols or occurrences: its uses are then attributed to nothing.
+        private val record: Boolean,
+    ) : ClassCodeVisitorSupport() {
 
         private val scopes = ArrayDeque<MutableMap<String, LocalBinding>>()
 
@@ -325,6 +367,12 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         private val closures = ArrayDeque<Boolean>()
 
         private val transparentClosures = HashSet<ClosureExpression>()
+
+        private fun accessOf(target: Expression): Access = when (assigned[target]) {
+            null -> Access.READ
+            false -> Access.WRITE
+            else -> Access.BOTH
+        }
 
         // Inside an opaque closure a name may be answered by the closure's delegate instead.
         private val closureScope: ClosureScope get() = when {
@@ -340,6 +388,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         private var scopeOwnerId: String = "${createClassSymbolId(currentClass)}{init}."
 
         override fun getSourceUnit(): SourceUnit? = null
+
+        /** Instance initializer blocks (`{ ... }`) are not members, so the class contents do not reach them. */
+        fun visitInitializers(statements: List<Statement>) = scoped { statements.forEach { it.visit(this) } }
 
         private inline fun scoped(body: () -> Unit) {
             scopes.addLast(HashMap())
@@ -366,6 +417,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         }
 
         override fun visitConstructorOrMethod(node: MethodNode, isConstructor: Boolean) {
+            if (generatedHelperMethod(node, unresolved.inTraitHelper)) return
             val savedOwner = scopeOwnerId
             val savedStatic = staticContext
             scopeOwnerId = createMethodSymbolId(currentClass, node)
@@ -377,6 +429,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                         TypeSignatures.knownTypeOrNull(param.type),
                     )
                 }
+                // Default values run in the method's scope, after its parameters are bound.
+                node.parameters?.filter { it.hasInitialExpression() }?.forEach { it.initialExpression.visit(this) }
                 super.visitConstructorOrMethod(node, isConstructor)
             }
             scopeOwnerId = savedOwner
@@ -449,10 +503,15 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         override fun visitMethodCallExpression(call: MethodCallExpression) {
             // Receiver and arguments may contain the same name; only the member is this occurrence.
             val range = nodeToRange(call.method)
-            val symbolId = call.methodAsString?.let { resolver.resolveCall(call, it, closureScope) }
-            if (range != null && symbolId != null) {
+            val outcome = call.methodAsString?.let { resolver.resolve(call, it, closureScope) }
+            val symbolId = (outcome as? CallOutcome.Resolved)?.symbolId
+            val stored = record && range != null && symbolId != null
+            if (range != null &&
+                symbolId != null
+            ) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.CALL))
             }
+            if (unresolved.isSource(call)) unresolved.call(call, stored)
             if (resolver.isDelegateNeutralCall(call)) {
                 (call.arguments as? TupleExpression)?.expressions.orEmpty()
                     .filterIsInstance<ClosureExpression>()
@@ -497,17 +556,59 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
 
         override fun visitVariableExpression(expression: VariableExpression) {
             val range = nodeToRange(expression)
-            if (range != null && !expression.isThisExpression && !expression.isSuperExpression) {
+            if (!expression.isThisExpression && !expression.isSuperExpression) {
                 // A parameter or local shadows a field of the same name. Otherwise only a field or property
                 // the class declares, and not inside an opaque closure, whose delegate may resolve the name first.
-                val symbolId = lookup(expression.name)?.id
+                val local = lookup(expression.name)
+                val symbolId = local?.id
                     ?: "${resolver.resolveTypeName(currentClass)}#${expression.name}.".takeIf {
                         declaresMember(currentClass, expression.name) &&
                             !closureScope.delegateMayAnswer(expression.name)
                     }
-                symbolId?.let { occurrences.add(SymbolOccurrence(it, range, OccurrenceRole.REFERENCE)) }
+                if (range != null && symbolId != null) {
+                    occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
+                }
+                // A parameter or local is certain; a field is attributed only where its occurrence is kept.
+                val attributed = local != null || (record && range != null && symbolId != null)
+                if (!attributed && unresolved.isSource(expression)) {
+                    unresolved.member(expression.name, accessOf(expression))
+                }
             }
             super.visitVariableExpression(expression)
+        }
+
+        override fun visitBinaryExpression(expression: BinaryExpression) {
+            val type = expression.operation.type
+            if (Types.ofType(type, Types.ASSIGNMENT_OPERATOR)) {
+                assigned[expression.leftExpression] = type != Types.ASSIGN
+            }
+            if (unresolved.isSource(expression)) recordOperator(type, expression)
+            super.visitBinaryExpression(expression)
+        }
+
+        private fun recordOperator(type: Int, expression: BinaryExpression) {
+            if (type == Types.LEFT_SQUARE_BRACKET) {
+                unresolved.index(
+                    expression.leftExpression,
+                    expression.rightExpression,
+                    resolver::receiverType,
+                    accessOf(expression),
+                )
+            } else {
+                unresolved.operator(type, expression.leftExpression, expression.rightExpression)
+            }
+        }
+
+        override fun visitAttributeExpression(expression: AttributeExpression) {
+            // `obj.@name` reads the field directly; the index never attributes it.
+            unresolved.name(expression.propertyAsString)
+            super.visitAttributeExpression(expression)
+        }
+
+        override fun visitMethodPointerExpression(expression: MethodPointerExpression) {
+            // `obj.&name` names a method without calling it; the index never attributes it.
+            unresolved.name((expression.methodName as? ConstantExpression)?.value as? String)
+            super.visitMethodPointerExpression(expression)
         }
 
         override fun visitPropertyExpression(expression: PropertyExpression) {
@@ -515,8 +616,14 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val symbolId = expression.propertyAsString?.let {
                 resolver.resolveProperty(expression.objectExpression, it, staticContext, expression.isSpreadSafe)
             }
-            if (range != null && symbolId != null) {
-                occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
+            val occurrence = if (range != null && symbolId != null) {
+                SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE)
+            } else {
+                null
+            }
+            occurrence?.let(occurrences::add)
+            if (!(record && occurrence != null) && unresolved.isSource(expression)) {
+                unresolved.member(expression.propertyAsString, accessOf(expression))
             }
             super.visitPropertyExpression(expression)
         }

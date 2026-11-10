@@ -441,20 +441,23 @@ internal object GroovyDispatch {
 
     fun isDynamic(type: ClassNode): Boolean {
         if (!type.isPrimaryClassNode) return false
-        val annotated = type.annotations.any { it.classNode.nameWithoutPackage in methodAddingAnnotations } ||
-            type.fields.any { field -> field.annotations.any { it.classNode.nameWithoutPackage == "Delegate" } } ||
-            type.properties.any { prop ->
-                prop.field?.annotations?.any { it.classNode.nameWithoutPackage == "Delegate" } ==
-                    true
-            }
         // Generated ones count too: Groovy gives every member class a methodMissing that forwards an
         // unmatched call to the outer class, and a trait from a jar weaves its methodMissing in.
-        val dispatching = type.methods.any { it.name in dispatchMethods } ||
-            type.interfaces.any {
-                it.name == "groovy.lang.GroovyInterceptable" ||
-                    it.nameWithoutPackage == "GroovyInterceptable"
-            }
-        return annotated || dispatching
+        return addsMethods(type) || type.methods.any { it.name in dispatchMethods } || isInterceptable(type)
+    }
+
+    private fun addsMethods(type: ClassNode): Boolean {
+        val annotated = type.annotations.any { it.classNode.nameWithoutPackage in methodAddingAnnotations }
+        val delegateField = type.fields.any { it.hasAnnotation("Delegate") }
+        val delegateProperty = type.properties.any { it.field?.hasAnnotation("Delegate") == true }
+        return annotated || delegateField || delegateProperty
+    }
+
+    private fun org.codehaus.groovy.ast.AnnotatedNode.hasAnnotation(simpleName: String): Boolean =
+        annotations.any { it.classNode.nameWithoutPackage == simpleName }
+
+    private fun isInterceptable(type: ClassNode): Boolean = type.interfaces.any {
+        it.name == "groovy.lang.GroovyInterceptable" || it.nameWithoutPackage == "GroovyInterceptable"
     }
 
     /**
@@ -533,6 +536,26 @@ internal object GroovyDispatch {
             type.methods.any { it.name in propertyDispatchMethods }
 
     private val propertyDispatchMethods = setOf("getProperty", "propertyMissing")
+
+    /**
+     * Whether [type], a source or a compiled class, answers calls or reads by itself: what [isDynamic] and
+     * [interceptsProperties] see, plus a `setProperty` override (writes), but only for hooks the source wrote
+     * (the bridges Groovy generates into every member class do not count here). The index of what stays
+     * unattributed uses this, so a class that does is a site where any name may be meant.
+     */
+    fun dispatchesByItself(type: ClassNode): Boolean =
+        (type.isPrimaryClassNode && (addsMethods(type) || isInterceptable(type))) ||
+            type.name == MAP || type.implementsInterface(ClassHelper.MAP_TYPE) ||
+            type.methods.any { it.name in selfDispatchMethods && (it.lineNumber > 0 || !isGeneratedMemberHook(type)) }
+
+    /**
+     * Groovy gives every member class position-less `methodMissing`/`propertyMissing` bridges to its outer class;
+     * those are not the class dispatching by itself. Any other position-less hook (a custom AST transform's,
+     * or one on a compiled class) still counts.
+     */
+    private fun isGeneratedMemberHook(type: ClassNode): Boolean = type.isPrimaryClassNode && type.outerClass != null
+
+    private val selfDispatchMethods = dispatchMethods + propertyDispatchMethods + "setProperty"
     private const val MAP = "java.util.Map"
 
     /** Properties of `java.lang.Class` (`name`, `simpleName`...), which `Person.name` reads on a class reference. */
