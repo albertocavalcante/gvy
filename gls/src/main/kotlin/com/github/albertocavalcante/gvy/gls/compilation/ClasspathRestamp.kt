@@ -55,12 +55,29 @@ internal object ClasspathRestamp {
         evidence: TargetDependencyEvidence.Scoped,
         stat: (Path) -> EntryStat,
     ): TargetDependencyEvidence.Scoped? {
-        return null // RED stub (#1364)
+        val stats = HashMap<Path, EntryStat>()
+        return rewrite(evidence) { artifact ->
+            if (artifact.isDirectory()) {
+                artifact.stamp
+            } else {
+                when (val found = stats.getOrPut(artifact.path) { stat(artifact.path) }) {
+                    is EntryStat.File -> found.stamp
+                    EntryStat.Directory -> artifact.stamp
+                    EntryStat.Missing -> null
+                }
+            }
+        }
     }
 
     /** The directory entries [paths] lie under (or are), in classpath order; no I/O. */
     fun directoriesContaining(evidence: TargetDependencyEvidence.Scoped, paths: Collection<Path>): Set<Path> {
-        return emptySet() // RED stub (#1364)
+        if (paths.isEmpty()) return emptySet()
+        val changed = paths.map { it.toAbsolutePath().normalize() }
+        return evidence.snapshots.asSequence()
+            .flatMap { it.artifacts }
+            .filter { it.isDirectory() }
+            .map { it.path.toAbsolutePath().normalize() }
+            .filterTo(LinkedHashSet()) { directory -> changed.any { it.startsWith(directory) } }
     }
 
     /** The evidence with each of [directories] re-walked once, or null when no stamp changed. */
@@ -69,7 +86,12 @@ internal object ClasspathRestamp {
         directories: Set<Path>,
         walk: (Path) -> ArtifactStamp?,
     ): TargetDependencyEvidence.Scoped? {
-        return null // RED stub (#1364)
+        if (directories.isEmpty()) return null
+        val walked = HashMap<Path, ArtifactStamp?>()
+        return rewrite(evidence) { artifact ->
+            val path = artifact.path.toAbsolutePath().normalize()
+            if (artifact.isDirectory() && path in directories) walked.getOrPut(path) { walk(path) } else artifact.stamp
+        }
     }
 
     private fun ResolvedDependencyArtifact.isDirectory(): Boolean = stamp?.files != null

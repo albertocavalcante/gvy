@@ -87,20 +87,19 @@ class ClasspathRestamperTest {
     }
 
     @Test
-    fun `a class rewritten in a class directory changes the target key after an event under it`(): Unit =
-        runBlocking {
-            val classes = Files.createDirectories(root.resolve("build/classes"))
-            val type = write(classes.resolve("p/B.class"), 3, 1_000_000)
-            observe(evidence(classes))
-            val before = key()
-            val restamper = restamper()
+    fun `a class rewritten in a class directory changes the target key after an event under it`(): Unit = runBlocking {
+        val classes = Files.createDirectories(root.resolve("build/classes"))
+        val type = write(classes.resolve("p/B.class"), 3, 1_000_000)
+        observe(evidence(classes))
+        val before = key()
+        val restamper = restamper()
 
-            write(type, 5, 2_000_000)
-            restamper.onWatchedPaths(listOf(type))
+        write(type, 5, 2_000_000)
+        restamper.onWatchedPaths(listOf(type))
 
-            assertTrue(restamper.drain(), "the rewritten class was not noticed")
-            assertNotEquals(before, key())
-        }
+        assertTrue(restamper.drain(), "the rewritten class was not noticed")
+        assertNotEquals(before, key())
+    }
 
     @Test
     fun `a tick that finds nothing changed keeps the model`(): Unit = runBlocking {

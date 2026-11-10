@@ -75,6 +75,7 @@ typealias StatusUpdateCallback = (Health, Boolean, String?, Int?, Int?, String?,
  * Manages project startup lifecycle: dependency resolution, file watching, and indexing.
  * De-clutters the main LanguageServer class.
  */
+@Suppress("LongParameterList") // the last three are defaulted collaborators and test seams
 class ProjectStartupManager(
     private val compilationService: GroovyCompilationService,
     private val availableBuildTools: List<BuildTool>,

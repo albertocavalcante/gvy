@@ -166,7 +166,23 @@ class WorkspaceManager internal constructor(
      * I/O happens here. Returns whether the model changed.
      */
     fun restampTargets(expected: TargetDependencyEvidence.Scoped, refreshed: TargetDependencyEvidence.Scoped): Boolean {
-        return false // RED stub (#1364)
+        var published = false
+        update { current ->
+            if (current.targets !== expected) {
+                current
+            } else {
+                published = true
+                WorkspaceModel(
+                    current.root,
+                    current.classpath,
+                    current.sourceRoots,
+                    current.sources,
+                    refreshed,
+                    computeFingerprint = fingerprintComputer,
+                )
+            }
+        }
+        return published
     }
 
     /**

@@ -43,6 +43,7 @@ import java.util.concurrent.CompletableFuture
 /**
  * Handles all workspace related LSP operations.
  */
+@Suppress("LongParameterList") // all but the first three are defaulted collaborators and test seams
 class GroovyWorkspaceService(
     private val compilationService: GroovyCompilationService,
     private val symbolIndexer: SymbolIndexingService,
