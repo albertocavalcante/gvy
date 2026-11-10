@@ -6,6 +6,7 @@ import com.github.ajalt.clikt.core.parse
 import com.github.albertocavalcante.gvy.gls.cli.GlsCommand
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.net.InetAddress
 import java.net.ServerSocket
 
 class MainCompatTest {
@@ -39,8 +40,9 @@ class MainCompatTest {
 
     @Test
     fun `test socket command fails if port is bound`() {
-        // Find a free port and bind it
-        ServerSocket(0).use { serverSocket ->
+        // Find a free port and bind it on the same (loopback) address the socket command uses;
+        // BSD/macOS lets a specific-address bind coexist with a wildcard listener.
+        ServerSocket(0, 1, InetAddress.getLoopbackAddress()).use { serverSocket ->
             val port = serverSocket.localPort
 
             // Now try to run socket command on same port

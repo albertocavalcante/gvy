@@ -16,12 +16,34 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.BindException
+import java.net.InetAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.UnknownHostException
 import java.util.concurrent.Executors
 
 private val logger = KotlinLogging.logger {}
 private const val DEFAULT_PORT = 8080
+private const val ACCEPT_BACKLOG = 50
+
+/**
+ * Binds the socket-mode listener. Defaults to the loopback interface so the server (which can read
+ * workspace files and run build tooling) is not exposed to the network unless explicitly requested.
+ *
+ * "Loopback" here is the JVM's loopback address, normally IPv4 `127.0.0.1`. A single listener cannot serve
+ * both families, so IPv6-only clients must be given an explicit `--host ::1`.
+ *
+ * @throws java.net.UnknownHostException if [host] cannot be resolved
+ */
+internal fun bindServerSocket(port: Int, host: String? = null): ServerSocket {
+    val address = if (host == null) InetAddress.getLoopbackAddress() else InetAddress.getByName(host)
+    if (!address.isLoopbackAddress) {
+        logger.warn {
+            "Binding to non-loopback address $address exposes the unauthenticated language server to the network"
+        }
+    }
+    return ServerSocket(port, ACCEPT_BACKLOG, address)
+}
 
 /**
  * Runs the Groovy Language Server in either stdio or socket mode.
@@ -35,6 +57,8 @@ class LspCommand : CliktCommand(name = "lsp") {
     private val port by option("-p", "--port")
         .int()
         .default(DEFAULT_PORT)
+
+    private val host by option("--host", help = "Address to bind in socket mode (default: loopback only)")
 
     private val clientExecutor = Executors.newFixedThreadPool(10)
 
@@ -61,7 +85,7 @@ class LspCommand : CliktCommand(name = "lsp") {
     override fun run() {
         when (mode) {
             "stdio" -> runStdio()
-            "socket" -> runSocket(port)
+            "socket" -> runSocket(port, host)
             else -> {
                 echo("Unknown mode: $mode. Use 'stdio' or 'socket'.", err = true)
                 throw ProgramResult(1)
@@ -84,18 +108,21 @@ class LspCommand : CliktCommand(name = "lsp") {
         startServer(input, output)
     }
 
-    internal fun runSocket(port: Int) {
+    internal fun runSocket(port: Int, host: String? = null) {
         try {
-            ServerSocket(port).use { serverSocket ->
-                logger.info { "Listening on port $port..." }
+            bindServerSocket(port, host).use { serverSocket ->
+                logger.info { "Listening on ${serverSocket.inetAddress}:${serverSocket.localPort}..." }
                 addShutdownHook(serverSocket)
                 acceptConnections(serverSocket)
             }
-        } catch (e: BindException) {
-            logger.error(e) { "Failed to bind to port $port (port may be in use)" }
-            throw ProgramResult(1)
         } catch (e: IOException) {
-            logger.error(e) { "IO error starting server" }
+            logger.error(e) {
+                when (e) {
+                    is UnknownHostException -> "Invalid --host '$host': cannot resolve address"
+                    is BindException -> "Failed to bind to port $port (port may be in use)"
+                    else -> "IO error starting server"
+                }
+            }
             throw ProgramResult(1)
         }
     }
