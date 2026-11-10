@@ -26,28 +26,26 @@ class NativeDefinitionService(
         context: ParseUnit,
         position: Position,
     ): List<UnifiedDefinition> {
-        val uriStr = context.uri
-        return runCatching { URI.create(uriStr) }
-            .onFailure { e -> logger.debug(e) { "Failed to parse URI: $uriStr" } }
-            .map { uri ->
-                val visitor = compilationService.getAstModel(uri)
-                val symbolTable = compilationService.getSymbolTable(uri)
+        // Only a malformed URI is "no definition": resolution errors, an Error above all, propagate (#1311)
+        val uri = parseUri(context.uri) ?: return emptyList()
+        val visitor = compilationService.getAstModel(uri)
+        val symbolTable = compilationService.getSymbolTable(uri)
+        if (visitor == null || symbolTable == null) return emptyList()
+        val resolver = DefinitionResolver(
+            visitor,
+            symbolTable,
+            compilationService,
+            sourceNavigator,
+            compilationService.getWorkspaceSymbolIndex(),
+        )
+        return resolver.findDefinitionAt(uri, position.toGroovyPosition())?.toUnifiedDefinition(visitor) ?: emptyList()
+    }
 
-                if (visitor == null || symbolTable == null) {
-                    emptyList()
-                } else {
-                    val resolver = DefinitionResolver(
-                        visitor,
-                        symbolTable,
-                        compilationService,
-                        sourceNavigator,
-                        compilationService.getWorkspaceSymbolIndex(),
-                    )
-                    val groovyPos = position.toGroovyPosition()
-                    resolver.findDefinitionAt(uri, groovyPos)?.toUnifiedDefinition(visitor) ?: emptyList()
-                }
-            }
-            .getOrElse { emptyList() }
+    private fun parseUri(uriStr: String): URI? = try {
+        URI.create(uriStr)
+    } catch (e: IllegalArgumentException) {
+        logger.debug(e) { "Failed to parse URI: $uriStr" }
+        null
     }
 
     private fun DefinitionResolver.DefinitionResult.toUnifiedDefinition(
