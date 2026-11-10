@@ -8,7 +8,8 @@ import java.nio.file.Path
 import kotlin.test.assertTrue
 
 /**
- * Guards scenario settings (`initializationOptions` and `workspace/didChangeConfiguration`) against keys the server never reads.
+ * Guards scenario settings (`initializationOptions` and `workspace/didChangeConfiguration`) against keys the
+ * server never reads.
  *
  * The server silently ignores unknown options, so a typo such as `groovy.engine.type` (the real key is
  * `groovy.languageServer.engine`) leaves a scenario running on the default engine while claiming otherwise.
@@ -23,10 +24,11 @@ class ScenarioInitializationOptionsTest {
             settings.keys.filterNot { it in KNOWN_SERVER_KEYS }.map { "  $scenario: $it" }
         }
 
+        val listing = unknown.joinToString("\n")
         assertTrue(
             unknown.isEmpty(),
             "Scenarios use initializationOptions/didChangeConfiguration keys the server never reads " +
-                "(they are silently ignored):\n${unknown.joinToString("\n")}\nKnown keys: ${KNOWN_SERVER_KEYS.sorted()}",
+                "(they are silently ignored):\n$listing\nKnown keys: ${KNOWN_SERVER_KEYS.sorted()}",
         )
     }
 
