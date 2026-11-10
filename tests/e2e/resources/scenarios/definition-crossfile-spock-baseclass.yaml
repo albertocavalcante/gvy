@@ -8,7 +8,7 @@ steps:
   - initialize:
       initializationOptions:
         groovy.server.logLevel: DEBUG
-        groovy.engine.type: native
+        groovy.languageServer.engine: native
   - initialized: {}
   - waitNotification:
       method: groovy/status
