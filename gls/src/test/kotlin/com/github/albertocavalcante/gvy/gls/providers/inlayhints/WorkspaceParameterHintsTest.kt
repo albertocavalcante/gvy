@@ -14,7 +14,6 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.io.path.writeText
 import kotlin.test.assertEquals
-import kotlin.test.assertTrue
 
 /** Parameter hints resolved from workspace classes, for closed files and unsaved buffers (#1312). */
 class WorkspaceParameterHintsTest {
@@ -83,8 +82,8 @@ class WorkspaceParameterHintsTest {
         // Packaged code cannot use a default-package class. The compiler qualifies `new Util` with the
         // file's package, but a variable receiver arrives as the bare name: keep the same-name merge for it.
         assertEquals(listOf("count:", "count:"), hintsFor("new Util(1).send(2)", imports = "package c\n"))
-        val viaVariable = hintsFor("def u = new Util(1)\n    u.send(2)", imports = "package c\n")
-        assertTrue("size:" !in viaVariable, "found $viaVariable")
+        // The constructor resolves to c.Util; the bare receiver's merge of both send(int) overloads is ambiguous.
+        assertEquals(listOf("count:"), hintsFor("def u = new Util(1)\n    u.send(2)", imports = "package c\n"))
     }
 
     @Test
