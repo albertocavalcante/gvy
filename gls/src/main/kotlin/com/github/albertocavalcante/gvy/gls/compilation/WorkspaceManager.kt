@@ -329,16 +329,36 @@ class WorkspaceManager internal constructor(
      * outside the workspace without links (a build's `srcDir '../shared'`) is the build's choice and is scanned.
      * Links are only followed inside the workspace, even for a root declared outside it: the model does not record
      * where a root came from, so a link cannot be trusted by origin (#1424).
+     *
+     * "Inside" is decided by component, and where the workspace's file system folds names, by the same case and
+     * normalisation key as source membership ([isWithin]): `/WS/src` under a workspace `/ws` on a case-insensitive
+     * volume is inside it, so an ancestor link under it is refused too.
      */
     private fun scanStart(root: Path, workspaceRoot: Path?): Path? {
         val workspace = workspaceRoot?.toAbsolutePath()?.normalize()
         val absolute = root.toAbsolutePath().normalize()
         return when {
             Files.isSymbolicLink(absolute) -> followedLink(absolute, workspace)
-            workspace == null || !absolute.startsWith(workspace) -> absolute
-            DocumentTargetSelector.canonical(absolute).startsWith(realWorkspace(workspace)) -> absolute
+            workspace == null || !isWithin(absolute, workspace, workspace) -> absolute
+            isWithin(DocumentTargetSelector.canonical(absolute), realWorkspace(workspace), workspace) -> absolute
             else -> null.also { refuse(absolute, "resolves outside the workspace through a linked ancestor") }
         }
+    }
+
+    /**
+     * Whether [path] lies at or under [ancestor], by component. Where [workspace]'s file system folds case (its
+     * probe), or the platform normalises names, the leading components are compared by key, so another case or
+     * normalisation of the same directory counts; `/wsx` never lies under `/ws` (#1424).
+     */
+    private fun isWithin(path: Path, ancestor: Path, workspace: Path): Boolean {
+        if (path.startsWith(ancestor)) return true
+        val folds = isCaseInsensitive(workspace, realWorkspace(workspace))
+        val comparable = (folds || normalisesNames) && ancestor.nameCount > 0 &&
+            path.nameCount >= ancestor.nameCount && path.root == ancestor.root
+        if (!comparable) return false
+        val prefix = path.subpath(0, ancestor.nameCount).let { path.root?.resolve(it) ?: it }
+        return nameKey(prefix.toString(), folds, normalisesNames) ==
+            nameKey(ancestor.toString(), folds, normalisesNames)
     }
 
     private fun realWorkspace(workspace: Path): Path =
