@@ -48,4 +48,21 @@ class CompletionBuildersTest {
 
         assertEquals(1, result.size)
     }
+
+    @Test
+    fun `method snippets escape snippet syntax in names and placeholders`() {
+        // `$` would start a tabstop, `}` close the placeholder, `\` an escape (#1407).
+        val item = MethodCompletionBuilder().build("\$run", "void", listOf("Outer\$1 x", "Weird}\\ y"))
+
+        assertEquals("\\\$run(\${1:Outer\\\$1 x}, \${2:Weird\\}\\\\ y})", item.insertText)
+        assertEquals("void \$run(Outer\$1 x, Weird}\\ y)", item.detail)
+    }
+
+    @Test
+    fun `function snippets escape snippet syntax in the name`() {
+        val item = FunctionCompletionBuilder().build("my\$fn")
+
+        assertEquals("my\\\$fn(\$1)", item.insertText)
+        assertEquals("void my\$fn()", item.detail)
+    }
 }
