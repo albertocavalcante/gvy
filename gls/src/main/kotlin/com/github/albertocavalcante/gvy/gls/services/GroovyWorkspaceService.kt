@@ -83,6 +83,7 @@ class GroovyWorkspaceService(
         logger.debug { "Watched files changed: ${params.changes?.size ?: 0} changes" }
 
         if (params.changes.isNullOrEmpty()) return
+        textDocumentService?.invalidateWorkspaceFiles()
 
         val changes = params.changes.groupBy { classifyFileChange(it.uri) }
 

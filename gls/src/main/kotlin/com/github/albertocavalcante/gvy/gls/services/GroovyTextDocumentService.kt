@@ -24,6 +24,9 @@ import com.github.albertocavalcante.gvy.gls.providers.highlight.DocumentHighligh
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverRequestHandler
 import com.github.albertocavalcante.gvy.gls.providers.inlayhints.InlayHintsProvider
 import com.github.albertocavalcante.gvy.gls.providers.rename.RenameProvider
+import com.github.albertocavalcante.gvy.gls.providers.rename.RenameRefusedException
+import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceTextCache
+import com.github.albertocavalcante.gvy.gls.providers.rename.WorkspaceWalkCache
 import com.github.albertocavalcante.gvy.gls.providers.selection.SelectionRangeProvider
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.SemanticTokensHandler
 import com.github.albertocavalcante.gvy.gls.providers.symbols.toDocumentSymbol
@@ -98,6 +101,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.TextDocumentService
 import java.net.URI
+import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
 data class GroovyTextDocumentServiceOptions(
@@ -130,6 +134,25 @@ class GroovyTextDocumentService(
     private var definitionLinkSupport: Boolean = options.definitionLinkSupport
 
     private val logger = KotlinLogging.logger {}
+
+    /** Providers are built per request; this keeps unchanged workspace files cached across rename checks. */
+    private val renameDiskText = WorkspaceTextCache()
+    internal val renameWalks = WorkspaceWalkCache()
+
+    @Volatile
+    private var workspaceFolders: List<Path> = emptyList()
+
+    /**
+     * Folders the client opened. The server does not declare workspace-folder change support, so these are fixed
+     * at initialize; rename checks every one of them for other uses of a symbol, not just the first.
+     */
+    fun updateWorkspaceFolders(folders: List<Path>) {
+        workspaceFolders = folders
+        renameWalks.invalidate()
+    }
+
+    /** Called on any watched-file event: the directory walk behind rename checks may be out of date. */
+    fun invalidateWorkspaceFiles() = renameWalks.invalidate()
 
     fun updateDefinitionLinkSupport(supported: Boolean) {
         definitionLinkSupport = supported
@@ -526,7 +549,13 @@ class GroovyTextDocumentService(
     override fun prepareRename(
         params: PrepareRenameParams,
     ): CompletableFuture<Either3<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>?> = coroutineScope.future {
-        RenameProvider(compilationService, documentProvider)
+        RenameProvider(
+            compilationService,
+            documentProvider,
+            renameDiskText,
+            extraRoots = { workspaceFolders },
+            walks = renameWalks,
+        )
             .providePrepareRename(params.textDocument.uri, params.position)
             ?.let { Either3.forSecond<Range, PrepareRenameResult, PrepareRenameDefaultBehavior>(it) }
     }
@@ -539,13 +568,22 @@ class GroovyTextDocumentService(
         }
 
         try {
-            val renameProvider = RenameProvider(compilationService, documentProvider)
+            val renameProvider = RenameProvider(
+                compilationService,
+                documentProvider,
+                renameDiskText,
+                extraRoots = { workspaceFolders },
+                walks = renameWalks,
+            )
             renameProvider.provideRename(
                 params.textDocument.uri,
                 params.position,
                 params.newName,
             )
         } catch (e: CancellationException) {
+            throw e
+        } catch (e: RenameRefusedException) {
+            logger.info { "Rename refused: ${e.message}" }
             throw e
         } catch (e: ResponseErrorException) {
             logger.error { "Rename failed: ${e.message}" }

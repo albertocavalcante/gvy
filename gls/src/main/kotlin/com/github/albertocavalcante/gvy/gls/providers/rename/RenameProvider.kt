@@ -33,6 +33,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.Either
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.net.URI
+import java.nio.file.Path
 import java.nio.file.Paths
 
 /**
@@ -44,6 +45,9 @@ class RenameProvider private constructor(
     private val compilationService: GroovyCompilationService,
     private val documentSource: RenameDocumentSource,
     private val openBuffers: () -> Map<URI, String> = { emptyMap() },
+    private val caches: RenameCaches = RenameCaches(),
+    private val scanLimits: ScanLimits = ScanLimits(),
+    private val extraRoots: () -> List<Path> = { emptyList() },
 ) {
     /** Current text of a document (open buffer, else file on disk); null if unavailable. */
     constructor(
@@ -56,18 +60,44 @@ class RenameProvider private constructor(
         },
     )
 
-    internal constructor(compilationService: GroovyCompilationService, documents: DocumentProvider) : this(
+    /**
+     * [diskText] should outlive a request (providers are built per request) so unchanged files are not re-read;
+     * [scanLimits] bounds the cross-file check.
+     */
+    internal constructor(
+        compilationService: GroovyCompilationService,
+        documents: DocumentProvider,
+        diskText: WorkspaceTextCache = WorkspaceTextCache(),
+        scanLimits: ScanLimits = ScanLimits(),
+        extraRoots: () -> List<Path> = { emptyList() },
+        walks: WorkspaceWalkCache = WorkspaceWalkCache(),
+    ) : this(
         compilationService,
         RenameDocumentSource { uri ->
             documents.getSnapshot(uri) ?: readFromDisk(uri)?.let { DocumentSnapshot(it, null) }
         },
         documents::snapshot,
+        RenameCaches(diskText, walks),
+        scanLimits,
+        extraRoots,
     )
 
     private val logger = KotlinLogging.logger {}
     private val referenceProvider = ReferenceProvider(compilationService)
-    private val crossFileUses =
-        CrossFileUseGuard(checkNotNull(compilationService.getWorkspaceSymbolIndex()), openBuffers)
+    private val crossFileUses = CrossFileUseGuard(
+        checkNotNull(compilationService.getWorkspaceSymbolIndex()),
+        openBuffers,
+        WorkspaceLayout(
+            sources = compilationService.workspaceManager::getWorkspaceSources,
+            roots = {
+                (listOfNotNull(compilationService.workspaceManager.getWorkspaceRoot()) + extraRoots()).distinct()
+            },
+            sourceRoots = compilationService.workspaceManager::getSourceRoots,
+        ),
+        caches.walks,
+        caches.diskText,
+        scanLimits,
+    )
 
     // Groovy keywords that cannot be used as identifiers
     private val groovyKeywords = setOf(
@@ -135,10 +165,10 @@ class RenameProvider private constructor(
     }
 
     /** Only this file is edited, so a target other files use would be silently broken. */
-    private fun refuseIfUsedElsewhere(target: RenameTarget) {
+    private suspend fun refuseIfUsedElsewhere(target: RenameTarget) {
         val uses = crossFileUses.usesOutside(target.documentUri, target.definition, target.oldName)
         if (!uses.isEmpty) {
-            val error = ResponseError(ResponseErrorCode.InvalidRequest, uses.message(target.oldName), null)
+            val error = ResponseError(ResponseErrorCode.RequestFailed, uses.message(target.oldName), null)
             throw RenameRefusedException(error)
         }
     }
@@ -448,6 +478,12 @@ private operator fun Position.compareTo(other: Position): Int =
 /** True if [inner] lies within this range and is not the same range. */
 private fun org.eclipse.lsp4j.Range.strictlyContains(inner: org.eclipse.lsp4j.Range): Boolean =
     start <= inner.start && inner.end <= end && this != inner
+
+/** State that outlives a request: providers are built per request, these are not. */
+internal class RenameCaches(
+    val diskText: WorkspaceTextCache = WorkspaceTextCache(),
+    val walks: WorkspaceWalkCache = WorkspaceWalkCache(),
+)
 
 /** A rename refused because other files would break; surfaced even by prepareRename. */
 internal class RenameRefusedException(error: ResponseError) : ResponseErrorException(error)

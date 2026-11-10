@@ -67,6 +67,7 @@ import org.eclipse.lsp4j.services.LanguageClientAware
 import org.eclipse.lsp4j.services.LanguageServer
 import org.eclipse.lsp4j.services.TextDocumentService
 import org.eclipse.lsp4j.services.WorkspaceService
+import java.net.URI
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -228,6 +229,7 @@ class GroovyLanguageServer(
         logger.info { "Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}" }
 
         savedInitParams = params
+        textDocumentService.updateWorkspaceFolders(workspaceFolderPaths(params))
         parentWatchdog.watch(params.processId)
         clientCapabilities = params.capabilities
 
@@ -244,6 +246,11 @@ class GroovyLanguageServer(
         logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)
     }
+
+    private fun workspaceFolderPaths(params: InitializeParams): List<java.nio.file.Path> =
+        params.workspaceFolders.orEmpty().mapNotNull { folder ->
+            runCatching { java.nio.file.Paths.get(URI.create(folder.uri)) }.getOrNull()
+        }
 
     private fun parseInitOptions(options: Any?): Map<String, Any> {
         if (options == null) return emptyMap()
