@@ -27,9 +27,57 @@ class ClasspathLoaderLifecycleTest {
         assertNotNull(first.getResource("first.txt"), "control: the loader serves its jar")
 
         service.updateClasspath(listOf(jar("second.jar", "second.txt")))
+        service.updateClasspath(listOf(jar("third.jar", "third.txt")))
 
         assertNull(first.getResource("first.txt"), "the replaced loader is still open")
-        assertNotNull(currentLoader(service).getResource("second.txt"))
+        assertNotNull(currentLoader(service).getResource("third.txt"))
+    }
+
+    @Test
+    fun `a long-lived type solver follows classpath updates`() {
+        val service = ClasspathService()
+        service.updateClasspath(listOf(jarWithClass("a.jar", "Alpha")))
+        // Resolvers keep the solver for the whole session (hover, inlay hints, definition)
+        val solver = service.getTypeSolver()
+        assertTrue(solver.tryToSolveType("com.example.Alpha").isSolved, "control: resolves the first jar")
+
+        service.updateClasspath(listOf(jarWithClass("b.jar", "Beta")))
+        service.updateClasspath(listOf(jarWithClass("b2.jar", "Beta")))
+
+        assertTrue(solver.tryToSolveType("com.example.Beta").isSolved, "the kept solver still uses a retired loader")
+    }
+
+    @Test
+    fun `a replaced loader stays usable for one more update`() {
+        val service = ClasspathService()
+        service.updateClasspath(listOf(jar("first.jar", "first.txt")))
+        val first = currentLoader(service)
+        service.updateClasspath(listOf(jar("second.jar", "second.txt")))
+
+        assertNotNull(first.getResource("first.txt"), "in-flight reflection on the replaced loader must not fail")
+
+        service.updateClasspath(listOf(jar("third.jar", "third.txt")))
+        assertNull(first.getResource("first.txt"), "closed once its successor is replaced too")
+    }
+
+    /** A jar with a compiled `com.example.<name>`. */
+    private fun jarWithClass(jarName: String, className: String): Path {
+        val compiler = javax.tools.ToolProvider.getSystemJavaCompiler()
+        org.junit.jupiter.api.Assumptions.assumeTrue(compiler != null, "needs a JDK compiler")
+        val sources = Files.createDirectories(tempDir.resolve("$jarName-src/com/example"))
+        val classes = Files.createDirectories(tempDir.resolve("$jarName-classes"))
+        val source = Files.writeString(
+            sources.resolve("$className.java"),
+            "package com.example; public class $className {}",
+        )
+        check(compiler.run(null, null, null, "-d", classes.toString(), source.toString()) == 0) { "javac failed" }
+        val path = tempDir.resolve(jarName)
+        JarOutputStream(Files.newOutputStream(path)).use { out ->
+            out.putNextEntry(JarEntry("com/example/$className.class"))
+            Files.copy(classes.resolve("com/example/$className.class"), out)
+            out.closeEntry()
+        }
+        return path
     }
 
     private fun currentLoader(service: ClasspathService): URLClassLoader {

@@ -23,9 +23,23 @@ class ClasspathService(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Start with the system classloader to access JDK and Groovy runtime. Replaced atomically; the loader it
-    // replaces is closed, releasing its jar files and the metaspace of the classes only it loaded (H2).
+    // Start with the system classloader to access JDK and Groovy runtime. Replaced atomically. A replaced loader
+    // stays open for one more update, so reflection already in flight on it can finish, and is then closed:
+    // that releases its jar files; its metaspace is freed by GC once none of its classes are reachable (H2).
     private val currentClassLoader = AtomicReference<ClassLoader>(ClassLoader.getSystemClassLoader())
+
+    // Guarded by this: the loader replaced by the latest update, closed by the next one.
+    private var retiredClassLoader: ClassLoader? = null
+
+    /** What long-lived resolvers hold: every lookup goes to the loader that is current at that moment. */
+    private val followingClassLoader = object : ClassLoader(null) {
+        override fun loadClass(name: String, resolve: Boolean): Class<*> = currentClassLoader.get().loadClass(name)
+
+        override fun getResource(name: String): java.net.URL? = currentClassLoader.get().getResource(name)
+
+        override fun getResources(name: String): java.util.Enumeration<java.net.URL> =
+            currentClassLoader.get().getResources(name)
+    }
 
     @Volatile
     private var classpathEntries: List<String> = emptyList()
@@ -42,7 +56,9 @@ class ClasspathService(
      *
      * @param paths List of paths to add to the classpath
      */
-    fun updateClasspath(paths: List<Path>) {
+    fun updateClasspath(paths: List<Path>) = synchronized(this) { replaceClasspath(paths) }
+
+    private fun replaceClasspath(paths: List<Path>) {
         val next = try {
             logger.info { "Updating classpath with ${paths.size} paths" }
             val urls = paths.map { it.toUri().toURL() }.toTypedArray()
@@ -60,11 +76,14 @@ class ClasspathService(
         isIndexed.set(false)
         classIndex.clear()
         qualifiedNameIndex.clear()
-        close(previous)
+        retiredClassLoader?.let(::close)
+        retiredClassLoader = previous
     }
 
-    /** Closes the current classloader (server shutdown); the service falls back to the system loader. */
-    fun close() {
+    /** Closes the current and retired classloaders (server shutdown); the service falls back to the system loader. */
+    fun close() = synchronized(this) {
+        retiredClassLoader?.let(::close)
+        retiredClassLoader = null
         close(currentClassLoader.getAndSet(ClassLoader.getSystemClassLoader()))
     }
 
@@ -210,10 +229,11 @@ class ClasspathService(
     fun loadClass(className: String): Class<*>? = reflection.loadClass(className)
 
     /**
-     * Returns a TypeSolver backed by the current classloader.
+     * Returns a TypeSolver that resolves against whichever classloader is current at each lookup, so callers may
+     * keep it for the whole session.
      */
     fun getTypeSolver(): TypeSolver = CombinedTypeSolver(
-        ReflectionTypeSolver(classLoader = currentClassLoader.get(), jreOnly = false),
+        ReflectionTypeSolver(classLoader = followingClassLoader, jreOnly = false),
     )
 
     internal class ClassIndex {
