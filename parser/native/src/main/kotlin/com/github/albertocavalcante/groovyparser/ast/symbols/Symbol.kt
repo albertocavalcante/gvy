@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser.ast.symbols
 
 import com.github.albertocavalcante.groovyparser.ast.SafePosition
+import com.github.albertocavalcante.groovyparser.ast.isDerivedFromSafe
 import com.github.albertocavalcante.groovyparser.ast.safePosition
 import com.github.albertocavalcante.groovyparser.errors.GroovyParserResult
 import org.codehaus.groovy.ast.ASTNode
@@ -353,7 +354,7 @@ private fun Symbol.isAccessibleMember(contextUri: URI, contextClass: ClassNode?)
     return when (memberVisibility) {
         Visibility.PUBLIC -> true
         Visibility.PACKAGE -> uri == contextUri
-        Visibility.PROTECTED -> contextClass?.isDerivedFrom(memberOwner) == true
+        Visibility.PROTECTED -> memberOwner?.let { contextClass?.isDerivedFromSafe(it) } == true
         Visibility.PRIVATE -> contextClass == memberOwner
         Visibility.INTERNAL -> uri == contextUri // Treat as package-private in Groovy
     }

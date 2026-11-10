@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import com.github.albertocavalcante.gvy.gls.utils.declaredName
 import com.github.albertocavalcante.gvy.gls.utils.firstNameOccurrence
@@ -35,7 +36,7 @@ internal class SemanticSourceRanges(val index: TextIndex, private val owned: (AS
     }
 
     fun declaration(node: AnnotatedNode, name: String, type: ASTNode? = null, initial: ASTNode? = null): Range? {
-        if (node is ClassNode && node.isScript) return null
+        if (node is ClassNode && node.isScriptSafe()) return null
         val scope = scope(node, node.annotations.orEmpty() + listOfNotNull(type), listOfNotNull(initial)) ?: return null
         val enumMember = node is FieldNode &&
             TokenTypeResolver.getTokenTypeForField(node) == TokenTypeResolver.TokenTypes.ENUM_MEMBER

@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.groovyparser.ast.containsPosition
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
@@ -96,7 +97,7 @@ internal class SpockCompletionStrategy : CompletionStrategy {
         val module = base.moduleNode ?: return emptyList()
         val prefix = line.take(base.character.coerceIn(0, line.length))
             .takeLastWhile { Character.isJavaIdentifierPart(it) }
-        val names = source.classes.filter { owner -> !owner.classNode.isScript && owner.isSpecification(module) }
+        val names = source.classes.filter { owner -> !owner.classNode.isScriptSafe() && owner.isSpecification(module) }
             .map { it.classNode }
             .flatMap { it.methods }
             .filter { it.containsPosition(base.line, base.character) }

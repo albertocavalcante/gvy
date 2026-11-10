@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import org.codehaus.groovy.ast.ModuleNode
@@ -55,7 +56,7 @@ internal object SpockTableAction {
         val lines = request.content.lines()
         val module = request.module ?: return emptyList()
         return SpockSourceContext.from(module, request.isPartial).classes
-            .filter { !it.classNode.isScript && it.status == SpecificationStatus.SPECIFICATION }
+            .filter { !it.classNode.isScriptSafe() && it.status == SpecificationStatus.SPECIFICATION }
             .flatMap { it.classNode.methods }
             .flatMap { method ->
                 val collector = TableCollector(lines)

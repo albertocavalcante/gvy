@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser.ast.visitor
 import com.github.albertocavalcante.groovyparser.ast.AstPositionQuery
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.groovyparser.ast.types.Position
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
@@ -96,7 +97,7 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
             logger.debug { "[DEBUG visitModule] module.classes size: ${module.classes.size}" }
             module.classes.forEach { cls ->
                 logger.debug {
-                    "  - ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScript}"
+                    "  - ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScriptSafe()}"
                 }
             }
         }

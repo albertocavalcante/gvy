@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
@@ -700,7 +701,7 @@ private fun explicitReceiverType(qualifierName: String?, module: ModuleNode, con
     val column = context.character + 1
     val enclosing = module.classes.filter { it.contains(line, column) }
         .maxWithOrNull(compareBy<ClassNode>({ it.lineNumber }, { it.columnNumber }))
-        ?: module.classes.firstOrNull { it.isScript }
+        ?: module.classes.firstOrNull { it.isScriptSafe() }
         ?: return null
     return if (qualifierName == THIS) enclosing.name else enclosing.superClass?.name
 }

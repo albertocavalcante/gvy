@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.spock
 
+import com.github.albertocavalcante.groovyparser.ast.isDerivedFromSafe
 import com.github.albertocavalcante.gvy.common.text.GroovyCodeCleaner
 import com.github.albertocavalcante.nativeapi.ParseResult
 import groovy.lang.GroovyClassLoader
@@ -49,7 +50,7 @@ object SpockDetector {
 
     fun isSpockSpec(classNode: ClassNode, module: ModuleNode? = null, specClassNode: ClassNode? = null): Boolean {
         // Semantic check if we have the Specification class from classpath
-        if (specClassNode != null && classNode.isDerivedFrom(specClassNode)) {
+        if (specClassNode != null && classNode.isDerivedFromSafe(specClassNode)) {
             logger.debug { "Detected Spock spec via derivedFrom: ${classNode.name}" }
             return true
         }
@@ -73,8 +74,10 @@ object SpockDetector {
     }
 
     private fun ClassNode.hierarchy(): Sequence<ClassNode> = sequence {
+        val seen = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<ClassNode, Boolean>())
         var current: ClassNode? = this@hierarchy
-        while (current != null) {
+        // A cycle is left in the AST after Groovy reports it; stop at the first repeated node.
+        while (current != null && seen.add(current)) {
             yield(current)
 
             // IF resolution failed (superClass is Object), check unresolvedSuperClass

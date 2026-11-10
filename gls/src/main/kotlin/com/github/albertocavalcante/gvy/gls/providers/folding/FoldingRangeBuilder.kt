@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.folding
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
+import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.gls.utils.TextIndex
 import groovyjarjarantlr4.v4.runtime.CharStreams
 import groovyjarjarantlr4.v4.runtime.Token
@@ -52,7 +53,7 @@ internal class FoldingRangeBuilder(private val index: TextIndex, private val nod
         val structures = nodes.mapNotNull { node ->
             checkCancelled()
             val structural = node is MethodNode || node is BlockStatement || node is ClosureExpression ||
-                (node is ClassNode && !node.isScript)
+                (node is ClassNode && !node.isScriptSafe())
             if (structural) {
                 // Preserve the established class/method convention: leave the closing-brace line visible.
                 range(node)?.let { fold(it.start.line, it.end.line - 1, FoldingRangeKind.Region) }

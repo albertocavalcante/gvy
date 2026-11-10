@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.junit4
 
+import com.github.albertocavalcante.groovyparser.ast.superClassChain
 import com.github.albertocavalcante.gvy.testing.api.TestFramework
 import com.github.albertocavalcante.gvy.testing.api.TestFrameworkDetector
 import com.github.albertocavalcante.gvy.testing.api.TestItem
@@ -78,18 +79,12 @@ class JUnit4TestDetector : TestFrameworkDetector {
     }
 
     private fun isTestCase(classNode: ClassNode): Boolean {
-        var current = classNode
-        while (current.name != "java.lang.Object") {
-            if (current.name == JUNIT4_TEST_CASE_CLASS) return true
+        // superClassChain stops at an inheritance cycle, which Groovy leaves in the AST after reporting it.
+        return (sequenceOf(classNode) + classNode.superClassChain()).takeWhile { it.name != "java.lang.Object" }.any {
             // Basic check for direct extension if unresolved
-            if (current.superClass?.name == JUNIT4_TEST_CASE_CLASS ||
-                current.superClass?.name == "TestCase"
-            ) {
-                return true
-            }
-            if (current.superClass == null) break
-            current = current.superClass
+            it.name == JUNIT4_TEST_CASE_CLASS ||
+                it.superClass?.name == JUNIT4_TEST_CASE_CLASS ||
+                it.superClass?.name == "TestCase"
         }
-        return false
     }
 }
