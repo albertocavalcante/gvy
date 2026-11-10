@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GdkExtensionMethod
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.runSuspendCatching
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import groovy.lang.Script
@@ -339,7 +340,7 @@ class SignatureHelpProvider(
         }
 
         val content = documentProvider.get(uri) ?: return
-        runCatching { compilationService.compile(uri, content) }
+        runSuspendCatching { compilationService.compile(uri, content) }
             .onFailure { error ->
                 logger.debug(error) { "Unable to compile $uri before providing signature help" }
             }

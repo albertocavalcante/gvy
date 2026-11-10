@@ -32,6 +32,7 @@ import com.github.albertocavalcante.gvy.gls.providers.typedefinition.TypeDefinit
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -438,19 +439,15 @@ class GroovyTextDocumentService(
 
     override fun typeDefinition(
         params: TypeDefinitionParams,
-    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
         logger.debug {
             "Type definition requested for ${params.textDocument.uri} at " +
                 "${params.position.line}:${params.position.character}"
         }
-
-        return typeDefinitionProvider.provideTypeDefinition(params).thenApply { locations ->
-            logger.debug { "Found ${locations.size} type definitions" }
-            Either.forLeft<List<Location>, List<LocationLink>>(locations)
-        }.exceptionally { e ->
-            logger.error(e) { "Error providing type definition" }
-            Either.forLeft(emptyList())
-        }
+        // Like its siblings: a client cancel reaches the coroutine, and cancellation is never an empty answer.
+        val locations = typeDefinitionProvider.typeDefinitions(params)
+        logger.debug { "Found ${locations.size} type definitions" }
+        Either.forLeft(locations)
     }
 
     override fun implementation(
@@ -482,6 +479,7 @@ class GroovyTextDocumentService(
                 logger.debug { "Found ${highlights.size} highlights" }
                 highlights
             } catch (e: Exception) {
+                rethrowIfCancellationOrError(e) // a cancelled request ends cancelled, not with no highlights
                 when (e) {
                     is IllegalArgumentException -> logger.error(e) { "Invalid arguments finding highlights" }
                     is IllegalStateException -> logger.error(e) { "Invalid state finding highlights" }

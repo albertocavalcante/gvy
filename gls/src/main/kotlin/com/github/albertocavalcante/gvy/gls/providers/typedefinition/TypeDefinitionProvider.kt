@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CoroutineScope
@@ -32,25 +33,28 @@ class TypeDefinitionProvider(
     /**
      * Provides type definition for the symbol at the given position.
      */
+    fun provideTypeDefinition(params: TypeDefinitionParams): CompletableFuture<List<Location>> =
+        coroutineScope.future { typeDefinitions(params) }
+
+    /** The type definitions at [params]; a cancelled request ends cancelled, not with an empty answer. */
     @Suppress("TooGenericExceptionCaught")
-    fun provideTypeDefinition(params: TypeDefinitionParams): CompletableFuture<List<Location>> = coroutineScope.future {
-        try {
-            val uri = URI.create(params.textDocument.uri)
-            val position = params.position
+    suspend fun typeDefinitions(params: TypeDefinitionParams): List<Location> = try {
+        val uri = URI.create(params.textDocument.uri)
+        val position = params.position
 
-            logger.debug { "Type definition requested for ${params.textDocument.uri} at $position" }
+        logger.debug { "Type definition requested for ${params.textDocument.uri} at $position" }
 
-            findTypeDefinition(uri, position)?.let { location ->
-                logger.debug { "Found type definition at: $location" }
-                listOf(location)
-            } ?: run {
-                logger.debug { "No type definition found" }
-                emptyList()
-            }
-        } catch (e: Exception) {
-            logger.error(e) { "Error providing type definition" }
+        findTypeDefinition(uri, position)?.let { location ->
+            logger.debug { "Found type definition at: $location" }
+            listOf(location)
+        } ?: run {
+            logger.debug { "No type definition found" }
             emptyList()
         }
+    } catch (e: Exception) {
+        rethrowIfCancellationOrError(e)
+        logger.error(e) { "Error providing type definition" }
+        emptyList()
     }
 
     private suspend fun findTypeDefinition(uri: URI, position: Position): Location? {

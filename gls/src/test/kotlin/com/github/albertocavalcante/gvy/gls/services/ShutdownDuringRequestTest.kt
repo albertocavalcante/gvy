@@ -94,6 +94,27 @@ class ShutdownDuringRequestTest {
     }
 
     @Test
+    fun `stopping compilation before the request scope still logs no error`(): Unit = runBlocking {
+        documents.put(uri, "class Shutdown { def m() { m() } }", 1)
+        compilation.compile(uri, "class Shutdown { def m() { m() } }")
+        documents.update(uri, "class Shutdown { def m() { m(); m() } }", 2)
+        armed.set(true)
+        val request = requests.async { handler().getReferences(uri.toString(), Position(0, 28), true) }
+        assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "the request never waited on a compile")
+
+        // The reverse order: the waiter sees its compile cancelled while it is still active and must stop
+        // instead of re-resolving into the stopped service until it reports ContentModified as an error.
+        compilation.shutdown()
+        released.countDown()
+        runCatching { request.await() }
+        requests.cancel()
+
+        assertTrue(request.isCancelled, "the request must end cancelled, not with an answer or an error")
+        val errors = logs.list.filter { it.level.isGreaterOrEqual(Level.ERROR) }
+        assertEquals(emptyList(), errors.map { it.formattedMessage }, "a stopped compilation logged errors")
+    }
+
+    @Test
     fun `after shutdown a waiter is cancelled at once`(): Unit = runBlocking {
         documents.put(uri, "class Shutdown {}", 1)
         compilation.shutdown()
