@@ -2,6 +2,12 @@ package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.util.Collections
+import java.util.IdentityHashMap
 
 class GradleFailureAnalyzer(
     private val compatibilityService: GradleJdkCompatibilityService = GradleJdkCompatibilityService.instance,
@@ -47,13 +53,38 @@ class GradleFailureAnalyzer(
     }
 
     /**
-     * Detects transient errors that might benefit from a simple retry (e.g. file locks).
+     * Detects transient errors that might benefit from a simple retry: lock contention,
+     * refused connections, and transient network failures while installing the wrapper distribution.
      */
     fun isTransient(t: Throwable): Boolean = searchExceptionChain(t) { message ->
         message.contains("waiting to lock", ignoreCase = true) ||
             message.contains("waiting for lock", ignoreCase = true) ||
             message.contains("Could not open build receipt cache", ignoreCase = true) ||
             message.contains("Connection refused", ignoreCase = true)
+    } || isTransientDistributionDownloadFailure(t)
+
+    /**
+     * Detects a Gradle wrapper distribution download that failed for a reason expected to clear on its own:
+     * a timeout, a reset/unreachable connection, or HTTP 408/429/500/502/503/504.
+     *
+     * Only failures inside the Tooling API's distribution install are considered, so network errors raised
+     * by a running build (which Gradle already retries) do not cause whole-model refetches. Deterministic
+     * install failures such as HTTP 404/401/403, checksum mismatches, and TLS trust errors are not transient.
+     * DNS failures ([java.net.UnknownHostException]) are not retried either: the JVM caches negative lookups
+     * for 10s by default, so short backoff retries would mostly replay the cached failure.
+     */
+    private fun isTransientDistributionDownloadFailure(t: Throwable): Boolean {
+        if (!searchExceptionChain(t) { it.contains(DISTRIBUTION_INSTALL_FAILURE, ignoreCase = true) }) return false
+        return causeChain(t).any { cause ->
+            val message = cause.message.orEmpty()
+            val status = HTTP_STATUS_REGEX.find(message)?.groupValues?.get(1)?.toIntOrNull()
+            cause is SocketTimeoutException ||
+                cause is ConnectException ||
+                cause is NoRouteToHostException ||
+                (cause is SocketException && message.contains("Connection reset", ignoreCase = true)) ||
+                DOWNLOAD_TIMEOUT_REGEX.containsMatchIn(message) ||
+                status in RETRYABLE_HTTP_STATUSES
+        }
     }
 
     /**
@@ -84,8 +115,7 @@ class GradleFailureAnalyzer(
     fun extractToolchainErrorInfo(t: Throwable): ToolchainErrorInfo? {
         if (!isToolchainProvisioningError(t)) return null
 
-        var current: Throwable? = t
-        while (current != null) {
+        for (current in causeChain(t)) {
             val message = current.message ?: ""
 
             // Parse: "Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: {languageVersion=17, vendor=any vendor}"
@@ -105,7 +135,6 @@ class GradleFailureAnalyzer(
                     suggestions = buildToolchainSuggestions(version),
                 )
             }
-            current = current.cause
         }
         return null
     }
@@ -127,8 +156,7 @@ class GradleFailureAnalyzer(
     fun extractGradleJdkIncompatibleInfo(t: Throwable): GradleJdkIncompatibleInfo? {
         if (!isJdkMismatch(t)) return null
 
-        var current: Throwable? = t
-        while (current != null) {
+        for (current in causeChain(t)) {
             val message = current.message ?: ""
 
             // Example message: "Unsupported class file major version 65"
@@ -152,7 +180,6 @@ class GradleFailureAnalyzer(
                     suggestions = suggestions,
                 )
             }
-            current = current.cause
         }
         return null
     }
@@ -229,16 +256,20 @@ class GradleFailureAnalyzer(
         }
     }
 
-    private fun searchExceptionChain(t: Throwable, predicate: (String) -> Boolean): Boolean {
+    private fun searchExceptionChain(t: Throwable, predicate: (String) -> Boolean): Boolean =
+        causeChain(t).any { cause -> cause.message?.let(predicate) == true }
+
+    /**
+     * Returns [t] followed by its causes, stopping at the first repeated throwable so that
+     * cyclic cause chains (possible via [Throwable.initCause]) cannot loop forever.
+     */
+    internal fun causeChain(t: Throwable): Sequence<Throwable> = sequence {
+        val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
         var current: Throwable? = t
-        while (current != null) {
-            val message = current.message
-            if (message != null && predicate(message)) {
-                return true
-            }
+        while (current != null && seen.add(current)) {
+            yield(current)
             current = current.cause
         }
-        return false
     }
 
     private companion object {
@@ -246,5 +277,11 @@ class GradleFailureAnalyzer(
         private val VENDOR_REGEX = Regex("""vendor=([^,}]+)""")
         private val PLATFORM_REGEX = Regex("""\(([^)]+)\)""")
         private val MAJOR_VERSION_REGEX = Regex("""major version (\d+)""", RegexOption.IGNORE_CASE)
+
+        // Message prefixes produced by Tooling API DistributionFactory and org.gradle.wrapper.Download.
+        private const val DISTRIBUTION_INSTALL_FAILURE = "Could not install Gradle distribution from"
+        private val DOWNLOAD_TIMEOUT_REGEX = Regex("""Downloading from \S+ failed: timeout \(""")
+        private val HTTP_STATUS_REGEX = Regex("""Server returned HTTP response code: (\d{3})""")
+        private val RETRYABLE_HTTP_STATUSES = setOf(408, 429, 500, 502, 503, 504)
     }
 }

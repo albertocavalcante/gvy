@@ -22,7 +22,7 @@ import kotlin.io.path.exists
  * This implements:
  * - In-process dependency resolution (no subprocess)
  * - Automatic retry with isolated Gradle user home on init script failures
- * - Exponential backoff retry for transient failures (e.g., lock timeouts)
+ * - Exponential backoff retry for transient failures (e.g., lock timeouts, distribution download blips)
  * - Source directory extraction from IdeaProject model
  */
 class GradleDependencyResolver(
@@ -137,12 +137,26 @@ class GradleDependencyResolver(
             if (!failureAnalyzer.isTransient(exception) || attempt >= retryConfig.maxAttempts) {
                 break
             }
-
-            logger.warn {
-                "Gradle dependency resolution failed (attempt $attempt/${retryConfig.maxAttempts}): " +
-                    "${exception.message}. Retrying in ${currentDelay}ms..."
+            // An interrupted thread means the caller gave up; keep the flag and stop retrying.
+            if (Thread.currentThread().isInterrupted) {
+                logger.info { "Gradle dependency resolution interrupted; not retrying transient failure" }
+                break
             }
-            Thread.sleep(currentDelay)
+
+            val rootCause = failureAnalyzer.causeChain(exception).last()
+            logger.warn {
+                "Gradle dependency resolution failed with a transient error " +
+                    "(attempt $attempt/${retryConfig.maxAttempts}): ${exception.message} " +
+                    "[cause: ${rootCause.javaClass.simpleName}: ${rootCause.message}]. " +
+                    "Retrying in ${currentDelay}ms..."
+            }
+            try {
+                Thread.sleep(currentDelay)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                logger.info { "Gradle dependency resolution interrupted during retry backoff" }
+                break
+            }
             currentDelay = (currentDelay * retryConfig.backoffMultiplier).toLong()
         }
 
