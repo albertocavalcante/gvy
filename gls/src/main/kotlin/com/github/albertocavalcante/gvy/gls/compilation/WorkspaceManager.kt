@@ -37,10 +37,16 @@ import kotlin.io.path.isDirectory
  * need several values from the same configuration read [current] once.
  */
 @Suppress("TooManyFunctions")
-class WorkspaceManager(
-    private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
-        ConfigurationFingerprint::compute,
+class WorkspaceManager internal constructor(
+    private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
+    @Suppress("UnusedPrivateProperty")
+    private val caseInsensitive: (root: Path) -> Boolean,
 ) {
+    constructor(
+        fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
+            ConfigurationFingerprint::compute,
+    ) : this(fingerprintComputer, { false })
+
     private val logger = KotlinLogging.logger {}
 
     private val model = AtomicReference(emptyModel(null))
