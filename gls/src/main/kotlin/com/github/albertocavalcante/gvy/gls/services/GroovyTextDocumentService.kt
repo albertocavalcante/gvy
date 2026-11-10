@@ -411,6 +411,7 @@ class GroovyTextDocumentService(
     override fun didClose(params: DidCloseTextDocumentParams) {
         logger.info { "Document closed: ${params.textDocument.uri}" }
         val uri = URI.create(params.textDocument.uri)
+        codeActionProvider.forgetDocument(uri)
         try {
             diagnosticsOrchestrator.close(uri)
         } finally {

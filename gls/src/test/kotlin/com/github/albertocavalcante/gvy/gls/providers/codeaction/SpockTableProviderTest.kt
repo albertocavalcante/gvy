@@ -161,12 +161,93 @@ class SpockTableProviderTest {
     private fun jarOf(type: Class<*>): Path = Path.of(type.protectionDomain.codeSource.location.toURI())
 
     /** Spock and the Groovy runtime on the workspace compile classpath, as a resolved Gradle project has them. */
-    private fun useSpockClasspath(vararg extra: Path) {
+    private fun useSpockClasspath(vararg extra: Path, sources: List<Path> = emptyList()) {
         compilationService.updateWorkspaceModel(
             workspace,
             listOf(jarOf(spock.lang.Specification::class.java), jarOf(groovy.lang.GroovyObject::class.java)) + extra,
-            emptyList(),
+            sources,
         )
+    }
+
+    /** A workspace with `BaseSpec.groovy` and a table spec extending [superclass], compiled cleanly. */
+    private inner class BrokenBaseFixture(superclass: String = "BaseSpec") {
+        val src: Path = Files.createDirectories(workspace.resolve("src"))
+        val base: Path = writeBase("BaseSpec")
+        val file: Path = src.resolve("TableSpec.groovy")
+        val fileUri: URI = file.toUri()
+        var text: String = content.replace("extends spock.lang.Specification", "extends $superclass")
+        private var version = 1
+
+        init {
+            Files.writeString(file, text)
+            useSpockClasspath(sources = listOf(src))
+        }
+
+        fun writeBase(name: String, broken: Boolean = false): Path = src.resolve("$name.groovy").also {
+            val body = if (broken) "{ void m( }" else "{}"
+            Files.writeString(it, "import spock.lang.*\nabstract class $name extends Specification $body\n")
+        }
+
+        suspend fun edit(newText: String = "$text\n// edit $version") {
+            text = newText
+            version++
+            documents.put(fileUri, text, version)
+            compilationService.compile(fileUri, text)
+        }
+
+        suspend fun hasAction(): Boolean = provider.provideCodeActions(
+            params().apply { textDocument = TextDocumentIdentifier(fileUri.toString()) },
+        ).any { it.title == "Align Spock data table" }
+    }
+
+    @Test
+    fun `a broken base spec file keeps the table action through the remembered verdict`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile")
+
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit()
+
+        assertTrue(fixture.hasAction(), "the remembered verdict for the same base applies")
+    }
+
+    @Test
+    fun `a spec moved to a different broken base gets no remembered verdict`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile")
+
+        fixture.writeBase("OtherBaseSpec", broken = true)
+        fixture.edit(fixture.text.replace("extends BaseSpec", "extends OtherBaseSpec"))
+
+        assertTrue(!fixture.hasAction(), "the superclass spelling changed, so nothing is reused")
+    }
+
+    @Test
+    fun `closing the document forgets its remembered verdicts`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile")
+
+        provider.forgetDocument(fixture.fileUri)
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "nothing is remembered after close")
+    }
+
+    @Test
+    fun `a classpath change forbids reusing a remembered verdict`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile")
+
+        useSpockClasspath(baseSpecJar(), sources = listOf(fixture.src))
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "a new compile fingerprint invalidates the record")
     }
 
     @Test

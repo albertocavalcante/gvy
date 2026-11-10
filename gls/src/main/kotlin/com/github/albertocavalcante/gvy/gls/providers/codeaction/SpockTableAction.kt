@@ -29,6 +29,8 @@ internal data class SpockTableRequest(
     val version: Int? = null,
     /** True when the compile that produced [module] reported errors, so classes may be missing. */
     val isPartial: Boolean = false,
+    /** Remembered verdicts for this document (#1387); null disables recording and recall. */
+    val verdicts: SpockVerdictMemory.Access? = null,
 )
 
 /**
@@ -44,8 +46,11 @@ internal data class SpockTableRequest(
  * nothing resolves, when a class degrades into a Script or the compiler fails without a collected error
  * (for example a classpath missing the Groovy runtime). Ordinary collected errors keep the resolved AST,
  * and syntax errors leave no compiled snapshot at all. Specs spelled `extends spock.lang.Specification`
- * or with an explicit import stay confident. Reusing the last confident verdict from a successful compile
- * is tracked separately (#1387).
+ * or with an explicit import stay confident.
+ *
+ * A spec whose base file currently fails to compile keeps the action through [SpockVerdictMemory]: an
+ * UNCERTAIN class is treated as a spec only when the last clean compile proved it and the degraded part is
+ * that same base (#1387). The memory is read here only; completion and definition never consume it.
  */
 internal object SpockTableAction {
     private const val MAX_COLUMNS = 256
@@ -55,8 +60,14 @@ internal object SpockTableAction {
         if (request.only?.any(::matchesKind) == false) return emptyList()
         val lines = request.content.lines()
         val module = request.module ?: return emptyList()
-        return SpockSourceContext.from(module, request.isPartial).classes
-            .filter { !it.classNode.isScriptSafe() && it.status == SpecificationStatus.SPECIFICATION }
+        val source = SpockSourceContext.from(module, request.isPartial)
+        val recalled = request.verdicts?.exchange(request.uri, module, source, request.content).orEmpty()
+        return source.classes
+            .filter { !it.classNode.isScriptSafe() }
+            .filter {
+                it.status == SpecificationStatus.SPECIFICATION ||
+                    (it.status == SpecificationStatus.UNCERTAIN && it.classNode.name in recalled)
+            }
             .flatMap { it.classNode.methods }
             .flatMap { method ->
                 val collector = TableCollector(lines)

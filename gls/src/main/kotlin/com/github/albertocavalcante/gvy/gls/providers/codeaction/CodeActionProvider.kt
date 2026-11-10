@@ -25,6 +25,10 @@ class CodeActionProvider(
     // Reuse action provider instances to reduce object allocation
     private val formattingAction = FormattingAction(formatter)
     private val importAction = ImportAction(compilationService)
+    private val verdictMemory = SpockVerdictMemory()
+
+    /** Drops the remembered Spock verdicts of a closed document (#1387). */
+    fun forgetDocument(uri: URI) = verdictMemory.forget(uri.toString())
     private val lintFixAction = LintFixAction()
 
     /**
@@ -55,6 +59,11 @@ class CodeActionProvider(
                             params.context.only,
                             snapshot.version,
                             isPartial = !compiled.parseResult.isSuccessful,
+                            verdicts = SpockVerdictMemory.Access(
+                                verdictMemory,
+                                compilationService.workspaceManager.fingerprintFor(uri),
+                                compiled.parseResult.outcome,
+                            ),
                         ),
                     ),
                 )
