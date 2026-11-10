@@ -8,7 +8,9 @@ steps:
   - initialize:
       initializationOptions:
         groovy.server.logLevel: DEBUG
-        groovy.engine.type: native
+        # Engine selection currently only affects hover (getHoverSession in HoverRequestHandler),
+        # so definition results are engine-independent today.
+        groovy.languageServer.engine: native
   - initialized: {}
   - waitNotification:
       method: groovy/status
