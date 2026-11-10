@@ -271,6 +271,12 @@ class HoverProvider(
             return parent // Return parent so SemanticTypeResolver can resolve the type
         }
 
+        // The implicit `this` receiver of `foo(...)` shares the method name's position; hovering the name
+        // means the call, not the script class `this` resolves to.
+        if (parent is MethodCallExpression && parent.isImplicitThis && parent.objectExpression === node) {
+            return parent
+        }
+
         // Otherwise resolve to definition
         return node.resolveToDefinition(visitor, symbolTable, strict = false) ?: node
     }

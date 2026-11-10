@@ -1,12 +1,14 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover.strategies
 
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContext
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverStrategy
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
@@ -44,11 +46,97 @@ class JenkinsStepHoverStrategy(
 
         val stepName = node.methodAsString ?: return null
 
+        // Declarative constructs first: inside options {} `timeout` is the option, not the step.
+        tryCreateDeclarativeHover(stepName, node, context)?.let { return it }
+
         // Try vars/ global variable hover first
         tryCreateVarsGlobalVariableHover(stepName, node)?.let { return it }
 
         // Then try step metadata hover
         return tryCreateStepMetadataHover(stepName, node)
+    }
+
+    /**
+     * Hover for declarative options (a call directly in `options {}`) and for declarative sections and
+     * directives (`pipeline`, `agent`, `stages`, `options`, `when`, ...), from the bundled enrichment.
+     */
+    private fun tryCreateDeclarativeHover(name: String, node: MethodCallExpression, context: HoverContext): Hover? {
+        val metadata = jenkinsCapabilities?.getAllMetadata() ?: return null
+        val astModel = context.astModel ?: return null
+        val enclosing = enclosingCallNames(node, astModel)
+        // Sections and options only exist in Declarative Pipeline; a scripted `stage('x') {}` (also inside
+        // `script {}` or `node {}`) is the step.
+        val declarative = (name == PIPELINE || PIPELINE in enclosing) && enclosing.none { it in SCRIPTED_BODIES }
+        if (!declarative) return null
+        val option = metadata.declarativeOptions[name]?.takeIf { enclosing.firstOrNull() == OPTIONS_BLOCK }
+        val content = when {
+            option != null -> markdown {
+                h2("Declarative option `$name`")
+                option.documentation?.let(::text)
+                text("**Plugin:** ${option.plugin}")
+                if (option.parameters.isNotEmpty()) {
+                    h3("Parameters")
+                    list(option.parameters.map { (key, param) -> "**`$key`**: `${param.type}`" })
+                }
+            }
+            metadata.sections[name] != null -> metadata.sections.getValue(name).let { section ->
+                declarativeBlockMarkdown(
+                    "section",
+                    name,
+                    section.description,
+                    section.allowedIn,
+                    section.documentationUrl,
+                )
+            }
+            metadata.directives[name] != null -> metadata.directives.getValue(name).let { directive ->
+                declarativeBlockMarkdown(
+                    "directive",
+                    name,
+                    directive.description,
+                    directive.allowedIn,
+                    directive.documentationUrl,
+                )
+            }
+            else -> return null
+        }
+        return Hover().apply {
+            contents = Either.forRight(MarkupContent(MarkupKind.MARKDOWN, content))
+            range = hoverRangeOf(node)
+        }
+    }
+
+    private fun declarativeBlockMarkdown(
+        kind: String,
+        name: String,
+        description: String,
+        allowedIn: List<String>,
+        documentationUrl: String?,
+    ): String = markdown {
+        h2("Declarative $kind `$name`")
+        text(description)
+        if (allowedIn.isNotEmpty()) text("**Allowed in:** ${allowedIn.joinToString { "`$it`" }}")
+        documentationUrl?.let { text("[Documentation]($it)") }
+    }
+
+    /**
+     * Names of the calls whose closures contain [call], innermost first (`[options, pipeline]` for
+     * `pipeline { options { timeout(...) } }`).
+     */
+    private fun enclosingCallNames(call: MethodCallExpression, astModel: GroovyAstModel): List<String> {
+        val names = mutableListOf<String>()
+        var insideClosure = false
+        var current: ASTNode? = astModel.getParent(call)
+        while (current != null) {
+            when {
+                current is ClosureExpression -> insideClosure = true
+                insideClosure && current is MethodCallExpression -> {
+                    current.methodAsString?.let(names::add)
+                    insideClosure = false
+                }
+            }
+            current = astModel.getParent(current)
+        }
+        return names
     }
 
     /**
@@ -144,5 +232,11 @@ class JenkinsStepHoverStrategy(
             Position(node.lineNumber - 1, node.columnNumber - 1),
             Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
         )
+    }
+
+    private companion object {
+        const val OPTIONS_BLOCK = "options"
+        const val PIPELINE = "pipeline"
+        val SCRIPTED_BODIES = setOf("script", "node")
     }
 }
