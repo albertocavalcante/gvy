@@ -391,9 +391,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         compilationUnit.addSource(sourceUnit)
 
         addWorkspaceSources(compilationUnit, request, config, classLoader)
-        request.workspaceClassLocator?.let { locator ->
-            compilationUnit.classNodeResolver = LocatingClassNodeResolver(locator, request.excludedSources)
-        }
+        LocatingClassNodeResolver.install(compilationUnit, request)
         stubs?.addTo(compilationUnit, config, classLoader)
 
         // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
@@ -661,14 +659,16 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
  * a file named after it is looked up by the exact fully qualified name of its top-level class (the part before
  * any `$`, so `Outer2$Inner` asks for `Outer2`), and the one file declaring it is added to the unit. Groovy then
  * compiles it and resolves the name from it, as it does for a file it finds by name. Excluded sources are never
- * added, so a file that failed the unit stays out on the recompile; each file is added at most once.
+ * added, so a file that failed the unit stays out on the recompile.
+ *
+ * Each file is answered once. Groovy restarts resolution when an answer is a source and expects that source to be
+ * queued; once the file is in the unit, its own members probe names such as `Outer2$Specification`, and answering
+ * those with the file again would restart with nothing queued.
  */
-private class LocatingClassNodeResolver(
-    private val locator: (String) -> List<Path>,
-    excludedSources: Set<Path>,
-) : ClassNodeResolver() {
+private class LocatingClassNodeResolver(private val locator: (String) -> List<Path>, excludedSources: Set<Path>) :
+    ClassNodeResolver() {
     private val excluded = excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
-    private val added = HashMap<Path, SourceUnit>()
+    private val added = HashSet<Path>()
 
     override fun resolveName(name: String, compilationUnit: CompilationUnit): LookupResult? =
         super.resolveName(name, compilationUnit) ?: located(name.substringBefore('$'), compilationUnit)
@@ -676,7 +676,15 @@ private class LocatingClassNodeResolver(
     private fun located(topLevel: String, compilationUnit: CompilationUnit): LookupResult? {
         val path = locator(topLevel).map { it.toAbsolutePath().normalize() }.firstOrNull { it !in excluded }
             ?: return null
-        val source = added.getOrPut(path) { compilationUnit.addSource(path.toUri().toURL()) }
-        return LookupResult(source, null)
+        if (!added.add(path)) return null
+        return LookupResult(compilationUnit.addSource(path.toUri().toURL()), null)
+    }
+
+    companion object {
+        /** Installs the lookup on [unit] when [request] carries a class locator. */
+        fun install(unit: CompilationUnit, request: ParseRequest) {
+            val locator = request.workspaceClassLocator ?: return
+            unit.classNodeResolver = LocatingClassNodeResolver(locator, request.excludedSources)
+        }
     }
 }

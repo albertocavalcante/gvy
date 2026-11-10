@@ -113,4 +113,15 @@ class ClosedFileWorkspaceResolutionTest {
         println("indexing plus the on-demand compile with 202 sources took $millis ms (informational)")
         assertEquals(listOf("Outers.groovy", "TableSpec.groovy"), snapshot.compiledFiles())
     }
+
+    @Test
+    fun `a classpath class wins over a workspace file declaring the same name`(): Unit = runBlocking {
+        // The index is consulted only after Groovy's own lookup misses, so it can never shadow the classpath.
+        write("shadow/Fake.groovy", "package spock.lang\nclass Specification {}\n")
+        val spec = write("TableSpec.groovy", "class TableSpec extends spock.lang.Specification {}\n")
+
+        val snapshot = compileClosed(spec)
+
+        assertEquals(listOf("TableSpec.groovy"), snapshot.compiledFiles(), "the workspace file is never added")
+    }
 }
