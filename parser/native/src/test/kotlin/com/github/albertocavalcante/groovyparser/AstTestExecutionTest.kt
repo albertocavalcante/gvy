@@ -161,6 +161,60 @@ class AstTestExecutionTest {
             "@AnnotationCollector @ASTTest(value=CLOSURE) @interface Boom {}\n@Boom\nclass A {}",
     )
 
+    private fun collectorHeader(importAnnotationCollector: String = "import groovy.transform.AnnotationCollector") =
+        "$importAnnotationCollector\nimport groovy.transform.AnnotationCollectorMode\nimport groovy.transform.ASTTest\n"
+
+    @Test
+    fun `AnnotationCollector mode and processor expressions are never evaluated`() {
+        // findCollectedAnnotations evaluates non-constant mode/processor members by compiling and running them.
+        val run = "new File('MARKER').with { text = 'x'; AnnotationCollectorMode.DUPLICATE }"
+        for ((label, members) in listOf(
+            "mode" to "mode=$run",
+            "mode-ternary" to "mode=(new File('MARKER').text = 'x') ? AnnotationCollectorMode.DUPLICATE" +
+                " : AnnotationCollectorMode.DUPLICATE",
+            "processor" to "processor=new File('MARKER').with { text = 'x'; 'p' }",
+            "processor-gstring" to "processor=\"\${new File('MARKER').with { text = 'x'; 'p' }}\"",
+        )) {
+            for (phase in phases) {
+                val marker = tempDir.resolve("$label-$phase")
+                val code = collectorHeader() + "@AnnotationCollector(value=[Deprecated], " +
+                    members.replace("MARKER", marker.toString().replace("\\", "/")) + ")\n@interface Boom {}\n" +
+                    "@Boom\nclass A {}"
+
+                parse(code, phase)
+
+                assertFalse(marker.exists(), "$label: collector member expression executed at phase $phase")
+            }
+        }
+    }
+
+    @Test
+    fun `an aliased AnnotationCollector annotation is sanitised too`() {
+        val header = collectorHeader("import groovy.transform.AnnotationCollector as AC")
+        assertNotExecuted("ac-alias", header + "@AC([ASTTest])\n@interface Boom {}\n@Boom(value=CLOSURE)\nclass A {}")
+        assertNotExecuted(
+            "ac-qualified",
+            "import groovy.transform.ASTTest\n@groovy.transform.AnnotationCollector([ASTTest])\n" +
+                "@interface Boom {}\n@Boom(value=CLOSURE)\nclass A {}",
+        )
+    }
+
+    @Test
+    fun `an aliased AnnotationCollector combined with a side-effecting mode`() {
+        for (phase in phases) {
+            val marker = tempDir.resolve("ac-mode-$phase")
+            val path = marker.toString().replace("\\", "/")
+            val code = collectorHeader("import groovy.transform.AnnotationCollector as AC") +
+                "@AC(value=[Deprecated], " +
+                "mode=new File('$path').with { text = 'x'; AnnotationCollectorMode.DUPLICATE })\n" +
+                "@interface Boom {}\n@Boom\nclass A {}"
+
+            parse(code, phase)
+
+            assertFalse(marker.exists(), "aliased collector with an evaluated mode executed at phase $phase")
+        }
+    }
+
     @Test
     fun `transitive collectors declared in other workspace sources`() {
         for (phase in listOf(Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)) {

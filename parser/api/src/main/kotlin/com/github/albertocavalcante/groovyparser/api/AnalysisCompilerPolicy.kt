@@ -6,6 +6,7 @@ import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.ListExpression
+import org.codehaus.groovy.ast.expr.PropertyExpression
 import org.codehaus.groovy.classgen.GeneratorContext
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilePhase
@@ -76,27 +77,48 @@ internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePh
         }.visitClass(classNode)
     }
 
-    private fun blockedNames(classNode: ClassNode): Set<String> {
-        val blocked = AnalysisCompilerPolicy.CODE_EXECUTING_ANNOTATIONS
-        val names = HashSet<String>(blocked)
-        blocked.mapTo(names) { it.substringAfterLast('.') }
+    private fun blockedNames(classNode: ClassNode): Set<String> =
+        namesFor(classNode, AnalysisCompilerPolicy.CODE_EXECUTING_ANNOTATIONS)
+
+    /** Qualified names, simple names and `import ... as Alias` aliases of [qualified] as seen from [classNode]. */
+    private fun namesFor(classNode: ClassNode, qualified: Set<String>): Set<String> {
+        val names = HashSet<String>(qualified)
+        qualified.mapTo(names) { it.substringAfterLast('.') }
         classNode.module?.imports?.forEach { import ->
-            if (import.className in blocked && import.alias != null) names.add(import.alias)
+            if (import.className in qualified && import.alias != null) names.add(import.alias)
         }
         return names
     }
 
-    private fun sanitizeCollector(collector: ClassNode, names: Set<String>) {
+    /**
+     * Neutralises an `@AnnotationCollector` declaration. Besides removing blocked entries from `value`, the
+     * compiler evaluates the `mode` and `processor` members when it expands a use of the collector: a
+     * non-constant expression is compiled and run. So `processor` and `serializeClass` are always dropped and
+     * `mode` is kept only when it is a plain `AnnotationCollectorMode.<CONSTANT>`.
+     */
+    private fun sanitizeCollector(collector: ClassNode, blocked: Set<String>) {
+        val collectorNames = namesFor(collector, setOf(COLLECTOR))
         collector.annotations
-            .filter { it.classNode.nameWithoutPackage == "AnnotationCollector" }
+            .filter { it.classNode.name in collectorNames }
             .forEach { annotation ->
-                val value = annotation.getMember("value") ?: return@forEach
+                val value = annotation.getMember("value")
                 if (value is ListExpression) {
-                    value.expressions.removeAll { entryName(it) in names }
-                } else if (entryName(value) in names) {
+                    value.expressions.removeAll { entryName(it) in blocked }
+                } else if (value != null && entryName(value) in blocked) {
                     annotation.members.remove("value")
                 }
+                annotation.members.remove("processor")
+                annotation.members.remove("serializeClass")
+                val mode = annotation.getMember("mode")
+                if (mode != null && !isPlainModeConstant(mode)) annotation.members.remove("mode")
             }
+    }
+
+    private fun isPlainModeConstant(mode: Expression): Boolean {
+        val property = mode as? PropertyExpression ?: return false
+        val owner = property.objectExpression.text
+        val constant = property.propertyAsString
+        return owner in MODE_ENUMS && constant in MODE_CONSTANTS && !property.isSafe && !property.isSpreadSafe
     }
 
     /**
@@ -104,4 +126,16 @@ internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePh
      * expression, afterwards a class expression; `Name.class` is a property expression ending in `.class`.
      */
     private fun entryName(entry: Expression): String = entry.text.removeSuffix(".class")
+
+    private companion object {
+        const val COLLECTOR = "groovy.transform.AnnotationCollector"
+        val MODE_ENUMS = setOf("AnnotationCollectorMode", "groovy.transform.AnnotationCollectorMode")
+        val MODE_CONSTANTS = setOf(
+            "DUPLICATE",
+            "PREFER_COLLECTOR",
+            "PREFER_COLLECTOR_MERGED",
+            "PREFER_EXPLICIT",
+            "PREFER_EXPLICIT_MERGED",
+        )
+    }
 }
