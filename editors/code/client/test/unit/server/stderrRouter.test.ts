@@ -243,6 +243,115 @@ describe("stderrRouter", () => {
     expect(entries).to.deep.equal([["error", "Nov 10, 2026 3:00:00 PM a.B c"]]);
   });
 
+  it("keeps a java.util.logging record's level for its exception", () => {
+    for (const [levelLine, level] of [
+      ["INFO: lookup failed", "info"],
+      ["FINE: lookup failed", "debug"],
+    ]) {
+      const { sink, entries } = recordingSink();
+      const route = createStderrRouter(sink);
+      route("Nov 10, 2026 3:00:00 PM a.B c");
+      route(levelLine);
+      route("java.io.IOException: x");
+      route("\tat a.B.c(B.java:1)");
+      expect(
+        entries.map(([entryLevel]) => entryLevel),
+        levelLine,
+      ).to.deep.equal([level, level, level, level]);
+    }
+  });
+
+  it("surfaces a java.util.logging header followed by another header", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("Nov 10, 2026 3:00:00 PM a.B first");
+    route("Nov 10, 2026 3:00:01 PM a.B second");
+    route("INFO: second record");
+    expect(entries).to.deep.equal([
+      ["error", "Nov 10, 2026 3:00:00 PM a.B first"],
+      ["info", "Nov 10, 2026 3:00:01 PM a.B second"],
+      ["info", "INFO: second record"],
+    ]);
+  });
+
+  it("gives an exception the level of the latest of two log headers", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:11.123 [main] ERROR x.Y -- failed");
+    route("14:03:11.124 [main] DEBUG x.Y -- retry detail");
+    route("java.io.IOException: x");
+    expect(entries.map(([level]) => level)).to.deep.equal([
+      "error",
+      "debug",
+      "debug",
+    ]);
+  });
+
+  it("pairs a java.util.logging header across a blank line", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("Nov 10, 2026 3:00:00 PM a.B c");
+    route("");
+    route("INFO: hello");
+    expect(entries).to.deep.equal([
+      ["info", "Nov 10, 2026 3:00:00 PM a.B c"],
+      ["info", "INFO: hello"],
+    ]);
+  });
+
+  it("keeps a Logback status header's level for its exception", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:10,002 |-WARN in ch.qos.logback.core - cannot open file");
+    route("java.io.FileNotFoundException: gls.log (Permission denied)");
+    route("\tat java.base/java.io.FileOutputStream.open0(Native Method)");
+    expect(entries.map(([level]) => level)).to.deep.equal([
+      "warn",
+      "warn",
+      "warn",
+    ]);
+  });
+
+  it("cannot tell a raw printStackTrace right after a header from a logged exception", () => {
+    // Documented tradeoff: the server must log throwables through its logger.
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:11.123 [main] INFO x.Y -- formatting");
+    route("java.lang.IllegalStateException: printed by printStackTrace()");
+    expect(entries[1][0]).to.equal("info");
+  });
+
+  it("flushes a pending java.util.logging header when the stream is destroyed", async () => {
+    const { sink, entries } = recordingSink();
+    const input = new PassThrough();
+    pipeServerStderr(input, sink);
+
+    input.write("Nov 10, 2026 3:00:00 PM a.B c\n");
+    await new Promise((resolve) => setImmediate(resolve));
+    input.destroy();
+    await new Promise((resolve) => input.on("close", resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(entries).to.deep.equal([["error", "Nov 10, 2026 3:00:00 PM a.B c"]]);
+  });
+
+  it("logs a stderr stream failure instead of throwing", async () => {
+    const { sink, entries } = recordingSink();
+    const input = new PassThrough();
+    pipeServerStderr(input, sink);
+
+    input.write("Nov 10, 2026 3:00:00 PM a.B c\n");
+    await new Promise((resolve) => setImmediate(resolve));
+    input.destroy(new Error("EPIPE"));
+    await new Promise((resolve) => input.on("close", resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(entries).to.deep.equal([
+      ["error", "Nov 10, 2026 3:00:00 PM a.B c"],
+      ["error", "Reading server stderr failed: EPIPE"],
+    ]);
+  });
+
   it("accepts thread names containing brackets", () => {
     const { sink, entries } = recordingSink();
     createStderrRouter(sink)("14:03:11.123 [pool-1[worker]] INFO x.Y -- hi");

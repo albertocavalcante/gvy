@@ -31,8 +31,7 @@ const JVM_WARNING = /^WARNING:/u;
 // NOTE: Only the English level names are recognized; other locales keep the
 // pre-pairing behavior (both lines are errors).
 const JUL_HEADER = /^\S+ \d{1,2}, \d{4} \d{1,2}:\d{2}:\d{2} \S+ \S/u;
-const JUL_LEVEL = /^(SEVERE|WARNING|INFO|CONFIG|FINE|FINER|FINEST): /u;
-const JUL_LEVELS: Record<string, Level> = {
+const JUL_LEVELS = {
   SEVERE: "error",
   WARNING: "warn",
   INFO: "info",
@@ -40,7 +39,19 @@ const JUL_LEVELS: Record<string, Level> = {
   FINE: "debug",
   FINER: "trace",
   FINEST: "trace",
-};
+} as const satisfies Record<string, Level>;
+const JUL_LEVEL = new RegExp(`^(${Object.keys(JUL_LEVELS).join("|")}): `, "u");
+
+function julLevelOf(line: string): Level | undefined {
+  const name = JUL_LEVEL.exec(line)?.[1];
+  return name !== undefined && isJulLevelName(name)
+    ? JUL_LEVELS[name]
+    : undefined;
+}
+
+function isJulLevelName(name: string): name is keyof typeof JUL_LEVELS {
+  return Object.hasOwn(JUL_LEVELS, name);
+}
 
 function levelOf(line: string): Level | undefined {
   const server = SERVER_LINE.exec(line) ?? LOGBACK_STATUS.exec(line);
@@ -61,21 +72,25 @@ const EXCEPTION_LINE = /^[\w$.]+(Exception|Error|Throwable)(: |$)/u;
  * language client would log every stderr line as an error, which makes a
  * healthy session look like a failing one. Stack trace continuations
  * (indented lines, `at`, `Caused by:`, `Suppressed:`, `... N more`) and an
- * exception line right after a log header keep that header's level. A
- * java.util.logging header takes the level of the `LEVEL:` line after it.
- * Any other line without a level (JVM fatal errors, uncaught
- * `Exception in thread`, launcher errors) stays an error, even right after
- * healthy output.
+ * exception line right after a log header keep that header's level, so a
+ * `logger.debug(msg, e)` trace stays debug. A java.util.logging header takes
+ * the level of the `LEVEL:` line after it. Any other line without a level
+ * (JVM fatal errors, uncaught `Exception in thread`, launcher errors) stays
+ * an error, even right after healthy output.
+ *
+ * Tradeoff: stderr carries no record boundaries, so a raw
+ * `Throwable.printStackTrace()` written right after a header looks exactly
+ * like that header's logged exception and takes its level. The server must
+ * therefore report throwables through its logger, never `printStackTrace()`.
  */
 export function createStderrRouter(sink: LogSink): StderrRouter {
   let current: Level = "error";
   let exceptionLineNext = false;
   let julHeader: string | undefined;
 
-  const emit = (level: Level, line: string) => sink[level](line);
   const flush = () => {
     if (julHeader !== undefined) {
-      emit("error", julHeader);
+      sink.error(julHeader);
       julHeader = undefined;
     }
   };
@@ -85,13 +100,13 @@ export function createStderrRouter(sink: LogSink): StderrRouter {
       return;
     }
     if (julHeader !== undefined) {
-      const julLevel = JUL_LEVEL.exec(line)?.[1];
+      const julLevel = julLevelOf(line);
       if (julLevel !== undefined) {
-        current = JUL_LEVELS[julLevel];
+        current = julLevel;
         exceptionLineNext = true;
-        emit(current, julHeader);
+        sink[current](julHeader);
         julHeader = undefined;
-        emit(current, line);
+        sink[current](line);
         return;
       }
       flush();
@@ -114,7 +129,7 @@ export function createStderrRouter(sink: LogSink): StderrRouter {
       current = "error";
       exceptionLineNext = false;
     }
-    emit(current, line);
+    sink[current](line);
   };
   return Object.assign(route, { flush });
 }
@@ -122,6 +137,8 @@ export function createStderrRouter(sink: LogSink): StderrRouter {
 /** Feeds complete stderr lines of the server process to `sink`. */
 export function pipeServerStderr(input: Readable, sink: LogSink): void {
   const route = createStderrRouter(sink);
+  // readline closes only on `end`; a destroyed stream emits just `close`.
+  input.once("close", route.flush);
   readline
     .createInterface({
       input,
@@ -130,5 +147,11 @@ export function pipeServerStderr(input: Readable, sink: LogSink): void {
       historySize: 0,
     })
     .on("line", route)
-    .on("close", route.flush);
+    .on("close", route.flush)
+    // readline re-emits input errors on the interface, where an unhandled
+    // `error` would be thrown; a listener on `input` alone does not stop it.
+    .on("error", (error: Error) => {
+      route.flush();
+      sink.error(`Reading server stderr failed: ${error.message}`);
+    });
 }
