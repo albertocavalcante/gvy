@@ -60,12 +60,6 @@ class WorkspaceCompiler(
 ) {
     private val logger = KotlinLogging.logger {}
 
-    /**
-     * Cached compilation results. Maps URI to compiled ModuleNode.
-     * This cache is updated after each workspace compilation.
-     */
-    private val moduleCache = mutableMapOf<URI, ModuleNode>()
-
     // Set once the eager workspace compile has run: from then on every workspace source has a document.
     @Volatile
     private var workspaceCompiled = false
@@ -156,14 +150,6 @@ class WorkspaceCompiler(
     }
 
     /**
-     * Gets the fully resolved ModuleNode for a file from the cache.
-     *
-     * @param uri The URI of the file
-     * @return The ModuleNode if available, null otherwise
-     */
-    fun getResolvedModule(uri: URI): ModuleNode? = moduleCache[uri]
-
-    /**
      * Compiles a list of workspace files together.
      *
      * This uses the Groovy compiler's ability to compile multiple sources in a single
@@ -197,8 +183,6 @@ class WorkspaceCompiler(
             when (result) {
                 is FileCompilationResult.Success -> {
                     modules[result.uri] = result.module
-                    // Update cache
-                    moduleCache[result.uri] = result.module
                 }
                 is FileCompilationResult.Failure -> {
                     errors.addAll(result.errors)
