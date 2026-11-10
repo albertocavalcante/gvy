@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.coEvery
@@ -61,6 +62,8 @@ class SymbolIndexingClassLookupTest {
         )
     }
 
+    // Results re-check each file's current entry, so only the recorded keys prove a removal hook ran.
+
     @Test
     fun `a changed file replaces its old class names`(): Unit = runBlocking {
         val uri = write("Greeter.groovy", "class Greeter {}")
@@ -70,27 +73,77 @@ class SymbolIndexingClassLookupTest {
         service.indexFile(uri)
 
         assertTrue(service.findClasses(ClassNameQuery.Exact("Greeter")).isEmpty(), "Stale class must disappear")
-        assertTrue(service.findClasses(ClassNameQuery.Prefix("Gr")).isEmpty())
         assertEquals(listOf("Welcomer"), fqns(service.findClasses(ClassNameQuery.Exact("Welcomer"))))
+        assertEquals(setOf("welcomer"), service.classNames.keys())
     }
 
     @Test
-    fun `deleted invalidated and cleared files leave no class names`(): Unit = runBlocking {
-        val deleted = write("Deleted.groovy", "class Deleted {}")
-        val invalidated = write("Invalidated.groovy", "class Invalidated {}")
-        val cleared = write("Cleared.groovy", "class Cleared {}")
-        service.indexAllWorkspaceSources(listOf(deleted, invalidated, cleared))
+    fun `a deleted file leaves no class names`(): Unit = runBlocking {
+        val uri = write("Deleted.groovy", "class Deleted {}")
+        service.indexFile(uri)
 
         Files.delete(tempDir.resolve("Deleted.groovy"))
-        service.indexFile(deleted)
-        service.invalidate(invalidated)
+        service.indexFile(uri)
 
         assertTrue(service.findClasses(ClassNameQuery.Exact("Deleted")).isEmpty())
-        assertTrue(service.findClasses(ClassNameQuery.Exact("Invalidated")).isEmpty())
-        assertEquals(listOf("Cleared"), fqns(service.findClasses(ClassNameQuery.Prefix(""))))
+        assertEquals(emptySet(), service.classNames.keys())
+    }
+
+    @Test
+    fun `an invalidated file leaves no class names`(): Unit = runBlocking {
+        val uri = write("Invalidated.groovy", "class Invalidated {}")
+        service.indexFile(uri)
+
+        service.invalidate(uri)
+
+        assertEquals(emptySet(), service.classNames.keys())
+    }
+
+    @Test
+    fun `clear leaves no class names`(): Unit = runBlocking {
+        service.indexAllWorkspaceSources(listOf(write("A.groovy", "class A {}"), write("B.groovy", "class B {}")))
+        assertEquals(setOf("a", "b"), service.classNames.keys())
 
         service.clear()
-        assertTrue(service.findClasses(ClassNameQuery.Prefix("")).isEmpty())
+
+        assertEquals(emptySet(), service.classNames.keys())
+    }
+
+    @Test
+    fun `closing an untitled buffer leaves no class names`(): Unit = runBlocking {
+        val untitled = URI.create("untitled:Untitled-1")
+        val buffer = "class Scratch {}"
+        service.ensureIndexed(ownership.begin(untitled), buffer) { parse(untitled, buffer) }
+        assertEquals(setOf("scratch"), service.classNames.keys())
+
+        service.refreshAfterClose(untitled)
+
+        assertEquals(emptySet(), service.classNames.keys())
+    }
+
+    @Test
+    fun `a re-install keeps kept names and shows new names before the entry write`() {
+        // Readers do not lock: a name must be findable from the moment its entry can be read.
+        val uri = URI.create("file:///Foo.groovy")
+        val names = WorkspaceClassNames()
+        val before = classesOf(uri, "class Foo {}\nclass Old {}")
+        names.replace(uri, before) { null }
+
+        val during = mutableMapOf<String, Set<URI>>()
+        names.replace(uri, classesOf(uri, "class Foo {}\nclass Bar {}")) {
+            listOf("Foo", "Bar", "Old").forEach { during[it] = names.files(ClassNameQuery.Exact(it)) }
+            before
+        }
+
+        assertEquals(mapOf("Foo" to setOf(uri), "Bar" to setOf(uri), "Old" to setOf(uri)), during)
+        assertEquals(setOf("foo", "bar"), names.keys())
+    }
+
+    @Test
+    fun `prefix lookup folds case per character like startsWith`(): Unit = runBlocking {
+        service.indexFile(write("Info.groovy", "class İnfo {}"))
+
+        assertEquals(listOf("İnfo"), fqns(service.findClasses(ClassNameQuery.Prefix("in"))))
     }
 
     @Test
@@ -105,6 +158,12 @@ class SymbolIndexingClassLookupTest {
         assertTrue(service.findClasses(ClassNameQuery.Exact("Greeter")).isEmpty())
         assertEquals(listOf("Buffered"), fqns(service.findClasses(ClassNameQuery.Exact("Buffered"))))
     }
+
+    private fun parse(uri: URI, content: String) = parser.parse(ParseRequest(uri = uri, content = content)).astModel
+
+    private fun classesOf(uri: URI, content: String) =
+        com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex().buildFromVisitor(parse(uri, content))
+            .getSymbols(uri).filterIsInstance<com.github.albertocavalcante.groovyparser.ast.symbols.Symbol.Class>()
 
     private fun write(name: String, content: String): URI = tempDir.resolve(name).also { it.writeText(content) }.toUri()
 
