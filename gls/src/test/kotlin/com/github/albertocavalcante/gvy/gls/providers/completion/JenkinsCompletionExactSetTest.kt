@@ -305,6 +305,85 @@ class JenkinsCompletionExactSetTest {
         )
     }
 
+    /** Labels at an empty line inside the innermost of [openers], each opened on its own line in a stage. */
+    private suspend fun labelsInStage(vararg openers: String): Set<String> {
+        val opened = openers.mapIndexed { depth, opener -> "    ".repeat(depth + 3) + opener }
+        val closed = openers.indices.reversed().map { depth -> "    ".repeat(depth + 3) + "}" }
+        val lines = listOf("pipeline {", "    agent any", "    stages {", "        stage('S') {") + opened +
+            "    ".repeat(openers.size + 3) + closed + listOf("        }", "    }", "}")
+        val items = completeAt(lines.joinToString("\n"), line = 4 + openers.size, character = 4 * (openers.size + 3))
+        assertNoDuplicateLabels(items)
+        return items.labels()
+    }
+
+    /** Labels at an empty line inside `agent { [opener] }` at pipeline level. */
+    private suspend fun labelsInAgent(opener: String): Set<String> {
+        val code = "pipeline {\n    agent {\n        $opener\n            \n        }\n    }\n}"
+        val items = completeAt(code, line = 3, character = 12)
+        assertNoDuplicateLabels(items)
+        return items.labels()
+    }
+
+    @Test
+    fun `parallel block offers exactly stage`(): Unit = runTest {
+        assertEquals(setOf("stage"), labelsInStage("parallel {"))
+    }
+
+    @Test
+    fun `matrix block offers exactly its sections and directives`(): Unit = runTest {
+        assertEquals(
+            setOf("axes", "excludes", "stages", "agent", "environment", "input", "options", "post", "tools", "when"),
+            labelsInStage("matrix {"),
+        )
+    }
+
+    @Test
+    fun `axes, axis, excludes and exclude blocks offer exactly their contents`(): Unit = runTest {
+        assertEquals(setOf("axis"), labelsInStage("matrix {", "axes {"))
+        assertEquals(setOf("name", "values"), labelsInStage("matrix {", "axes {", "axis {"))
+        assertEquals(setOf("exclude"), labelsInStage("matrix {", "excludes {"))
+        assertEquals(setOf("axis"), labelsInStage("matrix {", "excludes {", "exclude {"))
+    }
+
+    @Test
+    fun `agent sub-blocks offer exactly their options`(): Unit = runTest {
+        assertEquals(
+            setOf(
+                "image",
+                "args",
+                "label",
+                "alwaysPull",
+                "customWorkspace",
+                "registryUrl",
+                "registryCredentialsId",
+                "reuseNode",
+            ),
+            labelsInAgent("docker {"),
+        )
+        assertEquals(
+            setOf(
+                "filename", "dir", "label", "additionalBuildArgs", "args", "customWorkspace", "registryUrl",
+                "registryCredentialsId", "reuseNode",
+            ),
+            labelsInAgent("dockerfile {"),
+        )
+        assertEquals(
+            setOf(
+                "yaml", "yamlFile", "label", "cloud", "defaultContainer", "inheritFrom", "namespace",
+                "serviceAccount", "nodeSelector", "workingDir", "customWorkspace", "retries",
+            ),
+            labelsInAgent("kubernetes {"),
+        )
+    }
+
+    @Test
+    fun `a stage input block offers exactly its parameters`(): Unit = runTest {
+        assertEquals(
+            setOf("message", "id", "ok", "submitter", "submitterParameter", "parameters"),
+            labelsInStage("input {"),
+        )
+    }
+
     @Test
     fun `tools block offers exactly the tool types`(): Unit = runTest {
         val items = completeAt("pipeline {\n    agent any\n    tools {\n        \n    }\n}", line = 3, character = 8)
