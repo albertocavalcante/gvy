@@ -190,13 +190,16 @@ class WatchedSpellingRetireTest {
             documents.put(listed, "class A { int v = 3 }")
             compilation.compile(listed, "class A { int v = 3 }")
             val buffer = assertNotNull(compilation.getParseResult(listed))
+            // Compiling the event spelling indexed it; the watcher must not index it again.
+            val indexed = compilation.getSymbolStorage(reported)
 
             notify(real.resolve("A.groovy") to FileChangeType.Changed)
             assertNull(compilation.getCompiledSnapshot(reported), "the closed event-spelled parse is still served")
             drain()
 
             assertSame(buffer, compilation.getParseResult(listed), "the open buffer was retired")
-            assertNull(compilation.getSymbolStorage(reported), "the event spelling was indexed")
+            assertSame(indexed, compilation.getSymbolStorage(reported), "the event spelling was re-indexed")
+            coVerify(exactly = 0) { compilation.refreshSemanticFromDisk(any()) }
         }
 
     @Test
