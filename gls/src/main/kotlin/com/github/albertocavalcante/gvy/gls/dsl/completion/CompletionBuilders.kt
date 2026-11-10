@@ -207,13 +207,20 @@ class MethodCompletionBuilder {
             detail("$returnType $name(${parameters.joinToString(", ")})")
 
             val paramSnippet = parameters.mapIndexed { index, param ->
-                $$"${$${index + 1}:$$param}"
+                $$"${$${index + 1}:$${escapeSnippet(param)}}"
             }.joinToString(", ")
-            snippet("$name($paramSnippet)")
+            snippet("${escapeSnippet(name)}($paramSnippet)")
 
             doc?.let { documentation(it) }
         }
 }
+
+/**
+ * Escapes snippet syntax in literal text, so a binary type name such as `Outer$1` is not read as a
+ * tabstop: `$`, `}` and `\` each get a backslash.
+ */
+private fun escapeSnippet(text: String): String =
+    text.replace("\\", "\\\\").replace("\$", "\\\$").replace("}", "\\}")
 
 /**
  * Builder for class completions.
