@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.gvy.build.ArtifactStamp
 import com.github.albertocavalcante.gvy.build.DependencyProvenance
 import com.github.albertocavalcante.gvy.build.DependencyRole
 import com.github.albertocavalcante.gvy.build.DependencyTarget
@@ -11,12 +12,21 @@ import com.github.albertocavalcante.gvy.build.TargetDependencyState
 import java.net.URI
 import java.nio.file.Path
 
-/** Validates the entire observation; malformed records must not masquerade as missing targets. */
+/**
+ * Validates the entire observation; malformed records must not masquerade as missing targets.
+ * Artifact stamps come from [stamp], the caller's IO boundary; the projection itself does no I/O.
+ */
 internal object GradleScopedDependencyProjection {
-    fun project(model: GradleScopedDependencyModel, provenance: DependencyProvenance): TargetDependencyEvidence.Scoped {
+    fun project(
+        model: GradleScopedDependencyModel,
+        provenance: DependencyProvenance,
+        stamp: (Path) -> ArtifactStamp? = { null },
+    ): TargetDependencyEvidence.Scoped {
         val buildDirectory = absolutePath(model.buildDirectory)
+        val stamps = HashMap<Path, ArtifactStamp?>()
+        val stampOnce: (Path) -> ArtifactStamp? = { path -> stamps.getOrPut(path) { stamp(path) } }
         val snapshots = requireNotNull(model.targets).map { raw ->
-            snapshot(requireNotNull(raw), buildDirectory, provenance)
+            snapshot(requireNotNull(raw), buildDirectory, provenance, stampOnce)
         }
         require(snapshots.map { it.target.targetId }.distinct().size == snapshots.size) { "Duplicate Gradle target" }
         return TargetDependencyEvidence.Scoped(snapshots)
@@ -26,6 +36,7 @@ internal object GradleScopedDependencyProjection {
         raw: GradleSourceSetModel,
         buildDirectory: Path,
         provenance: DependencyProvenance,
+        stamp: (Path) -> ArtifactStamp?,
     ): TargetDependencySnapshot {
         val projectPath = requireNotNull(raw.projectPath).also { require(it.startsWith(':')) }
         val sourceSet = requireNotNull(raw.sourceSet).also { require(it.isNotBlank()) }
@@ -47,12 +58,16 @@ internal object GradleScopedDependencyProjection {
             role = DependencyRole.COMPILE,
             provenance = provenance,
             state = state,
-            artifacts = requireNotNull(raw.artifacts).map { artifact(requireNotNull(it), enrichment) },
+            artifacts = requireNotNull(raw.artifacts).map { artifact(requireNotNull(it), enrichment, stamp) },
             sourceRoots = requireNotNull(raw.sourceRoots).map(::absolutePath),
         )
     }
 
-    private fun artifact(raw: GradleClasspathEntryModel, enrichment: String?): ResolvedDependencyArtifact {
+    private fun artifact(
+        raw: GradleClasspathEntryModel,
+        enrichment: String?,
+        stamp: (Path) -> ArtifactStamp?,
+    ): ResolvedDependencyArtifact {
         val candidates = requireNotNull(raw.coordinateCandidates).map { candidate ->
             val coordinates = requireNotNull(candidate)
             require(!enrichment.isNullOrBlank()) { "Coordinates require their nominal enrichment query" }
@@ -62,7 +77,8 @@ internal object GradleScopedDependencyProjection {
                 requireNotNull(coordinates.version),
             )
         }
-        return ResolvedDependencyArtifact(absolutePath(raw.path), candidates.distinct().singleOrNull())
+        val path = absolutePath(raw.path)
+        return ResolvedDependencyArtifact(path, candidates.distinct().singleOrNull(), stamp(path))
     }
 
     private fun absolutePath(value: String?): Path = Path.of(requireNotNull(value)).also {

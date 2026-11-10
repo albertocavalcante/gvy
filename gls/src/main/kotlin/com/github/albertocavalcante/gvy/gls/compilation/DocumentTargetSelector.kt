@@ -39,6 +39,9 @@ sealed interface TargetSelection {
  * Documents and roots are compared in one canonical form: the real path when it exists (resolving
  * symbolic links and, on case-insensitive file systems, spelling), else the absolute normalised path.
  * Relative roots resolve against the target's project directory.
+ *
+ * A document's canonical form is cached for this selector's lifetime (one workspace model): a path that
+ * changes on disk afterwards (a new symbolic link, a renamed directory) stays stale until the next model.
  */
 internal class DocumentTargetSelector(
     evidence: TargetDependencyEvidence,

@@ -66,6 +66,7 @@ export const RESTART_REQUIRED_SETTINGS: readonly string[] = [
   "repl.maxSessions",
   "repl.sessionTimeoutMinutes",
   "gradle.buildStrategy",
+  "gradle.targetClasspaths.enabled",
 ];
 
 /** Applied by the server through workspace/didChangeConfiguration. */

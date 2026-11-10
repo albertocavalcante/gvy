@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.gvy.build.ArtifactStamp
 import com.github.albertocavalcante.gvy.build.DependencyProvenance
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import io.mockk.every
@@ -27,6 +28,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.MethodSource
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFileAttributeView
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.CopyOnWriteArrayList
@@ -34,6 +36,8 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlin.time.Duration.Companion.milliseconds
@@ -203,11 +207,33 @@ class GradleScopedDependencyProducerTest {
         verify(exactly = 0) { factory.getConnection(any(), any()) }
     }
 
+    @Test
+    fun `a jar replaced at the same path is observed as a different artifact`() = runBlocking {
+        val jar = Files.write(temporary.resolve("lib.jar"), ByteArray(3))
+        Files.setLastModifiedTime(jar, FileTime.fromMillis(1_000_000))
+        val missing = temporary.resolve("missing.jar")
+        builder.completes(Model(listOf(Target(listOf(jar, missing)))))
+        val producer = producer()
+
+        val before = assertIs<TargetDependencyEvidence.Scoped>(producer.resolve(directory, provenance))
+        Files.write(jar, ByteArray(5))
+        Files.setLastModifiedTime(jar, FileTime.fromMillis(2_000_000))
+        val after = assertIs<TargetDependencyEvidence.Scoped>(producer.resolve(directory, provenance))
+
+        val (stampedBefore, absentBefore) = before.snapshots.single().artifacts
+        val (stampedAfter, absentAfter) = after.snapshots.single().artifacts
+        assertEquals(ArtifactStamp(3, 1_000_000), stampedBefore.stamp)
+        assertEquals(ArtifactStamp(5, 2_000_000), stampedAfter.stamp)
+        assertNotEquals(stampedBefore, stampedAfter, "same path, different content: a different fact")
+        assertNull(absentBefore.stamp, "an unreadable entry keeps a null stamp")
+        assertEquals(absentBefore, absentAfter)
+    }
+
     private data class Model(override val targets: List<GradleSourceSetModel?>?) : GradleScopedDependencyModel {
         override val buildDirectory: String = Path.of("model-root").toAbsolutePath().toString()
     }
 
-    private class Target : GradleSourceSetModel {
+    private class Target(paths: List<Path> = emptyList()) : GradleSourceSetModel {
         override val projectPath = ":"
         override val projectDirectory: String = Path.of("model-root").toAbsolutePath().toString()
         override val sourceSet = "main"
@@ -215,7 +241,12 @@ class GradleScopedDependencyProducerTest {
         override val enrichmentConfiguration = "compileClasspath"
         override val state = "COMPLETE"
         override val sourceRoots = emptyList<String?>()
-        override val artifacts = emptyList<GradleClasspathEntryModel?>()
+        override val artifacts: List<GradleClasspathEntryModel?> = paths.map(::Entry)
+    }
+
+    private class Entry(path: Path) : GradleClasspathEntryModel {
+        override val path: String = path.toString()
+        override val coordinateCandidates = emptyList<GradleModuleCoordinatesModel?>()
     }
 
     companion object {

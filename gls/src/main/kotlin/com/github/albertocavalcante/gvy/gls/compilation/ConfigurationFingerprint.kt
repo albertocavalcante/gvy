@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.build.ArtifactStamp
 import com.github.albertocavalcante.gvy.common.hash.sha256
 import java.nio.file.Path
 
@@ -38,4 +39,17 @@ object ConfigurationFingerprint {
 
         return sha256(components.joinToString("\n"))
     }
+
+    /**
+     * Extends [base] with each artifact's observed size and modification time, in classpath order, so a
+     * jar replaced at the same path yields a new key. A null stamp (not stat'ed or unreadable) is keyed too.
+     */
+    fun withStamps(base: String, stamps: List<ArtifactStamp?>): String = sha256(
+        buildString {
+            append(base).append("\nstamps:")
+            stamps.forEach { stamp ->
+                append('\n').append(stamp?.let { "${it.size}:${it.lastModifiedMillis}" } ?: "-")
+            }
+        },
+    )
 }

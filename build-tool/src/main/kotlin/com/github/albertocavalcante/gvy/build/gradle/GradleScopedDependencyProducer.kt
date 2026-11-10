@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.gvy.build.ArtifactStamp
 import com.github.albertocavalcante.gvy.build.DependencyProvenance
 import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -127,7 +128,8 @@ class GradleScopedDependencyProducer(
         model: GradleScopedDependencyModel?,
         provenance: DependencyProvenance,
     ): TargetDependencyEvidence = try {
-        val scoped = GradleScopedDependencyProjection.project(requireNotNull(model), provenance)
+        // Stat each artifact once per observation, on the IO dispatcher this runs on (#1235)
+        val scoped = GradleScopedDependencyProjection.project(requireNotNull(model), provenance, ArtifactStamp::of)
         if (scoped.snapshots.isEmpty()) {
             logger.info { "Gradle build reported no source sets; retaining legacy evidence" }
             TargetDependencyEvidence.Legacy

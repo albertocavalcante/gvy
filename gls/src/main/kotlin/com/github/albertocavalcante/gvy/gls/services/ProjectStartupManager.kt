@@ -8,11 +8,13 @@ import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
+import com.github.albertocavalcante.gvy.build.gradle.GradleScopedDependencyProducer
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.LogLevelConfigurator
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.gradle.DependencyManager
+import com.github.albertocavalcante.gvy.gls.gradle.GradleTargetObserver
 import com.github.albertocavalcante.gvy.gls.progress.ProgressReporter
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
@@ -290,7 +292,14 @@ class ProjectStartupManager(
             gradleBuildStrategy = config.gradleBuildStrategy,
         )
         buildToolManager = newBuildToolManager
-        val newDependencyManager = DependencyManager(newBuildToolManager, coroutineScope)
+        // Opt-in (#1235): one more Gradle operation per attempt, before the single model publication
+        val targetObserver = if (config.gradleTargetClasspathsEnabled) {
+            logger.info { "Gradle target classpaths enabled" }
+            GradleTargetObserver(GradleScopedDependencyProducer(javaHome = javaHomePath))
+        } else {
+            null
+        }
+        val newDependencyManager = DependencyManager(newBuildToolManager, coroutineScope, targetObserver)
         dependencyManager = newDependencyManager
         return newDependencyManager
     }
