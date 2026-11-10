@@ -194,6 +194,9 @@ class ClosedFileWorkspaceResolutionTest {
 
         assertEquals(1 + 32, snapshot.compiledFiles().size, "${snapshot.compiledFiles()}")
         assertTrue(snapshot.parseResult.outcome.unlocatedClasses.isNotEmpty(), "the cut is recorded")
+        // The stand-in for a class past the cap is declared by no module, so nothing indexes it as a declaration.
+        val declared = snapshot.parseResult.compilationUnit.ast.modules.flatMap { it.classes }.map { it.name }
+        assertTrue(snapshot.parseResult.outcome.unlocatedClasses.none { it in declared }, "$declared")
     }
 
     @Test

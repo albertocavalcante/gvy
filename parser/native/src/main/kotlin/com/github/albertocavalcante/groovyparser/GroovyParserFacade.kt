@@ -692,10 +692,10 @@ private class LocatingClassNodeResolver(
         if (added.size >= MAX_LOCATED_SOURCES) {
             // Past the cap the class is known but not compiled: an empty stand-in keeps the file that names it
             // compiling, instead of failing it and unravelling the chain one recompile at a time.
-            unlocated += topLevel
+            unlocated.add(topLevel)
             return LookupResult(null, ClassNode(name, Modifier.PUBLIC, ClassHelper.OBJECT_TYPE))
         }
-        added += path
+        added.add(path)
         val buffer = buffers[path]
         val source = if (buffer == null) {
             unit.addSource(path.toUri().toURL())

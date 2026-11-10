@@ -183,7 +183,8 @@ internal class SpockVerdictMemory {
 
         private fun sameBaseDegraded(remembered: Remembered): Boolean {
             val excluded = outcome.excludedSources.mapTo(HashSet()) { sourceKey(it.source) }
-            return remembered.bases.any { it.source in excluded || it.name in outcome.stubbedClasses } ||
+            val standIns = outcome.stubbedClasses.toSet() + outcome.unlocatedClasses
+            return remembered.bases.any { it.source in excluded || it.name in standIns } ||
                 (remembered.jvmBase && outcome.fallback != null)
         }
 
@@ -395,8 +396,10 @@ internal class SpockVerdictMemory {
         private val OBJECT_SPELLINGS = setOf("java.lang.Object", "Object")
         private const val MAX_SOURCE_CHARS = 1_000_000
 
+        // A class past the locator's cap (#1425) is an empty stand-in, like a stub: no verdict is learned from it.
         private fun isDegraded(outcome: ParseOutcome): Boolean =
-            outcome.fallback != null || outcome.excludedSources.isNotEmpty() || outcome.stubbedClasses.isNotEmpty()
+            outcome.fallback != null || outcome.excludedSources.isNotEmpty() || outcome.stubbedClasses.isNotEmpty() ||
+                outcome.unlocatedClasses.isNotEmpty()
 
         private fun importsOf(module: ModuleNode): String = (
             module.imports.map { "${it.className} as ${it.alias}" } + module.starImports.map { "${it.packageName}*" }

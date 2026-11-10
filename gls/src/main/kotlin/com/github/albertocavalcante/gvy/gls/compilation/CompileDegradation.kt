@@ -37,6 +37,10 @@ fun ParseOutcome.describe(file: String): String = buildString {
     if (stubbedClasses.isNotEmpty()) {
         append(", stubbed unresolved classes ").append(stubbedClasses.joinToString())
     }
+    if (unlocatedClasses.isNotEmpty()) {
+        // Which names fall past the cap depends on resolution order: logged so a missing-member report is diagnosable.
+        append(", workspace classes past the locator cap ").append(unlocatedClasses.joinToString())
+    }
 }
 
 /**
