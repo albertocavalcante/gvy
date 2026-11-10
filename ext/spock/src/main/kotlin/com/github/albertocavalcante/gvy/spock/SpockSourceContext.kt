@@ -102,6 +102,9 @@ enum class SpecificationEvidence {
     /** UNCERTAIN: more than one module class or import binds the superclass spelling. */
     SHADOWED_NAME,
 
+    /** UNCERTAIN: an enclosing class's superclass may supply a nested class with the bare name. */
+    INHERITED_NESTED_SCOPE,
+
     /** UNCERTAIN: classes in this module extend each other cyclically. */
     MODULE_HIERARCHY_CYCLE,
 
@@ -155,17 +158,22 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     /**
      * Collects every binding the module can see for the superclass spelling: a top-level class, a
      * class nested in an enclosing class, and a single-type import. More than one binding stays
-     * uncertain instead of depending on Groovy's precedence between them. Nested classes of an
-     * enclosing class's superclass are not considered.
+     * uncertain instead of depending on Groovy's precedence between them. A bare name inside a class
+     * whose enclosing class extends another class is uncertain: that superclass's nested classes,
+     * which this module may not declare, could bind the name first.
      */
     private fun bySourceName(node: ClassNode, rawName: String): SpockClassContext {
         val name = rawName.replace('$', '.')
         val simple = '.' !in name
         val moduleBases = moduleClasses(name) + if (simple) enclosingNested(node, name) else emptyList()
         val explicit = if (simple) module.getImport(name)?.className else null
-        val bindings = moduleBases.distinctBy { System.identityHashCode(it) }.size + if (explicit != null) 1 else 0
+        val distinctBases: MutableSet<ClassNode> = Collections.newSetFromMap(IdentityHashMap())
+        distinctBases.addAll(moduleBases)
+        val bindings = distinctBases.size + if (explicit != null) 1 else 0
         return when {
             bindings > 1 -> context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.SHADOWED_NAME)
+            simple && inheritsOuterScope(node) ->
+                context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.INHERITED_NESTED_SCOPE)
             moduleBases.isNotEmpty() -> inherit(node, classify(moduleBases.first()))
             name == SPECIFICATION_FQN ->
                 context(node, SpecificationStatus.SPECIFICATION, SpecificationEvidence.QUALIFIED_SUPERCLASS)
@@ -190,6 +198,10 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     private fun moduleClasses(name: String): List<ClassNode> = module.classes.filter { candidate ->
         candidate.name.replace('$', '.') == name || candidate.nameWithoutPackage.replace('$', '.') == name
     }
+
+    /** True when an enclosing class declares a superclass other than Object. */
+    private fun inheritsOuterScope(node: ClassNode): Boolean = generateSequence(node.outerClass) { it.outerClass }
+        .any { outer -> outer.superClass != null && outer.superClass.name != ClassHelper.OBJECT_TYPE.name }
 
     /** Classes nested directly in one of [node]'s enclosing classes with the bare [name]. */
     private fun enclosingNested(node: ClassNode, name: String): List<ClassNode> {

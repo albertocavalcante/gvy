@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.spock
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.spock.SpecificationEvidence.EXPLICIT_IMPORT
+import com.github.albertocavalcante.gvy.spock.SpecificationEvidence.INHERITED_NESTED_SCOPE
 import com.github.albertocavalcante.gvy.spock.SpecificationEvidence.MODULE_BASE
 import com.github.albertocavalcante.gvy.spock.SpecificationEvidence.MODULE_HIERARCHY_CYCLE
 import com.github.albertocavalcante.gvy.spock.SpecificationEvidence.NO_SUPERCLASS
@@ -191,6 +192,43 @@ class SpockSpecificationContextTest {
     }
 
     @Test
+    fun `bare names inside a class whose enclosing class extends another stay uncertain`() {
+        val result = classify(
+            """
+            class Base extends spock.lang.Specification {}
+            class Parent { static class Base {} }
+            class Outer extends Parent {
+                static class S extends Base {}
+            }
+            """.trimIndent(),
+        )
+        assertEquals(SPECIFICATION to QUALIFIED_SUPERCLASS, result["Base"])
+        assertEquals(UNCERTAIN to INHERITED_NESTED_SCOPE, result["Outer\$S"], "Parent.Base may bind first")
+    }
+
+    @Test
+    fun `qualified nested superclass spellings resolve to the module class`() {
+        val result = classify(
+            """
+            class Outer {
+                static class Base extends spock.lang.Specification {}
+            }
+            class A extends Outer.Base {}
+            """.trimIndent(),
+        )
+        assertEquals(SPECIFICATION to MODULE_BASE, result["A"])
+    }
+
+    @Test
+    fun `a subclass of a duplicated class name stays uncertain`() {
+        val source = "class A {}\nclass A extends spock.lang.Specification {}\nclass B extends A {}"
+        val context = assertIs<SpockSourceContext.Available>(contexts(source).first())
+
+        val b = context.classes.single { it.classNode.name == "B" }
+        assertEquals(UNCERTAIN to SHADOWED_NAME, b.pair())
+    }
+
+    @Test
     fun `hierarchy cycles are uncertain rather than looping`() {
         val result = classify("class A extends B {}\nclass B extends A {}")
         assertEquals(UNCERTAIN to MODULE_HIERARCHY_CYCLE, result["A"])
@@ -266,8 +304,8 @@ class SpockSpecificationContextTest {
         assertEquals("SecondSpec", context.ownerAt(11, 8)?.classNode?.name)
         val anonymous = context.ownerAt(13, 20)
         assertEquals("SecondSpec", anonymous?.classNode?.outerClass?.name, "Anonymous classes own their bodies")
-        // Pre-resolution `Object` is a bare name a same-package class could shadow: uncertain, never a spec.
-        assertEquals(UNCERTAIN to UNRESOLVED_SUPERCLASS, anonymous?.let { it.status to it.evidence })
+        // Pre-resolution `Object` is a bare name; SecondSpec's superclass could supply a nested `Object`.
+        assertEquals(UNCERTAIN to INHERITED_NESTED_SCOPE, anonymous?.let { it.status to it.evidence })
         assertNull(context.ownerAt(0, 0), "Imports are outside every class")
         assertNull(context.ownerAt(5, 1), "The column after a closing brace is outside the class")
     }
@@ -294,21 +332,34 @@ class SpockSpecificationContextTest {
         assertEquals(NOT_SPECIFICATION to SpecificationEvidence.RESOLVED_HIERARCHY, result.getValue("B").pair())
     }
 
+    /**
+     * With Spock on the classpath the parse must really reach SEMANTIC_ANALYSIS, every expected class
+     * must be present and each result must be exact. Without Spock each present class is the truth or
+     * UNCERTAIN, never confidently wrong.
+     */
     @ParameterizedTest
     @MethodSource("resolvedTruth")
-    fun `resolving with or without Spock is never confidently wrong`(
+    fun `resolving with or without Spock is exact or uncertain, never confidently wrong`(
         source: String,
-        truth: Map<String, SpecificationStatus>,
+        resolved: Map<String, Pair<SpecificationStatus, SpecificationEvidence>>,
     ) {
-        loaders.forEach { loader ->
-            val request =
-                ParseRequest(URI.create("file:///src/Probe.groovy"), source, compilePhase = Phases.SEMANTIC_ANALYSIS)
-            val context = SpockSourceContext.from(GroovyParserFacade(loader).parse(request))
-            val classes = (context as? SpockSourceContext.Available)?.classes.orEmpty()
-            truth.forEach { (name, expected) ->
-                classes.filter { it.classNode.name == name }.forEach { actual ->
-                    assertTrue(actual.status == expected || actual.status == UNCERTAIN, "$name: $actual with $loader")
-                }
+        val request = ParseRequest(
+            URI.create("file:///src/Probe.groovy"),
+            source,
+            compilePhase = Phases.SEMANTIC_ANALYSIS,
+        )
+        val withSpock = GroovyParserFacade(loaders.first()).parse(request)
+        assertTrue(!withSpock.outcome.isDegraded, "No fallback expected: ${withSpock.outcome}")
+        assertTrue(withSpock.outcome.achievedPhase >= Phases.SEMANTIC_ANALYSIS, "${withSpock.outcome}")
+        val exact = assertIs<SpockSourceContext.Available>(SpockSourceContext.from(withSpock))
+            .classes.associate { it.classNode.name to it.pair() }
+        resolved.forEach { (name, expected) -> assertEquals(expected, exact[name], name) }
+
+        val withoutSpock = SpockSourceContext.from(GroovyParserFacade(withoutSpock).parse(request))
+        val classes = (withoutSpock as? SpockSourceContext.Available)?.classes.orEmpty()
+        resolved.forEach { (name, expected) ->
+            classes.filter { it.classNode.name == name }.forEach { actual ->
+                assertTrue(actual.status == expected.first || actual.status == UNCERTAIN, "$name: $actual")
             }
         }
     }
@@ -316,32 +367,36 @@ class SpockSpecificationContextTest {
     private fun SpockClassContext.pair() = status to evidence
 
     companion object {
+        private val resolvedSpec = SPECIFICATION to SpecificationEvidence.RESOLVED_HIERARCHY
+        private val resolvedOther = NOT_SPECIFICATION to SpecificationEvidence.RESOLVED_HIERARCHY
+
         @JvmStatic
         fun resolvedTruth(): List<Arguments> = listOf(
-            Arguments.of("class A extends spock.lang.Specification {}", mapOf("A" to SPECIFICATION)),
+            Arguments.of("class A extends spock.lang.Specification {}", mapOf("A" to resolvedSpec)),
             Arguments.of(
                 "import spock.lang.Specification\nclass A extends Specification {}",
-                mapOf("A" to SPECIFICATION),
+                mapOf("A" to resolvedSpec),
             ),
-            Arguments.of("import spock.lang.Specification as S\nclass A extends S {}", mapOf("A" to SPECIFICATION)),
-            Arguments.of("import spock.lang.*\nclass A extends Specification {}", mapOf("A" to SPECIFICATION)),
+            Arguments.of("import spock.lang.Specification as S\nclass A extends S {}", mapOf("A" to resolvedSpec)),
+            Arguments.of("import spock.lang.*\nclass A extends Specification {}", mapOf("A" to resolvedSpec)),
             Arguments.of(
                 "import spock.lang.*\nimport java.util.ArrayList as Specification\nclass A extends Specification {}",
-                mapOf("A" to NOT_SPECIFICATION),
+                mapOf("A" to resolvedOther),
             ),
-            Arguments.of(
-                "class A extends java.util.ArrayList { def f() { given: 1 } }",
-                mapOf("A" to NOT_SPECIFICATION),
-            ),
+            Arguments.of("class A extends java.util.ArrayList { def f() { given: 1 } }", mapOf("A" to resolvedOther)),
             Arguments.of(
                 "class Base extends spock.lang.Specification {}\nclass A extends Base {}",
-                mapOf("Base" to SPECIFICATION, "A" to SPECIFICATION),
+                mapOf("Base" to resolvedSpec, "A" to (SPECIFICATION to MODULE_BASE)),
             ),
             Arguments.of(
                 "class Outer {\n static class Base extends spock.lang.Specification {}\n" +
                     " static class A extends Base {}\n}",
-                mapOf("Outer" to NOT_SPECIFICATION, "Outer\$Base" to SPECIFICATION, "Outer\$A" to SPECIFICATION),
+                mapOf(
+                    "Outer" to (NOT_SPECIFICATION to NO_SUPERCLASS),
+                    "Outer\$Base" to resolvedSpec,
+                    // The superclass is the binary name `Outer$Base`: pins `$` to `.` normalisation.
+                    "Outer\$A" to (SPECIFICATION to MODULE_BASE),
+                ),
             ),
         )
-    }
-}
+    }}
