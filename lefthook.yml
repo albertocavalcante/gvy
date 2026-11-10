@@ -7,6 +7,8 @@ pre-commit:
           echo "Direct commits to main branch are forbidden!"
           exit 1
         fi
+    conflict-markers:
+      run: tools/ci/check-conflict-markers.sh --staged
     kotlin-lint:
       glob: '**/*.kt'
       run: ./gradlew spotlessCheck
@@ -31,6 +33,17 @@ pre-commit:
     markdown-lint:
       glob: '**/*.md'
       run: dprint check --config dprint.json {staged_files}
+
+pre-push:
+  commands:
+    conflict-markers:
+      # Catches markers left by a rebase, which pre-commit never sees.
+      run: |
+        if git rev-parse --verify --quiet origin/main >/dev/null; then
+          tools/ci/check-conflict-markers.sh origin/main
+        else
+          echo "origin/main not found; skipping conflict marker check" >&2
+        fi
 
 commit-msg:
   commands:

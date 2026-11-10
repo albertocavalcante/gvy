@@ -13,6 +13,25 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  check-conflict-markers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Self-test conflict marker gate
+        run: bash tools/ci/check-conflict-markers_test.sh
+
+      - name: Check for leftover conflict markers
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: bash tools/ci/check-conflict-markers.sh "origin/${BASE_REF}"
+
   check-file-size:
     runs-on: ubuntu-latest
     timeout-minutes: 5
