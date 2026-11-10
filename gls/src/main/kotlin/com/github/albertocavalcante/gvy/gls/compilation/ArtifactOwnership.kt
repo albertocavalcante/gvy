@@ -140,15 +140,15 @@ class ArtifactOwnership {
         }
     }
 
-    /** Files the fence currently holds generation state for (#1341). */
+    /** Files the fence currently holds generation state for (#1341). Visible for tests; not used in production. */
     internal val trackedFileCount: Int get() = synchronized(monitor) {
         expungeLocked()
         states.size
     }
 
     /**
-     * Test hook: does what the garbage collector does once nothing references [uri]'s state. Only call it when no
-     * ticket for [uri] is reachable, as the collector would.
+     * Test hook, visible for tests only and never called in production: does what the garbage collector does once
+     * nothing references [uri]'s state. Only call it when no ticket for [uri] is reachable, as the collector would.
      */
     internal fun clearUnreferencedStateForTesting(uri: URI) {
         synchronized(monitor) { states[uri] }?.let { reference ->
