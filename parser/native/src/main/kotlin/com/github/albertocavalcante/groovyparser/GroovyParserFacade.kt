@@ -42,12 +42,6 @@ import kotlin.io.path.isRegularFile
 private const val AST_TRANSFORMATION_SERVICE_FILE =
     "META-INF/services/org.codehaus.groovy.transform.ASTTransformation"
 
-/**
- * Global transformations never run, even when the LSP's own classloader can see them (Spock on the
- * classpath of a test run): Spock's rewrites feature methods and drops the block labels the LSP reads,
- * and it would key off a stubbed `spock.lang.Specification` just as off the real one.
- */
-private val ALWAYS_DISABLED_TRANSFORMS = AnalysisCompilerPolicy.DISABLED_GLOBAL_TRANSFORMS
 private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
 private const val UNATTRIBUTED_ERROR_REASON =
     "an open buffer was dropped because the compile failed with an error no source could be blamed for"
@@ -486,7 +480,10 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
             if (externalTransforms.isNotEmpty()) {
                 logger.info { "Disabled ${externalTransforms.size} AST transformations from project classpath" }
             }
-            disabledGlobalASTTransformations = externalTransforms + ALWAYS_DISABLED_TRANSFORMS
+            // Policy first (it sets the always-disabled globals and strips code-executing annotations),
+            // then widen the disabled set with transforms found on the project classpath.
+            AnalysisCompilerPolicy.apply(this)
+            disabledGlobalASTTransformations = externalTransforms + disabledGlobalASTTransformations
         }
 
     /**

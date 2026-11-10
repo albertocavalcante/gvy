@@ -171,7 +171,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         // Configure tolerance level for parsing
         tolerance = if (configuration.lenientMode) DEFAULT_LENIENT_TOLERANCE else 0
         // Never run transforms that need dependencies the server does not ship (or that fetch from the network).
-        disabledGlobalASTTransformations = AnalysisCompilerPolicy.DISABLED_GLOBAL_TRANSFORMS
+        AnalysisCompilerPolicy.apply(this)
     }
 
     private fun collectProblems(errorCollector: ErrorCollector?, problems: MutableList<Problem>) {
