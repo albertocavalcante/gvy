@@ -8,6 +8,8 @@ import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -169,5 +171,113 @@ class JenkinsContextTest {
         val classpath = context.buildClasspath(emptyList())
 
         assertTrue(classpath.any { it == pluginJar }, "Classpath should include registered plugin JAR")
+    }
+
+    @Test
+    fun `GDSL steps and globals join the metadata and are replaced on reload`() {
+        val gdsl = tempDir.resolve("custom.gdsl")
+        Files.writeString(
+            gdsl,
+            """
+            contributor(context()) {
+                method(name: 'myStep', type: 'void', params: [message: 'java.lang.String'], doc: 'My step')
+                property(name: 'myGlobal', type: 'java.lang.String', doc: 'My global')
+            }
+            """.trimIndent(),
+        )
+        val context = JenkinsContext(
+            JenkinsConfiguration(gdslPaths = listOf(gdsl.toString()), gdslExecutionEnabled = true),
+            tempDir,
+        )
+
+        context.loadGdslMetadata()
+        val loaded = context.getAllMetadata()
+
+        assertEquals("My step", loaded.getStep("myStep")?.documentation)
+        assertEquals(setOf("message"), loaded.getStep("myStep")?.namedParams?.keys)
+        assertEquals("My global", loaded.getGlobalVariable("myGlobal")?.documentation)
+
+        Files.writeString(gdsl, "contributor(context()) { method(name: 'yourStep', type: 'void') }")
+        context.loadGdslMetadata()
+        val reloaded = context.getAllMetadata()
+
+        assertNull(reloaded.getStep("myStep"))
+        assertNull(reloaded.getGlobalVariable("myGlobal"))
+        assertNotNull(reloaded.getStep("yourStep"))
+    }
+
+    @Test
+    fun `GDSL does not replace a known step`() {
+        val gdsl = tempDir.resolve("custom.gdsl")
+        Files.writeString(gdsl, "contributor(context()) { method(name: 'echo', type: 'void', doc: 'Mine') }")
+        val context = JenkinsContext(
+            JenkinsConfiguration(gdslPaths = listOf(gdsl.toString()), gdslExecutionEnabled = true),
+            tempDir,
+        )
+        val bundledEcho = context.getAllMetadata().getStep("echo")
+
+        context.loadGdslMetadata()
+
+        assertNotNull(bundledEcho)
+        assertEquals(bundledEcho, context.getAllMetadata().getStep("echo"))
+    }
+
+    @Test
+    fun `GDSL metadata is not added when GDSL reading is disabled`() {
+        val gdsl = tempDir.resolve("custom.gdsl")
+        Files.writeString(gdsl, "contributor(context()) { method(name: 'myStep', type: 'void') }")
+        val context = JenkinsContext(
+            JenkinsConfiguration(gdslPaths = listOf(gdsl.toString()), gdslExecutionEnabled = false),
+            tempDir,
+        )
+
+        context.loadGdslMetadata()
+
+        assertNull(context.getAllMetadata().getStep("myStep"))
+    }
+
+    @Test
+    fun `a GDSL file that cannot be read does not drop the others`() {
+        val bad = tempDir.resolve("bad.gdsl")
+        Files.writeString(bad, "method(name: 'unterminated")
+        val good = tempDir.resolve("good.gdsl")
+        Files.writeString(good, "contributor(context()) { method(name: 'myStep', type: 'void') }")
+        val context = JenkinsContext(
+            JenkinsConfiguration(gdslPaths = listOf(bad.toString(), good.toString()), gdslExecutionEnabled = true),
+            tempDir,
+        )
+
+        context.loadGdslMetadata()
+
+        assertNotNull(context.getAllMetadata().getStep("myStep"))
+    }
+
+    @Test
+    fun `a GDSL name never duplicates a known step or global in the other namespace`() {
+        val gdsl = tempDir.resolve("custom.gdsl")
+        Files.writeString(
+            gdsl,
+            """
+            contributor(context()) {
+                property(name: 'sh', type: 'java.lang.String')
+                method(name: 'env', type: 'void')
+                method(name: 'both', type: 'void')
+                property(name: 'both', type: 'java.lang.String')
+            }
+            """.trimIndent(),
+        )
+        val context = JenkinsContext(
+            JenkinsConfiguration(gdslPaths = listOf(gdsl.toString()), gdslExecutionEnabled = true),
+            tempDir,
+        )
+        val before = context.getAllMetadata()
+
+        context.loadGdslMetadata()
+        val after = context.getAllMetadata()
+
+        assertNull(after.getGlobalVariable("sh"))
+        assertEquals(before.getStep("env"), after.getStep("env"))
+        assertNotNull(after.getStep("both"))
+        assertNull(after.getGlobalVariable("both"))
     }
 }

@@ -6,6 +6,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -90,5 +91,17 @@ class GdslLoaderTest {
 
         assertEquals(0, results.successful.size)
         assertEquals(0, results.failed.size)
+    }
+
+    @Test
+    fun `a file larger than the GDSL size limit is rejected without reading it`() {
+        val gdslFile = tempDir.resolve("huge.gdsl")
+        java.io.RandomAccessFile(gdslFile.toFile(), "rw").use { it.setLength(GdslExecutor.MAX_SOURCE_SIZE + 1L) }
+
+        val result = GdslLoader().loadGdslFile(gdslFile.toString())
+
+        assertTrue(result.isFailure)
+        assertNull(result.content)
+        assertTrue(result.error!!.contains("larger than"), result.error)
     }
 }

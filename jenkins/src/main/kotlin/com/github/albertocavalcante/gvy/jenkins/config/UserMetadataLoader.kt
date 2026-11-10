@@ -2,7 +2,9 @@
 
 package com.github.albertocavalcante.gvy.jenkins.config
 
-import com.github.albertocavalcante.gvy.jenkins.gdsl.GdslParser
+import com.github.albertocavalcante.gvy.gdsl.GdslExecutor
+import com.github.albertocavalcante.gvy.gdsl.GdslLoader
+import com.github.albertocavalcante.gvy.jenkins.gdsl.JenkinsGdslAdapter
 import com.github.albertocavalcante.gvy.jenkins.metadata.BundledJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.JenkinsStepMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.StepParameter
@@ -26,10 +28,14 @@ import java.nio.file.Path
 class UserMetadataLoader(private val workspaceRoot: Path) {
     private val logger = KotlinLogging.logger {}
     private val json = Json { ignoreUnknownKeys = true }
+    private val gdslLoader = GdslLoader()
+    private val gdslExecutor = GdslExecutor()
+    private val gdslAdapter = JenkinsGdslAdapter()
 
     companion object {
         private const val CONFIG_DIR = ".gls"
         private const val CONFIG_FILE = "jenkins.json"
+        private const val USER_GDSL_PLUGIN = "user-gdsl"
     }
 
     /**
@@ -88,47 +94,28 @@ class UserMetadataLoader(private val workspaceRoot: Path) {
     }
 
     /**
-     * Load steps from a GDSL file.
+     * Load steps from a GDSL file, read from its AST (never run) like every other GDSL source.
      */
     private fun loadGdslSteps(gdslPath: String): Map<String, JenkinsStepMetadata>? {
         val fullPath = workspaceRoot.resolve(gdslPath)
-
-        if (!Files.exists(fullPath)) {
-            logger.warn { "GDSL file not found: $fullPath" }
+        // The loader refuses missing, non-regular and oversized files before reading them.
+        val loaded = gdslLoader.loadGdslFile(fullPath.toString())
+        val content = loaded.content ?: run {
+            logger.warn { "Could not load GDSL file $fullPath: ${loaded.error}" }
             return null
         }
 
         return try {
-            val content = Files.readString(fullPath)
-            val parsed = GdslParser.parseMerged(content)
-
-            parsed.steps.mapValues { (name, step) ->
-                JenkinsStepMetadata(
-                    name = name,
-                    plugin = "user-gdsl",
-                    documentation = step.documentation,
-                    parameters = step.namedParameters.ifEmpty { step.parameters }.mapValues { (paramName, paramType) ->
-                        StepParameter(
-                            name = paramName,
-                            type = normalizeType(paramType),
-                            required = false, // GDSL doesn't specify required
-                        )
-                    },
-                )
+            val parsed = gdslExecutor.executeAndCapture(content, fullPath.toString())
+            if (!parsed.success) {
+                logger.warn { "Failed to read GDSL file $fullPath: ${parsed.error}" }
+                return null
             }
+            gdslAdapter.convert(parsed, pluginSource = USER_GDSL_PLUGIN).steps
         } catch (e: Exception) {
-            logger.warn { "Failed to parse GDSL file $fullPath: ${e.message}" }
+            logger.warn { "Failed to read GDSL file $fullPath: ${e.message}" }
             null
         }
-    }
-
-    /**
-     * Normalize Java type names to simple names.
-     */
-    private fun normalizeType(type: String): String = when {
-        type.startsWith("java.lang.") -> type.removePrefix("java.lang.")
-        type.startsWith("java.util.") -> type.removePrefix("java.util.")
-        else -> type
     }
 }
 

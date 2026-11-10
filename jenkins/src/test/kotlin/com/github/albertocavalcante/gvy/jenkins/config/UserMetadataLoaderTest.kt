@@ -44,7 +44,9 @@ class UserMetadataLoaderTest {
         Files.writeString(
             jenkinsDir.resolve("pipeline.gdsl"),
             """
-            method(name: 'myCustomStep', type: 'Object', params: [:], doc: 'Custom step')
+            contributor(context()) {
+                method(name: 'myCustomStep', type: 'Object', params: [:], doc: 'Custom step')
+            }
             """.trimIndent(),
         )
 
@@ -220,5 +222,19 @@ class UserMetadataLoaderTest {
         assertNotNull(config)
         assertEquals(2, config.plugins.size)
         assertEquals("1464.v2d3f5c68f84c", config.plugins["workflow-durable-task-step"])
+    }
+
+    @Test
+    fun `a user GDSL file larger than the GDSL size limit is not read`() {
+        val configDir = tempDir.resolve(".gls")
+        Files.createDirectories(configDir)
+        Files.writeString(configDir.resolve("jenkins.json"), """{ "gdslFile": "huge.gdsl" }""")
+        val huge = tempDir.resolve("huge.gdsl")
+        Files.writeString(huge, "contributor(context()) { method(name: 'myCustomStep', type: 'Object') }\n")
+        java.io.RandomAccessFile(huge.toFile(), "rw").use {
+            it.setLength(com.github.albertocavalcante.gvy.gdsl.GdslExecutor.MAX_SOURCE_SIZE + 1L)
+        }
+
+        assertNull(UserMetadataLoader(tempDir).load())
     }
 }

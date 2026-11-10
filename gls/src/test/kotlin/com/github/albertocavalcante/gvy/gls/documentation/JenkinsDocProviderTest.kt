@@ -98,4 +98,20 @@ class JenkinsDocProviderTest {
         val info = provider.getQuickNavigateInfo(node)
         assertEquals("Jenkins step: sh", info)
     }
+
+    @Test
+    fun `parameter types render in a code span so they cannot autolink`() {
+        val node = mockk<MethodCallExpression>()
+        every { node.methodAsString } returns "deploy"
+        coEvery { pluginManager.resolveStepMetadata("deploy") } returns JenkinsStepMetadata(
+            name = "deploy",
+            plugin = "gdsl-extracted",
+            parameters = mapOf("target" to StepParameter("target", "www.evil.com")),
+        )
+
+        val doc = provider.generateDoc(node, model, uri)
+
+        assertNotNull(doc)
+        assertTrue(doc.content.contains("`target`: `www.evil.com`"), doc.content)
+    }
 }

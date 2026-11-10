@@ -224,4 +224,77 @@ class JenkinsGdslAdapterTest {
             assertThat(step.plugin).isEqualTo("user-gdsl")
         }
     }
+
+    /** GDSL text comes from workspace files; every consumer renders it as markdown. */
+    @Nested
+    inner class UntrustedText {
+
+        private val hostile = "Run [me](command:workbench.action.terminal.new) <img src=x onerror=alert(1)> **now**"
+
+        @Test
+        fun `documentation renders as literal text`() {
+            val metadata = adapter.convert(
+                GdslParseResult(
+                    methods = listOf(
+                        MethodDescriptor(
+                            "myStep",
+                            "void",
+                            namedParameters = listOf(NamedParameterDescriptor("p", "String", documentation = hostile)),
+                            documentation = hostile,
+                        ),
+                    ),
+                    properties = listOf(PropertyDescriptor("myGlobal", "String", documentation = hostile)),
+                ),
+            )
+
+            val escaped = "Run \\[me\\]\\(command\\:workbench\\.action\\.terminal\\.new\\) " +
+                "\\<img src\\=x onerror\\=alert\\(1\\)\\> \\*\\*now\\*\\*"
+            assertThat(metadata.steps["myStep"]!!.documentation).isEqualTo(escaped)
+            assertThat(metadata.steps["myStep"]!!.parameters["p"]!!.documentation).isEqualTo(escaped)
+            assertThat(metadata.globalVariables["myGlobal"]!!.documentation).isEqualTo(escaped)
+        }
+
+        @Test
+        fun `plain words are unchanged`() {
+            val step = adapter.convertMethod(MethodDescriptor("echo", "void", documentation = "Print Message"))
+
+            assertThat(step.documentation).isEqualTo("Print Message")
+        }
+
+        @Test
+        fun `steps, parameters and globals without identifier names are dropped`() {
+            val metadata = adapter.convert(
+                GdslParseResult(
+                    methods = listOf(
+                        MethodDescriptor("ok", "void", parameters = listOf(ParameterDescriptor("a`b", "String"))),
+                        MethodDescriptor("bad`](command:x)", "void"),
+                    ),
+                    properties = listOf(PropertyDescriptor("bad name", "String")),
+                ),
+            )
+
+            assertThat(metadata.steps.keys).containsExactly("ok")
+            assertThat(metadata.steps["ok"]!!.parameters).isEmpty()
+            assertThat(metadata.globalVariables).isEmpty()
+        }
+
+        @Test
+        fun `types that are not type names become Object and unsafe defaults are dropped`() {
+            val step = adapter.convertMethod(
+                MethodDescriptor(
+                    "s",
+                    "void",
+                    namedParameters = listOf(
+                        NamedParameterDescriptor("a", "String`](command:x)", defaultValue = "x` [y](command:z)"),
+                        NamedParameterDescriptor("b", "java.util.List<String>", defaultValue = "[]"),
+                    ),
+                ),
+            )
+
+            assertThat(step.parameters["a"]!!.type).isEqualTo("Object")
+            assertThat(step.parameters["a"]!!.default).isNull()
+            assertThat(step.parameters["b"]!!.type).isEqualTo("List<String>")
+            assertThat(step.parameters["b"]!!.default).isEqualTo("[]")
+        }
+    }
 }
