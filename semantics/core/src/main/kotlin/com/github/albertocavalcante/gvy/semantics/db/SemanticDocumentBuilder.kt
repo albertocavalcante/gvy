@@ -616,10 +616,13 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val symbolId = expression.propertyAsString?.let {
                 resolver.resolveProperty(expression.objectExpression, it, staticContext, expression.isSpreadSafe)
             }
-            if (range != null && symbolId != null) {
-                occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
+            val occurrence = if (range != null && symbolId != null) {
+                SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE)
+            } else {
+                null
             }
-            if (!(record && range != null && symbolId != null) && unresolved.isSource(expression)) {
+            occurrence?.let(occurrences::add)
+            if (!(record && occurrence != null) && unresolved.isSource(expression)) {
                 unresolved.member(expression.propertyAsString, accessOf(expression))
             }
             super.visitPropertyExpression(expression)
