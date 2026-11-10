@@ -148,7 +148,10 @@ class WorkspaceManager(
     fun applySourceChanges(created: Collection<Path>, deleted: Collection<Path>): Boolean {
         var changed = false
         update { current ->
-            val gone = deleted.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val createdKeys = created.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            // A path both deleted and created in one notification (a replace-on-save) is decided by the disk.
+            val gone = deleted.map { it.toAbsolutePath().normalize() }
+                .filterTo(HashSet()) { it !in createdKeys || !Files.isRegularFile(it) }
             val known = current.sources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
             val roots = current.sourceRoots.map { it.toAbsolutePath().normalize() }
             val added = created.map { it.toAbsolutePath().normalize() }

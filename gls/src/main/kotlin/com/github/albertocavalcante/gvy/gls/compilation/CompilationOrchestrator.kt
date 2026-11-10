@@ -459,6 +459,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             logger.debug { "Compiling from disk on-demand: $uri" }
             // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
             val claim = claim(uri, Origin.DISK)
+            // Read the model again now the ticket is taken, as the buffer path does: a change published
+            // before this read retires the ticket, so a compile on an older model cannot publish (#1422).
+            val compileWorkspace = workspaceManager.current()
             return Awaited.Done(
                 claim.publication.use {
                     try {
@@ -468,7 +471,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                         // Use MINIMAL mode for on-demand navigation requests to avoid workspace-wide recompiles
                         performCompilation(
                             CompilationInput(uri, content, claim),
-                            workspace,
+                            compileWorkspace,
                             parseMode = ParseMode.MINIMAL,
                         )
                     } catch (e: CancellationException) {

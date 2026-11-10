@@ -43,6 +43,8 @@ class GroovyCompilationService(
     compilationCacheMaxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
     /** Wraps every parser session, so a test can hold a compile at an exact point. */
     workerSessionDecorator: (WorkerSession) -> WorkerSession = { it },
+    /** The workspace model's owner; a seam so a test can interleave a model change deterministically. */
+    workspaceManager: WorkspaceManager = WorkspaceManager(),
 ) {
     private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
@@ -69,7 +71,7 @@ class GroovyCompilationService(
     private val ownership = ArtifactOwnership()
     private val cacheService =
         CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen, ownership = ownership)
-    val workspaceManager = WorkspaceManager()
+    val workspaceManager = workspaceManager
     private val symbolIndexer =
         SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager, ownership, isOpen)
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
