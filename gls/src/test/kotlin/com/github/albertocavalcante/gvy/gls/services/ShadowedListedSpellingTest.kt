@@ -200,8 +200,12 @@ class ShadowedListedSpellingTest {
             assertEquals(listOf(opened.toString()), symbolUris("Shadowed").distinct(), "listed under both spellings")
         }
         assertNotNull(compilation.compile(opened, TEXT))
-
         assertEquals(0, reads, "real-path reads on the request path")
+
+        // A model that changes no root or listing (a dependency or target re-stamp) keeps every translation.
+        assertTrue(compilation.workspaceManager.updateDependencies(listOf(workspaceRoot.resolve("lib.jar"))))
+        repeat(REQUESTS) { symbolUris("Shadowed") }
+        assertEquals(0, reads, "real-path reads after a model change that keeps the roots and listing")
     }
 
     private companion object {
