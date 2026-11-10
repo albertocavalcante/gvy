@@ -229,5 +229,4 @@ class WatchedSpellingRetireTest {
 
         assertNull(compilation.getCompiledSnapshot(file.toUri()), "the listed parse is served")
     }
-
 }
