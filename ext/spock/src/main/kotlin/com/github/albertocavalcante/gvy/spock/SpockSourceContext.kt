@@ -193,6 +193,10 @@ private class SpecificationClassifier(private val module: ModuleNode) {
      * by full name or at Object. Any other link, a cycle, or an unknown enclosing scope returns null so the
      * source-name rules decide (UNCERTAIN for a base outside the module). The verdict is only as current
      * as the compilation unit that produced the AST.
+     *
+     * Limitation: the enclosing-scope check ([enclosingScopesKnown]) runs only for [node]. A nested class
+     * in another file along the chain is trusted as the compiler bound it, even if one of its own enclosing
+     * classes has a supertype the compile could not see.
      */
     private fun compiledSourceHierarchy(node: ClassNode, superClass: ClassNode): SpockClassContext? {
         if (!inCompilationUnit(superClass) || !enclosingScopesKnown(node)) return null
