@@ -136,12 +136,9 @@ class JenkinsCompletionExactSetTest {
         val items = completeAt(code, line = 3, character = 12)
 
         assertNoDuplicateLabels(items)
-        // TODO(#1243): drop this filter once stage(...)'s map keys stop leaking into its body.
-        //   See: https://github.com/albertocavalcante/gvy/issues/1243
-        val leakedMapKeys = items.labels().filter { it.endsWith(":") }.toSet()
         assertEquals(
             setOf("agent", "environment", "matrix", "options", "parallel", "post", "steps", "tools", "when"),
-            items.labels() - leakedMapKeys,
+            items.labels(),
         )
     }
 
@@ -313,6 +310,36 @@ class JenkinsCompletionExactSetTest {
         val items = completeAt("pipeline {\n    options {\n        \n    }\n}", line = 2, character = 8)
 
         assertTrue("cron" !in items.labels() && "string" !in items.labels(), "options offers only options")
+    }
+
+    @Test
+    fun `scripted node body offers no node map keys`(): Unit = runTest {
+        val items = completeAt("node {\n    \n}", line = 1, character = 4)
+
+        assertEquals(emptyList(), items.map { it.label }.filter { it.endsWith(":") }, "node's label:/body: leaked")
+    }
+
+    @Test
+    fun `step closure bodies offer no outer step map keys`(): Unit = runTest {
+        val dir = completeAt("node {\n    dir('build') {\n        \n    }\n}", line = 2, character = 8)
+        val withCredentials = completeAt(
+            "node {\n    withCredentials([string(credentialsId: 'c', variable: 'V')]) {\n        \n    }\n}",
+            line = 2,
+            character = 8,
+        )
+
+        assertEquals(emptyList(), dir.map { it.label }.filter { it.endsWith(":") }, "dir's path: leaked")
+        assertEquals(emptyList(), withCredentials.map { it.label }.filter { it.endsWith(":") })
+        assertTrue("sh" in dir.labels(CompletionItemKind.Function), "steps are still offered in the body")
+    }
+
+    @Test
+    fun `argument lists still offer the step's map keys`(): Unit = runTest {
+        val node = completeAt("node() {\n}", line = 0, character = 5)
+        val sh = completeAt("node {\n    sh()\n}", line = 1, character = 7)
+
+        assertTrue("label:" in node.labels(), "node(|) offers label:")
+        assertTrue("returnStdout:" in sh.labels(), "sh(|) offers returnStdout:")
     }
 
     private companion object {
