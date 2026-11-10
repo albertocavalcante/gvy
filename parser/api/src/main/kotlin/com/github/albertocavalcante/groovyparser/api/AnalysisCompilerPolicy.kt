@@ -1,9 +1,13 @@
 package com.github.albertocavalcante.groovyparser.api
 
+import groovy.transform.AnnotationCollectorMode
 import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
@@ -64,7 +68,8 @@ internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePh
     @Throws(CompilationFailedException::class)
     override fun call(source: SourceUnit, context: GeneratorContext, classNode: ClassNode) {
         val names = blockedNames(classNode)
-        if (classNode.isAnnotationDefinition) sanitizeCollector(classNode, names)
+        // Groovy never checks that a collector is an annotation type, so any class may carry the annotation.
+        sanitizeCollector(classNode, names)
         object : ClassCodeVisitorSupport() {
             override fun getSourceUnit(): SourceUnit = source
 
@@ -110,15 +115,29 @@ internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePh
                 annotation.members.remove("processor")
                 annotation.members.remove("serializeClass")
                 val mode = annotation.getMember("mode")
-                if (mode != null && !isPlainModeConstant(mode)) annotation.members.remove("mode")
+                if (mode != null) {
+                    // Rebuild a plain constant from scratch so no user-controlled name resolution can matter.
+                    val constant = plainModeConstant(mode)
+                    if (constant == null) {
+                        annotation.members.remove("mode")
+                    } else {
+                        annotation.setMember(
+                            "mode",
+                            PropertyExpression(
+                                ClassExpression(ClassHelper.make(AnnotationCollectorMode::class.java)),
+                                ConstantExpression(constant),
+                            ),
+                        )
+                    }
+                }
             }
     }
 
-    private fun isPlainModeConstant(mode: Expression): Boolean {
-        val property = mode as? PropertyExpression ?: return false
-        val owner = property.objectExpression.text
-        val constant = property.propertyAsString
-        return owner in MODE_ENUMS && constant in MODE_CONSTANTS && !property.isSafe && !property.isSpreadSafe
+    private fun plainModeConstant(mode: Expression): String? {
+        val property = mode as? PropertyExpression ?: return null
+        val constant = property.propertyAsString ?: return null
+        val plain = property.objectExpression.text in MODE_ENUMS && !property.isSafe && !property.isSpreadSafe
+        return constant.takeIf { plain && it in MODE_CONSTANTS }
     }
 
     /**

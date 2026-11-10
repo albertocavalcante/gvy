@@ -216,6 +216,36 @@ class AstTestExecutionTest {
     }
 
     @Test
+    fun `a class or interface carrying AnnotationCollector is sanitised like an annotation definition`() {
+        for (kind in listOf("class", "interface")) {
+            assertNotExecuted(
+                "$kind-collector-value",
+                collectorHeader() + "@AnnotationCollector([ASTTest]) $kind Boom {}\n@Boom(value=CLOSURE)\nclass A {}",
+            )
+            for (phase in phases) {
+                val marker = tempDir.resolve("$kind-collector-mode-$phase")
+                val path = marker.toString().replace("\\", "/")
+                val code = collectorHeader() + "@AnnotationCollector(value=[Deprecated], " +
+                    "mode=new File('$path').with { text = 'x'; AnnotationCollectorMode.DUPLICATE }) $kind Boom {}\n" +
+                    "@Boom\nclass A {}"
+
+                parse(code, phase)
+
+                assertFalse(marker.exists(), "$kind collector with an evaluated mode executed at phase $phase")
+            }
+        }
+    }
+
+    @Test
+    fun `AnnotationCollector reached through a star import`() {
+        assertNotExecuted(
+            "star-collector",
+            "import groovy.transform.*\n@AnnotationCollector([ASTTest])\n@interface Boom {}\n" +
+                "@Boom(value=CLOSURE)\nclass A {}",
+        )
+    }
+
+    @Test
     fun `transitive collectors declared in other workspace sources`() {
         for (phase in listOf(Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)) {
             val (closure, marker) = closure("workspace-$phase")
