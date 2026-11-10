@@ -305,7 +305,7 @@ private fun getVariableTypeFromSymbol(
  */
 private fun findPropertyInClass(classNode: ClassNode, propertyName: String, symbolTable: SymbolTable): ASTNode? =
     symbolTable.registry.findFieldDeclaration(classNode, propertyName)
-        ?: classNode.getField(propertyName)
+        ?: classNode.findFieldSafe(propertyName)
         ?: classNode.getProperty(propertyName)
 
 /**

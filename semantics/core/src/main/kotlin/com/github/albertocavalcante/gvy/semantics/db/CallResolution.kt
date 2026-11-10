@@ -288,7 +288,7 @@ internal class CallResolver(
         if (variable.isThisExpression) return currentClass
         val binding = lookup(variable.name)
         if (binding != null) return binding.type
-        val member = currentClass.getField(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
+        val member = currentClass.findFieldSafe(variable.name)?.type ?: currentClass.getProperty(variable.name)?.type
         return TypeSignatures.knownTypeOrNull(member)
     }
 }

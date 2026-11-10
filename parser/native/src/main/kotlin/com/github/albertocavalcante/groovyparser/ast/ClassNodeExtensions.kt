@@ -2,6 +2,8 @@ package com.github.albertocavalcante.groovyparser.ast
 
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.MethodNode
 
 /**
  * Extension functions for ClassNode to provide cleaner type checking.
@@ -74,6 +76,26 @@ fun ClassNode.isDerivedFromSafe(other: ClassNode): Boolean = if (hasCyclicSuperC
  * through isScript(), which walks the superclass chain, so a cyclic hierarchy is answered "not a script" here.
  */
 fun ClassNode.isScriptSafe(): Boolean = !hasCyclicSuperClassChain() && isScript
+
+/**
+ * Cycle-safe replacement for [ClassNode.getField], which walks the superclass chain with no visited set and never
+ * returns for a missing name on a cyclic hierarchy. Acyclic chains are answered by Groovy itself.
+ */
+fun ClassNode.findFieldSafe(name: String): FieldNode? = if (hasCyclicSuperClassChain()) {
+    (sequenceOf(this) + superClassChain()).firstNotNullOfOrNull { it.getDeclaredField(name) }
+} else {
+    getField(name)
+}
+
+/**
+ * Cycle-safe replacement for [ClassNode.getMethods] with a name, which recurses through superclasses with no visited
+ * set (an endless, growing list on a cyclic hierarchy). Acyclic chains are answered by Groovy itself.
+ */
+fun ClassNode.methodsSafe(name: String): List<MethodNode> = if (hasCyclicSuperClassChain()) {
+    (sequenceOf(this) + superClassChain()).flatMap { it.getDeclaredMethods(name).asSequence() }.toList()
+} else {
+    getMethods(name)
+}
 
 /**
  * Cycle-safe replacement for [ClassNode.implementsInterface]: true when [other] is among the interfaces of this
