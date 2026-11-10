@@ -1,10 +1,14 @@
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.gls.compilation.contentHash
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 
 /** Text and the client's version captured from the same buffer state. Null means unversioned input. */
-data class DocumentSnapshot(val content: String, val version: Int?)
+data class DocumentSnapshot(val content: String, val version: Int?) {
+    /** SHA-256 of [content], computed once per buffer state (readiness checks run on every navigation). */
+    internal val contentHash: String by lazy { contentHash(content) }
+}
 
 /** Identity of one open/close lifecycle; accepted edits retain it. */
 internal class DocumentIncarnation

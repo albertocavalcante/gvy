@@ -7,7 +7,6 @@ package com.github.albertocavalcante.gvy.gls.providers.crossfile
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationEnsurer
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
-import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionProvider
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionTelemetrySink
 import com.github.albertocavalcante.gvy.gls.providers.implementation.ImplementationProvider
@@ -45,7 +44,6 @@ private const val MAX_IMPLEMENTATION_SNAPSHOT_ATTEMPTS = 3
  * @property compilationService Service for compiling and accessing AST/symbol tables
  * @property documentProvider Provider for accessing document content
  * @property sourceNavigator Navigator for resolving source locations (including JARs)
- * @property diagnosticsOrchestrator Orchestrator for managing diagnostic jobs
  * @property definitionLinkSupport Lambda returning whether definition links are supported
  * @property clientTelemetry Lambda for sending telemetry events to the client
  */
@@ -53,7 +51,6 @@ class CrossFileOperationsHandler(
     private val compilationService: GroovyCompilationService,
     private val documentProvider: DocumentProvider,
     private val sourceNavigator: SourceNavigator,
-    private val diagnosticsOrchestrator: DiagnosticsOrchestrator,
     private val definitionLinkSupport: () -> Boolean,
     private val clientTelemetry: (Any) -> Unit,
 ) {
@@ -96,44 +93,48 @@ class CrossFileOperationsHandler(
         val documentUri = URI.create(uri)
 
         return runSuspendCatching {
-            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
-            // Fixes #749: Race condition where target file may not be indexed yet
-            ensureAllOpenDocumentsCompiled()
-
-            // CRITICAL: Ensure compilation completes before proceeding
-            ensureCompiledOrCompileNow(documentUri)
-                ?: run {
-                    logger.warn { "Document $documentUri not compiled, cannot provide definitions" }
-                    return@runSuspendCatching Either.forLeft<List<Location>, List<LocationLink>>(emptyList())
-                }
-
-            // Try LocationLink format if supported
-            if (definitionLinkSupport()) {
-                val links = definitionProvider.provideDefinitionLinks(uri, position).toList()
-                if (links.isNotEmpty()) {
-                    logger.debug {
-                        "Returning ${links.size} definition links (first=${links.first().targetUri})"
-                    }
-                    return@runSuspendCatching Either.forRight<List<Location>, List<LocationLink>>(links)
-                }
-            }
-
-            // Fall back to Location format
-            val locations = definitionProvider.provideDefinitions(uri, position).toList()
-            logger.debug {
-                if (locations.isNotEmpty()) {
-                    "Returning ${locations.size} definition locations (first=${locations.first().uri})"
-                } else {
-                    "Found 0 definitions"
-                }
-            }
-
-            Either.forLeft<List<Location>, List<LocationLink>>(locations)
+            withCurrentOrigin(documentUri) { findDefinitions(documentUri, position) }
         }.getOrElse { e ->
             if (e is ResponseErrorException) throw e // e.g. ContentModified: the client retries
             logException(e, "finding definitions")
             Either.forLeft(emptyList())
         }
+    }
+
+    private suspend fun findDefinitions(
+        documentUri: URI,
+        position: Position,
+    ): Either<List<Location>, List<LocationLink>> {
+        val uri = documentUri.toString()
+        // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
+        // Fixes #749: Race condition where target file may not be indexed yet
+        ensureAllOpenDocumentsCompiled()
+
+        // CRITICAL: Ensure compilation completes before proceeding
+        if (ensureCompiledOrCompileNow(documentUri) == null) {
+            logger.warn { "Document $documentUri not compiled, cannot provide definitions" }
+            return Either.forLeft(emptyList())
+        }
+
+        // Try LocationLink format if supported
+        if (definitionLinkSupport()) {
+            val links = definitionProvider.provideDefinitionLinks(uri, position).toList()
+            if (links.isNotEmpty()) {
+                logger.debug { "Returning ${links.size} definition links (first=${links.first().targetUri})" }
+                return Either.forRight(links)
+            }
+        }
+
+        // Fall back to Location format
+        val locations = definitionProvider.provideDefinitions(uri, position).toList()
+        logger.debug {
+            if (locations.isNotEmpty()) {
+                "Returning ${locations.size} definition locations (first=${locations.first().uri})"
+            } else {
+                "Found 0 definitions"
+            }
+        }
+        return Either.forLeft(locations)
     }
 
     /**
@@ -152,25 +153,45 @@ class CrossFileOperationsHandler(
         val documentUri = URI.create(uri)
 
         return runSuspendCatching {
-            // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
-            // Fixes #749: Race condition where target file may not be indexed yet
-            ensureAllOpenDocumentsCompiled()
+            withCurrentOrigin(documentUri) {
+                // CRITICAL: Ensure ALL open documents are compiled before cross-file resolution
+                // Fixes #749: Race condition where target file may not be indexed yet
+                ensureAllOpenDocumentsCompiled()
 
-            ensureCompiledOrCompileNow(documentUri)
-                ?: run {
+                if (ensureCompiledOrCompileNow(documentUri) == null) {
                     logger.warn { "Document $documentUri not compiled, cannot provide references" }
-                    return@runSuspendCatching emptyList()
+                    emptyList()
+                } else {
+                    referenceProvider.provideReferences(uri, position, includeDeclaration)
+                        .toList()
+                        .also { logger.debug { "Found ${it.size} references" } }
                 }
-
-            referenceProvider.provideReferences(uri, position, includeDeclaration)
-                .toList()
-                .also { logger.debug { "Found ${it.size} references" } }
+            }
         }.getOrElse { e ->
             if (e is ResponseErrorException) throw e // e.g. ContentModified: the client retries
             logException(e, "finding references")
             emptyList()
         }
     }
+
+    /**
+     * Runs a request whose answer is computed from [uri]'s open buffer, and reports ContentModified instead of an
+     * answer about text the client no longer shows: the origin buffer was edited, closed or reopened while the
+     * request ran. Retirements of other work (a configuration refresh, another file closing) are retried by the
+     * compilation service and do not fail the request; clients drop ContentModified silently for definition and
+     * references, so it must mean the origin really changed.
+     */
+    private suspend fun <T> withCurrentOrigin(uri: URI, block: suspend () -> T): T {
+        val origin = documentProvider.getSnapshot(uri)
+        val result = block()
+        if (origin != null && documentProvider.getSnapshot(uri) !== origin) {
+            throw contentModified("$uri changed during the request")
+        }
+        return result
+    }
+
+    private fun contentModified(message: String) =
+        ResponseErrorException(ResponseError(ResponseErrorCode.ContentModified, message, null))
 
     /**
      * Get implementations of the symbol at the given position.
@@ -189,16 +210,18 @@ class CrossFileOperationsHandler(
         val documentUri = URI.create(uri)
 
         return runSuspendCatching {
-            val snapshot = acquireImplementationSnapshot(documentUri)
-                ?: run {
+            withCurrentOrigin(documentUri) {
+                val snapshot = acquireImplementationSnapshot(documentUri)
+                if (snapshot == null) {
                     logger.warn { "Document $documentUri not compiled, cannot provide implementations" }
-                    return@runSuspendCatching Either.forLeft<List<Location>, List<LocationLink>>(emptyList())
+                    Either.forLeft(emptyList())
+                } else {
+                    implementationProvider.provideImplementations(documentUri, position, snapshot)
+                        .toList()
+                        .also { logger.debug { "Found ${it.size} implementations" } }
+                        .let { Either.forLeft<List<Location>, List<LocationLink>>(it) }
                 }
-
-            implementationProvider.provideImplementations(documentUri, position, snapshot)
-                .toList()
-                .also { logger.debug { "Found ${it.size} implementations" } }
-                .let { Either.forLeft<List<Location>, List<LocationLink>>(it) }
+            }
         }.getOrElse { e ->
             if (e is ResponseErrorException) throw e
             logException(e, "finding implementations")
@@ -230,13 +253,7 @@ class CrossFileOperationsHandler(
             }
         }
         // Retry only after an observed invalidation, never because a valid query has no implementations.
-        throw ResponseErrorException(
-            ResponseError(
-                ResponseErrorCode.ContentModified,
-                "Workspace changed during implementation acquisition",
-                null,
-            ),
-        )
+        throw contentModified("Workspace changed during implementation acquisition")
     }
 
     /**
@@ -258,7 +275,6 @@ class CrossFileOperationsHandler(
         CompilationEnsurer(
             documentProvider = documentProvider,
             compilationService = compilationService,
-            diagnosticJobs = diagnosticsOrchestrator.getDiagnosticJobsMap(),
         ).ensureAllCompiled()
     }
 

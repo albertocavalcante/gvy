@@ -4,6 +4,7 @@ import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.groovyparser.ast.symbols.buildFromVisitor
 import com.github.albertocavalcante.gvy.common.UriPathConverter
+import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSessionManager
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -71,6 +72,9 @@ class SymbolIndexingService(
     internal fun install(uri: URI, prepared: Prepared) {
         entries[uri] = prepared
     }
+
+    /** Whether the stored index of [uri] was built from exactly [snapshot]'s text; older text is not current. */
+    fun isIndexed(uri: URI, snapshot: DocumentSnapshot): Boolean = entries[uri]?.contentHash == snapshot.contentHash
 
     /**
      * Returns the index for [content], building it from [astModelProvider] only when the stored one was built
