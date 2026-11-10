@@ -30,6 +30,8 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ConstantExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.control.CompilationFailedException
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.Position
@@ -108,7 +110,9 @@ object CompletionProvider {
             // If simple insertion failed and it was a clean insertion, try adding 'def'.
             // This helps in class bodies: "class Foo { def BrazilWorldCup2026 }" is valid,
             // but "class Foo { BrazilWorldCup2026 }" is not.
-            if (isClean && !result1.isSuccessful) {
+            // Skip the retry when the dummy already parsed as an expression: an unrelated error elsewhere
+            // (an unresolved type, say) fails both copies alike, and `def` cannot describe the cursor better.
+            if (isClean && !result1.isSuccessful && !parsedAsExpression(astModel1)) {
                 context.ensureActive()
                 val content2 = CompletionContextDetector.insertDummyIdentifier(content, line, character, withDef = true)
                 val result2 = compilationService.compileTransient(uriObj, content2)
@@ -172,6 +176,15 @@ object CompletionProvider {
                 tokenIndex = null,
                 compilationService = compilationService,
             )
+        }
+    }
+
+    /** Whether the inserted dummy identifier survived parsing as a variable, property or method name. */
+    private fun parsedAsExpression(astModel: GroovyAstModel?): Boolean = astModel?.getAllNodes().orEmpty().any {
+        when (it) {
+            is VariableExpression -> it.name.contains(DUMMY_IDENTIFIER)
+            is ConstantExpression -> (it.value as? String)?.contains(DUMMY_IDENTIFIER) == true
+            else -> false
         }
     }
 
