@@ -99,4 +99,76 @@ object GroovyCodeCleaner {
         }
         return result.toString()
     }
+
+    /**
+     * Like [removeCommentsAndStrings], but keeps the code's shape: every character of a comment or string literal
+     * becomes a space and every newline is kept, so the result has the same length and the same lines as [code].
+     * Line-based scanners can then clean a whole prefix once and still read it line by line, with strings and
+     * comments that span lines handled (#1281).
+     *
+     * Also blanks dollar-slashy strings (`$/ ... /$`) and slashy strings (`/ ... /`). A `/` opens a slashy
+     * string only where an expression starts (at the start of the code or after `(`, `[`, `{`, `,`, `=`, `:`,
+     * `;`, `!`, `&`, `|`, `?`, `~` or a newline), so division stays code.
+     */
+    fun blankCommentsAndStrings(code: String): String {
+        val out = code.toCharArray()
+        fun blank(from: Int, to: Int) {
+            for (k in from until minOf(to, code.length)) if (out[k] != '\n') out[k] = ' '
+        }
+        var i = 0
+        while (i < code.length) {
+            val end = literalEnd(code, i)
+            if (end == null) {
+                i++
+            } else {
+                blank(i, end)
+                i = end
+            }
+        }
+        return String(out)
+    }
+
+    /** End (exclusive) of the comment or string literal starting at [i], or null when none starts there. */
+    private fun literalEnd(code: String, i: Int): Int? = when {
+        code.startsWith("//", i) -> code.indexOf('\n', i).takeIf { it >= 0 } ?: code.length
+        else -> PAIRED_DELIMITERS.firstOrNull { (open, _) -> code.startsWith(open, i) }
+            ?.let { (open, close) -> closingEnd(code, close, i + open.length) }
+            ?: when {
+                code[i] == '\'' || code[i] == '"' -> quotedEnd(code, i + 1, code[i])
+                code[i] == '/' && startsExpression(code, i) -> quotedEnd(code, i + 1, '/')
+                else -> null
+            }
+    }
+
+    /** Opening and closing delimiters of comments and strings that need no escape handling, longest first. */
+    private val PAIRED_DELIMITERS = listOf(
+        "/*" to "*/",
+        "\'\'\'" to "\'\'\'",
+        "\"\"\"" to "\"\"\"",
+        "$/" to "/$",
+    )
+
+    private fun closingEnd(code: String, delimiter: String, from: Int): Int =
+        code.indexOf(delimiter, from).let { if (it < 0) code.length else it + delimiter.length }
+
+    /** End of a literal closed by [quote], with backslash escapes. */
+    private fun quotedEnd(code: String, from: Int, quote: Char): Int {
+        var j = from
+        while (j < code.length) {
+            when (code[j]) {
+                '\\' -> j += 2
+                quote -> return j + 1
+                else -> j++
+            }
+        }
+        return code.length
+    }
+
+    private const val EXPRESSION_STARTERS = "([{,=:;!&|?~\n"
+
+    private fun startsExpression(code: String, slash: Int): Boolean {
+        var j = slash - 1
+        while (j >= 0 && (code[j] == ' ' || code[j] == '\t')) j--
+        return j < 0 || code[j] in EXPRESSION_STARTERS
+    }
 }

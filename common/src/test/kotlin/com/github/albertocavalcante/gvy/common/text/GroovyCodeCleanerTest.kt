@@ -131,4 +131,28 @@ class GroovyCodeCleanerTest {
         // The string content should be removed
         assert(!result.contains("import spock.lang.Specification"))
     }
+
+    @Test
+    fun `blankCommentsAndStrings keeps the length and every newline`() {
+        val code = "a = \'\'\'x\n}\n\'\'\' /* {\n */ b // }\nc"
+
+        val blanked = GroovyCodeCleaner.blankCommentsAndStrings(code)
+
+        assertEquals(code.length, blanked.length)
+        assertEquals(code.indices.filter { code[it] == '\n' }, blanked.indices.filter { blanked[it] == '\n' })
+        assertEquals("a =     \n \n        \n    b     \nc", blanked)
+    }
+
+    @Test
+    fun `blankCommentsAndStrings blanks single and double quoted strings with escapes`() {
+        assertEquals("echo      ; x", GroovyCodeCleaner.blankCommentsAndStrings("echo '}\\''; x"))
+        assertEquals("echo        x", GroovyCodeCleaner.blankCommentsAndStrings("echo \"{\\\"}\" x"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings blanks dollar-slashy and slashy strings but not division`() {
+        assertEquals("j =        ;", GroovyCodeCleaner.blankCommentsAndStrings("j = ${'$'}/{ }/${'$'};"))
+        assertEquals("r =     ;", GroovyCodeCleaner.blankCommentsAndStrings("r = /a{/;"))
+        assertEquals("h = t / 2 / c", GroovyCodeCleaner.blankCommentsAndStrings("h = t / 2 / c"))
+    }
 }

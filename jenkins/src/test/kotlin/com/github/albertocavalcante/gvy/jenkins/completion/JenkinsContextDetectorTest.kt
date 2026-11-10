@@ -419,4 +419,86 @@ class JenkinsContextDetectorTest {
 
         assertEquals(listOf("pipeline", "stages", "stage", "steps", "script"), context.enclosingBlocks)
     }
+
+    /** Inside `steps {}` of a stage, after [body] (lines that open and close within the steps block). */
+    private fun enclosingAfter(vararg body: String): List<String> {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('Build') {",
+            "            steps {",
+        ) + body + "                "
+        return JenkinsContextDetector.detectFromDocument(
+            lines,
+            lineNumber = lines.lastIndex,
+            column = 16,
+        ).enclosingBlocks
+    }
+
+    private val inSteps = listOf("pipeline", "stages", "stage", "steps")
+
+    @Test
+    fun `braces and block keywords inside a multi-line triple-quoted shell script do not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                sh '''",
+                "                    if [ -f x ]; then { echo hi; }",
+                "                    }",
+                "                    post { success {",
+                "                '''",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line GString does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                sh \"\"\"",
+                "                    echo \"${'$'}{env.X} }\"",
+                "                    always {",
+                "                \"\"\"",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line block comment does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                /* disabled:",
+                "                stage('Old') {",
+                "                } } }",
+                "                */",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line dollar-slashy string does not shift the blocks`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                def json = ${'$'}/",
+                "                    { \"a\": { \"b\": 1 } } }",
+                "                /${'$'}",
+            ),
+        )
+    }
+
+    @Test
+    fun `a multi-line slashy regex does not shift the blocks, while division stays code`() {
+        assertEquals(
+            inSteps,
+            enclosingAfter(
+                "                def re = /^a{2}",
+                "                    }b/",
+                "                def half = total / 2 / count",
+            ),
+        )
+    }
 }
