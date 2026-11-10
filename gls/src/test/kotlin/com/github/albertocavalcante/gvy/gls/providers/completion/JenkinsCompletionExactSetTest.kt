@@ -154,7 +154,28 @@ class JenkinsCompletionExactSetTest {
 
         assertNoDuplicateLabels(items)
         assertTrue(setOf("env", "params", "currentBuild").all { it in items.labels(CompletionItemKind.Variable) })
+        assertTrue("fileExists" in items.labels(CompletionItemKind.Function), "expression {} can call steps")
         assertTrue("branch" !in items.labels(), "when conditions are not valid inside expression {}")
+    }
+
+    @Test
+    fun `when allOf body offers exactly the when conditions`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Build') {\n            when {\n" +
+            "                allOf {\n                    \n                }\n            }\n        }\n    }\n}"
+        val items = completeAt(code, line = 6, character = 20)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(WHEN_CONDITIONS, items.labels())
+    }
+
+    @Test
+    fun `one-line when not body offers exactly the when conditions`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Build') {\n            when { not {\n" +
+            "                \n            } }\n        }\n    }\n}"
+        val items = completeAt(code, line = 5, character = 16)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(WHEN_CONDITIONS, items.labels())
     }
 
     @Test
@@ -187,6 +208,7 @@ class JenkinsCompletionExactSetTest {
 
         assertNoDuplicateLabels(items)
         assertTrue(items.labels(CompletionItemKind.Function).isEmpty(), "No steps in agent { node {} }")
+        assertTrue(items.labels(CompletionItemKind.Variable).isEmpty(), "No global variables in agent { node {} }")
     }
 
     @Test
@@ -228,5 +250,14 @@ class JenkinsCompletionExactSetTest {
         assertNoDuplicateLabels(items)
         assertTrue(metadata.steps.keys.all { it in items.labels(CompletionItemKind.Function) }, "All steps offered")
         assertTrue(metadata.globalVariables.keys.all { it in items.labels(CompletionItemKind.Variable) })
+    }
+
+    private companion object {
+        /** `when` conditions from the declarative schema, valid in `when {}` and its combinators. */
+        val WHEN_CONDITIONS = setOf(
+            "allOf", "anyOf", "beforeAgent", "beforeInput", "beforeOptions", "branch", "buildingTag",
+            "changeRequest", "changelog", "changeset", "equals", "expression", "isRestartedRun", "not",
+            "tag", "triggeredBy",
+        )
     }
 }

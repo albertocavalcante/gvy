@@ -131,36 +131,50 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
  *
  * Deliberately not listed: `steps`, post-condition bodies and `script` (steps), `environment`
  * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), and `parameters`,
- * `triggers`, `tools`, `libraries`, `matrix`, whose contents are not modeled yet (#1246).
+ * `triggers`, `tools`, `libraries`, `matrix`, `parallel`, `axes`, whose contents are not modeled
+ * or not tracked by the block detector yet (#1246).
  */
-private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf(
-    "pipeline", "agent", "stages", "stage", "parallel", "axes", "post", "options", "when",
-)
+private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf("pipeline", "agent", "stages", "stage", "post", "options", "when")
+
+/** `when` condition combinators: their bodies hold `when` conditions, so they behave as `when` itself. */
+private val WHEN_COMBINATORS = setOf("allOf", "anyOf", "not")
+
+/** The innermost tracked block, looking through `when` combinators. */
+private fun JenkinsBlockContext.effectiveInnermostBlock(): String? = enclosingBlocks.lastOrNull {
+    it !in
+        WHEN_COMBINATORS
+}
+
+/** `agent { node { | } }`: the declarative node agent, whose body holds `label`, `customWorkspace`. */
+private fun JenkinsBlockContext.isDeclarativeNodeAgent(): Boolean =
+    enclosingBlocks.lastOrNull() == "node" && "agent" in enclosingBlocks
 
 /** True unless a tracked non-schema block (such as `expression {}`) sits inside [JenkinsBlockContext.currentBlock]. */
 private fun JenkinsBlockContext.isInnermostTrackedBlock(): Boolean =
-    enclosingBlocks.isEmpty() || enclosingBlocks.last() == currentBlock
+    enclosingBlocks.isEmpty() || effectiveInnermostBlock() == currentBlock
 
 /**
- * True when the cursor sits directly in a structural declarative block: the innermost tracked
- * block is that block (not, say, `expression {}` inside `when`), and no Groovy body encloses it
- * (a scripted `stage('x') {}` inside `script {}` takes steps and globals).
+ * True when the cursor sits directly in a structural declarative block (or a `when` combinator,
+ * or the declarative node agent) with no Groovy body in between. A scripted `stage('x') {}`
+ * inside `script {}` and `when { expression { } }` take steps and globals.
  */
 private fun JenkinsBlockContext?.isStructuralDeclarativeBlock(): Boolean {
     if (this == null || !isStrictDeclarative) return false
     val block = currentBlock ?: return false
     if (block !in STRUCTURAL_DECLARATIVE_BLOCKS) return false
-    if (!isInnermostTrackedBlock()) return false
-    return !isInsideGroovyBody()
+    if (isInsideGroovyBody()) return false
+    return isInnermostTrackedBlock() || isDeclarativeNodeAgent()
 }
 
-/** The cursor is directly in a declarative block (not in Groovy nested inside one). */
+/** The cursor is directly in a declarative block (not in Groovy nested inside one, nor in a node agent). */
 private fun JenkinsBlockContext.acceptsDeclarativeDirectives(): Boolean =
     isInnermostTrackedBlock() && !isInsideGroovyBody()
 
 /**
- * A `script {}`, or a scripted `node {}`, encloses the cursor, so scripted-pipeline statements
- * apply beneath it. `agent { node { label 'x' } }` is the declarative node agent, not Groovy.
+ * A `script {}`, `expression {}` or scripted `node {}` encloses the cursor, so Groovy statements
+ * and pipeline steps apply beneath it. `agent { node { label 'x' } }` is the declarative node
+ * agent, not Groovy.
  */
-private fun JenkinsBlockContext.isInsideGroovyBody(): Boolean =
-    "script" in enclosingBlocks || ("node" in enclosingBlocks && "agent" !in enclosingBlocks)
+private fun JenkinsBlockContext.isInsideGroovyBody(): Boolean = "script" in enclosingBlocks ||
+    "expression" in enclosingBlocks ||
+    ("node" in enclosingBlocks && "agent" !in enclosingBlocks)

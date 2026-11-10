@@ -337,4 +337,34 @@ class JenkinsContextDetectorTest {
 
         assertEquals(listOf("pipeline", "stages", "stage", "when", "anyOf", "not"), context.enclosingBlocks)
     }
+
+    @Test
+    fun `a block opening inside a string literal is ignored`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            steps {",
+            "                echo 'always {'",
+            "                ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 5, column = 16)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "steps"), context.enclosingBlocks)
+    }
+
+    @Test
+    fun `a closing brace inside a string literal does not close the block`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            steps {",
+            "                echo \"}\" /* } */",
+            "                ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 5, column = 16)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "steps"), context.enclosingBlocks)
+    }
 }

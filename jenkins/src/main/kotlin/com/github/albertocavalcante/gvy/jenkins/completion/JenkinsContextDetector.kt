@@ -138,7 +138,9 @@ object JenkinsContextDetector {
 
         for (i in 0 until minOf(lineNumber + 1, lines.size)) {
             val line = lines[i]
-            val cleanLine = GroovyCodeCleaner.stripSingleLineComments(line)
+            // Strings and comments can contain `always {` or unbalanced braces (`echo '}'`).
+            // Line-based: strings and block comments spanning lines are not handled (#1281).
+            val cleanLine = GroovyCodeCleaner.removeCommentsAndStrings(line)
 
             addBlockOpenings(cleanLine, blockStack)
 
