@@ -7,6 +7,8 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
 import org.eclipse.lsp4j.CodeActionParams
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.Path
 
 /**
  * Main provider for code actions (quick fixes) in Groovy files.
@@ -25,6 +27,56 @@ class CodeActionProvider(
     // Reuse action provider instances to reduce object allocation
     private val formattingAction = FormattingAction(formatter)
     private val importAction = ImportAction(compilationService)
+    private val verdictMemory = SpockVerdictMemory()
+
+    /** Drops the remembered Spock verdicts of a closed document (#1387). */
+    fun forgetDocument(uri: URI) = verdictMemory.forget(uri.toString())
+
+    /**
+     * The Groovy and Java files of [packageName] across every workspace source root the compile uses, plus the
+     * source's own directory (its file need not sit where its `package` says), on disk or open, as one sorted
+     * string; null when a directory cannot be listed. The package comes from the AST, not the directory, so
+     * nested source roots cannot misplace it.
+     */
+    private fun packageFileSet(path: String, packageName: String): String? {
+        val directory = runCatching { Path.of(path).parent }.getOrNull()?.let(::real) ?: return null
+        val packagePath = packageName.split('.').filter(String::isNotEmpty)
+        val roots = compilationService.workspaceManager.getSourceRoots().map(::real)
+        val directories = (roots.map { root -> packagePath.fold(root) { dir, part -> dir.resolve(part) } } + directory)
+            .map { it.normalize() }
+            .distinct()
+        val onDisk = directories.map { listSources(it) ?: return null }.flatten()
+        val open = documentProvider.getAllUris()
+            .mapNotNull { uri -> runCatching { real(Path.of(uri)) }.getOrNull() }
+            .filter { it.parent in directories && isSourceFile(it) }
+        return (onDisk + open).map(Path::toString).toSortedSet().joinToString(",")
+    }
+
+    /** The source files directly in [directory]; empty when it does not exist, null when it cannot be read. */
+    private fun listSources(directory: Path): List<Path>? = when {
+        !Files.isDirectory(directory) -> emptyList()
+        else -> runCatching {
+            Files.list(directory).use { entries ->
+                entries.filter { Files.isRegularFile(it) && isSourceFile(it) }.map(::real).toList()
+            }
+        }.getOrNull()
+    }
+
+    /** The real path when it exists, else the absolute normalized path, so roots and sources compare alike. */
+    private fun real(path: Path): Path =
+        runCatching { path.toRealPath() }.getOrElse { path.toAbsolutePath().normalize() }
+
+    private fun isSourceFile(path: Path): Boolean =
+        path.fileName.toString().let { it.endsWith(".groovy") || it.endsWith(".java") }
+
+    /** A source's current text by normalized path: the open buffer when there is one, else the file. */
+    private fun currentSourceText(path: String): String? {
+        val file = runCatching { Path.of(path) }.getOrNull() ?: return null
+        documentProvider.getSnapshot(file.toUri())?.let { return it.content }
+        return runCatching {
+            file.takeIf { Files.isRegularFile(it) && Files.size(it) <= MAX_SOURCE_BYTES }?.let(Files::readString)
+        }.getOrNull()
+    }
     private val lintFixAction = LintFixAction()
 
     /**
@@ -55,6 +107,13 @@ class CodeActionProvider(
                             params.context.only,
                             snapshot.version,
                             isPartial = !compiled.parseResult.isSuccessful,
+                            verdicts = verdictMemory.access(
+                                params.textDocument.uri,
+                                compilationService.workspaceManager.fingerprintFor(uri),
+                                compiled.parseResult.outcome,
+                                ::currentSourceText,
+                                ::packageFileSet,
+                            ),
                         ),
                     ),
                 )
@@ -86,3 +145,5 @@ class CodeActionProvider(
         return actions
     }
 }
+
+private const val MAX_SOURCE_BYTES = 1_000_000L
