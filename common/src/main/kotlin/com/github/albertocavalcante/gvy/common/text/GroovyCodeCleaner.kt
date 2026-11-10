@@ -206,6 +206,7 @@ object GroovyCodeCleaner {
         var j = from
         while (j < code.length && depth > 0) {
             when (code[j]) {
+                '\\' -> j++ // with the j++ below, skips the escaped character (`'\{'`)
                 '{' -> depth++
                 '}' -> depth--
                 '\n' -> if (newline == null) newline = j

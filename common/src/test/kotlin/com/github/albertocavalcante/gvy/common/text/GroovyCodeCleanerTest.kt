@@ -186,4 +186,13 @@ class GroovyCodeCleanerTest {
         assertEquals("s =                    \n         ; b {", blanked)
         assertEquals("t =       \nb {", GroovyCodeCleaner.blankCommentsAndStrings("t = \"stray\nb {"))
     }
+
+    @Test
+    fun `blankCommentsAndStrings skips an escaped brace inside a GString interpolation`() {
+        val literal = "\"${'$'}{ s.replace('\\{', '') }\""
+
+        val blanked = GroovyCodeCleaner.blankCommentsAndStrings("$literal ; b {")
+
+        assertEquals(" ".repeat(literal.length) + " ; b {", blanked)
+    }
 }
