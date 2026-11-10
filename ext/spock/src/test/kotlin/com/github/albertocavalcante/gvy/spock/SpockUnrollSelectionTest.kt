@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.spock.UnrollPatternOrigin.SPEC_ANNOTATIO
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
@@ -266,6 +267,72 @@ class SpockUnrollSelectionTest {
             }
             """.trimIndent()
         assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.ANNOTATION_IDENTITY), select(source))
+    }
+
+    @Test
+    fun `a nested Unroll class next to a Spock star import stays uncertain`() {
+        val source =
+            """
+            import spock.lang.*
+            class S extends Specification {
+                static class Unroll {}
+                @Unroll('nested #a')
+                def feature() { expect: a
+                    where: a << [1] }
+            }
+            """.trimIndent()
+        assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.ANNOTATION_IDENTITY), select(source))
+    }
+
+    @Test
+    fun `a class level annotation also sees the class's own nested classes as bindings`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            @Unroll('spec #a')
+            class S extends spock.lang.Specification {
+                static class Unroll {}
+                def feature() { expect: a
+                    where: a << [1] }
+            }
+            """.trimIndent()
+        assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.ANNOTATION_IDENTITY), select(source))
+    }
+
+    /** Pins the Groovy 4.0.33 resolution the binder's annotation scope relies on. */
+    @Test
+    fun `groovy resolves Unroll spellings against the annotated class's nested classes`() {
+        fun resolved(source: String): List<String> {
+            val request = ParseRequest(
+                URI.create("file:///S.groovy"),
+                source,
+                compilePhase = Phases.SEMANTIC_ANALYSIS,
+            )
+            val result = parser.parse(request)
+            assertEquals(false, result.outcome.isDegraded, "${result.outcome}")
+            val spec = requireNotNull(result.ast).classes.single { it.name == "S" }
+            val methodAnnotations = spec.methods.flatMap { m -> m.annotations.map { it.classNode.name } }
+            return spec.annotations.map { it.classNode.name } + methodAnnotations
+        }
+        val nested = "\n static class Unroll {}\n"
+        assertEquals(
+            listOf("spock.lang.Unroll"),
+            resolved("import spock.lang.Unroll\n@Unroll('c')\nclass S extends spock.lang.Specification {$nested}"),
+            "Class level: an explicit import beats the class's own nested class",
+        )
+        assertEquals(
+            listOf("S\$Unroll"),
+            resolved("import spock.lang.*\n@Unroll('c')\nclass S extends Specification {$nested}"),
+            "Class level: the class's own nested class beats a star import",
+        )
+        assertEquals(
+            listOf("S\$Unroll"),
+            resolved(
+                "import spock.lang.*\nclass S extends Specification {$nested" +
+                    " @Unroll('m') def f() { expect: a\n where: a << [1] }\n}",
+            ),
+            "Method level: the declaring class's nested class beats a star import",
+        )
     }
 
     @Test

@@ -32,7 +32,7 @@ internal sealed interface NameBinding {
         /** More than one module class or import binds the spelling. */
         MULTIPLE_BINDINGS,
 
-        /** An enclosing class's superclass could supply a nested class with that name first. */
+        /** An enclosing class's superclass or interface could supply a nested class with that name first. */
         INHERITED_NESTED_SCOPE,
     }
 }
@@ -72,7 +72,7 @@ internal class SpockNameBinder(private val module: ModuleNode) {
             bases.isNotEmpty() -> NameBinding.ModuleClass(bases.single())
             explicit != null -> NameBinding.Imported(explicit)
             !simple -> NameBinding.Qualified(name)
-            else -> starCandidate(name, targets) ?: NameBinding.Unbound
+            else -> starImportOffers(name, targets)?.let(NameBinding::StarImportOnly) ?: NameBinding.Unbound
         }
     }
 
@@ -95,10 +95,12 @@ internal class SpockNameBinder(private val module: ModuleNode) {
         (node.superClass != null && node.superClass.name != ClassHelper.OBJECT_TYPE.name) ||
             node.interfaces.orEmpty().isNotEmpty()
 
-    private fun starCandidate(name: String, targets: Set<String>): NameBinding? {
+    /** The requested target a star import could supply for the bare [spelling], whatever else binds it. */
+    fun starImportOffers(spelling: String, targets: Set<String>): String? {
+        if ('.' in spelling || '$' in spelling) return null
         val packages = module.starImports.mapNotNull { it.packageName }.toSet()
         return targets.firstOrNull { target ->
-            target.substringAfterLast('.') == name && target.substringBeforeLast('.') + "." in packages
-        }?.let(NameBinding::StarImportOnly)
+            target.substringAfterLast('.') == spelling && target.substringBeforeLast('.') + "." in packages
+        }
     }
 }

@@ -90,13 +90,16 @@ object SpockUnrollSelection {
 
     class ModuleSelector internal constructor(private val module: ModuleNode) {
         private val conflicts = IdentityHashMap<ClassNode, Boolean>()
+        private val binder = SpockNameBinder(module)
 
         fun select(method: MethodNode): UnrollSelection {
             if (!hasWhereBlock(method)) return UnrollSelection.NotParameterized
-            val feature = Annotations.of(method, module)
-            val spec = Annotations.of(method.declaringClass, module)
+            val feature = Annotations.of(method, binder)
+            val spec = Annotations.of(method.declaringClass, binder)
             // Spock rejects the whole spec when any element it visits carries both annotations.
-            val conflict = conflicts.getOrPut(method.declaringClass) { conflictInSpec(method.declaringClass, module) }
+            val conflict = conflicts.getOrPut(method.declaringClass) {
+                conflictInSpec(method.declaringClass, module, binder)
+            }
             if (conflict) return UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS)
             return feature.problem ?: decide(method, feature, spec)
         }
@@ -146,18 +149,18 @@ object SpockUnrollSelection {
      * super spec of a nested spec spelled with a bare name (`extends Inner`), and a conflicting
      * subclass spec that runs these features.
      */
-    private fun conflictInSpec(spec: ClassNode, module: ModuleNode): Boolean {
+    private fun conflictInSpec(spec: ClassNode, module: ModuleNode, binder: SpockNameBinder): Boolean {
         val visited = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
         return generateSequence(spec) { current -> moduleSuperclass(current, module) }
             .takeWhile { visited.add(it) }
             .any { current ->
-                current.isConflicting(module) ||
-                    current.methods.any { hasWhereBlock(it) && it.isConflicting(module) }
+                current.isConflicting(binder) ||
+                    current.methods.any { hasWhereBlock(it) && it.isConflicting(binder) }
             }
     }
 
-    private fun AnnotatedNode.isConflicting(module: ModuleNode): Boolean =
-        Annotations.of(this, module).problem?.reason == UnrollUncertainty.CONFLICTING_ANNOTATIONS
+    private fun AnnotatedNode.isConflicting(binder: SpockNameBinder): Boolean =
+        Annotations.of(this, binder).problem?.reason == UnrollUncertainty.CONFLICTING_ANNOTATIONS
 
     /**
      * The in-module super spec, or null when it cannot be identified safely. A bare spelling in a
@@ -186,8 +189,8 @@ object SpockUnrollSelection {
         val problem: UnrollSelection.Uncertain?,
     ) {
         companion object {
-            fun of(node: AnnotatedNode, module: ModuleNode): Annotations {
-                val bindings = node.annotations.map { it to binding(node, it.classNode, module) }
+            fun of(node: AnnotatedNode, binder: SpockNameBinder): Annotations {
+                val bindings = node.annotations.map { it to binding(node, it.classNode, binder) }
                 val unroll = bindings.filter { it.second == Binding.UNROLL }.map { it.first }
                 val rollup = bindings.any { it.second == Binding.ROLLUP }
                 val problem = when {
@@ -213,20 +216,26 @@ object SpockUnrollSelection {
 
     /**
      * The shared [SpockNameBinder] binding of an annotation spelling, seen from the annotated element.
-     * A compiler-resolved type is trusted as is. The inherited-scope rule is not applied: the declaring
-     * spec always extends a superclass, so it would make every bare `@Unroll` uncertain. A nested
-     * `Unroll` class declared in that superclass therefore remains an undetected shadow.
+     * A compiler-resolved type is trusted as is. The scope starts at the annotated class itself (for a
+     * method, its declaring class): Groovy 4.0.33 resolves class-level annotations against the class's
+     * own nested classes too (pinned by a test). The inherited-scope rule is not applied: the declaring
+     * spec always extends a superclass, so it would make every bare `@Unroll` uncertain; a nested
+     * `Unroll` declared in that superclass therefore remains an undetected shadow.
+     *
+     * A module class that a Spock star import could also supply stays uncertain. Groovy binds the
+     * nested class first, but this keeps the verdict the pre-binder rule gave (refactor, #1302).
      */
-    private fun binding(element: AnnotatedNode, type: ClassNode, module: ModuleNode): Binding {
+    private fun binding(element: AnnotatedNode, type: ClassNode, binder: SpockNameBinder): Binding {
         if (type.isResolved) return byName(type.name)
         val scope = element as? ClassNode ?: (element as? MethodNode)?.declaringClass
         val enclosing = generateSequence(scope) { it.outerClass }.toList()
-        val bound = SpockNameBinder(module).bind(type.name, enclosing, annotationTargets, checkInheritedScope = false)
-        return when (bound) {
+        return when (val bound = binder.bind(type.name, enclosing, annotationTargets, checkInheritedScope = false)) {
             is NameBinding.Qualified -> byName(bound.name)
             is NameBinding.Imported -> byName(bound.fqn)
             is NameBinding.StarImportOnly, is NameBinding.Ambiguous -> Binding.UNCERTAIN
-            is NameBinding.ModuleClass, NameBinding.Unbound -> Binding.OTHER
+            is NameBinding.ModuleClass ->
+                if (binder.starImportOffers(type.name, annotationTargets) != null) Binding.UNCERTAIN else Binding.OTHER
+            NameBinding.Unbound -> Binding.OTHER
         }
     }
 
