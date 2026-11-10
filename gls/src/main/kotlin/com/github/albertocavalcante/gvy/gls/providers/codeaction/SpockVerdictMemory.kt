@@ -4,6 +4,7 @@ import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import groovyjarjarantlr4.v4.runtime.CharStreams
+import io.github.oshai.kotlinlogging.KotlinLogging
 import groovyjarjarantlr4.v4.runtime.Token
 import org.apache.groovy.parser.antlr4.GroovyLangLexer
 import org.apache.groovy.parser.antlr4.GroovySyntaxError
@@ -77,13 +78,10 @@ internal class SpockVerdictMemory {
         val classes: Map<String, Remembered>,
     )
 
+    private val logger = KotlinLogging.logger {}
     private val lock = Any()
     private val records = HashMap<String, Record>()
     private val epochs = HashMap<String, Long>()
-    private val decisions = HashMap<String, String>()
-
-    /** Why the last degraded request for [uri] recalled or denied each class; for diagnostics and tests. */
-    internal fun lastDecision(uri: String): String? = synchronized(lock) { decisions[uri] }
 
     /**
      * Starts one request for [uri]. By a source's normalized path, [readSource] reads its current text and
@@ -101,7 +99,6 @@ internal class SpockVerdictMemory {
     fun forget(uri: String) {
         synchronized(lock) {
             records.remove(uri)
-            decisions.remove(uri)
             epochs[uri] = (epochs[uri] ?: 0L) + 1
         }
     }
@@ -126,13 +123,13 @@ internal class SpockVerdictMemory {
             }
             val record = synchronized(lock) { records[uri] }
             if (record == null || record.fingerprint != fingerprint) {
-                decide(if (record == null) "no record" else "fingerprint changed")
+                decide { if (record == null) "no record" else "fingerprint changed" }
                 return emptySet()
             }
             val imports = importsOf(module)
             val verdicts = source.classes.filter { it.status == SpecificationStatus.UNCERTAIN }
                 .associate { context -> context.classNode.name to denial(record, context.classNode, module, imports) }
-            decide(verdicts.entries.joinToString("; ") { (name, denial) -> "$name: ${denial ?: "recalled"}" })
+            decide { verdicts.entries.joinToString("; ") { (name, denial) -> "$name: ${denial ?: "recalled"}" } }
             return verdicts.filterValues { it == null }.keys
         }
 
@@ -150,8 +147,9 @@ internal class SpockVerdictMemory {
             }
         }
 
-        private fun decide(text: String) {
-            synchronized(lock) { if ((epochs[uri] ?: 0L) == epoch) decisions[uri] = text }
+        /** Why each UNCERTAIN class was recalled or denied, at DEBUG for field diagnosis; never stored. */
+        private fun decide(text: () -> String) {
+            logger.debug { "Spock verdict memory for $uri: ${text()}" }
         }
 
         private fun refresh(module: ModuleNode, source: SpockSourceContext.Available) {
@@ -178,9 +176,9 @@ internal class SpockVerdictMemory {
         /**
          * Every link must still be what the clean compile saw. An in-file link compares its declaration in the
          * current module; a link in another file compares its prelude hash and its package's file set, since a
-         * new file there can shadow a star-imported name. Anything that cannot be computed denies reuse.
+         * new file there can shadow a star-imported name. Anything that cannot be computed denies reuse. Null
+         * when every remembered base is unchanged, else what changed for the first one that did.
          */
-        /** Null when every remembered base is unchanged, else what changed for the first one that did. */
         private fun baseDifference(remembered: Remembered, module: ModuleNode, imports: String): String? =
             remembered.bases.firstNotNullOfOrNull { base ->
                 if (base.source == null) {
