@@ -216,9 +216,9 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         classNode.objectInitializerStatements.forEach { it.visit(operators) }
         // A class that is not recorded still has its uses collected, into sinks that are thrown away.
         val visitor = if (record) {
-            OccurrenceVisitor(classNode, symbols, occurrences)
+            OccurrenceVisitor(classNode, symbols, occurrences, record = true)
         } else {
-            OccurrenceVisitor(classNode, mutableListOf(), mutableListOf())
+            OccurrenceVisitor(classNode, mutableListOf(), mutableListOf(), record = false)
         }
         classNode.visitContents(visitor)
         visitor.visitInitializers(classNode.objectInitializerStatements)
@@ -355,6 +355,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
         private val currentClass: ClassNode,
         private val symbols: MutableList<SymbolInfo>,
         private val occurrences: MutableList<SymbolOccurrence>,
+        // False for a class that gets no symbols or occurrences: its uses are then attributed to nothing.
+        private val record: Boolean,
     ) : ClassCodeVisitorSupport() {
 
         private val scopes = ArrayDeque<MutableMap<String, LocalBinding>>()
@@ -503,7 +505,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             val range = nodeToRange(call.method)
             val outcome = call.methodAsString?.let { resolver.resolve(call, it, closureScope) }
             val symbolId = (outcome as? CallOutcome.Resolved)?.symbolId
-            val stored = range != null && symbolId != null
+            val stored = record && range != null && symbolId != null
             if (range != null &&
                 symbolId != null
             ) {
@@ -557,14 +559,18 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             if (!expression.isThisExpression && !expression.isSuperExpression) {
                 // A parameter or local shadows a field of the same name. Otherwise only a field or property
                 // the class declares, and not inside an opaque closure, whose delegate may resolve the name first.
-                val symbolId = lookup(expression.name)?.id
+                val local = lookup(expression.name)
+                val symbolId = local?.id
                     ?: "${resolver.resolveTypeName(currentClass)}#${expression.name}.".takeIf {
                         declaresMember(currentClass, expression.name) &&
                             !closureScope.delegateMayAnswer(expression.name)
                     }
                 if (range != null && symbolId != null) {
                     occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
-                } else if (unresolved.isSource(expression)) {
+                }
+                // A parameter or local is certain; a field is attributed only where its occurrence is kept.
+                val attributed = local != null || (record && range != null && symbolId != null)
+                if (!attributed && unresolved.isSource(expression)) {
                     unresolved.member(expression.name, accessOf(expression))
                 }
             }
@@ -612,7 +618,8 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
             }
             if (range != null && symbolId != null) {
                 occurrences.add(SymbolOccurrence(symbolId, range, OccurrenceRole.REFERENCE))
-            } else if (unresolved.isSource(expression)) {
+            }
+            if (!(record && range != null && symbolId != null) && unresolved.isSource(expression)) {
                 unresolved.member(expression.propertyAsString, accessOf(expression))
             }
             super.visitPropertyExpression(expression)

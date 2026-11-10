@@ -340,4 +340,44 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
         assertEquals(true, "target" in names("class C { def run(Object o) { o.respondsTo('target') } }"))
         assertEquals(true, "target" in names("class C { def run(Object o) { o.hasProperty('target') } }"))
     }
+
+    @Test
+    @DisplayName("a resolved use in a class that records nothing is still an unattributed use")
+    fun resolvedInUnrecordedClass() {
+        val trait = names("class K { def known() {} }\ntrait T { def bar() {}; def go(K k) { bar(); k.known() } }")
+        assertEquals(true, trait.containsAll(setOf("bar", "known")))
+        val enumBody = names("class K { def known() {} }\nenum E { A { def x(K k) { k.known() } }; def y() {} }")
+        assertEquals(true, "known" in enumBody)
+        val both = names("trait T { def target() {}; def run() { target(); this.target() } }")
+        assertEquals(true, "target" in both)
+        val props = names("class P { String target }\ntrait T { String target; def run(P p) { this.target; target; p.target } }")
+        assertEquals(true, "target" in props)
+        val anonymous = names("class C { def run() { new Object() { def target; def r() { target } } } }")
+        assertEquals(true, "target" in anonymous)
+    }
+
+    @Test
+    @DisplayName("a trait field read, write and compound assignment record the field and its accessors")
+    fun traitFields() {
+        assertEquals(true, names("trait T { int cnt = 0; def get1() { cnt } }").containsAll(setOf("cnt", "getCnt")))
+        assertEquals(true, names("trait T { int cnt = 0; def set1() { cnt = 1 } }").containsAll(setOf("cnt", "setCnt")))
+        val compound = names("trait T { int cnt = 0; def go() { cnt += 1 } }")
+        assertEquals(true, compound.containsAll(setOf("cnt", "getCnt", "setCnt")))
+        assertEquals(emptySet<String>(), compound.filter { '$' in it }.toSet())
+    }
+
+    @Test
+    @DisplayName("an inner class is not a dynamic site, but a hook the source wrote in one is")
+    fun innerClasses() {
+        assertEquals(false, "*" in names("class C { class I { def m() { 1 } } }"))
+        assertEquals(false, "*" in names("class C { def run() { new Object() { def m() { 1 } } } }"))
+        assertEquals(true, "*" in names("class C { class I { def methodMissing(String n, Object a) { null } } }"))
+    }
+
+    @Test
+    @DisplayName("inside a trait only the transform's own names are dropped, not a user's `$` name")
+    fun dollarNames() {
+        val found = names("trait T { def go(o) { o.tar\$get() } }")
+        assertEquals(true, "tar\$get" in found)
+    }
 }

@@ -89,6 +89,17 @@ internal object DispatchNames {
 
     private val accessorPrefix = Regex("^(get|set|is)(\\p{Lu}.*)$")
 
+    private val traitFieldHelper = Regex("^.*__(\\w+)\\$(get|set)$")
+
+    /**
+     * The trait field behind the helper the trait transform calls for it (`T__cnt$get`, `T__cnt$set`), with how
+     * the field is used; null for any other name.
+     */
+    fun traitField(method: String): Pair<String, Access>? {
+        val match = traitFieldHelper.matchEntire(method) ?: return null
+        return match.groupValues[1] to if (match.groupValues[2] == "get") Access.READ else Access.WRITE
+    }
+
     /**
      * The property an accessor-shaped call may stand for: `getTarget`/`isTarget`/`setTarget` give `target`
      * (the JavaBeans spelling, which keeps `URL`, and Groovy's `uRL` are both returned).

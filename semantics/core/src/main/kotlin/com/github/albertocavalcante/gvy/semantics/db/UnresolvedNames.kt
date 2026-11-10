@@ -35,7 +35,9 @@ internal class UnresolvedNames {
     fun isSource(node: ASTNode): Boolean = inTraitHelper || node.lineNumber > 0
 
     private fun put(found: String) {
-        if (!(inTraitHelper && '$' in found)) names += found
+        // The trait transform's own names (`$self`, `$init$`, `T__cnt$get`) say nothing about the source.
+        val synthetic = inTraitHelper && (found.startsWith('$') || DispatchNames.traitField(found) != null)
+        if (!synthetic) names += found
     }
 
     private fun put(found: Collection<String>) = found.forEach(::put)
@@ -59,6 +61,7 @@ internal class UnresolvedNames {
     fun call(call: MethodCallExpression, attributed: Boolean) {
         val name = call.methodAsString
         put(DispatchNames.namedArguments(call.arguments))
+        name?.let(DispatchNames::traitField)?.let { (field, access) -> member(field, access) }
         if (name == null || !attributed || call.isSpreadSafe) callee(name)
         if (name in REFLECTIVE) {
             val first = (call.arguments as? TupleExpression)?.expressions?.firstOrNull() ?: return
@@ -68,6 +71,7 @@ internal class UnresolvedNames {
 
     /** A call that was not attributed: its name, and the property it may be the accessor of (`getName` is `name`). */
     fun callee(name: String?) {
+        name?.let(DispatchNames::traitField)?.let { (field, access) -> member(field, access) }
         name(name)
         if (name != null) put(DispatchNames.propertyOf(name))
     }
