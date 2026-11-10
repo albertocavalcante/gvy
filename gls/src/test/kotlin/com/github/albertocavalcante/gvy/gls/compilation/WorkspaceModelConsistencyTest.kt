@@ -15,6 +15,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -103,17 +104,29 @@ class WorkspaceModelConsistencyTest {
     }
 
     @Test
-    fun `a reordered but equal configuration is unchanged and keeps its fingerprint`() {
+    fun `a reordered classpath is a change with a new fingerprint`() {
         val root = Files.createDirectories(tempDir.resolve("ordered"))
-        val roots = listOf(Files.createDirectories(root.resolve("a")), Files.createDirectories(root.resolve("b")))
         val deps = listOf(root.resolve("a.jar"), root.resolve("b.jar"))
         val manager = WorkspaceManager()
-        manager.updateWorkspaceModel(root, deps, roots)
+        manager.updateWorkspaceModel(root, deps, emptyList())
         val before = manager.getConfigurationFingerprint()
 
-        val changed = manager.updateWorkspaceModel(root, deps.reversed(), roots.reversed())
+        // The JVM loads the first match: the same jars in another order can resolve different classes.
+        assertEquals(true, manager.updateWorkspaceModel(root, deps.reversed(), emptyList()))
+        assertNotEquals(before, manager.getConfigurationFingerprint())
+        assertEquals(deps.reversed(), manager.getDependencyClasspath())
+        assertEquals(true, manager.updateDependencies(deps), "updateDependencies follows the same rule")
+    }
 
-        assertEquals(false, changed)
+    @Test
+    fun `reordered source roots are unchanged and keep their fingerprint`() {
+        val root = Files.createDirectories(tempDir.resolve("roots"))
+        val roots = listOf(Files.createDirectories(root.resolve("a")), Files.createDirectories(root.resolve("b")))
+        val manager = WorkspaceManager()
+        manager.updateWorkspaceModel(root, emptyList(), roots)
+        val before = manager.getConfigurationFingerprint()
+
+        assertEquals(false, manager.updateWorkspaceModel(root, emptyList(), roots.reversed()))
         assertEquals(before, manager.getConfigurationFingerprint(), "unchanged reported, but the fingerprint moved")
     }
 

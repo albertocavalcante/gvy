@@ -98,8 +98,8 @@ class WorkspaceManager(
             if (depsChanged) logger.info { "Updated dependency classpath with ${dependencies.size} dependencies" }
             val sourcesChanged = sourceDirectories.toSet() != current.sourceRoots.toSet()
             val roots = when {
-                // A reordering of the same roots or classpath is not a change: keep the current order, so the
-                // order-sensitive fingerprint agrees with the reported result and nothing diverges silently.
+                // Source roots are compared as a set: a reordering keeps the current order, so the
+                // order-sensitive fingerprint agrees with the unchanged result (the classpath is ordered, #1313).
                 sourceDirectories.isNotEmpty() && !sourcesChanged -> current.sourceRoots
                 sourceDirectories.isNotEmpty() -> sourceDirectories.also {
                     logger.info { "Received ${it.distinct().size} source roots from build model" }
@@ -124,8 +124,8 @@ class WorkspaceManager(
     private fun emptyModel(root: Path?) =
         WorkspaceModel(root, emptyList(), emptyList(), emptyList(), fingerprintComputer)
 
-    private fun classpathChanged(current: List<Path>, next: List<Path>) =
-        next.size != current.size || next.toSet() != current.toSet()
+    /** Order matters: the JVM loads the first match, so the same jars reordered can resolve other classes. */
+    private fun classpathChanged(current: List<Path>, next: List<Path>) = next != current
 
     private fun discoverSourceRoots(rootPath: Path): List<Path> {
         val sourceRoots = linkedSetOf<Path>()
