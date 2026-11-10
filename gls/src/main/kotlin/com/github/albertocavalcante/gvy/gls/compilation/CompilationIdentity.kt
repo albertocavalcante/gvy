@@ -16,8 +16,16 @@ internal class CompilationIdentity(
         configurationFingerprint == other.configurationFingerprint && document === other.document
 }
 
-/** A pending job retains its immutable inputs, including an open buffer's reference identity. */
-internal class PendingCompilation(val identity: CompilationIdentity, val deferred: Deferred<CompilationResult>) {
+/**
+ * A pending job retains its immutable inputs, including an open buffer's reference identity, and the fence
+ * [ticket] it compiles under. A waiter whose job ended while that ticket is still current knows the job's
+ * owner cancelled it, rather than invalidation retiring it (#1343).
+ */
+internal class PendingCompilation(
+    val identity: CompilationIdentity,
+    val deferred: Deferred<CompilationResult>,
+    val ticket: ArtifactOwnership.Ticket? = null,
+) {
     // A registered LAZY coroutine is shareable before it becomes active.
     val isPending: Boolean get() = !deferred.isCompleted && !deferred.isCancelled
 }

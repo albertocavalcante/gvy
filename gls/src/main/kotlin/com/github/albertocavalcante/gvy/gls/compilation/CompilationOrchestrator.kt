@@ -303,14 +303,14 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             buffer?.snapshot,
             buffer?.incarnation,
         )
-        return scheduleCompilation(scope, uri, identity)
+        return scheduleCompilation(scope, uri, identity).deferred
     }
 
     private fun scheduleCompilation(
         scope: CoroutineScope,
         uri: URI,
         identity: CompilationIdentity,
-    ): Deferred<CompilationResult> {
+    ): PendingCompilation {
         // Acquire before exposing queued work, without nesting semantic and registry map locks.
         val incarnation = identity.incarnation
         val claim = claim(uri, if (incarnation != null) Origin.BUFFER else Origin.UNMANAGED, incarnation)
@@ -318,35 +318,45 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         var created = false
         var retainedPublication = false
         try {
-            val deferred = cacheService.registerCompilation(uri, identity) {
+            val pending = cacheService.registerPending(uri, identity, claim.ticket) {
                 scope.async(ioDispatcher, start = CoroutineStart.LAZY) {
                     compile(uri, identity.content, Phases.CANONICALIZATION, claim)
                 }.also { created = true }
             }
+            val deferred = pending.deferred
             if (created) {
                 deferred.invokeOnCompletion { publication?.close() }
                 retainedPublication = true
             }
             deferred.start()
-            return deferred
+            return pending
         } finally {
             if (!retainedPublication) publication?.close()
         }
     }
 
     /**
-     * Awaits shared work, or returns null when its owner cancelled or invalidation retired it while this caller
-     * is still active (a cancelled caller propagates its own cancellation). The caller then re-resolves.
-     * Work this waiter starts is owned by [waiterScope], not by the request: cancelling one request (a client
-     * does so on every superseded hover) does not cancel the compile its co-waiters are sharing.
+     * Awaits shared work. A cancelled caller propagates its own cancellation; otherwise a job that ended by
+     * cancellation is classified, and the caller re-resolves. Work this waiter starts is owned by
+     * [waiterScope], not by the request: cancelling one request (a client does so on every superseded hover)
+     * does not cancel the compile its co-waiters are sharing.
      */
-    private suspend fun awaitShared(uri: URI, identity: CompilationIdentity): CompilationResult? = try {
-        scheduleCompilation(waiterScope, uri, identity).await()
-    } catch (e: CancellationException) {
-        currentCoroutineContext().ensureActive()
-        ensureRunning()
-        logger.debug(e) { "Compilation of $uri was cancelled or retired; resolving its current inputs again" }
-        null
+    private suspend fun awaitShared(uri: URI, identity: CompilationIdentity): Awaited {
+        val pending = scheduleCompilation(waiterScope, uri, identity)
+        return try {
+            Awaited.Done(pending.deferred.await())
+        } catch (e: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            ensureRunning()
+            val ticket = pending.ticket
+            val documentUnchanged = documentProvider?.getSnapshot(uri) === identity.document
+            val ownerCancelled = ticket != null && ownership.isCurrent(ticket) && documentUnchanged
+            logger.debug(e) {
+                "Compilation of $uri was ${if (ownerCancelled) "cancelled by its owner" else "retired"}; " +
+                    "resolving its current inputs again"
+            }
+            if (ownerCancelled) Awaited.OwnerCancelled else Awaited.Retired
+        }
     }
 
     /**
@@ -355,18 +365,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      *
      * Shared work that is retired while this caller waits is never retried with its old inputs: the open
      * buffer, pending work, cache and disk are resolved again, so a buffer closed meanwhile is answered from
-     * disk. After [MAX_RESOLUTIONS] retirements in a row the caller gets ContentModified, not a cancellation
-     * it did not ask for.
+     * disk. After [MAX_RESOLUTIONS] retirements the caller gets ContentModified, not a cancellation it did
+     * not ask for; cancellations by the shared job's owner alone do not count toward that bound (#1343).
      */
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
         ensureRunning()
-        repeat(MAX_RESOLUTIONS) {
-            when (val resolution = resolveCompiled(uri)) {
-                Resolution.Retired -> Unit
-                is Resolution.Done -> return resolution.result
-            }
-        }
-        throw contentModified(uri)
+        return resolveBounded(uri) { resolveCompiled(uri) }
     }
 
     /**
@@ -377,7 +381,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
     suspend fun ensureCompiled(uri: URI, snapshot: DocumentSnapshot): CompilationResult {
         ensureRunning()
         var current = snapshot
-        repeat(MAX_RESOLUTIONS) {
+        val result = resolveBounded(uri) {
             val buffer = documentProvider?.getBuffer(uri)?.takeIf { it.snapshot === current }
             val identity = CompilationIdentity(
                 current.content,
@@ -385,10 +389,11 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 current,
                 buffer?.incarnation,
             )
-            awaitShared(uri, identity)?.let { return it }
-            documentProvider?.getSnapshot(uri)?.let { current = it }
+            awaitShared(uri, identity).also { outcome ->
+                if (outcome !is Awaited.Done) documentProvider?.getSnapshot(uri)?.let { current = it }
+            }
         }
-        throw contentModified(uri)
+        return checkNotNull(result) { "Shared compilation of $uri completed without a result" }
     }
 
     /** After [shutdown] waiters are cancelled at once instead of re-resolving into a stopped scope. */
@@ -396,14 +401,8 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         if (!waiterScope.isActive) throw CancellationException("The compilation service is shut down")
     }
 
-    private sealed interface Resolution {
-        data object Retired : Resolution
-
-        class Done(val result: CompilationResult?) : Resolution
-    }
-
     @Suppress("ReturnCount") // Multiple cache and validation checks require early returns
-    private suspend fun resolveCompiled(uri: URI): Resolution {
+    private suspend fun resolveCompiled(uri: URI): Awaited {
         // An open buffer is the source of truth: it may be unsaved, untitled, or newer than the file on
         // disk or the cached parse, and didOpen compiles it in a background job that may not have
         // started yet. Resolve its identity before selecting any pending job.
@@ -414,7 +413,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 buffer.snapshot,
                 buffer.incarnation,
             )
-            return awaitShared(uri, identity)?.let { Resolution.Done(it) } ?: Resolution.Retired
+            return awaitShared(uri, identity)
         }
 
         // One model for this resolution: the fingerprint validates the cache and keys any disk compile
@@ -422,13 +421,13 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val configFingerprint = workspaceManager.fingerprintFor(uri, workspace)
 
         cacheService.getPendingCompilation(uri, configFingerprint)?.let { pending ->
-            return awaitShared(uri, pending.identity)?.let { Resolution.Done(it) } ?: Resolution.Retired
+            return awaitShared(uri, pending.identity)
         }
 
         // A closed file's entry is retired when its buffer closes or the file changes, so it follows the disk
         cacheService.getCachedWithContent(uri, configFingerprint)?.let { (content, parseResult) ->
             logger.debug { "Using cached result for: $uri" }
-            return Resolution.Done(resultMapper.mapFromCache(parseResult, content))
+            return Awaited.Done(resultMapper.mapFromCache(parseResult, content))
         }
 
         // Use on-demand compilation from disk if file exists
@@ -438,7 +437,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             logger.debug { "Compiling from disk on-demand: $uri" }
             // Publishes only while no buffer is open, checked inside the commit: a reopen meanwhile wins.
             val claim = claim(uri, Origin.DISK)
-            return Resolution.Done(
+            return Awaited.Done(
                 claim.publication.use {
                     try {
                         val content = withContext(ioDispatcher) {
@@ -461,7 +460,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         }
 
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
-        return Resolution.Done(null)
+        return Awaited.Done(null)
     }
 
     /**
@@ -493,11 +492,6 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      */
     private fun openSourcesFor(uri: URI): Map<URI, String> =
         documentProvider?.snapshot()?.filterKeys { it != uri }.orEmpty()
-
-    private companion object {
-        /** Retirements of awaited work tolerated in a row before a caller is told the content changed. */
-        const val MAX_RESOLUTIONS = 3
-    }
 }
 
 private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
@@ -514,3 +508,49 @@ private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
 private fun contentModified(uri: URI) = ResponseErrorException(
     ResponseError(ResponseErrorCode.ContentModified, "Compilation of $uri kept being invalidated", null),
 )
+
+/** Retirements of awaited work tolerated before a caller is told the content changed. */
+private const val MAX_RESOLUTIONS = 3
+
+/** Owner cancellations re-resolved without counting retirements, bounded so no waiter loops forever (#1343). */
+private const val MAX_OWNER_CANCELLATIONS = 10
+
+private val boundedLogger = KotlinLogging.logger {}
+
+/**
+ * Runs [attempt] until it answers. Retirements count toward [MAX_RESOLUTIONS]; owner cancellations re-resolve
+ * without counting, up to [MAX_OWNER_CANCELLATIONS]. Either bound ends in ContentModified, and every round
+ * first checks that the caller's own request is still active.
+ */
+private suspend fun resolveBounded(uri: URI, attempt: suspend () -> Awaited): CompilationResult? {
+    var retirements = 0
+    var ownerCancellations = 0
+    while (true) {
+        currentCoroutineContext().ensureActive()
+        when (val outcome = attempt()) {
+            is Awaited.Done -> return outcome.result
+            Awaited.Retired -> if (++retirements >= MAX_RESOLUTIONS) throw contentModified(uri)
+            Awaited.OwnerCancelled -> if (++ownerCancellations >= MAX_OWNER_CANCELLATIONS) {
+                boundedLogger.debug {
+                    "$uri: owner cancelled the shared compile $ownerCancellations times; reporting ContentModified"
+                }
+                throw contentModified(uri)
+            }
+        }
+    }
+}
+
+/** How awaiting shared work ended for a waiter that is itself still active. */
+private sealed interface Awaited {
+    /** An answer: shared work's result, or a cache, disk or no-file resolution ([result] may be null). */
+    class Done(val result: CompilationResult?) : Awaited
+
+    /** Invalidation or a configuration change made the job's ticket stale, or the waiter's document changed. */
+    data object Retired : Awaited
+
+    /**
+     * The job's owner cancelled it (a superseded diagnostics run, for example) while its ticket stayed
+     * current and the waiter's document did not change: nothing the waiter depends on moved (#1343).
+     */
+    data object OwnerCancelled : Awaited
+}
