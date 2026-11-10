@@ -7,6 +7,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 /**
  * Two configured source roots can name one directory: a root plus a link to it, or the same directory in another
@@ -157,6 +158,25 @@ class WorkspaceSourceAliasTest {
         manager.applySourceChanges(listOf(real.resolve("A.groovy")), emptyList())
 
         assertEquals(listOf(link.resolve("A.groovy")), manager.getWorkspaceSources())
+    }
+
+    @Test
+    fun `once the surviving root is removed from the configuration the alias takes over in its own spelling`() {
+        val (src, alias) = aliased("A.groovy")
+        val manager = manager().apply { updateWorkspaceModel(workspace, emptyList(), listOf(src, alias)) }
+        assertEquals(listOf(src.resolve("A.groovy")), manager.getWorkspaceSources(), "both configured")
+
+        assertTrue(manager.updateWorkspaceModel(workspace, emptyList(), listOf(alias)), "the roots changed")
+        assertEquals(listOf(alias), manager.getSourceRoots())
+        assertEquals(listOf(alias.resolve("A.groovy")), manager.getWorkspaceSources(), "rescanned as the alias")
+
+        write(src.resolve("B.groovy"))
+        manager.applySourceChanges(listOf(src.resolve("B.groovy")), emptyList())
+        assertEquals(
+            listOf(alias.resolve("A.groovy"), alias.resolve("B.groovy")),
+            manager.getWorkspaceSources(),
+            "an event spelled by the removed root lands on the alias",
+        )
     }
 
     @Test
