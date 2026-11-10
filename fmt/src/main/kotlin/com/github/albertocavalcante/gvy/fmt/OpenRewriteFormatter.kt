@@ -9,12 +9,17 @@ import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.format.AutoFormat
 import org.openrewrite.internal.InMemoryLargeSourceSet
 import org.openrewrite.java.tree.Space
+import org.slf4j.LoggerFactory
 import java.util.stream.Collectors
 
 class OpenRewriteFormatter {
 
     private val parser: GroovyParser = GroovyParser.builder().build()
-    private val executionContext: ExecutionContext = InMemoryExecutionContext { t: Throwable -> t.printStackTrace() }
+
+    // Report recipe errors through the server log: a raw printStackTrace() bypasses Logback and its levels.
+    internal val executionContext: ExecutionContext = InMemoryExecutionContext { t: Throwable ->
+        logger.error("OpenRewrite formatting recipe failed", t)
+    }
     private val recipe = AutoFormat()
 
     fun format(text: String): String {
@@ -89,6 +94,7 @@ class OpenRewriteFormatter {
     }
 
     companion object {
+        private val logger = LoggerFactory.getLogger(OpenRewriteFormatter::class.java)
         private val MULTI_SPACE_WITHIN_TOKEN_REGEX = Regex("(?<=\\S) {2,}(?=\\S)")
     }
 }
