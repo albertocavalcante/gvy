@@ -143,9 +143,6 @@ class RequestCancellationTest {
             compilation,
             documents,
             mockk(relaxed = true),
-            mockk<com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator> {
-                every { getDiagnosticJobsMap() } returns java.util.concurrent.ConcurrentHashMap()
-            },
             { false },
             {},
         )

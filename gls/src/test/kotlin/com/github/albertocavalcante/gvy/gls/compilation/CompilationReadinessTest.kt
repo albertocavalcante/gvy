@@ -126,7 +126,10 @@ class CompilationReadinessTest {
             handler.getDefinitions(first.toString(), Position(0, 21))
         }
         assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "the first request never compiled")
-        val surviving = async { handler.getDefinitions(first.toString(), Position(0, 21)) }
+        // Joined before the cancel: a genuine co-waiter of the compile the first request started.
+        val surviving = async(start = CoroutineStart.UNDISPATCHED) {
+            handler.getDefinitions(first.toString(), Position(0, 21))
+        }
 
         cancelled.cancel() // e.g. a superseded Ctrl+hover
         released.countDown()
