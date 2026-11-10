@@ -112,9 +112,11 @@ class GroovyWorkspaceService(
             jenkinsCapabilities?.reloadGdsl()
         }
 
-        // Handle source file changes for incremental indexing
-        changes[FileType.SOURCE]?.let { sourceChanges ->
-            handleSourceFileChanges(sourceChanges)
+        // Handle source file changes for incremental indexing, and folder events under the source roots (#1424)
+        val sourceChanges = changes[FileType.SOURCE].orEmpty()
+        val otherChanges = changes[FileType.OTHER].orEmpty()
+        if (sourceChanges.isNotEmpty() || otherChanges.isNotEmpty()) {
+            handleSourceFileChanges(sourceChanges, otherChanges)
         }
 
         // Build file changes are handled by BuildToolFileWatcher in DependencyManager
@@ -125,8 +127,11 @@ class GroovyWorkspaceService(
      * - Created files: Index the new file
      * - Changed files: Re-index to update symbols
      * - Deleted files: Remove from symbol index
+     *
+     * [otherChanges] may be folders: a created one is scanned when it is a directory under a source root, and a
+     * deleted one removes the sources strictly under it. A deleted file such as a `Jenkinsfile` has none.
      */
-    private fun handleSourceFileChanges(changes: List<FileEvent>) {
+    private fun handleSourceFileChanges(changes: List<FileEvent>, otherChanges: List<FileEvent> = emptyList()) {
         val created = changes.filter { it.type == FileChangeType.Created }
         val changed = changes.filter { it.type == FileChangeType.Changed }
         val deleted = changes.filter { it.type == FileChangeType.Deleted }
@@ -135,6 +140,8 @@ class GroovyWorkspaceService(
         val sourcesChanged = compilationService.onWorkspaceSourcesChanged(
             created.mapNotNull { filePath(it.uri) },
             deleted.mapNotNull { filePath(it.uri) },
+            createdDirectories = otherChanges.pathsOf(FileChangeType.Created),
+            deletedPrefixes = otherChanges.pathsOf(FileChangeType.Deleted),
         )
         if (sourcesChanged) textDocumentService?.rerunDiagnosticsOnOpenFiles()
 
@@ -150,13 +157,14 @@ class GroovyWorkspaceService(
         }
 
         // Index new and changed files in background
+        // Distinct: a source root's folder watcher can repeat an event the file watchers also report.
         val toIndex = (created + changed).mapNotNull { event ->
             try {
                 URI.create(event.uri)
             } catch (e: Exception) {
                 null
             }
-        }
+        }.distinct()
 
         // A closed file's cached parse no longer describes it; an open buffer keeps its own.
         toIndex.forEach { compilationService.onClosedSourceChanged(it, keepIfUnchanged = false) }
@@ -171,6 +179,9 @@ class GroovyWorkspaceService(
     }
 
     private fun filePath(uri: String): Path? = runCatching { Path.of(URI.create(uri)) }.getOrNull()
+
+    private fun List<FileEvent>.pathsOf(type: FileChangeType): List<Path> =
+        filter { it.type == type }.mapNotNull { filePath(it.uri) }
 
     private enum class FileType(val suffixes: List<String>) {
         CODENARC(listOf(".codenarc", "codenarc.xml", "codenarc.groovy", "codenarc.properties")),

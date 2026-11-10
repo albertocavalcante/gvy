@@ -38,7 +38,9 @@ class SourceRootWatcherRegistrarTest {
 
     private fun capabilities(dynamic: Boolean = true, relative: Boolean? = true) = ClientCapabilities().apply {
         workspace = WorkspaceClientCapabilities().apply {
-            didChangeWatchedFiles = DidChangeWatchedFilesCapabilities(dynamic).apply { relativePatternSupport = relative }
+            didChangeWatchedFiles = DidChangeWatchedFilesCapabilities(dynamic).apply {
+                relativePatternSupport = relative
+            }
         }
     }
 

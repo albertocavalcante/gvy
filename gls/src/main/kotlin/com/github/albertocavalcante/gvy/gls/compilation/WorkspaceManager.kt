@@ -142,29 +142,38 @@ class WorkspaceManager(
     /**
      * Applies sources created or deleted after the model was built (#1422), publishing one new model.
      * A created path joins only when it is a Groovy source under a current source root, the rule the scan
-     * uses; a deleted path leaves the list. Each root's sources stay sorted, as [scanSources] orders them.
+     * uses; a deleted path leaves the list. A created folder under a root (#1424) adds the sources a scan of it
+     * finds; a deleted path in [deletedPrefixes] removes the sources strictly under it, never a sibling that
+     * shares its name prefix, so a deleted `Jenkinsfile` removes nothing. Each root's sources stay sorted, as
+     * [scanSources] orders them.
      * Classpath, roots, targets and so the fingerprint are unchanged. Returns whether the list changed.
      */
-    @Suppress("UnusedParameter")
     fun applySourceChanges(
         created: Collection<Path>,
         deleted: Collection<Path>,
         createdDirectories: Collection<Path> = emptyList(),
         deletedPrefixes: Collection<Path> = emptyList(),
     ): Boolean {
+        // Walk created folders before taking the update lock; the merge below re-checks them against the roots.
+        val scanned = scanCreatedDirectories(createdDirectories, current().sourceRoots)
+        val prefixes = deletedPrefixes.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
         var changed = false
         update { current ->
             val createdKeys = created.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
             // A path both deleted and created in one notification (a replace-on-save) is decided by the disk.
             val gone = deleted.map { it.toAbsolutePath().normalize() }
                 .filterTo(HashSet()) { it !in createdKeys || !Files.isRegularFile(it) }
-            val known = current.sources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            val kept = current.sources.filterNot { source ->
+                val key = source.toAbsolutePath().normalize()
+                key in gone || hasAncestorIn(key, prefixes)
+            }
+            val known = kept.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
             val roots = current.sourceRoots.map { it.toAbsolutePath().normalize() }
-            val added = created.map { it.toAbsolutePath().normalize() }
-                .filter { it !in known && it !in gone && isGroovySource(it) }
+            // A folder's scan is what is on disk now, so a folder deleted and recreated keeps its sources.
+            val added = (created.map { it.toAbsolutePath().normalize() }.filter { it !in gone } + scanned)
+                .filter { it !in known && isGroovySource(it) }
                 .filter { path -> roots.any { root -> path.startsWith(root) } }
                 .distinct()
-            val kept = current.sources.filterNot { it.toAbsolutePath().normalize() in gone }
             val next = if (added.isEmpty()) kept else ordered(kept + added, roots)
             changed = next != current.sources
             if (!changed) {
@@ -181,6 +190,23 @@ class WorkspaceManager(
             }
         }
         return changed
+    }
+
+    /** The Groovy sources in each created folder under a root, each folder walked once even when nested. */
+    private fun scanCreatedDirectories(directories: Collection<Path>, sourceRoots: List<Path>): List<Path> {
+        if (directories.isEmpty()) return emptyList()
+        val roots = sourceRoots.map { it.toAbsolutePath().normalize() }
+        val dirs = directories.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+            .filter { dir -> roots.any { dir.startsWith(it) } && Files.isDirectory(dir) }
+            .toSet()
+        return dirs.filterNot { hasAncestorIn(it, dirs) }
+            .flatMap { dir -> collectGroovySources(dir).map { it.toAbsolutePath().normalize() } }
+    }
+
+    /** Whether a proper ancestor of [path] is in [prefixes]: [path] lies strictly under one, compared by component. */
+    private fun hasAncestorIn(path: Path, prefixes: Set<Path>): Boolean {
+        if (prefixes.isEmpty()) return false
+        return generateSequence(path.parent) { it.parent }.any { it in prefixes }
     }
 
     /** Sources grouped by their first containing root in root order, each group sorted, as a scan yields them. */
