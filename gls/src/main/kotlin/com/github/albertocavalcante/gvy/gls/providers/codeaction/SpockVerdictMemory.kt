@@ -193,21 +193,26 @@ internal class SpockVerdictMemory {
          * new file there can shadow a star-imported name. Anything that cannot be computed denies reuse. Null
          * when [base] is unchanged, else a lazily built description of what changed, for the DEBUG log.
          */
-        private fun baseDifference(base: Base, module: ModuleNode, imports: String): (() -> String)? {
-            if (base.source == null) {
-                val current = module.classes.firstOrNull { it.name == base.name }?.let { declaration(it, imports) }
-                if (base.localDeclaration != null && base.localDeclaration == current) return null
-                return { "local base ${base.name}: recorded=[${base.localDeclaration}] current=[$current]" }
-            }
-            val prelude = readSource(base.source)?.let { preludeOf(it, base.name)?.hash }
+        private fun baseDifference(base: Base, module: ModuleNode, imports: String): (() -> String)? =
+            base.source?.let { remoteDifference(base, it) } ?: localDifference(base, module, imports)
+
+        private fun localDifference(base: Base, module: ModuleNode, imports: String): (() -> String)? {
+            if (base.source != null) return null
+            val current = module.classes.firstOrNull { it.name == base.name }?.let { declaration(it, imports) }
+            val unchanged = base.localDeclaration != null && base.localDeclaration == current
+            val describe = { "local base ${base.name}: recorded=[${base.localDeclaration}] current=[$current]" }
+            return describe.takeUnless { unchanged }
+        }
+
+        private fun remoteDifference(base: Base, source: String): (() -> String)? {
+            val prelude = readSource(source)?.let { preludeOf(it, base.name)?.hash }
             if (base.prelude == null || base.prelude != prelude) {
                 return { "prelude of ${base.name}: recorded=${base.prelude} current=$prelude" }
             }
-            val files = listPackage(base.source, base.packageName)
-            if (base.packageFiles == null || base.packageFiles != files) {
-                return { "package files of ${base.name}: recorded=${base.packageFiles} current=$files" }
-            }
-            return null
+            val files = listPackage(source, base.packageName)
+            val unchanged = base.packageFiles != null && base.packageFiles == files
+            val describe = { "package files of ${base.name}: recorded=${base.packageFiles} current=$files" }
+            return describe.takeUnless { unchanged }
         }
 
         private fun chain(node: ClassNode, module: ModuleNode, imports: String): Chain {
