@@ -3,18 +3,14 @@ package com.github.albertocavalcante.gvy.gls.providers.typedefinition
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationContext
 import com.github.albertocavalcante.gvy.gls.converters.toGroovyPosition
 import com.github.albertocavalcante.gvy.gls.converters.toLspLocation
-import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.future.future
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TypeDefinitionParams
 import java.net.URI
-import java.util.concurrent.CompletableFuture
 
 /**
  * Provides type definition functionality for Groovy language server.
@@ -22,19 +18,11 @@ import java.util.concurrent.CompletableFuture
  * of the symbol at the cursor and returns the location where that type is defined.
  */
 class TypeDefinitionProvider(
-    private val coroutineScope: CoroutineScope,
     private val semanticResolver: SemanticTypeResolver,
-    private val sourceNavigator: SourceNavigator, // TODO: Will be used for external class resolution (see issue #615).
     private val contextProvider: (URI) -> CompilationContext?,
 ) {
 
     private val logger = KotlinLogging.logger {}
-
-    /**
-     * Provides type definition for the symbol at the given position.
-     */
-    fun provideTypeDefinition(params: TypeDefinitionParams): CompletableFuture<List<Location>> =
-        coroutineScope.future { typeDefinitions(params) }
 
     /** The type definitions at [params]; a cancelled request ends cancelled, not with an empty answer. */
     @Suppress("TooGenericExceptionCaught")
@@ -124,22 +112,4 @@ class TypeDefinitionProvider(
 
         return null
     }
-}
-
-/**
- * Factory for creating TypeDefinitionProvider instances.
- * Provides a clean way to construct providers with proper dependencies.
- */
-object TypeDefinitionProviderFactory {
-    fun create(
-        coroutineScope: CoroutineScope,
-        semanticResolver: SemanticTypeResolver,
-        sourceNavigator: SourceNavigator,
-        contextProvider: (URI) -> CompilationContext?,
-    ): TypeDefinitionProvider = TypeDefinitionProvider(
-        coroutineScope = coroutineScope,
-        semanticResolver = semanticResolver,
-        sourceNavigator = sourceNavigator,
-        contextProvider = contextProvider,
-    )
 }

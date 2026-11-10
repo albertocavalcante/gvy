@@ -196,9 +196,7 @@ class GroovyTextDocumentService(
     // Type definition provider - created lazily
     private val typeDefinitionProvider by lazy {
         TypeDefinitionProvider(
-            coroutineScope = coroutineScope,
             semanticResolver = semanticTypeResolver,
-            sourceNavigator = sourceNavigator,
             contextProvider = { uri -> compilationService.createContext(uri) },
         )
     }
