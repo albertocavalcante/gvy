@@ -6,6 +6,7 @@ kt_library(
     visibility = ["//visibility:public"],
     deps = [
         "//ext/testing",
+        "//parser/native",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         # JUnit dependencies are compileOnly - not included at runtime
