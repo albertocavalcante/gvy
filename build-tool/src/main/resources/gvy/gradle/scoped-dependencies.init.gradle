@@ -41,6 +41,9 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
             def names = []
             def observed = []
             def completed = withProjectLock(project) { locked ->
+                // Start clean on every run, so a retry can never duplicate names or targets
+                names.clear()
+                observed.clear()
                 def sourceSets = locked.extensions.findByType(SourceSetContainer)
                 names.addAll(sourceSets?.names ?: [])
                 sourceSets?.each { sourceSet -> observed << observe(locked, sourceSet) }
