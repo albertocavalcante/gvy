@@ -187,6 +187,7 @@ class ClosedFileWorkspaceResolutionTest {
         assertEquals("java.lang.String", field?.type?.name, "${snapshot.messages()}")
         val outcome = snapshot.parseResult.outcome
         assertTrue(outcome.unlocatedClasses.contains("C32"), "the cut is recorded: ${outcome.unlocatedClasses}")
+        assertTrue(outcome.excludedSources.isEmpty(), "no located file is excluded: ${outcome.excludedSources}")
         // C32 is stubbed by its exact name although Link31, not the requester, names it; the requester's own
         // missing Nope is stubbed in the same round, so the cap does not eat the stub rounds.
         assertTrue(outcome.stubbedClasses.containsAll(listOf("C32", "Nope")), "${outcome.stubbedClasses}")
