@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.testing.api.GroovyLanguageServerProt
 import com.github.albertocavalcante.gvy.gls.testing.api.RunTestParams
 import com.github.albertocavalcante.gvy.gls.testing.api.TestCommand
 import com.github.albertocavalcante.gvy.gls.testing.api.TestSuite
+import com.github.albertocavalcante.gvy.gls.testing.client.WaitResult
 import com.github.albertocavalcante.gvy.jenkins.extraction.PluginDownloader
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.PathNotFoundException
@@ -474,7 +475,7 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
 
         val envelope = waitResult.envelope ?: run {
             if (step.optional) return
-            throw TimeoutException("Timeout waiting for notification '${step.method}'")
+            throw TimeoutException(timeoutMessage(step.method, waitResult))
         }
 
         val payloadNode = wrapJavaObject(envelope.payload)
@@ -485,6 +486,34 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
         }
     }
 }
+
+private const val REPORTED_NOTIFICATIONS = 3
+private const val REPORTED_PAYLOAD_CHARS = 600
+
+/**
+ * Names what the server did send, so a timeout shows its real state (for example a failed
+ * dependency resolution status) instead of only the method that never matched.
+ */
+internal fun timeoutMessage(method: String, result: WaitResult): String = buildString {
+    append("Timeout waiting for notification '").append(method).append("' after ").append(result.elapsedMs)
+    append(" ms")
+    val rejected = result.matchedMethodButFailed.takeLast(REPORTED_NOTIFICATIONS)
+    if (rejected.isEmpty()) {
+        append("; no unconsumed '").append(method).append("' notification arrived")
+    } else {
+        append("; last '").append(method).append("' notifications failing the checks: ")
+        append(rejected.joinToString(" | ") { describe(it.envelope.payload) })
+    }
+    if (method != STATUS_METHOD) {
+        result.receivedDuringWait.lastOrNull { it.method == STATUS_METHOD }?.let {
+            append("; last '").append(STATUS_METHOD).append("' during the wait: ").append(describe(it.payload))
+        }
+    }
+}
+
+private const val STATUS_METHOD = "groovy/status"
+
+private fun describe(payload: Any?): String = wrapJavaObject(payload).toString().take(REPORTED_PAYLOAD_CHARS)
 
 class AssertStepExecutor : StepExecutor<ScenarioStep.Assert> {
     override fun execute(step: ScenarioStep.Assert, context: ScenarioContext, nextStep: ScenarioStep?) {

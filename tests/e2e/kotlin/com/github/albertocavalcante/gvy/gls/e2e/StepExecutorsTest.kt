@@ -1,5 +1,11 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.services.Health
+import com.github.albertocavalcante.gvy.gls.services.StatusNotification
+import com.github.albertocavalcante.gvy.gls.testing.client.NotificationEnvelope
+import com.github.albertocavalcante.gvy.gls.testing.client.NotificationSnapshot
+import com.github.albertocavalcante.gvy.gls.testing.client.PredicateFailure
+import com.github.albertocavalcante.gvy.gls.testing.client.WaitResult
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.spi.json.JsonSmartJsonProvider
 import com.jayway.jsonpath.spi.mapper.JsonSmartMappingProvider
@@ -8,7 +14,6 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -17,8 +22,11 @@ import kotlinx.serialization.json.put
 import org.assertj.core.api.Assertions.assertThat
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
+import org.eclipse.lsp4j.MessageParams
+import org.eclipse.lsp4j.MessageType
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.util.concurrent.CompletableFuture
 
 class StepExecutorsTest {
@@ -142,5 +150,45 @@ class StepExecutorsTest {
                 },
             )
         }
+    }
+
+    @Test
+    fun `notification timeout reports the rejected payloads and server status`() {
+        val now = Instant.now()
+        val loading = MessageParams(MessageType.Info, "Resolving build dependencies...")
+        val failed = StatusNotification(health = Health.Warning, message = "Could not install Gradle distribution")
+        val result = WaitResult(
+            envelope = null,
+            receivedDuringWait = listOf(NotificationSnapshot("groovy/status", now, failed)),
+            matchedMethodButFailed = listOf(
+                PredicateFailure(NotificationEnvelope(1, "window/showMessage", loading, now), null),
+            ),
+            elapsedMs = 42,
+        )
+
+        val message = timeoutMessage("window/showMessage", result)
+
+        assertThat(message)
+            .startsWith("Timeout waiting for notification 'window/showMessage' after 42 ms")
+            .contains("Resolving build dependencies...")
+            .contains("\"health\":\"warning\"")
+            .contains("Could not install Gradle distribution")
+    }
+
+    @Test
+    fun `notification timeout says when nothing arrived`() {
+        val result =
+            WaitResult(
+                envelope = null,
+                receivedDuringWait = emptyList(),
+                matchedMethodButFailed = emptyList(),
+                elapsedMs = 7,
+            )
+
+        assertThat(timeoutMessage("groovy/status", result))
+            .isEqualTo(
+                "Timeout waiting for notification 'groovy/status' after 7 ms; " +
+                    "no unconsumed 'groovy/status' notification arrived",
+            )
     }
 }

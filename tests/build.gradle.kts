@@ -161,6 +161,14 @@ testing {
                             filter.includeTestsMatching("*.ScenarioRunnerTest")
                         }
                         systemProperty("groovy.lsp.e2e.updateGolden", System.getProperty("groovy.lsp.e2e.updateGolden"))
+                        // Lets the isolated E2E Gradle home link fixture distributions this build installed.
+                        systemProperty("groovy.lsp.e2e.hostGradleUserHome", gradle.gradleUserHomeDir.absolutePath)
+                        systemProperty(
+                            "groovy.lsp.e2e.repoWrapperProperties",
+                            rootProject.layout.projectDirectory
+                                .file("gradle/wrapper/gradle-wrapper.properties")
+                                .asFile.absolutePath,
+                        )
                         systemProperty(
                             "groovy.lsp.e2e.goldenDir",
                             layout.projectDirectory
