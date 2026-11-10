@@ -52,4 +52,41 @@ class SourceScanResilienceTest {
 
         assertEquals(listOf(source), manager.getWorkspaceSources())
     }
+
+    @Test
+    fun `a symlinked source file is indexed`() {
+        val root = Files.createDirectories(tempDir.resolve("ws3"))
+        val sources = Files.createDirectories(root.resolve("src"))
+        val target = Files.writeString(
+            Files.createDirectories(root.resolve("shared")).resolve("Real.groovy"),
+            "class Real {}",
+        )
+        val link = Files.createSymbolicLink(sources.resolve("Linked.groovy"), target)
+        val manager = WorkspaceManager()
+
+        manager.updateWorkspaceModel(root, emptyList(), listOf(sources))
+
+        assertEquals(listOf(link), manager.getWorkspaceSources(), "Files.walk followed file links; keep doing so")
+    }
+
+    @Test
+    fun `entries that vanish during the walk are skipped and the walk continues`() {
+        val root = Files.createDirectories(tempDir.resolve("ws4"))
+        val dirs = listOf("a", "b", "c").map { name ->
+            Files.createDirectories(root.resolve(name)).also {
+                Files.writeString(it.resolve("$name.groovy"), "class $name {}")
+            }
+        }
+        var first: Path? = null
+
+        // On the first file visited, delete the other directories: the walk then reaches entries that are gone.
+        val found = collectGroovySources(root) { visited ->
+            if (first == null) {
+                first = visited
+                dirs.filterNot { visited.startsWith(it) }.forEach { it.toFile().deleteRecursively() }
+            }
+        }
+
+        assertEquals(listOf(first), found, "only the file visited before the deletion remains")
+    }
 }

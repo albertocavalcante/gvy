@@ -191,38 +191,6 @@ class WorkspaceManager(
         return workspaceSources
     }
 
-    /**
-     * The Groovy sources under [root]. An entry that cannot be read or vanishes mid-walk (a branch switch, a
-     * build cleaning its output) is skipped instead of aborting the whole workspace update (#1314).
-     */
-    private fun collectGroovySources(root: Path): List<Path> {
-        val found = mutableListOf<Path>()
-        Files.walkFileTree(
-            root,
-            object : SimpleFileVisitor<Path>() {
-                override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (attrs.isRegularFile && file.extension.equals("groovy", ignoreCase = true)) found.add(file)
-                    return FileVisitResult.CONTINUE
-                }
-
-                override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
-                    if (exc is NoSuchFileException) {
-                        logger.debug { "Skipped a source entry that vanished during the scan: $file" }
-                    } else {
-                        logger.warn { "Skipped an unreadable source entry: $file (${exc.message})" }
-                    }
-                    return FileVisitResult.CONTINUE
-                }
-
-                override fun postVisitDirectory(dir: Path, exc: IOException?): FileVisitResult {
-                    exc?.let { logger.debug { "Directory changed during the scan: $dir (${it.message})" } }
-                    return FileVisitResult.CONTINUE
-                }
-            },
-        )
-        return found
-    }
-
     fun getDependencyClasspath(): List<Path> = current().classpath
     fun getWorkspaceRoot(): Path? = current().root
     fun getSourceRoots(): List<Path> = current().sourceRoots
@@ -300,5 +268,47 @@ class WorkspaceManager(
 
         // Return standard dependency classpath for non-handled files
         return dependencies
+    }
+}
+
+/**
+ * The Groovy sources under [root], following file symbolic links as `Files.isRegularFile` does. An entry that
+ * cannot be read or vanishes mid-walk (a branch switch, a build cleaning its output) is skipped instead of
+ * aborting the whole workspace update (#1314). [beforeVisit] runs before each file is classified (a test seam).
+ */
+internal fun collectGroovySources(root: Path, beforeVisit: (Path) -> Unit = {}): List<Path> {
+    val found = mutableListOf<Path>()
+    Files.walkFileTree(
+        root,
+        object : SimpleFileVisitor<Path>() {
+            override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+                beforeVisit(file)
+                // The walk does not follow links: a symlinked source is a link whose target is a regular file.
+                val regular = attrs.isRegularFile || (attrs.isSymbolicLink && Files.isRegularFile(file))
+                if (regular && file.extension.equals("groovy", ignoreCase = true)) found.add(file)
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
+                skipped(file, exc)
+                return FileVisitResult.CONTINUE
+            }
+
+            override fun postVisitDirectory(dir: Path, exc: IOException?): FileVisitResult {
+                exc?.let { skipped(dir, it) }
+                return FileVisitResult.CONTINUE
+            }
+        },
+    )
+    return found
+}
+
+private val scanLogger = KotlinLogging.logger {}
+
+private fun skipped(entry: Path, exc: IOException) {
+    if (exc is NoSuchFileException) {
+        scanLogger.debug { "Skipped a source entry that vanished during the scan: $entry" }
+    } else {
+        scanLogger.warn { "Skipped an unreadable source entry: $entry (${exc.message})" }
     }
 }
