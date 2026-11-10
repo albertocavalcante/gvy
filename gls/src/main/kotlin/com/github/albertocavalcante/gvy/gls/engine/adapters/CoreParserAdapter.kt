@@ -100,10 +100,7 @@ private fun Problem.toLspDiagnostic(): Diagnostic {
         val problemRange = range
         val problemPosition = position
         when {
-            problemRange != null -> Range(
-                Position(problemRange.begin.line - 1, problemRange.begin.column - 1),
-                Position(problemRange.end.line - 1, problemRange.end.column),
-            )
+            problemRange != null -> problemRange.toLspRange()
 
             problemPosition != null -> {
                 val pos = Position(problemPosition.line - 1, problemPosition.column - 1)
@@ -161,10 +158,16 @@ private fun Node.extractType(): String? = when (this) {
     else -> null
 }
 
-private fun CoreRange.toLspRange(): Range = Range(
-    Position(begin.line - 1, begin.column - 1),
-    Position(end.line - 1, end.column),
-)
+/**
+ * Core ranges carry Groovy's 1-based, EXCLUSIVE end column, so the 0-based LSP exclusive end is column - 1
+ * (never before the start: nodes without an end position collapse to an empty range).
+ */
+internal fun CoreRange.toLspRange(): Range {
+    val start = Position(begin.line - 1, begin.column - 1)
+    val rawEnd = Position(end.line - 1, end.column - 1)
+    val endsBeforeStart = rawEnd.line < start.line || (rawEnd.line == start.line && rawEnd.character < start.character)
+    return Range(start, if (endsBeforeStart) start else rawEnd)
+}
 
 /**
  * Extension to convert TypeDeclaration to UnifiedSymbol with children.
