@@ -21,7 +21,9 @@ class JenkinsStubsLocationTest {
 
     private fun workspace(name: String): Path = tempDir.resolve(name).createDirectories()
 
-    private fun stubsDirOf(classpath: List<Path>): Path = classpath.single { it.startsWith(cacheRoot) }
+    /** The plugin stubs dir; the always-present `implicit` dir (`@Library` stub) lives inside it. */
+    private fun stubsDirOf(classpath: List<Path>): Path =
+        classpath.single { it.startsWith(cacheRoot) && it.fileName.toString() != "implicit" }
 
     @Test
     fun `building the classpath leaves the user workspace untouched`() {

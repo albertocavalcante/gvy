@@ -53,6 +53,26 @@ class JenkinsStubsRegenerationTest {
     }
 
     @Test
+    fun `failed regeneration keeps an earlier Library annotation stub on the classpath`() {
+        val implicitStubsDir = JenkinsStubsLocation.directoryFor(cacheRoot, workspace).resolve("implicit")
+        assertTrue(buildClasspath().contains(implicitStubsDir), "Precondition: first generation succeeds")
+
+        val classpath = buildClasspath(failingGenerator)
+
+        assertTrue(classpath.contains(implicitStubsDir), "Earlier @Library stub must stay on the classpath: $classpath")
+        assertTrue(Files.isRegularFile(implicitStubsDir.resolve("Library.groovy")))
+    }
+
+    @Test
+    fun `failed first Library annotation write leaves the implicit dir off the classpath`() {
+        val implicitStubsDir = JenkinsStubsLocation.directoryFor(cacheRoot, workspace).resolve("implicit")
+
+        val classpath = buildClasspath(failingGenerator)
+
+        assertFalse(classpath.contains(implicitStubsDir), "No @Library stub, so no implicit dir: $classpath")
+    }
+
+    @Test
     fun `an unusable default cache root with a leftover workspace stubs dir does not fail the classpath build`() {
         val legacyDir = workspace.resolve(".jenkins-stubs").createDirectories()
         val warnings = mutableListOf<String>()
