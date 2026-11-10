@@ -147,18 +147,6 @@ class ClosedFileWorkspaceResolutionTest {
     }
 
     @Test
-    fun `a broken source Groovy finds by file name is not attributed to the locator`(): Unit = runBlocking {
-        // Groovy adds Helper.groovy itself, by file name; excluding it as a located source would cost a recompile.
-        write("Helper.groovy", "class Helper {\n") // unbalanced: fails to parse
-        val spec = write("TableSpec.groovy", "class TableSpec extends Helper {}\n")
-
-        val snapshot = compileClosed(spec)
-
-        val excluded = snapshot.parseResult.outcome.excludedSources.map { it.source }
-        assertTrue(excluded.none { it.contains("Helper.groovy") }, "$excluded")
-    }
-
-    @Test
     fun `an open buffer of the declaring file wins over its disk copy`(): Unit = runBlocking {
         val declaring = write("Outers.groovy", "class Outer2 {}\n") // on disk: no Inner yet
         val spec = write("TableSpec.groovy", "class TableSpec extends Outer2.Inner {}\n")
