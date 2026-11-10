@@ -35,10 +35,15 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
         val targetLine = position.line + 1
         val targetCol = position.character + 1
 
-        // Walk the AST to find the most specific node containing the position. A node that really contains it
-        // wins over one that merely ended there; only if none does, accept a cursor right after a node.
-        val node = findNodeAt(cu, targetLine, targetCol, lenientEnd = false)
-            ?: findNodeAt(cu, targetLine, targetCol, lenientEnd = true)
+        // Walk the AST to find the most specific node containing the position (end exclusive). When the cursor
+        // is not on the first character of that node, a node that merely ends at the cursor is preferred, as
+        // the native engine does: with `a|.b` the cursor belongs to `a`, not to the parent `a.b`.
+        val strict = findNodeAt(cu, targetLine, targetCol, lenientEnd = false)
+        val node = if (strict != null && startsAt(strict, targetLine, targetCol)) {
+            strict
+        } else {
+            findNodeAt(cu, targetLine, targetCol, lenientEnd = true) ?: strict
+        }
         return node?.toUnifiedNode()
     }
 
@@ -87,6 +92,9 @@ class CoreParserAdapter(private val result: ParseResult<CompilationUnit>, overri
         }
         return true
     }
+
+    private fun startsAt(node: Node, line: Int, col: Int): Boolean =
+        node.range?.begin?.let { it.line == line && it.column == col } == true
 
     private fun isPointRange(range: CoreRange): Boolean = range.begin == range.end
 
