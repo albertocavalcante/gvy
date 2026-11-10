@@ -255,11 +255,13 @@ class GroovyCompilationService(
      * The buffer for [uri] closed, or the closed file changed on disk: its cached parse no longer describes
      * the file, so content-less readers must not see it, and in-flight semantic publications of the old text
      * are retired. Symbol and semantic facts are kept until refreshed from disk under the returned ticket.
-     * Returns null, retiring nothing, when a buffer is open again.
+     * Returns null, retiring nothing, when a buffer is open again. [keepIfUnchanged] (one closed buffer) reads
+     * the file and keeps a parse that matches it; watcher batches pass false and always retire.
      */
-    fun onClosedSourceChanged(uri: URI): ArtifactOwnership.Ticket? {
+    fun onClosedSourceChanged(uri: URI, keepIfUnchanged: Boolean = true): ArtifactOwnership.Ticket? {
         // Read outside the fence. A buffer closed unchanged keeps its parse: it already describes the file.
-        val disk = UriPathConverter.toPath(uri)?.let { path ->
+        // Watcher batches skip the read (thousands of events on a branch switch) and simply retire the parse.
+        val disk = UriPathConverter.toPath(uri)?.takeIf { keepIfUnchanged }?.let { path ->
             runCatching { Files.readString(path) }.getOrElse { error ->
                 rethrowIfCancellationOrError(error)
                 null

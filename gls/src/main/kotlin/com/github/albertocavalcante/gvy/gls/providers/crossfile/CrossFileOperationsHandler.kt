@@ -130,6 +130,7 @@ class CrossFileOperationsHandler(
 
             Either.forLeft<List<Location>, List<LocationLink>>(locations)
         }.getOrElse { e ->
+            if (e is ResponseErrorException) throw e // e.g. ContentModified: the client retries
             logException(e, "finding definitions")
             Either.forLeft(emptyList())
         }
@@ -165,6 +166,7 @@ class CrossFileOperationsHandler(
                 .toList()
                 .also { logger.debug { "Found ${it.size} references" } }
         }.getOrElse { e ->
+            if (e is ResponseErrorException) throw e // e.g. ContentModified: the client retries
             logException(e, "finding references")
             emptyList()
         }

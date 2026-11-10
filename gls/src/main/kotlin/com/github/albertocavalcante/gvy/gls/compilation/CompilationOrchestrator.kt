@@ -20,6 +20,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
@@ -341,6 +342,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         scheduleCompilation(waiterScope, uri, identity).await()
     } catch (e: CancellationException) {
         currentCoroutineContext().ensureActive()
+        ensureRunning()
         logger.debug(e) { "Compilation of $uri was cancelled or retired; resolving its current inputs again" }
         null
     }
@@ -355,6 +357,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * it did not ask for.
      */
     suspend fun ensureCompiled(uri: URI): CompilationResult? {
+        ensureRunning()
         repeat(MAX_RESOLUTIONS) {
             when (val resolution = resolveCompiled(uri)) {
                 Resolution.Retired -> Unit
@@ -370,6 +373,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
      * cancellation the caller did not ask for, and ends in ContentModified after [MAX_RESOLUTIONS] attempts.
      */
     suspend fun ensureCompiled(uri: URI, snapshot: DocumentSnapshot): CompilationResult {
+        ensureRunning()
         var current = snapshot
         repeat(MAX_RESOLUTIONS) {
             val buffer = documentProvider?.getBuffer(uri)?.takeIf { it.snapshot === current }
@@ -385,9 +389,10 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         throw contentModified(uri)
     }
 
-    private fun contentModified(uri: URI) = ResponseErrorException(
-        ResponseError(ResponseErrorCode.ContentModified, "Compilation of $uri kept being invalidated", null),
-    )
+    /** After [shutdown] waiters are cancelled at once instead of re-resolving into a stopped scope. */
+    private fun ensureRunning() {
+        if (!waiterScope.isActive) throw CancellationException("The compilation service is shut down")
+    }
 
     private sealed interface Resolution {
         data object Retired : Resolution
@@ -499,3 +504,7 @@ private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
     }
     return candidates
 }
+
+private fun contentModified(uri: URI) = ResponseErrorException(
+    ResponseError(ResponseErrorCode.ContentModified, "Compilation of $uri kept being invalidated", null),
+)
