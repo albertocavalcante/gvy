@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.CodeNarcDiagnosticProvider
+import com.github.albertocavalcante.gvy.diagnostics.codenarc.HierarchicalRulesetResolver
 import com.github.albertocavalcante.gvy.gls.codenarc.WorkspaceConfiguration
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
@@ -37,6 +38,7 @@ import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -112,6 +114,9 @@ data class GroovyTextDocumentServiceOptions(
     val formatter: Formatter = OpenRewriteFormatterAdapter(),
     val sourceNavigator: SourceNavigator = SourceNavigationService(),
     val definitionLinkSupport: Boolean = false,
+    /** Builds the CodeNarc ruleset resolver from the configured Jenkins pipeline file predicate (test seam). */
+    val codeNarcRulesetResolverFactory: ((java.net.URI) -> Boolean) -> HierarchicalRulesetResolver =
+        { isJenkinsPipelineFile -> HierarchicalRulesetResolver(isJenkinsPipelineFile = isJenkinsPipelineFile) },
 )
 
 class GroovyTextDocumentService(
@@ -130,6 +135,11 @@ class GroovyTextDocumentService(
     private val documentProvider: DocumentProvider = options.documentProvider
     private val formatter: Formatter = options.formatter
     private val sourceNavigator: SourceNavigator = options.sourceNavigator
+    private val codeNarcRulesetResolverFactory = options.codeNarcRulesetResolverFactory
+
+    /** The resolver behind the current CodeNarc provider, so [reloadCodeNarcRulesets] can clear its caches. */
+    @Volatile
+    private var codeNarcRulesetResolver: HierarchicalRulesetResolver? = null
 
     @Volatile
     private var definitionLinkSupport: Boolean = options.definitionLinkSupport
@@ -205,8 +215,12 @@ class GroovyTextDocumentService(
         val workspaceContext = WorkspaceConfiguration(workspaceRoot, serverConfiguration)
 
         val providers = buildList {
+            val jenkinsFiles = JenkinsFileDetector(serverConfiguration.jenkinsConfig.filePatterns)
             val codeNarcProvider = CodeNarcDiagnosticProvider(
                 workspaceContext,
+                // Jenkins pipeline files get the Jenkins profile, the workspace's other sources their own (#1236).
+                rulesetResolver = codeNarcRulesetResolverFactory(jenkinsFiles::isJenkinsFile)
+                    .also { codeNarcRulesetResolver = it },
                 onWorkspaceRulesetIgnored = { ruleset ->
                     // Service scope: updateConfiguration rebuilds the provider, which must not repeat the message
                     if (notifiedIgnoredRulesets.add(ruleset)) {
@@ -685,14 +699,13 @@ class GroovyTextDocumentService(
     }
 
     /**
-     * Notifies that CodeNarc rulesets should be reloaded.
-     * Currently a placeholder - actual reload happens when diagnostics are re-run.
-     * Called when .codenarc files change; should be followed by rerunDiagnosticsOnOpenFiles().
+     * Notifies that CodeNarc rulesets should be reloaded: clears the resolver's cached project detection and default
+     * rulesets. Called when .codenarc files change; should be followed by rerunDiagnosticsOnOpenFiles().
      */
     fun reloadCodeNarcRulesets() {
         logger.info { "CodeNarc ruleset reload requested" }
-        // NOTE: Currently no caching to invalidate. Rulesets are resolved fresh on each analysis.
-        // This method exists as a hook for future cache invalidation logic.
+        // Clears the cached project detection and default rulesets; workspace ruleset files are read per analysis.
+        codeNarcRulesetResolver?.reloadRulesets()
     }
 
     /**

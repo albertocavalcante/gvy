@@ -22,6 +22,16 @@ interface ProjectTypeDetector {
      * @return The detected project type
      */
     fun detect(workspaceRoot: Path): ProjectType
+
+    /**
+     * The project type from build files alone, ignoring Jenkins evidence: the profile for a workspace's ordinary
+     * Groovy sources when a root `Jenkinsfile` makes [detect] report [ProjectType.JenkinsLibrary] (#1236).
+     */
+    fun detectBuildType(workspaceRoot: Path): ProjectType =
+        detect(workspaceRoot).takeUnless { it is ProjectType.JenkinsLibrary } ?: ProjectType.PlainGroovy
+
+    /** True when the workspace is a Jenkins shared library: a root `vars/` with at least one `*.groovy` script. */
+    fun isSharedLibrary(workspaceRoot: Path): Boolean = false
 }
 
 /**
@@ -46,12 +56,17 @@ class DefaultProjectTypeDetector : ProjectTypeDetector {
 
     override fun detect(workspaceRoot: Path): ProjectType {
         logger.debug { "Detecting project type for workspace: $workspaceRoot" }
+        if (isJenkinsProject(workspaceRoot)) {
+            logger.info { "Detected Jenkins project: $workspaceRoot" }
+            return ProjectType.JenkinsLibrary
+        }
+        return detectBuildType(workspaceRoot)
+    }
 
+    override fun isSharedLibrary(workspaceRoot: Path): Boolean = hasVarsGroovyScript(workspaceRoot.resolve(VARS_DIR))
+
+    override fun detectBuildType(workspaceRoot: Path): ProjectType {
         val result = when {
-            isJenkinsProject(workspaceRoot) -> {
-                logger.info { "Detected Jenkins project: $workspaceRoot" }
-                ProjectType.JenkinsLibrary
-            }
             isGradleProject(workspaceRoot) -> {
                 val hasSpock = hasSpockTesting(workspaceRoot)
                 logger.info { "Detected Gradle project: $workspaceRoot (spock=$hasSpock)" }
