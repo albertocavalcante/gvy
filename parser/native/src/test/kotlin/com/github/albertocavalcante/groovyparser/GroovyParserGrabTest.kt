@@ -59,5 +59,9 @@ class GroovyParserGrabTest {
             result.diagnostics.any { it.message.startsWith("Compilation failed:") },
             "expected a 'Compilation failed' diagnostic, got ${result.diagnostics.map { it.message }}",
         )
+        assertTrue(
+            result.diagnostics.none { it.message.contains("Unknown error") },
+            "the exception's own message should be reported, got ${result.diagnostics.map { it.message }}",
+        )
     }
 }
