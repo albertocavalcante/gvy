@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
@@ -15,7 +16,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.yield
 import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
@@ -207,11 +207,16 @@ class RetiredWaiterTest {
             val job = jobs.last()
             // Cancel only once its parse is running: a job cancelled before it starts would leave a spare permit
             check(withContext(Dispatchers.IO) { arrived.tryAcquire(WAIT_SECONDS, TimeUnit.SECONDS) }) { "no parse" }
+            // Registered while the owner is provably incomplete (its parse waits at the gate), so it runs after
+            // every handler registered before it: the successor's start, then the waiter's resume. join() alone
+            // is not enough: it returns once the job is final, before those handlers have run (run 42800948915).
+            val handled = CompletableDeferred<Unit>()
+            job.invokeOnCompletion { handled.complete(Unit) }
             scopes.last().cancel()
             gate.release()
             if (settleMillis > 0) Thread.sleep(settleMillis)
-            job.join()
-            yield()
+            // Resumes on this loop behind the waiter, which re-resolves onto the successor before it suspends
+            handled.await()
         }
     }
 
