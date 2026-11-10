@@ -333,6 +333,22 @@ class SpockTableProviderTest {
     }
 
     @Test
+    fun `nested source roots still list the base's real package`(): Unit = runBlocking {
+        // Roots /w and /w/src: deriving the package from the directory would give `src` under /w, missing the
+        // default package of /w itself.
+        val fixture = BrokenBaseFixture()
+        useSpockClasspath(sources = listOf(workspace, fixture.src))
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        Files.writeString(workspace.resolve("Specification.groovy"), "class Specification {}\n")
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "a shadowing file in the base's package under the outer root is seen")
+    }
+
+    @Test
     fun `closing the document forgets its remembered verdicts`(): Unit = runBlocking {
         val fixture = BrokenBaseFixture()
         fixture.edit(fixture.text)

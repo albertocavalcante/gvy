@@ -33,16 +33,18 @@ class CodeActionProvider(
     fun forgetDocument(uri: URI) = verdictMemory.forget(uri.toString())
 
     /**
-     * The Groovy and Java files of a source's package across every workspace source root (the roots the compile
-     * uses), on disk or open, as one sorted string; null when a directory cannot be listed. The package is the
-     * source's directory relative to the root containing it, or just that directory when no root does.
+     * The Groovy and Java files of [packageName] across every workspace source root the compile uses, plus the
+     * source's own directory (its file need not sit where its `package` says), on disk or open, as one sorted
+     * string; null when a directory cannot be listed. The package comes from the AST, not the directory, so
+     * nested source roots cannot misplace it.
      */
-    private fun packageFileSet(path: String): String? {
+    private fun packageFileSet(path: String, packageName: String): String? {
         val directory = runCatching { Path.of(path).parent }.getOrNull()?.let(::real) ?: return null
+        val packagePath = packageName.split('.').filter(String::isNotEmpty)
         val roots = compilationService.workspaceManager.getSourceRoots().map(::real)
-        val relative = roots.firstOrNull { directory.startsWith(it) }?.relativize(directory)
-        val directories = relative?.let { pkg -> roots.map { it.resolve(pkg).normalize() }.distinct() }
-            ?: listOf(directory)
+        val directories = (roots.map { root -> packagePath.fold(root) { dir, part -> dir.resolve(part) } } + directory)
+            .map { it.normalize() }
+            .distinct()
         val onDisk = directories.map { listSources(it) ?: return null }.flatten()
         val open = documentProvider.getAllUris()
             .mapNotNull { uri -> runCatching { real(Path.of(uri)) }.getOrNull() }

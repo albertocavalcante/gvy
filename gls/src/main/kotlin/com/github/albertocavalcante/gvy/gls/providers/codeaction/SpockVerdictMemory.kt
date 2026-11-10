@@ -60,6 +60,8 @@ internal class SpockVerdictMemory {
         val prelude: String?,
         val packageFiles: String?,
         val localDeclaration: String?,
+        /** The base's package from the clean compile's AST; the broken base has no AST at recall. */
+        val packageName: String = "",
     )
 
     private class Remembered(val declaration: String, val bases: List<Base>, val jvmBase: Boolean)
@@ -76,14 +78,15 @@ internal class SpockVerdictMemory {
 
     /**
      * Starts one request for [uri]. By a source's normalized path, [readSource] reads its current text and
-     * [listPackage] its package's current file set; null from either denies reuse.
+     * [listPackage] the current file set of its package (named as in the clean compile's AST); null from either
+     * denies reuse.
      */
     fun access(
         uri: String,
         fingerprint: String,
         outcome: ParseOutcome,
         readSource: (String) -> String?,
-        listPackage: (String) -> String?,
+        listPackage: (source: String, packageName: String) -> String?,
     ): Access = Access(uri, fingerprint, outcome, readSource, listPackage, synchronized(lock) { epochs[uri] ?: 0L })
 
     fun forget(uri: String) {
@@ -99,7 +102,7 @@ internal class SpockVerdictMemory {
         private val fingerprint: String,
         private val outcome: ParseOutcome,
         private val readSource: (String) -> String?,
-        private val listPackage: (String) -> String?,
+        private val listPackage: (source: String, packageName: String) -> String?,
         private val epoch: Long,
     ) {
         /**
@@ -158,7 +161,7 @@ internal class SpockVerdictMemory {
                 } else {
                     val prelude = readSource(base.source)?.let { preludeOf(it, base.name)?.hash }
                     base.prelude != null && base.prelude == prelude &&
-                        base.packageFiles != null && base.packageFiles == listPackage(base.source)
+                        base.packageFiles != null && base.packageFiles == listPackage(base.source, base.packageName)
                 }
             }
 
@@ -183,7 +186,9 @@ internal class SpockVerdictMemory {
                         val written = link.getUnresolvedSuperClass(false)?.unresolvedName
                         val prelude = sourceKey?.let(readSource)?.let { preludeOf(it, link.name) }
                             ?.takeIf { it.extendsMatches(written) }?.hash
-                        bases += Base(sourceKey, link.name, prelude, sourceKey?.let(listPackage), null)
+                        val packageName = link.packageName.orEmpty()
+                        val files = sourceKey?.let { listPackage(it, packageName) }
+                        bases += Base(sourceKey, link.name, prelude, files, null, packageName)
                         link = link.superClass?.redirect()
                     }
                 }
