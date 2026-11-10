@@ -7,8 +7,22 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import java.util.Collections
+import java.util.IdentityHashMap
 
 enum class UnrollPatternOrigin { FEATURE_ANNOTATION, FEATURE_NAME, SPEC_ANNOTATION }
+
+/** `SpockConfig` `unroll { … }` settings a [UnrollSelection.Pattern] depends on; never read here. */
+enum class UnrollConfigurationKey {
+    /** `unrollByDefault` (default true): whether unannotated features are unrolled at all. */
+    UNROLL_BY_DEFAULT,
+
+    /**
+     * `validateExpressions` (default true): whether an invalid or unresolvable placeholder fails the
+     * iteration with `SpockAssertionError` or is rendered as `#Error:…`.
+     */
+    VALIDATE_EXPRESSIONS,
+}
 
 enum class UnrollUncertainty {
     /** An `@Unroll`/`@Rollup` spelling is only bound through a star import. */
@@ -17,7 +31,10 @@ enum class UnrollUncertainty {
     /** The relevant `@Unroll` value is not a single string constant. */
     NON_CONSTANT_VALUE,
 
-    /** `@Unroll` and `@Rollup` on the same element; Spock rejects the specification. */
+    /**
+     * `@Unroll` and `@Rollup` on the same element: the feature, its declaring spec, a parameterized
+     * sibling feature, or an in-module super spec. Spock rejects the whole specification.
+     */
     CONFLICTING_ANNOTATIONS,
 }
 
@@ -33,7 +50,14 @@ sealed interface UnrollSelection {
         val origin: UnrollPatternOrigin,
         val annotationValue: ConstantExpression?,
         val requiresUnrollByDefault: Boolean,
-    ) : UnrollSelection
+    ) : UnrollSelection {
+        /** Configuration that decides this pattern's outcome; expression failure handling always applies. */
+        val dependsOn: Set<UnrollConfigurationKey>
+            get() = buildSet {
+                add(UnrollConfigurationKey.VALIDATE_EXPRESSIONS)
+                if (requiresUnrollByDefault) add(UnrollConfigurationKey.UNROLL_BY_DEFAULT)
+            }
+    }
 
     /** Without a `where:` block Spock reports no iterations. */
     data object NotParameterized : UnrollSelection
@@ -59,9 +83,11 @@ object SpockUnrollSelection {
         if (!hasWhereBlock(method)) return UnrollSelection.NotParameterized
         val feature = Annotations.of(method, module)
         val spec = Annotations.of(method.declaringClass, module)
-        // Spock rejects a conflicting spec before visiting any of its features.
-        val specConflict = spec.problem?.takeIf { it.reason == UnrollUncertainty.CONFLICTING_ANNOTATIONS }
-        return specConflict ?: feature.problem ?: decide(method, feature, spec)
+        // Spock rejects the whole spec when any element it visits carries both annotations.
+        if (conflictInSpec(method.declaringClass, module)) {
+            return UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS)
+        }
+        return feature.problem ?: decide(method, feature, spec)
     }
 
     private fun decide(method: MethodNode, feature: Annotations, spec: Annotations): UnrollSelection {
@@ -100,6 +126,31 @@ object SpockUnrollSelection {
         }
         return pattern?.takeIf { it.isNotEmpty() }
             ?.let { UnrollSelection.Pattern(it, origin, value.literal, requiresDefault) }
+    }
+
+    /**
+     * Mirrors `visitSpec`: the spec, its parameterized features, then its super spec. Only super specs
+     * declared in this module are visited; a conflict in a subclass spec that runs these features
+     * is not detected.
+     */
+    private fun conflictInSpec(spec: ClassNode, module: ModuleNode): Boolean {
+        val visited = Collections.newSetFromMap(IdentityHashMap<ClassNode, Boolean>())
+        return generateSequence(spec) { current -> moduleSuperclass(current, module) }
+            .takeWhile { visited.add(it) }
+            .any { current ->
+                current.isConflicting(module) ||
+                    current.methods.any { hasWhereBlock(it) && it.isConflicting(module) }
+            }
+    }
+
+    private fun AnnotatedNode.isConflicting(module: ModuleNode): Boolean =
+        Annotations.of(this, module).problem?.reason == UnrollUncertainty.CONFLICTING_ANNOTATIONS
+
+    private fun moduleSuperclass(node: ClassNode, module: ModuleNode): ClassNode? {
+        val name = node.superClass?.name?.replace('$', '.') ?: return null
+        return module.classes.singleOrNull { candidate ->
+            candidate.name.replace('$', '.') == name || candidate.nameWithoutPackage.replace('$', '.') == name
+        }
     }
 
     private fun hasWhereBlock(method: MethodNode): Boolean =

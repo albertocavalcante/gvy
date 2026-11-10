@@ -8,7 +8,10 @@ sealed interface UnrollRoot {
     /** Resolved at runtime against the iteration's data variables; existence is not checked here. */
     data class DataVariable(val name: String) : UnrollRoot
 
-    /** Never a data variable or built-in (for example `a()`); Spock renders `#Error:…` for it. */
+    /**
+     * Never a data variable or built-in (for example `a()`). Like an unknown data variable, it fails
+     * the iteration with `unroll.validateExpressions` (default true) or renders `#Error:…` when false.
+     */
     data class Invalid(val text: String) : UnrollRoot
 }
 
@@ -19,7 +22,11 @@ enum class UnrollSegmentKind {
     /** A zero-argument method call; [UnrollSegment.name] excludes the parentheses. */
     METHOD,
 
-    /** Empty or malformed; Spock renders `#Error:…` for the whole expression. */
+    /**
+     * Not a well-formed property or method name (empty, or containing parentheses). The runtime
+     * outcome still depends on the receiver: a Map or a `propertyMissing` handler may return null
+     * without error, while other receivers fail like an invalid root.
+     */
     INVALID,
 }
 

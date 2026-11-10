@@ -14,10 +14,15 @@ import org.codehaus.groovy.ast.expr.ConstantExpression
  * before an escape ends at the escape's first character.
  */
 class UnrollLiteral internal constructor(val sourceRange: IntRange, private val offsets: IntArray) {
-    fun sourceOffset(patternOffset: Int): Int = offsets[patternOffset]
+    /** Null when [patternOffset] is outside this literal's pattern (for example, from another pattern). */
+    fun sourceOffset(patternOffset: Int): Int? = offsets.getOrNull(patternOffset)
 
-    /** The source span covering pattern offsets [range] (exclusive end at `range.last + 1`). */
-    fun sourceRange(range: IntRange): IntRange = offsets[range.first] until offsets[range.last + 1]
+    /** The source span covering pattern offsets [range] (exclusive end), or null when out of range. */
+    fun sourceRange(range: IntRange): IntRange? {
+        val start = offsets.getOrNull(range.first) ?: return null
+        val end = offsets.getOrNull(range.last + 1) ?: return null
+        return if (range.first <= range.last + 1) start until end else null
+    }
 }
 
 /**
@@ -25,15 +30,25 @@ class UnrollLiteral internal constructor(val sourceRange: IntRange, private val 
  * when decoding the located literal reproduces the compiler's value exactly; otherwise null, so a
  * stale document, an unsupported spelling or a position mismatch never yields a nearby guess.
  *
- * Supported spellings: `'…'`, `"…"`, `'''…'''`, `"""…"""` (standard, octal and unicode escapes,
- * line continuations, CRLF) and `/…/`. Dollar-slashy strings and GStrings are unmapped.
+ * Supported spellings: `'…'`, `"…"`, `'''…'''` and `"""…"""` with standard, octal and unicode
+ * escapes, line continuations and CRLF. Slashy `/…/` literals are mapped only when they contain
+ * nothing but plain characters and `\/`; slashy unicode escapes, continuations and CR normalisation
+ * are not modelled and yield null. Dollar-slashy strings and GStrings are unmapped.
+ *
+ * One instance per document text: line starts are computed once, so mapping every feature in a
+ * file stays linear in its size.
  */
-object SpockUnrollSource {
+class SpockUnrollSource(private val source: String) {
+    private val lineStarts: IntArray = buildList {
+        add(0)
+        source.forEachIndexed { index, char -> if (char == '\n') add(index + 1) }
+    }.toIntArray()
+
     /** The string literal naming [method], found with Groovy's lexer between its start and its body. */
-    fun featureName(source: String, method: MethodNode): UnrollLiteral? {
+    fun featureName(method: MethodNode): UnrollLiteral? {
         val body = method.code ?: return null
-        val start = offset(source, method.lineNumber, method.columnNumber) ?: return null
-        val end = offset(source, body.lineNumber, body.columnNumber) ?: return null
+        val start = offset(method.lineNumber, method.columnNumber) ?: return null
+        val end = offset(body.lineNumber, body.columnNumber) ?: return null
         if (start >= end) return null
         val header = source.substring(start, end)
         val token = nameToken(header) ?: return null
@@ -42,29 +57,24 @@ object SpockUnrollSource {
     }
 
     /** The literal of an annotation member, located by the constant's own source position. */
-    fun annotationValue(source: String, value: ConstantExpression): UnrollLiteral? {
+    fun annotationValue(value: ConstantExpression): UnrollLiteral? {
         val expected = value.value as? String ?: return null
-        val range = range(source, value) ?: return null
+        val range = range(value) ?: return null
         return decode(source.substring(range.first, range.last + 1), range.first)
             ?.takeIf { it.first == expected }?.second
     }
 
-    private fun range(source: String, node: ASTNode): IntRange? {
-        val start = offset(source, node.lineNumber, node.columnNumber) ?: return null
-        val end = offset(source, node.lastLineNumber, node.lastColumnNumber) ?: return null
+    private fun range(node: ASTNode): IntRange? {
+        val start = offset(node.lineNumber, node.columnNumber) ?: return null
+        val end = offset(node.lastLineNumber, node.lastColumnNumber) ?: return null
         return if (start < end) start until end else null
     }
 
     /** 1-based line and code-point column (as the Groovy lexer counts them) to a UTF-16 offset. */
-    private fun offset(source: String, line: Int, column: Int): Int? {
-        if (line < 1 || column < 1) return null
-        var lineStart = 0
-        repeat(line - 1) {
-            val newline = source.indexOf('\n', lineStart)
-            if (newline < 0) return null
-            lineStart = newline + 1
-        }
-        val lineEnd = source.indexOf('\n', lineStart).let { if (it < 0) source.length else it + 1 }
+    private fun offset(line: Int, column: Int): Int? {
+        if (line < 1 || column < 1 || line > lineStarts.size) return null
+        val lineStart = lineStarts[line - 1]
+        val lineEnd = if (line < lineStarts.size) lineStarts[line] else source.length
         if (column - 1 > source.codePointCount(lineStart, lineEnd)) return null
         return source.offsetByCodePoints(lineStart, column - 1)
     }
@@ -169,8 +179,7 @@ object SpockUnrollSource {
         }
 
         private fun unicode(at: Int): Boolean {
-            var cursor = at + 1
-            while (cursor < end && raw[cursor] == 'u') cursor++
+            val cursor = at + 2
             if (cursor + HEX_DIGITS > end) return false
             val code = raw.substring(cursor, cursor + HEX_DIGITS).toIntOrNull(HEX_RADIX) ?: return false
             emit(code.toChar(), at)

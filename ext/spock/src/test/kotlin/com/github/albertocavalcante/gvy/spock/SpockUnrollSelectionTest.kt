@@ -103,6 +103,64 @@ class SpockUnrollSelectionTest {
     }
 
     @Test
+    fun `a conflicting parameterized sibling or in-module super spec rejects the whole spec`() {
+        val sibling =
+            """
+            import spock.lang.Unroll
+            import spock.lang.Rollup
+            class S extends spock.lang.Specification {
+                def "feature #a"() { expect: a
+                    where: a << [1] }
+                @Unroll @Rollup
+                def other() { expect: b
+                    where: b << [1] }
+            }
+            """.trimIndent()
+        assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS), select(sibling))
+
+        val inherited =
+            """
+            import spock.lang.Unroll
+            import spock.lang.Rollup
+            @Unroll @Rollup
+            abstract class Base extends spock.lang.Specification {}
+            class S extends Base {
+                def "feature #a"() { expect: a
+                    where: a << [1] }
+            }
+            """.trimIndent()
+        assertEquals(UnrollSelection.Uncertain(UnrollUncertainty.CONFLICTING_ANNOTATIONS), select(inherited))
+    }
+
+    @Test
+    fun `conflicts on non parameterized siblings are ignored like Spock does`() {
+        val source =
+            """
+            import spock.lang.Unroll
+            import spock.lang.Rollup
+            class S extends spock.lang.Specification {
+                def "feature #a"() { expect: a
+                    where: a << [1] }
+                @Unroll @Rollup
+                def plain() { expect: true }
+            }
+            """.trimIndent()
+        assertIs<UnrollSelection.Pattern>(select(source))
+    }
+
+    @Test
+    fun `patterns expose the configuration they depend on`() {
+        val annotated = assertIs<UnrollSelection.Pattern>(select(spec(methodAnnotations = "@Unroll('x #a')")))
+        assertEquals(setOf(UnrollConfigurationKey.VALIDATE_EXPRESSIONS), annotated.dependsOn)
+
+        val byDefault = assertIs<UnrollSelection.Pattern>(select(spec()))
+        assertEquals(
+            setOf(UnrollConfigurationKey.VALIDATE_EXPRESSIONS, UnrollConfigurationKey.UNROLL_BY_DEFAULT),
+            byDefault.dependsOn,
+        )
+    }
+
+    @Test
     fun `features without a where block are not parameterized`() {
         val source = "class S extends spock.lang.Specification {\n  def \"feature #a\"() { expect: true }\n}"
         assertSame(UnrollSelection.NotParameterized, select(source))
