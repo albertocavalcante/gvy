@@ -11,39 +11,41 @@ import java.util.concurrent.ConcurrentHashMap
  * for the file, so its listed copy must not compile beside it, nor answer workspace-wide queries a second time.
  *
  * Translating a spelling can read the disk ([WorkspaceManager.listedSpellings]), and [shadowed] runs on every
- * compile and workspace query, which must not (#1316). So each open buffer's listed spelling is computed once per
- * model, at [opened] on the notification thread, and [shadowed] reads the cache: only a buffer whose entry
- * predates the current model is translated again, once.
+ * compile and workspace query, which must not (#1316). So each open buffer's listed spelling is computed at
+ * [opened], on the notification thread, and [shadowed] reads the cache. An entry stays valid for one
+ * [WorkspaceManager.spellingGeneration]: a dependency or target re-stamp keeps it; a root or listing change makes
+ * the next query translate that buffer again, once.
  */
 internal class ListedShadows(
     private val documentProvider: DocumentProvider?,
     private val workspaceManager: WorkspaceManager,
 ) {
-    /** One open buffer's listed spelling, when it is another URI, under the model it was translated against. */
-    private class Entry(val workspace: WorkspaceModel, val listed: URI?)
+    /** One open buffer's listed spelling, when it is another URI, and the spelling generation it was found in. */
+    private class Entry(val generation: Any, val listed: URI?)
 
     private val entries = ConcurrentHashMap<URI, Entry>()
 
     /** A buffer for [uri] opened: translated now, off the request path. */
     fun opened(uri: URI) {
-        listedFor(uri, workspaceManager.current())
+        listedFor(uri, workspaceManager.spellingGeneration())
     }
 
     /** A buffer for [uri] closed: its listed spelling when it is another URI, and the entry is dropped. */
-    fun closed(uri: URI): URI? = (entries.remove(uri) ?: Entry(workspaceManager.current(), translate(uri))).listed
+    fun closed(uri: URI): URI? = entries.remove(uri)?.listed ?: translate(uri)
 
     /** Each open buffer's listed spelling that is another URI, unless a buffer is open under that one too. */
     fun shadowed(): Set<URI> {
         val open = documentProvider?.getAllUris().orEmpty()
         if (open.isEmpty()) return emptySet()
         entries.keys.retainAll(open)
-        val workspace = workspaceManager.current()
-        return open.mapNotNullTo(HashSet()) { uri -> listedFor(uri, workspace)?.takeIf { it !in open } }
+        val generation = workspaceManager.spellingGeneration()
+        return open.mapNotNullTo(HashSet()) { uri -> listedFor(uri, generation)?.takeIf { it !in open } }
     }
 
-    private fun listedFor(uri: URI, workspace: WorkspaceModel): URI? =
-        entries[uri]?.takeIf { it.workspace === workspace }?.listed
-            ?: translate(uri).also { entries[uri] = Entry(workspace, it) }
+    private fun listedFor(uri: URI, generation: Any): URI? {
+        val entry = entries[uri]?.takeIf { it.generation === generation }
+        return if (entry != null) entry.listed else translate(uri).also { entries[uri] = Entry(generation, it) }
+    }
 
     private fun translate(uri: URI): URI? {
         val path = UriPathConverter.toPath(uri) ?: return null
