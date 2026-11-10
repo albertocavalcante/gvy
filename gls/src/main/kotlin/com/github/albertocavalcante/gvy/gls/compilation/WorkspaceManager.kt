@@ -44,6 +44,8 @@ class WorkspaceManager internal constructor(
     private val fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String,
     private val caseInsensitive: (root: Path) -> Boolean,
     private val normalisesNames: Boolean = PLATFORM_NORMALISES_NAMES,
+    /** Resolves a path's real spelling (a disk read); a seam so a test can count the reads (#1440). */
+    private val canonicalise: (Path) -> Path = { DocumentTargetSelector.canonical(it) },
 ) {
     constructor(
         fingerprintComputer: (dependencies: List<Path>, sourceRoots: List<Path>) -> String =
@@ -340,7 +342,7 @@ class WorkspaceManager internal constructor(
             when {
                 root in refused -> root
                 Files.isSymbolicLink(root) -> starts.getValue(root) ?: root
-                else -> DocumentTargetSelector.canonical(root)
+                else -> canonicalise(root)
             }
         }
         private val insensitive = roots.indices.associate { index ->
@@ -378,12 +380,12 @@ class WorkspaceManager internal constructor(
             val index = roots.indices.filter { path.startsWith(roots[it]) }.maxByOrNull { roots[it].nameCount }
             val directory = if (Files.isDirectory(path)) path else path.parent
             return index != null && directory != null &&
-                canonicalDirectories.getOrPut(directory) { DocumentTargetSelector.canonical(directory) }
+                canonicalDirectories.getOrPut(directory) { canonicalise(directory) }
                     .startsWith(canonicalRoots[index])
         }
 
         private fun rebased(absolute: Path): Path? {
-            val canonical = DocumentTargetSelector.canonical(absolute)
+            val canonical = canonicalise(absolute)
             val index = canonicalRoots.indices
                 .filter { roots[it] !in refused && roots[it] !in aliasOf && canonical.startsWith(canonicalRoots[it]) }
                 .maxByOrNull { canonicalRoots[it].nameCount } ?: return null

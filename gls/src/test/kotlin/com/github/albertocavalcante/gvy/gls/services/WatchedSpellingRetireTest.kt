@@ -46,8 +46,8 @@ class WatchedSpellingRetireTest {
     @AfterEach
     fun tearDown() = scope.cancel()
 
-    private fun start(caseInsensitive: Boolean = false) {
-        val manager = WorkspaceManager(ConfigurationFingerprint::compute, { caseInsensitive })
+    private fun start(caseInsensitive: Boolean = false, normalisesNames: Boolean = false) {
+        val manager = WorkspaceManager(ConfigurationFingerprint::compute, { caseInsensitive }, normalisesNames)
         compilation = spyk(
             GroovyCompilationService(
                 ioDispatcher = Dispatchers.Unconfined,
@@ -158,25 +158,29 @@ class WatchedSpellingRetireTest {
         }
 
     @Test
-    fun `a buffer open under the event spelling keeps its parse and retires neither spelling`(): Unit = runBlocking {
-        start()
-        val (link, real) = linkedRoot("A.groovy")
-        val listed = link.resolve("A.groovy").toUri()
-        val opened = real.resolve("A.groovy").toUri()
-        assertNotNull(compilation.ensureCompiled(listed))
-        documents.put(opened, "class A { int v = 3 }")
-        compilation.compile(opened, "class A { int v = 3 }")
-        val buffer = assertNotNull(compilation.getParseResult(opened))
+    fun `a buffer open under the event spelling keeps its parse and the closed listed spelling is retired`(): Unit =
+        runBlocking {
+            start()
+            val (link, real) = linkedRoot("A.groovy")
+            val listed = link.resolve("A.groovy").toUri()
+            val opened = real.resolve("A.groovy").toUri()
+            assertNotNull(compilation.ensureCompiled(listed))
+            documents.put(opened, "class A { int v = 3 }")
+            compilation.compile(opened, "class A { int v = 3 }")
+            val buffer = assertNotNull(compilation.getParseResult(opened))
+            // Saved from the buffer: the listed spelling's closed parse no longer describes the disk.
+            write(real.resolve("A.groovy"), "class A { int v = 3 }")
 
-        notify(real.resolve("A.groovy") to FileChangeType.Changed)
-        drain()
+            notify(real.resolve("A.groovy") to FileChangeType.Changed)
+            assertNull(compilation.getCompiledSnapshot(listed), "the closed listed parse is still served")
+            drain()
 
-        assertSame(buffer, compilation.getParseResult(opened), "the open buffer was retired")
-        assertNotNull(compilation.getCompiledSnapshot(listed), "the listed spelling was retired")
-    }
+            assertSame(buffer, compilation.getParseResult(opened), "the open buffer was retired")
+            assertNotNull(compilation.getSymbolStorage(listed), "the listed spelling is re-indexed from the disk")
+        }
 
     @Test
-    fun `a buffer open under the listed spelling keeps its parse when the change comes by the real path`(): Unit =
+    fun `a buffer open under the listed spelling keeps its parse and the closed event spelling is retired`(): Unit =
         runBlocking {
             start()
             val (link, real) = linkedRoot("A.groovy")
@@ -188,9 +192,42 @@ class WatchedSpellingRetireTest {
             val buffer = assertNotNull(compilation.getParseResult(listed))
 
             notify(real.resolve("A.groovy") to FileChangeType.Changed)
+            assertNull(compilation.getCompiledSnapshot(reported), "the closed event-spelled parse is still served")
             drain()
 
             assertSame(buffer, compilation.getParseResult(listed), "the open buffer was retired")
-            assertNotNull(compilation.getCompiledSnapshot(reported), "the event spelling was retired")
+            assertNull(compilation.getSymbolStorage(reported), "the event spelling was indexed")
         }
+
+    @Test
+    fun `a change reported through an alias root retires the listed parse`(): Unit = runBlocking {
+        start()
+        val src = Files.createDirectories(workspaceRoot.resolve("src"))
+        val alias = Files.createSymbolicLink(workspaceRoot.resolve("alias"), src)
+        val file = write(src.resolve("A.groovy"), "class A { int v = 1 }")
+        compilation.updateWorkspaceModel(workspaceRoot, emptyList(), listOf(src, alias))
+        assertEquals(listOf(file), compilation.workspaceManager.getWorkspaceSources())
+        assertNotNull(compilation.ensureCompiled(file.toUri()))
+        write(file, "class A { int v = 2 }")
+
+        notify(alias.resolve("A.groovy") to FileChangeType.Changed)
+
+        assertNull(compilation.getCompiledSnapshot(file.toUri()), "the listed parse is served")
+    }
+
+    @Test
+    fun `a change reported in another Unicode normalisation retires the listed parse`(): Unit = runBlocking {
+        // APFS ignores normalisation: the scan may hold NFD while the client reports NFC.
+        start(normalisesNames = true)
+        val src = Files.createDirectories(workspaceRoot.resolve("src"))
+        val file = write(src.resolve("Cafe\u0301.groovy"), "class Cafe { int v = 1 }")
+        compilation.updateWorkspaceModel(workspaceRoot, emptyList(), listOf(src))
+        assertNotNull(compilation.ensureCompiled(file.toUri()))
+        write(file, "class Cafe { int v = 2 }")
+
+        notify(src.resolve("Caf\u00e9.groovy") to FileChangeType.Changed)
+
+        assertNull(compilation.getCompiledSnapshot(file.toUri()), "the listed parse is served")
+    }
+
 }
