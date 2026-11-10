@@ -73,6 +73,45 @@ class SharedClassNodePositionTest {
         assertNull(model.getNodeAt(uri, 4, 14) as? ClassNode, "nothing at the other file's stamped position")
     }
 
+    @Test
+    fun `an aliased import of a shared type resolves at the imported name`() {
+        val uri = "file:///Alias.groovy"
+        // The reference spans the qualified name `java.util.List`, which starts at column 8
+        val node = nodeAt("import java.util.List as Names\nclass Alias {}\n", uri, line = 0, character = 18)
+
+        assertOwnReference(node, "java.util.List", line = 1, column = 8)
+    }
+
+    @Test
+    fun `a static import of a shared type resolves at the imported class name`() {
+        val uri = "file:///Static.groovy"
+        // The reference spans the qualified class name `java.lang.String`, which starts at column 15
+        val node = nodeAt("import static java.lang.String.valueOf\nclass Static {}\n", uri, line = 0, character = 26)
+
+        assertOwnReference(node, "java.lang.String", line = 1, column = 15)
+    }
+
+    @Test
+    fun `a supplementary character earlier on the import line keeps the parser's column convention`() {
+        val uri = "file:///Emoji.groovy"
+        // The emoji is one code point but two UTF-16 units; parser columns count code points
+        val source = "/* \uD83D\uDE00 */ import java.util.List\nclass Emoji {}\n"
+        val module = checkNotNull(fixture.parse(source, uri, PHASE).ast)
+        val importColumn = module.imports.single().columnNumber
+        val visitor = RecursiveAstVisitor(NodeRelationshipTracker()).also { it.visitModule(module, URI.create(uri)) }
+
+        val node = visitor.getNodeAt(URI.create(uri), 0, importColumn - 1 + "import ".length)
+
+        assertOwnReference(node, "java.util.List", line = 1, column = importColumn + "import ".length)
+        assertEquals(importColumn + "import java.util.List".length, (node as ClassNode).lastColumnNumber)
+    }
+
+    private fun assertOwnReference(node: Any?, name: String, line: Int, column: Int) {
+        assertTrue(node is ClassNode && node.name == name, "expected a $name reference, got $node")
+        assertFalse(ClassHelper.isCachedType(node), "the shared node itself must not be indexed")
+        assertEquals(line to column, node.lineNumber to node.columnNumber)
+    }
+
     private fun nodeAt(source: String, uri: String, line: Int, character: Int) =
         fixture.parse(source, uri, PHASE).astModel.getNodeAt(URI.create(uri), line, character)
 
