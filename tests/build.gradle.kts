@@ -162,6 +162,12 @@ testing {
                         }
                         systemProperty("groovy.lsp.e2e.updateGolden", System.getProperty("groovy.lsp.e2e.updateGolden"))
                         systemProperty(
+                            "groovy.lsp.e2e.repoWrapperProperties",
+                            rootProject.layout.projectDirectory
+                                .file("gradle/wrapper/gradle-wrapper.properties")
+                                .asFile.absolutePath,
+                        )
+                        systemProperty(
                             "groovy.lsp.e2e.goldenDir",
                             layout.projectDirectory
                                 .dir("e2e/resources/golden")

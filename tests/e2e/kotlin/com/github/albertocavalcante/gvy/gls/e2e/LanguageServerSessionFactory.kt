@@ -142,6 +142,7 @@ class LanguageServerSessionFactory {
 
         return runCatching {
             Files.createDirectories(target)
+            GradleWrapperDistributions.share(GradleWrapperDistributions.hostGradleUserHome(), target)
             target
         }.onFailure {
             logger.warn { "Failed to prepare isolated Gradle user home at $target: ${it.message}" }
