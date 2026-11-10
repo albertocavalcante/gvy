@@ -367,6 +367,17 @@ class GroovyCompilationService internal constructor(
         }
     }
 
+    /**
+     * Publishes re-stamped target evidence (#1364) through [WorkspaceManager.restampTargets]. When it lands, every
+     * compile key of an affected target changes and the caches are cleared like for any other model change, class
+     * loader included, so a replaced jar is not read through a stale open handle. Returns whether it landed.
+     */
+    fun restampTargets(expected: TargetDependencyEvidence.Scoped, refreshed: TargetDependencyEvidence.Scoped): Boolean {
+        val published = workspaceManager.restampTargets(expected, refreshed)
+        if (published) clearCaches()
+        return published
+    }
+
     fun createContext(uri: URI): CompilationContext? {
         val parseResult = parseAccessor.getParseResult(uri) ?: return null
         val ast = parseResult.ast ?: return null

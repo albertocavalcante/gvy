@@ -18,6 +18,9 @@ import java.util.concurrent.CompletableFuture
 private const val WATCHED_FILES_METHOD = "workspace/didChangeWatchedFiles"
 private const val REGISTRATION_ID_PREFIX = "groovy-lsp-source-root-watchers-"
 
+/** Registration ids for the watchers under in-workspace classpath directories (#1364). */
+internal const val CLASSPATH_DIRECTORY_WATCHERS = "groovy-lsp-classpath-directory-watchers-"
+
 /**
  * Asks the client for every create and delete under each source root (#1424). The file watchers' globs name
  * files by extension, so a folder that is copied, moved or deleted, which is reported as one event for the
@@ -29,8 +32,15 @@ private const val REGISTRATION_ID_PREFIX = "groovy-lsp-source-root-watchers-"
  * the workspace, `.git` and build output included, would be reported.
  * When the roots change, the old registration is removed before a new one, under a fresh id, is added; a
  * registration the client refused is forgotten, so the next sync tries again.
+ *
+ * The same registrar also watches in-workspace classpath directories (#1364), with its own [idPrefix] and every
+ * change kind ([watchKinds]): a class rewritten in place is a change, not a create or delete.
  */
-internal class SourceRootWatcherRegistrar {
+internal class SourceRootWatcherRegistrar(
+    private val idPrefix: String = REGISTRATION_ID_PREFIX,
+    private val watchKinds: Int = WatchKind.Create + WatchKind.Delete,
+    private val description: String = "source roots",
+) {
     private val logger = KotlinLogging.logger {}
     private val lock = Any()
     private var client: LanguageClient? = null
@@ -43,7 +53,7 @@ internal class SourceRootWatcherRegistrar {
     fun attach(client: LanguageClient?, capabilities: ClientCapabilities?) = synchronized(lock) {
         val watched = capabilities?.workspace?.didChangeWatchedFiles
         if (client == null || watched?.dynamicRegistration != true || watched.relativePatternSupport != true) {
-            logger.info { "Client lacks dynamic relative-pattern watchers - folder events under source roots are off" }
+            logger.info { "Client lacks dynamic relative-pattern watchers - folder events under $description are off" }
             return@synchronized
         }
         this.client = client
@@ -67,17 +77,19 @@ internal class SourceRootWatcherRegistrar {
         registrationId = null
         registered = roots
         if (roots.isEmpty()) return
-        val id = REGISTRATION_ID_PREFIX + ++generation
-        val kinds = WatchKind.Create + WatchKind.Delete
+        val id = idPrefix + ++generation
         val watchers = roots.map { root ->
-            FileSystemWatcher(Either.forRight(RelativePattern(Either.forRight(root.toUri().toString()), "**/*")), kinds)
+            FileSystemWatcher(
+                Either.forRight(RelativePattern(Either.forRight(root.toUri().toString()), "**/*")),
+                watchKinds,
+            )
         }
         val registration = Registration(id, WATCHED_FILES_METHOD, DidChangeWatchedFilesRegistrationOptions(watchers))
         registrationId = id
         request("register $id", onFailure = { forget(id) }) {
             client.registerCapability(RegistrationParams(listOf(registration)))
         }
-        logger.info { "Requested folder watchers under ${watchers.size} source roots" }
+        logger.info { "Requested folder watchers under ${watchers.size} $description" }
     }
 
     /** A refused registration was never active: nothing to unregister, and the same roots must be tried again. */
