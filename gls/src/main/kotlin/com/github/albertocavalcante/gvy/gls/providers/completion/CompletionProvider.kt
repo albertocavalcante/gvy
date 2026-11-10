@@ -297,6 +297,10 @@ object CompletionProvider {
             if (handleContextualCompletions(completionContext, ctx, jenkinsMetadata)) {
                 return@completions
             }
+        }.filterNot {
+            // The parsing copy declares the dummy (`def BrazilWorldCup2026` in a class body is a field);
+            // it exists only there and must never reach the user.
+            it.label?.contains(DUMMY_IDENTIFIER) == true
         }
     }
 
