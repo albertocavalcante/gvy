@@ -4,11 +4,9 @@ import com.github.albertocavalcante.groovyparser.ast.containsPosition
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.spock.SpecificationStatus
-import com.github.albertocavalcante.gvy.spock.SpockClassContext
 import com.github.albertocavalcante.gvy.spock.SpockDataVariables
 import com.github.albertocavalcante.gvy.spock.SpockDetector
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
-import org.codehaus.groovy.ast.ModuleNode
 import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.CompletionItemKind
 
@@ -70,13 +68,6 @@ internal class SpockCompletionStrategy : CompletionStrategy {
         }
     }
 
-    /** A confident verdict decides; UNCERTAIN keeps the previous class-level detector. */
-    private fun isSpecification(owner: SpockClassContext, module: ModuleNode): Boolean = when (owner.status) {
-        SpecificationStatus.SPECIFICATION -> true
-        SpecificationStatus.NOT_SPECIFICATION -> false
-        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(owner.classNode, module)
-    }
-
     private fun dataCompletions(
         context: CompletionStrategyContext,
         line: String,
@@ -86,7 +77,7 @@ internal class SpockCompletionStrategy : CompletionStrategy {
         val module = base.moduleNode ?: return emptyList()
         val prefix = line.take(base.character.coerceIn(0, line.length))
             .takeLastWhile { Character.isJavaIdentifierPart(it) }
-        val names = source.classes.filter { owner -> !owner.classNode.isScript && isSpecification(owner, module) }
+        val names = source.classes.filter { owner -> !owner.classNode.isScript && owner.isSpecification(module) }
             .map { it.classNode }
             .flatMap { it.methods }
             .filter { it.containsPosition(base.line, base.character) }

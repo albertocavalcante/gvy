@@ -88,7 +88,18 @@ data class SpockClassContext(
     val classNode: ClassNode,
     val status: SpecificationStatus,
     val evidence: SpecificationEvidence,
-)
+) {
+    /**
+     * Whether a provider should treat this class as a specification (#974). A confident verdict decides;
+     * UNCERTAIN keeps the previous class-level [SpockDetector.isSpockSpec], so behaviour changes only where
+     * the source alone proves the answer. [module] must be the module this context was built from.
+     */
+    fun isSpecification(module: ModuleNode): Boolean = when (status) {
+        SpecificationStatus.SPECIFICATION -> true
+        SpecificationStatus.NOT_SPECIFICATION -> false
+        SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(classNode, module)
+    }
+}
 
 enum class SpecificationStatus { SPECIFICATION, UNCERTAIN, NOT_SPECIFICATION }
 

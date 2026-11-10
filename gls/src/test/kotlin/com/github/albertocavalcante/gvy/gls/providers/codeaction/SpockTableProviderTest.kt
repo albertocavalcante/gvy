@@ -79,9 +79,43 @@ class SpockTableProviderTest {
         assertTrue(actions.none { it.title == "Align Spock data table" })
     }
 
-    private fun params() = CodeActionParams().apply {
+    @Test
+    fun `a local class named Specification gets no table action even with a spock star import`(): Unit = runBlocking {
+        val source = """
+                import spock.lang.*
+                class Specification {}
+                class Rule extends Specification {
+                    def check() {
+                        expect:
+                        true
+                        where:
+                        a | b
+                        100|2
+                    }
+                }
+        """.trimIndent()
+        documents.put(uri, source, 1)
+        compilationService.compile(uri, source)
+
+        val actions = provider.provideCodeActions(params(line = 7))
+
+        assertTrue(actions.none { it.title == "Align Spock data table" })
+    }
+
+    @Test
+    fun `an uncertain external base keeps the previous detector`(): Unit = runBlocking {
+        val source = content.replace("spock.lang.Specification", "BaseSpec")
+        documents.put(uri, source, 1)
+        compilationService.compile(uri, source)
+
+        val actions = provider.provideCodeActions(params())
+
+        assertTrue(actions.none { it.title == "Align Spock data table" })
+    }
+
+    private fun params(line: Int = 5) = CodeActionParams().apply {
         textDocument = TextDocumentIdentifier(uri.toString())
-        range = Range(Position(5, 8), Position(5, 8))
+        range = Range(Position(line, 8), Position(line, 8))
         context = CodeActionContext(emptyList())
     }
 }

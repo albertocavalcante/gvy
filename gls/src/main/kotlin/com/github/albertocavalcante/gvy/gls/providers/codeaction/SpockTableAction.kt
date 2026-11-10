@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
-import com.github.albertocavalcante.gvy.spock.SpockDetector
+import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
 import org.codehaus.groovy.ast.expr.Expression
@@ -35,9 +35,10 @@ internal object SpockTableAction {
     fun createActions(request: SpockTableRequest): List<CodeAction> {
         if (request.only?.any(::matchesKind) == false) return emptyList()
         val lines = request.content.lines()
-        return request.module?.classes.orEmpty()
-            .filter { !it.isScript && SpockDetector.isSpockSpec(it, request.module) }
-            .flatMap { it.methods }
+        val module = request.module ?: return emptyList()
+        return SpockSourceContext.from(module, isPartial = false).classes
+            .filter { !it.classNode.isScript && it.isSpecification(module) }
+            .flatMap { it.classNode.methods }
             .flatMap { method ->
                 val collector = TableCollector(lines)
                 (method.code as? BlockStatement)?.statements.orEmpty().forEach(collector::accept)
