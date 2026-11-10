@@ -5,6 +5,7 @@ import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.exists
 import kotlin.test.assertFalse
@@ -79,5 +80,48 @@ class AstTestExecutionTest {
         parse(code, Phases.SEMANTIC_ANALYSIS)
 
         assertFalse(marker.exists(), "@ASTTest on a member or local executed")
+    }
+
+    private fun collector(name: String, collects: String) = """
+        import groovy.transform.AnnotationCollector
+        import groovy.transform.ASTTest
+        @AnnotationCollector([$collects])
+        @interface $name {}
+    """.trimIndent()
+
+    @Test
+    fun `ASTTest does not run through an AnnotationCollector alias in the same file`() {
+        val marker = tempDir.resolve("collector-same-file")
+        val path = marker.toString().replace("\\", "/")
+
+        parse(
+            collector("Boom", "ASTTest") + "\n@Boom(value={ new File('$path').text = 'x' })\nclass A {}",
+            Phases.SEMANTIC_ANALYSIS,
+        )
+
+        assertFalse(marker.exists(), "@ASTTest expanded from an @AnnotationCollector alias executed")
+    }
+
+    @Test
+    fun `ASTTest does not run through a transitive collector declared in another workspace source`() {
+        val marker = tempDir.resolve("collector-workspace")
+        val path = marker.toString().replace("\\", "/")
+        val root = tempDir.resolve("src").also { Files.createDirectories(it) }
+        Files.writeString(root.resolve("Boom.groovy"), collector("Boom", "ASTTest"))
+        Files.writeString(root.resolve("Bigger.groovy"), collector("Bigger", "Boom"))
+        val code = "@Bigger(value={ new File('$path').text = 'x' })\nclass A {}"
+        val file = root.resolve("A.groovy").also { Files.writeString(it, code) }
+
+        GroovyParserFacade().parse(
+            ParseRequest(
+                uri = file.toUri(),
+                content = code,
+                classpath = listOf(jarOf("groovy.lang.Closure"), jarOf("groovy.transform.ASTTest")),
+                sourceRoots = listOf(root),
+                compilePhase = Phases.SEMANTIC_ANALYSIS,
+            ),
+        )
+
+        assertFalse(marker.exists(), "@ASTTest expanded from a transitive collector executed")
     }
 }

@@ -4,6 +4,7 @@ import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.AnnotationNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.expr.ListExpression
 import org.codehaus.groovy.classgen.GeneratorContext
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilePhase
@@ -78,6 +79,35 @@ internal class CodeExecutingAnnotationStripper : CompilationCustomizer(CompilePh
         classNode.module?.imports?.forEach { import ->
             if (import.className in blocked && import.alias != null) names.add(import.alias)
         }
+        addCollectorAliases(classNode, names)
         return names
     }
+
+    /**
+     * `@AnnotationCollector([ASTTest]) @interface Alias` makes `@Alias` expand into `@ASTTest` later, at
+     * SEMANTIC_ANALYSIS, so the alias has to be stripped too. Collectors declared in sources of the same
+     * compilation (the file itself or other workspace sources) are visible here, transitively.
+     */
+    private fun addCollectorAliases(classNode: ClassNode, names: MutableSet<String>) {
+        val declared = classNode.compileUnit?.classes.orEmpty() + classNode.module?.classes.orEmpty()
+        val collectors = declared.distinct().filter { it.isAnnotationDefinition }
+        var changed = true
+        while (changed) {
+            changed = false
+            for (collector in collectors) {
+                if (collector.name in names || collector.nameWithoutPackage in names) continue
+                if (collectedSimpleNames(collector).any { it in names || it.substringAfterLast('.') in names }) {
+                    changed = names.add(collector.name) or names.add(collector.nameWithoutPackage)
+                }
+            }
+        }
+    }
+
+    private fun collectedSimpleNames(collector: ClassNode): List<String> = collector.annotations
+        .filter { it.classNode.nameWithoutPackage == "AnnotationCollector" }
+        .mapNotNull { it.getMember("value") }
+        .flatMap { value -> if (value is ListExpression) value.expressions else listOf(value) }
+        // Before resolution the entries are variable / property expressions, afterwards class expressions;
+        // `text` is the (qualified) name in every case.
+        .map { it.text }
 }
