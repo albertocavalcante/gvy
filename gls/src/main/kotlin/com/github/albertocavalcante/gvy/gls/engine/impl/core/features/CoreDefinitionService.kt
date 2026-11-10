@@ -9,6 +9,7 @@ import com.github.albertocavalcante.groovyparser.resolution.GroovySymbolResolver
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.gvy.gls.engine.adapters.ParseUnit
 import com.github.albertocavalcante.gvy.gls.engine.adapters.UnifiedNode
+import com.github.albertocavalcante.gvy.gls.engine.adapters.toLspRange
 import com.github.albertocavalcante.gvy.gls.engine.api.DefinitionKind
 import com.github.albertocavalcante.gvy.gls.engine.api.DefinitionService
 import com.github.albertocavalcante.gvy.gls.engine.api.UnifiedDefinition
@@ -87,12 +88,8 @@ class CoreDefinitionService(private val typeSolver: TypeSolver) : DefinitionServ
     }
 
     private fun extractRangeFromNode(node: Node): Range? {
-        val range = node.range ?: return null
-        // Convert 1-based to 0-based positions
-        return Range(
-            Position(range.begin.line - 1, range.begin.column - 1),
-            Position(range.end.line - 1, range.end.column),
-        )
+        // 1-based inclusive-start / exclusive-end Groovy columns -> 0-based LSP range
+        return node.range?.toLspRange()
     }
 
     companion object {

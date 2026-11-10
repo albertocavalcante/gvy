@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover.strategies
 
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContext
@@ -9,11 +10,13 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.MergedParameter
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedStepMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.enrichment.StepCategory
 import com.github.albertocavalcante.gvy.jenkins.metadata.extracted.StepScope
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.eclipse.lsp4j.MarkupKind
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -231,6 +234,46 @@ class JenkinsStepHoverStrategyTest {
         assertThat(markupContent.value).contains("**`file`**: `String` *(required)*")
         assertThat(markupContent.value).contains("**`encoding`**: `String` (default: `UTF-8`)")
         assertThat(markupContent.value).doesNotContain("*(required)*\n  - **`encoding`")
+    }
+
+    @Test
+    fun `step metadata hover range ends exactly at the end of the parsed call`() {
+        val code = "echo 'hi'"
+        val node = parseCall(code)
+        every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
+        every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
+        every { jenkinsCapabilities.getAllMetadata() } returns
+            createMockMetadata("echo", "Prints a message.", null, emptyMap())
+
+        val range = strategy.generateHover(node, context)!!.range
+
+        assertThat(range.start.character).isEqualTo(0)
+        assertThat(range.end.character).isEqualTo(code.length)
+    }
+
+    @Test
+    fun `vars hover range ends exactly at the end of the parsed call`() {
+        val code = "myCustomStep 'x'"
+        val node = parseCall(code)
+        every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
+        every { jenkinsCapabilities.getGlobalVariables() } returns listOf(
+            GlobalVariable(
+                name = "myCustomStep",
+                path = Path.of("/workspace/vars/myCustomStep.groovy"),
+                documentation = "docs",
+                callLineNumber = 1,
+            ),
+        )
+
+        val range = strategy.generateHover(node, context)!!.range
+
+        assertThat(range.end.character).isEqualTo(code.length)
+    }
+
+    private fun parseCall(code: String): MethodCallExpression {
+        val result = GroovyParserFacade().parse(ParseRequest(jenkinsFileUri, code))
+        val statement = result.ast!!.statementBlock.statements.first() as ExpressionStatement
+        return statement.expression as MethodCallExpression
     }
 
     @Test

@@ -68,11 +68,12 @@ class CoreParserAdapterTest {
         val adapter = CoreParserAdapter(parseResult, "file:///Test.groovy")
 
         val diagnostic = adapter.diagnostics[0]
-        // 1-based (5, 10) should become 0-based (4, 9)
+        // 1-based (5, 10) should become 0-based (4, 9); the end column is Groovy's 1-based exclusive one,
+        // so 20 becomes the 0-based exclusive 19
         assertEquals(4, diagnostic.range.start.line)
         assertEquals(9, diagnostic.range.start.character)
         assertEquals(4, diagnostic.range.end.line)
-        assertEquals(20, diagnostic.range.end.character)
+        assertEquals(19, diagnostic.range.end.character)
     }
 
     @Test
@@ -211,5 +212,20 @@ class CoreParserAdapterTest {
 
         assertEquals(0, range.start.character)
         assertEquals(code.length, range.end.character, "LSP end is exclusive: lastColumn(1-based exclusive) - 1")
+    }
+
+    @Test
+    fun `problem range uses exclusive end and never ends before its start`() {
+        val cu = CompilationUnit()
+        val range = CoreRange(CorePosition(2, 5), CorePosition(2, 9))
+        val problem = Problem("boom", range = range, severity = ProblemSeverity.ERROR)
+        val adapter = CoreParserAdapter(ParseResult(cu, listOf(problem)), "file:///Test.groovy")
+
+        val lsp = adapter.diagnostics.single().range
+        assertEquals(Position(1, 4), lsp.start)
+        assertEquals(Position(1, 8), lsp.end)
+
+        val collapsed = CoreRange(CorePosition(3, 4), CorePosition(3, 1)).toLspRange()
+        assertEquals(collapsed.start, collapsed.end)
     }
 }

@@ -13,6 +13,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.VariableExpr
 import com.github.albertocavalcante.groovyparser.resolution.GroovySymbolResolver
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
 import com.github.albertocavalcante.gvy.gls.engine.adapters.ParseUnit
+import com.github.albertocavalcante.gvy.gls.engine.adapters.toLspRange
 import com.github.albertocavalcante.gvy.gls.engine.api.HoverProvider
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
@@ -20,8 +21,6 @@ import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.MarkupContent
 import org.eclipse.lsp4j.MarkupKind
-import org.eclipse.lsp4j.Position
-import org.eclipse.lsp4j.Range
 
 /**
  * Hover provider for the Core (JavaParser-style) parser engine.
@@ -68,12 +67,7 @@ class CoreHoverProvider(private val parseUnit: ParseUnit, private val typeSolver
             else -> createGenericHover(node)
         }
 
-        val range = node.range?.let {
-            Range(
-                Position(it.begin.line - 1, it.begin.column - 1),
-                Position(it.end.line - 1, it.end.column),
-            )
-        }
+        val range = node.range?.toLspRange()
 
         return Hover(MarkupContent(MarkupKind.MARKDOWN, content), range)
     }
