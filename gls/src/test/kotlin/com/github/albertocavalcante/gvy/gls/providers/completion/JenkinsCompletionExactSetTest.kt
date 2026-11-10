@@ -324,6 +324,35 @@ class JenkinsCompletionExactSetTest {
         return items.labels()
     }
 
+    /** Insert text by label at an empty line inside `agent { [opener] }`. */
+    private suspend fun insertTextsInAgent(opener: String): Map<String, String?> {
+        val code = "pipeline {\n    agent {\n        $opener\n            \n        }\n    }\n}"
+        return completeAt(code, line = 3, character = 12).associate { it.label to it.insertText }
+    }
+
+    /** Insert text by label at an empty line inside the innermost of [openers] in a stage. */
+    private suspend fun insertTextsInStage(vararg openers: String): Map<String, String?> {
+        val opened = openers.mapIndexed { depth, opener -> "    ".repeat(depth + 3) + opener }
+        val lines = listOf("pipeline {", "    agent any", "    stages {", "        stage('S') {") + opened +
+            "    ".repeat(openers.size + 3)
+        return completeAt(lines.joinToString("\n"), line = 4 + openers.size, character = 4 * (openers.size + 3))
+            .associate { it.label to it.insertText }
+    }
+
+    @Test
+    fun `statement entries insert their name and a space, block entries an opening brace`(): Unit = runTest {
+        val docker = insertTextsInAgent("docker {")
+        val input = insertTextsInStage("input {")
+        val axis = insertTextsInStage("matrix {", "axes {", "axis {")
+
+        assertEquals("image ", docker["image"])
+        assertEquals("reuseNode ", docker["reuseNode"])
+        assertEquals("message ", input["message"])
+        assertEquals("parameters {", input["parameters"], "parameters opens a block")
+        assertEquals("values ", axis["values"])
+        assertEquals("axis {", insertTextsInStage("matrix {", "axes {")["axis"], "axis opens a block")
+    }
+
     @Test
     fun `parallel block offers exactly stage`(): Unit = runTest {
         assertEquals(setOf("stage"), labelsInStage("parallel {"))
