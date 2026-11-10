@@ -324,6 +324,48 @@ class ColdLocalCompletionTest {
         assertEquals(2, choose.size, "found ${labels(items)}")
         assertTrue(choose.all { it.insertText == "choose(\${1:Date value})" })
         assertTrue(choose.all { it.detail == "String choose(Date value)" })
+        assertEquals(
+            setOf("(java.util.Date)", "(java.sql.Date)"),
+            choose.map { it.labelDetails?.description }.toSet(),
+            "Colliding simple names carry a package hint",
+        )
+    }
+
+    @Test
+    fun `a unique simple signature carries no package hint`(): Unit = runBlocking {
+        val greet = complete(memberSource).single { it.label == "greet" && it.kind == CompletionItemKind.Method }
+
+        assertNull(greet.labelDetails)
+    }
+
+    @Test
+    fun `members of an indexed parent's own indexed parent are offered`(): Unit = runBlocking {
+        // A (this buffer) extends B extends C; B and C live in another, indexed file.
+        val parents = URI.create("file:///Parents.groovy")
+        val source = "class C { String deep() { '' } }\nclass B extends C { String middle() { '' } }"
+        assertTrue(compilation.compile(parents, source).isSuccess)
+
+        val items = complete("class A extends B {}\nnew A().de")
+
+        assertTrue(items.any { it.label == "middle" && it.kind == CompletionItemKind.Method }, "found ${labels(items)}")
+        assertEquals(
+            listOf("deep()"),
+            items.filter { it.label == "deep" && it.kind == CompletionItemKind.Method }.map { it.insertText },
+            "found ${labels(items)}",
+        )
+    }
+
+    @Test
+    fun `a local generic override hides the erased interface method`(): Unit = runBlocking {
+        val source = """
+            class K implements Comparable<K> { int compareTo(K o) { 0 } }
+            new K().comp
+        """.trimIndent()
+
+        val items = complete(source)
+
+        val compareTo = items.filter { it.label == "compareTo" && it.kind == CompletionItemKind.Method }
+        assertEquals(listOf("compareTo(\${1:K o})"), compareTo.map { it.insertText }, "found ${labels(items)}")
     }
 
     private fun labels(items: List<CompletionItem>) = items.map { "${it.label}|${it.insertText}|${it.detail}" }

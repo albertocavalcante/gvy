@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
+import com.github.albertocavalcante.gvy.gls.dsl.completion.MethodSignatureKey
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionContext
@@ -14,6 +15,7 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAc
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationMethodSignatures
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
@@ -23,6 +25,8 @@ import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.eclipse.lsp4j.CompletionItem
+import org.eclipse.lsp4j.CompletionItemLabelDetails
 
 /**
  * Completion strategy for member access contexts (e.g., "myList." or "env.").
@@ -62,7 +66,7 @@ internal class MemberAccessCompletionStrategy(
             )
         }
 
-        return CompletionStrategy.found(items)
+        return CompletionStrategy.found(items.withPackageHints())
     }
 
     /**
@@ -113,9 +117,12 @@ internal class MemberAccessCompletionStrategy(
         // sources while overloads differing only by package stay separate under simple display names.
         local.methods.forEach { addCandidate(it) }
         addWorkspaceMembers(local.fields)
-        workspaceSymbolIndex?.let { index -> addExactIndexedMembers(local.externalTypes, index) }
+        val binaryTypes = addExactIndexedMembers(local.externalTypes, workspaceSymbolIndex)
         addQualifiedGdkMethods(rawType)
-        local.externalTypes.forEach { addQualifiedClasspathMethods(it) }
+        // A local generic override such as `compareTo(K o)` erases differently from the reflected
+        // `compareTo(Object)` it implements; the reflected method is then the same member twice.
+        val localShapes = local.methods.mapTo(mutableSetOf()) { it.name to it.parameters.size }
+        binaryTypes.forEach { addQualifiedClasspathMethods(it, localShapes) }
     }
 
     /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
@@ -134,34 +141,36 @@ internal class MemberAccessCompletionStrategy(
         addClasspathMethods(rawType, compilationService)
     }
 
-    private fun CompletionsBuilder.addExactIndexedMembers(classNames: List<String>, index: WorkspaceSymbolIndex) {
-        classNames.forEach { name ->
+    /**
+     * Adds exact members of indexed workspace types and of their indexed ancestors, across files.
+     * Returns the ancestors that are not indexed source classes, for classpath reflection.
+     */
+    private fun CompletionsBuilder.addExactIndexedMembers(
+        classNames: List<String>,
+        index: WorkspaceSymbolIndex?,
+    ): List<String> {
+        if (index == null) return classNames
+        val pending = ArrayDeque(classNames)
+        val visited = mutableSetOf<String>()
+        val binary = mutableListOf<String>()
+        while (pending.isNotEmpty()) {
+            val name = pending.removeFirst()
+            if (!visited.add(name)) continue
             val owner = "${name.replace('.', '/')}#"
             // Symbols and qualified facts come from the same captured document.
             val document = index.findImplementationDocument(owner)
             if (document == null) {
                 addWorkspaceMembers(index.getAllMembers(name.replace('.', '/'), includeInherited = true))
-                return@forEach
-            }
-            val exact = ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
-            val members = document.document.symbols.filter {
-                it.owner == owner && it.kind in INDEXED_MEMBER_KINDS
-            }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
-            addWorkspaceMembers(members.filter { it.kind != SymbolKind.METHOD })
-            members.filter { it.kind == SymbolKind.METHOD }.forEach { member ->
-                val alternatives = exact[member.symbolId] ?: listOf(member.signature.completionParameters())
-                alternatives.forEach { types ->
-                    addCandidate(
-                        MethodCandidate(
-                            name = member.name,
-                            returnType = member.type?.let { formatType(it) } ?: "def",
-                            parameters = types.map { CandidateParameter(it, simpleTypeName(it)) },
-                            doc = "Method: ${member.name}(${types.joinToString(", ")})",
-                        ),
-                    )
-                }
+                binary += name
+            } else {
+                val (fields, methods) = indexedDocumentMembers(document, owner)
+                addWorkspaceMembers(fields)
+                methods.forEach { addCandidate(it) }
+                ImplementationMethodSignatures.directSupertypes(document, owner)
+                    .forEach { pending.addLast(it.removeSuffix("#").replace('/', '.')) }
             }
         }
+        return binary
     }
 
     private fun CompletionsBuilder.addQualifiedGdkMethods(className: String) {
@@ -179,11 +188,14 @@ internal class MemberAccessCompletionStrategy(
         }
     }
 
-    private fun CompletionsBuilder.addQualifiedClasspathMethods(className: String) {
+    private fun CompletionsBuilder.addQualifiedClasspathMethods(
+        className: String,
+        localShapes: Set<Pair<String, Int>>,
+    ) {
         val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
         types.forEach { type ->
             val reflected = compilationService.classpathService.loadClass(type) ?: return@forEach
-            reflectedInstanceMethods(reflected).forEach { method ->
+            reflectedInstanceMethods(reflected).filterNot { it.isGenericOverrideOf(localShapes) }.forEach { method ->
                 addCandidate(
                     MethodCandidate(
                         name = method.name,
@@ -552,6 +564,49 @@ private fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Met
 } catch (error: SecurityException) {
     reflectionLogger.debug(error) { "Cannot reflect completion methods for ${type.name}" }
     emptyList()
+}
+
+/** Fields and exact method candidates that [owner] declares itself in its indexed [document]. */
+private fun indexedDocumentMembers(
+    document: ImplementationDocument,
+    owner: String,
+): Pair<List<MemberInfo>, List<MethodCandidate>> {
+    val exact = ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
+    val members = document.document.symbols.filter {
+        it.owner == owner && it.kind in INDEXED_MEMBER_KINDS
+    }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
+    val methods = members.filter { it.kind == SymbolKind.METHOD }.flatMap { member ->
+        val alternatives = exact[member.symbolId] ?: listOf(member.signature.completionParameters())
+        alternatives.map { types ->
+            MethodCandidate(
+                name = member.name,
+                returnType = member.type?.let { formatType(it) } ?: "def",
+                parameters = types.map { CandidateParameter(it, simpleTypeName(it)) },
+                doc = "Method: ${member.name}(${types.joinToString(", ")})",
+            )
+        }
+    }
+    return members.filter { it.kind != SymbolKind.METHOD } to methods
+}
+
+/** True when a local method of the same name and arity overrides this method through a type variable. */
+private fun java.lang.reflect.Method.isGenericOverrideOf(localShapes: Set<Pair<String, Int>>): Boolean =
+    (name to parameterCount) in localShapes &&
+        genericParameterTypes.any { it is java.lang.reflect.TypeVariable<*> }
+
+/**
+ * Methods whose simple display collides (for example `choose(Date)` from `java.util` and `java.sql`)
+ * get the qualified parameter list as a label hint so the user can tell them apart.
+ */
+private fun List<CompletionItem>.withPackageHints(): List<CompletionItem> {
+    val collisions = filter { it.data is MethodSignatureKey }
+        .groupBy { it.label to it.detail }
+        .values.filter { group -> group.map { it.data }.distinct().size > 1 }
+    collisions.flatten().forEach { item ->
+        val signature = (item.data as MethodSignatureKey).signature
+        item.labelDetails = CompletionItemLabelDetails().apply { description = "(${signature.replace(",", ", ")})" }
+    }
+    return this
 }
 
 private val INDEXED_MEMBER_KINDS = setOf(SymbolKind.METHOD, SymbolKind.FIELD, SymbolKind.PROPERTY)

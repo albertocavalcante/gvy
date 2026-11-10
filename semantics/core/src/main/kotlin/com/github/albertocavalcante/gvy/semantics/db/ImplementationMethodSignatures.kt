@@ -19,4 +19,14 @@ object ImplementationMethodSignatures {
             },
         )
     }
+
+    /**
+     * Direct superclass and interface class symbols (for example `pkg/Parent#`) of a source-owned
+     * [owner]; empty for classes this document does not own.
+     */
+    fun directSupertypes(document: ImplementationDocument, owner: String): List<String> {
+        if (document.classes.none { it.symbol == owner }) return emptyList()
+        val type = document.hierarchy[owner] ?: return emptyList()
+        return Collections.unmodifiableList(listOfNotNull(type.superclass) + type.interfaces)
+    }
 }
