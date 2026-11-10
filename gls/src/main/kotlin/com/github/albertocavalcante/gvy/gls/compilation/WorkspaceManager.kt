@@ -442,7 +442,7 @@ class WorkspaceManager internal constructor(
          * this [Spelling], so to one notification or one model: a directory replaced by a link while it lives keeps
          * its old real path here until then, an accepted limit. Shared by the LSP and queue threads, so locked.
          */
-        private val canonicalParents = object : LinkedHashMap<Path, Path>(16, 0.75f, true) {
+        private val canonicalParents = object : LinkedHashMap<Path, Path>(LRU_INITIAL_CAPACITY, LRU_LOAD_FACTOR, true) {
             override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Path, Path>?): Boolean =
                 size > MAX_CANONICAL_PARENTS
         }
@@ -783,6 +783,10 @@ private fun nameKey(text: String, foldsCase: Boolean, normalisesNames: Boolean):
 
 /** Parent directories whose real path one [WorkspaceManager] spelling remembers (#1440). */
 private const val MAX_CANONICAL_PARENTS = 1024
+
+// [java.util.HashMap]'s defaults, spelled out because the access-ordered constructor needs them.
+private const val LRU_INITIAL_CAPACITY = 16
+private const val LRU_LOAD_FACTOR = 0.75f
 
 /** macOS file systems (APFS, HFS+) ignore Unicode normalisation in names, even on case-sensitive volumes. */
 private val PLATFORM_NORMALISES_NAMES: Boolean =
