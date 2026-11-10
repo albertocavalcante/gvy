@@ -141,4 +141,41 @@ class GdslUntrustedInputTest {
         assertThat(result.success).isTrue()
         assertThat(result.methods.single().documentation).isEqualTo("[".repeat(200))
     }
+
+    @Test
+    fun `shared list locals cannot grow values exponentially`() {
+        // Each local would double the previous one by reference; 2^40 elements would exhaust memory.
+        val script = buildString {
+            appendLine("def x0 = ['a']")
+            for (i in 1..40) appendLine("def x$i = [x${i - 1}, x${i - 1}]")
+            appendLine("contributor(context()) { method(name: 'm', doc: x40) }")
+            append(validContributor)
+        }
+
+        val result = executor.executeAndCapture(script, "shared.gdsl")
+
+        assertThat(result.methods.map { it.name }).containsExactly("echo")
+        assertThat(result.warnings).anyMatch { it.contains("Locals may only hold") }
+    }
+
+    @Test
+    fun `name, type and doc must be strings`() {
+        val script = "contributor(context()) { method(name: 'm', doc: ['a', 'b']) }\n$validContributor"
+
+        val result = executor.executeAndCapture(script, "fields.gdsl")
+
+        assertThat(result.methods.map { it.name }).containsExactly("echo")
+        assertThat(result.warnings).anyMatch { it.contains("'doc' must be a string") }
+    }
+
+    @ParameterizedTest
+    @ValueSource(
+        strings = ["method(name: 'unterminated", "/* unterminated comment", "def x = 1 #", "method(name: 'x')\u0000"],
+    )
+    fun `malformed scripts yield an error result instead of throwing`(script: String) {
+        val result = executor.executeAndCapture(script, "malformed.gdsl")
+
+        assertThat(result.success).isFalse()
+        assertThat(result.error).isNotBlank()
+    }
 }

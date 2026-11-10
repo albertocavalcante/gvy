@@ -150,13 +150,23 @@ internal class GdslInterpreter(private val limits: Limits = Limits()) {
         }
     }
 
+    /**
+     * `def x = <value>`. Locals may only hold scalars or a context: a list or map local could be shared
+     * by reference (`def x1 = [x0, x0]` …), which makes values, and their string forms, grow
+     * exponentially in the number of statements.
+     */
     private fun declare(expression: DeclarationExpression, scope: Scope): Any? {
         val target = expression.leftExpression as? VariableExpression
             ?: throw Unsupported("Unsupported declaration", expression)
         val value = evaluate(expression.rightExpression, scope)
+        if (!isScalar(value) && value !is GdslContext) {
+            throw Unsupported("Locals may only hold strings, numbers, booleans or contexts", expression)
+        }
         scope.define(target.name, value)
         return value
     }
+
+    private fun isScalar(value: Any?): Boolean = value == null || value is String || value is Number || value is Boolean
 
     private fun call(expression: MethodCallExpression, scope: Scope): Any? {
         val name = plainCallName(expression)
@@ -187,12 +197,19 @@ internal class GdslInterpreter(private val limits: Limits = Limits()) {
     ): Any? {
         val contributor = scope.contributor
             ?: throw Unsupported("'$name' is only supported inside contributor { }", expression)
+        if (name != "enclosingCall") requireScalarFields(arguments, expression)
         return when (name) {
             "method" -> contributor.method(arguments.named)
             "property" -> contributor.property(arguments.named)
             "parameter" -> contributor.parameter(arguments.named)
             else -> contributor.enclosingCall(arguments.singleString(expression))
         }
+    }
+
+    /** `name`, `type` and `doc` are stored as strings; a list or map there would be stringified whole. */
+    private fun requireScalarFields(arguments: Arguments, expression: MethodCallExpression) {
+        val nonScalar = SCALAR_FIELDS.firstOrNull { key -> key in arguments.named && !isScalar(arguments.named[key]) }
+        if (nonScalar != null) throw Unsupported("'$nonScalar' must be a string", expression)
     }
 
     private fun Map<String, Any?>.nonNullValues(): Map<String, Any> = buildMap {
@@ -269,6 +286,7 @@ internal class GdslInterpreter(private val limits: Limits = Limits()) {
             "annotatedScope" to "annotated",
         )
         val CONTRIBUTOR_CALLS = setOf("method", "property", "parameter", "enclosingCall")
+        val SCALAR_FIELDS = listOf("name", "type", "doc")
         const val DEFAULT_MAX_NODES = 500_000
         const val DEFAULT_MAX_DEPTH = 256
     }

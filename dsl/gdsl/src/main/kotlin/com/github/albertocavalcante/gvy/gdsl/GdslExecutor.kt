@@ -36,10 +36,7 @@ class GdslExecutor {
      * @param scriptName Name for error reporting (default: "script.gdsl")
      */
     fun executeAndCapture(scriptContent: String, scriptName: String = "script.gdsl"): GdslParseResult {
-        val result = when (val parsed = UntrustedAstParser.parse(scriptContent, scriptName, PARSE_LIMITS)) {
-            is UntrustedParseResult.Rejected -> GdslParseResult.error(rejection(parsed))
-            is UntrustedParseResult.Parsed -> GdslInterpreter().interpret(parsed.module)
-        }
+        val result = read(scriptContent, scriptName)
         if (!result.success) {
             logger.warn { "Could not read GDSL script $scriptName: ${result.error}" }
         } else {
@@ -49,6 +46,20 @@ class GdslExecutor {
             }
         }
         return result
+    }
+
+    /**
+     * Never throws for any input: one malformed file must not abort loading the others. Errors (out of
+     * memory, linkage) still propagate.
+     */
+    @Suppress("TooGenericExceptionCaught") // Untrusted input: any parser or interpreter failure is a result
+    private fun read(scriptContent: String, scriptName: String): GdslParseResult = try {
+        when (val parsed = UntrustedAstParser.parse(scriptContent, scriptName, PARSE_LIMITS)) {
+            is UntrustedParseResult.Rejected -> GdslParseResult.error(rejection(parsed))
+            is UntrustedParseResult.Parsed -> GdslInterpreter().interpret(parsed.module)
+        }
+    } catch (e: Exception) {
+        GdslParseResult.error("GDSL script could not be read: ${e.message ?: e.javaClass.simpleName}")
     }
 
     private fun rejection(rejected: UntrustedParseResult.Rejected): String {
