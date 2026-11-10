@@ -215,7 +215,7 @@ Jenkins Pipeline support with step completion and diagnostics.
 | `JenkinsContext`                | Pipeline context management |
 | `JenkinsStepCompletionProvider` | Step/global var completion  |
 | `StableStepDefinitions`         | Hardcoded core steps        |
-| `GdslParser`                    | Parse Jenkins GDSL output   |
+| `JenkinsGdslAdapter`            | GDSL contributions to steps |
 | `VarsGlobalVariableProvider`    | Shared library vars         |
 
 **Metadata Hierarchy:**

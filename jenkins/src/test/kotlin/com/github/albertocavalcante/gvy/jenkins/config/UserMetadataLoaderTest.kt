@@ -44,7 +44,9 @@ class UserMetadataLoaderTest {
         Files.writeString(
             jenkinsDir.resolve("pipeline.gdsl"),
             """
-            method(name: 'myCustomStep', type: 'Object', params: [:], doc: 'Custom step')
+            contributor(context()) {
+                method(name: 'myCustomStep', type: 'Object', params: [:], doc: 'Custom step')
+            }
             """.trimIndent(),
         )
 
