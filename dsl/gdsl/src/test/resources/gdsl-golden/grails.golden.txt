@@ -1,0 +1,3 @@
+success=true error=null
+method MethodDescriptor(name=json, returnType=void, parameters=[ParameterDescriptor(name=closure, type=groovy.lang.Closure, documentation=null)], namedParameters=[], documentation=null, context={filetypes=[gson]}, enclosingCall=null)
+property PropertyDescriptor(name=model, type=java.util.Map, documentation=null, context={filetypes=[gson]}, enclosingCall=null)

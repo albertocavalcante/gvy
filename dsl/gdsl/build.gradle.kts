@@ -4,6 +4,9 @@ plugins {
 }
 
 dependencies {
+    // Bounded parse of untrusted Groovy (no compile phase, transform or class loading)
+    implementation(project(":parser:api"))
+
     // Groovy
     implementation(libs.groovy.core)
 

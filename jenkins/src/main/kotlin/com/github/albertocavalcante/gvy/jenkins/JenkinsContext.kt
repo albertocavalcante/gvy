@@ -280,16 +280,11 @@ class JenkinsContext internal constructor(
             return results
         }
 
-        // Log results and execute successful loads
+        // Read each loaded file. GdslExecutor interprets the AST and never runs the script; the captured
+        // contributions are not yet merged into metadata (audit H21, follow-up PR).
         results.successful.forEach { result ->
             logger.info { "Loaded Jenkins GDSL: ${result.path}" }
-            result.content?.let { content ->
-                try {
-                    gdslExecutor.execute(content, result.path)
-                } catch (e: Exception) {
-                    logger.error(e) { "Failed to execute GDSL: ${result.path}" }
-                }
-            }
+            result.content?.let { content -> gdslExecutor.executeAndCapture(content, result.path) }
         }
 
         return results

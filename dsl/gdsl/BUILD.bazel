@@ -6,6 +6,7 @@ kt_library(
     resources = glob(["src/main/resources/**/*"]),
     visibility = ["//visibility:public"],
     deps = [
+        "//parser/api",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
     ],
@@ -15,9 +16,11 @@ kt_test(
     name = "gdsl_test",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":gdsl"],
+    resources = glob(["src/test/resources/**/*"]),
     test_packages = ["com.github.albertocavalcante.gvy.gdsl"],
     deps = [
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_assertj_assertj_core",
+        "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
 )
