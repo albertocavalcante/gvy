@@ -32,6 +32,7 @@ class CrossFileRenameGuardTest {
     private val documents = DocumentProvider()
     private val service = GroovyCompilationService(documentProvider = documents)
     private var extraRoots = emptyList<Path>()
+
     // A clock a minute ahead keeps freshly written directories out of the cache's "modified just now" distrust.
     private val walks = WorkspaceWalkCache(clock = { System.currentTimeMillis() + 60_000 })
     private val provider by lazy {
