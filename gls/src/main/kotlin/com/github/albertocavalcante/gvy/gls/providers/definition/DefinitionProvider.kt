@@ -530,7 +530,8 @@ private fun spockDefinition(service: GroovyCompilationService, uri: URI, positio
     val snapshot = service.getCompiledSnapshot(uri) ?: return null
     val module = snapshot.parseResult.ast ?: return null
     val origin = snapshot.parseResult.astModel.getNodeAt(uri, position.toGroovyPosition())
-    val target = SpockDefinitionLookup.find(module, snapshot.sourceText, position, origin) ?: return null
+    val isPartial = !snapshot.parseResult.isSuccessful
+    val target = SpockDefinitionLookup.find(module, snapshot.sourceText, position, origin, isPartial) ?: return null
     return target.toLspRange()?.let { Location(uri.toString(), it) }
 }
 

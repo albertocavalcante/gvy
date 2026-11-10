@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
+import com.github.albertocavalcante.gvy.spock.SpecificationStatus
 import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.BinaryExpression
@@ -25,9 +26,18 @@ internal data class SpockTableRequest(
     val selection: Range,
     val only: List<String>? = null,
     val version: Int? = null,
+    /** True when the compile that produced [module] reported errors, so classes may be missing. */
+    val isPartial: Boolean = false,
 )
 
-/** Aligns unambiguous, single-line Spock tables without evaluating their cells. */
+/**
+ * Aligns unambiguous, single-line Spock tables without evaluating their cells.
+ *
+ * The edit changes source, so it is offered only for a confident [SpecificationStatus.SPECIFICATION]
+ * (#1211: a heuristic alone cannot justify a source-changing edit). UNCERTAIN classes, for example a
+ * star-imported `Specification` without Spock on the compile classpath, get no action until target
+ * evidence can decide them (#1285 step 2, #1211 row 5).
+ */
 internal object SpockTableAction {
     private const val MAX_COLUMNS = 256
     private val separator = Regex("\\s*(\\|\\|?)\\s*")
@@ -36,8 +46,8 @@ internal object SpockTableAction {
         if (request.only?.any(::matchesKind) == false) return emptyList()
         val lines = request.content.lines()
         val module = request.module ?: return emptyList()
-        return SpockSourceContext.from(module, isPartial = false).classes
-            .filter { !it.classNode.isScript && it.isSpecification(module) }
+        return SpockSourceContext.from(module, request.isPartial).classes
+            .filter { !it.classNode.isScript && it.status == SpecificationStatus.SPECIFICATION }
             .flatMap { it.classNode.methods }
             .flatMap { method ->
                 val collector = TableCollector(lines)

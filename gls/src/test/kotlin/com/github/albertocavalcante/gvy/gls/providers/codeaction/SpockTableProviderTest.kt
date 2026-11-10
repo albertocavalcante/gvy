@@ -103,7 +103,7 @@ class SpockTableProviderTest {
     }
 
     @Test
-    fun `an uncertain external base keeps the previous detector`(): Unit = runBlocking {
+    fun `an uncertain external base gets no table action`(): Unit = runBlocking {
         val source = content.replace("spock.lang.Specification", "BaseSpec")
         documents.put(uri, source, 1)
         compilationService.compile(uri, source)
@@ -111,6 +111,39 @@ class SpockTableProviderTest {
         val actions = provider.provideCodeActions(params())
 
         assertTrue(actions.none { it.title == "Align Spock data table" })
+    }
+
+    @Test
+    fun `an uncertain class gets no table action because the edit changes source`(): Unit = runBlocking {
+        // Without Spock on the compile classpath, `import spock.lang.*` alone cannot prove the base.
+        val withoutSpock = object : ClassLoader(SpockTableProviderTest::class.java.classLoader) {
+            override fun loadClass(name: String, resolve: Boolean): Class<*> {
+                if (name.startsWith("spock.")) throw ClassNotFoundException(name)
+                return super.loadClass(name, resolve)
+            }
+
+            override fun getResource(name: String) = if (name.startsWith("spock/")) null else super.getResource(name)
+        }
+        val service = GroovyCompilationService(withoutSpock)
+        val source = "import spock.lang.*\n" +
+            content.replace("class TableSpec extends spock.lang.Specification", "class TableSpec extends Specification")
+        val starProvider = CodeActionProvider(
+            service,
+            documents,
+            object : Formatter {
+                override fun format(text: String): String = text
+            },
+        )
+        try {
+            documents.put(uri, source, 1)
+            service.compile(uri, source)
+
+            val actions = starProvider.provideCodeActions(params(line = 6))
+
+            assertTrue(actions.none { it.title == "Align Spock data table" })
+        } finally {
+            service.clearCaches()
+        }
     }
 
     private fun params(line: Int = 5) = CodeActionParams().apply {
