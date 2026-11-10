@@ -52,6 +52,18 @@ class WorkspaceSourceAliasTest {
     }
 
     @Test
+    fun `an alias root spelled with dot segments is still recognised as the same directory`() {
+        val (src, alias) = aliased("A.groovy")
+        val dotted = src.resolve("..").resolve(alias.fileName)
+        val manager = manager().apply { updateWorkspaceModel(workspace, emptyList(), listOf(src, dotted)) }
+        assertEquals(listOf(src.resolve("A.groovy")), manager.getWorkspaceSources(), "scan")
+
+        write(src.resolve("B.groovy"))
+        manager.applySourceChanges(listOf(dotted.resolve("B.groovy")), emptyList())
+        assertEquals(listOf(src.resolve("A.groovy"), src.resolve("B.groovy")), manager.getWorkspaceSources(), "event")
+    }
+
+    @Test
     fun `on a case-insensitive file system roots differing only in case list each file once`() {
         val src = Files.createDirectories(workspace.resolve("src"))
         // Distinct directories on case-sensitive Linux; one directory on a case-insensitive disk.
@@ -97,11 +109,16 @@ class WorkspaceSourceAliasTest {
         val manager = manager().apply { updateWorkspaceModel(workspace, emptyList(), listOf(src, alias)) }
         write(src.resolve("A.groovy"))
 
-        manager.applySourceChanges(listOf(alias.resolve("A.groovy")), emptyList())
+        val created = manager.applySourceChanges(listOf(alias.resolve("A.groovy")), emptyList())
+        assertEquals(listOf(src.resolve("A.groovy")), created.added, "a new file is a change")
         assertEquals(listOf(src.resolve("A.groovy")), manager.getWorkspaceSources(), "created")
 
-        manager.applySourceChanges(listOf(src.resolve("A.groovy")), emptyList())
-        assertEquals(listOf(src.resolve("A.groovy")), manager.getWorkspaceSources(), "created again, other spelling")
+        // A listed file reported again, in either spelling, is no change: no needless cache clear.
+        listOf(src, alias).forEach { root ->
+            val again = manager.applySourceChanges(listOf(root.resolve("A.groovy")), emptyList())
+            assertEquals(SourceListChange.NONE, again, "created again as ${root.fileName}")
+        }
+        assertEquals(listOf(src.resolve("A.groovy")), manager.getWorkspaceSources(), "still once")
 
         Files.delete(src.resolve("A.groovy"))
         manager.applySourceChanges(emptyList(), listOf(alias.resolve("A.groovy")))
