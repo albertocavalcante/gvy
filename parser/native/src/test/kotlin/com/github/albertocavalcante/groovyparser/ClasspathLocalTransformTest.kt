@@ -27,7 +27,8 @@ import kotlin.test.assertTrue
  * Why it is blocked: the compile unit loads transform classes through the server's own transform loader, which never
  * sees workspace jars, so a transform that only exists in a classpath jar is not found and is reported as an error
  * from SEMANTIC_ANALYSIS (where local transforms are collected). Transforms in Groovy's own jars (`@CompileStatic`,
- * `@Canonical`, ...) are on that loader and keep working.
+ * `@Canonical`, ...) are on that loader and keep working. The same holds for a precompiled `@AnnotationCollector`
+ * with a `processor` class from the jar.
  */
 class ClasspathLocalTransformTest {
     @TempDir
@@ -46,47 +47,18 @@ class ClasspathLocalTransformTest {
         val classes = tempDir.resolve("classes").also { Files.createDirectories(it) }
         val config = CompilerConfiguration().apply { targetDirectory = classes.toFile() }
         CompilationUnit(config).apply {
-            addSource(
-                "Mark.groovy",
-                """
-                package probe
-
-                import org.codehaus.groovy.transform.GroovyASTTransformationClass
-                import java.lang.annotation.ElementType
-                import java.lang.annotation.Retention
-                import java.lang.annotation.RetentionPolicy
-                import java.lang.annotation.Target
-
-                @Retention(RetentionPolicy.RUNTIME)
-                @Target([ElementType.TYPE])
-                @GroovyASTTransformationClass("probe.MarkTransform")
-                @interface Mark {}
-                """.trimIndent(),
-            )
-            addSource(
-                "MarkTransform.groovy",
-                """
-                package probe
-
-                import org.codehaus.groovy.ast.ASTNode
-                import org.codehaus.groovy.control.CompilePhase
-                import org.codehaus.groovy.control.SourceUnit
-                import org.codehaus.groovy.transform.ASTTransformation
-                import org.codehaus.groovy.transform.GroovyASTTransformation
-
-                @GroovyASTTransformation(phase = CompilePhase.SEMANTIC_ANALYSIS)
-                class MarkTransform implements ASTTransformation {
-                    void visit(ASTNode[] nodes, SourceUnit source) {
-                        new File(System.getProperty('$MARKER_PROPERTY')).text = 'x'
-                    }
-                }
-                """.trimIndent(),
-            )
+            LIBRARY_SOURCES.forEach { (name, text) -> addSource("$name.groovy", text) }
             compile()
         }
         val jar = tempDir.resolve("shared-library.jar")
         JarOutputStream(Files.newOutputStream(jar)).use { out ->
-            for (name in listOf("probe/Mark.class", "probe/MarkTransform.class")) {
+            val names = listOf(
+                "probe/Mark.class",
+                "probe/MarkTransform.class",
+                "probe/Boom.class",
+                "probe/MarkProcessor.class",
+            )
+            for (name in names) {
                 out.putNextEntry(JarEntry(name))
                 out.write(Files.readAllBytes(classes.resolve(name)))
                 out.closeEntry()
@@ -95,10 +67,17 @@ class ClasspathLocalTransformTest {
         return jar
     }
 
-    private val source = "@probe.Mark\nclass A {}"
+    private val directSource = "@probe.Mark\nclass A {}"
+    private val processorSource = "@probe.Boom\nclass A {}"
 
     @Test
-    fun `control - a plain compile that sees the jar does run its local transform`() {
+    fun `control - a plain compile that sees the jar does run its local transform`() = control(directSource)
+
+    @Test
+    fun `control - a precompiled collector with a processor from the jar does run under a plain compile`() =
+        control(processorSource)
+
+    private fun control(source: String) {
         val marker = tempDir.resolve("control-marker")
         System.setProperty(MARKER_PROPERTY, marker.toString())
         // The parent must own Groovy, or the transform implements a different ASTTransformation and is skipped.
@@ -110,7 +89,13 @@ class ClasspathLocalTransformTest {
         assertTrue(marker.exists(), "control: the scenario must be able to run the transform ($failure)")
     }
 
-    private fun assertNotRun(label: String, facade: GroovyParserFacade, classpath: List<Path>, phase: Int) {
+    private fun assertNotRun(
+        label: String,
+        facade: GroovyParserFacade,
+        classpath: List<Path>,
+        phase: Int,
+        source: String,
+    ) {
         val marker = tempDir.resolve("marker-$label-$phase")
         System.setProperty(MARKER_PROPERTY, marker.toString())
 
@@ -130,24 +115,94 @@ class ClasspathLocalTransformTest {
         assertTrue(failed == (phase >= Phases.SEMANTIC_ANALYSIS), "$label: unexpected diagnostics at phase $phase")
     }
 
+    private val cases = mapOf(
+        "direct" to directSource,
+        "processor" to processorSource,
+    )
+    private val phases = listOf(Phases.CONVERSION, Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)
+
     @Test
     fun `server-like facade does not run a classpath jar's local transform`() {
         val jar = transformJar()
-        for (phase in listOf(Phases.CONVERSION, Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)) {
-            assertNotRun("default-parent", GroovyParserFacade(), listOf(groovyJar(), jar), phase)
+        for ((label, source) in cases) {
+            for (phase in phases) {
+                assertNotRun("default-parent/$label", GroovyParserFacade(), listOf(groovyJar(), jar), phase, source)
+            }
         }
     }
 
     @Test
     fun `facade sharing Groovy's loader does not run a classpath jar's local transform either`() {
         val jar = transformJar()
-        for (phase in listOf(Phases.CONVERSION, Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)) {
-            val facade = GroovyParserFacade(GroovyClassLoader::class.java.classLoader)
-            assertNotRun("shared-parent", facade, listOf(jar), phase)
+        for ((label, source) in cases) {
+            for (phase in phases) {
+                val facade = GroovyParserFacade(GroovyClassLoader::class.java.classLoader)
+                assertNotRun("shared-parent/$label", facade, listOf(jar), phase, source)
+            }
         }
     }
 
     private companion object {
         const val MARKER_PROPERTY = "gvy.test.local.transform.marker"
+
+        private val LIBRARY_SOURCES: Map<String, String> = mapOf(
+            "Mark" to """
+package probe
+
+import org.codehaus.groovy.transform.GroovyASTTransformationClass
+import java.lang.annotation.ElementType
+import java.lang.annotation.Retention
+import java.lang.annotation.RetentionPolicy
+import java.lang.annotation.Target
+
+@Retention(RetentionPolicy.RUNTIME)
+@Target([ElementType.TYPE])
+@GroovyASTTransformationClass("probe.MarkTransform")
+@interface Mark {}
+            """.trimIndent(),
+            "MarkTransform" to """
+package probe
+
+import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.control.CompilePhase
+import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.transform.ASTTransformation
+import org.codehaus.groovy.transform.GroovyASTTransformation
+
+@GroovyASTTransformation(phase = CompilePhase.SEMANTIC_ANALYSIS)
+class MarkTransform implements ASTTransformation {
+    void visit(ASTNode[] nodes, SourceUnit source) {
+        new File(System.getProperty('$MARKER_PROPERTY')).text = 'x'
+    }
+}
+            """.trimIndent(),
+            "Boom" to """
+package probe
+
+import groovy.transform.AnnotationCollector
+
+@AnnotationCollector(processor = 'probe.MarkProcessor')
+@interface Boom {}
+            """.trimIndent(),
+            "MarkProcessor" to """
+package probe
+
+import org.codehaus.groovy.ast.AnnotatedNode
+import org.codehaus.groovy.ast.AnnotationNode
+import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.transform.AnnotationCollectorTransform
+
+class MarkProcessor extends AnnotationCollectorTransform {
+    List<AnnotationNode> visit(
+            AnnotationNode collector,
+            AnnotationNode aliasAnnotationUsage,
+            AnnotatedNode aliasAnnotated,
+            SourceUnit source) {
+        new File(System.getProperty('$MARKER_PROPERTY')).text = 'x'
+        return []
+    }
+}
+            """.trimIndent(),
+        )
     }
 }
