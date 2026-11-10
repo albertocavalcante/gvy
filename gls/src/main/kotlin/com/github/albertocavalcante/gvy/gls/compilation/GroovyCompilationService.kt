@@ -298,7 +298,10 @@ class GroovyCompilationService internal constructor(
      */
     fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
         val change = workspaceManager.applySourceChanges(created, deleted)
-        if (change.changed) clearCaches()
+        if (change.changed) {
+            clearCaches()
+            shadows.refresh() // on the source queue: the next request finds the new listing's spellings ready
+        }
         return change
     }
 
@@ -382,6 +385,7 @@ class GroovyCompilationService internal constructor(
             classpathService.updateClasspath(workspaceManager.current().classpath)
             gdkProvider.initialize()
             clearCaches()
+            shadows.refresh() // off the request path: open buffers are spelled against the new roots now
         }
     }
 

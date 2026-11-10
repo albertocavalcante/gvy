@@ -31,7 +31,23 @@ internal class ListedShadows(
     }
 
     /** A buffer for [uri] closed: its listed spelling when it is another URI, and the entry is dropped. */
-    fun closed(uri: URI): URI? = entries.remove(uri)?.listed ?: translate(uri)
+    fun closed(uri: URI): URI? {
+        val entry = entries.remove(uri)
+        // A buffer opened as listed has an entry holding null: only a buffer with no entry is translated now.
+        return if (entry != null) entry.listed else translate(uri)
+    }
+
+    /**
+     * The listing or roots changed (#1446): translate every open buffer now, off the request path, so the next
+     * compile or workspace query finds its entries current. Call it where the model is published.
+     */
+    fun refresh() {
+        val open = documentProvider?.getAllUris().orEmpty()
+        entries.keys.retainAll(open)
+        if (open.isEmpty()) return
+        val generation = workspaceManager.spellingGeneration()
+        open.forEach { uri -> listedFor(uri, generation) }
+    }
 
     /** Each open buffer's listed spelling that is another URI, unless a buffer is open under that one too. */
     fun shadowed(): Set<URI> {
