@@ -53,6 +53,7 @@ class GroovyWorkspaceService(
     /**
      * Source and folder events, applied one notification at a time in arrival order, off the LSP notification
      * thread: a folder event can walk a whole subtree (#1424). A later notification never overtakes an earlier one.
+     * The consumer ends with [coroutineScope]; batches still queued at shutdown are dropped.
      */
     private val sourceChanges = Channel<List<FileEvent>>(Channel.UNLIMITED)
 
@@ -175,12 +176,15 @@ class GroovyWorkspaceService(
 
         // Index new and changed files, and the sources found in created folders, in background.
         // Distinct: a source root's folder watcher can repeat an event the file watchers also report.
-        val toIndex = (sources.filter { it.type == FileChangeType.Created } + changed).mapNotNull { uriOf(it.uri) }
+        val candidates = (sources.filter { it.type == FileChangeType.Created } + changed).mapNotNull { uriOf(it.uri) }
             .plus(change.added.map { it.toUri() })
             .distinct()
 
-        // A closed file's cached parse no longer describes it; an open buffer keeps its own.
-        toIndex.forEach { compilationService.onClosedSourceChanged(it, keepIfUnchanged = false) }
+        // A closed file's cached parse no longer describes it; an open buffer keeps its own. Applied after the
+        // notification, so a buffer may have been reopened meanwhile: that file is skipped, as didClose skips it.
+        val toIndex = candidates.filter { uri ->
+            compilationService.onClosedSourceChanged(uri, keepIfUnchanged = false) != null
+        }
 
         if (toIndex.isNotEmpty()) {
             logger.info { "Indexing ${toIndex.size} changed source files" }
