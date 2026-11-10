@@ -34,7 +34,7 @@ import java.nio.file.Path
  * symbol indexing, AST access, engine lifecycle, and orchestration.
  */
 @Suppress("LongParameterList") // all defaulted; the session decorator is a test seam for compile timing
-class GroovyCompilationService(
+class GroovyCompilationService internal constructor(
     parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
     ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     documentProvider: DocumentProvider? = null,
@@ -43,7 +43,28 @@ class GroovyCompilationService(
     compilationCacheMaxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
     /** Wraps every parser session, so a test can hold a compile at an exact point. */
     workerSessionDecorator: (WorkerSession) -> WorkerSession = { it },
+    /** The workspace model's owner; an internal seam so a test can interleave a model change deterministically. */
+    workspaceManager: WorkspaceManager,
 ) {
+    constructor(
+        parentClassLoader: ClassLoader = ClassLoader.getPlatformClassLoader(),
+        ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
+        documentProvider: DocumentProvider? = null,
+        sourceNavigator: SourceNavigator? = null,
+        engineConfig: EngineConfiguration = EngineConfiguration(),
+        compilationCacheMaxEntries: Int = CompilationCache.DEFAULT_MAX_ENTRIES,
+        workerSessionDecorator: (WorkerSession) -> WorkerSession = { it },
+    ) : this(
+        parentClassLoader,
+        ioDispatcher,
+        documentProvider,
+        sourceNavigator,
+        engineConfig,
+        compilationCacheMaxEntries,
+        workerSessionDecorator,
+        WorkspaceManager(),
+    )
+
     private val logger = KotlinLogging.logger {}
     private val errorHandler = CompilationErrorHandler()
 
@@ -69,7 +90,7 @@ class GroovyCompilationService(
     private val ownership = ArtifactOwnership()
     private val cacheService =
         CompilationCacheService(maxEntries = compilationCacheMaxEntries, isOpen = isOpen, ownership = ownership)
-    val workspaceManager = WorkspaceManager()
+    val workspaceManager = workspaceManager
     private val symbolIndexer =
         SymbolIndexingService(ioDispatcher, workerSessionManager, workspaceManager, ownership, isOpen)
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
@@ -235,6 +256,21 @@ class GroovyCompilationService(
             semanticIndexer.clear()
         }
         invalidateClassLoader()
+    }
+
+    /**
+     * Applies one file-watch notification's created and deleted sources to the workspace model (#1422).
+     * When the source list changed, the caches are cleared once: the fingerprint covers the classpath and
+     * roots, not the source list, so cached results would otherwise keep the old list's resolution.
+     *
+     * Order matters: the new model is published before [clearCaches] retires every ticket. A compile takes
+     * its ticket before it reads the model, so any compile that read the old list holds a ticket from
+     * before the retirement and cannot publish; a compile after it reads the new list.
+     */
+    fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): Boolean {
+        val changed = workspaceManager.applySourceChanges(created, deleted)
+        if (changed) clearCaches()
+        return changed
     }
 
     /** Retires [uri]'s artifacts, as [clearCaches] does for every file. */
