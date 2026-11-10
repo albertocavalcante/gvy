@@ -112,6 +112,12 @@ class ArtifactOwnership {
         }
     }
 
+    /** Files the fence currently holds generation state for (#1341). */
+    internal val trackedFileCount: Int get() = synchronized(monitor) { stamps.size }
+
+    /** Test hook: what the garbage collector does once nothing references [uri]'s state (#1341). */
+    internal fun clearUnreferencedStateForTesting(uri: URI) = Unit
+
     private fun ticketFor(uri: URI, order: BufferOrder? = null) = Ticket(uri, epoch, stamps[uri] ?: 0L, order)
 
     private fun isCurrentLocked(ticket: Ticket): Boolean =
