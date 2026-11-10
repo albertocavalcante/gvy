@@ -342,6 +342,79 @@ class JenkinsCompletionExactSetTest {
         assertTrue("returnStdout:" in sh.labels(), "sh(|) offers returnStdout:")
     }
 
+    @Test
+    fun `string parameter arguments offer the string parameter keys`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    parameters {\n        string()\n    }\n}"
+        val items = completeAt(code, line = 3, character = 15)
+
+        assertEquals(
+            setOf("name:", "defaultValue:", "description:", "trim:"),
+            items.labels(CompletionItemKind.Property),
+        )
+    }
+
+    @Test
+    fun `credentials string arguments still offer the credentials binding keys`(): Unit = runTest {
+        val code = "node {\n    withCredentials([string()]) {\n    }\n}"
+        val items = completeAt(code, line = 1, character = 28)
+
+        val keys = items.labels(CompletionItemKind.Property)
+        assertTrue("credentialsId:" in keys && "variable:" in keys, "credentials binding keys: $keys")
+        assertTrue("defaultValue:" !in keys, "parameter keys must not leak outside parameters {}")
+    }
+
+    @Test
+    fun `a call nested inside a directive entry keeps its own step keys`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    parameters {\n" +
+            "        string(name: 'A', defaultValue: string())\n    }\n}"
+        val items = completeAt(code, line = 3, character = 47)
+
+        val keys = items.labels(CompletionItemKind.Property)
+        assertTrue("credentialsId:" in keys, "the nested string() is the credentials binding step: $keys")
+        assertTrue("trim:" !in keys, "the nested call is not a parameters {} entry: $keys")
+    }
+
+    @Test
+    fun `a call in an inner closure of a directive entry keeps its own step keys`(): Unit = runTest {
+        val line = "        choice(name: 'C', choices: ['a'].collect { string() })"
+        val code = "pipeline {\n    agent any\n    parameters {\n$line\n    }\n}"
+        val items = completeAt(code, line = 3, character = line.indexOf("string(") + 7)
+
+        val keys = items.labels(CompletionItemKind.Property)
+        assertTrue("credentialsId:" in keys, "string() in collect {} is the credentials binding step: $keys")
+        assertTrue("trim:" !in keys, "an inner closure is not the parameters {} block: $keys")
+    }
+
+    @Test
+    fun `parenthesised and command-form entries both get directive keys`(): Unit = runTest {
+        val paren = "        string(name: 'A', )"
+        val command = "        string name: 'A', "
+        val wrap = { line: String -> "pipeline {\n    agent any\n    parameters {\n$line\n    }\n}" }
+        val parenItems = completeAt(wrap(paren), line = 3, character = paren.indexOf(", )") + 2)
+        val commandItems = completeAt(wrap(command), line = 3, character = command.length)
+
+        assertTrue("trim:" in parenItems.labels(), "string(name: 'A', |) offers trim:")
+        assertTrue("trim:" in commandItems.labels(), "string name: 'A', | offers trim:")
+    }
+
+    @Test
+    fun `trigger and tool entries offer their own keys`(): Unit = runTest {
+        val pollScm =
+            completeAt(
+                "pipeline {\n    agent any\n    triggers {\n        pollSCM()\n    }\n}",
+                line = 3,
+                character = 16,
+            )
+        val choice = completeAt(
+            "pipeline {\n    agent any\n    parameters {\n        choice()\n    }\n}",
+            line = 3,
+            character = 15,
+        )
+
+        assertEquals(setOf("scmpoll_spec:", "ignorePostCommitHooks:"), pollScm.labels(CompletionItemKind.Property))
+        assertEquals(setOf("name:", "choices:", "description:"), choice.labels(CompletionItemKind.Property))
+    }
+
     private companion object {
         /** `when` conditions from the declarative schema, valid in `when {}` and its combinators. */
         val WHEN_CONDITIONS = setOf(

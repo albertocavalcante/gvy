@@ -13,6 +13,8 @@ import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MapExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.PropertyExpression
+import org.codehaus.groovy.ast.stmt.BlockStatement
+import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.eclipse.lsp4j.CompletionItemKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
@@ -132,11 +134,18 @@ internal object JenkinsCompletionProvider {
         }
     }
 
+    /**
+     * Map-key completions for the step call around the cursor.
+     *
+     * @param directive the declarative directive the cursor is in (see
+     *   [JenkinsStepCompletionProvider.getParameterCompletions]); `null` outside one.
+     */
     fun CompletionsBuilder.addJenkinsMapKeyCompletions(
         ctx: CompletionContext,
         nodeAtCursor: ASTNode?,
         astModel: GroovyAstModel,
         metadata: MergedJenkinsMetadata,
+        directive: String? = null,
     ) {
         // After a complete command-expression argument the dummy identifier turns `sh 'ls' |` into the
         // property access `sh('ls').<dummy>`. That receiver is the step call only when there is no real dot;
@@ -176,6 +185,9 @@ internal object JenkinsCompletionProvider {
             existingKeys,
             metadata,
             isCommand,
+            // Only a statement directly in the directive block is one of its entries; a nested call such as
+            // `string(defaultValue: string(|))` keeps the step's own keys.
+            directive?.takeIf { isDirectiveStatement(methodCall, it, astModel) },
         )
         val typedWord = if (isCommand) typedWordBeforeCursor(ctx) else null
         bundledParamCompletions.forEach { item ->
@@ -201,6 +213,20 @@ internal object JenkinsCompletionProvider {
     private fun isCommandAt(ctx: CompletionContext, call: MethodCallExpression): Boolean {
         val name = call.methodAsString ?: return false
         return CompletionContextDetector.isCommandExpression(ctx.content, ctx.line, ctx.character, name)
+    }
+
+    /**
+     * True when [call] is a statement directly in the [directive] block's closure
+     * (`parameters { string(...) }`), not nested in another expression or in an inner closure such as
+     * `['a'].collect { string(...) }`.
+     */
+    private fun isDirectiveStatement(call: MethodCallExpression, directive: String, astModel: GroovyAstModel): Boolean {
+        val statement = astModel.getParent(call) as? ExpressionStatement ?: return false
+        val block = astModel.getParent(statement) as? BlockStatement ?: return false
+        val closure = astModel.getParent(block) as? ClosureExpression ?: return false
+        val owner = generateSequence(astModel.getParent(closure)) { astModel.getParent(it) }
+            .firstOrNull { it is MethodCallExpression } as? MethodCallExpression
+        return owner?.methodAsString == directive
     }
 
     private fun callOrReceiverCall(

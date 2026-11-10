@@ -68,13 +68,22 @@ object JenkinsStepCompletionProvider {
             }
         }
 
+    /**
+     * Map-key completions for the call [stepName].
+     *
+     * @param directive the declarative directive enclosing the call (`parameters`, `triggers`, `tools`).
+     *   Its entries win over a step of the same name: `string(...)` inside `parameters {}` is the string
+     *   parameter, while elsewhere it is the credentials-binding step.
+     */
     fun getParameterCompletions(
         stepName: String,
         existingKeys: Set<String>,
         metadata: MergedJenkinsMetadata,
         useCommandExpression: Boolean = false,
+        directive: String? = null,
     ): List<CompletionItem> {
-        val params = metadata.getStep(stepName)?.namedParams
+        val params = directive?.let { metadata.directiveEntries[it]?.get(stepName)?.parameters }
+            ?: metadata.getStep(stepName)?.namedParams
             ?: metadata.getDeclarativeOption(stepName)?.parameters
             ?: return emptyList()
 
