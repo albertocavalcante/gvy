@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
-import com.github.albertocavalcante.groovyparser.ast.symbols.SymbolCategory
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
@@ -56,17 +55,9 @@ class ImportAction(private val compilationService: GroovyCompilationService) {
      * Finds all possible fully-qualified names for a symbol from workspace and dependencies.
      */
     private fun findImportCandidates(symbolName: String): List<String> {
-        // Search in workspace symbols
-        val candidates = compilationService.getAllSymbolStorages()
-            .flatMap { (symbolUri, symbolIndex) ->
-                symbolIndex.findByCategory(
-                    symbolUri,
-                    SymbolCategory.CLASS,
-                )
-            }
-            .asSequence()
-            .filterIsInstance<Symbol.Class>()
-            .filter { it.name == symbolName }
+        // Workspace classes by name, in file order, from the indexed lookup rather than a full scan (#1312).
+        val candidates = compilationService.symbolIndexingService
+            .findClasses(ClassNameQuery.Exact(symbolName))
             .map { it.fullyQualifiedName }
             .filter { it.isNotEmpty() && it.contains('.') }
             .toSet()
