@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Test
@@ -21,7 +22,9 @@ class ClosedFileWorkspaceResolutionTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private val compilation = GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined)
+    private val documents = DocumentProvider()
+    private val compilation =
+        GroovyCompilationService(ioDispatcher = Dispatchers.Unconfined, documentProvider = documents)
     private val src: Path by lazy { Files.createDirectories(tempDir.resolve("src")) }
 
     private fun jarOf(type: Class<*>): Path = Path.of(type.protectionDomain.codeSource.location.toURI())
@@ -36,13 +39,20 @@ class ClosedFileWorkspaceResolutionTest {
             "class Outer1 { static abstract class Inner extends Specification {} }\n" +
             "class Outer2 { static abstract class Inner extends Specification {} }\n"
 
-    /** Builds the model, indexes every source except [closed] as startup indexing does, and compiles [closed]. */
-    private suspend fun compileClosed(closed: Path): CompiledDocumentSnapshot {
+    /**
+     * Builds the model, opens [buffers] (each compiled, so the index holds their classes), indexes every other
+     * source except [closed] as startup indexing does, and compiles [closed] from disk.
+     */
+    private suspend fun compileClosed(closed: Path, buffers: Map<Path, String> = emptyMap()): CompiledDocumentSnapshot {
         compilation.updateWorkspaceModel(
             tempDir,
             listOf(jarOf(spock.lang.Specification::class.java), jarOf(groovy.lang.GroovyObject::class.java)),
             listOf(src),
         )
+        buffers.forEach { (path, text) ->
+            documents.put(path.toUri(), text)
+            compilation.compile(path.toUri(), text)
+        }
         val others = compilation.workspaceManager.getWorkspaceSources().filter { it != closed }
         compilation.symbolIndexingService.indexAllWorkspaceSources(others.map { it.toUri() })
         // Never opened: navigation reaches it through the content-less path, which compiles from disk.
@@ -134,5 +144,81 @@ class ClosedFileWorkspaceResolutionTest {
 
         assertTrue(snapshot.messages().none { it.contains("unable to resolve class") }, "${snapshot.messages()}")
         assertEquals(listOf("Pair.groovy", "TableSpec.groovy"), snapshot.compiledFiles())
+    }
+
+    @Test
+    fun `a broken source Groovy finds by file name is not attributed to the locator`(): Unit = runBlocking {
+        // Groovy adds Helper.groovy itself, by file name; excluding it as a located source would cost a recompile.
+        write("Helper.groovy", "class Helper {\n") // unbalanced: fails to parse
+        val spec = write("TableSpec.groovy", "class TableSpec extends Helper {}\n")
+
+        val snapshot = compileClosed(spec)
+
+        val excluded = snapshot.parseResult.outcome.excludedSources.map { it.source }
+        assertTrue(excluded.none { it.contains("Helper.groovy") }, "$excluded")
+    }
+
+    @Test
+    fun `an open buffer of the declaring file wins over its disk copy`(): Unit = runBlocking {
+        val declaring = write("Outers.groovy", "class Outer2 {}\n") // on disk: no Inner yet
+        val spec = write("TableSpec.groovy", "class TableSpec extends Outer2.Inner {}\n")
+
+        val buffer = "class Outer2 { static abstract class Inner {} }\n"
+        val snapshot = compileClosed(spec, buffers = mapOf(declaring to buffer))
+
+        assertTrue(snapshot.messages().none { it.contains("unable to resolve class") }, "${snapshot.messages()}")
+    }
+
+    @Test
+    fun `a class declared only in an open buffer is located`(): Unit = runBlocking {
+        val declaring = write("Outers.groovy", "class Other {}\n")
+        val spec = write("TableSpec.groovy", "class TableSpec extends Outer3.Inner {}\n")
+
+        val buffer = "class Outer3 { static abstract class Inner {} }\n"
+        val snapshot = compileClosed(spec, buffers = mapOf(declaring to buffer))
+
+        assertTrue(snapshot.messages().none { it.contains("unable to resolve class") }, "${snapshot.messages()}")
+    }
+
+    @Test
+    fun `a hierarchy chain is located transitively up to the cap`(): Unit = runBlocking {
+        // C0 extends C1 extends ... C39, each in a file named otherwise: every added file resolves through the
+        // locator too, so the chain is followed, but only until the per-compile cap of located files.
+        repeat(40) { link ->
+            val parent = if (link < 39) " extends C${link + 1}" else ""
+            write("chain/Link$link.groovy", "class C$link$parent {}\n")
+        }
+        val spec = write("TableSpec.groovy", "class TableSpec extends C0 {}\n")
+
+        val snapshot = compileClosed(spec)
+
+        assertEquals(1 + 32, snapshot.compiledFiles().size, "${snapshot.compiledFiles()}")
+        assertTrue(snapshot.parseResult.outcome.unlocatedClasses.isNotEmpty(), "the cut is recorded")
+    }
+
+    @Test
+    fun `a name nested two levels deep is located through its top-level class`(): Unit = runBlocking {
+        write("Nest.groovy", "class Outer { static class Mid { static abstract class Inner {} } }\n")
+        val spec = write("TableSpec.groovy", "class TableSpec extends Outer.Mid.Inner {}\n")
+
+        val snapshot = compileClosed(spec)
+
+        assertTrue(snapshot.messages().none { it.contains("unable to resolve class") }, "${snapshot.messages()}")
+        assertEquals(listOf("Nest.groovy", "TableSpec.groovy"), snapshot.compiledFiles())
+    }
+
+    @Test
+    fun `star imports of two packages declaring the class follow Groovy's order`(): Unit = runBlocking {
+        write("a/DupA.groovy", "package a\nclass Dup {}\n")
+        write("b/DupB.groovy", "package b\nclass Dup {}\n")
+        val spec = write(
+            "app/TableSpec.groovy",
+            "package app\nimport a.*\nimport b.*\nclass TableSpec extends Dup {}\n",
+        )
+
+        val snapshot = compileClosed(spec)
+
+        // Groovy tries the star imports in declaration order, so the first, a.Dup, is the one located.
+        assertEquals(listOf("DupA.groovy", "TableSpec.groovy"), snapshot.compiledFiles(), "${snapshot.messages()}")
     }
 }
