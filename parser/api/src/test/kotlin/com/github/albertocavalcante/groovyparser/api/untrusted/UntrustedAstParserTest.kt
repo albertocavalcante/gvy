@@ -119,4 +119,33 @@ class UntrustedAstParserTest {
 
         assertTrue((System.nanoTime() - started) / 1_000_000 < 10_000)
     }
+
+    @Test
+    fun `safe-index openers count as nesting`() {
+        assertBoundedQuickly("safe index", "ruleset { x = a" + "?[a".repeat(900) + "]".repeat(900) + " }")
+    }
+
+    @Test
+    fun `brackets after a GString interpolation do not leak nesting`() {
+        val source = "ruleset { description \"" + "\${a}".repeat(200) + "\" }"
+
+        val limits = UntrustedParseLimits(maxNesting = 3)
+
+        assertIs<UntrustedParseResult.Parsed>(UntrustedAstParser.parse(source, "test", limits))
+    }
+
+    @Test
+    fun `lexer errors are rejected with a position instead of escaping`() {
+        for ((label, source) in mapOf(
+            "unterminated string" to "ruleset { description \"abc }",
+            "unterminated comment" to "ruleset { /* never closed",
+            "nul character" to "ruleset { \u0000 }",
+            "hash" to "ruleset { # }",
+        )) {
+            val result = rejected(source)
+
+            assertTrue(result.reason.isNotBlank(), "$label must be rejected with a reason")
+        }
+        assertNotNull(rejected("ruleset {\n description \"abc }").line)
+    }
 }

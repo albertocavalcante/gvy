@@ -10,7 +10,9 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.ast.stmt.Statement
 import org.codehaus.groovy.syntax.Types
+import org.codenarc.ruleregistry.RuleRegistry
 import org.codenarc.ruleregistry.RuleRegistryHolder
+import org.codenarc.ruleregistry.RuleRegistryInitializer
 
 internal val NAME = Regex("[A-Za-z][A-Za-z0-9_]*")
 
@@ -36,7 +38,7 @@ internal fun property(key: String, value: String, indent: String, out: StringBui
 
 internal fun requireRule(name: String): String {
     if (!NAME.matches(name)) fail("bad rule name: $name")
-    val ruleClass = runCatching { RuleRegistryHolder.getRuleRegistry().getRuleClass(name) }.getOrNull()
+    val ruleClass = runCatching { ruleRegistry().getRuleClass(name) }.getOrNull()
     if (ruleClass == null || !ruleClass.name.startsWith("org.codenarc.rule.")) fail("unknown rule: $name")
     return ruleClass.name
 }
@@ -69,4 +71,10 @@ internal fun assignment(statement: Statement, into: MutableMap<String, String>) 
         fail("only simple assignments of literals are allowed: ${expression.text}")
     }
     into[target.name] = literal(expression.rightExpression)
+}
+
+/** CodeNarc's registry is only populated once something initialises it, so do that before the first lookup. */
+private fun ruleRegistry(): RuleRegistry = synchronized(RuleRegistryHolder::class.java) {
+    RuleRegistryHolder.getRuleRegistry() ?: RuleRegistryInitializer().also { it.initializeRuleRegistry() }
+        .let { RuleRegistryHolder.getRuleRegistry() }
 }

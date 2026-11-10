@@ -3,6 +3,7 @@ package com.github.albertocavalcante.groovyparser.api.untrusted
 import groovyjarjarantlr4.v4.runtime.Token
 import org.apache.groovy.parser.antlr4.GroovyLangLexer
 import org.apache.groovy.parser.antlr4.GroovyLexer
+import org.apache.groovy.parser.antlr4.GroovySyntaxError
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.stmt.BlockStatement
@@ -60,12 +61,20 @@ object UntrustedAstParser {
         limits: UntrustedParseLimits = UntrustedParseLimits(),
     ): UntrustedParseResult {
         val tooBig = "larger than ${limits.maxChars} characters".takeIf { source.length > limits.maxChars }
-        val tooDeep = "nested deeper than ${limits.maxNesting} levels"
-            .takeIf { tooBig == null && maxNesting(source) > limits.maxNesting }
-        return when {
-            tooBig != null -> UntrustedParseResult.Rejected(tooBig)
-            tooDeep != null -> UntrustedParseResult.Rejected(tooDeep)
-            else -> parseBounded(source, name, limits)
+        if (tooBig != null) return UntrustedParseResult.Rejected(tooBig)
+        val nesting = try {
+            maxNesting(source)
+        } catch (e: GroovySyntaxError) {
+            return UntrustedParseResult.Rejected(
+                "not lexable: ${e.message}",
+                e.line.takeIf { it > 0 },
+                e.column.takeIf { it > 0 },
+            )
+        }
+        return if (nesting > limits.maxNesting) {
+            UntrustedParseResult.Rejected("nested deeper than ${limits.maxNesting} levels")
+        } else {
+            parseBounded(source, name, limits)
         }
     }
 
@@ -116,8 +125,9 @@ object UntrustedAstParser {
     /**
      * Deepest `{` / `(` / `[` nesting in [text], counted from Groovy's own lexer so that GString interpolation
      * (`"${ ... }"`), slashy and dollar-slashy strings, triple-quoted strings and comments are tokenised exactly
-     * as the parser will see them (a hand-written scan is unsound for those). Lexing is linear and does not
-     * recurse, so it is safe on hostile input; unlexable input simply ends the scan.
+     * as the parser will see them (a hand-written scan is unsound for those). Brackets are recognised by the last
+     * character of short punctuation tokens, so compound openers such as `?[` count too. Lexing is linear and does
+     * not recurse, so it is safe on hostile input. Lexer errors are thrown as [GroovySyntaxError].
      */
     private fun maxNesting(text: String): Int {
         val lexer = GroovyLangLexer(StringReader(text))
@@ -126,19 +136,21 @@ object UntrustedAstParser {
         var max = 0
         while (true) {
             val token = lexer.nextToken()
+            if (token.type == Token.EOF) return max
+            if (token.channel != Token.DEFAULT_CHANNEL) continue
             when {
-                token.type == Token.EOF -> return max
-                opens(token) -> max = maxOf(max, ++depth)
-                closes(token.type) -> depth = maxOf(0, depth - 1)
+                token.type == GroovyLexer.GStringPart -> {
+                    if (token.text.startsWith("}")) depth = maxOf(0, depth - 1)
+                    if (token.text.endsWith("{")) max = maxOf(max, ++depth)
+                }
+                isShortPunctuation(token) && token.text.last() in "([{" -> max = maxOf(max, ++depth)
+                isShortPunctuation(token) && token.text.last() in ")]}" -> depth = maxOf(0, depth - 1)
             }
         }
     }
 
-    private fun opens(token: Token): Boolean = token.type in OPENERS ||
-        (token.type == GroovyLexer.GStringPart && token.text.endsWith("{"))
-
-    private fun closes(type: Int): Boolean = type in CLOSERS
-
-    private val OPENERS = setOf(GroovyLexer.LPAREN, GroovyLexer.LBRACE, GroovyLexer.LBRACK)
-    private val CLOSERS = setOf(GroovyLexer.RPAREN, GroovyLexer.RBRACE, GroovyLexer.RBRACK)
+    private fun isShortPunctuation(token: Token): Boolean = token.type != GroovyLexer.StringLiteral &&
+        token.text.isNotEmpty() && token.text.length <= MAX_PUNCTUATION_LENGTH
 }
+
+private const val MAX_PUNCTUATION_LENGTH = 3

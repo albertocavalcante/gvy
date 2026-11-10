@@ -30,12 +30,23 @@ internal fun statementsOf(closure: ClosureExpression): List<Statement> =
 internal fun stringArg(arguments: List<Expression>): String =
     (arguments.singleOrNull() as? ConstantExpression)?.value as? String ?: fail("expected one string literal")
 
-internal fun literal(expression: Expression): String = when {
-    expression is ConstantExpression && expression.value != null -> expression.value.toString()
-    expression is UnaryMinusExpression && expression.expression is ConstantExpression &&
-        (expression.expression as ConstantExpression).value is Number ->
-        "-" + (expression.expression as ConstantExpression).value
-    else -> fail("not a literal: ${expression.text}")
+/**
+ * A property value from a workspace ruleset: only int, long, decimal and boolean literals. String values are not
+ * accepted: several rule properties (`applyToClassNames`, `ignoreMethodNames`, ...) are compiled by CodeNarc into
+ * regular expressions with wildcards expanded to `.*`, which can be made catastrophic (ReDoS) on the analysis
+ * thread. Vetted string properties can be added to an allow-list later (tracked in #1324).
+ */
+internal fun literal(expression: Expression): String {
+    val constant = when {
+        expression is ConstantExpression -> expression.value
+        expression is UnaryMinusExpression && (expression.expression as? ConstantExpression)?.value is Number ->
+            return "-" + (expression.expression as ConstantExpression).value
+        else -> null
+    }
+    return when (constant) {
+        is Boolean, is Int, is Long, is java.math.BigDecimal -> constant.toString()
+        else -> fail("property values must be int, long, decimal or boolean literals: ${expression.text}")
+    }
 }
 
 internal fun xml(text: String): String = buildString {

@@ -116,7 +116,7 @@ class WorkspaceRulesetInterpreterTest {
     fun `rejects regular-expression properties that could ReDoS the analysis`() {
         for (property in listOf("regex", "classNameRegex", "doNotApplyToFilesMatching", "applyToFilesMatching")) {
             val ruleset = "ruleset { IllegalRegex { $property = '(a+)+$' } }"
-            assertTrue(rejected(ruleset).contains("regular-expression"), "$property must be rejected")
+            assertTrue(rejected(ruleset).isNotBlank(), "$property must be rejected")
         }
     }
 
@@ -136,5 +136,27 @@ class WorkspaceRulesetInterpreterTest {
         )
 
         assertEquals(listOf("codenarc.groovy"), resolved.ignoredWorkspaceRulesets)
+    }
+
+    @Test
+    fun `rejects string property values whose wildcards compile to catastrophic regexes`() {
+        val payload = "*a".repeat(25) + "b"
+        for (property in listOf(
+            "doNotApplyToClassNames",
+            "applyToClassNames",
+            "ignoreMethodNames",
+            "ignoreFieldNames",
+        )) {
+            val ruleset = "ruleset { TrailingWhitespace { $property = '$payload' } }"
+            assertTrue(rejected(ruleset).contains("property"), "$property with a wildcard string must be rejected")
+        }
+    }
+
+    @Test
+    fun `accepts numeric and boolean property values`() {
+        val xml = accepted("ruleset { LineLength { length = 140\n priority = 2\n enabled = false\n ratio = 1.5 } }")
+
+        assertTrue(xml.contains("<property name=\"enabled\" value=\"false\"/>"), xml)
+        assertTrue(xml.contains("<property name=\"ratio\" value=\"1.5\"/>"), xml)
     }
 }
