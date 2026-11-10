@@ -5,10 +5,12 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -19,7 +21,6 @@ import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import java.net.URI
 import java.util.concurrent.CountDownLatch
@@ -151,6 +152,39 @@ class RetirementWakeTest {
             assertNotNull(withTimeout(WAIT_SECONDS * 1_000) { waiter.await() }, "an owner cancellation must not count")
         }
 
+    @Test
+    fun `a waiter resumed inline re-resolves after the fence and its compile keeps its facts`(): Unit =
+        assertWakeKeepsFacts(Dispatchers.Unconfined)
+
+    @Test
+    fun `a dispatched waiter's compile keeps its facts after a retirement wake`(): Unit =
+        assertWakeKeepsFacts(Dispatchers.IO)
+
+    /**
+     * An Unconfined waiter resumes on the retiring thread. Woken while the fence is held (a reentrant monitor),
+     * it would take its new ticket mid-cleanup, and the cleanup's remaining steps would erase that compile's
+     * semantic publication. The dispatched case is the control: it shows the semantic document is observable.
+     */
+    private fun assertWakeKeepsFacts(dispatcher: CoroutineDispatcher): Unit = runBlocking {
+        open("class Held {}")
+        heldParses = 1 // only the owner's parse is held; the waiter's fresh compile runs
+        val owner = service.compileAsync(scope, uri, "class Held {}")
+        awaitParse()
+        val waiter = async(SupervisorJob() + dispatcher, start = CoroutineStart.UNDISPATCHED) {
+            service.ensureCompiled(uri)
+        }
+
+        service.invalidateCache(uri)
+        val answer = withTimeout(WAIT_SECONDS * 1_000) { waiter.await() }
+
+        assertEquals("class Held {}", answer?.sourceText)
+        assertFalse(owner.isCompleted, "the waiter waited for the retired compile to finish")
+        assertNotNull(
+            service.getWorkspaceSymbolIndex()?.getDocument(uri),
+            "the retirement's cleanup erased the semantic publication of the waiter's fresh compile",
+        )
+    }
+
     private fun CompilationCacheService.register(job: Deferred<CompilationResult>): PendingCompilation =
         registerPending(uri, CompilationIdentity("class Pending {}", "fp", null), ownership.begin(uri)) { job }
 
@@ -215,17 +249,26 @@ class RetirementWakeTest {
     }
 
     /**
-     * The completion handlers registered on [signal], read from kotlinx.coroutines' job state (pinned in
-     * libs.versions.toml): empty when its state is `Empty`, the state's description otherwise. Skips the
-     * test if a coroutines upgrade renamed the state. A GC probe proved unreliable here: the test runtime
-     * keeps a finished coroutine reachable whether or not the signal does (#1429).
+     * The completion handlers registered on [signal], read from kotlinx.coroutines' internal job state: empty
+     * when that state is `Empty`, the state's description otherwise. Verified against kotlinx.coroutines
+     * [VERIFIED_COROUTINES]; any other version fails loudly rather than passing on internals it was not checked
+     * against. A GC probe proved unreliable here: the test runtime keeps a finished coroutine reachable whether
+     * or not the signal does (#1429).
      */
     private fun handlersOf(signal: CompletableDeferred<Unit>): String {
+        val version = Job::class.java.getResource("/META-INF/kotlinx_coroutines_core.version")?.readText()?.trim()
+        check(version == VERIFIED_COROUTINES) {
+            "kotlinx.coroutines is $version, not $VERIFIED_COROUTINES: re-verify that a losing select clause " +
+                "leaves the job state Empty and update VERIFIED_COROUTINES, or delete this test (#1429)"
+        }
         val field = generateSequence<Class<*>>(signal.javaClass) { it.superclass }
             .flatMap { it.declaredFields.asSequence() }
             .firstOrNull { it.name.startsWith("_state") }
-        assumeTrue(field != null, "kotlinx.coroutines no longer keeps a _state field")
-        val state = checkNotNull(field).apply { isAccessible = true }.get(signal)
+        checkNotNull(field) {
+            "kotlinx.coroutines $version no longer keeps a _state field: re-verify the handler check or delete " +
+                "this test (#1429)"
+        }
+        val state = field.apply { isAccessible = true }.get(signal)
         return if (state?.javaClass?.simpleName == "Empty") "" else state.toString()
     }
 
@@ -236,6 +279,9 @@ class RetirementWakeTest {
         const val HOLD_SECONDS = 60L
         const val MAX_RESOLUTIONS = 3
         const val WAITERS = 4
+
+        /** The kotlinx.coroutines version [handlersOf] reads the internals of (libs.versions.toml). */
+        const val VERIFIED_COROUTINES = "1.10.2"
         val NOT_SIGNALLED = Any()
     }
 }
