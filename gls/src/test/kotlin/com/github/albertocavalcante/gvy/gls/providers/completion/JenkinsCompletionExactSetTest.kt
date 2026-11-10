@@ -267,6 +267,30 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
+    fun `stage input parameters block offers exactly the parameter types`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Deploy') {\n            input {\n" +
+            "                message 'Deploy?'\n                parameters {\n                    \n" +
+            "                }\n            }\n            steps { echo 'x' }\n        }\n    }\n}"
+        val items = completeAt(code, line = 7, character = 20)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("booleanParam", "choice", "password", "string", "text"), items.labels())
+    }
+
+    @Test
+    fun `stage input parameter arguments offer the parameter keys`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Deploy') {\n            input {\n" +
+            "                parameters {\n                    string()\n                }\n            }\n" +
+            "            steps { echo 'x' }\n        }\n    }\n}"
+        val items = completeAt(code, line = 6, character = 27)
+
+        assertEquals(
+            setOf("name:", "defaultValue:", "description:", "trim:"),
+            items.labels(CompletionItemKind.Property),
+        )
+    }
+
+    @Test
     fun `tools block offers exactly the tool types`(): Unit = runTest {
         val items = completeAt("pipeline {\n    agent any\n    tools {\n        \n    }\n}", line = 3, character = 8)
 
@@ -413,6 +437,26 @@ class JenkinsCompletionExactSetTest {
 
         assertEquals(setOf("scmpoll_spec:", "ignorePostCommitHooks:"), pollScm.labels(CompletionItemKind.Property))
         assertEquals(setOf("name:", "choices:", "description:"), choice.labels(CompletionItemKind.Property))
+    }
+
+    /** Map keys inside an entry's argument list, by directive, as the bundled entries define them (#1246 M1). */
+    private suspend fun entryKeys(directive: String, entry: String): Set<String> {
+        val line = "        $entry()"
+        val code = "pipeline {\n    agent any\n    $directive {\n$line\n    }\n}"
+        return completeAt(code, line = 3, character = line.length - 1).labels(CompletionItemKind.Property)
+    }
+
+    @Test
+    fun `trigger entry arguments offer exactly their keys`(): Unit = runTest {
+        assertEquals(setOf("spec:"), entryKeys("triggers", "cron"))
+        assertEquals(setOf("upstreamProjects:", "threshold:"), entryKeys("triggers", "upstream"))
+    }
+
+    @Test
+    fun `parameter entry arguments offer exactly their keys`(): Unit = runTest {
+        assertEquals(setOf("name:", "defaultValue:", "description:"), entryKeys("parameters", "booleanParam"))
+        assertEquals(setOf("name:", "defaultValue:", "description:", "trim:"), entryKeys("parameters", "text"))
+        assertEquals(setOf("name:", "defaultValue:", "description:"), entryKeys("parameters", "password"))
     }
 
     @Test
