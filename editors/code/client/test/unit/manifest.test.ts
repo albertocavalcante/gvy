@@ -116,7 +116,8 @@ describe("package.json manifest", () => {
   it("keeps settings that run code or choose executables out of workspace control", () => {
     // A cloned repository's .vscode/settings.json must not be able to run its own code: GDSL scripts
     // run arbitrary Groovy in the server, the Java homes pick the java binary the extension and builds
-    // launch, and VM args can add -javaagent.
+    // launch, and VM args can add -javaagent. The AI tool switches decide whether language-server queries are
+    // exposed to an LLM agent, which a repository must not be able to opt the user into.
     const properties = manifest.contributes.configuration.properties;
     for (const key of [
       "groovy.jenkins.gdslExecution.enabled",
@@ -126,6 +127,8 @@ describe("package.json manifest", () => {
       "groovy.server.vmargs",
       "groovy.configuration.runtimes",
       "groovy.project.javaHome",
+      "groovy.ai.tools.enabled",
+      "groovy.ai.tools.allowed",
     ]) {
       assert.ok(properties[key], `${key} is not contributed`);
       assert.ok(

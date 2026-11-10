@@ -806,10 +806,12 @@
         "groovy.ai.tools.enabled": {
           "type": "boolean",
           "default": false,
+          "scope": "machine",
           "description": "Master switch to enable AI tools (e.g., symbol search, definition lookup) for LLMs."
         },
         "groovy.ai.tools.allowed": {
           "type": "array",
+          "scope": "machine",
           "items": {
             "type": "string"
           },
