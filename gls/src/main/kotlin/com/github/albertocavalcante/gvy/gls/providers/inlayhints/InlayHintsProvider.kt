@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.providers.inlayhints
 
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.InlayHintsConfiguration
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
@@ -313,27 +314,22 @@ internal object InlayHintsCandidates {
             }
     }
 
+    /** [workspaceMethods] is the request's workspace methods grouped once; see [HintContext]. */
     fun findWorkspaceMethodCandidates(
         methodName: String,
         argCount: Int,
         receiverType: String?,
         isStaticCall: Boolean,
-        workspaceSymbols: List<Symbol>,
+        workspaceMethods: Map<WorkspaceMethodKey, List<Symbol.Method>>,
     ): List<CallableSignature> {
         val normalizedReceiverType = receiverType?.let { InlayHintsTypes.normalizeTypeName(it) } ?: return emptyList()
         val receiverSimple = normalizedReceiverType.substringAfterLast('.')
 
-        return workspaceSymbols
+        // Owners named exactly like the receiver share its simple name, so one key covers both matches.
+        return workspaceMethods[WorkspaceMethodKey(methodName, receiverSimple)].orEmpty()
             .asSequence()
-            .filterIsInstance<Symbol.Method>()
-            .filter { it.name == methodName && it.parameters.size == argCount }
+            .filter { it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
-            .filter { methodSymbol ->
-                val classOwner = methodSymbol.owner ?: return@filter false
-                val ownerName = classOwner.name
-                val ownerSimple = classOwner.nameWithoutPackage
-                ownerName == normalizedReceiverType || ownerSimple == receiverSimple
-            }
             .map { InlayHintsTypes.toSignature(it.parameters) }
             .toList()
     }
@@ -401,17 +397,16 @@ internal object InlayHintsCandidates {
         }
     }
 
+    /** Classes come from the class-name lookup (#1312), in the same file order as the full scan was. */
     fun findWorkspaceConstructorCandidates(
         typeName: String,
         argCount: Int,
-        workspaceSymbols: List<Symbol>,
+        compilationService: GroovyCompilationService,
     ): List<CallableSignature> {
         val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
         val simpleName = normalizedType.substringAfterLast('.')
-        return workspaceSymbols
+        return compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
             .asSequence()
-            .filterIsInstance<Symbol.Class>()
-            .filter { it.name == simpleName || it.fullyQualifiedName == normalizedType }
             .flatMap { classSymbol ->
                 classSymbol.node.declaredConstructors
                     .filter { it.parameters.size == argCount }
