@@ -143,6 +143,13 @@ class ProjectStartupManager(
         FileSystemWatcher(Either.forLeft("**/gradle.properties"), allWatchKinds),
         FileSystemWatcher(Either.forLeft("**/*.groovy"), allWatchKinds),
         FileSystemWatcher(Either.forLeft("**/*.java"), allWatchKinds),
+        // The rename guard's workspace walk also reads these; watching them refreshes it sooner.
+        FileSystemWatcher(Either.forLeft("**/*.gvy"), allWatchKinds),
+        FileSystemWatcher(Either.forLeft("**/*.gy"), allWatchKinds),
+        FileSystemWatcher(Either.forLeft("**/*.gsh"), allWatchKinds),
+        FileSystemWatcher(Either.forLeft("**/*.gradle"), allWatchKinds),
+        FileSystemWatcher(Either.forLeft("**/Jenkinsfile"), allWatchKinds),
+        FileSystemWatcher(Either.forLeft("**/*.jenkinsfile"), allWatchKinds),
     )
 
     /**

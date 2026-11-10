@@ -13,7 +13,9 @@ import org.junit.jupiter.api.io.TempDir
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -24,10 +26,14 @@ class CrossFileRenameGuardTest {
     @TempDir
     lateinit var tempDir: Path
 
+    @TempDir
+    lateinit var otherDir: Path
+
     private val documents = DocumentProvider()
     private val service = GroovyCompilationService(documentProvider = documents)
     private var extraRoots = emptyList<Path>()
-    private val walks = WorkspaceWalkCache()
+    // A clock a minute ahead keeps freshly written directories out of the cache's "modified just now" distrust.
+    private val walks = WorkspaceWalkCache(clock = { System.currentTimeMillis() + 60_000 })
     private val provider by lazy {
         RenameProvider(service, documents, extraRoots = { extraRoots }, walks = walks)
     }
@@ -251,7 +257,7 @@ class CrossFileRenameGuardTest {
     fun `untitled and jar buffers and a Jenkinsfile outside the workspace do not refuse`(): Unit = runBlocking {
         val files = mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
         val uri = workspace(files, open = "A.groovy")
-        val outside = Files.createTempDirectory("outside-workspace")
+        val outside = Files.createDirectories(otherDir.resolve("outside-workspace"))
         documents.put(URI.create("untitled:Untitled-1"), "println 'greet'")
         documents.put(URI.create("jar:file:///x/lib.jar!/Y.groovy"), "class Y { def greet() {} }")
         documents.put(outside.resolve("Jenkinsfile").toUri(), "node { echo 'greet' }")
@@ -414,7 +420,7 @@ class CrossFileRenameGuardTest {
     @Test
     fun `build output at the workspace root or a module root is skipped`(): Unit = runBlocking {
         val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
-        listOf("build/Gen.groovy", "mod/out/Gen2.groovy").forEach {
+        listOf("build/tmp/Gen.groovy", "mod/out/tmp/Gen2.groovy").forEach {
             val file = tempDir.resolve(it)
             Files.createDirectories(file.parent)
             Files.writeString(file, "class Gen { def run(x) { x.greet() } }\n")
@@ -427,7 +433,7 @@ class CrossFileRenameGuardTest {
     @Test
     fun `a second workspace folder is checked too`() {
         val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
-        val folder = Files.createTempDirectory("second-folder")
+        val folder = Files.createDirectories(otherDir.resolve("second-folder"))
         Files.writeString(folder.resolve("B.groovy"), "class B {\n    def run(x) { x.greet() }\n}\n")
         extraRoots = listOf(folder)
 
@@ -435,8 +441,10 @@ class CrossFileRenameGuardTest {
     }
 
     @Test
-    fun `the directory walk is reused until it is invalidated`() {
+    fun `the directory walk is reused until a directory changes, with no watcher event`() {
+        Files.setLastModifiedTime(tempDir, FileTime.from(Instant.now().minusSeconds(3_600)))
         val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        Files.setLastModifiedTime(tempDir, FileTime.from(Instant.now().minusSeconds(3_600)))
         val position = positionOf(a, "greet")
         runBlocking {
             provider.providePrepareRename(uri.toString(), position)
@@ -444,13 +452,11 @@ class CrossFileRenameGuardTest {
         }
         assertEquals(1, walks.walks, "the second prepareRename does not re-walk")
 
-        Files.writeString(tempDir.resolve("Jenkinsfile"), "node { new A().greet() }\n") // no watcher covers this
-        runBlocking { provider.providePrepareRename(uri.toString(), position) }
-        assertEquals(1, walks.walks, "a new Jenkinsfile can go unseen until the walk expires")
-
-        walks.invalidate()
+        // Nothing tells the server about this file: no watcher covers a Jenkinsfile.
+        Files.writeString(tempDir.resolve("Jenkinsfile"), "node { new A().greet() }\n")
+        Files.setLastModifiedTime(tempDir, FileTime.from(Instant.now().minusSeconds(1_800))) // timestamps can tie
         assertRefused(uri, a, "greet", "Jenkinsfile")
-        assertEquals(2, walks.walks)
+        assertEquals(2, walks.walks, "the changed workspace root directory forced one new walk")
     }
 
     @Test
@@ -462,6 +468,17 @@ class CrossFileRenameGuardTest {
         "A.groovy",
         "greet",
     )
+
+    @Test
+    fun `a package named build beside the build file is not skipped as build output`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        Files.writeString(tempDir.resolve("build.gradle"), "// marker\n")
+        val pkg = Files.createDirectories(tempDir.resolve("build"))
+        Files.writeString(pkg.resolve("B.groovy"), "package build\nclass B { def run(x) { x.greet() } }\n")
+        walks.invalidate()
+
+        assertRefused(uri, a, "greet", "B.groovy")
+    }
 
     @Test
     fun `a directory that cannot be read refuses instead of being skipped`() {

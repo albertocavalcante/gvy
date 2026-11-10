@@ -9,6 +9,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.FileTime
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -68,8 +69,15 @@ internal class WorkspaceLayout(
 /**
  * What a walk of the workspace roots found; [overflow] when there are too many files or entries to verify, and
  * [unreadable] the directories and files it could not read (whose contents are therefore unknown).
+ * [directories] holds every directory it listed with its modification time: adding, removing or moving a file or
+ * directory changes the parent's time, so a changed time means the walk is out of date.
  */
-internal class Walked(val files: List<Path>, val overflow: Boolean, val unreadable: List<Path> = emptyList())
+internal class Walked(
+    val files: List<Path>,
+    val overflow: Boolean,
+    val unreadable: List<Path> = emptyList(),
+    val directories: Map<Path, FileTime> = emptyMap(),
+)
 
 /** Directories that never hold project sources, at any depth. */
 private val ALWAYS_SKIPPED = setOf(".git", ".hg", ".svn", ".gradle", ".idea", "node_modules")
@@ -86,13 +94,29 @@ private val MODULE_FILES = listOf(
     "build.xml",
 )
 
+/**
+ * Whether [dir] directly holds Groovy or Java sources, which makes it a package that happens to be named like build
+ * output (a flat repository's `build/` package) rather than build output. Sources only in a subpackage of such a
+ * directory are still missed.
+ */
+private fun holdsSources(dir: Path): Boolean = runCatching {
+    Files.newDirectoryStream(dir).use { children ->
+        children.any { child ->
+            val name = child.fileName.toString().lowercase()
+            SOURCE_ENDINGS.any(name::endsWith) && Files.isRegularFile(child)
+        }
+    }
+}.getOrDefault(false)
+
+private val SOURCE_ENDINGS = listOf(".groovy", ".java", ".gvy", ".gy", ".gsh")
+
 private fun hasFile(dir: Path, name: String) = Files.exists(dir.resolve(name))
 
 /**
  * Walks [roots] for files that may call project code, without following symlinks (a link could loop, so files
  * reachable only through one are not checked). Nothing inside a source root
  * is skipped (`com/acme/build/` is a package). Outside source roots, `build`, `out` and `target` are skipped
- * only directly under a workspace root or a module root.
+ * only directly under a workspace root or a module root, and only when they hold no source files directly.
  */
 internal fun walkWorkspace(
     roots: List<Path>,
@@ -105,9 +129,13 @@ internal fun walkWorkspace(
     var entries = 0
     var overflow = false
     val unreadable = mutableListOf<Path>()
+    val directories = LinkedHashMap<Path, FileTime>()
     val visitor = object : SimpleFileVisitor<Path>() {
-        override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
-            if (isSkipped(dir)) FileVisitResult.SKIP_SUBTREE else FileVisitResult.CONTINUE
+        override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+            if (isSkipped(dir)) return FileVisitResult.SKIP_SUBTREE
+            directories[dir] = attrs.lastModifiedTime()
+            return FileVisitResult.CONTINUE
+        }
 
         override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
             active()
@@ -128,7 +156,7 @@ internal fun walkWorkspace(
             return when {
                 dir in roots || sourceRoots.any(dir::startsWith) -> false
                 name in ALWAYS_SKIPPED -> true
-                name in BUILD_OUTPUTS -> isModuleOrWorkspaceRoot(dir.parent)
+                name in BUILD_OUTPUTS -> isModuleOrWorkspaceRoot(dir.parent) && !holdsSources(dir)
                 else -> false
             }
         }
@@ -136,21 +164,26 @@ internal fun walkWorkspace(
     for (root in roots) {
         if (!overflow) Files.walkFileTree(root, visitor)
     }
-    return Walked(files.toList(), overflow, unreadable)
+    return Walked(files.toList(), overflow, unreadable, directories)
 }
 
 /**
  * Remembers the last walk of the workspace roots, because the walk is the expensive part of a rename check and
- * prepareRename fires on every F2. A result is reused for [ttlMillis] and dropped by [invalidate], which the
- * workspace service calls on any watched-file event. The registered watchers cover only Groovy, Java and GDSL
- * files, so a Jenkinsfile or `.gradle` file created outside the editor can go unseen for up to [ttlMillis].
- * Open buffers are never cached, so a file being typed is always seen.
+ * prepareRename fires on every F2. A result is reused only while all of these hold:
+ * - it is younger than [ttlMillis] (a backstop);
+ * - no [invalidate] happened since it started (the workspace service calls it on any watched-file event);
+ * - every directory the walk listed still exists with the modification time it had. Creating, deleting or moving a
+ *   file changes its parent directory's time, so this needs no file watcher. A directory modified within
+ *   [RECENT_MILLIS] of the walk is never trusted, because coarse filesystem timestamps cannot order it.
+ *
+ * What stays unseen for up to [ttlMillis] is an in-place edit of a file the walk already knew, whose content the
+ * scan reads from disk or from the open buffer anyway. Open buffers are never cached.
  */
 internal class WorkspaceWalkCache(
     private val ttlMillis: Long = DEFAULT_TTL_MILLIS,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
-    private class Entry(val key: Any, val at: Long, val walked: Walked)
+    private class Entry(val key: Any, val at: Long, val generation: Int, val walked: Walked)
 
     @Volatile
     private var entry: Entry? = null
@@ -164,12 +197,13 @@ internal class WorkspaceWalkCache(
     val invalidations: Int get() = generation.get()
 
     fun get(key: Any, walk: () -> Walked): Walked {
-        entry?.takeIf { it.key == key && clock() - it.at < ttlMillis }?.let { return it.walked }
+        entry?.takeIf { isFresh(it, key) }?.let { return it.walked }
+        // The generation is read before the walk and stored with it: an invalidation that lands at any later point,
+        // even between the walk and the store, makes this entry stale on its first read.
         val before = generation.get()
         val walked = walk()
         walkCounter.incrementAndGet()
-        // A walk that raced with an invalidation may predate the change it was invalidated for.
-        if (generation.get() == before) entry = Entry(key, clock(), walked)
+        entry = Entry(key, clock(), before, walked)
         return walked
     }
 
@@ -178,8 +212,19 @@ internal class WorkspaceWalkCache(
         entry = null
     }
 
+    private fun isFresh(entry: Entry, key: Any): Boolean = entry.key == key &&
+        entry.generation == generation.get() &&
+        clock() - entry.at < ttlMillis &&
+        directoriesUnchanged(entry)
+
+    private fun directoriesUnchanged(entry: Entry): Boolean = entry.walked.directories.all { (dir, time) ->
+        time.toMillis() < entry.at - RECENT_MILLIS &&
+            runCatching { Files.getLastModifiedTime(dir) }.getOrNull() == time
+    }
+
     companion object {
         const val DEFAULT_TTL_MILLIS = 30_000L
+        const val RECENT_MILLIS = 2_000L
     }
 }
 

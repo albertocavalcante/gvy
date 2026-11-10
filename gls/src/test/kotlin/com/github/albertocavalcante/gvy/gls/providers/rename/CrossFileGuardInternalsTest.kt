@@ -9,6 +9,8 @@ import org.codehaus.groovy.ast.ClassNode
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -130,20 +132,73 @@ class CrossFileGuardInternalsTest {
     }
 
     @Test
-    fun `invalidating drops the walk, including one that was running`() {
+    fun `invalidating drops the walk`() {
         val cache = WorkspaceWalkCache()
         val walk = { Walked(emptyList(), overflow = false) }
         cache.get("k", walk)
         cache.invalidate()
         cache.get("k", walk)
         assertEquals(2, cache.walks)
+    }
 
-        cache.get("racing") {
-            cache.invalidate() // a watcher event arrives while the walk runs
+    @Test
+    fun `a walk that an invalidation overtakes is stale on its first read`() {
+        val cache = WorkspaceWalkCache()
+        val walk = { Walked(emptyList(), overflow = false) }
+
+        cache.get("k") {
+            cache.invalidate() // lands after the walk started and before its result is stored
             walk()
         }
-        cache.get("racing", walk)
-        assertEquals(4, cache.walks, "the racing walk was not cached")
+        cache.get("k", walk)
+
+        assertEquals(2, cache.walks, "the pre-invalidation result was not served")
+        cache.get("k", walk)
+        assertEquals(2, cache.walks, "the re-walk is cached normally")
+    }
+
+    @Test
+    fun `a walk is repeated when a directory it listed changed and not otherwise`() {
+        val dir = Files.createDirectories(tempDir.resolve("pkg"))
+        Files.writeString(dir.resolve("A.groovy"), "class A {}")
+        val old = FileTime.from(Instant.now().minusSeconds(3_600))
+        Files.setLastModifiedTime(dir, old)
+        Files.setLastModifiedTime(tempDir, old)
+        val cache = WorkspaceWalkCache(clock = { System.currentTimeMillis() + 60_000 })
+        val walk = { walkWorkspace(listOf(tempDir), emptyList(), 100, 1_000) {} }
+
+        cache.get("k", walk)
+        cache.get("k", walk)
+        assertEquals(1, cache.walks, "unchanged directories are served from the cache")
+
+        Files.writeString(dir.resolve("Jenkinsfile"), "node {}")
+        Files.setLastModifiedTime(dir, FileTime.from(old.toInstant().plusSeconds(10))) // timestamps can tie
+        val found = cache.get("k", walk)
+        assertEquals(2, cache.walks, "a file added under a walked directory forces a new walk")
+        assertTrue(found.files.any { it.fileName.toString() == "Jenkinsfile" })
+
+        Files.createDirectories(tempDir.resolve("pkg/sub"))
+        Files.setLastModifiedTime(dir, FileTime.from(old.toInstant().plusSeconds(20)))
+        cache.get("k", walk)
+        assertEquals(3, cache.walks, "a new directory does too")
+
+        Files.delete(dir.resolve("Jenkinsfile"))
+        Files.setLastModifiedTime(dir, FileTime.from(old.toInstant().plusSeconds(30)))
+        cache.get("k", walk)
+        assertEquals(4, cache.walks, "and so does a deletion")
+    }
+
+    @Test
+    fun `a directory modified just before the walk is not trusted`() {
+        val dir = Files.createDirectories(tempDir.resolve("fresh"))
+        Files.writeString(dir.resolve("A.groovy"), "class A {}")
+        val cache = WorkspaceWalkCache()
+        val walk = { walkWorkspace(listOf(tempDir), emptyList(), 100, 1_000) {} }
+
+        cache.get("k", walk)
+        cache.get("k", walk)
+
+        assertEquals(2, cache.walks, "coarse timestamps cannot order a change this close to the walk")
     }
 
     @Test
