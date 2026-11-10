@@ -291,4 +291,97 @@ class JenkinsContextDetectorTest {
 
         assertEquals(listOf("pipeline", "stages", "stage", "steps"), context.enclosingBlocks)
     }
+
+    @Test
+    fun `one-line post condition opening is tracked`() {
+        val lines = listOf(
+            "pipeline {",
+            "    post { always {",
+            "        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 2, column = 8)
+
+        assertEquals(listOf("pipeline", "post", "always"), context.enclosingBlocks)
+        assertEquals("always", context.currentBlock)
+    }
+
+    @Test
+    fun `when expression blocks are tracked as enclosing blocks`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            when {",
+            "                allOf {",
+            "                    expression {",
+            "                        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 6, column = 24)
+
+        assertEquals(
+            listOf("pipeline", "stages", "stage", "when", "allOf", "expression"),
+            context.enclosingBlocks,
+        )
+    }
+
+    @Test
+    fun `when condition combinators anyOf and not are tracked`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            when { anyOf { not {",
+            "                ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 4, column = 16)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "when", "anyOf", "not"), context.enclosingBlocks)
+    }
+
+    @Test
+    fun `a block opening inside a string literal is ignored`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            steps {",
+            "                echo 'always {'",
+            "                ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 5, column = 16)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "steps"), context.enclosingBlocks)
+    }
+
+    @Test
+    fun `a closing brace inside a string literal does not close the block`() {
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            "            steps {",
+            "                echo \"}\" /* } */",
+            "                ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 5, column = 16)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "steps"), context.enclosingBlocks)
+    }
+
+    @Test
+    fun `text after the cursor on the cursor line does not close blocks`() {
+        // One-line `when { allOf { branch 'x'; | } }`, or an editor that auto-closed `allOf { | }`.
+        val line = "            when { allOf { branch 'main'; } }"
+        val lines = listOf(
+            "pipeline {",
+            "    stages {",
+            "        stage('Build') {",
+            line,
+        )
+        val column = line.indexOf("; }") + 2
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 3, column = column)
+
+        assertEquals(listOf("pipeline", "stages", "stage", "when", "allOf"), context.enclosingBlocks)
+        assertEquals("when", context.currentBlock)
+    }
 }

@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
+import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.providers.completion.CursorPositionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
@@ -62,18 +63,12 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 // Add Jenkins step completions if allowed by block context
                 val allowSteps = blockContext == null ||
                     !blockContext.isStrictDeclarative ||
-                    blockContext.blockCategories.contains(DeclarativePipelineSchema.CompletionCategory.STEP)
+                    blockContext.blockCategories.contains(DeclarativePipelineSchema.CompletionCategory.STEP) ||
+                    blockContext.isInsideGroovyBody()
 
                 if (allowSteps) {
                     addJenkinsStepCompletions(metadata)
                 }
-
-                // Add Jenkins global variables
-                addJenkinsGlobalVariables(
-                    metadata = metadata,
-                    jenkinsCapabilities = context.baseContext.compilationService
-                        .workspaceManager.getJenkinsCapabilities(),
-                )
 
                 // Only add block-level completions when cursor is at block level (not inside method call args)
                 val cursorContext = detectCursorPositionContext(
@@ -82,39 +77,104 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 )
                 val isBlockLevel = cursorContext is CursorPositionContext.BlockLevel
 
-                // Add block-specific completions based on declarative context
-                blockContext?.blockCategories?.let { categories ->
-                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE) &&
-                        isBlockLevel
-                    ) {
-                        addJenkinsAgentTypeCompletions()
-                    }
-                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION) &&
-                        isBlockLevel
-                    ) {
-                        addJenkinsDeclarativeOptions(metadata)
-                    }
-                    if (categories.contains(DeclarativePipelineSchema.CompletionCategory.POST_CONDITION) &&
-                        isBlockLevel
-                    ) {
-                        addJenkinsPostConditionCompletions()
-                    }
+                // Global variables cannot start a statement in structural declarative blocks
+                // (pipeline, agent, stage, post, options, ...): offering them there is noise and
+                // duplicates agent types such as `docker`. Arguments and Groovy blocks keep them.
+                if (!(isBlockLevel && blockContext.isStructuralDeclarativeBlock())) {
+                    addJenkinsGlobalVariables(
+                        metadata = metadata,
+                        jenkinsCapabilities = context.baseContext.compilationService
+                            .workspaceManager.getJenkinsCapabilities(),
+                    )
                 }
 
-                // Add inner instructions (sub-blocks) from schema
-                // Only add when cursor is at block level (consistent with other declarative completions)
-                if (isBlockLevel) {
-                    blockContext?.innerInstructions?.forEach { instruction ->
-                        completion {
-                            label(instruction)
-                            kind(CompletionItemKind.Keyword)
-                            detail("Declarative directive")
-                            insertText("$instruction {")
-                            sortText("0-directive-$instruction")
-                        }
-                    }
+                // Directives belong to the innermost declarative block only: `when { expression { | } }`
+                // and a scripted `stage('x') {}` inside `script {}` are Groovy, not places for
+                // `branch` or the `parallel` directive (which would duplicate the `parallel` step).
+                blockContext?.takeIf { isBlockLevel && it.acceptsDeclarativeDirectives() }?.let {
+                    addDeclarativeBlockCompletions(it, metadata)
                 }
             }
         }
     }
+
+    /** Agent types, options, post conditions and sub-directives for the declarative block at the cursor. */
+    private fun CompletionsBuilder.addDeclarativeBlockCompletions(
+        blockContext: JenkinsBlockContext,
+        metadata: MergedJenkinsMetadata,
+    ) = with(JenkinsCompletionProvider) {
+        val categories = blockContext.blockCategories
+        if (DeclarativePipelineSchema.CompletionCategory.AGENT_TYPE in categories) {
+            addJenkinsAgentTypeCompletions()
+        }
+        if (DeclarativePipelineSchema.CompletionCategory.DECLARATIVE_OPTION in categories) {
+            addJenkinsDeclarativeOptions(metadata)
+        }
+        if (DeclarativePipelineSchema.CompletionCategory.POST_CONDITION in categories) {
+            addJenkinsPostConditionCompletions()
+        }
+        blockContext.innerInstructions.forEach { instruction ->
+            completion {
+                label(instruction)
+                kind(CompletionItemKind.Keyword)
+                detail("Declarative directive")
+                insertText("$instruction {")
+                sortText("0-directive-$instruction")
+            }
+        }
+    }
 }
+
+/**
+ * Declarative blocks whose statements are fixed directives, sections or conditions, never
+ * expressions. Global variables are not offered at their block level.
+ *
+ * Deliberately not listed: `steps`, post-condition bodies and `script` (steps), `environment`
+ * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), `parameters`, `triggers`,
+ * `tools` and `libraries`, whose contents are not modeled yet (#1246), and `matrix`, `parallel`,
+ * `axes`, which the block detector does not track yet (#1290).
+ */
+private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf("pipeline", "agent", "stages", "stage", "post", "options", "when")
+
+/** `when` condition combinators: their bodies hold `when` conditions, so they behave as `when` itself. */
+private val WHEN_COMBINATORS = setOf("allOf", "anyOf", "not")
+
+/** The innermost tracked block, looking through `when` combinators. */
+private fun JenkinsBlockContext.effectiveInnermostBlock(): String? = enclosingBlocks.lastOrNull {
+    it !in
+        WHEN_COMBINATORS
+}
+
+/** `agent { node { | } }`: the declarative node agent, whose body holds `label`, `customWorkspace`. */
+private fun JenkinsBlockContext.isDeclarativeNodeAgent(): Boolean =
+    enclosingBlocks.lastOrNull() == "node" && "agent" in enclosingBlocks
+
+/** True unless a tracked non-schema block (such as `expression {}`) sits inside [JenkinsBlockContext.currentBlock]. */
+private fun JenkinsBlockContext.isInnermostTrackedBlock(): Boolean =
+    enclosingBlocks.isEmpty() || effectiveInnermostBlock() == currentBlock
+
+/**
+ * True when the cursor sits directly in a structural declarative block (or a `when` combinator,
+ * or the declarative node agent) with no Groovy body in between. A scripted `stage('x') {}`
+ * inside `script {}` and `when { expression { } }` take steps and globals.
+ */
+private fun JenkinsBlockContext?.isStructuralDeclarativeBlock(): Boolean {
+    if (this == null || !isStrictDeclarative) return false
+    val block = currentBlock ?: return false
+    if (block !in STRUCTURAL_DECLARATIVE_BLOCKS) return false
+    if (isInsideGroovyBody()) return false
+    return isInnermostTrackedBlock() || isDeclarativeNodeAgent()
+}
+
+/** The cursor is directly in a declarative block (not in Groovy nested inside one, nor in a node agent). */
+private fun JenkinsBlockContext.acceptsDeclarativeDirectives(): Boolean =
+    isInnermostTrackedBlock() && !isInsideGroovyBody()
+
+/**
+ * A `script {}`, `expression {}` or scripted `node {}` encloses the cursor, so Groovy statements
+ * and pipeline steps apply beneath it. `agent { node { label 'x' } }` is the declarative node
+ * agent, not Groovy.
+ */
+private fun JenkinsBlockContext.isInsideGroovyBody(): Boolean = "script" in enclosingBlocks ||
+    "expression" in enclosingBlocks ||
+    ("node" in enclosingBlocks && "agent" !in enclosingBlocks)

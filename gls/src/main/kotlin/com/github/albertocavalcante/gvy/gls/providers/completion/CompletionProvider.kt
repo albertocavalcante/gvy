@@ -324,6 +324,7 @@ object CompletionProvider {
             blockCategories = blockCategories,
             innerInstructions = innerInstructions,
             isStrictDeclarative = isStrictDeclarative,
+            enclosingBlocks = detected.enclosingBlocks,
         )
     }
 
