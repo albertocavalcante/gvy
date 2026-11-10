@@ -77,11 +77,15 @@ class JenkinsParameterHoverStrategy(
             is MapExpression -> parent.takeIf { map -> map.mapEntryExpressions.any { it.keyExpression === key } }
             else -> null
         } as? MapExpression ?: return null
-        return when (val owner = astModel.getParent(map)) {
+        val call = when (val owner = astModel.getParent(map)) {
             is MethodCallExpression -> owner
             is TupleExpression -> astModel.getParent(owner) as? MethodCallExpression
             else -> null
-        }
+        } ?: return null
+        // `[returnStdout: true].each {}`: the map is the call's receiver, not its arguments.
+        val args = call.arguments
+        val isArgument = args === map || (args is TupleExpression && args.expressions.any { it === map })
+        return call.takeIf { isArgument }
     }
 
     /**

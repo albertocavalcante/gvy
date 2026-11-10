@@ -166,6 +166,103 @@ class JenkinsParameterHoverTest {
         assertTrue(!isGlobalHover(text), "parameter env: $text")
     }
 
+    @Test
+    fun `a map that is a call's receiver is not its arguments`(): Unit = runBlocking {
+        val line = "    [returnStdout: true].each { echo it.key }"
+        val text = hoverText("node {\n$line\n}", line = 1, character = line.indexOf("returnStdout") + 2)
+
+        assertTrue(!isParameterHover(text), "receiver map key: $text")
+    }
+
+    @Test
+    fun `hover on a declarative option shows the option`(): Unit = runBlocking {
+        val line = "        timeout(time: 1, unit: 'HOURS')"
+        val code = "pipeline {\n    agent any\n    options {\n$line\n    }\n}"
+        val text = hoverText(code, line = 3, character = line.indexOf("timeout") + 2)
+
+        assertNotNull(text)
+        assertTrue(text.contains("Declarative option `timeout`"), "option hover: $text")
+    }
+
+    @Test
+    fun `a step named like an option keeps the step hover in steps`(): Unit = runBlocking {
+        val line = "                timeout(time: 1) { sh 'make' }"
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('B') {\n            steps {\n" +
+            "$line\n            }\n        }\n    }\n}"
+        val text = hoverText(code, line = 5, character = line.indexOf("timeout") + 2)
+
+        assertNotNull(text)
+        assertTrue(text.contains("Jenkins Step: `timeout`"), "step hover: $text")
+    }
+
+    @Test
+    fun `hover on declarative sections and directives shows their documentation`(): Unit = runBlocking {
+        val lines = listOf("pipeline {", "    agent any", "    options {", "    }", "    stages {", "    }", "}")
+        val code = lines.joinToString("\n")
+        val agent = hoverText(code, line = 1, character = 6)
+        val options = hoverText(code, line = 2, character = 6)
+        val stages = hoverText(code, line = 4, character = 6)
+
+        assertTrue(agent?.contains("Specifies where") == true, "agent section: $agent")
+        assertTrue(options?.contains("Configure pipeline or stage options") == true, "options directive: $options")
+        assertTrue(stages?.contains("Declarative section `stages`") == true, "stages section: $stages")
+    }
+
+    @Test
+    fun `a section name used where the section is not allowed keeps the step hover`(): Unit = runBlocking {
+        val line = "                stage('inner') { echo 'x' }"
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('B') {\n            steps {\n" +
+            "$line\n            }\n        }\n    }\n}"
+        val text = hoverText(code, line = 5, character = line.indexOf("stage") + 2)
+
+        assertTrue(text == null || !text.contains("Declarative section"), "stage inside steps: $text")
+    }
+
+    @Test
+    fun `stages in parallel and matrix blocks keep their section hover`(): Unit = runBlocking {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('P') {",
+            "            parallel {",
+            "                stage('a') { steps { echo 'a' } }",
+            "            }",
+            "        }",
+            "        stage('M') {",
+            "            matrix {",
+            "                agent any",
+            "                stages {",
+            "                    stage('m') { steps { echo 'm' } }",
+            "                }",
+            "            }",
+            "        }",
+            "    }",
+            "}",
+        )
+        val code = lines.joinToString("\n")
+        val inParallel = hoverText(code, line = 5, character = lines[5].indexOf("stage") + 2)
+        val matrixAgent = hoverText(code, line = 10, character = lines[10].indexOf("agent") + 2)
+        val matrixStages = hoverText(code, line = 11, character = lines[11].indexOf("stages") + 2)
+        val inMatrix = hoverText(code, line = 12, character = lines[12].indexOf("stage") + 2)
+
+        assertTrue(inParallel?.contains("Declarative section `stage`") == true, "stage in parallel: $inParallel")
+        assertTrue(matrixAgent?.contains("Declarative section `agent`") == true, "agent in matrix: $matrixAgent")
+        assertTrue(matrixStages?.contains("Declarative section `stages`") == true, "stages in matrix: $matrixStages")
+        assertTrue(inMatrix?.contains("Declarative section `stage`") == true, "stage in matrix stages: $inMatrix")
+    }
+
+    @Test
+    fun `a declarative hover range covers the name, not the whole block`(): Unit = runBlocking {
+        val code = "pipeline {\n    agent any\n    stages {\n    }\n}"
+        val pipeline = hoverAt(code, line = 0, character = 2)
+        val stages = hoverAt(code, line = 2, character = 6)
+
+        assertTrue(pipeline?.contents?.right?.value?.contains("Declarative section `pipeline`") == true)
+        assertEquals(Range(Position(0, 0), Position(0, 8)), pipeline?.range)
+        assertEquals(Range(Position(2, 4), Position(2, 10)), stages?.range)
+    }
+
     /** Guard: passes with or without the strategy (the ordinary hover never mentions the Jenkins env docs). */
     @Test
     fun `a local variable named like a global keeps the ordinary hover`(): Unit = runBlocking {

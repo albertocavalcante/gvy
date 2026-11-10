@@ -194,7 +194,7 @@ class EnrichmentMetadataLoaderTest {
             "Define environment variables for the pipeline or a stage.",
             environmentDirective.description,
         )
-        assertEquals(listOf("pipeline", "stage"), environmentDirective.allowedIn)
+        assertEquals(listOf("pipeline", "stage", "matrix"), environmentDirective.allowedIn)
         assertEquals(
             "https://www.jenkins.io/doc/book/pipeline/syntax/#environment",
             environmentDirective.documentationUrl,

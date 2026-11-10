@@ -1,12 +1,14 @@
 package com.github.albertocavalcante.gvy.gls.providers.hover.strategies
 
 import com.github.albertocavalcante.groovylsp.markdown.dsl.markdown
+import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsStepCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverContext
 import com.github.albertocavalcante.gvy.gls.providers.hover.HoverStrategy
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.eclipse.lsp4j.Hover
 import org.eclipse.lsp4j.MarkupContent
@@ -44,11 +46,102 @@ class JenkinsStepHoverStrategy(
 
         val stepName = node.methodAsString ?: return null
 
+        // Declarative constructs first: inside options {} `timeout` is the option, not the step.
+        tryCreateDeclarativeHover(stepName, node, context)?.let { return it }
+
         // Try vars/ global variable hover first
         tryCreateVarsGlobalVariableHover(stepName, node)?.let { return it }
 
         // Then try step metadata hover
         return tryCreateStepMetadataHover(stepName, node)
+    }
+
+    /**
+     * Hover for declarative options (a call directly in `options {}`) and for declarative sections and
+     * directives (`pipeline`, `agent`, `stages`, `options`, `when`, ...), from the bundled enrichment.
+     */
+    private fun tryCreateDeclarativeHover(name: String, node: MethodCallExpression, context: HoverContext): Hover? {
+        val metadata = jenkinsCapabilities?.getAllMetadata() ?: return null
+        val astModel = context.astModel ?: return null
+        val enclosing = enclosingCallNames(node, astModel)
+        // Sections and options only exist in Declarative Pipeline; a scripted `stage('x') {}` (also inside
+        // `script {}` or `node {}`) is the step.
+        val declarative = (name == PIPELINE || PIPELINE in enclosing) && enclosing.none { it in SCRIPTED_BODIES }
+        if (!declarative) return null
+        val parent = enclosing.firstOrNull()
+        val option = metadata.declarativeOptions[name]?.takeIf { parent == OPTIONS_BLOCK }
+        // A section or directive only where its schema allows it: `stage('x') {}` inside `steps {}` is the step.
+        val section = metadata.sections[name]?.takeIf { isAllowedIn(it.allowedIn, parent) }
+        val directive = metadata.directives[name]?.takeIf { isAllowedIn(it.allowedIn, parent) }
+        val content = when {
+            option != null -> markdown {
+                h2("Declarative option `$name`")
+                option.documentation?.let(::text)
+                text("**Plugin:** ${option.plugin}")
+                if (option.parameters.isNotEmpty()) {
+                    h3("Parameters")
+                    list(option.parameters.map { (key, param) -> "**`$key`**: `${param.type}`" })
+                }
+            }
+            section != null -> declarativeBlockMarkdown(
+                "section",
+                name,
+                section.description,
+                section.allowedIn,
+                section.documentationUrl,
+            )
+            directive != null -> declarativeBlockMarkdown(
+                "directive",
+                name,
+                directive.description,
+                directive.allowedIn,
+                directive.documentationUrl,
+            )
+            else -> return null
+        }
+        return Hover().apply {
+            contents = Either.forRight(MarkupContent(MarkupKind.MARKDOWN, content))
+            // Only the name: a section's call spans its whole block (`pipeline` would highlight the file).
+            range = hoverRangeOf(node.method) ?: hoverRangeOf(node)
+        }
+    }
+
+    /** `root` (only `pipeline`) means top level, outside any block. */
+    private fun isAllowedIn(allowedIn: List<String>, parent: String?): Boolean =
+        if (parent == null) ROOT in allowedIn else parent in allowedIn
+
+    private fun declarativeBlockMarkdown(
+        kind: String,
+        name: String,
+        description: String,
+        allowedIn: List<String>,
+        documentationUrl: String?,
+    ): String = markdown {
+        h2("Declarative $kind `$name`")
+        text(description)
+        if (allowedIn.isNotEmpty()) text("**Allowed in:** ${allowedIn.joinToString { "`$it`" }}")
+        documentationUrl?.let { text("[Documentation]($it)") }
+    }
+
+    /**
+     * Names of the calls whose closures contain [call], innermost first (`[options, pipeline]` for
+     * `pipeline { options { timeout(...) } }`).
+     */
+    private fun enclosingCallNames(call: MethodCallExpression, astModel: GroovyAstModel): List<String> {
+        val names = mutableListOf<String>()
+        var insideClosure = false
+        var current: ASTNode? = astModel.getParent(call)
+        while (current != null) {
+            when {
+                current is ClosureExpression -> insideClosure = true
+                insideClosure && current is MethodCallExpression -> {
+                    current.methodAsString?.let(names::add)
+                    insideClosure = false
+                }
+            }
+            current = astModel.getParent(current)
+        }
+        return names
     }
 
     /**
@@ -137,12 +230,19 @@ class JenkinsStepHoverStrategy(
      * that no negative LSP coordinate is ever emitted. Groovy's `lastColumnNumber` is 1-based and EXCLUSIVE; the
      * 0-based exclusive LSP end is `lastColumnNumber - 1`.
      */
-    private fun hoverRangeOf(node: MethodCallExpression): Range? {
+    private fun hoverRangeOf(node: ASTNode): Range? {
         val positions = listOf(node.lineNumber, node.columnNumber, node.lastLineNumber, node.lastColumnNumber)
         if (positions.any { it < 1 }) return null
         return Range(
             Position(node.lineNumber - 1, node.columnNumber - 1),
             Position(node.lastLineNumber - 1, node.lastColumnNumber - 1),
         )
+    }
+
+    private companion object {
+        const val OPTIONS_BLOCK = "options"
+        const val PIPELINE = "pipeline"
+        const val ROOT = "root"
+        val SCRIPTED_BODIES = setOf("script", "node")
     }
 }
