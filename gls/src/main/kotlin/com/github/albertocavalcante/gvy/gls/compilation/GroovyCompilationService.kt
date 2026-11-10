@@ -324,12 +324,13 @@ class GroovyCompilationService internal constructor(
                 null
             }
         }
-        val fingerprint = workspaceManager.fingerprintFor(uri)
+        // Only that comparison needs the fingerprint: a watcher batch skips it for every event (#1428).
+        val fingerprint = disk?.let { workspaceManager.fingerprintFor(uri) }
         var retired: PendingCompilation? = null
         val ticket = ownership.retireClosed(uri, isOpen) {
-            if (disk == null || cacheService.getCachedWithContent(uri, fingerprint)?.first != disk) {
-                retired = cacheService.detach(uri)
-            }
+            val unchanged = disk != null && fingerprint != null &&
+                cacheService.getCachedWithContent(uri, fingerprint)?.first == disk
+            if (!unchanged) retired = cacheService.detach(uri)
             semanticIndexer.retirePublications(uri)
         }
         // Woken after the fence, as [invalidateCache] does (#1429)
