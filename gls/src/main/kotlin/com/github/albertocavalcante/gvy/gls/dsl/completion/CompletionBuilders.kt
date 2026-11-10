@@ -307,7 +307,7 @@ class FunctionCompletionBuilder {
         label(name)
         kind(CompletionItemKind.Function)
         detail("$returnType $name()")
-        snippet("$name($1)")
+        snippet("${escapeSnippet(name)}($1)")
         doc?.let { documentation(it) }
     }
 }
