@@ -3,9 +3,11 @@ package com.github.albertocavalcante.gvy.gls.providers.completion.strategy
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.dsl.completion.CompletionsBuilder
 import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
+import com.github.albertocavalcante.gvy.gls.providers.completion.CompletionProvider.ContextType
 import com.github.albertocavalcante.gvy.gls.providers.completion.CursorPositionContext
 import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompletionProvider
 import com.github.albertocavalcante.gvy.gls.providers.completion.detectCursorPositionContext
+import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAccessDot
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.jenkins.metadata.declarative.DeclarativePipelineSchema
 import org.eclipse.lsp4j.CompletionItem
@@ -39,6 +41,22 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
 
         val metadata = context.jenkinsMetadata
             ?: return CompletionStrategy.notApplicable("JenkinsCompletion")
+
+        // After `env.` or `currentBuild.` only members make sense, and MemberAccessCompletionStrategy supplies
+        // the Jenkins global-variable properties. Steps, globals and map keys would complete to invalid code
+        // such as `env.sh`. A member-access context without a real dot (`sh 'ls' |`, parsed as
+        // `sh('ls').<dummy>`) is still a statement position and keeps its `, key:` completions.
+        val base = context.baseContext
+        val memberAccess = context.contextType as? ContextType.MemberAccess
+        if (memberAccess != null && followsMemberAccessDot(base.content, base.line, base.character)) {
+            // `steps.sh` (the shared-library idiom) and `this.sh` call steps through an explicit receiver.
+            if (memberAccess.qualifierName in STEP_RECEIVERS) {
+                return CompletionStrategy.found(
+                    completions { with(JenkinsCompletionProvider) { addJenkinsStepCompletions(metadata) } },
+                )
+            }
+            return CompletionStrategy.notApplicable("JenkinsCompletion")
+        }
 
         val items = buildJenkinsCompletions(context, metadata)
         return CompletionStrategy.found(items)
@@ -151,6 +169,17 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
 private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf(
     "pipeline", "agent", "stages", "stage", "post", "options", "when", "triggers", "parameters", "tools",
 )
+
+/**
+ * Receivers whose members are the pipeline steps: `steps.sh` in shared libraries and `this.sh`.
+ *
+ * Deliberate limits:
+ * - `script.` (a common shared-library parameter name for the pipeline object) is not a step receiver:
+ *   an `Object`-typed parameter named `script` could be anything.
+ * - `this.steps.|` gets no steps: its qualifier is a property expression, not a name.
+ * - `steps.` offers the steps only, not global variables such as `steps.env`.
+ */
+private val STEP_RECEIVERS = setOf("steps", "this")
 
 /** `when` condition combinators: their bodies hold `when` conditions, so they behave as `when` itself. */
 private val WHEN_COMBINATORS = setOf("allOf", "anyOf", "not")
