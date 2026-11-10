@@ -38,22 +38,40 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
     Object buildAll(String name, Project requested) {
         def targets = []
         requested.rootProject.allprojects.each { project ->
-            project.extensions.findByType(SourceSetContainer)?.each { sourceSet ->
-                targets << observe(project, sourceSet)
+            def names = []
+            def observed = []
+            def completed = withProjectLock(project) { locked ->
+                // Start clean on every run, so a retry can never duplicate names or targets
+                names.clear()
+                observed.clear()
+                def sourceSets = locked.extensions.findByType(SourceSetContainer)
+                names.addAll(sourceSets?.names ?: [])
+                sourceSets?.each { sourceSet -> observed << observe(locked, sourceSet) }
+            }
+            targets.addAll(observed)
+            if (!completed) {
+                // Failed outside observe(): each known source set it did not reach is reported UNRESOLVED.
+                // When even the names are unknown, the project's targets stay absent, which means unknown.
+                def reached = observed*.sourceSet as Set
+                names.findAll { !(it in reached) }.each { targets << unresolved(project, it) }
             }
         }
         new GvyScopedWorkspace(buildDirectory: requested.rootProject.projectDir.absolutePath, targets: targets)
     }
 
-    private static GvyScopedTarget observe(Project project, sourceSet) {
-        def target = new GvyScopedTarget(
+    private static GvyScopedTarget unresolved(Project project, String sourceSet) {
+        new GvyScopedTarget(
             projectPath: project.path,
             projectDirectory: project.projectDir.absolutePath,
-            sourceSet: sourceSet.name,
+            sourceSet: sourceSet,
             state: 'UNRESOLVED',
             sourceRoots: [],
             artifacts: []
         )
+    }
+
+    private static GvyScopedTarget observe(Project project, sourceSet) {
+        def target = unresolved(project, sourceSet.name)
         try {
             // Inside the guard: lazily configured roots can fail for one target without erasing siblings.
             target.sourceRoots = sourceSet.allSource.srcDirs.collect { it.absolutePath }
@@ -68,6 +86,63 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
             target.artifacts = []
         }
         target
+    }
+
+    /*
+     * Runs [action] holding [project]'s own lock. This builder runs for the root project; under
+     * org.gradle.parallel=true Gradle refuses to resolve another project's configurations from it
+     * ("Resolution of the configuration ... was attempted without an exclusive lock"), so every
+     * subproject target came back UNRESOLVED (#1363).
+     *
+     * INTERNAL GRADLE API: ProjectInternal.getOwner() returns the project's ProjectState, and
+     * ProjectState.applyToMutableState(Consumer) runs the consumer under that project's lock. Gradle's
+     * own tooling model builders take the lock the same way. Verified on Gradle 9.8.2, 8.5 and 7.3.3
+     * (the oldest Gradle that runs on JDK 17); older versions are not checked in CI (#1376). It is
+     * feature-detected (respondsTo, then a dynamic call through the public interface, because the
+     * implementation class is not public): when it is missing or refuses before running the action, the
+     * project is resolved directly, which is the previous behaviour and works without parallel mode.
+     * Per-target failures inside the action are isolated by observe(); a failure outside it reports the
+     * project's unreached source sets as UNRESOLVED. Only errors and cancellation propagate.
+     * Returns whether [action] completed; a failure never escapes into sibling projects.
+     */
+    private static boolean withProjectLock(Project project, Closure action) {
+        def owner = projectState(project)
+        def ran = false
+        try {
+            if (owner == null) {
+                ran = true
+                action(project)
+            } else {
+                owner.applyToMutableState({ locked ->
+                    ran = true
+                    action(locked)
+                } as java.util.function.Consumer)
+            }
+            return true
+        } catch (Exception failure) {
+            rethrowCancellationOrError(failure)
+            if (ran) return false
+        }
+        // The lock refused before running the action: resolve directly, the previous behaviour.
+        try {
+            action(project)
+            true
+        } catch (Exception failure) {
+            rethrowCancellationOrError(failure)
+            false
+        }
+    }
+
+    /** The project's ProjectState when it offers applyToMutableState(Consumer), else null (feature detection). */
+    private static Object projectState(Project project) {
+        try {
+            if (!project.respondsTo('getOwner')) return null
+            def owner = project.getOwner()
+            owner?.respondsTo('applyToMutableState', java.util.function.Consumer) ? owner : null
+        } catch (Exception failure) {
+            rethrowCancellationOrError(failure)
+            null
+        }
     }
 
     private static void enrich(Project project, sourceSet, List classpath, GvyScopedTarget target) {

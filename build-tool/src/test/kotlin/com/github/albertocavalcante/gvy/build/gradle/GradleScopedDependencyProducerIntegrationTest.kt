@@ -15,6 +15,8 @@ import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
@@ -44,7 +46,7 @@ class GradleScopedDependencyProducerIntegrationTest {
         connections.forEach(ProjectConnection::close)
     }
 
-    private fun producer(): GradleScopedDependencyProducer {
+    private fun producer(gradleVersion: String? = null): GradleScopedDependencyProducer {
         val property = System.getProperty(INSTALLATION_PROPERTY)
         // Gradle's test task always supplies the installation; only Bazel's sandbox lacks one.
         assumeTrue(property != null || !TestEnvironment.isRunningInBazel, "Skipped in Bazel: no Gradle installation")
@@ -54,8 +56,12 @@ class GradleScopedDependencyProducerIntegrationTest {
             Path.of(requireNotNull(System.getProperty("gvy.gradle.scoped.test.home"))),
         )
         val factory = GradleConnectionFactory { directory, _ ->
-            GradleConnector.newConnector().useInstallation(installation.toFile())
-                .useGradleUserHomeDir(userHome.toFile()).forProjectDirectory(directory.toFile())
+            val connector = GradleConnector.newConnector()
+            when (gradleVersion) {
+                null -> connector.useInstallation(installation.toFile())
+                else -> connector.useGradleVersion(gradleVersion)
+            }
+            connector.useGradleUserHomeDir(userHome.toFile()).forProjectDirectory(directory.toFile())
                 .connect().also(connections::add)
         }
         val scratch = Files.createDirectories(temporaryDirectory.resolve("producer"))
@@ -66,11 +72,12 @@ class GradleScopedDependencyProducerIntegrationTest {
         )
     }
 
-    @Test
-    fun `observes real Groovy source sets effective order coordinates and isolated failures offline`() {
+    @ParameterizedTest(name = "[{index}] {0}")
+    @ValueSource(strings = ["", PARALLEL, CONFIGURATION_CACHE])
+    fun `observes real Groovy source sets effective order coordinates and isolated failures offline`(mode: String) {
         val producer = producer()
         val root = Files.createDirectories(temporaryDirectory.resolve("fixture")).toRealPath()
-        fixture(root)
+        fixture(root, mode)
         val provenance = DependencyProvenance("offline-integration-observation", 7)
         val result = assertIs<TargetDependencyEvidence.Scoped>(runBlocking { producer.resolve(root, provenance) })
         val main = result.target(root, "main")
@@ -117,6 +124,79 @@ class GradleScopedDependencyProducerIntegrationTest {
         assertFalse(Files.exists(root.resolve("build/classes")), "The query must not compile the fixture")
     }
 
+    @ParameterizedTest(name = "[{index}] {0}")
+    @ValueSource(strings = [PARALLEL, "$PARALLEL\n$ISOLATED_PROJECTS"])
+    fun `a project dependency resolves under parallel configuration (#1363)`(mode: String) {
+        assertProjectDependencyObserved(producer(), mode)
+    }
+
+    /**
+     * Older Gradle versions download their distribution, so they run only when requested, for example
+     * `GVY_SCOPED_TEST_GRADLE_VERSIONS=7.3.3,8.5`. CI does not set it (#1376).
+     */
+    @Test
+    fun `a project dependency resolves on the requested older Gradle versions`() {
+        val versions = System.getenv("GVY_SCOPED_TEST_GRADLE_VERSIONS")?.split(',')?.map(String::trim).orEmpty()
+        assumeTrue(versions.isNotEmpty(), "Set GVY_SCOPED_TEST_GRADLE_VERSIONS to run")
+        versions.forEach { version -> assertProjectDependencyObserved(producer(version), PARALLEL, version) }
+    }
+
+    private fun assertProjectDependencyObserved(
+        producer: GradleScopedDependencyProducer,
+        mode: String,
+        tag: String = "",
+    ) {
+        val root = Files.createDirectories(temporaryDirectory.resolve("project-dependency$tag")).toRealPath()
+        projectDependencyFixture(root, mode)
+
+        val result = assertIs<TargetDependencyEvidence.Scoped>(runBlocking { producer.resolve(root, PROVENANCE) })
+
+        val app = result.target(root.resolve("app"), "main")
+        val lib = result.target(root.resolve("lib"), "main")
+        assertEquals(
+            TargetDependencyState.COMPLETE,
+            app.state,
+            "$tag: a subproject target must resolve in parallel mode",
+        )
+        assertEquals(TargetDependencyState.COMPLETE, lib.state, tag)
+        assertEquals(
+            listOf(
+                root.resolve("lib/build/libs/lib.jar"),
+                root.resolve("repo/org/spockframework/spock-core/2.4-groovy-4.0/spock-core-2.4-groovy-4.0.jar"),
+            ),
+            app.artifacts.map { it.path },
+            "$tag: the project output first, then the external jar, in resolution order",
+        )
+        assertEquals("2.4-groovy-4.0", app.artifacts[1].coordinates?.version)
+        assertFalse(Files.exists(root.resolve("lib/build")), "$tag: the query must not build the dependency")
+    }
+
+    private fun projectDependencyFixture(root: Path, mode: String) {
+        Files.createDirectories(root.resolve("app/src/main/groovy"))
+        Files.createDirectories(root.resolve("lib/src/main/groovy"))
+        Files.writeString(
+            root.resolve("settings.gradle"),
+            "gradle.startParameter.offline = true\nrootProject.name = 'project-dependency'\ninclude 'app', 'lib'\n",
+        )
+        Files.writeString(root.resolve("gradle.properties"), "$GRADLE_PROPERTIES\n$mode\n")
+        // No cross-project configuration, so the same fixture is valid under isolated projects
+        Files.writeString(root.resolve("build.gradle"), "")
+        val repository = "repositories { maven { url = rootProject.file('repo') } }"
+        Files.writeString(root.resolve("lib/build.gradle"), "plugins { id 'groovy' }\n")
+        Files.writeString(
+            root.resolve("app/build.gradle"),
+            """
+            plugins { id 'groovy' }
+            ${repository.replace("rootProject.file('repo')", "file('../repo')")}
+            dependencies {
+                implementation project(':lib')
+                implementation 'org.spockframework:spock-core:2.4-groovy-4.0'
+            }
+            """.trimIndent(),
+        )
+        module(root, "2.4-groovy-4.0")
+    }
+
     @Test
     fun `deadline cancels a real blocked build and yields legacy`() {
         val producer = producer()
@@ -160,7 +240,7 @@ class GradleScopedDependencyProducerIntegrationTest {
     private fun TargetDependencyEvidence.Scoped.target(directory: Path, sourceSet: String): TargetDependencySnapshot =
         snapshots.single { it.target.projectDirectory == directory && it.target.sourceSet == sourceSet }
 
-    private fun fixture(root: Path) {
+    private fun fixture(root: Path, mode: String = "") {
         Files.createDirectories(root.resolve("sub"))
         Files.writeString(
             root.resolve("settings.gradle"),
@@ -170,7 +250,7 @@ class GradleScopedDependencyProducerIntegrationTest {
             include 'sub'
             """.trimIndent(),
         )
-        Files.writeString(root.resolve("gradle.properties"), GRADLE_PROPERTIES)
+        Files.writeString(root.resolve("gradle.properties"), "$GRADLE_PROPERTIES\n$mode\n")
         Files.writeString(
             root.resolve("build.gradle"),
             """
@@ -223,6 +303,9 @@ class GradleScopedDependencyProducerIntegrationTest {
     private companion object {
         const val INSTALLATION_PROPERTY = "gvy.gradle.scoped.test.installation"
         const val BLOCKING_MILLIS = 10_000L
+        const val PARALLEL = "org.gradle.parallel=true"
+        const val CONFIGURATION_CACHE = "org.gradle.configuration-cache=true"
+        const val ISOLATED_PROJECTS = "org.gradle.unsafe.isolated-projects=true"
         val PROVENANCE = DependencyProvenance("offline-integration-observation", 8)
         val GRADLE_PROPERTIES =
             """
