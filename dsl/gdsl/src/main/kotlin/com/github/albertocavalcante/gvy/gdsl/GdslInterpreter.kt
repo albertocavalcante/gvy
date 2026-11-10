@@ -173,7 +173,7 @@ internal class GdslInterpreter(private val limits: Limits = Limits()) {
         val arguments = arguments(expression.arguments, scope)
         return when (name) {
             in SCOPE_TYPES -> arguments.named + mapOf("type" to SCOPE_TYPES.getValue(name))
-            "context" -> GdslContext(arguments.named.nonNullValues())
+            "context" -> context(arguments, expression)
             "contributor" -> contributor(arguments, scope, expression)
             "delegatesTo" -> null
             "findClass" -> arguments.singleString(expression)
@@ -210,6 +210,30 @@ internal class GdslInterpreter(private val limits: Limits = Limits()) {
     private fun requireScalarFields(arguments: Arguments, expression: MethodCallExpression) {
         val nonScalar = SCALAR_FIELDS.firstOrNull { key -> key in arguments.named && !isScalar(arguments.named[key]) }
         if (nonScalar != null) throw Unsupported("'$nonScalar' must be a string", expression)
+    }
+
+    /**
+     * `context(...)`. Values may only be scalars, a flat list of scalars (`filetypes: ["gson"]`) or one
+     * level of scope map holding scalars (`scope: closureScope(isArg: true)`). A context holding contexts
+     * could share them by reference (`context(a: c0, b: c0)` …) and make hashing or printing it
+     * exponential in the number of statements.
+     */
+    private fun context(arguments: Arguments, expression: MethodCallExpression): GdslContext {
+        val nested = arguments.named.entries.firstOrNull { (_, value) ->
+            !isScalar(value) && !isScalarCollection(value)
+        }
+        if (nested != null) {
+            val message = "Context values may only be strings, numbers, booleans, lists of those " +
+                "or scopes ('${nested.key}')"
+            throw Unsupported(message, expression)
+        }
+        return GdslContext(arguments.named.nonNullValues())
+    }
+
+    private fun isScalarCollection(value: Any?): Boolean = when (value) {
+        is List<*> -> value.all(::isScalar)
+        is Map<*, *> -> value.all { (key, item) -> key is String && isScalar(item) }
+        else -> false
     }
 
     private fun Map<String, Any?>.nonNullValues(): Map<String, Any> = buildMap {

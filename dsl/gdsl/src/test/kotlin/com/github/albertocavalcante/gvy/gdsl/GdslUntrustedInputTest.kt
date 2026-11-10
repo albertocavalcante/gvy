@@ -159,6 +159,34 @@ class GdslUntrustedInputTest {
     }
 
     @Test
+    fun `a context cannot hold another context`() {
+        // Each context would reference the previous one twice; hashing or printing the DAG walks 2^40 paths.
+        val script = buildString {
+            appendLine("def c0 = context(ctype: 'X')")
+            for (i in 1..40) appendLine("def c$i = context(a: c${i - 1}, b: c${i - 1})")
+            appendLine("contributor(c40) { method(name: 'nested') }")
+            append(validContributor)
+        }
+
+        val result = executor.executeAndCapture(script, "nested-contexts.gdsl")
+
+        assertThat(result.methods.map { it.name }).containsExactly("echo")
+        assertThat(result.warnings).anyMatch { it.contains("Context values may only be") }
+        result.hashCode()
+        result.toString()
+    }
+
+    @Test
+    fun `a context scope may hold scalars`() {
+        val script = "contributor(context(scope: closureScope(isArg: true), ctype: 'X')) { method(name: 'm') }"
+
+        val result = executor.executeAndCapture(script, "scope.gdsl")
+
+        assertThat(result.methods.map { it.name }).containsExactly("m")
+        assertThat(result.warnings).isEmpty()
+    }
+
+    @Test
     fun `name, type and doc must be strings`() {
         val script = "contributor(context()) { method(name: 'm', doc: ['a', 'b']) }\n$validContributor"
 
