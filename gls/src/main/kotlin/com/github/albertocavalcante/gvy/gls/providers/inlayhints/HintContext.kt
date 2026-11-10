@@ -8,6 +8,12 @@ import com.github.albertocavalcante.gvy.gls.config.InlayHintsConfiguration
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import io.github.oshai.kotlinlogging.KLogger
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.BinaryExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.TupleExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.syntax.Types
 
 /**
  * Context for processing AST nodes during inlay hint generation.
@@ -45,6 +51,25 @@ data class HintContext(
                 method.owner?.let { WorkspaceMethodKey(method.name, it.nameWithoutPackage) to method }
             }
             .groupBy({ it.first }, { it.second })
+    }
+
+    /**
+     * Local variables assigned anywhere after their declaration, including inside closures that capture
+     * them, built once per request on first use. Their declared initializer no longer tells the type.
+     */
+    val reassignedLocals: Set<Variable> by lazy {
+        astModel.getAllNodes().asSequence()
+            .filterIsInstance<BinaryExpression>()
+            .filter { it !is DeclarationExpression && Types.isAssignment(it.operation.type) }
+            .flatMap { assignment ->
+                // `(u, v) = [...]` assigns every variable of the tuple on the left.
+                when (val left = assignment.leftExpression) {
+                    is TupleExpression -> left.expressions.asSequence()
+                    else -> sequenceOf(left)
+                }
+            }
+            .mapNotNull { (it as? VariableExpression)?.accessedVariable }
+            .toSet()
     }
 
     /**

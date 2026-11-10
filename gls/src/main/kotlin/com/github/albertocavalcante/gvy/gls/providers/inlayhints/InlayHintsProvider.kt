@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstructorCallExpression
+import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -207,9 +208,14 @@ internal object InlayHintsCandidates {
             ?: return null
         if (refined.contains('.')) return refined
         // An unresolved workspace class comes back as its simple name. Keep the package the source wrote
-        // (`new a.Util()`) or imported (`import a.Util`), so the exact owner can win (#1374).
-        val written = (objectExpr as? ConstructorCallExpression)?.type?.name
-            ?.takeIf { it.endsWith(".$refined") }
+        // (`new a.Util()`, directly or as a local's initializer) or imported (`import a.Util`), so the exact
+        // owner can win (#1374).
+        val constructed = objectExpr as? ConstructorCallExpression
+            ?: ((objectExpr as? VariableExpression)?.accessedVariable as? VariableExpression)
+                ?.takeUnless { it in context.reassignedLocals } // a later `u = new b.Util()` wins
+                ?.let { declared -> context.astModel.getParent(declared) as? DeclarationExpression }
+                ?.rightExpression as? ConstructorCallExpression
+        val written = constructed?.type?.name?.takeIf { it.endsWith(".$refined") }
         val imported = context.moduleNode?.imports.orEmpty()
             .firstOrNull { it.alias == refined }?.className
         return written ?: imported ?: refined
