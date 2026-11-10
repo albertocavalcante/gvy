@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.jenkins.stubs
 
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.io.IOException
+import java.io.UncheckedIOException
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -30,7 +31,7 @@ internal class JenkinsStubSets(
     private val setsRoot: Path,
     private val generator: JenkinsStubGenerator,
     private val clock: () -> Instant = Instant::now,
-    private val moveDirectory: (Path, Path) -> Unit = { from, to -> moveDirectoryAtomically(from, to) },
+    private val fileOps: StubSetFileOps = StubSetFileOps(),
     private val maxSets: Int = MAX_SETS,
     private val grace: Duration = GRACE,
 ) {
@@ -50,25 +51,30 @@ internal class JenkinsStubSets(
     }
 
     /**
-     * The published directory for [files]: the existing one for its key, or a new one written and renamed into
-     * place. If another writer publishes the same key first, its directory is used.
+     * The published directory for [files]: the existing complete one for its key, or a new one written and renamed
+     * into place. If another writer publishes the same key first, its directory is used. A directory under the
+     * key's name without the completion marker (an interrupted delete) counts as absent: it is moved aside and
+     * replaced.
      *
-     * @throws IOException when the set cannot be written and no directory for its key exists
+     * @throws IOException when the set cannot be written and no complete directory for its key exists
      */
     fun publish(files: Map<String, String>): Path {
         val key = keyOf(files)
         val dir = setsRoot.resolve(key)
-        if (!Files.isDirectory(dir)) {
+        if (!isComplete(dir)) {
             setsRoot.createDirectories()
-            val tmp = setsRoot.resolve(".$key.${UUID.randomUUID()}$TMP_SUFFIX")
+            if (Files.exists(dir)) retire(dir) ?: throw IOException("Cannot move incomplete stub set $dir aside")
+            val tmp = temporaryFor(key)
             try {
                 generator.writeSet(files, tmp)
-                moveDirectory(tmp, dir)
+                // Written last: a set under its final name is complete exactly when it has the marker.
+                Files.writeString(tmp.resolve(COMPLETE_MARKER), key)
+                fileOps.moveDirectory(tmp, dir)
             } catch (e: IOException) {
                 // Lost the race to another writer of the same key: its complete directory serves just as well.
-                if (!Files.isDirectory(dir)) throw e
+                if (!isComplete(dir)) throw e
             } finally {
-                deleteRecursively(tmp)
+                deleteQuietly(tmp)
             }
         }
         touch(dir)
@@ -97,23 +103,51 @@ internal class JenkinsStubSets(
      */
     fun evict(liveKeys: Set<String>) {
         if (!Files.isDirectory(setsRoot)) return
-        val cutoff = clock().minus(grace)
-        val entries = try {
-            Files.list(setsRoot).use { stream -> stream.filter { Files.isDirectory(it) }.toList() }
+        try {
+            evictUnchecked(liveKeys)
         } catch (e: IOException) {
-            logger.debug(e) { "Cannot list Jenkins stub sets in $setsRoot" }
-            return
+            logger.debug(e) { "Cannot evict Jenkins stub sets in $setsRoot" }
+        } catch (e: UncheckedIOException) {
+            // Another process evicting the same directory makes Files.list fail mid-stream.
+            logger.debug(e) { "Cannot evict Jenkins stub sets in $setsRoot" }
         }
-        val (temporary, sets) = entries.partition { it.name.startsWith(".") && it.name.endsWith(TMP_SUFFIX) }
-        temporary.filter { lastUsed(it) < cutoff }.forEach(::deleteRecursively)
+    }
+
+    private fun evictUnchecked(liveKeys: Set<String>) {
+        val cutoff = clock().minus(grace)
+        val entries = Files.list(setsRoot).use { stream -> stream.filter { Files.isDirectory(it) }.toList() }
+        val (temporary, sets) = entries.partition(::isTemporary)
+        temporary.filter { lastUsed(it) < cutoff }.forEach(::deleteQuietly)
 
         val excess = sets.size - maxSets
         if (excess <= 0) return
         sets.sortedBy(::lastUsed)
             .filter { it.name !in liveKeys && lastUsed(it) < cutoff }
             .take(excess)
-            .forEach(::deleteRecursively)
+            // Renamed aside first, so a failed or interrupted delete never leaves a partial set under its name.
+            .forEach { set -> retire(set)?.let(::deleteQuietly) }
     }
+
+    /**
+     * Moves [dir] to a temporary name (which [evict] later removes if this delete fails), or null when it
+     * cannot be moved; a set still in use on Windows then stays under its name, complete.
+     */
+    private fun retire(dir: Path): Path? {
+        val aside = temporaryFor(dir.name)
+        return try {
+            fileOps.moveDirectory(dir, aside)
+            aside
+        } catch (e: IOException) {
+            logger.debug(e) { "Cannot move $dir aside; a later eviction retries" }
+            null
+        }
+    }
+
+    private fun temporaryFor(key: String): Path = setsRoot.resolve(".$key.${UUID.randomUUID()}$TMP_SUFFIX")
+
+    private fun isTemporary(dir: Path) = dir.name.startsWith(".") && dir.name.endsWith(TMP_SUFFIX)
+
+    private fun isComplete(dir: Path) = Files.isRegularFile(dir.resolve(COMPLETE_MARKER))
 
     private fun lastUsed(dir: Path): Instant = try {
         Files.getLastModifiedTime(dir).toInstant()
@@ -130,11 +164,13 @@ internal class JenkinsStubSets(
         }
     }
 
-    private fun deleteRecursively(dir: Path) {
+    private fun deleteQuietly(dir: Path) {
         if (!Files.exists(dir)) return
         try {
-            Files.walk(dir).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
+            fileOps.deleteTree(dir)
         } catch (e: IOException) {
+            logger.debug(e) { "Cannot delete $dir yet; a later eviction retries" }
+        } catch (e: UncheckedIOException) {
             logger.debug(e) { "Cannot delete $dir yet; a later eviction retries" }
         }
     }
@@ -150,7 +186,21 @@ internal class JenkinsStubSets(
         private const val GENERATOR_VERSION = "jenkins-stubs/1"
         private const val KEY_HEX_LENGTH = 16
         internal const val TMP_SUFFIX = ".tmp"
+
+        /** Written last into a set before it is renamed into place; a set without it is incomplete. */
+        internal const val COMPLETE_MARKER = ".complete"
     }
+}
+
+/** The directory operations [JenkinsStubSets] uses (test seam): one-step rename and recursive delete. */
+internal class StubSetFileOps(
+    val moveDirectory: (Path, Path) -> Unit = { from, to -> moveDirectoryAtomically(from, to) },
+    val deleteTree: (Path) -> Unit = ::deleteTreeBottomUp,
+)
+
+/** Deletes [dir] and everything under it, children first. */
+internal fun deleteTreeBottomUp(dir: Path) {
+    Files.walk(dir).use { paths -> paths.sorted(Comparator.reverseOrder()).forEach(Files::deleteIfExists) }
 }
 
 /**

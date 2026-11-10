@@ -36,8 +36,20 @@ class JenkinsStubSetsTest {
         file.writeText(content)
     }
 
-    private fun sets(moveDirectory: (Path, Path) -> Unit = { from, to -> moveDirectoryAtomically(from, to) }) =
-        JenkinsStubSets(setsRoot, generator, clock = { now }, moveDirectory = moveDirectory)
+    private fun sets(
+        moveDirectory: (Path, Path) -> Unit = { from, to -> moveDirectoryAtomically(from, to) },
+        deleteTree: (Path) -> Unit = ::deleteTreeBottomUp,
+    ) = JenkinsStubSets(setsRoot, generator, clock = { now }, fileOps = StubSetFileOps(moveDirectory, deleteTree))
+
+    private fun isComplete(dir: Path) = Files.isRegularFile(dir.resolve(JenkinsStubSets.COMPLETE_MARKER))
+
+    /** Publishes [count] sets, each used one minute after the previous, all longer ago than the grace period. */
+    private fun publishOldSets(count: Int): List<String> = (0 until count).map { i ->
+        now = now.plus(Duration.ofMinutes(1))
+        sets().publish(files("s$i")).name
+    }.also { now = now.plus(JenkinsStubSets.GRACE).plus(Duration.ofMinutes(count.toLong())) }
+
+    private fun finalNamedSets() = Files.list(setsRoot).use { s -> s.filter { !it.name.startsWith(".") }.toList() }
 
     private fun files(vararg steps: String) = mapOf(
         "org.example.CpsScript" to
@@ -99,10 +111,12 @@ class JenkinsStubSetsTest {
     @Test
     fun `a writer that loses the rename race uses the winner's directory`() {
         val winner = sets()
-        val loser = sets { from, to ->
-            winner.publish(files("aStep")) // another writer publishes the same key first
-            moveDirectoryAtomically(from, to)
-        }
+        val loser = sets(
+            moveDirectory = { from, to ->
+                winner.publish(files("aStep")) // another writer publishes the same key first
+                moveDirectoryAtomically(from, to)
+            },
+        )
 
         val dir = loser.publish(files("aStep"))
 
@@ -112,9 +126,11 @@ class JenkinsStubSetsTest {
 
     @Test
     fun `without an atomic rename the set is still published by a plain move`() {
-        val dir = sets { from, to ->
-            moveDirectoryAtomically(from, to) { _, _ -> throw AtomicMoveNotSupportedException(null, null, "test") }
-        }.publish(files("aStep"))
+        val dir = sets(
+            moveDirectory = { from, to ->
+                moveDirectoryAtomically(from, to) { _, _ -> throw AtomicMoveNotSupportedException(null, null, "test") }
+            },
+        ).publish(files("aStep"))
 
         assertTrue("aStep" in cpsScript(dir))
         assertEquals(emptyList(), temporaryDirs())
@@ -155,6 +171,50 @@ class JenkinsStubSetsTest {
         assertTrue(keys.takeLast(2).all { it in kept }, "recently used sets survive the bound")
         assertEquals(JenkinsStubSets.MAX_SETS, kept.size)
         assertFalse(keys[1] in kept, "the least recently used set beyond the bound goes")
+    }
+
+    @Test
+    fun `a set without its completion marker is regenerated`() {
+        val key = sets().keyOf(files("aStep"))
+        val partial = setsRoot.resolve(key).resolve("org/example").createDirectories()
+        partial.resolve("CpsScript.groovy").writeText("class CpsScript {") // an interrupted delete left this
+
+        val dir = sets().publish(files("aStep"))
+
+        assertEquals(setsRoot.resolve(key), dir)
+        assertTrue(isComplete(dir))
+        assertEquals(files("aStep").getValue("org.example.CpsScript"), cpsScript(dir))
+        assertTrue(Files.isRegularFile(dir.resolve("org/example/Fixed.groovy")))
+    }
+
+    @Test
+    fun `an eviction delete that fails partway leaves no partial set under its name`() {
+        val keys = publishOldSets(JenkinsStubSets.MAX_SETS + 3)
+        val halfDelete: (Path) -> Unit = { dir ->
+            Files.walk(dir).use { paths -> paths.filter { Files.isRegularFile(it) }.findFirst() }
+                .ifPresent { Files.delete(it) }
+            throw java.nio.file.AccessDeniedException(dir.toString()) // a file held open on Windows
+        }
+
+        sets(deleteTree = halfDelete).evict(emptySet())
+
+        val remaining = finalNamedSets()
+        assertEquals(JenkinsStubSets.MAX_SETS, remaining.size)
+        assertTrue(remaining.all(::isComplete), "every set under a final name is complete: $remaining")
+        assertFalse(Files.exists(setsRoot.resolve(keys[0])), "the evicted set left its final name first")
+        // Its half-deleted remains are a temporary directory, removed by a later eviction.
+        sets().evict(emptySet())
+        assertEquals(emptyList(), temporaryDirs())
+    }
+
+    @Test
+    fun `a failing directory walk during eviction does not escape`() {
+        publishOldSets(JenkinsStubSets.MAX_SETS + 1)
+        val failingWalk: (Path) -> Unit = { throw java.io.UncheckedIOException(java.io.IOException("gone")) }
+
+        sets(deleteTree = failingWalk).evict(emptySet()) // another process evicted the same directory
+
+        assertTrue(finalNamedSets().all(::isComplete))
     }
 
     @Test

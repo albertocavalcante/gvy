@@ -24,7 +24,7 @@ import com.github.albertocavalcante.gvy.jenkins.scanning.JenkinsClasspathScanner
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubGenerator
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubSets
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
-import com.github.albertocavalcante.gvy.jenkins.stubs.moveDirectoryAtomically
+import com.github.albertocavalcante.gvy.jenkins.stubs.StubSetFileOps
 import io.github.oshai.kotlinlogging.KLogger
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
@@ -49,7 +49,7 @@ internal class StubHooks(
     val defaultCacheRoot: () -> Path = JenkinsStubsLocation::defaultCacheRoot,
     val warn: ((String) -> Unit)? = null,
     val clock: () -> Instant = Instant::now,
-    val moveDirectory: (Path, Path) -> Unit = { from, to -> moveDirectoryAtomically(from, to) },
+    val fileOps: StubSetFileOps = StubSetFileOps(),
 )
 
 /**
@@ -124,11 +124,24 @@ class JenkinsContext internal constructor(
         val scanKey = classpath.toList()
         val scanned = scanClasspath(scanKey)
         warnAboutLegacyStubsDir()
-        classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, ::shouldGenerateStubs) { stubsDir ->
+        val pluginStubs = PluginStubs(
             // A failed scan has no library steps of its own: bundled and GDSL only, never another file's scan.
-            val own = scanned?.let { withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata) }
-            publishStubSet(stubsDir, own, scanKey)
-        }
+            publish = { stubsDir ->
+                publishStubSet(
+                    stubsDir,
+                    scanned?.let {
+                        withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata)
+                    },
+                    scanKey,
+                )
+            },
+            // Removes sets no cached classpath uses, keeping the one just published (#1367).
+            evict = { stubsDir, published ->
+                val live = scans.get().byClasspath.values.mapNotNullTo(mutableSetOf()) { it.stubKey }
+                stubSets(stubsDir).evict(live + setOfNotNull(published?.fileName?.toString()))
+            },
+        )
+        classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, ::shouldGenerateStubs, pluginStubs)
 
         return ScopedClasspath(classpath, scanKey)
     }
@@ -151,22 +164,20 @@ class JenkinsContext internal constructor(
     /**
      * Publishes the plugin stub set for [own] (this classpath's metadata, or null after a failed scan) and
      * returns its directory for the classpath. Falls back to the bundled + GDSL set, never to another file's
-     * set; null when no set can be written. Then evicts sets no live classpath uses (#1367).
+     * set; null when no set can be written. Records the key so eviction keeps it (#1367).
      */
     private fun publishStubSet(stubsDir: Path, own: MergedJenkinsMetadata?, scanKey: List<Path>): Path? {
-        val sets = JenkinsStubSets(
-            stubsDir.resolve(STUB_SETS_DIR),
-            stubHooks.generator,
-            stubHooks.clock,
-            stubHooks.moveDirectory,
-        )
+        val sets = stubSets(stubsDir)
         val unscanned = { stubHooks.generator.render(getAllMetadata(null)) }
         val dir = own?.let { sets.publishFirst({ stubHooks.generator.render(it) }, unscanned) }
             ?: sets.publishFirst(unscanned)
-        val cache = scans.get().byClasspath
-        cache[scanKey]?.stubKey = dir?.fileName?.toString()
-        sets.evict(cache.values.mapNotNullTo(mutableSetOf()) { it.stubKey } + setOfNotNull(dir?.fileName?.toString()))
+        scans.get().byClasspath[scanKey]?.stubKey = dir?.fileName?.toString()
         return dir
+    }
+
+    /** The plugin stub sets under a workspace stubs directory (#1367). */
+    private val stubSets: (Path) -> JenkinsStubSets = { stubsDir ->
+        JenkinsStubSets(stubsDir.resolve(STUB_SETS_DIR), stubHooks.generator, stubHooks.clock, stubHooks.fileOps)
     }
 
     private fun shouldGenerateStubs(classpath: List<Path>): Boolean {
@@ -630,7 +641,7 @@ private fun MutableList<Path>.tryGenerateStubs(
     stubGenerator: JenkinsStubGenerator,
     stubsDirectory: () -> Path,
     shouldGenerateStubs: (List<Path>) -> Boolean,
-    publishPluginStubs: (Path) -> Path?,
+    pluginStubs: PluginStubs,
 ) {
     tryGenerateLibraryAnnotationStub(logger, stubGenerator, stubsDirectory)
 
@@ -638,7 +649,12 @@ private fun MutableList<Path>.tryGenerateStubs(
         if (!shouldGenerateStubs(this)) return@runCatching
         val stubsDir = stubsDirectory()
         logger.info { "Publishing Jenkins plugin stubs under $stubsDir" }
-        publishPluginStubs(stubsDir)?.let(::add)
+        val published = pluginStubs.publish(stubsDir)?.also(::add)
+        // Eviction is housekeeping: its failure must not cost this compile the set it just published.
+        runCatching { pluginStubs.evict(stubsDir, published) }.onFailure { throwable ->
+            if (throwable is Error) throw throwable
+            logger.debug(throwable) { "Failed to evict Jenkins stub sets under $stubsDir" }
+        }
     }.onFailure { throwable ->
         if (throwable is Error) throw throwable
         logger.warn(throwable) { "Failed to generate Jenkins stubs" }
@@ -673,6 +689,9 @@ private fun MutableList<Path>.tryGenerateLibraryAnnotationStub(
 
 /** A Jenkinsfile's compile classpath ([entries]) and the key its scanned metadata is kept under. */
 internal class ScopedClasspath(val entries: List<Path>, val scanKey: List<Path>)
+
+/** Publishes a classpath's plugin stub set (returning its directory) and evicts unused sets under a stubs dir. */
+private class PluginStubs(val publish: (Path) -> Path?, val evict: (Path, Path?) -> Unit)
 
 /** Subdirectory of the stubs directory holding the content-keyed plugin stub sets (#1367). */
 private const val STUB_SETS_DIR = "sets"

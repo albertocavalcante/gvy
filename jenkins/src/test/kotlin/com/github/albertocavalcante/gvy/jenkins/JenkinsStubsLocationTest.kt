@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.jenkins
 
+import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubSets
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -67,6 +68,7 @@ class JenkinsStubsLocationTest {
 
         assertEquals(first, second)
         val files = Files.walk(second).use { paths -> paths.filter(Files::isRegularFile).toList() }
+            .filterNot { it.fileName.toString() == JenkinsStubSets.COMPLETE_MARKER }
         assertTrue(files.isNotEmpty(), "Expected generated stubs in $second")
         assertTrue(files.all { it.fileName.toString().endsWith(".groovy") }, "Leftover non-stub files: $files")
     }
