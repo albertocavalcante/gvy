@@ -1,5 +1,9 @@
 package com.github.albertocavalcante.gvy.jenkins.metadata.declarative
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -53,5 +57,39 @@ class DeclarativePipelineSchemaTest {
     @Test
     fun `unknown block returns empty categories`() {
         assertTrue(schema.getCompletionCategories("not-a-block").isEmpty())
+    }
+
+    @Test
+    fun `a stage can hold sequential stages`() {
+        assertTrue("stages" in schema.getInnerInstructions("stage"), "stage { stages { stage('a') {} } } is valid")
+    }
+
+    @Test
+    fun `a matrix holds stages, not a bare stage`() {
+        val instructions = schema.getInnerInstructions("matrix")
+
+        assertTrue("stages" in instructions, "matrix { axes {} stages { stage('x') {} } }")
+        assertTrue("stage" !in instructions, "a stage inside matrix sits under stages")
+        assertTrue("axes" in instructions)
+    }
+
+    @Test
+    fun `a matrix offers no steps, only its sections and directives`() {
+        assertTrue(DeclarativePipelineSchema.CompletionCategory.STEP !in schema.getCompletionCategories("matrix"))
+        val instructions = schema.getInnerInstructions("matrix")
+        listOf("axes", "excludes", "stages", "agent", "environment", "options", "post", "tools", "when").forEach {
+            assertTrue(it in instructions, "matrix accepts $it: $instructions")
+        }
+    }
+
+    @Test
+    fun `a stage is allowed in stages and parallel, not directly in matrix`() {
+        val resource = requireNotNull(javaClass.classLoader.getResource("schemas/declarative-pipeline-schema.json"))
+        val stage = Json.parseToJsonElement(resource.readText()).jsonObject.getValue("sections").jsonArray
+            .map { it.jsonObject }
+            .single { it.getValue("name").jsonPrimitive.content == "stage" }
+        val allowedIn = stage.getValue("allowedIn").jsonArray.map { it.jsonPrimitive.content }
+
+        assertEquals(listOf("stages", "parallel"), allowedIn, "a stage inside matrix sits under its stages")
     }
 }

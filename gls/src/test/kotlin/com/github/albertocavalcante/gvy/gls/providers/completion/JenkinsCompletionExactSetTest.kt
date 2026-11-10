@@ -140,9 +140,20 @@ class JenkinsCompletionExactSetTest {
 
         assertNoDuplicateLabels(items)
         assertEquals(
-            setOf("agent", "environment", "matrix", "options", "parallel", "post", "steps", "tools", "when"),
+            setOf("agent", "environment", "matrix", "options", "parallel", "post", "stages", "steps", "tools", "when"),
             items.labels(),
         )
+    }
+
+    @Test
+    fun `matrix block offers stages and axes, not a bare stage`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('M') {\n            matrix {\n" +
+            "                \n            }\n        }\n    }\n}"
+        val labels = completeAt(code, line = 5, character = 16).labels()
+
+        assertTrue("stages" in labels && "axes" in labels, "matrix: $labels")
+        assertTrue("stage" !in labels, "a stage inside matrix sits under stages: $labels")
+        assertTrue("sh" !in labels && "echo" !in labels, "a matrix body is not a steps block: $labels")
     }
 
     @Test
