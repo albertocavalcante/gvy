@@ -37,24 +37,35 @@ class TypeDisplayTest {
     @Test
     fun `a synthetic generated class keeps its binary name`() {
         val script = ClassNode("Script", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
-        val closure = InnerClassNode(script, "Script\$_run_closure1", Modifier.PUBLIC or SYNTHETIC, ClassHelper.OBJECT_TYPE)
+        val closure =
+            InnerClassNode(script, "Script\$_run_closure1", Modifier.PUBLIC or SYNTHETIC, ClassHelper.OBJECT_TYPE)
 
         assertEquals("Script\$_run_closure1", closure.displayName())
+    }
+
+    @Test
+    fun `a closure class keeps its binary name without the synthetic flag`() {
+        val script = ClassNode("Script", Modifier.PUBLIC, ClassHelper.OBJECT_TYPE)
+        val closure = InnerClassNode(script, "Script\$_run_closure2", Modifier.PUBLIC, ClassHelper.CLOSURE_TYPE)
+
+        assertEquals("Script\$_run_closure2", closure.displayName())
     }
 
     @Test
     fun `nodes without structure fall back to the name rule`() {
         // Decompiled or reflected nodes carry only the binary name.
         assertEquals("Outer\$1", ClassNode("a.Outer\$1", 0, ClassHelper.OBJECT_TYPE).displayName())
-        assertEquals("Script\$_run_closure1", ClassNode("Script\$_run_closure1", 0, ClassHelper.OBJECT_TYPE).displayName())
+        assertEquals("Script\$_run_closure1", ClassNode("Script\$_run_closure1", 0, OBJECT).displayName())
         assertEquals("Outer.Inner\$2", ClassNode("a.Outer\$Inner\$2", 0, ClassHelper.OBJECT_TYPE).displayName())
         assertEquals("Outer.Inner", ClassNode("a.Outer\$Inner", 0, ClassHelper.OBJECT_TYPE).displayName())
     }
 
     @Test
     fun `a user-declared nested class named with an underscore keeps the source form`() {
-        val source = "package a\nclass Outer {\n  static class _Helper {}\n  Runnable r = new Runnable() { void run() {} }\n}\n"
-        val module = checkNotNull(GroovyParserFacade().parse(ParseRequest(URI.create("file:///Outer.groovy"), source)).ast)
+        val source = "package a\nclass Outer {\n  static class _Helper {}\n" +
+            "  Runnable r = new Runnable() { void run() {} }\n}\n"
+        val request = ParseRequest(URI.create("file:///Outer.groovy"), source)
+        val module = checkNotNull(GroovyParserFacade().parse(request).ast)
 
         val names = module.classes.associate { it.name to it.displayName() }
 
@@ -64,5 +75,6 @@ class TypeDisplayTest {
 
     private companion object {
         const val SYNTHETIC = 0x1000
+        val OBJECT: ClassNode = ClassHelper.OBJECT_TYPE
     }
 }
