@@ -12,7 +12,6 @@ dependencies {
     implementation(libs.kotlin.logging)
     implementation(libs.kotlin.serialization.json)
     implementation(project(":parser:core"))
-    implementation(project(":parser:api"))
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

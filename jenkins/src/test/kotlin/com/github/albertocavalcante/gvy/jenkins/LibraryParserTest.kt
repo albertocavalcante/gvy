@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.jenkins
 
+import groovy.grape.Grape
+import groovy.grape.GrapeEngine
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -367,18 +369,41 @@ class LibraryParserEdgeCasesTest {
     }
 
     @Test
-    fun shouldStillParseLibrariesWhenGrabCannotResolveIvy() {
-        // @Grab needs Ivy, which is not shipped; analysis must not run the Grab transform at all
-        val jenkinsfile = """
-            @Grab('org.apache.commons:commons-lang3:3.14.0')
-            @Library('pipeline-library')
-            import com.example.Pipeline
+    fun shouldNeverRunTheGrabTransformWhileParsing() {
+        // The Grab transform resolves dependencies through Grape.grab; a recording engine proves it is not called.
+        val calls = mutableListOf<String>()
+        val recording = java.lang.reflect.Proxy.newProxyInstance(
+            GrapeEngine::class.java.classLoader,
+            arrayOf(GrapeEngine::class.java),
+        ) { _, method, _ ->
+            calls.add(method.name)
+            null
+        } as GrapeEngine
+        // Grape has no public setter; swap the static engine through its field and restore it afterwards
+        val field = Grape::class.java.getDeclaredField("instance").apply { isAccessible = true }
+        val original = field.get(null)
+        field.set(null, recording)
+        try {
+            val jenkinsfile = """
+                @Grab('org.apache.commons:commons-lang3:3.14.0')
+                @Library('pipeline-library')
+                import com.example.Pipeline
 
-            node { echo 'hello' }
-        """.trimIndent()
+                @Grab(group='commons-io', module='commons-io', version='2.15.0')
+                class Helper {
+                    @Grab('org.slf4j:slf4j-api:2.0.9')
+                    def log() {}
+                }
 
-        val libraries = LibraryParser().parseLibraries(jenkinsfile)
+                node { echo 'hello' }
+            """.trimIndent()
 
-        assertEquals(listOf("pipeline-library"), libraries.map { it.name })
+            val libraries = LibraryParser().parseLibraries(jenkinsfile)
+
+            assertEquals(listOf("pipeline-library"), libraries.map { it.name })
+            assertTrue(calls.none { it == "grab" }, "Grape.grab was called while parsing: $calls")
+        } finally {
+            field.set(null, original)
+        }
     }
 }
