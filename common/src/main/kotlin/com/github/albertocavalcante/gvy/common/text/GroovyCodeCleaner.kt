@@ -176,10 +176,13 @@ object GroovyCodeCleaner {
     /**
      * End of a `"..."` GString starting after its quote. It ends at an unescaped newline like `'...'`, except inside
      * a `${...}` interpolation, whose closures may span lines (`"${ items.collect {\n it } }"`): there braces are
-     * counted until the interpolation closes.
+     * counted until the interpolation closes. That multi-line reading is kept only when the closing `"` follows
+     * before another line ends; otherwise (a half-typed `"${env.X`) the string ends at its first newline, so it
+     * cannot swallow the braces of the lines after it.
      */
     private fun gStringEnd(code: String, from: Int): Int {
         var depth = 0
+        var firstNewline: Int? = null
         var j = from
         while (j < code.length) {
             val c = code[j]
@@ -190,15 +193,19 @@ object GroovyCodeCleaner {
                     j += 2
                 }
                 depth > 0 -> {
-                    if (c == '{') depth++ else if (c == '}') depth--
+                    when (c) {
+                        '{' -> depth++
+                        '}' -> depth--
+                        '\n' -> if (firstNewline == null) firstNewline = j
+                    }
                     j++
                 }
                 c == '"' -> return j + 1
-                c == '\n' -> return j
+                c == '\n' -> return firstNewline ?: j
                 else -> j++
             }
         }
-        return code.length
+        return firstNewline ?: code.length
     }
 
     /** Characters after which a `/` starts a slashy string; `>` covers a closure's `->`. */
