@@ -6,6 +6,7 @@ import java.net.URI
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.io.path.exists
+import kotlin.io.path.isRegularFile
 import kotlin.io.path.readText
 
 /**
@@ -15,6 +16,8 @@ data class RulesetConfiguration(
     val rulesetContent: String,
     val propertiesFile: String? = null,
     val source: String = "unknown",
+    /** Workspace ruleset files that exist but were deliberately not loaded (see [HierarchicalRulesetResolver]). */
+    val ignoredWorkspaceRulesets: List<String> = emptyList(),
 )
 
 /**
@@ -107,6 +110,7 @@ class HierarchicalRulesetResolver(
             rulesetContent = rulesetContent.content,
             propertiesFile = propertiesFile,
             source = rulesetContent.source,
+            ignoredWorkspaceRulesets = context.root?.let(::findWorkspaceRulesets).orEmpty(),
         ).also {
             logger.info { "Resolved ruleset: source=${it.source}, properties=${it.propertiesFile}" }
         }
@@ -116,13 +120,7 @@ class HierarchicalRulesetResolver(
      * Resolves the ruleset content from various sources.
      */
     private fun resolveRulesetContent(context: WorkspaceContext): ResolvedRuleset {
-        // 1. Try explicit workspace configuration files
-        if (context.root != null) {
-            val workspaceRuleset = loadFromWorkspaceFiles(context.root!!)
-            if (workspaceRuleset != null) {
-                return workspaceRuleset
-            }
-        }
+        // 1. Workspace ruleset files are intentionally not loaded (see findWorkspaceRulesets)
 
         // 2. Try server configuration override (future enhancement)
         // val serverOverride = loadFromServerConfig(context.serverConfig)
@@ -204,38 +202,18 @@ class HierarchicalRulesetResolver(
     }
 
     /**
-     * Attempts to load ruleset from workspace configuration files.
+     * Workspace Groovy-DSL ruleset files that are present. They are never loaded: CodeNarc evaluates such a
+     * file as a Groovy script (including `evaluate`, `ruleset('file:x.groovy')` and `rule('file:x.groovy')`,
+     * which load further Groovy), so a ruleset that arrives with an untrusted workspace would run arbitrary
+     * code inside the server. Allow-listing the DSL cannot be made safe; interpreting a validated AST into a
+     * CodeNarc RuleSet without ever evaluating it is tracked as a follow-up.
      */
-    private fun loadFromWorkspaceFiles(workspaceRoot: Path): ResolvedRuleset? {
-        for (configFileName in WORKSPACE_CONFIG_FILES) {
-            val configFile = workspaceRoot.resolve(configFileName)
-            val ruleset = tryLoadRulesetFromFile(configFile, configFileName)
-            if (ruleset != null) return ruleset
-        }
-        return null
-    }
-
-    private fun tryLoadRulesetFromFile(configFile: Path, configFileName: String): ResolvedRuleset? {
-        if (!configFile.exists()) return null
-
-        return try {
-            val content = configFile.readText()
-            val rejection = if (content.isNotEmpty()) WorkspaceRulesetValidator.rejection(content) else null
-            if (rejection != null) {
-                // CodeNarc evaluates DSL rulesets as Groovy; never run code that came with the workspace
-                logger.warn { "Ignoring workspace CodeNarc ruleset $configFileName: $rejection" }
-                null
-            } else if (content.isNotEmpty()) {
-                logger.info { "Loaded CodeNarc ruleset from workspace file: $configFileName" }
-                ResolvedRuleset(content, "workspace:$configFileName")
-            } else {
-                null
+    private fun findWorkspaceRulesets(workspaceRoot: Path): List<String> =
+        WORKSPACE_CONFIG_FILES.filter { workspaceRoot.resolve(it).isRegularFile() }.also { ignored ->
+            ignored.forEach {
+                logger.warn { "Ignoring workspace CodeNarc ruleset $it: workspace rulesets are not evaluated" }
             }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to read CodeNarc configuration from: $configFileName" }
-            null
         }
-    }
 
     /**
      * Loads the appropriate default ruleset based on project type.

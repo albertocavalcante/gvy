@@ -73,4 +73,71 @@ class WorkspaceRulesetExecutionTest {
 
         assertFalse(marker.exists(), "the workspace ruleset executed code")
     }
+
+    @Test
+    fun `evaluate through resolveStrategy cannot run code`() {
+        val (marker, path) = marker("evaluate")
+
+        analyzeWith(
+            ".codenarc",
+            "ruleset { resolveStrategy = 2\n evaluate 'new File(\"$path\").text = \"x\"' }",
+        )
+
+        assertFalse(marker.exists(), "evaluate reached Script.evaluate")
+    }
+
+    @Test
+    fun `nested evaluate cannot run code`() {
+        val (marker, path) = marker("nested-evaluate")
+
+        analyzeWith(
+            "codenarc.groovy",
+            "ruleset { TrailingWhitespace { resolveStrategy = 2\n evaluate 'new File(\"$path\").text = \"x\"' } }",
+        )
+
+        assertFalse(marker.exists(), "nested evaluate executed code")
+    }
+
+    @Test
+    fun `ruleset and rule references to groovy files cannot run code`() {
+        val (marker, path) = marker("file-ref")
+        val evil = tempDir.resolve("evil.groovy")
+        Files.writeString(evil, "new File('$path').text = 'x'\nruleset { TrailingWhitespace }")
+        val uri = evil.toUri().toString()
+
+        analyzeWith(".codenarc", "ruleset { ruleset('$uri') }")
+        assertFalse(marker.exists(), "ruleset('file:...groovy') loaded Groovy")
+
+        analyzeWith("config/codenarc/rules.groovy", "ruleset { rule('$uri') }")
+        assertFalse(marker.exists(), "rule('file:...groovy') loaded Groovy")
+
+        analyzeWith("codenarc.groovy", "ruleset { ruleset('${evil.toString().replace("\\", "/")}') }")
+        assertFalse(marker.exists(), "ruleset with an absolute path loaded Groovy")
+    }
+
+    @Test
+    fun `an XML ruleset with a rule-script cannot run code`() {
+        val (marker, path) = marker("rule-script")
+        val script = tempDir.resolve("rule.groovy")
+        Files.writeString(script, "new File('$path').text = 'x'")
+        val xml = """
+            <ruleset xmlns="http://codenarc.org/ruleset/1.0">
+              <rule-script path="${script.toUri()}"/>
+            </ruleset>
+        """.trimIndent()
+
+        analyzeWith(".codenarc", xml)
+
+        assertFalse(marker.exists(), "rule-script executed code")
+    }
+
+    @Test
+    fun `an ignored workspace ruleset is reported to the resolver's caller`() {
+        val workspace = tempDir.resolve("ws2").also { Files.createDirectories(it) }
+        Files.writeString(workspace.resolve(".codenarc"), "ruleset { TrailingWhitespace }")
+
+        val resolved = HierarchicalRulesetResolver().resolve(context(workspace))
+
+        kotlin.test.assertEquals(listOf(".codenarc"), resolved.ignoredWorkspaceRulesets)
+    }
 }
