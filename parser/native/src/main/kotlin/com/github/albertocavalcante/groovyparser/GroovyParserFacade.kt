@@ -18,6 +18,8 @@ import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.ClassNodeResolver
+import org.codehaus.groovy.control.ClassNodeResolver.LookupResult
 import org.codehaus.groovy.control.CompilationFailedException
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
@@ -171,7 +173,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // here. Classes that merely cannot be resolved never get here: they are stubbed above. Compile
         // again without the sources that failed. A failure that cannot be attributed to
         // a source drops the open buffers (most likely mid-edit) and otherwise falls through.
-        if (request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty()) {
+        if (request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty() ||
+            request.workspaceClassLocator != null
+        ) {
             val failing = failingOtherSources(request, result)
             val newlyFailing = failing.workspace - request.excludedSources
             if (failing.open.isNotEmpty() || newlyFailing.isNotEmpty()) {
@@ -193,7 +197,8 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         }
 
         val final = retryAtEarlierPhaseIfNeeded(request, result)
-        return final.copy(outcome = final.outcome.copy(excludedSources = excluded))
+        val unlocated = LocatingClassNodeResolver.unlocatedBy(final.compilationUnit)
+        return final.copy(outcome = final.outcome.copy(excludedSources = excluded, unlocatedClasses = unlocated))
     }
 
     /**
@@ -219,6 +224,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val errors = result.compilationUnit.errorCollector.errors.orEmpty()
         val openByKey = request.openSources.keys.associateBy { fileKey(it) }
         val workspaceByKey = request.workspaceSources.associateBy { it.toAbsolutePath().normalize() }
+        val locatedPaths = LocatingClassNodeResolver.addedBy(result.compilationUnit)
         val open = mutableSetOf<URI>()
         val workspace = mutableSetOf<Path>()
         val reasons = linkedMapOf<String, String>()
@@ -233,7 +239,10 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                     val key = locatorPath(locator)
                     // A buffer and its disk copy are one source: both leave the unit, under one reason.
                     val buffer = openByKey[key]?.also { open += it }
-                    val disk = workspaceByKey[key]?.also { workspace.add(it) }
+                    // A file the class locator added (#1425) fails the unit like a workspace source does; a file
+                    // Groovy found by its name, or a stub, is not the locator's and is left to the other rules.
+                    val located = (key as? Path)?.takeIf { buffer == null && key in locatedPaths }
+                    val disk = (workspaceByKey[key] ?: located)?.also { workspace.add(it) }
                     val source = buffer?.toString() ?: disk?.toString()
                     if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause?.originalMessage ?: ""))
                 }
@@ -385,6 +394,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         compilationUnit.addSource(sourceUnit)
 
         addWorkspaceSources(compilationUnit, request, config, classLoader)
+        LocatingClassNodeResolver.install(compilationUnit, request)
         stubs?.addTo(compilationUnit, config, classLoader)
 
         // Groovy's compile(phase) restarts from INITIALIZATION on every call, so it cannot be driven phase by
@@ -644,5 +654,85 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
     } catch (e: CompilationFailedException) {
         logger.debug { "Failed to extract AST: ${e.message}" }
         null
+    }
+}
+
+/**
+ * Groovy's class lookup, then the workspace class index (#1425): a name Groovy cannot find on the classpath or as
+ * a file named after it is looked up by the exact fully qualified name of its top-level class (the part before
+ * any `$`, so `Outer2$Inner` asks for `Outer2`), and the one file declaring it is added to the unit, from its open
+ * buffer when it has one. Groovy then compiles it and resolves the name from it, as it does for a file it finds by
+ * name. Excluded sources are never added, so a file that failed the unit stays out on the recompile.
+ *
+ * Each file is answered once. Groovy restarts resolution when an answer is a source and expects that source to be
+ * queued; once the file is in the unit, its own members probe names such as `Outer2$Specification`, and answering
+ * those with the file again would restart with nothing queued. Added files resolve through this resolver too, as
+ * a hierarchy needs, so at most [MAX_LOCATED_SOURCES] files are added per compile; a name past the cap is left
+ * unresolved and recorded, so [MissingClassStubs] stubs it and [ParseOutcome.unlocatedClasses] reports it.
+ */
+internal class LocatingClassNodeResolver(
+    private val locator: (String) -> List<Path>,
+    excludedSources: Set<Path>,
+    private val buffers: Map<Path, Pair<URI, String>>,
+) : ClassNodeResolver() {
+    private val excluded = excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
+    private val added = LinkedHashSet<Path>()
+    private val unlocated = LinkedHashSet<String>()
+
+    override fun resolveName(name: String, compilationUnit: CompilationUnit): LookupResult? =
+        super.resolveName(name, compilationUnit) ?: located(name, compilationUnit)
+
+    private fun located(name: String, unit: CompilationUnit): LookupResult? {
+        val topLevel = name.substringBefore('$')
+        val path = locator(topLevel).map { it.toAbsolutePath().normalize() }
+            .firstOrNull { it !in excluded && it !in added } ?: return null
+        if (added.size >= MAX_LOCATED_SOURCES) {
+            // Past the cap the class stays unresolved here and is recorded; MissingClassStubs stubs it by this exact
+            // name on its next pass. Answering with a stand-in instead would also answer Groovy's nested-class
+            // probes (`C32$String`) and capture every simple name below the cut.
+            unlocated.add(topLevel)
+            return null
+        }
+        added.add(path)
+        val buffer = buffers[path]
+        val source = if (buffer == null) {
+            unit.addSource(path.toUri().toURL())
+        } else {
+            // Named as addWorkspaceSources names an open buffer, so a failure is attributed to the buffer.
+            val (uri, text) = buffer
+            val config = unit.configuration
+            unit.addSource(
+                SourceUnit(
+                    uri.path ?: uri.toString(),
+                    StringReaderSource(text, config),
+                    config,
+                    unit.classLoader,
+                    unit.errorCollector,
+                ),
+            )
+        }
+        return LookupResult(source, null)
+    }
+
+    companion object {
+        /** Located files a compile may add before the rest of a chain is left unresolved. */
+        const val MAX_LOCATED_SOURCES = 32
+
+        /** Installs the lookup on [unit] when [request] carries a class locator. */
+        fun install(unit: CompilationUnit, request: ParseRequest) {
+            val locator = request.workspaceClassLocator ?: return
+            val buffers = request.openSources.entries.mapNotNull { (uri, text) ->
+                runCatching { Path.of(uri).toAbsolutePath().normalize() to (uri to text) }.getOrNull()
+            }.toMap()
+            unit.classNodeResolver = LocatingClassNodeResolver(locator, request.excludedSources, buffers)
+        }
+
+        /** The files [unit]'s class locator added, so only they are attributed as its failing sources. */
+        fun addedBy(unit: CompilationUnit): Set<Path> =
+            (unit.classNodeResolver as? LocatingClassNodeResolver)?.added.orEmpty()
+
+        /** The names [unit]'s class locator left unresolved at the cap. */
+        fun unlocatedBy(unit: CompilationUnit): List<String> =
+            (unit.classNodeResolver as? LocatingClassNodeResolver)?.unlocated?.toList().orEmpty()
     }
 }

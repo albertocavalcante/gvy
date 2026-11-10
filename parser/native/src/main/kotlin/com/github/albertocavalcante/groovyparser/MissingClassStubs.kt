@@ -52,7 +52,7 @@ internal class MissingClassStubs {
         if (causes.isEmpty()) return false
         val existing = declaredClasses(unit)
         val packages = packagesBySource(unit)
-        var changed = false
+        var changed = stubUnlocated(unit, existing)
         for (cause in causes) {
             changed = (stubUnresolved(cause, ownSource, existing, packages) || correctKind(cause)) || changed
             if (stubs.size >= MAX_STUBS) break
@@ -72,6 +72,18 @@ internal class MissingClassStubs {
             )
             unit.addSource(source)
         }
+    }
+
+    /**
+     * Stubs the classes the workspace class locator left past its cap (#1425). Their names are exact, from the
+     * class index, so unlike a bare name another file failed to resolve they are stubbed wherever they were named:
+     * otherwise the located file naming one would fail the unit and be excluded, then the next, down the chain.
+     */
+    private fun stubUnlocated(unit: CompilationUnit, existing: Set<String>): Boolean {
+        val before = stubs.size
+        LocatingClassNodeResolver.unlocatedBy(unit).filter { it !in existing && it !in stubs }
+            .forEach { if (stubs.size < MAX_STUBS) stubs[it] = Stub(it) }
+        return stubs.size > before
     }
 
     private fun stubUnresolved(

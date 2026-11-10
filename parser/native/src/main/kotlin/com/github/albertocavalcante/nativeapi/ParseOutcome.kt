@@ -27,13 +27,18 @@ data class ParseOutcome(
     val fallbackReason: String? = null,
     /** Fully qualified names of the classes that could not be resolved and were compiled as empty stubs. */
     val stubbedClasses: List<String> = emptyList(),
+    /**
+     * Classes the workspace class locator did not look up because the compile had already added its cap of
+     * located files (#1425): a long hierarchy chain is cut there and the rest stays unresolved.
+     */
+    val unlocatedClasses: List<String> = emptyList(),
 ) {
     /** True when the result lacks the type resolution that was asked for. */
     val typesUnresolved: Boolean get() = achievedPhase < requestedPhase
 
     /** True when anything was given up to produce the result. */
     val isDegraded: Boolean get() = typesUnresolved || fallback != null || excludedSources.isNotEmpty() ||
-        stubbedClasses.isNotEmpty()
+        stubbedClasses.isNotEmpty() || unlocatedClasses.isNotEmpty()
 
     companion object {
         const val MAX_REASON_LENGTH = 200
