@@ -80,19 +80,21 @@ class WorkspaceParameterHintsTest {
 
         assertEquals(listOf("size:", "size:"), hintsFor("new Util(1).send(2)"))
         // Packaged code cannot use a default-package class. The compiler qualifies `new Util` with the
-        // file's package, but a variable receiver arrives as the bare name: keep the same-name merge for it.
+        // file's package, and a variable receiver keeps its initializer's package, so both pick c.Util.
         assertEquals(listOf("count:", "count:"), hintsFor("new Util(1).send(2)", imports = "package c\n"))
-        // The constructor resolves to c.Util; the bare receiver's merge of both send(int) overloads is ambiguous.
-        assertEquals(listOf("count:"), hintsFor("def u = new Util(1)\n    u.send(2)", imports = "package c\n"))
+        assertEquals(
+            listOf("count:", "count:"),
+            hintsFor("def u = new Util(1)\n    u.send(2)", imports = "package c\n"),
+        )
     }
 
     @Test
-    fun `a variable receiver falls back to the same-name merge`(): Unit = runBlocking {
-        // Not recovered yet: the receiver type comes from the initializer as a simple name.
+    fun `a variable receiver keeps the package of its initializer`(): Unit = runBlocking {
         index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
         index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
 
-        assertEquals(listOf("first:"), hintsFor("def u = new a.Util('x')\n    u.send('y')"))
+        assertEquals(listOf("first:", "first:"), hintsFor("def u = new a.Util('x')\n    u.send('y')"))
+        assertEquals(listOf("other:", "other:"), hintsFor("def u = new b.Util('x')\n    u.send('y')"))
     }
 
     @Test
