@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.DependencyResolver
+import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
@@ -70,7 +71,11 @@ class GradleDependencyResolver(
      * @param projectFile Path to the project directory (build.gradle location)
      * @return WorkspaceResolution containing both dependencies and source directories
      */
-    fun resolveWithSourceDirectories(projectFile: Path): WorkspaceResolution {
+    @Suppress("UnusedParameter") // Cancellation is plumbed through before the resolver honours it.
+    fun resolveWithSourceDirectories(
+        projectFile: Path,
+        cancellation: ResolutionCancellation = ResolutionCancellation(),
+    ): WorkspaceResolution {
         val projectDir = if (Files.isDirectory(projectFile)) projectFile else projectFile.parent
 
         logger.info { "Resolving dependencies using Gradle Tooling API for: $projectDir" }
@@ -243,7 +248,7 @@ class GradleDependencyResolver(
      */
     private fun checkJdkGradleCompatibility(connection: ProjectConnection) {
         val gradleVersion = runCatching {
-            connection.getModel(BuildEnvironment::class.java).gradle.gradleVersion
+            connection.model(BuildEnvironment::class.java).get().gradle.gradleVersion
         }.getOrNull() ?: return // If we can't get version, proceed and let it fail naturally
 
         // If javaHome is configured, we should check compatibility for THAT JDK.

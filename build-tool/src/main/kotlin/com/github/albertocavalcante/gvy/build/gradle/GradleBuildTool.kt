@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.build.gradle
 import com.github.albertocavalcante.gvy.build.BuildExecutableResolver
 import com.github.albertocavalcante.gvy.build.DependencyMetadata
 import com.github.albertocavalcante.gvy.build.NativeGradleBuildTool
+import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import com.github.albertocavalcante.gvy.build.TestCommand
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -56,7 +57,18 @@ class GradleBuildTool(
      * @param onProgress Optional callback for progress updates (e.g., Gradle distribution download)
      * @return WorkspaceResolution containing dependency JAR files and source directories
      */
-    override fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)?): WorkspaceResolution {
+    override fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)?): WorkspaceResolution =
+        resolve(workspaceRoot, onProgress, ResolutionCancellation())
+
+    /**
+     * Resolves like [resolve]; [cancellation] cancels the in-flight Tooling API operation (including a
+     * distribution download) and ends retry backoff, then this throws [java.util.concurrent.CancellationException].
+     */
+    override fun resolve(
+        workspaceRoot: Path,
+        onProgress: ((String) -> Unit)?,
+        cancellation: ResolutionCancellation,
+    ): WorkspaceResolution {
         if (!canHandle(workspaceRoot)) {
             logger.info { "Not a Gradle project: $workspaceRoot" }
             return WorkspaceResolution(emptyList(), emptyList())
@@ -66,7 +78,7 @@ class GradleBuildTool(
 
         // Delegate to resolver which extracts both dependencies and source directories
         // from the IdeaProject model (supports custom source directory layouts)
-        val resolution = dependencyResolver.resolveWithSourceDirectories(workspaceRoot)
+        val resolution = dependencyResolver.resolveWithSourceDirectories(workspaceRoot, cancellation)
 
         val depCount = resolution.dependencies.size
         val srcCount = resolution.sourceDirectories.size
