@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.mockk.coEvery
 import io.mockk.mockk
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,12 +15,14 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.assertEquals
 import kotlin.test.assertSame
@@ -98,16 +101,25 @@ class DependencyTargetObservationTest {
     }
 
     @Test
-    fun `a superseded attempt does not publish its observation`() = runBlocking {
+    fun `a superseded attempt cancels its observer and does not publish its observation`() = runBlocking {
         val first = CompletableDeferred<Unit>()
         val release = CompletableDeferred<TargetDependencyEvidence>()
+        val exited = CompletableDeferred<Unit>()
+        val sawCancellation = AtomicBoolean(false)
         val stale = TargetDependencyEvidence.Scoped(emptyList())
         val other = Path.of("/tmp/other-workspace")
         val done = CountDownLatch(1)
         val manager = DependencyManager(tools, scope) { _, workspace, _ ->
             if (workspace == root) {
                 first.complete(Unit)
-                release.await()
+                try {
+                    release.await()
+                } catch (cancelled: CancellationException) {
+                    sawCancellation.set(true)
+                    throw cancelled
+                } finally {
+                    exited.complete(Unit)
+                }
             } else {
                 TargetDependencyEvidence.Legacy
             }
@@ -116,8 +128,11 @@ class DependencyTargetObservationTest {
         start(manager)
         withTimeout(5_000) { first.await() }
         start(manager, other, done)
-        release.complete(stale)
 
+        // The stale observer must be cancelled, not merely fenced at publication
+        val cancelled = withTimeoutOrNull(5_000) { exited.await() } != null && sawCancellation.get()
+        release.complete(stale)
+        assertTrue(cancelled, "the superseded observer was never cancelled")
         assertTrue(done.await(5, TimeUnit.SECONDS))
         assertTrue(published.none { it.targetDependencies === stale }, "stale evidence was published: $published")
     }

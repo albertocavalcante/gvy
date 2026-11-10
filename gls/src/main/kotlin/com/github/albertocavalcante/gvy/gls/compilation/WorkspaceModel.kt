@@ -52,12 +52,8 @@ class WorkspaceModel internal constructor(
             val artifacts = selection.snapshot.artifacts
             val targetClasspath = artifacts.map { it.path }
             val key = targetFingerprints.getOrPut(selection.snapshot) {
-                ConfigurationFingerprint.withStamps(
-                    computeFingerprint(targetClasspath, sourceRoots),
-                    artifacts.map {
-                        it.stamp
-                    },
-                )
+                val base = computeFingerprint(targetClasspath, sourceRoots)
+                ConfigurationFingerprint.withStamps(base, artifacts.map { it.stamp })
             }
             DocumentCompileContext(targetClasspath, key, selection)
         }
