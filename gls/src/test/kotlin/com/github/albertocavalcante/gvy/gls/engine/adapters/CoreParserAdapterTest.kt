@@ -11,6 +11,7 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -227,5 +228,25 @@ class CoreParserAdapterTest {
 
         val collapsed = CoreRange(CorePosition(3, 4), CorePosition(3, 1)).toLspRange()
         assertEquals(collapsed.start, collapsed.end)
+    }
+
+    private fun adapterFor(code: String) =
+        CoreParserAdapter(GroovyParser(ParserConfiguration()).parse(code), "file:///Test.groovy")
+
+    @Test
+    fun `nodeAt picks the enclosing node when the cursor is just past a member`() {
+        // The method is "def m() {}" at 0-based [10, 20); character 20 is the space after it, inside class A.
+        val adapter = adapterFor("class A { def m() {} }")
+
+        // inside the method body the most specific node is the member's own (unnamed block / method), not the class
+        assertNotEquals("A", adapter.nodeAt(Position(0, 19))?.name)
+        assertEquals("A", adapter.nodeAt(Position(0, 20))?.name)
+    }
+
+    @Test
+    fun `nodeAt still finds the node when the cursor is right after its last character`() {
+        val adapter = adapterFor("class A {}")
+
+        assertEquals("A", adapter.nodeAt(Position(0, 10))?.name)
     }
 }

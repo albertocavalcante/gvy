@@ -277,6 +277,43 @@ class JenkinsStepHoverStrategyTest {
     }
 
     @Test
+    fun `hover range is omitted instead of negative for a synthetic node without position`() {
+        val node = createMethodCallExpression("echo")
+        every { node.lineNumber } returns -1
+        every { node.columnNumber } returns -1
+        every { node.lastLineNumber } returns -1
+        every { node.lastColumnNumber } returns -1
+        every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
+        every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
+        every { jenkinsCapabilities.getAllMetadata() } returns
+            createMockMetadata("echo", "Prints a message.", null, emptyMap())
+
+        val hover = strategy.generateHover(node, context)!!
+
+        assertThat(hover.range).isNull()
+    }
+
+    @Test
+    fun `vars hover range is omitted for a synthetic node without position`() {
+        val node = createMethodCallExpression("myCustomStep")
+        every { node.lineNumber } returns -1
+        every { node.columnNumber } returns -1
+        every { node.lastLineNumber } returns -1
+        every { node.lastColumnNumber } returns -1
+        every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
+        every { jenkinsCapabilities.getGlobalVariables() } returns listOf(
+            GlobalVariable(
+                name = "myCustomStep",
+                path = Path.of("/workspace/vars/myCustomStep.groovy"),
+                documentation = "docs",
+                callLineNumber = 1,
+            ),
+        )
+
+        assertThat(strategy.generateHover(node, context)!!.range).isNull()
+    }
+
+    @Test
     fun `generateHover returns null when step not found in metadata`() {
         val node = createMethodCallExpression("unknownStep")
         val metadata = createMockMetadata(
