@@ -33,8 +33,9 @@ class SymbolIndexingClassLookupTest {
         val workers = mockk<WorkerSessionManager>()
         coEvery { workers.parse(any<ParseRequest>()) } answers { parser.parse(firstArg()) }
         val workspace = mockk<WorkspaceManager>(relaxed = true)
-        every { workspace.getDependencyClasspath() } returns emptyList()
-        every { workspace.getSourceRoots() } returns emptyList()
+        // Disk indexing reads one workspace model (#1278)
+        every { workspace.current() } returns
+            WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "fp" }
         service = SymbolIndexingService(Dispatchers.Unconfined, workers, workspace, ownership)
     }
 

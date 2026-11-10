@@ -42,8 +42,9 @@ class SymbolIndexingServiceTest {
         workspaceManager = mockk(relaxed = true)
 
         // Default mocking for workspace manager
-        every { workspaceManager.getDependencyClasspath() } returns emptyList()
-        every { workspaceManager.getSourceRoots() } returns emptyList()
+        // Disk indexing reads one workspace model (#1278)
+        every { workspaceManager.current() } returns
+            WorkspaceModel(null, emptyList(), emptyList(), emptyList()) { _, _ -> "fp" }
 
         indexingService = SymbolIndexingService(
             ioDispatcher = testDispatcher,

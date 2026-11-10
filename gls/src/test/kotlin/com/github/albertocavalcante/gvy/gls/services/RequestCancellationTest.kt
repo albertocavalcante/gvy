@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SemanticIndexer
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceCompiler
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
+import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceModel
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.gls.providers.SignatureHelpProvider
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
@@ -109,7 +110,9 @@ class RequestCancellationTest {
                 delegate.parse(request.copy(checkCancelled = { throw CancellationException("cancelled") }))
         }
         val workspace = mockk<WorkspaceManager>(relaxed = true)
-        every { workspace.getWorkspaceSources() } returns listOf(file)
+        // WorkspaceCompiler reads one model per batch (#1278)
+        every { workspace.current() } returns
+            WorkspaceModel(null, emptyList(), emptyList(), listOf(file)) { _, _ -> "fp" }
         val compiler = WorkspaceCompiler(
             WorkerSessionManager(cancelling) { error("no remote workers") },
             workspace,
