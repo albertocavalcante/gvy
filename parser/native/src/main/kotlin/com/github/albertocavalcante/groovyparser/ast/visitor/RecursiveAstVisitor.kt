@@ -8,6 +8,7 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.AnnotatedNode
 import org.codehaus.groovy.ast.AnnotationNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.FieldNode
@@ -119,9 +120,26 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
             // Track the imported type so position queries on the imported class name work.
             // This enables go-to-definition on import statements (e.g., `import org.junit.Test`).
             val type = importNode.type
-            if (type != null) {
-                track(type) { /* no-op */ }
+            val reference = if (type != null && isSharedDefaultType(type)) importedReference(importNode, type) else type
+            if (reference != null) {
+                track(reference) { /* no-op */ }
             }
+        }
+    }
+
+    /**
+     * `import java.util.List` resolves to the JVM-wide shared node, which never belongs to this document. Track a
+     * reference of this document's own instead, positioned where the import names it, so import hover and
+     * definition keep working. A position another file stamped on the shared node meanwhile is not adopted.
+     */
+    private fun importedReference(importNode: ImportNode, shared: ClassNode): ClassNode? {
+        val withinImport = shared.lineNumber == importNode.lineNumber &&
+            shared.columnNumber >= importNode.columnNumber &&
+            (importNode.lastColumnNumber <= 0 || shared.lastColumnNumber <= importNode.lastColumnNumber)
+        if (!withinImport) return null
+        return ClassHelper.makeWithoutCaching(shared.name).also { reference ->
+            reference.setRedirect(shared)
+            reference.setSourcePosition(shared)
         }
     }
 
@@ -224,7 +242,8 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         statement.visit(codeVisitor)
     }
 
-    private fun shouldTrack(node: ASTNode): Boolean = node.lineNumber > 0 && node.columnNumber > 0
+    private fun shouldTrack(node: ASTNode): Boolean =
+        node.lineNumber > 0 && node.columnNumber > 0 && !isSharedDefaultType(node)
 
     private inline fun track(node: ASTNode, block: () -> Unit) {
         if (shouldTrack(node)) {
@@ -491,3 +510,11 @@ class RecursiveAstVisitor(private val tracker: NodeRelationshipTracker) : Groovy
         }
     }
 }
+
+/**
+ * Whether [node] is one of Groovy's JVM-wide cached `ClassHelper` nodes (`groovy.lang.Script`, `Closure`,
+ * `String`, ...). The parser stamps the position of a fully qualified reference to such a class (for example
+ * `import groovy.lang.Script` in any file) onto the shared node, and every script class extends `Script`. Its
+ * position therefore belongs to whichever file was compiled last, never to the document being indexed (#1354).
+ */
+fun isSharedDefaultType(node: ASTNode): Boolean = node is ClassNode && ClassHelper.isCachedType(node)

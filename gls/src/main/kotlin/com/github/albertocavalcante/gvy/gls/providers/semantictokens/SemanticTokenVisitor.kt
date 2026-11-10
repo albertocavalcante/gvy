@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.semantictokens
 
+import com.github.albertocavalcante.groovyparser.ast.visitor.isSharedDefaultType
 import com.github.albertocavalcante.gvy.gls.utils.ParameterSourceRanges
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
 import org.codehaus.groovy.ast.ASTNode
@@ -197,7 +198,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
      */
     private fun visitClassHierarchy(classNode: ClassNode, tokens: MutableList<SemanticToken>) {
         // Visit superclass (excluding implicit Object inheritance)
-        if (classNode.superClass != null && classNode.superClass.lineNumber > 0) {
+        if (classNode.superClass != null && hasOwnPosition(classNode.superClass)) {
             val superName = classNode.superClass.nameWithoutPackage
             if (superName != "Object") {
                 addTokenForNode(
@@ -212,7 +213,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
 
         // Visit interfaces
         classNode.interfaces.forEach { interfaceNode ->
-            if (interfaceNode.lineNumber > 0) {
+            if (hasOwnPosition(interfaceNode)) {
                 addTokenForNode(
                     interfaceNode,
                     interfaceNode.nameWithoutPackage.length,
@@ -256,7 +257,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
         }
 
         // Visit return type if present
-        if (method.returnType != null && method.returnType.lineNumber > 0) {
+        if (method.returnType != null && hasOwnPosition(method.returnType)) {
             val typeName = method.returnType.nameWithoutPackage
             if (typeName != "Object" && typeName != "void") {
                 addTokenForNode(
@@ -284,7 +285,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
         addTokenForNode(field, field.name.length, tokenType, modifiers, tokens)
 
         // Visit field type
-        if (field.type != null && field.type.lineNumber > 0) {
+        if (field.type != null && hasOwnPosition(field.type)) {
             val typeName = field.type.nameWithoutPackage
             if (typeName != "Object") {
                 addTokenForNode(
@@ -350,7 +351,7 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
         addTokenForNode(param, param.name.length, TokenTypeResolver.TokenTypes.PARAMETER, modifiers, tokens)
 
         // Visit parameter type
-        if (param.type != null && param.type.lineNumber > 0) {
+        if (param.type != null && hasOwnPosition(param.type)) {
             val typeName = param.type.nameWithoutPackage
             if (typeName != "Object") {
                 addTokenForNode(
@@ -696,3 +697,6 @@ class SemanticTokenVisitor(private val sourceLines: List<String>) {
         }
     }
 }
+
+/** A type reference with a position of its own: not one of the JVM-wide shared nodes (#1354). */
+private fun hasOwnPosition(type: ClassNode): Boolean = type.lineNumber > 0 && !isSharedDefaultType(type)
