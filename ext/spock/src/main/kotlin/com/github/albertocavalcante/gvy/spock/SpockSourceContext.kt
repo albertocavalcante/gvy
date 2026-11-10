@@ -129,10 +129,12 @@ enum class SpecificationEvidence {
 }
 
 private const val SPECIFICATION_FQN = "spock.lang.Specification"
-private const val SPOCK_PACKAGE = "spock.lang."
+private val SPECIFICATION_TARGET = setOf(SPECIFICATION_FQN)
 
 /** Applies Groovy name-binding precedence conservatively: anything the module cannot prove stays uncertain. */
 private class SpecificationClassifier(private val module: ModuleNode) {
+    private val binder = SpockNameBinder(module)
+
     // Identity, not ClassNode equality: ClassNode compares by name, and duplicate names are common mid-edit.
     private val results = IdentityHashMap<ClassNode, SpockClassContext>()
     private val inProgress: MutableSet<ClassNode> = Collections.newSetFromMap(IdentityHashMap())
@@ -192,34 +194,30 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         return context(node, status, SpecificationEvidence.RESOLVED_HIERARCHY)
     }
 
-    /**
-     * Collects every binding the module can see for the superclass spelling: a top-level class, a
-     * class nested in an enclosing class, and a single-type import. More than one binding stays
-     * uncertain instead of depending on Groovy's precedence between them. A bare name inside a class
-     * whose enclosing class extends another class is uncertain: that superclass's nested classes,
-     * which this module may not declare, could bind the name first.
-     */
+    /** Maps the shared conservative [SpockNameBinder] result for the superclass spelling. */
     private fun bySourceName(node: ClassNode, rawName: String): SpockClassContext {
-        val name = rawName.replace('$', '.')
-        val simple = '.' !in name
-        val moduleBases = moduleClasses(name) + if (simple) enclosingNested(node, name) else emptyList()
-        val explicit = if (simple) module.getImport(name)?.className else null
-        val distinctBases: MutableSet<ClassNode> = Collections.newSetFromMap(IdentityHashMap())
-        distinctBases.addAll(moduleBases)
-        val bindings = distinctBases.size + if (explicit != null) 1 else 0
-        return when {
-            bindings > 1 -> context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.SHADOWED_NAME)
-            // Dotted spellings start with a bare segment too (`Base.Inner`), which the same scope could bind.
-            name != SPECIFICATION_FQN && inheritsOuterScope(node) ->
-                context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.INHERITED_NESTED_SCOPE)
-            moduleBases.isNotEmpty() -> inherit(node, classify(moduleBases.first()))
-            name == SPECIFICATION_FQN ->
+        val enclosing = generateSequence(node.outerClass) { it.outerClass }.toList()
+        return when (val binding = binder.bind(rawName, enclosing, SPECIFICATION_TARGET)) {
+            is NameBinding.Ambiguous -> when (binding.reason) {
+                NameBinding.Ambiguity.MULTIPLE_BINDINGS ->
+                    context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.SHADOWED_NAME)
+                NameBinding.Ambiguity.INHERITED_NESTED_SCOPE ->
+                    context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.INHERITED_NESTED_SCOPE)
+            }
+            is NameBinding.ModuleClass -> inherit(node, classify(binding.node))
+            is NameBinding.Qualified -> if (binding.name == SPECIFICATION_FQN) {
                 context(node, SpecificationStatus.SPECIFICATION, SpecificationEvidence.QUALIFIED_SUPERCLASS)
-            explicit == SPECIFICATION_FQN ->
+            } else {
+                uncertain(node)
+            }
+            is NameBinding.Imported -> if (binding.fqn == SPECIFICATION_FQN) {
                 context(node, SpecificationStatus.SPECIFICATION, SpecificationEvidence.EXPLICIT_IMPORT)
-            explicit == null && name == "Specification" && module.starImports.any { it.packageName == SPOCK_PACKAGE } ->
+            } else {
+                uncertain(node)
+            }
+            is NameBinding.StarImportOnly ->
                 context(node, SpecificationStatus.UNCERTAIN, SpecificationEvidence.STAR_IMPORT_ONLY)
-            else -> uncertain(node)
+            NameBinding.Unbound -> uncertain(node)
         }
     }
 
@@ -232,11 +230,6 @@ private class SpecificationClassifier(private val module: ModuleNode) {
         return context(node, base.status, evidence)
     }
 
-    /** Classes whose full or package-relative name, with `$` normalised to `.`, equals [name]. */
-    private fun moduleClasses(name: String): List<ClassNode> = module.classes.filter { candidate ->
-        candidate.name.replace('$', '.') == name || candidate.nameWithoutPackage.replace('$', '.') == name
-    }
-
     /**
      * The module class this superclass reference is identical to. A source spelling yields a fresh
      * placeholder node, so identity means the compiler (after resolution, via redirect) or the parser
@@ -245,23 +238,6 @@ private class SpecificationClassifier(private val module: ModuleNode) {
     private fun compilerBound(superClass: ClassNode): ClassNode? {
         val target = superClass.redirect()
         return module.classes.firstOrNull { it === target }
-    }
-
-    /**
-     * True when an enclosing class declares a superclass other than Object or any interface, whose
-     * nested classes could bind the name first. Compared by name, so a bare pre-resolution `Object`
-     * or an enum outer (extending `Enum`) also counts: conservative.
-     */
-    private fun inheritsOuterScope(node: ClassNode): Boolean = generateSequence(node.outerClass) { it.outerClass }
-        .any { outer ->
-            (outer.superClass != null && outer.superClass.name != ClassHelper.OBJECT_TYPE.name) ||
-                outer.interfaces.orEmpty().isNotEmpty()
-        }
-
-    /** Classes nested directly in one of [node]'s enclosing classes with the bare [name]. */
-    private fun enclosingNested(node: ClassNode, name: String): List<ClassNode> {
-        val scopes = generateSequence(node.outerClass) { it.outerClass }.map { it.name + "$" + name }.toSet()
-        return module.classes.filter { it.name in scopes }
     }
 
     private fun uncertain(node: ClassNode) =
