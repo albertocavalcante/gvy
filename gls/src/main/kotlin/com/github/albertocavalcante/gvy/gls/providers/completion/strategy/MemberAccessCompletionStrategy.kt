@@ -16,6 +16,7 @@ import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
+import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationMethodSignatures
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
@@ -107,7 +108,8 @@ internal class MemberAccessCompletionStrategy(
         }
 
         // Held declarations are authoritative for this buffer, including unsaved changes.
-        val local = LocalCompletionMembers(module).lookup(rawType)
+        val held = LocalCompletionMembers(module)
+        val local = held.lookup(rawType)
         if (local == null) {
             addSharedMembers(rawType, ctx)
             return
@@ -117,12 +119,9 @@ internal class MemberAccessCompletionStrategy(
         // sources while overloads differing only by package stay separate under simple display names.
         local.methods.forEach { addCandidate(it) }
         addWorkspaceMembers(local.fields)
-        val binaryTypes = addExactIndexedMembers(local.externalTypes, workspaceSymbolIndex)
+        val walk = addInheritedMembers(local, held, workspaceSymbolIndex)
         addQualifiedGdkMethods(rawType)
-        // A local generic override such as `compareTo(K o)` erases differently from the reflected
-        // `compareTo(Object)` it implements; the reflected method is then the same member twice.
-        val localShapes = local.methods.mapTo(mutableSetOf()) { it.name to it.parameters.size }
-        binaryTypes.forEach { addQualifiedClasspathMethods(it, localShapes) }
+        walk.binaryTypes.forEach { addQualifiedClasspathMethods(it, walk.genericOverrides) }
     }
 
     /** Receivers resolved only from shared metadata keep their display-based de-duplication. */
@@ -142,35 +141,38 @@ internal class MemberAccessCompletionStrategy(
     }
 
     /**
-     * Adds exact members of indexed workspace types and of their indexed ancestors, across files.
-     * Returns the ancestors that are not indexed source classes, for classpath reflection.
+     * Adds members that [local]'s class inherits from outside the held chain: indexed workspace
+     * ancestors, across files, in the same superclass-first order as the held walk. A held class reached
+     * through the index uses its buffer declarations, never the published copy. Returns the binary
+     * ancestors left for classpath reflection and the reflected methods source overrides generically.
      */
-    private fun CompletionsBuilder.addExactIndexedMembers(
-        classNames: List<String>,
+    private fun CompletionsBuilder.addInheritedMembers(
+        local: LocalCompletionMembers.Result,
+        held: LocalCompletionMembers,
         index: WorkspaceSymbolIndex?,
-    ): List<String> {
-        if (index == null) return classNames
-        val pending = ArrayDeque(classNames)
-        val visited = mutableSetOf<String>()
+    ): InheritedWalk {
+        val overrides = local.genericOverrides.toMutableSet()
+        if (index == null) return InheritedWalk(local.externalTypes, overrides)
+        val pending = ArrayDeque(local.externalTypes)
+        val visited = local.visited.toMutableSet()
         val binary = mutableListOf<String>()
+        val methods = mutableListOf<MethodCandidate>()
+        val members = mutableListOf<MemberInfo>()
         while (pending.isNotEmpty()) {
             val name = pending.removeFirst()
             if (!visited.add(name)) continue
-            val owner = "${name.replace('.', '/')}#"
-            // Symbols and qualified facts come from the same captured document.
-            val document = index.findImplementationDocument(owner)
-            if (document == null) {
-                addWorkspaceMembers(index.getAllMembers(name.replace('.', '/'), includeInherited = true))
-                binary += name
-            } else {
-                val (fields, methods) = indexedDocumentMembers(document, owner)
-                addWorkspaceMembers(fields)
-                methods.forEach { addCandidate(it) }
-                ImplementationMethodSignatures.directSupertypes(document, owner)
-                    .forEach { pending.addLast(it.removeSuffix("#").replace('/', '.')) }
-            }
+            val step = inheritedStep(name, held, index)
+            methods += step.methods
+            members += step.members
+            overrides += step.genericOverrides
+            visited += step.covered
+            step.parents.interfaces.forEach(pending::addLast)
+            step.parents.superclass?.let(pending::addFirst)
+            if (step.binary) binary += name
         }
-        return binary
+        methods.forEach { addCandidate(it) }
+        addWorkspaceMembers(members)
+        return InheritedWalk(binary, overrides)
     }
 
     private fun CompletionsBuilder.addQualifiedGdkMethods(className: String) {
@@ -188,14 +190,17 @@ internal class MemberAccessCompletionStrategy(
         }
     }
 
+    /** Reflected methods that a source method already overrides through generics are left out. */
     private fun CompletionsBuilder.addQualifiedClasspathMethods(
         className: String,
-        localShapes: Set<Pair<String, Int>>,
+        genericOverrides: Set<Pair<String, List<String>>>,
     ) {
         val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
         types.forEach { type ->
             val reflected = compilationService.classpathService.loadClass(type) ?: return@forEach
-            reflectedInstanceMethods(reflected).filterNot { it.isGenericOverrideOf(localShapes) }.forEach { method ->
+            reflectedInstanceMethods(reflected).filterNot {
+                (it.name to it.parameterTypes.map { type -> type.typeName }) in genericOverrides
+            }.forEach { method ->
                 addCandidate(
                     MethodCandidate(
                         name = method.name,
@@ -571,12 +576,15 @@ private fun indexedDocumentMembers(
     document: ImplementationDocument,
     owner: String,
 ): Pair<List<MemberInfo>, List<MethodCandidate>> {
+    // Every indexed member here is inherited, so private declarations are not reachable.
     val exact = ImplementationMethodSignatures.parameterTypesBySymbol(document, owner)
+    val privateAlternatives = ImplementationMethodSignatures.privateParameterTypesBySymbol(document, owner)
     val members = document.document.symbols.filter {
         it.owner == owner && it.kind in INDEXED_MEMBER_KINDS
     }.map { MemberInfo(it.name, it.kind, it.type, it.symbol, it.symbol) }.distinctBy { it.symbolId }
     val methods = members.filter { it.kind == SymbolKind.METHOD }.flatMap { member ->
-        val alternatives = exact[member.symbolId] ?: listOf(member.signature.completionParameters())
+        val alternatives = exact[member.symbolId]?.filterNot { it in privateAlternatives[member.symbolId].orEmpty() }
+            ?: listOf(member.signature.completionParameters())
         alternatives.map { types ->
             MethodCandidate(
                 name = member.name,
@@ -589,10 +597,56 @@ private fun indexedDocumentMembers(
     return members.filter { it.kind != SymbolKind.METHOD } to methods
 }
 
-/** True when a local method of the same name and arity overrides this method through a type variable. */
-private fun java.lang.reflect.Method.isGenericOverrideOf(localShapes: Set<Pair<String, Int>>): Boolean =
-    (name to parameterCount) in localShapes &&
-        genericParameterTypes.any { it is java.lang.reflect.TypeVariable<*> }
+/** What one ancestor contributes. Its superclass is walked before its interfaces, as in the held walk. */
+private class InheritedStep(
+    val methods: List<MethodCandidate> = emptyList(),
+    val members: List<MemberInfo> = emptyList(),
+    val genericOverrides: Set<Pair<String, List<String>>> = emptySet(),
+    val covered: Set<String> = emptySet(),
+    val parents: Parents = Parents(),
+    val binary: Boolean = false,
+)
+
+/** The superclass, walked next, and the interfaces, walked after everything already queued. */
+private data class Parents(val superclass: String? = null, val interfaces: List<String> = emptyList())
+
+/**
+ * A held class reached through the index uses its buffer declarations, never the published copy.
+ * Symbols and qualified facts of an indexed class come from the same captured document.
+ */
+private fun inheritedStep(name: String, held: LocalCompletionMembers, index: WorkspaceSymbolIndex): InheritedStep {
+    held.lookup(name, inherited = true)?.let { buffer ->
+        return InheritedStep(
+            methods = buffer.methods,
+            members = buffer.fields,
+            genericOverrides = buffer.genericOverrides,
+            covered = buffer.visited,
+            parents = Parents(interfaces = buffer.externalTypes),
+        )
+    }
+    val owner = "${name.replace('.', '/')}#"
+    val document = index.findImplementationDocument(owner)
+        ?: return InheritedStep(
+            members = index.getAllMembers(name.replace('.', '/'), includeInherited = true),
+            binary = true,
+        )
+    val (fields, methods) = indexedDocumentMembers(document, owner)
+    val parents = ImplementationMethodSignatures.supertypes(document, owner)
+    return InheritedStep(
+        methods = methods,
+        members = fields,
+        genericOverrides = ImplementationMethodSignatures.genericOverrides(document, owner),
+        parents = Parents(
+            parents?.superclass?.toClassName(),
+            parents?.interfaces.orEmpty().map { it.toClassName() },
+        ),
+    )
+}
+
+/** Binary ancestors for classpath reflection, and the reflected methods source overrides generically. */
+private class InheritedWalk(val binaryTypes: List<String>, val genericOverrides: Set<Pair<String, List<String>>>)
+
+private fun String.toClassName(): String = removeSuffix("#").replace('/', '.')
 
 /**
  * Methods whose simple display collides (for example `choose(Date)` from `java.util` and `java.sql`)
@@ -604,7 +658,7 @@ private fun List<CompletionItem>.withPackageHints(): List<CompletionItem> {
         .values.filter { group -> group.map { it.data }.distinct().size > 1 }
     collisions.flatten().forEach { item ->
         val signature = (item.data as MethodSignatureKey).signature
-        item.labelDetails = CompletionItemLabelDetails().apply { description = "(${signature.replace(",", ", ")})" }
+        item.labelDetails = CompletionItemLabelDetails().apply { description = signature.replace(",", ", ") }
     }
     return this
 }
@@ -648,18 +702,31 @@ private fun ASTNode.contains(line: Int, column: Int): Boolean {
 }
 
 /** A request-local member view; it never writes shared semantic metadata. */
-private class LocalCompletionMembers(module: ModuleNode?) {
+private class LocalCompletionMembers(private val module: ModuleNode?) {
     private val classes = module?.classes.orEmpty().associateBy { it.name }
 
-    data class Result(val methods: List<MethodCandidate>, val fields: List<MemberInfo>, val externalTypes: List<String>)
+    // Request-local hierarchy facts of the held buffer, built only when a lookup needs them.
+    private val facts by lazy { module?.let(ImplementationFacts::build) }
 
-    fun lookup(type: String): Result? {
+    data class Result(
+        val methods: List<MethodCandidate>,
+        val fields: List<MemberInfo>,
+        val externalTypes: List<String>,
+        /** Held class names this walk covered. */
+        val visited: Set<String>,
+        /** Reflected `name` to erased parameters that the held chain overrides through generics. */
+        val genericOverrides: Set<Pair<String, List<String>>>,
+    )
+
+    /** Members of held [type] and its held ancestors; [inherited] also hides [type]'s own private members. */
+    fun lookup(type: String, inherited: Boolean = false): Result? {
         val first = heldClass(type) ?: return null
         val pending = ArrayDeque<ClassNode>().apply { add(first) }
         val visited = mutableSetOf<String>()
         val methods = linkedMapOf<String, MethodCandidate>()
         val fields = linkedMapOf<String, MemberInfo>()
         val external = linkedSetOf<String>()
+        val heldNames = mutableSetOf<String>()
         while (pending.isNotEmpty()) {
             val next = pending.removeFirst()
             val held = heldClass(next.name)
@@ -667,15 +734,25 @@ private class LocalCompletionMembers(module: ModuleNode?) {
             if (held == null) {
                 external.add(next.name)
             } else {
-                val inherited = held !== first
-                ownMethods(held, inherited).forEach { (identity, method) -> methods.putIfAbsent(identity, method) }
-                ownFields(held, inherited).forEach { (identity, field) -> fields.putIfAbsent(identity, field) }
+                heldNames += held.name
+                val hidePrivate = inherited || held !== first
+                ownMethods(held, hidePrivate).forEach { (identity, method) -> methods.putIfAbsent(identity, method) }
+                ownFields(held, hidePrivate).forEach { (identity, field) -> fields.putIfAbsent(identity, field) }
                 // The class chain precedes interface declarations, even at a greater depth.
                 held.interfaces.forEach(pending::addLast)
                 held.superClass?.let(pending::addFirst)
             }
         }
-        return Result(methods.values.toList(), fields.values.toList(), external.toList())
+        val overrides = facts?.let {
+            ImplementationMethodSignatures.genericOverrides(it, "${first.name.replace('.', '/')}#")
+        }
+        return Result(
+            methods.values.toList(),
+            fields.values.toList(),
+            external.toList(),
+            heldNames,
+            overrides.orEmpty(),
+        )
     }
 
     private fun ownMethods(node: ClassNode, inherited: Boolean): List<Pair<String, MethodCandidate>> =

@@ -325,7 +325,7 @@ class ColdLocalCompletionTest {
         assertTrue(choose.all { it.insertText == "choose(\${1:Date value})" })
         assertTrue(choose.all { it.detail == "String choose(Date value)" })
         assertEquals(
-            setOf("(java.util.Date)", "(java.sql.Date)"),
+            setOf("java.util.Date", "java.sql.Date"),
             choose.map { it.labelDetails?.description }.toSet(),
             "Colliding simple names carry a package hint",
         )
@@ -367,6 +367,77 @@ class ColdLocalCompletionTest {
         val compareTo = items.filter { it.label == "compareTo" && it.kind == CompletionItemKind.Method }
         assertEquals(listOf("compareTo(\${1:K o})"), compareTo.map { it.insertText }, "found ${labels(items)}")
     }
+
+    @Test
+    fun `an overload that is not a generic override keeps the inherited method`(): Unit = runBlocking {
+        val source = """
+            class Names extends ArrayList<String> { boolean add(Integer i) { true } }
+            new Names().ad
+        """.trimIndent()
+
+        val add = methods(complete(source), "add")
+
+        assertTrue("add(\${1:Integer i})" in add, "found $add")
+        assertTrue("add(\${1:Object})" in add, "ArrayList.add(E) is add(String) here, not add(Integer): $add")
+    }
+
+    @Test
+    fun `an indexed parent's generic override hides the erased interface method`(): Unit = runBlocking {
+        indexParents("class B implements Comparable<B> { int compareTo(B o) { 0 } }")
+
+        val compareTo = methods(complete("class A extends B {}\nnew A().comp"), "compareTo")
+
+        assertEquals(listOf("compareTo(\${1:B})"), compareTo)
+    }
+
+    @Test
+    fun `a binary ancestor of an indexed parent is reflected once`(): Unit = runBlocking {
+        indexParents("class B extends ArrayList<String> {}")
+
+        val add = methods(complete("class A extends B {}\nnew A().ad"), "add")
+
+        assertEquals(1, add.count { !it.contains(",") && it != "add()" }, "one single-argument add: $add")
+    }
+
+    @Test
+    fun `a held class reached through the index uses buffer declarations`(): Unit = runBlocking {
+        indexParents("class C { String stale() { '' } }\nclass B extends C {}")
+        val source = "class C { String fresh() { '' } }\nclass A extends B {}\nnew A().f"
+
+        val labels = complete(source).filter { it.kind == CompletionItemKind.Method }.map { it.label }
+
+        assertTrue("fresh" in labels, "found $labels")
+        assertTrue("stale" !in labels, "the published copy of a held class must not leak: $labels")
+    }
+
+    @Test
+    fun `the superclass chain wins over an interface reached earlier`(): Unit = runBlocking {
+        // Indexed B extends indexed Mid extends Deep, and implements Getter. The buffer holds Deep and
+        // Getter, so their return types are known: walking Getter before Deep would offer `Object get()`.
+        val held = "interface Getter { Object get() }\nclass Deep { String get() { '' } }"
+        indexParents("$held\nclass Mid extends Deep {}\nclass B extends Mid implements Getter {}")
+
+        val get = complete("$held\nclass A extends B {}\nnew A().ge").filter { it.label == "get" }
+
+        assertEquals(listOf("String get()"), get.map { it.detail })
+    }
+
+    @Test
+    fun `private members of an indexed ancestor are not offered`(): Unit = runBlocking {
+        indexParents("class B { private String secret() { '' }; String open() { '' } }")
+
+        val labels = complete("class A extends B {}\nnew A().o").map { it.label }
+
+        assertTrue("open" in labels, "found $labels")
+        assertTrue("secret" !in labels, "found $labels")
+    }
+
+    private suspend fun indexParents(source: String) {
+        assertTrue(compilation.compile(URI.create("file:///Parents.groovy"), source).isSuccess)
+    }
+
+    private fun methods(items: List<CompletionItem>, name: String): List<String> =
+        items.filter { it.label == name && it.kind == CompletionItemKind.Method }.map { it.insertText.orEmpty() }
 
     private fun labels(items: List<CompletionItem>) = items.map { "${it.label}|${it.insertText}|${it.detail}" }
 
