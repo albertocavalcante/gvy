@@ -46,10 +46,10 @@ class SymbolIndexingService(
     private val workerSessionManager: WorkerSessionManager,
     private val workspaceManager: WorkspaceManager,
     private val ownership: ArtifactOwnership = ArtifactOwnership(),
-    /** Whether [uri] is open in the editor: its buffer, indexed by the compile path, wins over the disk. */
-    private val isOpen: (URI) -> Boolean = { false },
     /** Listed copies an open buffer under another spelling stands for (#1446): left out of [getAllSymbolIndices]. */
     private val shadowed: () -> Set<URI> = { emptySet() },
+    /** Whether [uri] is open in the editor: its buffer, indexed by the compile path, wins over the disk. */
+    private val isOpen: (URI) -> Boolean = { false },
 ) {
     companion object {
         /**

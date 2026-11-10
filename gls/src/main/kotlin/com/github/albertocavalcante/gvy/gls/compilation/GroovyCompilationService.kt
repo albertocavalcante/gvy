@@ -100,8 +100,8 @@ class GroovyCompilationService internal constructor(
             workerSessionManager,
             workspaceManager,
             ownership,
-            isOpen,
-            shadows::shadowed,
+            shadowed = shadows::shadowed,
+            isOpen = isOpen,
         )
     private val parseAccessor = ParseResultAccessor(cacheService, workerSessionManager, workspaceManager, symbolIndexer)
     val workspaceScanner = WorkspaceScanner()
