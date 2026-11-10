@@ -155,4 +155,19 @@ class GroovyCodeCleanerTest {
         assertEquals("r =     ;", GroovyCodeCleaner.blankCommentsAndStrings("r = /a{/;"))
         assertEquals("h = t / 2 / c", GroovyCodeCleaner.blankCommentsAndStrings("h = t / 2 / c"))
     }
+
+    @Test
+    fun `blankCommentsAndStrings ends an unterminated quoted string at the end of its line`() {
+        assertEquals("a =       \nb { }", GroovyCodeCleaner.blankCommentsAndStrings("a = 'stray\nb { }"))
+        assertEquals("a =       \nb { }", GroovyCodeCleaner.blankCommentsAndStrings("a = \"stray\nb { }"))
+    }
+
+    @Test
+    fun `blankCommentsAndStrings treats return, case, in and assert as the start of a slashy string`() {
+        assertEquals("case       : x", GroovyCodeCleaner.blankCommentsAndStrings("case /it's/: x"))
+        assertEquals("return      ", GroovyCodeCleaner.blankCommentsAndStrings("return /a{}/"))
+        assertEquals("x in      ", GroovyCodeCleaner.blankCommentsAndStrings("x in /b}c/"))
+        assertEquals("assert      ", GroovyCodeCleaner.blankCommentsAndStrings("assert /d{e/"))
+        assertEquals("total / count", GroovyCodeCleaner.blankCommentsAndStrings("total / count"))
+    }
 }

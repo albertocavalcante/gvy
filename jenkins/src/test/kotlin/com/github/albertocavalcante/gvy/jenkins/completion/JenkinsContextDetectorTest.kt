@@ -501,4 +501,24 @@ class JenkinsContextDetectorTest {
             ),
         )
     }
+
+    @Test
+    fun `a stray quote early in the file does not blank the blocks after it`() {
+        val lines = listOf(
+            "pipeline {",
+            "    agent any",
+            "    stages {",
+            "        stage('A') {",
+            "            steps {",
+            "                echo 'half-edited",
+            "            }",
+            "        }",
+            "    }",
+            "    post {",
+            "        ",
+        )
+        val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 10, column = 8)
+
+        assertEquals(listOf("pipeline", "post"), context.enclosingBlocks)
+    }
 }

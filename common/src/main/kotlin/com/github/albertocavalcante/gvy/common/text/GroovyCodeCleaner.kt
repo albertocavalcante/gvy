@@ -107,8 +107,10 @@ object GroovyCodeCleaner {
      * comments that span lines handled (#1281).
      *
      * Also blanks dollar-slashy strings (`$/ ... /$`) and slashy strings (`/ ... /`). A `/` opens a slashy
-     * string only where an expression starts (at the start of the code or after `(`, `[`, `{`, `,`, `=`, `:`,
-     * `;`, `!`, `&`, `|`, `?`, `~` or a newline), so division stays code.
+     * string only where an expression starts (at the start of the code, after `(`, `[`, `{`, `,`, `=`, `:`,
+     * `;`, `!`, `&`, `|`, `?`, `~` or a newline, or after `return`, `case`, `in` or `assert`), so division stays
+     * code. `'...'` and `"..."` end at the end of their line even when unterminated, as Groovy does not let
+     * them span lines; triple-quoted, slashy and dollar-slashy strings may.
      */
     fun blankCommentsAndStrings(code: String): String {
         val out = code.toCharArray()
@@ -134,8 +136,9 @@ object GroovyCodeCleaner {
         else -> PAIRED_DELIMITERS.firstOrNull { (open, _) -> code.startsWith(open, i) }
             ?.let { (open, close) -> closingEnd(code, close, i + open.length) }
             ?: when {
-                code[i] == '\'' || code[i] == '"' -> quotedEnd(code, i + 1, code[i])
-                code[i] == '/' && startsExpression(code, i) -> quotedEnd(code, i + 1, '/')
+                // Groovy does not let '...' and "..." span lines: a stray quote must not blank the rest of the file.
+                code[i] == '\'' || code[i] == '"' -> quotedEnd(code, i + 1, code[i], stopAtNewline = true)
+                code[i] == '/' && startsExpression(code, i) -> quotedEnd(code, i + 1, '/', stopAtNewline = false)
                 else -> null
             }
     }
@@ -151,13 +154,17 @@ object GroovyCodeCleaner {
     private fun closingEnd(code: String, delimiter: String, from: Int): Int =
         code.indexOf(delimiter, from).let { if (it < 0) code.length else it + delimiter.length }
 
-    /** End of a literal closed by [quote], with backslash escapes. */
-    private fun quotedEnd(code: String, from: Int, quote: Char): Int {
+    /**
+     * End of a literal closed by [quote], with backslash escapes. With [stopAtNewline], an unterminated literal
+     * ends before the newline (single-line strings); otherwise it may span lines (slashy strings).
+     */
+    private fun quotedEnd(code: String, from: Int, quote: Char, stopAtNewline: Boolean): Int {
         var j = from
         while (j < code.length) {
-            when (code[j]) {
-                '\\' -> j += 2
-                quote -> return j + 1
+            when {
+                code[j] == '\\' -> j += 2
+                code[j] == quote -> return j + 1
+                stopAtNewline && code[j] == '\n' -> return j
                 else -> j++
             }
         }
@@ -166,9 +173,15 @@ object GroovyCodeCleaner {
 
     private const val EXPRESSION_STARTERS = "([{,=:;!&|?~\n"
 
+    /** Keywords after which a `/` starts a slashy string (`case /re/:`, `return /re/`), not a division. */
+    private val EXPRESSION_KEYWORDS = setOf("return", "case", "in", "assert")
+
     private fun startsExpression(code: String, slash: Int): Boolean {
         var j = slash - 1
         while (j >= 0 && (code[j] == ' ' || code[j] == '\t')) j--
-        return j < 0 || code[j] in EXPRESSION_STARTERS
+        if (j < 0 || code[j] in EXPRESSION_STARTERS) return true
+        var wordStart = j
+        while (wordStart > 0 && (code[wordStart - 1].isLetterOrDigit() || code[wordStart - 1] == '_')) wordStart--
+        return code.substring(wordStart, j + 1) in EXPRESSION_KEYWORDS
     }
 }
