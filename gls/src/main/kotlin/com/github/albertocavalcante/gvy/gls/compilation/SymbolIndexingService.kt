@@ -298,15 +298,16 @@ class SymbolIndexingService(
             onProgress(currentCount, total)
         }
     }
+}
 
-    private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
-        val candidates = mutableSetOf<String>()
-        candidates += uri.toString()
-        candidates += uri.path
-        sourcePath?.let { path ->
-            candidates += path.toString()
-            candidates += path.toAbsolutePath().toString()
-        }
-        return candidates
+/** Every spelling under which the parser may locate [uri]'s source. Pure; needs no service state. */
+private fun buildLocatorCandidates(uri: URI, sourcePath: Path?): Set<String> {
+    val candidates = mutableSetOf<String>()
+    candidates += uri.toString()
+    candidates += uri.path
+    sourcePath?.let { path ->
+        candidates += path.toString()
+        candidates += path.toAbsolutePath().toString()
     }
+    return candidates
 }
