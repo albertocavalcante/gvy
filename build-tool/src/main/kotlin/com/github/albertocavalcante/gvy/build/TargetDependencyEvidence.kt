@@ -2,8 +2,10 @@ package com.github.albertocavalcante.gvy.build
 
 import java.io.IOException
 import java.net.URI
+import java.nio.file.FileVisitResult
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
 import java.util.Collections
 
@@ -97,20 +99,69 @@ data class ResolvedDependencyArtifact(
 )
 
 /**
- * A classpath entry's size and modification time at observation. Equal stamps do not prove equal
- * content, and a directory's stamp does not change when files inside it change.
+ * A classpath entry's size and modification time at observation. A jar or other file is stamped by its own
+ * attributes. A class directory is stamped by what it contains (#1364): the total size and count of its regular files
+ * and the newest modification time in its tree, so rewriting or deleting a class inside it changes the stamp, where
+ * the directory's own attributes would not. Equal stamps still do not prove equal content.
+ *
+ * @property size the file's size, or the total size of a directory's regular files
+ * @property lastModifiedMillis the file's modification time, or the newest in a directory's tree
+ * @property files the number of regular files in a directory; null for a file entry
  */
-data class ArtifactStamp(val size: Long, val lastModifiedMillis: Long) {
+data class ArtifactStamp(val size: Long, val lastModifiedMillis: Long, val files: Long? = null) {
     companion object {
-        /** Reads the stamp of [path] (filesystem I/O); null when it does not exist or cannot be read. */
-        fun of(path: Path): ArtifactStamp? = try {
+        /**
+         * More files than any class directory should hold. Past it a directory is not walked to the end and has no
+         * stamp, which reads as "not observed": its changes are not detected this way.
+         */
+        const val MAX_DIRECTORY_FILES = 100_000
+
+        /**
+         * Reads the stamp of [path] (filesystem I/O, a tree walk for a directory); null when it does not exist,
+         * cannot be read, or is a directory holding more than [maxDirectoryFiles] files.
+         */
+        fun of(path: Path, maxDirectoryFiles: Int = MAX_DIRECTORY_FILES): ArtifactStamp? = try {
             val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
-            ArtifactStamp(attributes.size(), attributes.lastModifiedTime().toMillis())
+            if (attributes.isDirectory) {
+                directory(path, maxDirectoryFiles)
+            } else {
+                ArtifactStamp(attributes.size(), attributes.lastModifiedTime().toMillis())
+            }
         } catch (_: IOException) {
             null
         } catch (_: SecurityException) {
             null
         }
+
+        /** Links are not followed, so a cycle through a link cannot loop the walk. */
+        private fun directory(root: Path, maxFiles: Int): ArtifactStamp? {
+            val walk = DirectoryWalk(maxFiles)
+            Files.walkFileTree(root, walk)
+            return if (walk.files > maxFiles) null else ArtifactStamp(walk.bytes, walk.newest, walk.files)
+        }
+    }
+
+    private class DirectoryWalk(private val maxFiles: Int) : SimpleFileVisitor<Path>() {
+        var files = 0L
+        var bytes = 0L
+        var newest = Long.MIN_VALUE
+
+        override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult {
+            newest = maxOf(newest, attrs.lastModifiedTime().toMillis())
+            return FileVisitResult.CONTINUE
+        }
+
+        override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
+            if (attrs.isRegularFile) {
+                files++
+                bytes += attrs.size()
+                newest = maxOf(newest, attrs.lastModifiedTime().toMillis())
+            }
+            return if (files > maxFiles) FileVisitResult.TERMINATE else FileVisitResult.CONTINUE
+        }
+
+        // An unreadable part of the tree makes the whole stamp unknown rather than silently partial.
+        override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult = throw exc
     }
 }
 

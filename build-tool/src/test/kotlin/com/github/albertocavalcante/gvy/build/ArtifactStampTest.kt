@@ -74,6 +74,24 @@ class ArtifactStampTest {
     }
 
     @Test
+    fun `a directory is stamped by the total size, count and newest time of its files`() {
+        write("A.class", 3, 1_000_000)
+        write("B.class", 4, 2_000_000)
+        pinDirectories()
+
+        assertEquals(ArtifactStamp(7, 2_000_000, 2), stampOfRoot())
+    }
+
+    @Test
+    fun `a directory with more files than the bound has no stamp`() {
+        repeat(3) { write("C$it.class", 1, 1_000_000) }
+        val root = temporary.resolve("classes")
+
+        assertNull(ArtifactStamp.of(root, maxDirectoryFiles = 2))
+        assertEquals(3L, ArtifactStamp.of(root, maxDirectoryFiles = 3)?.files)
+    }
+
+    @Test
     fun `a jar is still stamped by its own size and time`() {
         val jar = Files.write(temporary.resolve("lib.jar"), ByteArray(3))
         Files.setLastModifiedTime(jar, FileTime.fromMillis(1_000_000))
