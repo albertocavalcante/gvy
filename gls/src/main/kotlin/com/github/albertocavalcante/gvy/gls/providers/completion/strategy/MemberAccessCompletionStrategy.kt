@@ -12,6 +12,7 @@ import com.github.albertocavalcante.gvy.gls.providers.completion.JenkinsCompleti
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportInfo
 import com.github.albertocavalcante.gvy.gls.providers.completion.TextImportParser
 import com.github.albertocavalcante.gvy.gls.providers.completion.followsMemberAccessDot
+import com.github.albertocavalcante.gvy.gls.services.reflectSafely
 import com.github.albertocavalcante.gvy.jenkins.metadata.MergedJenkinsMetadata
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
@@ -200,18 +201,21 @@ internal class MemberAccessCompletionStrategy(
         val types = resolveDataTypes(className, compilationService).ifEmpty { listOf(className) }
         types.forEach { type ->
             val reflected = compilationService.classpathService.loadClass(type) ?: return@forEach
-            reflectedInstanceMethods(reflected).filterNot {
-                it.isGenericInstantiation() &&
-                    (it.name to it.parameterTypes.map { parameter -> parameter.typeName }) in genericOverrides()
-            }.forEach { method ->
-                addCandidate(
-                    MethodCandidate(
-                        name = method.name,
-                        returnType = method.returnType.simpleName,
-                        parameters = method.parameterTypes.map { CandidateParameter(it.typeName, it.simpleName) },
-                        doc = "JDK/Classpath method from ${method.declaringClass.simpleName}",
-                    ),
-                )
+            // Generic signatures may need types the (possibly closed) loader never loaded: keep what was added.
+            reflectSafely({ "completion methods of $type" }, Unit) {
+                reflectedInstanceMethods(reflected).filterNot {
+                    it.isGenericInstantiation() &&
+                        (it.name to it.parameterTypes.map { parameter -> parameter.typeName }) in genericOverrides()
+                }.forEach { method ->
+                    addCandidate(
+                        MethodCandidate(
+                            name = method.name,
+                            returnType = method.returnType.simpleName,
+                            parameters = method.parameterTypes.map { CandidateParameter(it.typeName, it.simpleName) },
+                            doc = "JDK/Classpath method from ${method.declaringClass.simpleName}",
+                        ),
+                    )
+                }
             }
         }
     }
@@ -563,7 +567,7 @@ internal fun reflectedInstanceMethods(type: Class<*>): List<java.lang.reflect.Me
     // A visibility bridge (StringBuilder.length() over its package-private base) is the only copy: keep it.
     val typed = instance.filterNot { it.isBridge }
     instance.filterNot { bridge -> bridge.isBridge && typed.any { it.bridgedBy(bridge) } }
-} catch (error: NoClassDefFoundError) {
+} catch (error: LinkageError) {
     reflectionLogger.debug(error) { "Incomplete classpath methods for ${type.name}" }
     emptyList()
 } catch (error: SecurityException) {

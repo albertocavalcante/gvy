@@ -105,3 +105,21 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
             }
         }
 }
+
+private val safeReflectionLogger = KotlinLogging.logger {}
+
+/**
+ * Runs reflection on a class from the user's classpath. A missing dependency type, or a loader closed by a
+ * classpath update while the caller still held the class, surfaces as a [LinkageError] (e.g.
+ * `NoClassDefFoundError`) or [TypeNotPresentException]: degrade to [fallback] and log at debug instead of
+ * failing the request.
+ */
+internal inline fun <T> reflectSafely(crossinline what: () -> String, fallback: T, block: () -> T): T = try {
+    block()
+} catch (error: LinkageError) {
+    safeReflectionLogger.debug(error) { "Incomplete classpath reflection: ${what()}" }
+    fallback
+} catch (error: TypeNotPresentException) {
+    safeReflectionLogger.debug(error) { "Incomplete classpath reflection: ${what()}" }
+    fallback
+}

@@ -5,6 +5,7 @@ import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.InlayHintsConfiguration
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
+import com.github.albertocavalcante.gvy.gls.services.reflectSafely
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
 import com.github.albertocavalcante.gvy.semantics.TypeStringUtils
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -436,14 +437,20 @@ internal object InlayHintsCandidates {
         val lookupType = expandToFqn(normalizedType) ?: return emptyList()
 
         val clazz = compilationService.classpathService.loadClass(lookupType) ?: return emptyList()
-        return clazz.constructors
-            .filter { it.parameterCount == argCount }
-            .map { constructor ->
-                val types = constructor.parameterTypes.map { it.name }
-                val names = constructor.parameters.map { it.name }
-                InlayHintsTypes.toSignature(types, names)
-            }
+        return classpathConstructorSignatures(clazz, argCount)
     }
+
+    /** Constructor signatures of [clazz] taking [argCount] arguments; none when reflection cannot complete. */
+    fun classpathConstructorSignatures(clazz: Class<*>, argCount: Int): List<CallableSignature> =
+        reflectSafely({ "constructors of ${clazz.name}" }, emptyList()) {
+            clazz.constructors
+                .filter { it.parameterCount == argCount }
+                .map { constructor ->
+                    val types = constructor.parameterTypes.map { it.name }
+                    val names = constructor.parameters.map { it.name }
+                    InlayHintsTypes.toSignature(types, names)
+                }
+        }
 
     /**
      * Expand a simple class name to its fully qualified name for classpath lookup.
