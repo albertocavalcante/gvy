@@ -47,7 +47,8 @@ class JenkinsStubsLocationTest {
             .buildClasspath(emptyList())
 
         val stubsDir = stubsDirOf(classpath)
-        assertEquals(JenkinsStubsLocation.directoryFor(cacheRoot, workspace), stubsDir)
+        // Plugin stubs are one content-keyed set under the workspace's stubs directory (#1367).
+        assertEquals(JenkinsStubsLocation.directoryFor(cacheRoot, workspace).resolve("sets"), stubsDir.parent)
         assertTrue(
             Files.isRegularFile(stubsDir.resolve("org/jenkinsci/plugins/workflow/cps/CpsScript.groovy")),
             "CpsScript stub missing in $stubsDir",

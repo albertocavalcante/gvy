@@ -11,6 +11,7 @@ import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class JenkinsStubsRegenerationTest {
@@ -41,15 +42,20 @@ class JenkinsStubsRegenerationTest {
     private fun buildClasspath(generator: JenkinsStubGenerator = JenkinsStubGenerator()): List<Path> =
         context(generator).buildClasspath(emptyList())
 
+    /** The plugin stub set directory on [classpath] (`<stubsDir>/sets/<key>`), if any. */
+    private fun stubSetOn(classpath: List<Path>): Path? {
+        val setsDir = JenkinsStubsLocation.directoryFor(cacheRoot, workspace).resolve("sets")
+        return classpath.singleOrNull { it.parent == setsDir }
+    }
+
     @Test
     fun `failed regeneration keeps a previously complete stub set on the classpath`() {
-        val stubsDir = JenkinsStubsLocation.directoryFor(cacheRoot, workspace)
-        assertTrue(buildClasspath().contains(stubsDir), "Precondition: first generation succeeds")
+        val stubSet = assertNotNull(stubSetOn(buildClasspath()), "Precondition: first generation succeeds")
 
         val classpath = buildClasspath(failingGenerator)
 
-        assertTrue(classpath.contains(stubsDir), "Complete earlier stubs must stay on the classpath: $classpath")
-        assertTrue(Files.isRegularFile(stubsDir.resolve("org/jenkinsci/plugins/workflow/cps/CpsScript.groovy")))
+        assertEquals(stubSet, stubSetOn(classpath), "The complete set for the same stubs stays on the classpath")
+        assertTrue(Files.isRegularFile(stubSet.resolve("org/jenkinsci/plugins/workflow/cps/CpsScript.groovy")))
     }
 
     @Test
