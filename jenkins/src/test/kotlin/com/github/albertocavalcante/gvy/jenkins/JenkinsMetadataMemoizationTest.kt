@@ -186,6 +186,24 @@ class JenkinsMetadataMemoizationTest {
     }
 
     @Test
+    fun `plugin filtering keeps core directive entries and drops entries from missing plugins`() {
+        val manager = JenkinsWorkspaceManager(
+            JenkinsConfiguration(
+                pluginConfig = PluginConfiguration(
+                    plugins = listOf("workflow-basic-steps"),
+                    includeDefaultPlugins = false,
+                ),
+            ),
+            tempDir,
+        )
+
+        val entries = manager.getAllMetadata().directiveEntries
+
+        assertEquals(setOf("jdk", "maven"), entries.getValue("tools").keys, "gradle needs the gradle plugin")
+        assertEquals(setOf("cron", "pollSCM", "upstream"), entries.getValue("triggers").keys)
+    }
+
+    @Test
     fun `workspace manager configuration update rebuilds the filtered bundled metadata`() {
         val manager = JenkinsWorkspaceManager(
             JenkinsConfiguration(

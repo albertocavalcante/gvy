@@ -361,6 +361,10 @@ class JenkinsContext internal constructor(
             steps = finalMetadata.steps.filterValues { step ->
                 step.plugin?.let { it in installedPlugins } ?: false
             },
+            // Core entries (cron, string, maven, ...) are always available; plugin ones (gradle) need the plugin.
+            directiveEntries = finalMetadata.directiveEntries.mapValues { (_, entries) ->
+                entries.filterValues { it.plugin == JENKINS_CORE_PLUGIN || it.plugin in installedPlugins }
+            },
         )
     }
 
@@ -429,6 +433,9 @@ class JenkinsContext internal constructor(
     fun parseLibraries(source: String): List<LibraryReference> = libraryParser.parseLibraries(source)
 
     companion object {
+        /** Plugin id that bundled metadata uses for Jenkins core contributions. */
+        private const val JENKINS_CORE_PLUGIN = "jenkins-core"
+
         /**
          * Bundled and enrichment metadata come from immutable classpath resources, so every
          * context in the process shares one deserialized and merged copy.

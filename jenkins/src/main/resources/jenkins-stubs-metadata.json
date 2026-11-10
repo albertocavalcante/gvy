@@ -1227,10 +1227,16 @@
       "pollSCM": {
         "plugin": "jenkins-core",
         "parameters": {
-          "spec": {
+          "scmpoll_spec": {
             "type": "String",
             "required": true,
             "documentation": "Cron-style polling schedule, e.g. 'H/15 * * * *'"
+          },
+          "ignorePostCommitHooks": {
+            "type": "boolean",
+            "required": false,
+            "default": "false",
+            "documentation": "Ignore post-commit hook notifications and only poll on the schedule"
           }
         },
         "documentation": "Poll the SCM periodically and run when it has changed"
@@ -1298,6 +1304,12 @@
             "type": "String",
             "required": false,
             "documentation": "Description shown on the build form"
+          },
+          "trim": {
+            "type": "boolean",
+            "required": false,
+            "default": "false",
+            "documentation": "Strip leading and trailing whitespace"
           }
         },
         "documentation": "A multi-line text parameter"
