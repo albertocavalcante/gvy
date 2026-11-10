@@ -300,14 +300,22 @@ class WorkspaceManager internal constructor(
             return translated?.takeUnless { candidate -> refused.any { candidate.startsWith(it) } }
         }
 
+        // Parent directories' real paths, looked up once per notification: a branch switch creates many siblings.
+        private val canonicalDirectories = HashMap<Path, Path>()
+
         /**
          * Whether a created [path] really lies in its root's directory. A directory link inside an allowed root
          * (`src/evil -> /`) passes every lexical check, and a stat or walk through it would follow it; the scan
-         * never follows such a link, so neither do events. One real-path lookup per created path.
+         * never enters such a link, so neither do events. A directory is checked by its own real path, anything
+         * else by its parent's: a single file link (`src/A.groovy -> ../shared/A.groovy`, as Jenkins shared
+         * libraries use) is read wherever it points, as the scan and `main` read it.
          */
         fun isContained(path: Path): Boolean {
             val index = roots.indices.filter { path.startsWith(roots[it]) }.maxByOrNull { roots[it].nameCount }
-            return index != null && DocumentTargetSelector.canonical(path).startsWith(canonicalRoots[index])
+            val directory = if (Files.isDirectory(path)) path else path.parent
+            return index != null && directory != null &&
+                canonicalDirectories.getOrPut(directory) { DocumentTargetSelector.canonical(directory) }
+                    .startsWith(canonicalRoots[index])
         }
 
         private fun rebased(absolute: Path): Path? {
