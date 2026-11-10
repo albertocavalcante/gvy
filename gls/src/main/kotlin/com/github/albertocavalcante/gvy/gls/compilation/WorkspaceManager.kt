@@ -227,6 +227,23 @@ class WorkspaceManager internal constructor(
         return result
     }
 
+    /**
+     * The listed spelling of each of [paths] (#1440), so a cache or index keyed by the listed source is found: an
+     * event path spelled through a symlinked root's real path, an aliased root, or another case or normalisation
+     * under a case-insensitive root. Translated exactly as [applySourceChanges] spells an event path ([Spelling]),
+     * then matched by key against the listed sources. A path outside every root, or under a refused one, keeps its
+     * own spelling. Reads the disk only for a path no root holds lexically; takes no lock and changes nothing.
+     */
+    fun listedSpellings(paths: Collection<Path>): Map<Path, Path> {
+        if (paths.isEmpty()) return emptyMap()
+        val workspace = current()
+        val spelling = Spelling(workspace.sourceRoots.map { it.toAbsolutePath().normalize() }, workspace.root)
+        val listed = workspace.sources.associateBy { spelling.key(it.toAbsolutePath().normalize()) }
+        return paths.associateWith { path ->
+            spelling.inRoot(path)?.let { translated -> listed[spelling.key(translated)] ?: translated } ?: path
+        }
+    }
+
     /** The probe for [root], run on its [canonical] directory; cached only once the root exists. */
     private fun isCaseInsensitive(root: Path, canonical: Path): Boolean = caseInsensitiveRoots[root]
         ?: caseInsensitive(canonical).also { if (Files.isDirectory(root)) caseInsensitiveRoots[root] = it }

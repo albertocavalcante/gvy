@@ -154,11 +154,12 @@ class GroovyWorkspaceService(
         // A closed source's parse is retired now, an in-memory fence, so no reader gets the old parse while the
         // queued work waits: a Changed event, or an atomic save reported as Deleted plus Created. An open buffer
         // keeps its own parse; its Changed event has nothing left to do, its Created or Deleted still moves the list.
-        val queued = changes[FileType.SOURCE].orEmpty().filter { event ->
-            val retired = uriOf(event.uri)?.let { uri ->
-                compilationService.onClosedSourceChanged(uri, keepIfUnchanged = false)
-            }
-            event.type != FileChangeType.Changed || retired != null
+        // The parse may be cached under the listed spelling, not the event's (#1440): both are retired.
+        val sourceEvents = changes[FileType.SOURCE].orEmpty()
+        val listed = listedUris(sourceEvents)
+        val queued = sourceEvents.filter { event ->
+            val retired = uriOf(event.uri)?.let { uri -> retireClosed(uri, listed[uri]) } ?: false
+            event.type != FileChangeType.Changed || retired
         } + changes[FileType.OTHER].orEmpty().filter { it.type != FileChangeType.Changed }
         if (queued.isNotEmpty()) enqueue(queued)
 
@@ -178,6 +179,8 @@ class GroovyWorkspaceService(
     private fun handleSourceFileChanges(changes: List<FileEvent>) {
         val sources = changes.filter { classifyFileChange(it.uri) == FileType.SOURCE }
         val changed = sources.filter { it.type == FileChangeType.Changed }
+        // Spelled before the model update, while a deleted file is still listed (#1440).
+        val listed = listedUris(sources)
 
         // One model update and at most one cache clear per notification, however many files it carries.
         val change = compilationService.onWorkspaceSourcesChanged(
@@ -187,24 +190,24 @@ class GroovyWorkspaceService(
         if (change.changed) textDocumentService?.rerunDiagnosticsOnOpenFiles()
 
         // Deleted files, and the sources under deleted folders, leave the caches and the index.
-        val removed = sources.filter { it.type == FileChangeType.Deleted }.mapNotNull { uriOf(it.uri) } +
-            change.removed.map { it.toUri() }
+        val removed = sources.filter { it.type == FileChangeType.Deleted }.mapNotNull { uriOf(it.uri) }
+            .flatMap { uri -> listOfNotNull(uri, listed[uri]) } + change.removed.map { it.toUri() }
         removed.distinct().forEach { uri ->
             compilationService.invalidateCache(uri)
             logger.debug { "Removed deleted file from index: $uri" }
         }
 
-        // Index new and changed files, and the sources found in created folders, in background.
+        // Index new and changed files, and the sources found in created folders, in background, each under its
+        // listed spelling only: indexing the event's spelling too would list its symbols twice (#1440).
         // Distinct: a source root's folder watcher can repeat an event the file watchers also report.
         val candidates = (sources.filter { it.type == FileChangeType.Created } + changed).mapNotNull { uriOf(it.uri) }
-            .plus(change.added.map { it.toUri() })
-            .distinct()
+            .map { uri -> uri to (listed[uri] ?: uri) }
+            .plus(change.added.map { it.toUri() }.map { uri -> uri to uri })
+            .distinctBy { (_, listedUri) -> listedUri }
 
         // A closed file's cached parse no longer describes it; an open buffer keeps its own. Applied after the
         // notification, so a buffer may have been reopened meanwhile: that file is skipped, as didClose skips it.
-        val toIndex = candidates.filter { uri ->
-            compilationService.onClosedSourceChanged(uri, keepIfUnchanged = false) != null
-        }
+        val toIndex = candidates.filter { (uri, listedUri) -> retireClosed(uri, listedUri) }.map { it.second }
 
         if (toIndex.isNotEmpty()) {
             logger.info { "Indexing ${toIndex.size} changed source files" }
@@ -216,6 +219,29 @@ class GroovyWorkspaceService(
     }
 
     private fun filePath(uri: String): Path? = runCatching { Path.of(URI.create(uri)) }.getOrNull()
+
+    /** The listed spelling of each source event's URI that names one (#1440); a URI already listed maps to itself. */
+    private fun listedUris(events: List<FileEvent>): Map<URI, URI> {
+        val paths = events.mapNotNull { event ->
+            val uri = uriOf(event.uri) ?: return@mapNotNull null
+            filePath(event.uri)?.let { uri to it }
+        }
+        val spellings = compilationService.workspaceManager.listedSpellings(paths.map { it.second })
+        return paths.associate { (uri, path) -> uri to (spellings[path]?.toUri() ?: uri) }
+    }
+
+    /**
+     * Retires a closed source's parse under the event's spelling [uri] and its [listed] one (#1440). Nothing is
+     * retired, and false returned, while a buffer is open under either spelling: its parse is the buffer's.
+     */
+    private fun retireClosed(uri: URI, listed: URI?): Boolean {
+        val spellings = listOfNotNull(uri, listed).distinct()
+        if (spellings.any(compilationService::isDocumentOpen)) return false
+        // Each spelling is retired separately, not atomically: a compile between them holds a fresh ticket and
+        // commits current facts. Each retirement re-checks under the fence, so a buffer opened meanwhile is kept.
+        val tickets = spellings.map { compilationService.onClosedSourceChanged(it, keepIfUnchanged = false) }
+        return tickets.all { it != null }
+    }
 
     private fun uriOf(uri: String): URI? = runCatching { URI.create(uri) }.getOrNull()
 

@@ -300,6 +300,9 @@ class GroovyCompilationService internal constructor(
         logger.debug { "Invalidated cache for: $uri" }
     }
 
+    /** Whether a buffer is open for [uri]: its parse is the buffer's, and watcher events must not retire it. */
+    fun isDocumentOpen(uri: URI): Boolean = isOpen(uri)
+
     /**
      * A buffer for [uri] opened: work begun under an earlier lifecycle (a disk compile, a delayed close
      * cleanup) can no longer publish. The cached facts stay; content-keyed reads still reuse them.
