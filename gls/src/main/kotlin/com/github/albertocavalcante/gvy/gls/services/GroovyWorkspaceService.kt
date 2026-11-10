@@ -231,16 +231,20 @@ class GroovyWorkspaceService(
     }
 
     /**
-     * Retires a closed source's parse under the event's spelling [uri] and its [listed] one (#1440). Nothing is
-     * retired, and false returned, while a buffer is open under either spelling: its parse is the buffer's.
+     * Retires the parse of each closed spelling of a changed source: the event's [uri] and its [listed] one (#1440).
+     * A spelling open as a buffer keeps its parse, the buffer's; a closed one always describes the disk, so it is
+     * retired even while the other spelling is open. Returns whether the listed spelling was retired: only then is
+     * there disk work left to queue and index.
      */
     private fun retireClosed(uri: URI, listed: URI?): Boolean {
-        val spellings = listOfNotNull(uri, listed).distinct()
-        if (spellings.any(compilationService::isDocumentOpen)) return false
+        val listedUri = listed ?: uri
         // Each spelling is retired separately, not atomically: a compile between them holds a fresh ticket and
-        // commits current facts. Each retirement re-checks under the fence, so a buffer opened meanwhile is kept.
-        val tickets = spellings.map { compilationService.onClosedSourceChanged(it, keepIfUnchanged = false) }
-        return tickets.all { it != null }
+        // commits current facts. onClosedSourceChanged re-checks under the fence, so a buffer opened meanwhile is
+        // kept, and reports that by returning null.
+        val tickets = listOf(uri, listedUri).distinct().associateWith { spelling ->
+            compilationService.onClosedSourceChanged(spelling, keepIfUnchanged = false)
+        }
+        return tickets[listedUri] != null
     }
 
     private fun uriOf(uri: String): URI? = runCatching { URI.create(uri) }.getOrNull()

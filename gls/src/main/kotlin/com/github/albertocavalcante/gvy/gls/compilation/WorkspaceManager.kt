@@ -234,17 +234,32 @@ class WorkspaceManager internal constructor(
      * event path spelled through a symlinked root's real path, an aliased root, or another case or normalisation
      * under a case-insensitive root. Translated exactly as [applySourceChanges] spells an event path ([Spelling]),
      * then matched by key against the listed sources. A path outside every root, or under a refused one, keeps its
-     * own spelling. Reads the disk only for a path no root holds lexically; takes no lock and changes nothing.
+     * own spelling. Takes no lock and changes nothing.
+     *
+     * It runs on the LSP notification thread for every source event, so the [Spelling] and the listed keys are
+     * built once per model ([ListedIndex]); the trust boundary and link targets it saw are then those of the
+     * model's first notification, until the next model. [applySourceChanges] still decides them afresh.
      */
     fun listedSpellings(paths: Collection<Path>): Map<Path, Path> {
         if (paths.isEmpty()) return emptyMap()
         val workspace = current()
-        val spelling = Spelling(workspace.sourceRoots.map { it.toAbsolutePath().normalize() }, workspace.root)
-        val listed = workspace.sources.associateBy { spelling.key(it.toAbsolutePath().normalize()) }
+        val index = listedIndex?.takeIf { it.workspace === workspace }
+            ?: ListedIndex(workspace).also { listedIndex = it }
         return paths.associateWith { path ->
-            spelling.inRoot(path)?.let { translated -> listed[spelling.key(translated)] ?: translated } ?: path
+            index.spelling.inRoot(path)?.let { translated ->
+                index.listed[index.spelling.key(translated)] ?: translated
+            } ?: path
         }
     }
+
+    /** One model's [Spelling] and its listed sources by key: models are immutable, so it is keyed by identity. */
+    private inner class ListedIndex(val workspace: WorkspaceModel) {
+        val spelling = Spelling(workspace.sourceRoots.map { it.toAbsolutePath().normalize() }, workspace.root)
+        val listed: Map<String, Path> = workspace.sources.associateBy { spelling.key(it.toAbsolutePath().normalize()) }
+    }
+
+    @Volatile
+    private var listedIndex: ListedIndex? = null
 
     /** The probe for [root], run on its [canonical] directory; cached only once the root exists. */
     private fun isCaseInsensitive(root: Path, canonical: Path): Boolean = caseInsensitiveRoots[root]
@@ -384,13 +399,60 @@ class WorkspaceManager internal constructor(
                     .startsWith(canonicalRoots[index])
         }
 
+        /**
+         * A path no root holds lexically, respelled under the root whose directory holds it. A path already spelled
+         * through a root's real path (its key, under a case-insensitive root) is rebased with no disk read. Any
+         * other path is checked by its parent directory's real path, read once per directory ([canonicalParent]):
+         * a burst of generated files under `build/` costs one read, not one per file (#1440).
+         */
         private fun rebased(absolute: Path): Path? {
-            val canonical = canonicalise(absolute)
-            val index = canonicalRoots.indices
-                .filter { roots[it] !in refused && roots[it] !in aliasOf && canonical.startsWith(canonicalRoots[it]) }
-                .maxByOrNull { canonicalRoots[it].nameCount } ?: return null
-            val rebased = roots[index].resolve(canonicalRoots[index].relativize(canonical))
+            val (index, relative) = underCanonicalRoot(absolute)
+                ?: canonicalParent(absolute)?.let(::underCanonicalRoot)
+                ?: return null
+            val rebased = roots[index].resolve(relative)
             return rebased.takeIf { isScannedUnder(it, roots) }
+        }
+
+        private val canonicalRootKeys = roots.indices.map { index ->
+            nameKey(canonicalRoots[index].toString(), insensitive.getValue(roots[index]), normalisesNames)
+        }
+
+        /** The deepest accepted, scanned root whose real path holds [path] lexically, and [path] relative to it. */
+        private fun underCanonicalRoot(path: Path): Pair<Int, String>? {
+            val index = roots.indices
+                .filter { roots[it] !in refused && roots[it] !in aliasOf && holds(it, path) }
+                .maxByOrNull { canonicalRoots[it].nameCount } ?: return null
+            val depth = canonicalRoots[index].nameCount
+            val relative = if (path.nameCount == depth) "" else path.subpath(depth, path.nameCount).toString()
+            return index to relative
+        }
+
+        private fun holds(index: Int, path: Path): Boolean {
+            val root = canonicalRoots[index]
+            if (path.startsWith(root)) return true
+            // Under a case-insensitive root, or on a platform that normalises names, compare the prefix by key.
+            val prefix = path.takeIf { it.nameCount >= root.nameCount && it.root == root.root }
+                ?.let { it.root?.resolve(it.subpath(0, root.nameCount)) } ?: return false
+            return nameKey(prefix.toString(), insensitive.getValue(roots[index]), normalisesNames) ==
+                canonicalRootKeys[index]
+        }
+
+        /**
+         * Parent directories' real paths, at most [MAX_CANONICAL_PARENTS], least recently used dropped. Scoped to
+         * this [Spelling], so to one notification or one model: a directory replaced by a link while it lives keeps
+         * its old real path here until then, an accepted limit. Shared by the LSP and queue threads, so locked.
+         */
+        private val canonicalParents = object : LinkedHashMap<Path, Path>(16, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Path, Path>?): Boolean =
+                size > MAX_CANONICAL_PARENTS
+        }
+
+        private fun canonicalParent(absolute: Path): Path? {
+            val parent = absolute.parent ?: return null
+            val name = absolute.fileName ?: return null
+            val real = synchronized(canonicalParents) { canonicalParents[parent] }
+                ?: canonicalise(parent).also { synchronized(canonicalParents) { canonicalParents[parent] = it } }
+            return real.resolve(name.toString())
         }
 
         fun key(path: Path): String {
@@ -718,6 +780,9 @@ private fun nameKey(text: String, foldsCase: Boolean, normalisesNames: Boolean):
     val normalised = if (foldsCase || normalisesNames) Normalizer.normalize(text, Normalizer.Form.NFC) else text
     return if (foldsCase) normalised.lowercase(Locale.ROOT) else normalised
 }
+
+/** Parent directories whose real path one [WorkspaceManager] spelling remembers (#1440). */
+private const val MAX_CANONICAL_PARENTS = 1024
 
 /** macOS file systems (APFS, HFS+) ignore Unicode normalisation in names, even on case-sensitive volumes. */
 private val PLATFORM_NORMALISES_NAMES: Boolean =
