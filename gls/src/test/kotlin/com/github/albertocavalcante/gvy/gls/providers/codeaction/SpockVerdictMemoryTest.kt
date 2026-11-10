@@ -18,6 +18,9 @@ class SpockVerdictMemoryTest {
     private val baseKey = Path.of("/src/BaseSpec.groovy").toAbsolutePath().normalize().toString()
     private val spec = "class TableSpec extends BaseSpec {}\n"
     private val read: (String) -> String? = { key -> baseText.takeIf { key == baseKey } }
+    private val packageFiles: (String) -> String? = { key ->
+        "BaseSpec.groovy,TableSpec.groovy".takeIf { key == baseKey }
+    }
 
     private fun parse(withBase: Boolean): ParseResult = GroovyParserFacade(javaClass.classLoader).parse(
         ParseRequest(
@@ -31,7 +34,7 @@ class SpockVerdictMemoryTest {
     private fun SpockVerdictMemory.exchange(result: ParseResult, reader: (String) -> String? = read): Set<String> {
         val module = checkNotNull(result.ast)
         val source = assertIs<SpockSourceContext.Available>(SpockSourceContext.from(result))
-        return access(uri, "fp", result.outcome, reader).exchange(module, source)
+        return access(uri, "fp", result.outcome, reader, packageFiles).exchange(module, source)
     }
 
     @Test
@@ -56,7 +59,7 @@ class SpockVerdictMemoryTest {
     fun `a record written by a request that started before close is discarded`() {
         val memory = SpockVerdictMemory()
         val clean = parse(withBase = true)
-        val inFlight = memory.access(uri, "fp", clean.outcome, read)
+        val inFlight = memory.access(uri, "fp", clean.outcome, read, packageFiles)
 
         memory.forget(uri)
         inFlight.exchange(checkNotNull(clean.ast), SpockSourceContext.from(checkNotNull(clean.ast), isPartial = false))

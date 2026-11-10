@@ -271,6 +271,53 @@ class SpockTableProviderTest {
     }
 
     @Test
+    fun `an in-file base edited off its remote base is noticed while the remote base is broken`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        val withLocal = "class LocalBase extends BaseSpec {}\n" +
+            fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends LocalBase")
+        fixture.edit(withLocal)
+        assertTrue(fixture.hasAction(paramsLine = 6), "clean compile records the verdict through LocalBase")
+
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit(
+            fixture.text.replace("class LocalBase extends BaseSpec", "class LocalBase extends SomethingMissing"),
+        )
+
+        assertTrue(!fixture.hasAction(paramsLine = 6), "the in-file link's superclass changed")
+    }
+
+    @Test
+    fun `a nested base is matched by its enclosing class, not its short name`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        val nested = { body2: String ->
+            "import spock.lang.*\n" +
+                "class Outer1 { static abstract class Inner extends Specification {} }\n" +
+                "class Outer2 { static abstract class Inner $body2 }\n"
+        }
+        Files.writeString(fixture.src.resolve("Outers.groovy"), nested("extends Specification {}"))
+        fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
+        assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner")
+
+        Files.writeString(fixture.src.resolve("Outers.groovy"), nested("{ void m( }"))
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "Outer2.Inner's header changed even though Outer1.Inner's did not")
+    }
+
+    @Test
+    fun `a new file shadowing Specification in the base package is noticed`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        Files.writeString(fixture.src.resolve("Specification.groovy"), "class Specification {}\n")
+        fixture.writeBase("BaseSpec", broken = true)
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "the base package's file set changed")
+    }
+
+    @Test
     fun `closing the document forgets its remembered verdicts`(): Unit = runBlocking {
         val fixture = BrokenBaseFixture()
         fixture.edit(fixture.text)

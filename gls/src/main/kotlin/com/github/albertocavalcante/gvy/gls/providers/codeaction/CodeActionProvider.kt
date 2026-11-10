@@ -32,6 +32,24 @@ class CodeActionProvider(
     /** Drops the remembered Spock verdicts of a closed document (#1387). */
     fun forgetDocument(uri: URI) = verdictMemory.forget(uri.toString())
 
+    /** The Groovy and Java file names beside a source, on disk or open, as one sorted string. */
+    private fun packageFileSet(path: String): String? {
+        val directory = runCatching { Path.of(path).parent }.getOrNull() ?: return null
+        val onDisk = runCatching {
+            Files.list(directory).use { entries ->
+                entries.filter { Files.isRegularFile(it) && isSourceFile(it) }.map { it.fileName.toString() }.toList()
+            }
+        }.getOrNull() ?: return null
+        val open = documentProvider.getAllUris()
+            .mapNotNull { uri -> runCatching { Path.of(uri) }.getOrNull() }
+            .filter { it.parent == directory && isSourceFile(it) }
+            .map { it.fileName.toString() }
+        return (onDisk + open).toSortedSet().joinToString(",")
+    }
+
+    private fun isSourceFile(path: Path): Boolean =
+        path.fileName.toString().let { it.endsWith(".groovy") || it.endsWith(".java") }
+
     /** A source's current text by normalized path: the open buffer when there is one, else the file. */
     private fun currentSourceText(path: String): String? {
         val file = runCatching { Path.of(path) }.getOrNull() ?: return null
@@ -75,6 +93,7 @@ class CodeActionProvider(
                                 compilationService.workspaceManager.fingerprintFor(uri),
                                 compiled.parseResult.outcome,
                                 ::currentSourceText,
+                                ::packageFileSet,
                             ),
                         ),
                     ),
