@@ -46,4 +46,17 @@ describe("server settings map", () => {
       12,
     );
   });
+
+  it("forwards Gradle target classpaths, off unless the user enables them", () => {
+    assert.strictEqual(
+      client.buildServerSettingsMap()["groovy.gradle.targetClasspaths.enabled"],
+      false,
+    );
+
+    configured["gradle.targetClasspaths.enabled"] = true;
+    assert.strictEqual(
+      client.buildServerSettingsMap()["groovy.gradle.targetClasspaths.enabled"],
+      true,
+    );
+  });
 });

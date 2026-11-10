@@ -324,6 +324,10 @@ export function buildServerSettingsMap(): Record<string, unknown> {
       "gradle.buildStrategy",
       "auto",
     ),
+    "groovy.gradle.targetClasspaths.enabled": config.get<boolean>(
+      "gradle.targetClasspaths.enabled",
+      false,
+    ),
   };
 
   const javaHome = config.get<string>("java.home");

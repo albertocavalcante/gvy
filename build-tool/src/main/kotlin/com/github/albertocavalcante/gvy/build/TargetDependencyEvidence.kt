@@ -1,12 +1,15 @@
 package com.github.albertocavalcante.gvy.build
 
+import java.io.IOException
 import java.net.URI
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.Collections
 
 /**
  * Target evidence supplements the legacy flat workspace result; it never replaces its classpath.
- * No current resolver produces scoped evidence. Future producers must preserve the identity and
+ * The Gradle scoped producer supplies it when opted in (#1235). Producers must preserve the identity and
  * order they actually resolved instead of reconstructing them from folders or artifact names.
  */
 sealed interface TargetDependencyEvidence {
@@ -81,8 +84,35 @@ data class ResolvedArtifactCoordinates(
     val extension: String? = null,
 )
 
-/** A reported classpath entry, including local files or class directories with no coordinates. */
-data class ResolvedDependencyArtifact(val path: Path, val coordinates: ResolvedArtifactCoordinates? = null)
+/**
+ * A reported classpath entry, including local files or class directories with no coordinates.
+ * [stamp] is the entry's size and modification time when the producer observed it; null when the
+ * producer did not stat it or the entry could not be read. It is part of equality, so the same path
+ * observed with different content is a different fact.
+ */
+data class ResolvedDependencyArtifact(
+    val path: Path,
+    val coordinates: ResolvedArtifactCoordinates? = null,
+    val stamp: ArtifactStamp? = null,
+)
+
+/**
+ * A classpath entry's size and modification time at observation. Equal stamps do not prove equal
+ * content, and a directory's stamp does not change when files inside it change.
+ */
+data class ArtifactStamp(val size: Long, val lastModifiedMillis: Long) {
+    companion object {
+        /** Reads the stamp of [path] (filesystem I/O); null when it does not exist or cannot be read. */
+        fun of(path: Path): ArtifactStamp? = try {
+            val attributes = Files.readAttributes(path, BasicFileAttributes::class.java)
+            ArtifactStamp(attributes.size(), attributes.lastModifiedTime().toMillis())
+        } catch (_: IOException) {
+            null
+        } catch (_: SecurityException) {
+            null
+        }
+    }
+}
 
 /**
  * Origin of one build-refresh observation. Generation is meaningful only within the corresponding

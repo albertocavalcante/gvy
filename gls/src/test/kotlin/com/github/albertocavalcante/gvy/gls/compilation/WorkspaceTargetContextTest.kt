@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.build.ArtifactStamp
 import com.github.albertocavalcante.gvy.build.DependencyProvenance
 import com.github.albertocavalcante.gvy.build.DependencyRole
 import com.github.albertocavalcante.gvy.build.DependencyTarget
@@ -42,6 +43,52 @@ class WorkspaceTargetContextTest {
         val manager = WorkspaceManager()
         manager.updateWorkspaceModel(root, listOf(root.resolve("union.jar")), listOf(main, test), targets)
         return manager to mapOf("main" to main, "test" to test)
+    }
+
+    private fun stamped(sourceRoot: Path, stamp: ArtifactStamp?) = TargetDependencyEvidence.Scoped(
+        listOf(
+            TargetDependencySnapshot(
+                target = DependencyTarget(URI.create("test:main"), root, "main"),
+                role = DependencyRole.COMPILE,
+                provenance = provenance,
+                state = TargetDependencyState.COMPLETE,
+                artifacts = listOf(ResolvedDependencyArtifact(root.resolve("lib.jar"), stamp = stamp)),
+                sourceRoots = listOf(sourceRoot),
+            ),
+        ),
+    )
+
+    @Test
+    fun `a jar replaced at the same path publishes a new model and a new target key`() {
+        val main = Files.createDirectories(root.resolve("src/main/groovy"))
+        val document = main.resolve("A.groovy").toUri()
+        val manager = WorkspaceManager()
+        fun observe(stamp: ArtifactStamp?) =
+            manager.updateWorkspaceModel(root, emptyList(), listOf(main), stamped(main, stamp))
+        observe(ArtifactStamp(3, 1_000))
+        val before = manager.fingerprintFor(document)
+
+        val unchanged = manager.updateWorkspaceModel(
+            root,
+            emptyList(),
+            listOf(main),
+            stamped(main, ArtifactStamp(3, 1_000)),
+        )
+        assertEquals(false, unchanged, "an equal re-observation is not a change")
+        assertEquals(before, manager.fingerprintFor(document))
+
+        val replaced = manager.updateWorkspaceModel(
+            root,
+            emptyList(),
+            listOf(main),
+            stamped(main, ArtifactStamp(5, 2_000)),
+        )
+        assertEquals(true, replaced, "same path, new size and mtime: the classpath content changed")
+        val after = manager.fingerprintFor(document)
+        assertNotEquals(before, after, "a replaced jar must not reuse the old compile key")
+
+        observe(null)
+        assertNotEquals(after, manager.fingerprintFor(document), "an unreadable jar is a distinct, keyed fact")
     }
 
     @Test

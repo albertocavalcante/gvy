@@ -43,14 +43,21 @@ class WorkspaceModel internal constructor(
 
     /**
      * The compile context for [path] from this model alone. A selected target compiles against its
-     * own ordered classpath, keyed by a fingerprint of exactly those inputs; every other selection uses
-     * the workspace classpath and [fingerprint], unchanged from before target evidence existed.
+     * own ordered classpath, keyed by a fingerprint of exactly those inputs and their observed stamps;
+     * every other selection uses the workspace classpath and [fingerprint], unchanged from before target
+     * evidence existed.
      */
     fun compileContextFor(path: Path?): DocumentCompileContext = when (val selection = selector.select(path)) {
         is TargetSelection.Selected -> {
-            val targetClasspath = selection.snapshot.artifacts.map { it.path }
+            val artifacts = selection.snapshot.artifacts
+            val targetClasspath = artifacts.map { it.path }
             val key = targetFingerprints.getOrPut(selection.snapshot) {
-                computeFingerprint(targetClasspath, sourceRoots)
+                ConfigurationFingerprint.withStamps(
+                    computeFingerprint(targetClasspath, sourceRoots),
+                    artifacts.map {
+                        it.stamp
+                    },
+                )
             }
             DocumentCompileContext(targetClasspath, key, selection)
         }

@@ -49,4 +49,12 @@ class ServerConfigurationTest {
         assertTrue(descriptor.features.contains("ast"))
         assertEquals("in-process", descriptor.connector)
     }
+
+    @Test
+    fun `gradle target classpaths are off unless enabled`() {
+        assertEquals(false, ServerConfiguration.fromMap(emptyMap()).gradleTargetClasspathsEnabled)
+        assertEquals(false, ServerConfiguration().gradleTargetClasspathsEnabled)
+        val enabled = ServerConfiguration.fromMap(mapOf("groovy.gradle.targetClasspaths.enabled" to true))
+        assertTrue(enabled.gradleTargetClasspathsEnabled)
+    }
 }

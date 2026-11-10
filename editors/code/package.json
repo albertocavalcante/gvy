@@ -830,6 +830,12 @@
           "default": "auto",
           "description": "Build tool strategy for dependency resolution."
         },
+        "groovy.gradle.targetClasspaths.enabled": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "markdownDescription": "Compile each Gradle source set's files against that source set's own compile classpath (for example, test-only dependencies stay out of `main`). Runs one more Gradle Tooling API operation per dependency resolution, so the classpath appears later. Can only be set in user (or remote machine) settings, because it runs the build's configuration."
+        },
         "groovy.codelens.test.enabled": {
           "type": "boolean",
           "default": true,

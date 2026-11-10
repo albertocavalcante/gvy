@@ -24,8 +24,15 @@ private const val PROGRESS_CONNECTING = 25
 private const val PROGRESS_RESOLVING = 75
 private const val PROGRESS_COMPLETE = 100
 
-/** Asynchronous dependency resolution with retryable failures and publication fenced by attempt identity. */
-class DependencyManager(private val buildToolManager: BuildToolManager, private val scope: CoroutineScope) {
+/**
+ * Asynchronous dependency resolution with retryable failures and publication fenced by attempt identity.
+ * With a [targetObserver], a usable resolution is published only after its target evidence is observed.
+ */
+class DependencyManager(
+    private val buildToolManager: BuildToolManager,
+    private val scope: CoroutineScope,
+    private val targetObserver: TargetEvidenceObserver? = null,
+) {
     enum class State {
         NOT_STARTED,
         IN_PROGRESS,
@@ -112,9 +119,11 @@ class DependencyManager(private val buildToolManager: BuildToolManager, private 
                 request.onProgress?.invoke(PROGRESS_CONNECTING, "Connecting to ${tool?.name ?: "workspace"}...")
             }
             checkCurrent(attempt)
-            val resolution = tool?.resolve(request.workspaceRoot) { message ->
+            val legacy = tool?.resolve(request.workspaceRoot) { message ->
                 notifyCurrent(attempt) { request.onProgress?.invoke(PROGRESS_CONNECTING, message) }
             } ?: WorkspaceResolution(emptyList(), listOf(request.workspaceRoot))
+            checkCurrent(attempt)
+            val resolution = legacy.withObservedTargets(targetObserver, tool, request.workspaceRoot, attempt.generation)
             checkCurrent(attempt)
             notifyCurrent(attempt) {
                 if (resolution.isUsable) {
