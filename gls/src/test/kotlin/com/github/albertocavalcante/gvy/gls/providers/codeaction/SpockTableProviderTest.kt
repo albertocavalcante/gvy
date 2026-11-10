@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.Formatter
+import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.CodeActionContext
@@ -328,6 +329,42 @@ class SpockTableProviderTest {
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "a shadowing file in the base's package under the outer root is seen")
+    }
+
+    @Test
+    fun `a nested base is matched by its enclosing class, not its short name`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        val nested = { body2: String ->
+            "import spock.lang.*\n" +
+                "class Outer1 { static abstract class Inner extends Specification {} }\n" +
+                "class Outer2 { static abstract class Inner $body2 }\n"
+        }
+        Files.writeString(fixture.src.resolve("Outers.groovy"), nested("extends Specification {}"))
+        fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
+        assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
+
+        Files.writeString(fixture.src.resolve("Outers.groovy"), nested("{ void m( }"))
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "Outer2.Inner's header changed even though Outer1.Inner's did not")
+    }
+
+    /** How the classifier saw TableSpec's superclass in the last compile (#1420). */
+    private fun diagnosis(fixture: BrokenBaseFixture): String {
+        val parsed = compilationService.getCompiledSnapshot(fixture.fileUri)?.parseResult ?: return "no snapshot"
+        val module = parsed.ast ?: return "no AST: ${parsed.outcome}"
+        val context = SpockSourceContext.from(module, isPartial = false).classes
+            .single { it.classNode.name == "TableSpec" }
+        val superClass = context.classNode.superClass
+        val target = superClass?.redirect()
+        val inUnit = target?.module?.let { owner -> module.unit?.modules?.any { it === owner } }
+        return "status=${context.status} evidence=${context.evidence} " +
+            "written=${context.classNode.getUnresolvedSuperClass(false)?.unresolvedName} " +
+            "super=${superClass?.name}/${superClass?.javaClass?.simpleName} " +
+            "redirect=${target?.name}/${target?.javaClass?.simpleName} resolved=${target?.isResolved} " +
+            "primary=${target?.isPrimaryClassNode} outer=${target?.outerClass?.name} " +
+            "module=${target?.module?.context?.name} inUnit=$inUnit outcome=${parsed.outcome} " +
+            "diagnostics=${parsed.diagnostics.map { it.message.take(100) }}"
     }
 
     @Test
