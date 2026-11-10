@@ -187,13 +187,13 @@ class RetiredWaiterTest {
             lateinit var job: Deferred<CompilationResult>
         }
 
-        val owners = CopyOnWriteArrayList<Owner>()
-        val count: Int get() = owners.size
+        val started = CopyOnWriteArrayList<Owner>()
+        val count: Int get() = started.size
 
         fun start() {
-            val tag = ownerIndex.asContextElement(owners.size)
+            val tag = ownerIndex.asContextElement(started.size)
             val owner = Owner(CoroutineScope(SupervisorJob() + Dispatchers.IO + tag))
-            owners += owner // before the compile starts, so its parse finds its gate
+            started += owner // before the compile starts, so its parse finds its gate
             owner.job = service.compileAsync(owner.scope, uri, text())
         }
 
@@ -208,14 +208,14 @@ class RetiredWaiterTest {
                 strays += "${request.uri} ${request.content.take(STRAY_PREVIEW)} on ${Thread.currentThread().name}"
                 return
             }
-            val owner = owners[index]
+            val owner = started[index]
             owner.parsing.complete(Unit)
             check(owner.release.await(WAIT_SECONDS, TimeUnit.SECONDS)) { "parse never released" }
         }
 
-        fun releaseNewest() = owners.last().release.countDown()
+        fun releaseNewest() = started.last().release.countDown()
 
-        fun releaseAll() = owners.forEach { it.release.countDown() }
+        fun releaseAll() = started.forEach { it.release.countDown() }
 
         /**
          * Cancels the newest owner and returns once the waiter has re-resolved onto its successor.
@@ -223,7 +223,7 @@ class RetiredWaiterTest {
          */
         suspend fun cancelNewest(settleMillis: Long = 0) {
             assertNoStrays()
-            val owner = owners.last()
+            val owner = started.last()
             // Cancel only once its parse is running, so the cancellation aborts that parse
             checkNotNull(withTimeoutOrNull(WAIT_SECONDS * 1_000) { owner.parsing.await() }) { "no parse" }
             // Registered while the owner is provably incomplete (its parse is held), so it is queued, not run now
