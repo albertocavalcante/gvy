@@ -24,7 +24,7 @@ internal fun rethrowIfCancellationOrError(throwable: Throwable) {
  *
  * Standard [runCatching] catches ALL exceptions including [CancellationException],
  * which breaks structured concurrency. This variant rethrows [CancellationException]
- * to preserve proper coroutine cancellation behavior.
+ * to preserve proper coroutine cancellation behavior, and [Error]s, which no caller can handle.
  *
  * Usage:
  * ```kotlin
@@ -43,10 +43,13 @@ internal fun rethrowIfCancellationOrError(throwable: Throwable) {
  * @return [Result.success] with the result, or [Result.failure] with the exception
  * @throws CancellationException if the block was cancelled (not caught)
  */
+@Suppress("TooGenericExceptionCaught") // the point of the helper: every other Throwable becomes a Result
 internal inline fun <T> runSuspendCatching(block: () -> T): Result<T> = try {
     Result.success(block())
 } catch (e: CancellationException) {
     throw e
+} catch (e: Error) {
+    throw e // StackOverflowError, OutOfMemoryError: never an ordinary failed result
 } catch (e: Throwable) {
     Result.failure(e)
 }

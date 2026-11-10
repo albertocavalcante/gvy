@@ -118,4 +118,38 @@ class RequestCancellationTest {
 
         assertFailsWith<CancellationException> { compiler.compileWorkspace() }
     }
+
+    @Test
+    fun `a cancelled type definition ends cancelled instead of empty`(): Unit = runBlocking {
+        every { compilation.createContext(uri) } throws CancellationException("lookup cancelled")
+        val service =
+            GroovyTextDocumentService(
+                scope,
+                compilation,
+                GroovyTextDocumentServiceOptions(documentProvider = documents),
+            )
+
+        val typeDefinition = service.typeDefinition(
+            org.eclipse.lsp4j.TypeDefinitionParams(TextDocumentIdentifier(uri.toString()), Position(0, 7)),
+        )
+
+        assertFailsWith<CancellationException> { typeDefinition.await() }
+    }
+
+    @Test
+    fun `a fatal error during definition is not turned into an empty answer`(): Unit = runBlocking {
+        coEvery { compilation.ensureCompiled(uri) } throws StackOverflowError("deep AST")
+        val handler = com.github.albertocavalcante.gvy.gls.providers.crossfile.CrossFileOperationsHandler(
+            compilation,
+            documents,
+            mockk(relaxed = true),
+            mockk<com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator> {
+                every { getDiagnosticJobsMap() } returns java.util.concurrent.ConcurrentHashMap()
+            },
+            { false },
+            {},
+        )
+
+        assertFailsWith<StackOverflowError> { handler.getDefinitions(uri.toString(), Position(0, 30)) }
+    }
 }

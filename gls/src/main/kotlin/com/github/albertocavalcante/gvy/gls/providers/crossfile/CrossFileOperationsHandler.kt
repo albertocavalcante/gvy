@@ -95,7 +95,7 @@ class CrossFileOperationsHandler(
         return runSuspendCatching {
             withCurrentOrigin(documentUri) { findDefinitions(documentUri, position) }
         }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e // e.g. ContentModified: the client retries
+            if (e is ResponseErrorException) throw e // e.g. ContentModified: passed to the client
             logException(e, "finding definitions")
             Either.forLeft(emptyList())
         }
@@ -168,7 +168,7 @@ class CrossFileOperationsHandler(
                 }
             }
         }.getOrElse { e ->
-            if (e is ResponseErrorException) throw e // e.g. ContentModified: the client retries
+            if (e is ResponseErrorException) throw e // e.g. ContentModified: passed to the client
             logException(e, "finding references")
             emptyList()
         }

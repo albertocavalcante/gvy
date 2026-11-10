@@ -439,19 +439,15 @@ class GroovyTextDocumentService(
 
     override fun typeDefinition(
         params: TypeDefinitionParams,
-    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> {
+    ): CompletableFuture<Either<List<Location>, List<LocationLink>>> = coroutineScope.future {
         logger.debug {
             "Type definition requested for ${params.textDocument.uri} at " +
                 "${params.position.line}:${params.position.character}"
         }
-
-        return typeDefinitionProvider.provideTypeDefinition(params).thenApply { locations ->
-            logger.debug { "Found ${locations.size} type definitions" }
-            Either.forLeft<List<Location>, List<LocationLink>>(locations)
-        }.exceptionally { e ->
-            logger.error(e) { "Error providing type definition" }
-            Either.forLeft(emptyList())
-        }
+        // Like its siblings: a client cancel reaches the coroutine, and cancellation is never an empty answer.
+        val locations = typeDefinitionProvider.typeDefinitions(params)
+        logger.debug { "Found ${locations.size} type definitions" }
+        Either.forLeft(locations)
     }
 
     override fun implementation(
