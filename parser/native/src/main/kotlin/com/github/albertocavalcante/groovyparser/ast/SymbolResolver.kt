@@ -112,17 +112,17 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         ancestors(node, visitor).firstOrNull(::isScopeBoundary)
 
     /**
-     * [node]'s ancestors, nearest first, ending at the root, at the first node seen twice, or after
-     * [MAX_PARENT_DEPTH] steps: a cycle in the model's parent links must not hang resolution (#1411).
+     * [node]'s ancestors, nearest first, ending at the root or at the first node seen twice: a cycle in the model's
+     * parent links must not hang resolution (#1411). There is deliberately no depth cap: the parent map is finite, so
+     * the visited set alone ends the walk, and a cap could only cut a real deep chain (a long concatenation, say)
+     * short and turn it into a silent "not found".
      */
     private fun ancestors(node: ASTNode, visitor: GroovyAstModel): Sequence<ASTNode> = sequence {
         val seen = Collections.newSetFromMap(IdentityHashMap<ASTNode, Boolean>())
         var current = visitor.getParent(node)
-        var depth = 0
-        while (current != null && depth < MAX_PARENT_DEPTH && seen.add(current)) {
+        while (current != null && seen.add(current)) {
             yield(current)
             current = visitor.getParent(current)
-            depth++
         }
     }
 
@@ -158,9 +158,4 @@ class SymbolResolver(private val registry: SymbolRegistry) {
         val column: Int,
         val isBeforeReference: Boolean,
     )
-
-    private companion object {
-        /** Far deeper than any real nesting; only a malformed model reaches it. */
-        const val MAX_PARENT_DEPTH = 4096
-    }
 }
