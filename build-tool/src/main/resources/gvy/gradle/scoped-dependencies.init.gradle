@@ -96,8 +96,9 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
      *
      * INTERNAL GRADLE API: ProjectInternal.getOwner() returns the project's ProjectState, and
      * ProjectState.applyToMutableState(Consumer) runs the consumer under that project's lock. Gradle's
-     * own tooling model builders take the lock the same way. Verified on Gradle 9.8.2, 8.5 and 7.3.3
-     * (the oldest Gradle that runs on JDK 17); older versions are not checked in CI (#1376). It is
+     * own tooling model builders take the lock the same way. Verified in CI on the build's own Gradle (9.8.2)
+     * and, weekly by the Gradle Compatibility workflow, on 7.3.3 (the oldest Gradle that runs on JDK 17), the
+     * latest 8.14.x and the latest release (#1376); older versions are not checked. It is
      * feature-detected (respondsTo, then a dynamic call through the public interface, because the
      * implementation class is not public): when it is missing or refuses before running the action, the
      * project is resolved directly, which is the previous behaviour and works without parallel mode.
@@ -135,6 +136,7 @@ class GvyScopedModelBuilder implements ToolingModelBuilder {
 
     /** The project's ProjectState when it offers applyToMutableState(Consumer), else null (feature detection). */
     private static Object projectState(Project project) {
+        return null // RED (#1376): lock API detection forced off, to show the compatibility job can fail
         try {
             if (!project.respondsTo('getOwner')) return null
             def owner = project.getOwner()

@@ -1,0 +1,131 @@
+# Verifies the scoped-dependency init script's internal project-lock API (ProjectState.applyToMutableState)
+# on the oldest Gradle the server's JDK runs, the last 8.x, and the latest release (#1376). Not a required
+# check: a services.gradle.org outage must never block merges.
+name: Gradle Compatibility
+
+on:
+  schedule:
+    - cron: "17 4 * * 1" # Weekly, Mondays 04:17 UTC
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'build-tool/src/main/resources/gvy/gradle/scoped-dependencies.init.gradle'
+      - 'build-tool/src/main/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleScoped*.kt'
+      - 'build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/gradle/GradleScopedDependencyProducerIntegrationTest.kt'
+      - '.github/workflows/gradle-compat.yml'
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scoped-lock-api:
+    name: Scoped init script on older and latest Gradle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-read-only: true
+
+      - name: Resolve Gradle versions
+        id: versions
+        shell: bash
+        run: |
+          # The minimum is the oldest Gradle that runs on JDK 17; 8.14.x and the latest final release are looked up,
+          # so a newer Gradle that changes the internal API is caught. Retried with backoff, then fails loudly.
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            if curl -fsS --max-time 30 https://services.gradle.org/versions/all -o versions.json; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::services.gradle.org unreachable after 3 attempts"
+              exit 1
+            fi
+            sleep $((attempt * 15))
+          done
+          list=$(python3 - <<'PY'
+          import json
+          import re
+          releases = [
+              v for v in json.load(open("versions.json"))
+              if not (v["snapshot"] or v["nightly"] or v["releaseNightly"] or v["broken"])
+              and not v["rcFor"] and not v["milestoneFor"]
+              and re.fullmatch(r"\d+(\.\d+)*", v["version"])
+          ]
+          def key(version):
+              return tuple(int(part) for part in version.split("."))
+          latest = max((v["version"] for v in releases), key=key)
+          eight = max((v["version"] for v in releases if v["version"].startswith("8.14.")), key=key)
+          print(",".join(["7.3.3", eight, latest]))
+          PY
+          )
+          echo "list=$list" >> "$GITHUB_OUTPUT"
+          # Cache keys may not contain commas
+          echo "key=${list//,/_}" >> "$GITHUB_OUTPUT"
+          echo "Gradle versions under test: \`$list\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cache Gradle distributions
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: build-tool/build/scoped-gradle-test-home/wrapper/dists
+          key: gradle-compat-dists-${{ steps.versions.outputs.key }}
+
+      - name: Run the scoped observation on each version
+        env:
+          GVY_SCOPED_TEST_GRADLE_VERSIONS: ${{ steps.versions.outputs.list }}
+        run: >-
+          ./gradlew :build-tool:test
+          --tests '*GradleScopedDependencyProducerIntegrationTest.a project dependency resolves on the requested older Gradle versions'
+          --stacktrace
+
+  report:
+    name: Report scheduled result
+    needs: scoped-lock-api
+    if: always() && github.event_name == 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the tracking issue
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RESULT: ${{ needs.scoped-lock-api.result }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="Scheduled Gradle compatibility check is failing"
+          existing=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" \
+            --json number,title --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          if [ "$RESULT" = "failure" ]; then
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --repo "$REPO" --body "Still failing: $RUN_URL"
+            else
+              gh issue create --repo "$REPO" --title "$title" --body "$(printf '%s\n\n%s\n' \
+                "The weekly scoped init script check (#1376) failed: $RUN_URL" \
+                "A subproject target was not COMPLETE on one of the tested Gradle versions, or the run broke.")"
+            fi
+          elif [ "$RESULT" = "success" ] && [ -n "$existing" ]; then
+            gh issue close "$existing" --repo "$REPO" --comment "Passing again: $RUN_URL"
+          fi
