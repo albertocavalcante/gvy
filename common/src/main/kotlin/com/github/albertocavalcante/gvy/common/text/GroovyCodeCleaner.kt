@@ -108,9 +108,10 @@ object GroovyCodeCleaner {
      *
      * Also blanks dollar-slashy strings (`$/ ... /$`) and slashy strings (`/ ... /`). A `/` opens a slashy
      * string only where an expression starts (at the start of the code, after `(`, `[`, `{`, `,`, `=`, `:`,
-     * `;`, `!`, `&`, `|`, `?`, `~` or a newline, or after `return`, `case`, `in` or `assert`), so division stays
-     * code. `'...'` and `"..."` end at the end of their line even when unterminated, as Groovy does not let
-     * them span lines; triple-quoted, slashy and dollar-slashy strings may.
+     * `;`, `!`, `&`, `|`, `?`, `~`, `>` (a closure's `->`) or a newline, or after `return`, `case`, `in` or
+     * `assert`), so division stays code. `'...'` and `"..."` end at the end of their line even when
+     * unterminated, as Groovy does not let them span lines, except inside a `"${...}"` interpolation; triple-quoted,
+     * slashy and dollar-slashy strings may span lines.
      */
     fun blankCommentsAndStrings(code: String): String {
         val out = code.toCharArray()
@@ -137,7 +138,8 @@ object GroovyCodeCleaner {
             ?.let { (open, close) -> closingEnd(code, close, i + open.length) }
             ?: when {
                 // Groovy does not let '...' and "..." span lines: a stray quote must not blank the rest of the file.
-                code[i] == '\'' || code[i] == '"' -> quotedEnd(code, i + 1, code[i], stopAtNewline = true)
+                code[i] == '\'' -> quotedEnd(code, i + 1, '\'', stopAtNewline = true)
+                code[i] == '"' -> gStringEnd(code, i + 1)
                 code[i] == '/' && startsExpression(code, i) -> quotedEnd(code, i + 1, '/', stopAtNewline = false)
                 else -> null
             }
@@ -171,7 +173,36 @@ object GroovyCodeCleaner {
         return code.length
     }
 
-    private const val EXPRESSION_STARTERS = "([{,=:;!&|?~\n"
+    /**
+     * End of a `"..."` GString starting after its quote. It ends at an unescaped newline like `'...'`, except inside
+     * a `${...}` interpolation, whose closures may span lines (`"${ items.collect {\n it } }"`): there braces are
+     * counted until the interpolation closes.
+     */
+    private fun gStringEnd(code: String, from: Int): Int {
+        var depth = 0
+        var j = from
+        while (j < code.length) {
+            val c = code[j]
+            when {
+                c == '\\' -> j += 2
+                depth == 0 && c == '$' && code.startsWith("{", j + 1) -> {
+                    depth = 1
+                    j += 2
+                }
+                depth > 0 -> {
+                    if (c == '{') depth++ else if (c == '}') depth--
+                    j++
+                }
+                c == '"' -> return j + 1
+                c == '\n' -> return j
+                else -> j++
+            }
+        }
+        return code.length
+    }
+
+    /** Characters after which a `/` starts a slashy string; `>` covers a closure's `->`. */
+    private const val EXPRESSION_STARTERS = "([{,=:;!&|?~>\n"
 
     /** Keywords after which a `/` starts a slashy string (`case /re/:`, `return /re/`), not a division. */
     private val EXPRESSION_KEYWORDS = setOf("return", "case", "in", "assert")
