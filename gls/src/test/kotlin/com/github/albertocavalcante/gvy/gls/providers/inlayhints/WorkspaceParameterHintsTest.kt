@@ -44,10 +44,10 @@ class WorkspaceParameterHintsTest {
 
     private var targets = 0
 
-    private suspend fun hintsFor(call: String): List<String> {
+    private suspend fun hintsFor(call: String, imports: String = ""): List<String> {
         val name = "T${targets++}"
         val target = tempDir.resolve("$name.groovy")
-        val source = "class $name {\n  void run() {\n    $call\n  }\n}\n"
+        val source = "${imports}class $name {\n  void run() {\n    $call\n  }\n}\n"
         target.writeText(source)
         compilation.compile(target.toUri(), source)
         return InlayHintsProvider(
@@ -57,6 +57,28 @@ class WorkspaceParameterHintsTest {
         ).provideInlayHints(
             InlayHintParams(TextDocumentIdentifier(target.toUri().toString()), Range(Position(0, 0), Position(20, 0))),
         ).sortedBy { it.position.character }.map { it.label.left } // source order; traversal order varies
+    }
+
+    @Test
+    fun `the exact owner class wins over a same-named class in another package`(): Unit = runBlocking {
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n  def send(String first) {}\n}\n")
+        index("B.groovy", "package b\nclass Util {\n  Util(String other) {}\n  def send(String other) {}\n}\n")
+
+        assertEquals(listOf("first:", "first:"), hintsFor("new a.Util('x').send('y')"))
+        assertEquals(listOf("other:", "other:"), hintsFor("new b.Util('x').send('y')"))
+        assertEquals(
+            listOf("other:", "other:"),
+            hintsFor("def u = new Util('x')\n    u.send('y')", imports = "import b.Util\n"),
+            "an imported simple name keeps its package",
+        )
+    }
+
+    @Test
+    fun `without an exact owner the same-named classes are still considered`(): Unit = runBlocking {
+        index("A.groovy", "package a\nclass Util {\n  Util(String first) {}\n}\n")
+
+        // `c.Util` does not exist: the simple-name candidates stay, as before.
+        assertEquals(listOf("first:"), hintsFor("new c.Util('x')"))
     }
 
     @Test

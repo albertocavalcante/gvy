@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ClassExpression
+import org.codehaus.groovy.ast.expr.ConstructorCallExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -198,12 +199,21 @@ internal object InlayHintsCandidates {
                     "receiver",
                 )
 
-        return refineReceiverTypeWithSymbolTable(
+        val refined = refineReceiverTypeWithSymbolTable(
             type,
             objectExpr,
             context,
         )
             ?.takeUnless { InlayHintsTypes.isDynamicType(it) || it == "java.lang.Class" }
+            ?: return null
+        if (refined.contains('.')) return refined
+        // An unresolved workspace class comes back as its simple name. Keep the package the source wrote
+        // (`new a.Util()`) or imported (`import a.Util`), so the exact owner can win (#1374).
+        val written = (objectExpr as? ConstructorCallExpression)?.type?.name
+            ?.takeIf { it.endsWith(".$refined") }
+        val imported = context.moduleNode?.imports.orEmpty()
+            .firstOrNull { it.alias == refined }?.className
+        return written ?: imported ?: refined
     }
 
     fun resolveImplicitThisReceiverType(call: MethodCallExpression, astModel: GroovyAstModel): String? {
@@ -326,7 +336,9 @@ internal object InlayHintsCandidates {
         val receiverSimple = normalizedReceiverType.substringAfterLast('.')
 
         // Owners named exactly like the receiver share its simple name, so one key covers both matches.
-        return workspaceMethods[WorkspaceMethodKey(methodName, receiverSimple)].orEmpty()
+        // A method of the exact receiver class wins over same-named classes in other packages (#1374).
+        val sameName = workspaceMethods[WorkspaceMethodKey(methodName, receiverSimple)].orEmpty()
+        return sameName.filter { it.owner?.name == normalizedReceiverType }.ifEmpty { sameName }
             .asSequence()
             .filter { it.parameters.size == argCount }
             .filter { !isStaticCall || it.isStatic }
@@ -405,7 +417,9 @@ internal object InlayHintsCandidates {
     ): List<CallableSignature> {
         val normalizedType = InlayHintsTypes.normalizeTypeName(typeName)
         val simpleName = normalizedType.substringAfterLast('.')
-        return compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+        // The exact class wins over same-named classes in other packages (#1374).
+        val sameName = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleName))
+        return sameName.filter { it.fullyQualifiedName == normalizedType }.ifEmpty { sameName }
             .asSequence()
             .flatMap { classSymbol ->
                 classSymbol.node.declaredConstructors
