@@ -653,7 +653,8 @@ private fun MutableList<Path>.tryGenerateStubs(
         // Eviction is housekeeping: its failure must not cost this compile the set it just published.
         runCatching { pluginStubs.evict(stubsDir, published) }.onFailure { throwable ->
             if (throwable is Error) throw throwable
-            logger.debug(throwable) { "Failed to evict Jenkins stub sets under $stubsDir" }
+            // evict handles IO errors itself, so anything reaching here is a bug.
+            logger.warn(throwable) { "Failed to evict Jenkins stub sets under $stubsDir" }
         }
     }.onFailure { throwable ->
         if (throwable is Error) throw throwable

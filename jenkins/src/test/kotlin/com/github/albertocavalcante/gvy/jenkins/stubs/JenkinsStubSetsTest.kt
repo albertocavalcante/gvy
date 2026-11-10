@@ -85,27 +85,30 @@ class JenkinsStubSetsTest {
     @Test
     fun `concurrent publishers only ever see complete sets and leave no temporary directories`() {
         val threads = 8
-        val start = CountDownLatch(1)
+        val rounds = 20 // fresh keys each round, so every round races on publication
         val pool = Executors.newFixedThreadPool(threads)
         try {
-            val results = (0 until threads * 4).map { i ->
-                pool.submit<Pair<String, Path>> {
-                    start.await()
-                    val step = "step${i % 3}" // the same and different sets at once
-                    step to sets().publish(files(step))
+            repeat(rounds) { round ->
+                val start = CountDownLatch(1)
+                val results = (0 until threads * 4).map { i ->
+                    pool.submit<Pair<String, Path>> {
+                        start.await()
+                        val step = "r${round}s${i % 3}" // the same and different sets at once
+                        step to sets().publish(files(step))
+                    }
                 }
-            }
-            start.countDown()
-            results.map { it.get(30, TimeUnit.SECONDS) }.forEach { (step, dir) ->
-                assertEquals(files(step).getValue("org.example.CpsScript"), cpsScript(dir))
-                assertTrue(Files.isRegularFile(dir.resolve("org/example/Fixed.groovy")))
+                start.countDown()
+                results.map { it.get(30, TimeUnit.SECONDS) }.forEach { (step, dir) ->
+                    assertEquals(files(step).getValue("org.example.CpsScript"), cpsScript(dir))
+                    assertTrue(isComplete(dir) && Files.isRegularFile(dir.resolve("org/example/Fixed.groovy")))
+                }
             }
         } finally {
             pool.shutdownNow()
         }
 
-        assertEquals(emptyList(), temporaryDirs())
-        assertEquals(3, Files.list(setsRoot).use { it.count() })
+        assertEquals(emptyList(), temporaryDirs(), "a published set was moved aside and left behind")
+        assertEquals(rounds * 3L, Files.list(setsRoot).use { it.count() })
     }
 
     @Test
@@ -185,6 +188,54 @@ class JenkinsStubSetsTest {
         assertTrue(isComplete(dir))
         assertEquals(files("aStep").getValue("org.example.CpsScript"), cpsScript(dir))
         assertTrue(Files.isRegularFile(dir.resolve("org/example/Fixed.groovy")))
+    }
+
+    /** Leaves a directory under [files]' key with a source but no completion marker, like an interrupted delete. */
+    private fun leavePartialSet(files: Map<String, String>): Path {
+        val dir = setsRoot.resolve(sets().keyOf(files))
+        dir.resolve("org/example").createDirectories().resolve("CpsScript.groovy").writeText("class CpsScript {")
+        return dir
+    }
+
+    @Test
+    fun `a writer that fails to move a partial set aside uses the set another writer published meanwhile`() {
+        val partial = leavePartialSet(files("aStep"))
+        val winner = sets()
+        val loser = sets(
+            moveDirectory = { from, to ->
+                if (from == partial) {
+                    // The winner retires the partial set and publishes first; the loser's retire then fails.
+                    winner.publish(files("aStep"))
+                    throw java.nio.file.NoSuchFileException(from.toString())
+                }
+                moveDirectoryAtomically(from, to)
+            },
+        )
+
+        val dir = loser.publish(files("aStep"))
+
+        assertEquals(partial, dir)
+        assertTrue(isComplete(dir))
+        assertEquals(files("aStep").getValue("org.example.CpsScript"), cpsScript(dir))
+    }
+
+    @Test
+    fun `a writer whose retire fails because the partial set vanished writes a fresh one`() {
+        val partial = leavePartialSet(files("aStep"))
+        val loser = sets(
+            moveDirectory = { from, to ->
+                if (from == partial) {
+                    deleteTreeBottomUp(partial) // another writer removed it without publishing
+                    throw java.nio.file.NoSuchFileException(from.toString())
+                }
+                moveDirectoryAtomically(from, to)
+            },
+        )
+
+        val dir = loser.publish(files("aStep"))
+
+        assertTrue(isComplete(dir))
+        assertEquals(files("aStep").getValue("org.example.CpsScript"), cpsScript(dir))
     }
 
     @Test

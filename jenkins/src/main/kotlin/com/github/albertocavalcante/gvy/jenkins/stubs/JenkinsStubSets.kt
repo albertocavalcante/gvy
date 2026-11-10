@@ -63,7 +63,8 @@ internal class JenkinsStubSets(
         val dir = setsRoot.resolve(key)
         if (!isComplete(dir)) {
             setsRoot.createDirectories()
-            if (Files.exists(dir)) retire(dir) ?: throw IOException("Cannot move incomplete stub set $dir aside")
+            // Another writer may have published meanwhile; use its set.
+            if (clearIncomplete(dir)) return dir.also(::touch)
             val tmp = temporaryFor(key)
             try {
                 generator.writeSet(files, tmp)
@@ -126,6 +127,35 @@ internal class JenkinsStubSets(
             .take(excess)
             // Renamed aside first, so a failed or interrupted delete never leaves a partial set under its name.
             .forEach { set -> retire(set)?.let(::deleteQuietly) }
+    }
+
+    /**
+     * Makes way for a fresh set under [dir]'s name: moves an incomplete directory there aside and deletes it.
+     * Returns true when a complete set is (or is again) under the name, so the caller uses it instead.
+     *
+     * Writers race here. A set another writer published after our first check is complete, so it is never
+     * moved aside on purpose; if one is moved aside anyway (it was published between the check and the move),
+     * it is put back, or the set now under the name is used.
+     *
+     * @throws IOException when an incomplete directory stays under the name
+     */
+    private fun clearIncomplete(dir: Path): Boolean {
+        if (isComplete(dir)) return true
+        if (!Files.exists(dir)) return false
+        val aside = retire(dir)
+        if (aside != null && isComplete(aside)) {
+            try {
+                fileOps.moveDirectory(aside, dir)
+            } catch (e: IOException) {
+                logger.debug(e) { "Another stub set took $dir's place" }
+            }
+        }
+        aside?.let(::deleteQuietly)
+        return when {
+            isComplete(dir) -> true
+            Files.exists(dir) -> throw IOException("Cannot move incomplete stub set $dir aside")
+            else -> false // retired, or removed by another writer: write a fresh set
+        }
     }
 
     /**
