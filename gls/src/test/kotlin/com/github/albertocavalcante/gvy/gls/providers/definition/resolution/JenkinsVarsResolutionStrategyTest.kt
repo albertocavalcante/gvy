@@ -34,9 +34,11 @@ import org.codehaus.groovy.syntax.Types
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertTimeoutPreemptively
 import java.lang.reflect.Modifier
 import java.net.URI
 import java.nio.file.Files
+import java.time.Duration
 
 class JenkinsVarsResolutionStrategyTest {
 
@@ -381,6 +383,25 @@ class JenkinsVarsResolutionStrategyTest {
     }
 
     @Test
+    fun `Jenkins vars strategy finishes on a script class whose superclasses form a cycle`() {
+        // `class A extends B {}; class B extends A {}` with the script extending A (#1411)
+        val a = ClassNode("A", 1, ClassHelper.OBJECT_TYPE)
+        val b = ClassNode("B", 1, a)
+        a.superClass = b
+        val script = ClassNode("Jenkinsfile", 1, a).apply { isScript = true }
+        val call = MethodCallExpression(VariableExpression("this"), "deploy", ArgumentListExpression())
+        val astModel = mockk<GroovyAstModel> {
+            every { getParent(call) } returns script
+            every { getParent(script) } returns null
+        }
+        val strategy = JenkinsVarsResolutionStrategy(capabilitiesWith("deploy"), astModel = astModel)
+
+        assertTimeoutPreemptively(Duration.ofSeconds(CYCLE_TIMEOUT_SECONDS)) {
+            assertNotResolved(strategy, call, JENKINSFILE)
+        }
+    }
+
+    @Test
     fun `Jenkins vars strategy falls back to the script class when no parent is tracked`() {
         val script = scriptClass().apply {
             addField("deploy", 1, ClassHelper.OBJECT_TYPE, null)
@@ -572,5 +593,6 @@ class JenkinsVarsResolutionStrategyTest {
 
     private companion object {
         val JENKINSFILE: URI = URI.create("file:///workspace/Jenkinsfile")
+        const val CYCLE_TIMEOUT_SECONDS = 20L
     }
 }

@@ -32,30 +32,24 @@ interface ResolvedClassDeclaration : ResolvedTypeDeclaration {
     fun isFinal(): Boolean
 
     /**
-     * Checks if this class is a subtype of the given type.
+     * Checks if this class is a subtype of the given type: [other] itself, one of its superclasses, or an interface
+     * one of them implements directly. The superclass chain is walked once per class name, so a cycle such as
+     * `class A extends B {}; class B extends A {}` ends the walk instead of recursing forever (#1411).
      */
     fun isAssignableBy(other: ResolvedTypeDeclaration): Boolean {
         if (qualifiedName == other.qualifiedName) return true
-
-        // Check if other is a subclass
-        if (other is ResolvedClassDeclaration) {
-            val otherSuperClass = other.superClass
-            if (otherSuperClass != null &&
-                isAssignableBy(otherSuperClass.declaration)
+        val seen = mutableSetOf<String>()
+        var current: ResolvedTypeDeclaration? = other
+        while (current is ResolvedClassDeclaration && seen.add(current.qualifiedName)) {
+            val type = current
+            val superDeclaration = type.superClass?.declaration
+            if (superDeclaration?.qualifiedName == qualifiedName ||
+                type.interfaces.any { it.declaration.qualifiedName == qualifiedName }
             ) {
                 return true
             }
+            current = superDeclaration
         }
-
-        // Check implemented interfaces
-        if (other is ResolvedClassDeclaration) {
-            for (iface in other.interfaces) {
-                if (qualifiedName == iface.declaration.qualifiedName) {
-                    return true
-                }
-            }
-        }
-
         return false
     }
 }
