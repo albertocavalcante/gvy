@@ -178,7 +178,7 @@ class JenkinsStepHoverStrategyTest {
 
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns metadata
 
         val result = strategy.generateHover(node, context)
 
@@ -224,7 +224,7 @@ class JenkinsStepHoverStrategyTest {
 
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns metadata
 
         val result = strategy.generateHover(node, context)
 
@@ -242,7 +242,7 @@ class JenkinsStepHoverStrategyTest {
         val node = parseCall(code)
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns
             createMockMetadata("echo", "Prints a message.", null, emptyMap())
 
         val range = strategy.generateHover(node, context)!!.range
@@ -285,7 +285,7 @@ class JenkinsStepHoverStrategyTest {
         every { node.lastColumnNumber } returns -1
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns
             createMockMetadata("echo", "Prints a message.", null, emptyMap())
 
         val hover = strategy.generateHover(node, context)!!
@@ -325,7 +325,7 @@ class JenkinsStepHoverStrategyTest {
 
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns metadata
 
         val result = strategy.generateHover(node, context)
 
@@ -338,7 +338,7 @@ class JenkinsStepHoverStrategyTest {
 
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns null
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns null
 
         val result = strategy.generateHover(node, context)
 
@@ -363,7 +363,7 @@ class JenkinsStepHoverStrategyTest {
 
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns listOf(globalVar)
-        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns metadata
 
         val result = strategy.generateHover(node, context)
 
@@ -397,7 +397,7 @@ class JenkinsStepHoverStrategyTest {
 
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns metadata
 
         val result = strategy.generateHover(node, context)
 
@@ -420,7 +420,7 @@ class JenkinsStepHoverStrategyTest {
 
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns metadata
 
         val result = strategy.generateHover(node, context)
 
@@ -474,7 +474,7 @@ class JenkinsStepHoverStrategyTest {
         // Mock the mode resolver to return true (simulating JENKINS mode explicitly set)
         every { modeResolver.isJenkinsModeEnabled(regularGroovyFileUri) } returns true
         every { jenkinsCapabilities.getGlobalVariables() } returns emptyList()
-        every { jenkinsCapabilities.getAllMetadata() } returns metadata
+        every { jenkinsCapabilities.getAllMetadata(any()) } returns metadata
 
         val result = strategy.generateHover(node, contextForGroovyFile)
 

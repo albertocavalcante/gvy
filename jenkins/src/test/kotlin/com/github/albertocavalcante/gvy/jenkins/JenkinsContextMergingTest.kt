@@ -48,10 +48,11 @@ class JenkinsContextMergingTest {
             bundledMetadataLoader = { VersionedMetadataLoader().loadMerged() },
             classpathScanner = { dynamicMetadata },
         )
-        context.scanClasspath(listOf(tempDir.resolve("workflow-durable-task-step.jar")))
+        val classpath = listOf(tempDir.resolve("workflow-durable-task-step.jar"))
+        context.scanClasspath(classpath)
 
         // 4. Act
-        val result = context.getAllMetadata()
+        val result = context.getAllMetadata(classpath)
         val mergedSh = result.steps["sh"]
 
         // 5. Assert

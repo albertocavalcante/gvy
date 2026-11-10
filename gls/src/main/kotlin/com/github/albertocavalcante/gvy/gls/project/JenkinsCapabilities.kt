@@ -31,9 +31,10 @@ interface JenkinsCapabilities {
     fun getGlobalVariables(): List<GlobalVariable>
 
     /**
-     * Gets combined Jenkins metadata (steps, globals) including scanned plugins.
+     * Gets combined Jenkins metadata (steps, globals) for the Jenkinsfile [uri], including the library steps
+     * scanned from the classpath that file was compiled with, never another file's (#1242).
      */
-    fun getAllMetadata(): MergedJenkinsMetadata?
+    fun getAllMetadata(uri: URI): MergedJenkinsMetadata?
 
     /**
      * Gets the classpath for a Jenkins file, including shared library dependencies.

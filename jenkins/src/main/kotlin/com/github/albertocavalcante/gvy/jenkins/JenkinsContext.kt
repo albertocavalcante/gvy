@@ -95,7 +95,16 @@ class JenkinsContext internal constructor(
     fun buildClasspath(
         libraryReferences: List<LibraryReference>,
         projectDependencies: List<Path> = emptyList(),
-    ): List<Path> {
+    ): List<Path> = buildScopedClasspath(libraryReferences, projectDependencies).entries
+
+    /**
+     * [buildClasspath], plus the key its scan is kept under: the classpath before stub directories were added.
+     * Pass [ScopedClasspath.scanKey] to [getAllMetadata] for this file's own metadata.
+     */
+    internal fun buildScopedClasspath(
+        libraryReferences: List<LibraryReference>,
+        projectDependencies: List<Path> = emptyList(),
+    ): ScopedClasspath {
         val classpath = mutableListOf<Path>()
 
         classpath.addProjectDependencies(logger, projectDependencies)
@@ -107,13 +116,15 @@ class JenkinsContext internal constructor(
         classpath.addRegisteredPluginJars(logger, pluginManager)
 
         // Stubs follow this classpath's own scan, even if a newer request has been published meanwhile.
-        val scanned = scanClasspath(classpath)
+        val scanKey = classpath.toList()
+        val scanned = scanClasspath(scanKey)
         warnAboutLegacyStubsDir()
         classpath.tryGenerateStubs(logger, stubHooks.generator, ::stubsDirectory, ::shouldGenerateStubs) {
-            scanned?.let { withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata) } ?: getAllMetadata()
+            // A failed scan has no library steps of its own: bundled and GDSL only, never another file's scan.
+            scanned?.let { withGdsl(buildMergedMetadata(it), gdslSnapshot?.metadata) } ?: getAllMetadata(null)
         }
 
-        return classpath
+        return ScopedClasspath(classpath, scanKey)
     }
 
     /**
@@ -325,18 +336,50 @@ class JenkinsContext internal constructor(
 
     /**
      * Result of one classpath scan; [generation] is the request's place in line, taken before it scanned.
-     * Replaced atomically by [scanClasspath].
+     * [view] memoizes the merged view over it for one GDSL snapshot.
      */
-    private class ScanSnapshot(val generation: Long, val classpath: List<Path>, val metadata: BundledJenkinsMetadata)
+    private class ScanSnapshot(val generation: Long, val classpath: List<Path>, val metadata: BundledJenkinsMetadata) {
+        @Volatile
+        var view: MergedSnapshot? = null
+    }
+
+    /**
+     * Recent scans by classpath, least recently used first. Immutable: [scanClasspath] replaces the whole
+     * cache, so readers never see a partial update.
+     */
+    private class ScanCache(val byClasspath: Map<List<Path>, ScanSnapshot>) {
+        /** [scan] for its classpath unless a newer request's scan is there; the LRU entry beyond the bound goes. */
+        fun with(scan: ScanSnapshot): ScanCache {
+            val existing = byClasspath[scan.classpath]
+            val kept = if (existing != null && existing.generation > scan.generation) existing else scan
+            val entries = LinkedHashMap(byClasspath).apply {
+                remove(scan.classpath)
+                put(scan.classpath, kept)
+                while (size > MAX_SCANNED_CLASSPATHS) remove(keys.first())
+            }
+            return ScanCache(entries)
+        }
+
+        /** Marks [classpath] as most recently used. */
+        fun touched(classpath: List<Path>): ScanCache {
+            val entry = byClasspath[classpath] ?: return this
+            if (byClasspath.keys.lastOrNull() == classpath) return this
+            val entries = LinkedHashMap(byClasspath).apply {
+                remove(classpath)
+                put(classpath, entry)
+            }
+            return ScanCache(entries)
+        }
+    }
 
     /** Metadata declared by the configured GDSL files; replaced atomically by [loadGdslMetadata]. */
     private class GdslSnapshot(val metadata: BundledJenkinsMetadata)
 
-    /** Merged view computed for one scan and GDSL snapshot (null = that source contributes nothing). */
-    private class MergedSnapshot(val scan: ScanSnapshot?, val gdsl: GdslSnapshot?, val metadata: MergedJenkinsMetadata)
+    /** Merged view computed for one GDSL snapshot (null = GDSL contributes nothing). */
+    private class MergedSnapshot(val gdsl: GdslSnapshot?, val metadata: MergedJenkinsMetadata)
 
-    /** Replaced in [scanClasspath] without the context lock; the newest request wins. */
-    private val scanSnapshot = AtomicReference<ScanSnapshot?>(null)
+    /** Replaced in [scanClasspath] without the context lock; per classpath, the newest request wins. */
+    private val scans = AtomicReference(ScanCache(emptyMap()))
 
     /** Hands out scan request generations, in the order requests start. */
     private val scanRequests = AtomicLong()
@@ -344,55 +387,37 @@ class JenkinsContext internal constructor(
     @Volatile
     private var gdslSnapshot: GdslSnapshot? = null
 
+    /** Memoized view with no scan: bundled metadata and GDSL only. */
     @Volatile
-    private var mergedSnapshot: MergedSnapshot? = null
+    private var unscannedView: MergedSnapshot? = null
 
     /**
-     * Get combined metadata (bundled + dynamic), optionally filtered by installed plugins.
+     * Combined metadata (bundled + GDSL + the library steps scanned from [classpath]) for a file compiled with
+     * [classpath] (#1242): its own scanned library steps, never another file's. Null, or a classpath that was
+     * never scanned or was evicted, gives the view without scanned steps until the file's next compile scans
+     * it again. Reads take no lock and write nothing but memos.
      *
-     * Completion and hover call this per request, so the result is memoized: it is rebuilt only
-     * when a classpath scan or a GDSL (re)load publishes new metadata. Configuration (plugins, GDSL
-     * paths) is fixed per context; a configuration change creates a new context and therefore a new view.
+     * Completion and hover call this per request, so each view is memoized: it is rebuilt only when its scan
+     * or a GDSL (re)load publishes new metadata. Configuration (plugins, GDSL paths) is fixed per context; a
+     * configuration change creates a new context and therefore a new view.
      *
      * HEURISTIC: If plugins.txt exists, filter to only show steps from installed plugins.
      * If no plugins.txt, show all bundled metadata (better UX for users without JCasC).
      */
-    fun getAllMetadata(): MergedJenkinsMetadata {
-        val scan = scanSnapshot.get()
+    fun getAllMetadata(classpath: List<Path>?): MergedJenkinsMetadata =
+        viewOf(classpath?.let { scans.get().byClasspath[it] })
+
+    private fun viewOf(scan: ScanSnapshot?): MergedJenkinsMetadata {
         val gdsl = gdslSnapshot
-        mergedSnapshot?.takeIf { it.scan === scan && it.gdsl === gdsl }?.let { return it.metadata }
+        val memo = if (scan != null) scan.view else unscannedView
+        memo?.takeIf { it.gdsl === gdsl }?.let { return it.metadata }
 
         // Racing callers may compute the same view twice; both results are equal and the
         // expensive bundled load is guarded by its own lazy initializer.
-        val merged = withGdsl(buildMergedMetadata(scan?.metadata), gdsl?.metadata)
-        mergedSnapshot = MergedSnapshot(scan, gdsl, merged)
-        return merged
+        val view = MergedSnapshot(gdsl, withGdsl(buildMergedMetadata(scan?.metadata), gdsl?.metadata))
+        if (scan != null) scan.view = view else unscannedView = view
+        return view.metadata
     }
-
-    /**
-     * Adds GDSL steps and globals whose names the other sources do not know, as either a step or a global, so
-     * completion never offers a name twice. Bundled and scanned metadata are richer (enrichment, parameters,
-     * plugins), so GDSL never replaces them; a GDSL name declared as both a step and a global stays a step.
-     * GDSL entries are the user's own configuration, so plugin filtering does not apply to them.
-     */
-    private fun withGdsl(metadata: MergedJenkinsMetadata, gdsl: BundledJenkinsMetadata?): MergedJenkinsMetadata {
-        if (gdsl == null) return metadata
-        val known = metadata.steps.keys + metadata.globalVariables.keys
-        val newSteps = gdsl.steps.filterKeys { it !in known }.mapValues { (_, step) -> step.toMerged() }
-        val newGlobals = gdsl.globalVariables.filterKeys { it !in known && it !in gdsl.steps }
-            .mapValues { (_, global) -> global.toMerged() }
-        if (newSteps.isEmpty() && newGlobals.isEmpty()) return metadata
-        return metadata.copy(steps = metadata.steps + newSteps, globalVariables = metadata.globalVariables + newGlobals)
-    }
-
-    private fun GlobalVariableMetadata.toMerged(): MergedGlobalVariable = MergedGlobalVariable(
-        name = name,
-        type = type,
-        extractedDocumentation = documentation,
-        enrichedDescription = null,
-        documentationUrl = null,
-        properties = emptyMap(),
-    )
 
     private fun buildMergedMetadata(dynamicMetadata: BundledJenkinsMetadata?): MergedJenkinsMetadata {
         val versionedMerged = bundledMetadata
@@ -426,49 +451,16 @@ class JenkinsContext internal constructor(
         )
     }
 
-    private fun JenkinsStepMetadata.toMerged(backup: MergedStepMetadata? = null): MergedStepMetadata =
-        MergedStepMetadata(
-            name = this.name,
-            scope = StepScope.GLOBAL,
-            positionalParams = this.positionalParams,
-            namedParams = run
-            {
-                val dynamicParams = this.parameters.mapValues { (pName, param) ->
-                    MergedParameter(
-                        name = pName,
-                        type = param.type,
-                        defaultValue = param.default,
-                        description = param.documentation,
-                        required = param.required,
-                        validValues = null,
-                        examples = emptyList(),
-                    )
-                }
-                if (backup != null) {
-                    backup.namedParams + dynamicParams
-                } else {
-                    dynamicParams
-                }
-            },
-            extractedDocumentation = this.documentation,
-            returnType = null,
-            plugin = this.plugin,
-            // Preserve enrichment from backup if available
-            enrichedDescription = backup?.enrichedDescription,
-            documentationUrl = backup?.documentationUrl,
-            category = backup?.category,
-            examples = backup?.examples ?: emptyList(),
-            deprecation = backup?.deprecation,
-        )
-
     /**
      * Parse and scan classpath for Jenkins metadata.
      *
-     * Rescans only when the classpath differs from the last published scan. Every Jenkinsfile compile,
-     * completion included, reaches this, so the scan runs without any lock (#1241): a request for another
-     * classpath never waits for a scan in progress. Each request takes a generation before it scans and
-     * publishes only over an older generation, so the newest request wins whatever order scans finish in,
-     * and readers always see exactly one scan.
+     * Each classpath's scan is kept (up to [MAX_SCANNED_CLASSPATHS], least recently used evicted), so every
+     * Jenkinsfile sees its own library steps through [getAllMetadata] for its classpath (#1242); a known
+     * classpath is not rescanned. Every Jenkinsfile compile, completion included, reaches this, so the scan
+     * runs without any lock (#1241): a request for another classpath never waits for a scan in progress.
+     * Each request takes a generation before it scans; per classpath a scan replaces only an older
+     * generation, so the newest request wins whatever order scans finish in, and readers always see exactly
+     * one scan.
      *
      * @return this request's own scan result (even when a newer request has been published since), or null
      *   if the scanner failed.
@@ -478,18 +470,16 @@ class JenkinsContext internal constructor(
      * previous snapshot in place.
      */
     fun scanClasspath(classpath: List<Path>): BundledJenkinsMetadata? {
-        val unchanged = scanSnapshot.get()?.takeIf { it.classpath == classpath }
-        // Skip only when no newer request has started: otherwise an older scan still in flight would replace
-        // this classpath's snapshot after this (newer) request returned.
-        if (unchanged != null && unchanged.generation == scanRequests.get()) {
+        val cached = scans.get().byClasspath[classpath]
+        if (cached != null) {
             logger.debug { "Classpath unchanged (${classpath.size} entries), skipping scan" }
-            return unchanged.metadata
+            scans.updateAndGet { it.touched(classpath) }
+            return cached.metadata
         }
 
         val generation = scanRequests.incrementAndGet()
         val snapshot = classpath.toList()
-        // An unchanged classpath is republished under this request's generation, without rescanning.
-        val metadata = unchanged?.metadata ?: try {
+        val metadata = try {
             logger.info { "Scanning ${classpath.size} classpath entries for Jenkins metadata" }
             classpathScanner(snapshot)
         } catch (e: Exception) {
@@ -497,12 +487,7 @@ class JenkinsContext internal constructor(
             return null
         }
         val scanned = ScanSnapshot(generation, snapshot, metadata)
-        val published = scanSnapshot.updateAndGet { current ->
-            if (current == null || current.generation < generation) scanned else current
-        }
-        if (published !== scanned) {
-            logger.debug { "Kept a newer classpath scan over this one (request $generation)" }
-        }
+        scans.updateAndGet { it.with(scanned) }
         return metadata
     }
 
@@ -514,6 +499,12 @@ class JenkinsContext internal constructor(
     companion object {
         /** Plugin id that bundled metadata uses for Jenkins core contributions. */
         private const val JENKINS_CORE_PLUGIN = "jenkins-core"
+
+        /**
+         * Classpaths whose scans are kept, least recently used evicted first. Each entry holds its library
+         * steps plus one memoized merged view (about 4 KB over the bundled metadata, measured).
+         */
+        internal const val MAX_SCANNED_CLASSPATHS = 8
 
         /**
          * Bundled and enrichment metadata come from immutable classpath resources, so every
@@ -658,5 +649,67 @@ private fun MutableList<Path>.tryGenerateLibraryAnnotationStub(
     }
 }
 
+/** A Jenkinsfile's compile classpath ([entries]) and the key its scanned metadata is kept under. */
+internal class ScopedClasspath(val entries: List<Path>, val scanKey: List<Path>)
+
 /** Subdirectory of the stubs directory holding stubs that are needed even with the real plugins. */
 private const val IMPLICIT_STUBS_DIR = "implicit"
+
+/**
+ * Adds GDSL steps and globals whose names the other sources do not know, as either a step or a global, so
+ * completion never offers a name twice. Bundled and scanned metadata are richer (enrichment, parameters,
+ * plugins), so GDSL never replaces them; a GDSL name declared as both a step and a global stays a step.
+ * GDSL entries are the user's own configuration, so plugin filtering does not apply to them.
+ */
+private fun withGdsl(metadata: MergedJenkinsMetadata, gdsl: BundledJenkinsMetadata?): MergedJenkinsMetadata {
+    if (gdsl == null) return metadata
+    val known = metadata.steps.keys + metadata.globalVariables.keys
+    val newSteps = gdsl.steps.filterKeys { it !in known }.mapValues { (_, step) -> step.toMerged() }
+    val newGlobals = gdsl.globalVariables.filterKeys { it !in known && it !in gdsl.steps }
+        .mapValues { (_, global) -> global.toMerged() }
+    if (newSteps.isEmpty() && newGlobals.isEmpty()) return metadata
+    return metadata.copy(steps = metadata.steps + newSteps, globalVariables = metadata.globalVariables + newGlobals)
+}
+
+private fun GlobalVariableMetadata.toMerged(): MergedGlobalVariable = MergedGlobalVariable(
+    name = name,
+    type = type,
+    extractedDocumentation = documentation,
+    enrichedDescription = null,
+    documentationUrl = null,
+    properties = emptyMap(),
+)
+
+private fun JenkinsStepMetadata.toMerged(backup: MergedStepMetadata? = null): MergedStepMetadata = MergedStepMetadata(
+    name = this.name,
+    scope = StepScope.GLOBAL,
+    positionalParams = this.positionalParams,
+    namedParams = run
+    {
+        val dynamicParams = this.parameters.mapValues { (pName, param) ->
+            MergedParameter(
+                name = pName,
+                type = param.type,
+                defaultValue = param.default,
+                description = param.documentation,
+                required = param.required,
+                validValues = null,
+                examples = emptyList(),
+            )
+        }
+        if (backup != null) {
+            backup.namedParams + dynamicParams
+        } else {
+            dynamicParams
+        }
+    },
+    extractedDocumentation = this.documentation,
+    returnType = null,
+    plugin = this.plugin,
+    // Preserve enrichment from backup if available
+    enrichedDescription = backup?.enrichedDescription,
+    documentationUrl = backup?.documentationUrl,
+    category = backup?.category,
+    examples = backup?.examples ?: emptyList(),
+    deprecation = backup?.deprecation,
+)

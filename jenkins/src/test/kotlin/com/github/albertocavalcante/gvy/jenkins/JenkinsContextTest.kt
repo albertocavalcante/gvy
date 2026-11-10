@@ -191,7 +191,7 @@ class JenkinsContextTest {
         )
 
         context.loadGdslMetadata()
-        val loaded = context.getAllMetadata()
+        val loaded = context.getAllMetadata(null)
 
         assertEquals("My step", loaded.getStep("myStep")?.documentation)
         assertEquals(setOf("message"), loaded.getStep("myStep")?.namedParams?.keys)
@@ -199,7 +199,7 @@ class JenkinsContextTest {
 
         Files.writeString(gdsl, "contributor(context()) { method(name: 'yourStep', type: 'void') }")
         context.loadGdslMetadata()
-        val reloaded = context.getAllMetadata()
+        val reloaded = context.getAllMetadata(null)
 
         assertNull(reloaded.getStep("myStep"))
         assertNull(reloaded.getGlobalVariable("myGlobal"))
@@ -214,12 +214,12 @@ class JenkinsContextTest {
             JenkinsConfiguration(gdslPaths = listOf(gdsl.toString()), gdslExecutionEnabled = true),
             tempDir,
         )
-        val bundledEcho = context.getAllMetadata().getStep("echo")
+        val bundledEcho = context.getAllMetadata(null).getStep("echo")
 
         context.loadGdslMetadata()
 
         assertNotNull(bundledEcho)
-        assertEquals(bundledEcho, context.getAllMetadata().getStep("echo"))
+        assertEquals(bundledEcho, context.getAllMetadata(null).getStep("echo"))
     }
 
     @Test
@@ -233,7 +233,7 @@ class JenkinsContextTest {
 
         context.loadGdslMetadata()
 
-        assertNull(context.getAllMetadata().getStep("myStep"))
+        assertNull(context.getAllMetadata(null).getStep("myStep"))
     }
 
     @Test
@@ -249,7 +249,7 @@ class JenkinsContextTest {
 
         context.loadGdslMetadata()
 
-        assertNotNull(context.getAllMetadata().getStep("myStep"))
+        assertNotNull(context.getAllMetadata(null).getStep("myStep"))
     }
 
     @Test
@@ -270,10 +270,10 @@ class JenkinsContextTest {
             JenkinsConfiguration(gdslPaths = listOf(gdsl.toString()), gdslExecutionEnabled = true),
             tempDir,
         )
-        val before = context.getAllMetadata()
+        val before = context.getAllMetadata(null)
 
         context.loadGdslMetadata()
-        val after = context.getAllMetadata()
+        val after = context.getAllMetadata(null)
 
         assertNull(after.getGlobalVariable("sh"))
         assertEquals(before.getStep("env"), after.getStep("env"))

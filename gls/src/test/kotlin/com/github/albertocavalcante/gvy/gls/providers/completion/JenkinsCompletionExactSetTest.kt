@@ -65,7 +65,10 @@ class JenkinsCompletionExactSetTest {
     }
 
     private val metadata
-        get() = requireNotNull(compilationService.workspaceManager.getJenkinsCapabilities()?.getAllMetadata())
+        get() = requireNotNull(
+            compilationService.workspaceManager.getJenkinsCapabilities()
+                ?.getAllMetadata(tempDir.resolve("Jenkinsfile").toUri()),
+        )
 
     private suspend fun completeAt(code: String, line: Int, character: Int): List<CompletionItem> {
         val jenkinsfile = tempDir.resolve("Jenkinsfile")

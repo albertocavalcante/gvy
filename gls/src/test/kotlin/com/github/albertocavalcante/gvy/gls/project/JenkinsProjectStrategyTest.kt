@@ -76,7 +76,7 @@ class JenkinsProjectStrategyTest {
 
         // After initialization, workspace manager should be available
         // (tested via capability methods)
-        assertNotNull(strategy.getAllMetadata())
+        assertNotNull(strategy.getAllMetadata(java.net.URI.create("file:///workspace/Jenkinsfile")))
     }
 
     @Test
@@ -173,7 +173,7 @@ class JenkinsProjectStrategyTest {
         strategy.initialize(tempDir, config)
 
         // Verify initialized
-        assertNotNull(strategy.getAllMetadata())
+        assertNotNull(strategy.getAllMetadata(java.net.URI.create("file:///workspace/Jenkinsfile")))
 
         // Shutdown
         strategy.shutdown()
@@ -181,7 +181,7 @@ class JenkinsProjectStrategyTest {
         // After shutdown, capability methods return defaults
         assertFalse(strategy.isJenkinsFile(URI("file:///any")))
         assertTrue(strategy.getGlobalVariables().isEmpty())
-        assertNull(strategy.getAllMetadata())
+        assertNull(strategy.getAllMetadata(java.net.URI.create("file:///workspace/Jenkinsfile")))
     }
 
     @Test

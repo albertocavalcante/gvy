@@ -18,6 +18,7 @@ import org.eclipse.lsp4j.MarkupKind
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import java.net.URI
 
 /**
  * Hover strategy for Jenkins Pipeline steps and global variables.
@@ -55,7 +56,7 @@ class JenkinsStepHoverStrategy(
         tryCreateVarsGlobalVariableHover(stepName, node)?.let { return it }
 
         // Then try step metadata hover
-        return tryCreateStepMetadataHover(stepName, node)
+        return tryCreateStepMetadataHover(stepName, node, context.documentUri)
     }
 
     /**
@@ -63,7 +64,7 @@ class JenkinsStepHoverStrategy(
      * directives (`pipeline`, `agent`, `stages`, `options`, `when`, ...), from the bundled enrichment.
      */
     private fun tryCreateDeclarativeHover(name: String, node: MethodCallExpression, context: HoverContext): Hover? {
-        val metadata = jenkinsCapabilities?.getAllMetadata() ?: return null
+        val metadata = jenkinsCapabilities?.getAllMetadata(context.documentUri) ?: return null
         val astModel = context.astModel ?: return null
         val enclosing = enclosingCallNames(node, astModel)
         // Sections and options only exist in Declarative Pipeline; a scripted `stage('x') {}` (also inside
@@ -194,8 +195,8 @@ class JenkinsStepHoverStrategy(
     /**
      * Try to create a hover for a Jenkins step from bundled metadata.
      */
-    private fun tryCreateStepMetadataHover(stepName: String, node: MethodCallExpression): Hover? {
-        val metadata = jenkinsCapabilities?.getAllMetadata() ?: return null
+    private fun tryCreateStepMetadataHover(stepName: String, node: MethodCallExpression, uri: URI): Hover? {
+        val metadata = jenkinsCapabilities?.getAllMetadata(uri) ?: return null
         val stepMetadata = JenkinsStepCompletionProvider.getStepMetadata(stepName, metadata) ?: return null
 
         // Build rich hover content for Jenkins step

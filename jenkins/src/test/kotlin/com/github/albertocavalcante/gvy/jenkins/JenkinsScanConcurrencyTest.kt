@@ -69,8 +69,8 @@ class JenkinsScanConcurrencyTest {
 
             val fastScan = pool.submit { context.scanClasspath(fast) }
             val fastFinished = runCatching { fastScan.get(5, TimeUnit.SECONDS) }.isSuccess
-            // Reads never wait either: the view is the last published scan.
-            val whileSlowRuns = context.getAllMetadata().steps.keys
+            // Reads never wait either: the fast classpath's view is there while the slow scan runs.
+            val whileSlowRuns = context.getAllMetadata(fast).steps.keys
             releaseSlow.countDown()
             slowScan.get(10, TimeUnit.SECONDS)
 
@@ -124,7 +124,8 @@ class JenkinsScanConcurrencyTest {
     fun `the newer request wins when it finishes last`() {
         val (context, firstResult, secondResult) = overlappingScans(holdFirst = false)
 
-        assertEquals(setOf("fromCp2"), context.getAllMetadata().steps.keys)
+        assertEquals(setOf("fromCp1"), context.getAllMetadata(cp("cp1")).steps.keys)
+        assertEquals(setOf("fromCp2"), context.getAllMetadata(cp("cp2")).steps.keys)
         assertEquals(setOf("fromCp1"), firstResult)
         assertEquals(setOf("fromCp2"), secondResult)
     }
@@ -133,13 +134,14 @@ class JenkinsScanConcurrencyTest {
     fun `an older request that finishes last does not replace the newer one`() {
         val (context, firstResult, secondResult) = overlappingScans(holdFirst = true)
 
-        assertEquals(setOf("fromCp2"), context.getAllMetadata().steps.keys)
+        assertEquals(setOf("fromCp1"), context.getAllMetadata(cp("cp1")).steps.keys)
+        assertEquals(setOf("fromCp2"), context.getAllMetadata(cp("cp2")).steps.keys)
         assertEquals(setOf("fromCp1"), firstResult, "the older caller still gets its own classpath's scan")
         assertEquals(setOf("fromCp2"), secondResult)
     }
 
     @Test
-    fun `a newer request for the published classpath is not overtaken by an older scan in flight`() {
+    fun `a request for a known classpath is not rescanned and is not replaced by another scan in flight`() {
         val cp1 = listOf(tempDir.resolve("cp1.jar"))
         val cp2 = listOf(tempDir.resolve("cp2.jar"))
         val cp1Scans = AtomicInteger()
@@ -161,13 +163,14 @@ class JenkinsScanConcurrencyTest {
             val older = pool.submit { context.scanClasspath(cp2) }
             assertTrue(cp2Started.await(10, TimeUnit.SECONDS), "cp2 scan started")
 
-            val newest = context.scanClasspath(cp1)?.steps?.keys // newest request, same classpath as published
+            val newest = context.scanClasspath(cp1)?.steps?.keys // known classpath, while cp2 is still scanning
             releaseCp2.countDown()
             older.get(10, TimeUnit.SECONDS)
 
             assertEquals(setOf("fromCp1"), newest)
-            assertEquals(setOf("fromCp1"), context.getAllMetadata().steps.keys)
-            assertEquals(1, cp1Scans.get(), "an unchanged classpath is republished, not rescanned")
+            assertEquals(setOf("fromCp1"), context.getAllMetadata(cp1).steps.keys)
+            assertEquals(setOf("fromCp2"), context.getAllMetadata(cp2).steps.keys)
+            assertEquals(1, cp1Scans.get(), "a known classpath is not rescanned")
         } finally {
             releaseCp2.countDown()
             pool.shutdownNow()
@@ -175,7 +178,7 @@ class JenkinsScanConcurrencyTest {
     }
 
     @Test
-    fun `readers always see the overlay of exactly one scan`() {
+    fun `readers always see the overlay of exactly their classpath's scan`() {
         val scans = AtomicInteger()
         val context = context { cp ->
             val id = cp.single().fileName.toString().removeSuffix(".jar")
@@ -189,15 +192,16 @@ class JenkinsScanConcurrencyTest {
             val writers = (1..2).map { writer ->
                 pool.submit {
                     var i = 0
-                    while (!stop.get()) context.scanClasspath(listOf(tempDir.resolve("w$writer-${i++ % 8}.jar")))
+                    while (!stop.get()) context.scanClasspath(cp("w$writer-${i++ % 8}"))
                 }
             }
             val readers = (1..4).map {
                 pool.submit {
-                    repeat(20_000) {
-                        val steps = context.getAllMetadata().steps.keys
+                    repeat(20_000) { i ->
+                        val id = "w${1 + i % 2}-${i / 2 % 8}"
+                        val steps = context.getAllMetadata(cp(id)).steps.keys
                         val ids = steps.map { it.drop(1) }.toSet()
-                        if (steps.isNotEmpty() && (ids.size != 1 || steps.size != 3)) {
+                        if (steps.isNotEmpty() && (ids != setOf(id) || steps.size != 3)) {
                             synchronized(torn) { torn += steps }
                         }
                     }
@@ -214,4 +218,6 @@ class JenkinsScanConcurrencyTest {
             pool.shutdownNow()
         }
     }
+
+    private fun cp(name: String) = listOf(tempDir.resolve("$name.jar"))
 }

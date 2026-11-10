@@ -43,7 +43,7 @@ class JenkinsParameterHoverStrategy(
 
     override fun generateHover(node: ASTNode, context: HoverContext): Hover? {
         if (!modeResolver.isJenkinsModeEnabled(context.documentUri)) return null
-        val metadata = jenkinsCapabilities?.getAllMetadata() ?: return null
+        val metadata = jenkinsCapabilities?.getAllMetadata(context.documentUri) ?: return null
         return when (node) {
             is ConstantExpression -> context.astModel?.let { parameterHover(node, it, metadata) }
             is VariableExpression -> globalVariableHover(node, metadata)
