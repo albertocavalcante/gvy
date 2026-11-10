@@ -49,8 +49,9 @@ class JenkinsStubGenerator internal constructor(private val writeFile: (Path, St
         val content = """
             package org.jenkinsci.plugins.workflow.cps
 
-            import groovy.lang.Closure
-            import groovy.lang.Script
+            // No `import groovy.lang.Script` (or Closure): both are default imports, and a fully qualified
+            // import gives Groovy's JVM-wide cached ClassNode this file's position, which then shows up in
+            // every Jenkinsfile's AST (their script class extends that node).
 
             /**
              * Stub for Jenkins CpsScript.
