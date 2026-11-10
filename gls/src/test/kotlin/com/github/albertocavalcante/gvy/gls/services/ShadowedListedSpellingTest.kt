@@ -206,6 +206,13 @@ class ShadowedListedSpellingTest {
         assertTrue(compilation.workspaceManager.updateDependencies(listOf(workspaceRoot.resolve("lib.jar"))))
         repeat(REQUESTS) { symbolUris("Shadowed") }
         assertEquals(0, reads, "real-path reads after a model change that keeps the roots and listing")
+
+        // A listing change is applied on the source queue, which spells the open buffers again there.
+        val added = Files.writeString(real.resolve("Y.groovy"), "class Added {}\n")
+        assertTrue(compilation.onWorkspaceSourcesChanged(listOf(added), emptyList()).changed)
+        reads = 0
+        assertEquals(listOf(opened.toString()), symbolUris("Shadowed").distinct(), "listed under both spellings")
+        assertEquals(0, reads, "real-path reads on the first request after a listing change")
     }
 
     private companion object {
