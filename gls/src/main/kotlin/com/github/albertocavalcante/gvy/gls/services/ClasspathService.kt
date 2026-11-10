@@ -89,6 +89,7 @@ class ClasspathService(
         retiredClassLoader?.let(::close)
         retiredClassLoader = null
         close(currentClassLoader.getAndSet(ClassLoader.getSystemClassLoader()))
+        generationSolver.set(solverFor(ClassLoader.getSystemClassLoader()))
     }
 
     private fun close(loader: ClassLoader) {

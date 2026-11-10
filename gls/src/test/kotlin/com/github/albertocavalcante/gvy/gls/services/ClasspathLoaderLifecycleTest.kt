@@ -75,6 +75,19 @@ class ClasspathLoaderLifecycleTest {
         solver.solveType(name).getDeclaredMethods().map { it.name }
 
     @Test
+    fun `after close the kept solver no longer resolves from the closed classpath`() {
+        val service = ClasspathService()
+        service.updateClasspath(listOf(jarWithClass("delta.jar", "Delta")))
+        val solver = service.getTypeSolver()
+        assertTrue(solver.tryToSolveType("com.example.Delta").isSolved, "control")
+
+        service.close()
+
+        assertTrue(!solver.tryToSolveType("com.example.Delta").isSolved, "the solver still uses the closed loader")
+        assertTrue(solver.tryToSolveType("java.lang.String").isSolved, "it falls back to the system classpath")
+    }
+
+    @Test
     fun `a replaced loader stays usable for one more update`() {
         val service = ClasspathService()
         service.updateClasspath(listOf(jar("first.jar", "first.txt")))

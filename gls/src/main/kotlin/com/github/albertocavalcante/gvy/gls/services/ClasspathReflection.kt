@@ -124,6 +124,8 @@ internal inline fun <T> reflectSafely(crossinline what: () -> String, fallback: 
     fallback
 }
 
+// Bounded: past the cap further distinct failures stay at debug instead of growing the set.
+private const val MAX_WARNED_REFLECTION = 1024
 private val warnedReflection = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
 /**
@@ -133,7 +135,9 @@ private val warnedReflection = java.util.concurrent.ConcurrentHashMap.newKeySet<
 internal fun reportIncompleteReflection(what: String, error: Throwable) {
     if (error is NoClassDefFoundError || error is TypeNotPresentException) {
         safeReflectionLogger.debug(error) { "Incomplete classpath reflection: $what" }
-    } else if (warnedReflection.add(what)) {
+    } else if (warnedReflection.size < MAX_WARNED_REFLECTION && warnedReflection.add(what)) {
         safeReflectionLogger.warn(error) { "Classpath reflection failed: $what" }
+    } else {
+        safeReflectionLogger.debug(error) { "Classpath reflection failed: $what" }
     }
 }
