@@ -82,6 +82,14 @@ data class ParseRequest(
      * in the codebase keys a cache on `ParseRequest` equality.
      */
     val checkCancelled: () -> Unit = {},
+    /**
+     * Files declaring the top-level class with a given fully qualified name, from the workspace's class index
+     * (#1425). Consulted only when Groovy's own source lookup finds no file named after the class, so a
+     * [ParseMode.MINIMAL] compile still resolves `Outer2` declared in `Outers.groovy`. The resolver asks for
+     * exact candidate names (`pkg.Outer2`, an import, a star-import package), and only a file declaring that
+     * exact name is added, read when the compile reaches it. Null: no lookup beyond file names.
+     */
+    val workspaceClassLocator: ((fullyQualifiedName: String) -> List<Path>)? = null,
 ) {
     val sourceUnitName: String = uri.path ?: uri.toString()
 }

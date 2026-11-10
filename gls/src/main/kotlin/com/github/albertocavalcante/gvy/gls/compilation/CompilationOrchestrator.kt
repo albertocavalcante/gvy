@@ -230,6 +230,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                 compilePhase = compilePhase,
                 parseMode = parseMode,
                 checkCancelled = checkCancelled,
+                // MINIMAL adds no workspace sources; the class index still finds a class declared in a file
+                // named otherwise, one file per name the resolver asks for (#1425).
+                workspaceClassLocator = if (parseMode == ParseMode.MINIMAL) workspaceClassLocator(sourcePath) else null,
             ),
         )
 
@@ -486,6 +489,19 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         logger.debug { "No compilation found for $uri (not cached, not compiling, not on disk)" }
         return Awaited.Done(null)
+    }
+
+    /**
+     * Files declaring the top-level workspace class [fullyQualifiedName][ParseRequest.workspaceClassLocator]
+     * names, from the symbol index: an exact name match only, so a same-named class in another package is never
+     * added. Before startup indexing has run the index is empty and nothing is found, as before #1425.
+     */
+    private fun workspaceClassLocator(self: Path?): (String) -> List<Path> = { fullyQualifiedName ->
+        symbolIndexer.findClasses(ClassNameQuery.Exact(fullyQualifiedName.substringAfterLast('.')))
+            .filter { it.node.outerClass == null && it.fullyQualifiedName == fullyQualifiedName }
+            .mapNotNull { runCatching { Path.of(it.uri) }.getOrNull() }
+            .filter { it != self }
+            .distinct()
     }
 
     /**

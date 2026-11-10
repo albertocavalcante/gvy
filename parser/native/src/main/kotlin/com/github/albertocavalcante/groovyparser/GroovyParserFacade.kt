@@ -171,7 +171,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         // here. Classes that merely cannot be resolved never get here: they are stubbed above. Compile
         // again without the sources that failed. A failure that cannot be attributed to
         // a source drops the open buffers (most likely mid-edit) and otherwise falls through.
-        if (request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty()) {
+        if (request.openSources.isNotEmpty() || request.workspaceSources.isNotEmpty() ||
+            request.workspaceClassLocator != null
+        ) {
             val failing = failingOtherSources(request, result)
             val newlyFailing = failing.workspace - request.excludedSources
             if (failing.open.isNotEmpty() || newlyFailing.isNotEmpty()) {
@@ -233,7 +235,9 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                     val key = locatorPath(locator)
                     // A buffer and its disk copy are one source: both leave the unit, under one reason.
                     val buffer = openByKey[key]?.also { open += it }
-                    val disk = workspaceByKey[key]?.also { workspace.add(it) }
+                    // A file the class locator added (#1425) fails the unit like a workspace source does.
+                    val located = (key as? Path)?.takeIf { buffer == null && request.workspaceClassLocator != null }
+                    val disk = (workspaceByKey[key] ?: located)?.also { workspace.add(it) }
                     val source = buffer?.toString() ?: disk?.toString()
                     if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause?.originalMessage ?: ""))
                 }
@@ -459,15 +463,23 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
         val classLoader = TransformFilteringClassLoader(parentClassLoader)
         request.classpath.forEach { classLoader.addClasspath(it.toString()) }
         request.sourceRoots.forEach { classLoader.addClasspath(it.toString()) }
-        if (request.excludedSources.isNotEmpty()) {
+        val locator = request.workspaceClassLocator
+        if (request.excludedSources.isNotEmpty() || locator != null) {
             val excluded = request.excludedSources.mapTo(HashSet()) { it.toAbsolutePath().normalize() }
             val sources = classLoader.resourceLoader
+            // Groovy asks this loader for each unresolved top-level candidate name and adds the file it returns
+            // as a source of the unit; a file named after the class comes first, then the class locator.
             classLoader.resourceLoader = groovy.lang.GroovyResourceLoader { name ->
-                sources.loadGroovySource(name)?.takeUnless { url -> urlPath(url) in excluded }
+                val byFileName = sources.loadGroovySource(name)?.takeUnless { url -> urlPath(url) in excluded }
+                byFileName ?: locator?.let { locate(it, name, excluded) }
             }
         }
         return classLoader
     }
+
+    /** The first file declaring [name] that is not excluded, as the URL Groovy adds it by. */
+    private fun locate(locator: (String) -> List<Path>, name: String, excluded: Set<Path>): URL? =
+        locator(name).firstOrNull { it.toAbsolutePath().normalize() !in excluded }?.toUri()?.toURL()
 
     /**
      * Creates a compiler configuration with global AST transformations disabled.
