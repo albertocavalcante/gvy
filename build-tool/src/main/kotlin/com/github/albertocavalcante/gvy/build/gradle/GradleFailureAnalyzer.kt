@@ -6,7 +6,8 @@ import java.net.ConnectException
 import java.net.NoRouteToHostException
 import java.net.SocketException
 import java.net.SocketTimeoutException
-import java.net.UnknownHostException
+import java.util.Collections
+import java.util.IdentityHashMap
 
 class GradleFailureAnalyzer(
     private val compatibilityService: GradleJdkCompatibilityService = GradleJdkCompatibilityService.instance,
@@ -64,21 +65,22 @@ class GradleFailureAnalyzer(
 
     /**
      * Detects a Gradle wrapper distribution download that failed for a reason expected to clear on its own:
-     * a timeout, a reset/unreachable connection, a DNS failure, or HTTP 408/429/500/502/503/504.
+     * a timeout, a reset/unreachable connection, or HTTP 408/429/500/502/503/504.
      *
      * Only failures inside the Tooling API's distribution install are considered, so network errors raised
      * by a running build (which Gradle already retries) do not cause whole-model refetches. Deterministic
      * install failures such as HTTP 404/401/403, checksum mismatches, and TLS trust errors are not transient.
+     * DNS failures ([java.net.UnknownHostException]) are not retried either: the JVM caches negative lookups
+     * for 10s by default, so short backoff retries would mostly replay the cached failure.
      */
-    fun isTransientDistributionDownloadFailure(t: Throwable): Boolean {
+    private fun isTransientDistributionDownloadFailure(t: Throwable): Boolean {
         if (!searchExceptionChain(t) { it.contains(DISTRIBUTION_INSTALL_FAILURE, ignoreCase = true) }) return false
-        return generateSequence(t) { it.cause }.any { cause ->
+        return causeChain(t).any { cause ->
             val message = cause.message.orEmpty()
             val status = HTTP_STATUS_REGEX.find(message)?.groupValues?.get(1)?.toIntOrNull()
             cause is SocketTimeoutException ||
                 cause is ConnectException ||
                 cause is NoRouteToHostException ||
-                cause is UnknownHostException ||
                 (cause is SocketException && message.contains("Connection reset", ignoreCase = true)) ||
                 DOWNLOAD_TIMEOUT_REGEX.containsMatchIn(message) ||
                 status in RETRYABLE_HTTP_STATUSES
@@ -113,8 +115,7 @@ class GradleFailureAnalyzer(
     fun extractToolchainErrorInfo(t: Throwable): ToolchainErrorInfo? {
         if (!isToolchainProvisioningError(t)) return null
 
-        var current: Throwable? = t
-        while (current != null) {
+        for (current in causeChain(t)) {
             val message = current.message ?: ""
 
             // Parse: "Cannot find a Java installation on your machine (Mac OS X 15.6 aarch64) matching: {languageVersion=17, vendor=any vendor}"
@@ -134,7 +135,6 @@ class GradleFailureAnalyzer(
                     suggestions = buildToolchainSuggestions(version),
                 )
             }
-            current = current.cause
         }
         return null
     }
@@ -156,8 +156,7 @@ class GradleFailureAnalyzer(
     fun extractGradleJdkIncompatibleInfo(t: Throwable): GradleJdkIncompatibleInfo? {
         if (!isJdkMismatch(t)) return null
 
-        var current: Throwable? = t
-        while (current != null) {
+        for (current in causeChain(t)) {
             val message = current.message ?: ""
 
             // Example message: "Unsupported class file major version 65"
@@ -181,7 +180,6 @@ class GradleFailureAnalyzer(
                     suggestions = suggestions,
                 )
             }
-            current = current.cause
         }
         return null
     }
@@ -258,16 +256,20 @@ class GradleFailureAnalyzer(
         }
     }
 
-    private fun searchExceptionChain(t: Throwable, predicate: (String) -> Boolean): Boolean {
+    private fun searchExceptionChain(t: Throwable, predicate: (String) -> Boolean): Boolean =
+        causeChain(t).any { cause -> cause.message?.let(predicate) == true }
+
+    /**
+     * Returns [t] followed by its causes, stopping at the first repeated throwable so that
+     * cyclic cause chains (possible via [Throwable.initCause]) cannot loop forever.
+     */
+    internal fun causeChain(t: Throwable): Sequence<Throwable> = sequence {
+        val seen = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
         var current: Throwable? = t
-        while (current != null) {
-            val message = current.message
-            if (message != null && predicate(message)) {
-                return true
-            }
+        while (current != null && seen.add(current)) {
+            yield(current)
             current = current.cause
         }
-        return false
     }
 
     private companion object {

@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.build.gradle
 import org.gradle.tooling.BuildCancelledException
 import org.gradle.tooling.BuildException
 import org.gradle.tooling.GradleConnectionException
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -76,8 +77,22 @@ class GradleFailureAnalyzerDistributionDownloadTest {
     }
 
     @Test
-    fun `distribution download with unknown host is transient`() {
-        assertTrue(analyzer.isTransient(installFailure(UnknownHostException("services.gradle.org"))))
+    fun `distribution download with unknown host is not transient`() {
+        assertFalse(analyzer.isTransient(installFailure(UnknownHostException("services.gradle.org"))))
+    }
+
+    @Test
+    fun `interrupted distribution download is not transient`() {
+        assertFalse(analyzer.isTransient(installFailure(RuntimeException(InterruptedException()))))
+    }
+
+    @Test
+    fun `cyclic cause chain terminates`() {
+        val first = RuntimeException("first")
+        val second = RuntimeException("second", first)
+        first.initCause(second)
+        assertFalse(analyzer.isTransient(first))
+        assertEquals(listOf(first, second), analyzer.causeChain(first).toList())
     }
 
     @Test

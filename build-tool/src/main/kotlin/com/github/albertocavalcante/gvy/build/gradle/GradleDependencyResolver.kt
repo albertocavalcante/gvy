@@ -143,7 +143,7 @@ class GradleDependencyResolver(
                 break
             }
 
-            val rootCause = generateSequence(exception) { it.cause }.last()
+            val rootCause = failureAnalyzer.causeChain(exception).last()
             logger.warn {
                 "Gradle dependency resolution failed with a transient error " +
                     "(attempt $attempt/${retryConfig.maxAttempts}): ${exception.message} " +
@@ -152,9 +152,9 @@ class GradleDependencyResolver(
             }
             try {
                 Thread.sleep(currentDelay)
-            } catch (e: InterruptedException) {
+            } catch (_: InterruptedException) {
                 Thread.currentThread().interrupt()
-                logger.info(e) { "Gradle dependency resolution interrupted during retry backoff" }
+                logger.info { "Gradle dependency resolution interrupted during retry backoff" }
                 break
             }
             currentDelay = (currentDelay * retryConfig.backoffMultiplier).toLong()
