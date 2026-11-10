@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.providers.codeaction
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.Formatter
+import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.CodeActionContext
@@ -185,12 +186,12 @@ class SpockTableProviderTest {
 
         fun writeBase(
             name: String,
-            broken: Boolean = false,
+            body: String = "{}",
             extends: String = "extends Specification",
             prefix: String = "",
+            suffix: String = "",
         ): Path = src.resolve("$name.groovy").also {
-            val body = if (broken) "{ void m( }" else "{}"
-            Files.writeString(it, "import spock.lang.*\n${prefix}abstract class $name $extends $body\n")
+            Files.writeString(it, "import spock.lang.*\n${prefix}abstract class $name $extends $body\n$suffix")
         }
 
         suspend fun edit(newText: String = "$text\n// edit $version") {
@@ -211,7 +212,7 @@ class SpockTableProviderTest {
         fixture.edit(fixture.text)
         assertTrue(fixture.hasAction(), "clean compile")
 
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit()
 
         assertTrue(fixture.hasAction(), "the remembered verdict for the same base applies")
@@ -223,7 +224,7 @@ class SpockTableProviderTest {
         fixture.edit(fixture.text)
         assertTrue(fixture.hasAction(), "clean compile")
 
-        fixture.writeBase("OtherBaseSpec", broken = true)
+        fixture.writeBase("OtherBaseSpec", body = BROKEN_BODY)
         fixture.edit(fixture.text.replace("extends BaseSpec", "extends OtherBaseSpec"))
 
         assertTrue(!fixture.hasAction(), "the superclass spelling changed, so nothing is reused")
@@ -235,7 +236,7 @@ class SpockTableProviderTest {
         fixture.edit("import spock.lang.Requires\n@Requires({ true })\n" + fixture.text)
         assertTrue(fixture.hasAction(paramsLine = 7), "clean compile")
 
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit(fixture.text.replace("extends BaseSpec", "extends MissingBaseSpec"))
 
         assertTrue(!fixture.hasAction(paramsLine = 7), "the superclass spelling changed behind a closure")
@@ -250,7 +251,7 @@ class SpockTableProviderTest {
         // The base stops extending Specification and the spec recompiles cleanly, with no code action asked.
         fixture.writeBase("BaseSpec", extends = "")
         fixture.edit()
-        fixture.writeBase("BaseSpec", broken = true, extends = "")
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY, extends = "")
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "the broken base's prelude no longer matches the recorded one")
@@ -264,7 +265,7 @@ class SpockTableProviderTest {
         fixture.edit(fixture.text)
         assertTrue(fixture.hasAction(), "clean compile records the verdict")
 
-        fixture.writeBase("BaseSpec", broken = true, extends = "", prefix = doc)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY, extends = "", prefix = doc)
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "the prelude is lexed past the comment and no longer matches")
@@ -278,7 +279,7 @@ class SpockTableProviderTest {
         fixture.edit(withLocal)
         assertTrue(fixture.hasAction(paramsLine = 6), "clean compile records the verdict through LocalBase")
 
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit(
             fixture.text.replace("class LocalBase extends BaseSpec", "class LocalBase extends SomethingMissing"),
         )
@@ -293,7 +294,7 @@ class SpockTableProviderTest {
         assertTrue(fixture.hasAction(), "clean compile records the verdict")
 
         Files.writeString(fixture.src.resolve("Specification.groovy"), "class Specification {}\n")
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "the base package's file set changed")
@@ -308,7 +309,7 @@ class SpockTableProviderTest {
         assertTrue(fixture.hasAction(), "clean compile records the verdict")
 
         Files.writeString(testRoot.resolve("Specification.groovy"), "class Specification {}\n")
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "the base package's file set across both roots changed")
@@ -324,10 +325,141 @@ class SpockTableProviderTest {
         assertTrue(fixture.hasAction(), "clean compile records the verdict")
 
         Files.writeString(workspace.resolve("Specification.groovy"), "class Specification {}\n")
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "a shadowing file in the base's package under the outer root is seen")
+    }
+
+    @Test
+    fun `a nested base is matched by its enclosing class, not its short name`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        val nested = { body2: String ->
+            "import spock.lang.*\n" +
+                "class Outer1 { static abstract class Inner extends Specification {} }\n" +
+                "class Outer2 { static abstract class Inner $body2 }\n"
+        }
+        Files.writeString(fixture.src.resolve("Outers.groovy"), nested("extends Specification {}"))
+        // The workspace model lists its sources when it is built, and a source-root lookup by class name cannot
+        // find Outer2 in Outers.groovy, so rebuild the model after creating the file, as a model rebuild does;
+        // a Created event does not yet (#1422). (#1420: the earlier version never put Outers.groovy in the compile.)
+        useSpockClasspath(sources = listOf(fixture.src))
+        fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
+        assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
+
+        Files.writeString(fixture.src.resolve("Outers.groovy"), nested("{ void m( }"))
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "Outer2.Inner's header changed even though Outer1.Inner's did not")
+    }
+
+    @Test
+    fun `breaking only the sibling nested class keeps the remembered verdict`(): Unit = runBlocking {
+        // Positive control for the test above: Outer2.Inner is unchanged, so its prelude still matches while
+        // Outers.groovy fails to compile. Matching by short name would hash Outer1.Inner's changed header.
+        val fixture = BrokenBaseFixture()
+        val outers = { outer1Inner: String ->
+            "import spock.lang.*\n" +
+                "class Outer1 { static abstract class Inner extends $outer1Inner }\n" +
+                "class Outer2 { static abstract class Inner extends Specification {} }\n"
+        }
+        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("Specification {}"))
+        useSpockClasspath(sources = listOf(fixture.src))
+        fixture.edit(fixture.text.replace("class TableSpec extends BaseSpec", "class TableSpec extends Outer2.Inner"))
+        assertTrue(fixture.hasAction(), "clean compile records the verdict through Outer2.Inner: ${diagnosis(fixture)}")
+
+        // A syntax break plus a header change: the file is excluded for certain (the compile degrades), and
+        // matching by short name would see Outer1.Inner's changed header. The break must still lex, because it
+        // comes before Outer2.Inner: a lex error before the target's header denies reuse by design.
+        Files.writeString(fixture.src.resolve("Outers.groovy"), outers("MissingOuter1Base { void m() { def x = } }"))
+        fixture.edit()
+
+        val degraded = compilationService.getCompiledSnapshot(fixture.fileUri)?.parseResult?.outcome
+        assertTrue(
+            degraded != null && (degraded.excludedSources.isNotEmpty() || degraded.stubbedClasses.isNotEmpty()),
+            "the compile must degrade, so the verdict comes from memory: ${diagnosis(fixture)}",
+        )
+        val status = diagnosis(fixture)
+        assertTrue(status.startsWith("status=UNCERTAIN"), "TableSpec must be UNCERTAIN: $status")
+        assertTrue(fixture.hasAction(), "Outer2.Inner is unchanged, so its verdict is recalled: ${diagnosis(fixture)}")
+    }
+
+    /** How the classifier saw TableSpec's superclass in the last compile (#1420). */
+    private fun diagnosis(fixture: BrokenBaseFixture): String {
+        val parsed = compilationService.getCompiledSnapshot(fixture.fileUri)?.parseResult ?: return "no snapshot"
+        val module = parsed.ast ?: return "no AST: ${parsed.outcome}"
+        val context = SpockSourceContext.from(module, isPartial = false).classes
+            .firstOrNull { it.classNode.name == "TableSpec" } ?: return "TableSpec missing: ${parsed.outcome}"
+        val superClass = context.classNode.superClass
+        val target = superClass?.redirect()
+        val inUnit = target?.module?.let { owner -> module.unit?.modules?.any { it === owner } }
+        return "status=${context.status} evidence=${context.evidence} " +
+            "written=${context.classNode.getUnresolvedSuperClass(false)?.unresolvedName} " +
+            "super=${superClass?.name}/${superClass?.javaClass?.simpleName} " +
+            "redirect=${target?.name}/${target?.javaClass?.simpleName} resolved=${target?.isResolved} " +
+            "primary=${target?.isPrimaryClassNode} outer=${target?.outerClass?.name} " +
+            "module=${target?.module?.context?.name} inUnit=$inUnit outcome=${parsed.outcome} " +
+            "diagnostics=${parsed.diagnostics.map { it.message.take(100) }}"
+    }
+
+    @Test
+    fun `a class added above the base that shadows Specification is noticed`(): Unit = runBlocking {
+        // Helper is already above BaseSpec, so adding Specification beside it leaves BaseSpec's own header
+        // segment unchanged: only the declared-name list can tell the files apart.
+        val fixture = BrokenBaseFixture()
+        fixture.writeBase("BaseSpec", prefix = "class Helper {}\n")
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY, prefix = "class Helper {}\nclass Specification {}\n")
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "a new class named Specification in the base's file changes its identity")
+    }
+
+    @Test
+    fun `a class added below the base that shadows Specification is noticed`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY, suffix = "class Specification {}\n")
+        fixture.edit()
+
+        assertTrue(!fixture.hasAction(), "declared names are collected from the whole file, not just before the base")
+    }
+
+    @Test
+    fun `a base that extends a nested class is recalled through its prelude`(): Unit = runBlocking {
+        // BaseSpec's text spells its superclass Holder.SpecBase while the compiled AST can give Holder$SpecBase;
+        // the prelude must still be recorded, or the broken base could never be recalled.
+        val fixture = BrokenBaseFixture()
+        Files.writeString(
+            fixture.src.resolve("Holder.groovy"),
+            "import spock.lang.*\nclass Holder { static abstract class SpecBase extends Specification {} }\n",
+        )
+        fixture.writeBase("BaseSpec", extends = "extends Holder.SpecBase")
+        useSpockClasspath(sources = listOf(fixture.src))
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict: ${diagnosis(fixture)}")
+
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY, extends = "extends Holder.SpecBase")
+        fixture.edit()
+
+        assertTrue(fixture.hasAction(), "the broken base's remembered verdict applies: ${diagnosis(fixture)}")
+    }
+
+    @Test
+    fun `a lex error after the base header still recalls the verdict`(): Unit = runBlocking {
+        val fixture = BrokenBaseFixture()
+        fixture.edit(fixture.text)
+        assertTrue(fixture.hasAction(), "clean compile records the verdict")
+
+        // A half-typed string in the body: the file neither compiles nor lexes past that point.
+        fixture.writeBase("BaseSpec", body = "{ void m() { def s = \"half typed\n } }")
+        fixture.edit()
+
+        assertTrue(fixture.hasAction(), "the base's identity was read before the lex error: ${diagnosis(fixture)}")
     }
 
     @Test
@@ -337,7 +469,7 @@ class SpockTableProviderTest {
         assertTrue(fixture.hasAction(), "clean compile")
 
         provider.forgetDocument(fixture.fileUri)
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "nothing is remembered after close")
@@ -350,7 +482,7 @@ class SpockTableProviderTest {
         assertTrue(fixture.hasAction(), "clean compile")
 
         useSpockClasspath(baseSpecJar(), sources = listOf(fixture.src))
-        fixture.writeBase("BaseSpec", broken = true)
+        fixture.writeBase("BaseSpec", body = BROKEN_BODY)
         fixture.edit()
 
         assertTrue(!fixture.hasAction(), "a new compile fingerprint invalidates the record")
@@ -439,3 +571,6 @@ class SpockTableProviderTest {
         context = CodeActionContext(emptyList())
     }
 }
+
+/** A class body that does not compile: an unclosed parameter list. */
+private const val BROKEN_BODY = "{ void m( }"

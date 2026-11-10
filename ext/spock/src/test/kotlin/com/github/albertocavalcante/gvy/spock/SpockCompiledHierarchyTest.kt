@@ -56,6 +56,32 @@ class SpockCompiledHierarchyTest {
     }
 
     @Test
+    fun `a nested base in another file of the same compile is a specification`() {
+        val outers = "import spock.lang.*\n" +
+            "class Outer1 { static abstract class Inner extends Specification {} }\n" +
+            "class Outer2 { static abstract class Inner extends Specification {} }\n"
+        val result = parse("class FooSpec extends Outer2.Inner {}", openSources = mapOf("Outers.groovy" to outers))
+        val foo = contexts(result).single { it.classNode.name == "FooSpec" }
+
+        assertEquals(SpecificationStatus.SPECIFICATION, foo.status, diagnosis(result, foo))
+        assertEquals(SpecificationEvidence.COMPILED_SOURCE_HIERARCHY, foo.evidence, diagnosis(result, foo))
+    }
+
+    /** How the classifier saw [context]'s superclass (#1420). */
+    private fun diagnosis(result: ParseResult, context: SpockClassContext): String {
+        val superClass = context.classNode.superClass
+        val target = superClass?.redirect()
+        val inUnit = target?.module?.let { owner -> context.classNode.module?.unit?.modules?.any { it === owner } }
+        return "evidence=${context.evidence} " +
+            "written=${context.classNode.getUnresolvedSuperClass(false)?.unresolvedName} " +
+            "super=${superClass?.name}/${superClass?.javaClass?.simpleName} " +
+            "redirect=${target?.name}/${target?.javaClass?.simpleName} resolved=${target?.isResolved} " +
+            "primary=${target?.isPrimaryClassNode} outer=${target?.outerClass?.name} " +
+            "module=${target?.module?.context?.name} inUnit=$inUnit outcome=${result.outcome} " +
+            "diagnostics=${result.diagnostics.map { it.message.take(100) }}"
+    }
+
+    @Test
     fun `a multi-file chain to Specification is a specification`() {
         val others = baseSpec + ("MidSpec.groovy" to "class MidSpec extends BaseSpec {}")
         val foo = verdict("class FooSpec extends MidSpec {}", others, "FooSpec")

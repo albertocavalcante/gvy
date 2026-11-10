@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.spock.SpockSourceContext
 import com.github.albertocavalcante.nativeapi.ParseOutcome
 import groovyjarjarantlr4.v4.runtime.CharStreams
 import groovyjarjarantlr4.v4.runtime.Token
+import io.github.oshai.kotlinlogging.KotlinLogging
 import org.apache.groovy.parser.antlr4.GroovyLangLexer
 import org.apache.groovy.parser.antlr4.GroovySyntaxError
 import org.codehaus.groovy.ast.ClassHelper
@@ -30,9 +31,11 @@ import java.util.IdentityHashMap
  * - the degraded part is the same base: one of its source files is excluded, one of its classes is stubbed,
  *   or, for a base from a jar, the whole compile fell back;
  * - every link above the class is unchanged. A link in the spec's own file must have the same declaration
- *   in the current module. A link in another file must have the same prelude (its significant tokens from
- *   the file start to the class body, found with the Groovy lexer and matched by enclosing class, so comments,
- *   strings and same-named nested classes cannot stand in) and the same package file set across every source
+ *   in the current module. A link in another file must have the same prelude (the file's package and imports,
+ *   each enclosing class's header and its own header, found with the Groovy lexer and matched by enclosing
+ *   class, so edits to unrelated classes in the file do not count and comments, strings and same-named nested
+ *   classes cannot stand in; plus every class name declared in the file, since a new class there can shadow a
+ *   star-imported name) and the same package file set across every source
  *   root, since a new file in that package, even under another root, can shadow a star-imported name.
  *   Anything that cannot be computed denies reuse; these checks can only deny. They catch a base edited to
  *   stop extending `Specification` and then broken, whether or not the table action ran in between.
@@ -46,8 +49,13 @@ import java.util.IdentityHashMap
  * seen until the base compiles again. The compile result does not keep other sources' text, so the base is
  * read when the record is written rather than when it was compiled; a prelude whose `extends` disagrees
  * with the compiled AST is not recorded (and so denies), but an edit elsewhere in the prelude between the
- * compile and the record is hashed as if compiled. That is acceptable for a whitespace-only, reversible alignment;
- * nothing else reads this memory.
+ * compile and the record is hashed as if compiled. When a base's file stops lexing after the base's header,
+ * only the class names before that point are known: a class added after the lex error, say one shadowing
+ * `Specification`, cannot deny reuse until the file lexes again, so the recall may disagree with what the
+ * fixed file will mean. Written names compare with `$` unified to `.`, so a top-level class literally named
+ * `A$B` and a class `B` nested in `A` look alike; they share the binary name `A$B` and one compile cannot
+ * hold both, so this only equates two spellings of one class. That is acceptable for a whitespace-only,
+ * reversible alignment; nothing else reads this memory.
  */
 internal class SpockVerdictMemory {
     /**
@@ -72,6 +80,7 @@ internal class SpockVerdictMemory {
         val classes: Map<String, Remembered>,
     )
 
+    private val logger = KotlinLogging.logger {}
     private val lock = Any()
     private val records = HashMap<String, Record>()
     private val epochs = HashMap<String, Long>()
@@ -114,17 +123,47 @@ internal class SpockVerdictMemory {
                 refresh(module, source)
                 return emptySet()
             }
-            val record = synchronized(lock) { records[uri] }?.takeIf { it.fingerprint == fingerprint }
-                ?: return emptySet()
+            val record = synchronized(lock) { records[uri] }
+            if (record == null || record.fingerprint != fingerprint) {
+                decide { if (record == null) "no record" else "fingerprint changed" }
+                return emptySet()
+            }
             val imports = importsOf(module)
-            return source.classes.filter { it.status == SpecificationStatus.UNCERTAIN }
-                .mapNotNullTo(HashSet()) { context ->
-                    val remembered = record.classes[context.classNode.name]
-                    context.classNode.name.takeIf {
-                        remembered != null && remembered.declaration == declaration(context.classNode, imports) &&
-                            sameBaseDegraded(remembered) && basesUnchanged(remembered, module, imports)
-                    }
+            val candidates = source.classes.filter { it.status == SpecificationStatus.UNCERTAIN }.map { it.classNode }
+            val recalled = candidates.filter { recallable(record, it, module, imports) }.mapTo(HashSet()) { it.name }
+            decide {
+                candidates.joinToString("; ") { node ->
+                    "${node.name}: " + if (node.name in recalled) "recalled" else denial(record, node, module, imports)
                 }
+            }
+            return recalled
+        }
+
+        /** Whether [node]'s remembered SPECIFICATION applies; checks stop at the first that fails. */
+        private fun recallable(record: Record, node: ClassNode, module: ModuleNode, imports: String): Boolean {
+            val remembered = record.classes[node.name] ?: return false
+            return remembered.declaration == declaration(node, imports) && sameBaseDegraded(remembered) &&
+                remembered.bases.all { baseDifference(it, module, imports) == null }
+        }
+
+        /** Why [node] was not recalled, built only for the DEBUG log. */
+        private fun denial(record: Record, node: ClassNode, module: ModuleNode, imports: String): String {
+            val remembered = record.classes[node.name] ?: return "not remembered (recorded: ${record.classes.keys})"
+            val current = declaration(node, imports)
+            return when {
+                remembered.declaration != current ->
+                    "declaration differs: recorded=[${remembered.declaration}] current=[$current]"
+                !sameBaseDegraded(remembered) ->
+                    "base not degraded: bases=${remembered.bases.map { "${it.name}@${it.source}" }} " +
+                        "excluded=${outcome.excludedSources.map { it.source }} stubbed=${outcome.stubbedClasses}"
+                else -> remembered.bases.firstNotNullOfOrNull { baseDifference(it, module, imports)?.invoke() }
+                    ?: "denied"
+            }
+        }
+
+        /** Why each UNCERTAIN class was recalled or denied, at DEBUG for field diagnosis; never stored. */
+        private fun decide(text: () -> String) {
+            logger.debug { "Spock verdict memory for $uri: ${text()}" }
         }
 
         private fun refresh(module: ModuleNode, source: SpockSourceContext.Available) {
@@ -151,19 +190,30 @@ internal class SpockVerdictMemory {
         /**
          * Every link must still be what the clean compile saw. An in-file link compares its declaration in the
          * current module; a link in another file compares its prelude hash and its package's file set, since a
-         * new file there can shadow a star-imported name. Anything that cannot be computed denies reuse.
+         * new file there can shadow a star-imported name. Anything that cannot be computed denies reuse. Null
+         * when [base] is unchanged, else a lazily built description of what changed, for the DEBUG log.
          */
-        private fun basesUnchanged(remembered: Remembered, module: ModuleNode, imports: String): Boolean =
-            remembered.bases.all { base ->
-                if (base.source == null) {
-                    val current = module.classes.firstOrNull { it.name == base.name }?.let { declaration(it, imports) }
-                    base.localDeclaration != null && base.localDeclaration == current
-                } else {
-                    val prelude = readSource(base.source)?.let { preludeOf(it, base.name)?.hash }
-                    base.prelude != null && base.prelude == prelude &&
-                        base.packageFiles != null && base.packageFiles == listPackage(base.source, base.packageName)
-                }
+        private fun baseDifference(base: Base, module: ModuleNode, imports: String): (() -> String)? =
+            base.source?.let { remoteDifference(base, it) } ?: localDifference(base, module, imports)
+
+        private fun localDifference(base: Base, module: ModuleNode, imports: String): (() -> String)? {
+            if (base.source != null) return null
+            val current = module.classes.firstOrNull { it.name == base.name }?.let { declaration(it, imports) }
+            val unchanged = base.localDeclaration != null && base.localDeclaration == current
+            val describe = { "local base ${base.name}: recorded=[${base.localDeclaration}] current=[$current]" }
+            return describe.takeUnless { unchanged }
+        }
+
+        private fun remoteDifference(base: Base, source: String): (() -> String)? {
+            val prelude = readSource(source)?.let { preludeOf(it, base.name)?.hash }
+            if (base.prelude == null || base.prelude != prelude) {
+                return { "prelude of ${base.name}: recorded=${base.prelude} current=$prelude" }
             }
+            val files = listPackage(source, base.packageName)
+            val unchanged = base.packageFiles != null && base.packageFiles == files
+            val describe = { "package files of ${base.name}: recorded=${base.packageFiles} current=$files" }
+            return describe.takeUnless { unchanged }
+        }
 
         private fun chain(node: ClassNode, module: ModuleNode, imports: String): Chain {
             val bases = mutableListOf<Base>()
@@ -202,8 +252,12 @@ internal class SpockVerdictMemory {
     /** A base's prelude hash and the `extends` name its text declares (null for none). */
     class Prelude(val hash: String, val extendsName: String?) {
         /** Whether the text agrees with the compiled AST's written superclass; no `extends` means Object. */
-        fun extendsMatches(written: String?): Boolean =
-            if (extendsName == null) written == null || written in OBJECT_SPELLINGS else extendsName == written
+        fun extendsMatches(written: String?): Boolean = if (extendsName == null) {
+            written == null || written in OBJECT_SPELLINGS
+        } else {
+            // The text spells a nested superclass `Outer.X`; the compiled AST can give `Outer$X`.
+            written != null && spelling(extendsName) == spelling(written)
+        }
     }
 
     /**
@@ -213,7 +267,11 @@ internal class SpockVerdictMemory {
      * `extends` name up to `implements` or the body.
      */
     private class PreludeScanner(private val path: List<String>) {
-        private val enclosing = ArrayDeque<Pair<String, Int>>()
+        /** Classes whose bodies are open: name, the depth outside their body, and their header tokens. */
+        private val enclosing = ArrayDeque<Triple<String, Int, String>>()
+        private val seen = mutableListOf<String>()
+        private val segment = mutableListOf<String>()
+        private var filePrelude: List<String>? = null
         private var depth = 0
         private var keyword = false
         private var afterDot = false
@@ -223,45 +281,93 @@ internal class SpockVerdictMemory {
         var extendsName: String? = null
             private set
 
+        /** Every class name declared in the file, top-level and nested, wherever it appears. */
+        val declaredNames = mutableListOf<String>()
+
+        /**
+         * What identifies the target: the file's tokens before its first top-level declaration (package,
+         * imports), each enclosing class's header, and the target's header. Bodies and unrelated headers are left
+         * out, so an edit elsewhere in the file does not change it; declared class names are added separately.
+         */
+        val identity: String
+            get() {
+                val parts = listOf(filePrelude.orEmpty().joinToString(" ")) + enclosing.map { it.third } +
+                    segment.joinToString(" ")
+                return parts.joinToString(" | ")
+            }
+
         /** Feeds one significant token; true when it is the target's body `{`. */
         fun accept(token: Token): Boolean {
             val wasAfterDot = afterDot
             afterDot = token.type == GroovyLangLexer.DOT
-            return if (inHeader) header(token) else outside(token, wasAfterDot)
+            if (inHeader) {
+                if (token.type == GroovyLangLexer.LBRACE) return true
+                segment += token.text
+                header(token)
+                return false
+            }
+            when (token.type) {
+                GroovyLangLexer.LBRACE -> open()
+                GroovyLangLexer.RBRACE -> close()
+                else -> {
+                    segment += token.text
+                    outside(token, wasAfterDot)
+                }
+            }
+            seen += token.text
+            return false
         }
 
-        private fun outside(token: Token, wasAfterDot: Boolean): Boolean {
+        private fun outside(token: Token, wasAfterDot: Boolean) {
             when {
                 keyword -> declare(token.text)
                 // `Foo.class` is a class literal, not a declaration.
-                token.type in DECLARATION_KEYWORDS && !wasAfterDot -> keyword = true
-                token.type == GroovyLangLexer.LBRACE -> open()
-                token.type == GroovyLangLexer.RBRACE -> close()
+                token.type in DECLARATION_KEYWORDS && !wasAfterDot -> {
+                    keyword = true
+                    if (depth == 0 && filePrelude == null) filePrelude = seen.toList()
+                }
             }
-            return false
         }
 
         private fun declare(name: String) {
             keyword = false
+            declaredNames += name
             val directlyInside = depth == (enclosing.lastOrNull()?.second?.plus(1) ?: 0)
             inHeader = name == path.last() && directlyInside && enclosing.map { it.first } == path.dropLast(1)
             pendingClass = name.takeUnless { inHeader }
         }
 
         private fun open() {
-            pendingClass?.let { enclosing.addLast(it to depth) }
+            pendingClass?.let { enclosing.addLast(Triple(it, depth, segment.joinToString(" "))) }
             pendingClass = null
+            segment.clear()
             depth++
         }
 
         private fun close() {
             depth--
             if (enclosing.lastOrNull()?.second == depth) enclosing.removeLast()
+            segment.clear()
         }
 
-        private fun header(token: Token): Boolean {
+        /**
+         * After the target's header: only collect declared names, so a class added after the target that
+         * shadows a name (for example `Specification` under a star import) still changes the identity.
+         */
+        fun collectName(token: Token) {
+            val wasAfterDot = afterDot
+            afterDot = token.type == GroovyLangLexer.DOT
             when {
-                token.type == GroovyLangLexer.LBRACE -> return true
+                keyword -> {
+                    keyword = false
+                    declaredNames += token.text
+                }
+                token.type in DECLARATION_KEYWORDS && !wasAfterDot -> keyword = true
+            }
+        }
+
+        private fun header(token: Token) {
+            when {
                 token.type == GroovyLangLexer.EXTENDS -> {
                     inExtends = true
                     extendsName = ""
@@ -269,7 +375,6 @@ internal class SpockVerdictMemory {
                 inExtends && token.type in NAME_TOKENS -> extendsName = (extendsName ?: "") + token.text
                 else -> inExtends = false
             }
-            return false
         }
     }
 
@@ -280,6 +385,7 @@ internal class SpockVerdictMemory {
             GroovyLangLexer.INTERFACE,
             GroovyLangLexer.TRAIT,
             GroovyLangLexer.ENUM,
+            GroovyLangLexer.RECORD,
         )
         private val NAME_TOKENS = setOf(
             GroovyLangLexer.Identifier,
@@ -299,16 +405,25 @@ internal class SpockVerdictMemory {
         /** Superclass and interface spellings as written, for [node] and each enclosing class, plus [imports]. */
         private fun declaration(node: ClassNode, imports: String): String = generateSequence(node) { it.outerClass }
             .joinToString("|") { type ->
-                val superclass = type.getUnresolvedSuperClass(false)?.unresolvedName
-                val interfaces = type.getUnresolvedInterfaces(false).orEmpty().joinToString(",") { it.unresolvedName }
+                val superclass = type.getUnresolvedSuperClass(false)?.unresolvedName?.let(::spelling)
+                val interfaces = type.getUnresolvedInterfaces(false).orEmpty()
+                    .joinToString(",") { spelling(it.unresolvedName) }
                 "${type.name}:$superclass:$interfaces"
             } + "|" + imports
 
         /**
-         * The significant tokens of [text] up to the body of the class named [fqn], hashed, with the class's
+         * A written type name with nested-class separators unified. Resolving `Outer.Inner` as a static inner
+         * class can leave `Outer$Inner` as the unresolved name, while the same spelling that fails to resolve
+         * stays `Outer.Inner`; both name the same class, so a clean and a degraded compile must agree.
+         */
+        private fun spelling(name: String): String = name.replace('$', '.')
+
+        /**
+         * The identity of the class named [fqn] in [text], hashed (see [PreludeScanner.identity]), with its
          * written `extends` name; null when the declaration is not found or the text does not lex. Comments and
-         * string literals are not significant, so they can neither end the prelude nor change the hash. Tokens
-         * are pulled lazily and the scan stops at the body's `{`, so a broken body is never lexed.
+         * string literals are not significant, so they can neither end the prelude nor change the hash. The whole
+         * file is lexed, so every declared class name is included (see [scanPrelude]); a file that does not lex,
+         * for example with an unterminated string, has no prelude, which denies reuse.
          */
         fun preludeOf(text: String, fqn: String): Prelude? {
             if (text.length > MAX_SOURCE_CHARS) return null
@@ -318,21 +433,41 @@ internal class SpockVerdictMemory {
                 .getOrNull()
         }
 
+        /**
+         * Lexes the whole file: the target's identity up to its body, then only the declared class names, so
+         * a name-shadowing class anywhere in the file counts but bodies never do.
+         *
+         * A lex error before the end of the target's header gives no prelude, which denies reuse. A lex error
+         * after it (a half-typed string in a body, say) keeps the names gathered so far: the text past that
+         * point is not valid Groovy, so no compile can bind a name to a class declared there until the file
+         * lexes again, and that compile records a fresh verdict. Local classes in bodies and `[class: …]`
+         * map keys are collected as declared names too, which can only make an edit deny reuse.
+         */
         private fun scanPrelude(lexer: GroovyLangLexer, path: List<String>): Prelude? {
-            val significant = mutableListOf<String>()
             val scanner = PreludeScanner(path)
-            var token = lexer.nextToken()
-            while (token.type != Token.EOF) {
+            var identity: String? = null
+            var extendsName: String? = null
+            var token = nextOrNull(lexer)
+            while (token != null && token.type != Token.EOF) {
                 if (token.channel == Token.DEFAULT_CHANNEL && token.type != GroovyLangLexer.NL) {
-                    if (scanner.accept(token)) {
-                        return Prelude(sha256(significant.joinToString(" ")), scanner.extendsName)
+                    when {
+                        identity != null -> scanner.collectName(token)
+                        scanner.accept(token) -> {
+                            identity = scanner.identity
+                            extendsName = scanner.extendsName
+                        }
                     }
-                    significant += token.text
                 }
-                token = lexer.nextToken()
+                token = nextOrNull(lexer)
             }
-            return null
+            val names = scanner.declaredNames.sorted().joinToString(",")
+            return identity?.let { Prelude(sha256("$it | classes: $names"), extendsName) }
         }
+
+        /** The next token, or null when the text stops lexing; real errors other than syntax errors propagate. */
+        private fun nextOrNull(lexer: GroovyLangLexer): Token? = runCatching { lexer.nextToken() }
+            .onFailure { failure -> if (failure is Error && failure !is GroovySyntaxError) throw failure }
+            .getOrNull()
 
         private fun sha256(text: String): String =
             MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
