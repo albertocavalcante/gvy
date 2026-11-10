@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.compilation.ConfigurationFingerprint
+import com.github.albertocavalcante.gvy.gls.compilation.DocumentTargetSelector
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
@@ -45,6 +46,7 @@ class ShadowedListedSpellingTest {
     private lateinit var compilation: GroovyCompilationService
     private lateinit var textDocuments: GroovyTextDocumentService
     private lateinit var workspace: GroovyWorkspaceService
+    private var reads = 0
 
     @AfterEach
     fun tearDown() = scope.cancel()
@@ -53,7 +55,15 @@ class ShadowedListedSpellingTest {
         compilation = GroovyCompilationService(
             ioDispatcher = Dispatchers.Unconfined,
             documentProvider = documents,
-            workspaceManager = WorkspaceManager(ConfigurationFingerprint::compute, { caseInsensitive }),
+            workspaceManager = WorkspaceManager(
+                ConfigurationFingerprint::compute,
+                { caseInsensitive },
+                normalisesNames = false,
+                canonicalise = { path ->
+                    reads++
+                    DocumentTargetSelector.canonical(path)
+                },
+            ),
         )
         val defaults = ServerConfiguration()
         textDocuments = GroovyTextDocumentService(
@@ -171,7 +181,31 @@ class ShadowedListedSpellingTest {
         )
     }
 
+    @Test
+    fun `workspace requests with a shadowing buffer open read no real paths after it opens`(): Unit = runBlocking {
+        start()
+        // The root is configured by its real path and the buffer opened through a link to it: translating that
+        // spelling needs a real-path read, which belongs to the open, not to every request after it (#1316).
+        val real = Files.createDirectories(workspaceRoot.resolve("real/src"))
+        Files.writeString(real.resolve("X.groovy"), TEXT)
+        val link = Files.createSymbolicLink(workspaceRoot.resolve("src"), real)
+        compilation.updateWorkspaceModel(workspaceRoot, emptyList(), listOf(real))
+        val listed = real.resolve("X.groovy").toUri()
+        val opened = link.resolve("X.groovy").toUri()
+        compilation.indexAllWorkspaceSources(listOf(listed))
+        open(opened)
+
+        reads = 0
+        repeat(REQUESTS) {
+            assertEquals(listOf(opened.toString()), symbolUris("Shadowed").distinct(), "listed under both spellings")
+        }
+        assertNotNull(compilation.compile(opened, TEXT))
+
+        assertEquals(0, reads, "real-path reads on the request path")
+    }
+
     private companion object {
+        const val REQUESTS = 20
         const val TEXT = "class Shadowed { int value }\n"
     }
 }
