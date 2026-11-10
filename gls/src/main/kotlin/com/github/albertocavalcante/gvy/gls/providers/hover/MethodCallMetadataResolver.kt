@@ -120,7 +120,7 @@ class MethodCallMetadataResolver(
      */
     private fun com.github.albertocavalcante.gvy.gls.services.ReflectedMethod.toMethodMetadata(): MethodMetadata {
         // Use mapIndexed to avoid truncation when parameterNames.size < parameters.size
-        val params = parameters.mapIndexed { i, type ->
+        val params = displayParameters.mapIndexed { i, type ->
             val paramName = parameterNames.getOrNull(i) ?: "arg$i"
             "$type $paramName"
         }.joinToString(", ")

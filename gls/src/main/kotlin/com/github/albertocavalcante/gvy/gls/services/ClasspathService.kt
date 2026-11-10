@@ -285,8 +285,10 @@ class ClasspathService(
 /**
  * Reflection snapshot for a classpath method.
  *
+ * @property parameters Simple type names as the JVM sees them (`Object[]` for varargs); matching keys on these.
  * @property parameterNames Available when the class was compiled with `-parameters`; empty otherwise.
  * @property declaringClass The fully qualified name of the class that declares this method.
+ * @property displayParameters [parameters] as source writes them (`Object...` when declared varargs), for display only.
  */
 data class ReflectedMethod(
     val name: String,
@@ -297,6 +299,7 @@ data class ReflectedMethod(
     val isPublic: Boolean,
     val doc: String,
     val declaringClass: String,
+    val displayParameters: List<String> = parameters,
 )
 
 data class ClassInfo(val simpleName: String, val fullName: String, val packageName: String)

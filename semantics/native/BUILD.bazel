@@ -11,6 +11,7 @@ kt_library(
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
+        "@maven//:org_ow2_asm_asm",
     ],
 )
 

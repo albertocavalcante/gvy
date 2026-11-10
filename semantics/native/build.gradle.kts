@@ -12,6 +12,8 @@ dependencies {
 
     // Native Groovy AST
     implementation(libs.groovy.core)
+    // Reads a classpath class's SourceFile attribute to tell Groovy-compiled classes apart (#1418)
+    implementation(libs.asm)
 
     testImplementation(kotlin("test"))
     testImplementation(project(":parser:native"))
