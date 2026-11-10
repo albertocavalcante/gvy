@@ -2,8 +2,10 @@ package com.github.albertocavalcante.gvy.gls.config
 
 import com.github.albertocavalcante.gvy.gls.Version
 import com.github.albertocavalcante.gvy.gls.providers.semantictokens.JenkinsSemanticTokenProvider
+import com.github.albertocavalcante.gvy.gls.services.GroovyWorkspaceService
 import org.eclipse.lsp4j.CodeLensOptions
 import org.eclipse.lsp4j.CompletionOptions
+import org.eclipse.lsp4j.ExecuteCommandOptions
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.RenameOptions
 import org.eclipse.lsp4j.SemanticTokensLegend
@@ -31,6 +33,9 @@ object ServerCapabilitiesFactory {
                 resolveProvider = false
                 triggerCharacters = listOf(".", ":", "=", "*")
             }
+
+            // Commands handled by workspace/executeCommand
+            executeCommandProvider = ExecuteCommandOptions(GroovyWorkspaceService.SUPPORTED_COMMANDS)
 
             // Hover support
             hoverProvider = Either.forLeft(true)

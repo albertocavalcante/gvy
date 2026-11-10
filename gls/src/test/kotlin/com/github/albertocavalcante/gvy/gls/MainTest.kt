@@ -122,6 +122,27 @@ class MainTest {
         assertTrue(result.output.isNotEmpty())
     }
 
+    @Test
+    fun `test execute command fails for unknown command and lists supported ones on stderr`() {
+        val originalErr = System.err
+        val errBuffer = ByteArrayOutputStream()
+        System.setErr(PrintStream(errBuffer))
+        val result = try {
+            captureOutput { runWithContext("execute", "groovy.resolveDependencies") }
+        } finally {
+            System.setErr(originalErr)
+        }
+
+        assertEquals(1, result.exitCode)
+        val stderr = errBuffer.toString()
+        // The logger also writes the stack trace to stderr; assert on the user-facing line only.
+        assertTrue(
+            stderr.contains("Error executing command 'groovy.resolveDependencies': Unknown command"),
+            "stderr: $stderr",
+        )
+        assertTrue(stderr.contains("Supported commands: groovy.version"), "stderr: $stderr")
+    }
+
     /**
      * Captures stdout output during the execution of a block.
      * Returns both output and exit code so tests can assert on command success/failure.

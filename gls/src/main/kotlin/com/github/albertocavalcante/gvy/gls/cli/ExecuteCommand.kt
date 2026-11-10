@@ -10,6 +10,7 @@ import com.github.ajalt.mordant.terminal.Terminal
 import com.github.albertocavalcante.gvy.gls.GroovyLanguageServer
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.ExecuteCommandParams
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 
 private val logger = KotlinLogging.logger {}
 
@@ -38,6 +39,10 @@ class ExecuteCommand : CliktCommand(name = "execute") {
             }
         } catch (@Suppress("TooGenericExceptionCaught") e: Exception) {
             logger.error(e) { "Error executing command '$command'" }
+            // Surface the server's message (e.g. the supported command list) to CLI users.
+            val reason = generateSequence<Throwable>(e) { it.cause }
+                .firstOrNull { it is ResponseErrorException }?.message ?: e.message
+            echo("Error executing command '$command': $reason", err = true)
             // Re-throw as ProgramResult to ensure finally block runs for cleanup
             throw ProgramResult(1)
         } finally {

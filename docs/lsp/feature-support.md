@@ -83,24 +83,24 @@ Legend:
 
 ## Workspace
 
-| Method                                | Support | Notes                                         |
-| ------------------------------------- | ------- | --------------------------------------------- |
-| `workspace/symbol`                    | yes     |                                               |
-| `workspace/executeCommand`            | partial | `groovy.version` handler only; not advertised |
-| `workspace/didChangeConfiguration`    | yes     |                                               |
-| `workspace/didChangeWatchedFiles`     | yes     | Registered dynamically when supported         |
-| `workspace/didChangeWorkspaceFolders` | no      |                                               |
-| `workspace/configuration`             | no      |                                               |
-| `workspace/applyEdit`                 | no      |                                               |
-| `workspace/willCreateFiles`           | no      |                                               |
-| `workspace/didCreateFiles`            | no      |                                               |
-| `workspace/willRenameFiles`           | no      |                                               |
-| `workspace/didRenameFiles`            | no      |                                               |
-| `workspace/willDeleteFiles`           | no      |                                               |
-| `workspace/didDeleteFiles`            | no      |                                               |
-| `workspace/codeLens/refresh`          | no      |                                               |
-| `workspace/semanticTokens/refresh`    | no      |                                               |
-| `workspace/inlayHint/refresh`         | no      |                                               |
+| Method                                | Support | Notes                                                       |
+| ------------------------------------- | ------- | ----------------------------------------------------------- |
+| `workspace/symbol`                    | yes     |                                                             |
+| `workspace/executeCommand`            | partial | `groovy.version`; advertised; unknown fails (InvalidParams) |
+| `workspace/didChangeConfiguration`    | yes     |                                                             |
+| `workspace/didChangeWatchedFiles`     | yes     | Registered dynamically when supported                       |
+| `workspace/didChangeWorkspaceFolders` | no      |                                                             |
+| `workspace/configuration`             | no      |                                                             |
+| `workspace/applyEdit`                 | no      |                                                             |
+| `workspace/willCreateFiles`           | no      |                                                             |
+| `workspace/didCreateFiles`            | no      |                                                             |
+| `workspace/willRenameFiles`           | no      |                                                             |
+| `workspace/didRenameFiles`            | no      |                                                             |
+| `workspace/willDeleteFiles`           | no      |                                                             |
+| `workspace/didDeleteFiles`            | no      |                                                             |
+| `workspace/codeLens/refresh`          | no      |                                                             |
+| `workspace/semanticTokens/refresh`    | no      |                                                             |
+| `workspace/inlayHint/refresh`         | no      |                                                             |
 
 ## Window and telemetry
 
@@ -135,4 +135,5 @@ Legend:
   and comments include their last line. Source changes reject the request, cancellation propagates, and cold queries do
   not publish compilation state. Unknown documents return an empty list. Responses are sorted, deduplicated and capped
   at 10,000 ranges; this bounds response count, not document-processing cost.
-- `workspace/executeCommand` is implemented for `groovy.version` only, but not advertised.
+- `workspace/executeCommand` is implemented for `groovy.version` only and advertised via `executeCommandProvider`.
+  Unknown commands fail with an `InvalidParams` error naming the command.

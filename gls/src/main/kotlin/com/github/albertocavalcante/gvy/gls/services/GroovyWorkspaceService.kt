@@ -34,7 +34,10 @@ import org.eclipse.lsp4j.FileEvent
 import org.eclipse.lsp4j.SymbolInformation
 import org.eclipse.lsp4j.WorkspaceSymbol
 import org.eclipse.lsp4j.WorkspaceSymbolParams
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.eclipse.lsp4j.jsonrpc.messages.Either
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.services.WorkspaceService
 import java.net.URI
 import java.nio.file.Path
@@ -83,13 +86,30 @@ class GroovyWorkspaceService(
         }
     }
 
+    companion object {
+        const val COMMAND_VERSION = "groovy.version"
+
+        /** Commands handled by [executeCommand]; advertised via `executeCommandProvider`. */
+        val SUPPORTED_COMMANDS: List<String> = listOf(COMMAND_VERSION)
+    }
+
     override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> {
         logger.info { "Executing command: ${params.command}" }
         return when (params.command) {
-            "groovy.version" -> CompletableFuture.completedFuture(Version.current)
+            COMMAND_VERSION -> CompletableFuture.completedFuture(Version.current)
             else -> {
                 logger.warn { "Unknown command: ${params.command}" }
-                CompletableFuture.completedFuture(null)
+                // Fail the request so clients can tell a missing command from a successful one.
+                CompletableFuture.failedFuture(
+                    ResponseErrorException(
+                        ResponseError(
+                            ResponseErrorCode.InvalidParams,
+                            "Unknown command: ${params.command}. " +
+                                "Supported commands: ${SUPPORTED_COMMANDS.joinToString()}",
+                            null,
+                        ),
+                    ),
+                )
             }
         }
     }
