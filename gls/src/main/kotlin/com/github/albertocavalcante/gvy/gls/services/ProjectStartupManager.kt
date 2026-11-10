@@ -335,6 +335,7 @@ class ProjectStartupManager(
                         workspaceRoot = context.workspaceRoot,
                         dependencies = resolution.dependencies,
                         sourceDirectories = resolution.sourceDirectories,
+                        targets = resolution.targetDependencies,
                     )
                     context.textDocumentServiceRefresh()
 

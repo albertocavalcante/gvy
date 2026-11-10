@@ -57,6 +57,7 @@ class CompilationCancellationTest {
         every { workspaceManager.getSourceRoots() } returns emptyList()
         every { workspaceManager.getWorkspaceSources() } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } returns "fp"
+        workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace("fp", sourceRoots = emptyList(), sources = emptyList())
         }

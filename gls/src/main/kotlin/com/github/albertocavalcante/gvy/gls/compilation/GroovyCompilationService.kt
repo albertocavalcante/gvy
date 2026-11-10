@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.engine.api.LanguageSession
@@ -147,7 +148,7 @@ class GroovyCompilationService(
 
     fun getSession(uri: URI): LanguageSession? {
         val cached =
-            cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint()) ?: return null
+            cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri)) ?: return null
         val (content, _) = cached
         return engineManager.activeEngine.createSession(uri, content)
     }
@@ -267,7 +268,7 @@ class GroovyCompilationService(
                 null
             }
         }
-        val fingerprint = workspaceManager.getConfigurationFingerprint()
+        val fingerprint = workspaceManager.fingerprintFor(uri)
         return ownership.retireClosed(uri, isOpen) {
             if (disk == null || cacheService.getCachedWithContent(uri, fingerprint)?.first != disk) {
                 cacheService.invalidate(uri)
@@ -290,8 +291,13 @@ class GroovyCompilationService(
     /** Applies a new compilation cache cap; closed files beyond it are evicted and recompiled on demand. */
     fun updateCompilationCacheLimit(maxEntries: Int) = cacheService.resize(maxEntries)
 
-    fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>) {
-        val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories)
+    fun updateWorkspaceModel(
+        workspaceRoot: Path,
+        dependencies: List<Path>,
+        sourceDirectories: List<Path>,
+        targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
+    ) {
+        val changed = workspaceManager.updateWorkspaceModel(workspaceRoot, dependencies, sourceDirectories, targets)
         if (changed) {
             classpathService.updateClasspath(dependencies)
             gdkProvider.initialize()
@@ -320,11 +326,11 @@ class GroovyCompilationService(
 
     /** The source text the cached AST for [uri] was compiled from, so AST positions index into it. */
     fun getCompiledContent(uri: URI): String? =
-        cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint())?.first
+        cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))?.first
 
     /** Capture source, AST model, and symbol table from the same cache entry under its existing lock. */
     internal fun getCompiledSnapshot(uri: URI): CompiledDocumentSnapshot? =
-        cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint())
+        cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))
             ?.let { (source, parsed) -> CompiledDocumentSnapshot(source, parsed) }
 
     fun getParseResult(uri: URI) = parseAccessor.getParseResult(uri)

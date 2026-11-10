@@ -353,6 +353,7 @@ class CompilationJobOwnershipTest {
             }
             val workspace = mockk<WorkspaceManager>()
             every { workspace.getConfigurationFingerprint() } answers { fingerprint }
+            workspace.delegateCompileContextToLegacyStubs()
             every { workspace.current() } answers {
                 testWorkspace(fingerprint, sourceRoots = emptyList(), sources = emptyList())
             }

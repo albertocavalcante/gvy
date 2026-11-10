@@ -124,8 +124,11 @@ class TargetDependencySnapshot(
 
     /**
      * Producer-reported roots, not exclusive document-membership or compilation-coverage proof.
-     * Shared roots, resource/language roots, include/exclude filters and unsaved files require
-     * additional producer evidence before a consumer can select a document's compilation target.
+     * A consumer may attribute a document to this target only when this is the sole COMPLETE
+     * target whose roots contain it (the gls `DocumentTargetSelector`); a document under several
+     * targets' roots stays ambiguous. Include/exclude filters, resource/language roots and unsaved
+     * files outside every root are not modelled, so such an attribution is still a root-based
+     * inference rather than proof that the build compiles the document in this target.
      */
     val sourceRoots: List<Path> = immutableCopy(sourceRoots)
 }

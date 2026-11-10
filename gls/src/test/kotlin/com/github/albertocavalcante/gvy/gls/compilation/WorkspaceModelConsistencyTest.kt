@@ -135,6 +135,9 @@ class WorkspaceModelConsistencyTest {
         override val displayName = "Capturing"
         override fun canHandle(workspaceRoot: Path, config: ServerConfiguration) = true
         override suspend fun initialize(workspaceRoot: Path, config: ServerConfiguration): Job? = null
+
+        // A strategy that supplies a classpath declares it (#1235): context and fingerprint share this predicate.
+        override fun overridesClasspath(uri: URI) = true
         override fun getClasspathForFile(uri: URI, content: String, projectDependencies: List<Path>): List<Path>? {
             handed += projectDependencies // retained, as a strategy caching per-file classpaths would
             return null
