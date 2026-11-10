@@ -80,10 +80,10 @@ class WatchedFilesRetireCostTest {
 
         // The drained queue re-retires the closed files and still skips the open buffer.
         while (paused.isNotEmpty()) paused.removeFirst().run()
-        assertSame(openParse, compilation.getParseResult(open), "the drain retired the open buffer")
+        assertSame<Any?>(openParse, compilation.getParseResult(open), "the drain retired the open buffer")
         assertTrue(compilation.workspaceManager.getWorkspaceSources().containsAll(files), "changed files stay listed")
         val reread = assertNotNull(compilation.ensureCompiled(sample.first()))
-        assertTrue("v = 2" in reread.sourceText, "a retired file is recompiled from the new disk text")
+        assertTrue("v = 2" in reread.sourceText.orEmpty(), "a retired file is recompiled from the new disk text")
     }
 
     /** [LARGE] listed sources under one source root, F0 open as a buffer; returns the open buffer's parse. */
@@ -124,7 +124,7 @@ class WatchedFilesRetireCostTest {
             cached.forEach { uri ->
                 assertNull(compilation.getCompiledSnapshot(uri), "run $run of $size events: old parse of $uri served")
             }
-            assertSame(openParse, compilation.getParseResult(open), "the open buffer's parse was retired")
+            assertSame<Any?>(openParse, compilation.getParseResult(open), "the open buffer's parse was retired")
             millis
         }
     }
