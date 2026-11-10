@@ -246,16 +246,26 @@ class WorkspaceManager internal constructor(
         val index = listedIndex?.takeIf { it.workspace === workspace }
             ?: ListedIndex(workspace).also { listedIndex = it }
         return paths.associateWith { path ->
-            index.spelling.inRoot(path)?.let { translated ->
-                index.listed[index.spelling.key(translated)] ?: translated
-            } ?: path
+            index.spelling.inRoot(path)?.let(index::listedSpelling) ?: path
         }
     }
 
     /** One model's [Spelling] and its listed sources by key: models are immutable, so it is keyed by identity. */
     private inner class ListedIndex(val workspace: WorkspaceModel) {
         val spelling = Spelling(workspace.sourceRoots.map { it.toAbsolutePath().normalize() }, workspace.root)
-        val listed: Map<String, Path> = workspace.sources.associateBy { spelling.key(it.toAbsolutePath().normalize()) }
+
+        // A translated path already is its listed spelling when every key is the path's own text (no root folds
+        // case and the platform keeps normalisations apart) and the roots, so the sources, are spelled normalised.
+        private val direct = spelling.keysAreSpellings &&
+            workspace.sourceRoots.all { it == it.toAbsolutePath().normalize() }
+
+        // O(sources), so built only where it is needed, and on first use rather than on every model change.
+        private val listed: Map<String, Path> by lazy {
+            workspace.sources.associateBy { spelling.key(it.toAbsolutePath().normalize()) }
+        }
+
+        fun listedSpelling(translated: Path): Path =
+            if (direct) translated else listed[spelling.key(translated)] ?: translated
     }
 
     @Volatile
@@ -364,6 +374,9 @@ class WorkspaceManager internal constructor(
             roots[index] to isCaseInsensitive(roots[index], canonicalRoots[index])
         }
 
+        /** Whether every [key] is the path's own text: no root folds case and the platform keeps normalisations. */
+        val keysAreSpellings: Boolean = !normalisesNames && insensitive.values.none { it }
+
         // A root naming the same directory as an earlier one is not scanned: its events take that root's spelling.
         private val aliasOf = scannedRoots(roots, workspaceRoot).aliasOf
 
@@ -382,7 +395,8 @@ class WorkspaceManager internal constructor(
         }
 
         // Parent directories' real paths, looked up once per notification: a branch switch creates many siblings.
-        private val canonicalDirectories = HashMap<Path, Path>()
+        // Concurrent: a model's Spelling is shared by the LSP and source-queue threads ([ListedIndex]).
+        private val canonicalDirectories = ConcurrentHashMap<Path, Path>()
 
         /**
          * Whether a created [path] really lies in its root's directory. A directory link inside an allowed root
