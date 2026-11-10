@@ -67,14 +67,14 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
             root,
             object : SimpleFileVisitor<Path>() {
                 override fun preVisitDirectory(dir: Path, attrs: BasicFileAttributes): FileVisitResult =
-                    if (dir != root && isExcludedDirectory(dir.name)) {
+                    if (dir != root && isExcludedDirectory(root, dir)) {
                         FileVisitResult.SKIP_SUBTREE
                     } else {
                         FileVisitResult.CONTINUE
                     }
 
                 override fun visitFile(file: Path, attrs: BasicFileAttributes): FileVisitResult {
-                    if (attrs.isRegularFile &&
+                    if (!attrs.isDirectory &&
                         (file.extension in FileExtensions.EXTENSIONS || file.name in FileExtensions.FILENAMES)
                     ) {
                         indexFile(root, file, indexer)
@@ -83,6 +83,7 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
                 }
 
                 override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
+                    if (file == root) throw exc
                     logger.warn(exc) { "Skipping unreadable path $file" }
                     return FileVisitResult.CONTINUE
                 }
@@ -104,13 +105,27 @@ class IndexExportService(private val buildToolManagerProvider: () -> BuildToolMa
     }
 
     private companion object {
-        /** Build/output directories that never contain hand-written sources (hidden dirs are handled separately). */
+        /** Build output directory names; only excluded where they are real build outputs (see below). */
         val BUILD_OUTPUT_DIRECTORIES = setOf("build", "out", "target", "node_modules")
 
+        /** Source layout segments under which a directory named build/out/target is a package, not an output. */
+        val SOURCE_SEGMENTS = setOf("src", "vars")
+
+        val BUILD_FILES =
+            listOf("build.gradle", "build.gradle.kts", "pom.xml", "settings.gradle", "settings.gradle.kts")
+
         /**
-         * Hidden directories (.git, .gradle, .idea, .jenkins-stubs, ...) and build outputs hold tooling state or
-         * generated code, so exporting them wastes time and adds bogus symbols to the index.
+         * Hidden directories (.git, .gradle, .idea, .jenkins-stubs, ...) are skipped at any depth. Build output
+         * names are skipped only as a direct child of the workspace root or of a project directory (one holding a
+         * build file), and never under src/ or vars/, where they are legitimate package names.
          */
-        fun isExcludedDirectory(name: String): Boolean = name.startsWith(".") || name in BUILD_OUTPUT_DIRECTORIES
+        fun isExcludedDirectory(root: Path, dir: Path): Boolean {
+            val name = dir.name
+            if (name.startsWith(".")) return true
+            if (name !in BUILD_OUTPUT_DIRECTORIES) return false
+            val parent = dir.parent ?: return false
+            if (root.relativize(parent).any { it.toString() in SOURCE_SEGMENTS }) return false
+            return parent == root || BUILD_FILES.any { Files.exists(parent.resolve(it)) }
+        }
     }
 }

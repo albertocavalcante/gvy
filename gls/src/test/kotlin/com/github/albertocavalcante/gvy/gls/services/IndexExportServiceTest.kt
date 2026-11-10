@@ -84,4 +84,86 @@ class IndexExportServiceTest {
             outDir.toFile().deleteRecursively()
         }
     }
+
+    private fun exportedText(workspace: java.nio.file.Path, files: Map<String, String>): String {
+        val outDir = createTempDirectory("index-out")
+        try {
+            files.forEach { (rel, content) ->
+                val file = workspace.resolve(rel)
+                Files.createDirectories(file.parent)
+                Files.writeString(file, content)
+            }
+            val output = outDir.resolve("index.scip")
+            IndexExportService { null }.exportIndex(ExportIndexParams(IndexFormat.SCIP, output.toString()), workspace)
+            return String(Files.readAllBytes(output), Charsets.ISO_8859_1)
+        } finally {
+            outDir.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `should index symlinked source files`() {
+        val workspace = createTempDirectory("index-link-ws")
+        val external = createTempDirectory("index-link-ext")
+        try {
+            val target = external.resolve("Linked.groovy")
+            Files.writeString(target, "class Linked {}")
+            Files.createDirectories(workspace.resolve("src"))
+            try {
+                Files.createSymbolicLink(workspace.resolve("src/Linked.groovy"), target)
+            } catch (e: UnsupportedOperationException) {
+                org.junit.jupiter.api.Assumptions.assumeTrue(false, "symlinks unsupported: $e")
+            } catch (e: java.io.IOException) {
+                org.junit.jupiter.api.Assumptions.assumeTrue(false, "symlinks unsupported: $e")
+            }
+            val text = exportedText(workspace, mapOf("src/Foo.groovy" to "class Foo {}"))
+            kotlin.test.assertTrue(text.contains("src/Linked.groovy"), "symlinked file must be indexed")
+        } finally {
+            workspace.toFile().deleteRecursively()
+            external.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `should index packages named build under source roots`() {
+        val workspace = createTempDirectory("index-pkg-ws")
+        try {
+            val text = exportedText(
+                workspace,
+                mapOf(
+                    "src/main/groovy/com/acme/build/PkgBuild.groovy" to "class PkgBuild {}",
+                    "src/org/foo/build/JenkinsBuild.groovy" to "class JenkinsBuild {}",
+                    "vars/target/VarsTarget.groovy" to "class VarsTarget {}",
+                    "build/generated/TopGen.groovy" to "class TopGen {}",
+                ),
+            )
+            kotlin.test.assertTrue(text.contains("PkgBuild.groovy"))
+            kotlin.test.assertTrue(text.contains("JenkinsBuild.groovy"))
+            kotlin.test.assertTrue(text.contains("VarsTarget.groovy"))
+            kotlin.test.assertFalse(text.contains("TopGen.groovy"), "top-level build must be skipped")
+        } finally {
+            workspace.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `should skip build output of subprojects`() {
+        val workspace = createTempDirectory("index-sub-ws")
+        try {
+            val text = exportedText(
+                workspace,
+                mapOf(
+                    "sub/build.gradle" to "// build",
+                    "sub/src/Sub.groovy" to "class Sub {}",
+                    "sub/build/generated/SubGen.groovy" to "class SubGen {}",
+                    "plain/build/Kept.groovy" to "class Kept {}",
+                ),
+            )
+            kotlin.test.assertTrue(text.contains("sub/src/Sub.groovy"))
+            kotlin.test.assertFalse(text.contains("SubGen.groovy"), "sub/build must be skipped")
+            kotlin.test.assertTrue(text.contains("Kept.groovy"), "build dir without a build file is a package")
+        } finally {
+            workspace.toFile().deleteRecursively()
+        }
+    }
 }
