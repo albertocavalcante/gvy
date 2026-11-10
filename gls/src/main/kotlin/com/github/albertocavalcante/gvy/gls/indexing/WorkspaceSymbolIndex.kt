@@ -96,7 +96,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      * @param classFqn The fully qualified class name (e.g., "com/example/MyClass")
      * @return The FQN of the superclass; null until inheritance is tracked
      */
-    @Suppress("UnusedParameter") // A stub until SymbolInfo carries inheritance.
+    @Suppress("UnusedParameter", "FunctionOnlyReturningConstant") // A stub until SymbolInfo carries inheritance.
     fun getSuperclass(classFqn: String): String? = null
 
     /**
@@ -177,7 +177,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
     override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? {
         // Look up the class to get all its members
         val classSymbolId = "$classFqn#"
-        val classSymbol = findSymbol(classSymbolId) ?: return null
+        findSymbol(classSymbolId) ?: return null // an unknown class has no members
 
         // Find all symbols in the workspace that belong to this class
         val allDocuments = semanticDb.getAllDocuments()
@@ -220,7 +220,7 @@ class WorkspaceSymbolIndex(private val semanticDb: GroovySemanticDB) : MemberLoo
      */
     override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> {
         val classSymbolId = "$classFqn#"
-        val classSymbol = findSymbol(classSymbolId) ?: return emptyList()
+        findSymbol(classSymbolId) ?: return emptyList() // an unknown class has no members
 
         // Find all symbols owned by this class
         val allDocuments = semanticDb.getAllDocuments()
