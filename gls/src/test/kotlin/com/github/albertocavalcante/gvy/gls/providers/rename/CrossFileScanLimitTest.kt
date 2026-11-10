@@ -54,13 +54,13 @@ class CrossFileScanLimitTest {
 
     @Test
     fun `more bytes than the cap is refused as too large to verify`() {
-        val message = assertNotNull(renameMessage(ScanLimits(maxBytes = 10)))
+        val message = assertNotNull(renameMessage(ScanLimits(maxChars = 10)))
         assertTrue("too large to verify" in message, message)
     }
 
     @Test
     fun `a workspace within the caps is not refused`() {
-        assertEquals(null, renameMessage(ScanLimits(maxFiles = 10, maxBytes = 1_000_000)))
+        assertEquals(null, renameMessage(ScanLimits(maxFiles = 10, maxChars = 1_000_000)))
     }
 
     @Test

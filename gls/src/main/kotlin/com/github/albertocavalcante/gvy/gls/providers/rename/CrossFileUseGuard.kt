@@ -1,8 +1,11 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
-import com.github.albertocavalcante.gvy.common.UriPathConverter
 import com.github.albertocavalcante.gvy.gls.indexing.WorkspaceSymbolIndex
 import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -12,12 +15,15 @@ import java.net.URI
 import java.nio.file.Path
 
 /** How much of the workspace one cross-file check may read before it gives up and refuses. */
-internal data class ScanLimits(val maxFiles: Int = MAX_FILES, val maxBytes: Long = MAX_BYTES) {
+internal data class ScanLimits(val maxFiles: Int = MAX_FILES, val maxChars: Long = MAX_CHARS) {
     companion object {
         const val MAX_FILES = 2_000
-        const val MAX_BYTES = 32L * 1024 * 1024
+        const val MAX_CHARS = 32L * 1024 * 1024
     }
 }
+
+/** Hits after which the scan stops: the message names this many files, so reading more would change nothing. */
+private const val MAX_REPORTED = 3
 
 /**
  * Finds uses of a rename target outside its own document. Workspace-wide rename is disabled until indexed
@@ -25,16 +31,18 @@ internal data class ScanLimits(val maxFiles: Int = MAX_FILES, val maxBytes: Long
  *
  * Two rules, both conservative:
  * 1. The semantic index proves a reference to the target's symbol id in another file.
- * 2. Another workspace source file mentions the name as a whole word (for fields and properties, also as
+ * 2. Another workspace file (Groovy, Java, Gradle, Jenkinsfile) mentions the name as a whole word (for fields
+ *    and properties, also as
  *    `get`/`set`/`is` + capitalized name). `private` is not exempt: Groovy ignores it across files, and the
  *    index records only certain occurrences, so untyped receivers, map-constructor keys, static imports,
  *    overrides and files that do not compile are invisible to rule 1.
  *
- * Only workspace sources are examined, so open buffers that are not (untitled, `jar:` documents, Jenkinsfiles
- * outside the source roots) never cause a refusal. A file's text is its open buffer, else the text the index
- * was built from, else the file on disk (cached by path, modification time and size). Past [limits] the check
- * refuses instead of guessing. A refusal means "may be used"; the absence of one is not proof that no other
- * file uses the symbol.
+ * Candidates are every file under the workspace root with a source extension (found by walking the root, so files
+ * created since startup and roots without a recognized source layout are covered), plus the workspace's known
+ * sources, indexed documents and open buffers. `untitled:` and `jar:` documents and files outside the root never
+ * cause a refusal. A file's text is its open buffer, else the file on disk (cached by path, modification time and
+ * size). Past [limits], or when the walk is too large, the check refuses instead of guessing. A refusal means
+ * "may be used"; the absence of one is not proof that no other file uses the symbol.
  *
  * Files are compared by real path, not URI spelling: the index keys files by `Path.toUri()` while editors send
  * their own spelling (`file:///c:/…` vs `file:///C:/…`, percent-encoded characters), and the document being
@@ -44,53 +52,93 @@ internal class CrossFileUseGuard(
     private val index: WorkspaceSymbolIndex,
     private val openBuffers: () -> Map<URI, String>,
     private val workspaceSources: () -> List<Path>,
+    private val workspaceRoot: () -> Path?,
     private val diskText: WorkspaceTextCache = WorkspaceTextCache(),
     private val limits: ScanLimits = ScanLimits(),
 ) {
+    /** Known sources keyed for one workspace root; the source list is replaced, never mutated, on refresh. */
+    private class KeyedSources(val list: List<Path>, val rootKey: Path?, val byKey: Map<Path, Path>)
 
-    fun usesOutside(documentUri: URI, definition: ASTNode, name: String): CrossFileUses {
+    @Volatile
+    private var keyedSources: KeyedSources? = null
+
+    /** Reads files on the IO dispatcher and checks for cancellation between files. */
+    suspend fun usesOutside(documentUri: URI, definition: ASTNode, name: String): CrossFileUses {
         val symbolId = symbolIdOf(definition) ?: return CrossFileUses()
-        val self = fileKey(documentUri)
-        val used = index.findReferenceDocuments(symbolId).keys.filter { fileKey(it) != self }.sortedBy { it.toString() }
-        val usedKeys = used.mapTo(HashSet(), ::fileKey)
+        return withContext(Dispatchers.IO) {
+            val context = currentCoroutineContext()
+            val root = workspaceRoot()
+            val keys = FileKeys(root)
+            diskText.rebind(root)
+            val self = keys.of(documentUri)
+            val used = index.findReferenceDocuments(symbolId).keys
+                .filter { keys.of(it) != self }.sortedBy { it.toString() }
+            if (used.size >= MAX_REPORTED) return@withContext CrossFileUses(used = used, truncated = true)
 
-        val candidates = workspaceSources().map { fileKey(it) to it }.filter { (key, _) -> key != self }
-        if (candidates.size > limits.maxFiles) return CrossFileUses(used = used, unverifiable = true)
-        val scan = Scan(
-            word = mentionPattern(name, definition),
-            indexed = index.implementationSnapshot.entries.associate { (uri, doc) -> fileKey(uri) to doc.sourceText },
-            buffers = openBuffers().mapKeys { fileKey(it.key) },
-        )
-        return scan.run(candidates.filter { (key, _) -> key !in usedKeys }, used)
+            val snapshot = index.implementationSnapshot
+            val buffers = openBuffers()
+            val found = CandidateCollector(keys, limits.maxFiles)
+                .collect(sourcesKeyed(keys), snapshot.keys + buffers.keys) { context.ensureActive() }
+            val usedKeys = used.mapNotNullTo(HashSet(), keys::of)
+            val candidates = found.files.filterKeys { it != self && it !in usedKeys }
+            if (found.overflow || candidates.size > limits.maxFiles) {
+                return@withContext CrossFileUses(used = used, unverifiable = true)
+            }
+            val scan = Scan(
+                word = NameMatcher.pattern(name, definition),
+                indexed = snapshot.entries
+                    .mapNotNull { (uri, doc) -> keys.of(uri)?.let { it to doc.sourceText } }.toMap(),
+                buffers = buffers.entries.mapNotNull { (uri, text) -> keys.of(uri)?.let { it to text } }.toMap(),
+            )
+            scan.run(candidates, used) { context.ensureActive() }
+        }
     }
 
-    /** One pass over the candidate files, tracking the byte budget. */
-    private inner class Scan(val word: Regex, val indexed: Map<Any, String?>, val buffers: Map<Any, String>) {
-        private var bytes = 0L
+    /** Resolves the known sources' keys once per source list (they cost a filesystem call each). */
+    private fun sourcesKeyed(keys: FileKeys): Map<Path, Path> {
+        val list = workspaceSources()
+        keyedSources?.takeIf { it.list === list && it.rootKey == keys.rootKey }?.let { return it.byKey }
+        val byKey = LinkedHashMap<Path, Path>()
+        list.forEach { byKey.putIfAbsent(keys.of(it), it) }
+        keyedSources = KeyedSources(list, keys.rootKey, byKey)
+        return byKey
+    }
+
+    /** One pass over the candidate files, tracking the character budget and stopping at [MAX_REPORTED] hits. */
+    private inner class Scan(val word: Regex, val indexed: Map<Path, String?>, val buffers: Map<Path, String>) {
+        private var chars = 0L
         private val mentioned = mutableListOf<URI>()
         private val unsaved = mutableListOf<URI>()
+        private val hits: Int get() = mentioned.size + unsaved.size
 
-        fun run(candidates: List<Pair<Any, Path>>, used: List<URI>): CrossFileUses {
-            val complete = candidates.all { (key, path) -> examine(key, path) }
-            return CrossFileUses(used, sorted(mentioned), sorted(unsaved), unverifiable = !complete)
+        fun run(candidates: Map<Path, Path>, used: List<URI>, active: () -> Unit): CrossFileUses {
+            val pending = candidates.entries.iterator()
+            var complete = true
+            while (complete && used.size + hits < MAX_REPORTED && pending.hasNext()) {
+                active()
+                val (key, path) = pending.next()
+                complete = examine(key, path)
+            }
+            val truncated = complete && pending.hasNext()
+            return CrossFileUses(used, sorted(mentioned), sorted(unsaved), truncated, unverifiable = !complete)
         }
 
-        /** False once the byte budget is exhausted. */
-        private fun examine(key: Any, path: Path): Boolean {
-            val text = buffers[key] ?: indexed[key] ?: return examineDisk(path)
-            bytes += text.length
-            if (word.containsMatchIn(text)) {
-                val stale = indexed[key]?.let { it != text } == true
+        /** False once the character budget is exhausted. */
+        private fun examine(key: Path, path: Path): Boolean {
+            val buffer = buffers[key] ?: return examineDisk(path)
+            chars += buffer.length
+            if (word.containsMatchIn(buffer)) {
+                val stale = indexed[key]?.let { it != buffer } == true
                 (if (stale) unsaved else mentioned).add(path.toUri())
             }
-            return bytes <= limits.maxBytes
+            return chars <= limits.maxChars
         }
 
-        private fun examineDisk(path: Path): Boolean = when (val read = diskText.read(path, limits.maxBytes - bytes)) {
+        private fun examineDisk(path: Path): Boolean = when (val read = diskText.read(path, limits.maxChars - chars)) {
             is DiskText.Text -> {
-                bytes += read.bytes
+                chars += read.text.length
                 if (word.containsMatchIn(read.text)) mentioned.add(path.toUri())
-                true
+                chars <= limits.maxChars
             }
             DiskText.TooLarge -> false
             DiskText.Unreadable -> {
@@ -101,24 +149,6 @@ internal class CrossFileUseGuard(
         }
 
         private fun sorted(uris: List<URI>): List<URI> = uris.sortedBy { it.toString() }
-    }
-
-    /** The name as a whole word; fields and properties also by their `get`/`set`/`is` accessor names. */
-    private fun mentionPattern(name: String, definition: ASTNode): Regex {
-        val alternatives = mutableListOf(Regex.escape(name))
-        if (definition is PropertyNode || definition is FieldNode) {
-            val capitalized = name.replaceFirstChar { it.uppercaseChar() }
-            ACCESSOR_PREFIXES.mapTo(alternatives) { Regex.escape(it + capitalized) }
-        }
-        return Regex("\\b(?:${alternatives.joinToString("|")})\\b")
-    }
-
-    /** Identity of the file behind [uri]: its real path where it has one, else the normalized path. */
-    private fun fileKey(uri: URI): Any = UriPathConverter.toPath(uri)?.let(::fileKey) ?: uri
-
-    private fun fileKey(path: Path): Any {
-        val absolute = path.toAbsolutePath()
-        return runCatching { absolute.toRealPath() }.getOrDefault(absolute.normalize())
     }
 
     /** The id the semantic index stores for [definition]; null for locals, parameters and other non-members. */
@@ -132,9 +162,5 @@ internal class CrossFileUseGuard(
             SemanticDocumentBuilder.createFieldSymbolId(it, definition)
         }
         else -> null
-    }
-
-    private companion object {
-        val ACCESSOR_PREFIXES = listOf("get", "set", "is")
     }
 }

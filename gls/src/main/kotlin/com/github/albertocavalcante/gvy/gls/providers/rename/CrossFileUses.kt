@@ -9,12 +9,15 @@ import java.net.URI
  * - [used]: the semantic index proves a reference.
  * - [mentioned]: the file's text contains the name (or an accessor spelling of it); the use is not proven.
  * - [unsaved]: an open buffer mentions the name and differs from the text the index was built from.
- * - [unverifiable]: the workspace exceeds the scan limits, so no verdict about other files is possible.
+ * - [truncated]: the scan stopped at the first few files; there may be more.
+ * - [unverifiable]: the workspace exceeds the scan limits, so no verdict about other files is possible. A
+ *   workspace over the limits therefore refuses every member and class rename.
  */
 internal data class CrossFileUses(
     val used: List<URI> = emptyList(),
     val mentioned: List<URI> = emptyList(),
     val unsaved: List<URI> = emptyList(),
+    val truncated: Boolean = false,
     val unverifiable: Boolean = false,
 ) {
     val isEmpty: Boolean get() = used.isEmpty() && mentioned.isEmpty() && unsaved.isEmpty() && !unverifiable
@@ -27,7 +30,7 @@ internal data class CrossFileUses(
         }
         val parts = buildList {
             if (used.isNotEmpty()) add("is used in ${used.count()} (${used.named()})")
-            if (mentioned.isNotEmpty()) add("may be used in ${mentioned.count()} (${mentioned.named()})")
+            if (mentioned.isNotEmpty()) add("may be used in ${mentioned.count(truncated)} (${mentioned.named()})")
             if (unsaved.isNotEmpty()) {
                 val verb = if (unsaved.size == 1) "has" else "have"
                 add("may be used in ${unsaved.named()}, which $verb unsaved changes not analyzed yet")
@@ -36,7 +39,8 @@ internal data class CrossFileUses(
         return "'$name' ${parts.joinToString(" and ")}; renaming across files is not supported yet"
     }
 
-    private fun List<URI>.count(): String = "$size other file${if (size == 1) "" else "s"}"
+    private fun List<URI>.count(atLeast: Boolean = false): String =
+        "${if (atLeast) "at least " else ""}$size other file${if (size == 1) "" else "s"}"
 
     private fun List<URI>.named(): String =
         take(MAX_NAMED).joinToString(", ") { it.fileName() } + if (size > MAX_NAMED) ", …" else ""

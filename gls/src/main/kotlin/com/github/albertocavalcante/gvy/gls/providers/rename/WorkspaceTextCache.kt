@@ -3,10 +3,11 @@ package com.github.albertocavalcante.gvy.gls.providers.rename
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 
 /** Outcome of reading one workspace file for the cross-file scan. */
 internal sealed interface DiskText {
-    data class Text(val text: String, val bytes: Long) : DiskText
+    data class Text(val text: String) : DiskText
 
     /** The file is larger than the remaining scan budget, so it was not read. */
     data object TooLarge : DiskText
@@ -14,36 +15,54 @@ internal sealed interface DiskText {
     /** The file is gone; it cannot use anything. */
     data object Missing : DiskText
 
-    /** The file exists but could not be read or decoded; nothing can be said about it. */
+    /** The file exists but could not be read (an I/O failure); nothing can be said about it. */
     data object Unreadable : DiskText
 }
 
 /**
- * Bounded cache of workspace file text keyed by path and validated by (lastModified, size), so repeated
+ * Bounded cache of workspace file text keyed by path and validated by modification time (at the filesystem's
+ * full precision) and size, so repeated
  * prepareRename requests (one per F2, in some clients one per cursor move) do not re-read unchanged files.
- * Entries beyond [maxEntries] are evicted least-recently-used. Thread-safe.
+ *
+ * Bounded by entry count and by total characters, evicting least-recently-used. A file modified within
+ * [RECENT_MILLIS] is never served from the cache, because coarse modification times cannot tell a rewrite from
+ * the cached version. Cleared when the workspace root changes. Thread-safe.
  */
-internal class WorkspaceTextCache(private val maxEntries: Int = DEFAULT_MAX_ENTRIES) {
-    private data class Stamp(val lastModified: Long, val size: Long)
+internal class WorkspaceTextCache(
+    private val maxEntries: Int = DEFAULT_MAX_ENTRIES,
+    private val maxChars: Long = DEFAULT_MAX_CHARS,
+    private val clock: () -> Long = System::currentTimeMillis,
+) {
+    private data class Stamp(val lastModified: FileTime, val size: Long)
     private data class Entry(val stamp: Stamp, val text: String)
 
-    private val entries = object : LinkedHashMap<Path, Entry>(INITIAL_CAPACITY, LOAD_FACTOR, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Path, Entry>?): Boolean = size > maxEntries
-    }
+    private val entries = LinkedHashMap<Path, Entry>(INITIAL_CAPACITY, LOAD_FACTOR, true)
+    private var totalChars = 0L
+    private var root: Path? = null
 
     val size: Int get() = synchronized(entries) { entries.size }
+    val chars: Long get() = synchronized(entries) { totalChars }
 
-    /** Reads [path], from the cache when unchanged; files larger than [budgetBytes] are not read. */
-    fun read(path: Path, budgetBytes: Long): DiskText {
-        val stamp = stampOf(path) ?: return DiskText.Missing
-        return when {
-            stamp.size > budgetBytes -> DiskText.TooLarge
-            else -> cached(path, stamp)?.let { DiskText.Text(it, stamp.size) } ?: load(path, stamp)
+    /** Drops everything when the workspace changed under the cache. */
+    fun rebind(workspaceRoot: Path?) = synchronized(entries) {
+        if (workspaceRoot != root) {
+            root = workspaceRoot
+            entries.clear()
+            totalChars = 0
         }
     }
 
+    /** Reads [path], from the cache when unchanged; files larger than [budgetChars] are not read. */
+    fun read(path: Path, budgetChars: Long): DiskText {
+        val stamp = stampOf(path) ?: return DiskText.Missing
+        if (stamp.size > budgetChars) return DiskText.TooLarge
+        val recent = clock() - stamp.lastModified.toMillis() < RECENT_MILLIS
+        val hit = if (recent) null else cached(path, stamp)
+        return hit?.let { DiskText.Text(it) } ?: load(path, stamp)
+    }
+
     private fun stampOf(path: Path): Stamp? = try {
-        if (Files.isRegularFile(path)) Stamp(Files.getLastModifiedTime(path).toMillis(), Files.size(path)) else null
+        if (Files.isRegularFile(path)) Stamp(Files.getLastModifiedTime(path), Files.size(path)) else null
     } catch (_: IOException) {
         null
     }
@@ -52,15 +71,27 @@ internal class WorkspaceTextCache(private val maxEntries: Int = DEFAULT_MAX_ENTR
         synchronized(entries) { entries[path]?.takeIf { it.stamp == stamp }?.text }
 
     private fun load(path: Path, stamp: Stamp): DiskText = try {
-        val text = Files.readString(path)
-        synchronized(entries) { entries[path] = Entry(stamp, text) }
-        DiskText.Text(text, stamp.size)
+        // Undecodable bytes become U+FFFD: one Latin-1 file must not make every rename unverifiable.
+        val text = String(Files.readAllBytes(path), Charsets.UTF_8)
+        store(path, Entry(stamp, text))
+        DiskText.Text(text)
     } catch (_: IOException) {
         DiskText.Unreadable
     }
 
+    private fun store(path: Path, entry: Entry) = synchronized(entries) {
+        entries.put(path, entry)?.let { totalChars -= it.text.length }
+        totalChars += entry.text.length
+        val eldest = entries.entries.iterator()
+        while ((entries.size > maxEntries || totalChars > maxChars) && eldest.hasNext()) {
+            totalChars -= eldest.next().also { eldest.remove() }.value.text.length
+        }
+    }
+
     companion object {
         const val DEFAULT_MAX_ENTRIES = 2_000
+        const val DEFAULT_MAX_CHARS = 64L * 1024 * 1024
+        const val RECENT_MILLIS = 2_000L
         private const val INITIAL_CAPACITY = 64
         private const val LOAD_FACTOR = 0.75f
     }

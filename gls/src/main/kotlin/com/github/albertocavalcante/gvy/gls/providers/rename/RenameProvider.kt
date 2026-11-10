@@ -83,6 +83,7 @@ class RenameProvider private constructor(
         checkNotNull(compilationService.getWorkspaceSymbolIndex()),
         openBuffers,
         compilationService.workspaceManager::getWorkspaceSources,
+        compilationService.workspaceManager::getWorkspaceRoot,
         diskText,
         scanLimits,
     )
@@ -153,7 +154,7 @@ class RenameProvider private constructor(
     }
 
     /** Only this file is edited, so a target other files use would be silently broken. */
-    private fun refuseIfUsedElsewhere(target: RenameTarget) {
+    private suspend fun refuseIfUsedElsewhere(target: RenameTarget) {
         val uses = crossFileUses.usesOutside(target.documentUri, target.definition, target.oldName)
         if (!uses.isEmpty) {
             val error = ResponseError(ResponseErrorCode.RequestFailed, uses.message(target.oldName), null)

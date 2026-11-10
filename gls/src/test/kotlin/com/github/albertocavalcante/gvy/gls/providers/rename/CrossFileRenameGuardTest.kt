@@ -242,15 +242,164 @@ class CrossFileRenameGuardTest {
     }
 
     @Test
-    fun `an untitled or Jenkinsfile buffer mentioning the name does not refuse`(): Unit = runBlocking {
+    fun `untitled and jar buffers and a Jenkinsfile outside the workspace do not refuse`(): Unit = runBlocking {
         val files = mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
         val uri = workspace(files, open = "A.groovy")
+        val outside = Files.createTempDirectory("outside-workspace")
         documents.put(URI.create("untitled:Untitled-1"), "println 'greet'")
-        documents.put(tempDir.resolve("Jenkinsfile").toUri(), "node { echo 'greet' }")
-        documents.put(tempDir.resolve("build.gradle").toUri(), "println 'greet'")
         documents.put(URI.create("jar:file:///x/lib.jar!/Y.groovy"), "class Y { def greet() {} }")
+        documents.put(outside.resolve("Jenkinsfile").toUri(), "node { echo 'greet' }")
 
         assertRenames(uri, a, "greet")
+    }
+
+    @Test
+    fun `a Jenkinsfile or gradle or java file in the workspace that mentions the name refuses`() {
+        val files = mapOf("A.groovy" to a)
+        val uri = workspace(files, open = "A.groovy")
+        listOf(
+            "Jenkinsfile" to "node { new A().greet() }",
+            "build.gradle" to "println new A().greet()",
+            "B.java" to "class B { Object f(A a) { return a.greet(); } }",
+            "ci.Jenkinsfile" to "greet()",
+        ).forEach { (name, text) ->
+            val file = tempDir.resolve(name)
+            Files.writeString(file, text)
+            assertRefused(uri, a, "greet", name)
+            Files.delete(file)
+        }
+    }
+
+    @Test
+    fun `a file created after startup is refused without a restart`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        write("Late.groovy", "class Late {\n    def run() { new A().greet() }\n}\n")
+
+        assertRefused(uri, a, "greet", "Late.groovy")
+    }
+
+    @Test
+    fun `a flat repository with no source root is refused`() {
+        Files.writeString(tempDir.resolve("A.groovy"), a)
+        Files.writeString(tempDir.resolve("B.groovy"), "class B {\n    def run() { new A().greet() }\n}\n")
+        runBlocking {
+            service.workspaceManager.initializeWorkspace(tempDir)
+            val uri = tempDir.resolve("A.groovy").toUri()
+            documents.put(uri, a)
+            service.compile(uri, a)
+            assertRefused(uri, a, "greet", "B.groovy")
+        }
+    }
+
+    @Test
+    fun `a dollar name used in another file is refused`() = assertRenameRefused(
+        mapOf(
+            "A.groovy" to "class A {\n    def \$foo() { 1 }\n}\n",
+            "B.groovy" to "class B {\n    def run(x) { x.\$foo() }\n}\n",
+        ),
+        "A.groovy",
+        "\$foo",
+    )
+
+    @Test
+    fun `a non-ASCII name used in another file is refused`() = assertRenameRefused(
+        mapOf(
+            "A.groovy" to "class A {\n    def café() { 1 }\n}\n",
+            "B.groovy" to "class B {\n    def run(x) { x.café() }\n}\n",
+        ),
+        "A.groovy",
+        "café",
+    )
+
+    @Test
+    fun `a getter method used as a property in another file is refused`() = assertRenameRefused(
+        mapOf(
+            "A.groovy" to "class A {\n    def getLabel() { 'x' }\n}\n",
+            "B.groovy" to "class B {\n    def run(A a) { a.label }\n}\n",
+        ),
+        "A.groovy",
+        "getLabel",
+    )
+
+    @Test
+    fun `a new unsaved buffer in the source root that calls the target is refused`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        documents.put(tempDir.resolve("src/New.groovy").toUri(), "class New {\n    def run(x) { x.greet() }\n}\n")
+
+        assertRefused(uri, a, "greet", "New.groovy")
+    }
+
+    @Test
+    fun `a java caller and a Jenkins vars step are refused`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        val java = tempDir.resolve("src/main/java/B.java")
+        Files.createDirectories(java.parent)
+        Files.writeString(java, "class B { Object run() { return new A().greet(); } }\n")
+        assertRefused(uri, a, "greet", "B.java")
+        Files.delete(java)
+
+        val step = tempDir.resolve("vars/step.groovy")
+        Files.createDirectories(step.parent)
+        Files.writeString(step, "def call(x) { x.greet() }\n")
+        assertRefused(uri, a, "greet", "step.groovy")
+    }
+
+    @Test
+    fun `a getter whose property keeps an uppercase second letter is refused through either spelling`() {
+        val getter = "class A {\n    def getURL() { 'u' }\n}\n"
+        val uri = workspace(
+            mapOf("A.groovy" to getter, "B.groovy" to "class B {\n    def run(x) { x.uRL }\n}\n"),
+            open = "A.groovy",
+        )
+
+        assertRefused(uri, getter, "getURL", "B.groovy")
+    }
+
+    @Test
+    fun `a property whose second letter is uppercase is refused through its Groovy-capitalized accessor`() =
+        assertRenameRefused(
+            mapOf(
+                "A.groovy" to "class A {\n    String aB = 'x'\n}\n",
+                "B.groovy" to "class B {\n    def run(A a) { a.getaB() }\n}\n",
+            ),
+            "A.groovy",
+            "aB",
+        )
+
+    @Test
+    fun `a longer non-ASCII identifier containing the name does not refuse`(): Unit = runBlocking {
+        val u = "class A {\n    def café() { 1 }\n}\n"
+        val files = mapOf("A.groovy" to u, "B.groovy" to "class B {\n    def cafés() { 'x' }\n}\n")
+        assertRenames(workspace(files, open = "A.groovy"), u, "café")
+    }
+
+    @Test
+    fun `a file that is not valid UTF-8 and does not mention the name does not block the rename`(): Unit = runBlocking {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        Files.write(tempDir.resolve("src/L.groovy"), "// café\nclass L {}\n".toByteArray(Charsets.ISO_8859_1))
+
+        assertRenames(uri, a, "greet")
+    }
+
+    @Test
+    fun `many mentioning files stop the scan and say at least`() {
+        val files = mapOf("A.groovy" to a) + ('B'..'F').associate {
+            "$it.groovy" to "class $it {\n    def run(x) { x.greet() }\n}\n"
+        }
+        val uri = workspace(files, open = "A.groovy")
+        val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
+
+        assertTrue("at least 3 other files" in message, message)
+    }
+
+    @Test
+    fun `an external edit to a closed indexed file is seen without a watcher event`() {
+        val files = mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
+        val uri = workspace(files, open = "A.groovy")
+        val edited = "class B {\n    def run() { new A().greet() }\n}\n"
+        Files.writeString(tempDir.resolve("src").resolve("B.groovy"), edited)
+
+        assertRefused(uri, a, "greet", "B.groovy")
     }
 
     @Test
