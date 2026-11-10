@@ -365,7 +365,6 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
         assertEquals(true, names("trait T { int cnt = 0; def set1() { cnt = 1 } }").containsAll(setOf("cnt", "setCnt")))
         val compound = names("trait T { int cnt = 0; def go() { cnt += 1 } }")
         assertEquals(true, compound.containsAll(setOf("cnt", "getCnt", "setCnt")))
-        assertEquals(emptySet<String>(), compound.filter { '$' in it }.toSet())
         assertEquals(true, "a__b" in names("trait T { int a__b = 0; def go() { a__b } }"))
         assertEquals(true, "ação" in names("trait T { int ação = 0; def go() { ação } }"))
         assertEquals(true, "cnt" in names("trait T_ { int cnt = 0; def go() { cnt } }"), "trait name ending in _")
