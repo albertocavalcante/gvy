@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.compilation
 
+import com.github.albertocavalcante.gvy.build.TargetDependencyEvidence
 import com.github.albertocavalcante.gvy.gls.project.JenkinsCapabilities
+import com.github.albertocavalcante.gvy.gls.project.ProjectStrategy
 import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -72,7 +74,7 @@ class WorkspaceManager(
         logger.info { "Initializing workspace (non-blocking): $workspaceRoot" }
         update { current ->
             val roots = current.sourceRoots.ifEmpty { discoverSourceRoots(workspaceRoot) }
-            model(workspaceRoot, current.classpath, roots)
+            model(workspaceRoot, current.classpath, roots, current.targets)
         }
     }
 
@@ -82,7 +84,14 @@ class WorkspaceManager(
             if (classpathChanged(current.classpath, newDependencies)) {
                 changed = true
                 logger.info { "Updated dependency classpath with ${newDependencies.size} dependencies" }
-                WorkspaceModel(current.root, newDependencies, current.sourceRoots, current.sources, fingerprintComputer)
+                // A bare classpath update carries no target facts for it: stale evidence is dropped.
+                WorkspaceModel(
+                    current.root,
+                    newDependencies,
+                    current.sourceRoots,
+                    current.sources,
+                    computeFingerprint = fingerprintComputer,
+                )
             } else {
                 logger.debug { "Dependencies unchanged" }
                 current
@@ -91,7 +100,18 @@ class WorkspaceManager(
         return changed
     }
 
-    fun updateWorkspaceModel(workspaceRoot: Path, dependencies: List<Path>, sourceDirectories: List<Path>): Boolean {
+    /**
+     * Publishes a new model. [targets] is the build-target evidence resolved together with
+     * [dependencies], published in the same snapshot so per-document classpaths, fingerprints and
+     * target facts always come from one resolution. The new evidence is always published (it carries
+     * the new provenance); it counts as a change only when its facts differ, ignoring provenance.
+     */
+    fun updateWorkspaceModel(
+        workspaceRoot: Path,
+        dependencies: List<Path>,
+        sourceDirectories: List<Path>,
+        targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
+    ): Boolean {
         var changed = false
         update { current ->
             val depsChanged = classpathChanged(current.classpath, dependencies)
@@ -107,8 +127,9 @@ class WorkspaceManager(
                 current.sourceRoots.isEmpty() -> discoverSourceRoots(workspaceRoot)
                 else -> current.sourceRoots
             }
-            changed = depsChanged || sourcesChanged
-            model(workspaceRoot, if (depsChanged) dependencies else current.classpath, roots)
+            val targetsChanged = !sameTargetFacts(current.targets, targets)
+            changed = depsChanged || sourcesChanged || targetsChanged
+            model(workspaceRoot, if (depsChanged) dependencies else current.classpath, roots, targets)
         }
         return changed
     }
@@ -118,11 +139,24 @@ class WorkspaceManager(
         synchronized(updateLock) { model.set(next(model.get())) }
     }
 
-    private fun model(root: Path?, classpath: List<Path>, sourceRoots: List<Path>) =
-        WorkspaceModel(root, classpath, sourceRoots, scanSources(sourceRoots.distinct()), fingerprintComputer)
+    private fun model(
+        root: Path?,
+        classpath: List<Path>,
+        sourceRoots: List<Path>,
+        targets: TargetDependencyEvidence = TargetDependencyEvidence.Legacy,
+    ) = WorkspaceModel(root, classpath, sourceRoots, scanSources(sourceRoots.distinct()), targets, fingerprintComputer)
+
+    /** Structural comparison of target facts; provenance (generation) alone is not a change. */
+    private fun sameTargetFacts(current: TargetDependencyEvidence, next: TargetDependencyEvidence): Boolean =
+        targetFacts(current) == targetFacts(next)
+
+    private fun targetFacts(evidence: TargetDependencyEvidence): List<List<Any?>>? =
+        (evidence as? TargetDependencyEvidence.Scoped)?.snapshots?.map { snapshot ->
+            listOf(snapshot.target, snapshot.role, snapshot.state, snapshot.artifacts, snapshot.sourceRoots)
+        }
 
     private fun emptyModel(root: Path?) =
-        WorkspaceModel(root, emptyList(), emptyList(), emptyList(), fingerprintComputer)
+        WorkspaceModel(root, emptyList(), emptyList(), emptyList(), computeFingerprint = fingerprintComputer)
 
     private fun classpathChanged(current: List<Path>, next: List<Path>) =
         next.size != current.size || next.toSet() != current.toSet()
@@ -246,26 +280,46 @@ class WorkspaceManager(
     }
 
     /**
-     * Gets the classpath for a file, including strategy-specific classpath if applicable.
-     *
-     * First queries active strategies for file-specific classpath. If a strategy returns
-     * a non-null classpath, that is used. Otherwise falls back to the standard dependency
-     * classpath.
+     * The classpath, fingerprint and target for one document from [workspace] alone (#1235).
+     * A strategy that [overrides][ProjectStrategy.overridesClasspath] the document supplies its
+     * classpath and keeps the workspace fingerprint, exactly as before; that single predicate also
+     * drives [fingerprintFor], so reads and writes always use the same cache key.
+     */
+    fun compileContextFor(uri: URI, content: String): DocumentCompileContext =
+        compileContextFor(uri, content, current())
+
+    /** [compileContextFor] against one [workspace] snapshot a compile already holds. */
+    fun compileContextFor(uri: URI, content: String, workspace: WorkspaceModel): DocumentCompileContext {
+        overridingStrategy(uri)?.let { strategy ->
+            val classpath = strategy.getClasspathForFile(uri, content, workspace.classpath) ?: workspace.classpath
+            return DocumentCompileContext(classpath, workspace.fingerprint, TargetSelection.StrategyOverride)
+        }
+        return workspace.compileContextFor(documentPath(uri))
+    }
+
+    /** The fingerprint [compileContextFor] uses for [uri], without computing a classpath. */
+    fun fingerprintFor(uri: URI): String = fingerprintFor(uri, current())
+
+    /** [fingerprintFor] against one [workspace] snapshot. */
+    fun fingerprintFor(uri: URI, workspace: WorkspaceModel): String = if (overridingStrategy(uri) != null) {
+        workspace.fingerprint
+    } else {
+        workspace.compileContextFor(documentPath(uri)).fingerprint
+    }
+
+    /**
+     * The classpath for a file: a strategy classpath when one applies, else the selected target's,
+     * else the workspace dependency classpath. Same rules as [compileContextFor].
      */
     fun getClasspathForFile(uri: URI, content: String): List<Path> = getClasspathForFile(uri, content, current())
 
     /** [getClasspathForFile] against one [workspace] snapshot a compile already holds. */
-    fun getClasspathForFile(uri: URI, content: String, workspace: WorkspaceModel): List<Path> {
-        // One immutable classpath: a strategy may retain it without seeing later updates
-        val dependencies = workspace.classpath
-        strategyRegistry?.activeStrategies?.forEach { strategy ->
-            val classpath = strategy.getClasspathForFile(uri, content, dependencies)
-            if (classpath != null) {
-                return classpath
-            }
-        }
+    fun getClasspathForFile(uri: URI, content: String, workspace: WorkspaceModel): List<Path> =
+        compileContextFor(uri, content, workspace).classpath
 
-        // Return standard dependency classpath for non-handled files
-        return dependencies
-    }
+    private fun overridingStrategy(uri: URI): ProjectStrategy? =
+        strategyRegistry?.activeStrategies?.firstOrNull { it.overridesClasspath(uri) }
+
+    private fun documentPath(uri: URI): Path? =
+        if (uri.scheme == "file") runCatching { Path.of(uri) }.getOrNull() else null
 }

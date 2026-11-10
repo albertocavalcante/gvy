@@ -65,6 +65,13 @@ interface ProjectStrategy {
     fun getClasspathForFile(uri: URI, content: String, projectDependencies: List<Path>): List<Path>? = null
 
     /**
+     * True when this strategy owns [uri]'s classpath, whatever the content. The workspace selects a
+     * strategy classpath (and its cache fingerprint) by this predicate alone, so a strategy whose
+     * [getClasspathForFile] returns non-null for a document must return true here for it (#1235).
+     */
+    fun overridesClasspath(uri: URI): Boolean = false
+
+    /**
      * Called when configuration changes.
      *
      * @param config The new server configuration

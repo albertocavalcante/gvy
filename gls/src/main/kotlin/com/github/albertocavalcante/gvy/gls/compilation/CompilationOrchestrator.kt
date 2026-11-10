@@ -139,7 +139,9 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             // One workspace model supplies this compile's key and inputs (H1). It may already be newer than
             // the claim; a retirement in between rejects the publication (#1184).
             val workspace = workspaceManager.current()
-            val configFingerprint = workspace.fingerprint
+            // This document's classpath and key from that one model: a selected target's own (#1235)
+            val context = workspaceManager.compileContextFor(uri, content, workspace)
+            val configFingerprint = context.fingerprint
 
             // Check cache first - validates both content AND configuration fingerprint
             val cachedResult = cacheService.getCached(uri, content, configFingerprint)
@@ -149,7 +151,12 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
                 if (isSuspiciousScriptNode) {
                     logger.info { "Cached result has suspicious Script node for $uri, re-compiling" }
-                    performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase)
+                    performCompilation(
+                        CompilationInput(uri, content, claim),
+                        workspace,
+                        compilePhase,
+                        context = context,
+                    )
                 } else {
                     logger.debug { "Using cached parse result for: $uri" }
                     // The symbol index may be absent or older than this result (e.g. after invalidation).
@@ -162,7 +169,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
                     resultMapper.map(cachedResult, content)
                 }
             } else {
-                performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase)
+                performCompilation(CompilationInput(uri, content, claim), workspace, compilePhase, context = context)
             }
         }.getOrElse { throwable ->
             when (throwable) {
@@ -178,12 +185,14 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         workspace: WorkspaceModel,
         compilePhase: Int = Phases.CANONICALIZATION,
         parseMode: ParseMode = ParseMode.WORKSPACE,
+        context: DocumentCompileContext? = null,
     ): CompilationResult {
         val (uri, content, claim) = input
         val sourcePath = runCatching { Path.of(uri) }.getOrNull()
 
-        // Get file-specific classpath
-        val classpath = workspaceManager.getClasspathForFile(uri, content, workspace)
+        // File-specific classpath and its cache key, from the same workspace as roots and sources (#1235)
+        val compileContext = context ?: workspaceManager.compileContextFor(uri, content, workspace)
+        val classpath = compileContext.classpath
 
         // Use bounded workspace selection when dependency info is available (Issue #743)
         // This provides O(k) compilation instead of O(n) where k = direct deps + dependents
@@ -213,7 +222,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         if (ast != null) {
             // Cache parse result with configuration fingerprint for coherency (Issue #743), and its symbol
             // index, as one commit that a retired compile cannot make (#1184)
-            val fingerprint = workspace.fingerprint
+            val fingerprint = compileContext.fingerprint
             val symbols = symbolIndexer.prepare(content, parseResult.astModel)
             val published = cacheService.publish(claim.ticket, content, parseResult, fingerprint, claim.isValid) {
                 symbolIndexer.install(uri, symbols)
@@ -289,7 +298,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         val buffer = documentProvider?.getBuffer(uri)
         val identity = CompilationIdentity(
             content,
-            workspaceManager.getConfigurationFingerprint(),
+            workspaceManager.fingerprintFor(uri),
             // Different requested text still originated while this buffer was open.
             buffer?.snapshot,
             buffer?.incarnation,
@@ -372,7 +381,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
             val buffer = documentProvider?.getBuffer(uri)?.takeIf { it.snapshot === current }
             val identity = CompilationIdentity(
                 current.content,
-                workspaceManager.getConfigurationFingerprint(),
+                workspaceManager.fingerprintFor(uri),
                 current,
                 buffer?.incarnation,
             )
@@ -401,7 +410,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
         documentProvider?.getBuffer(uri)?.let { buffer ->
             val identity = CompilationIdentity(
                 buffer.snapshot.content,
-                workspaceManager.getConfigurationFingerprint(),
+                workspaceManager.fingerprintFor(uri),
                 buffer.snapshot,
                 buffer.incarnation,
             )
@@ -410,7 +419,7 @@ class CompilationOrchestrator(dependencies: CompilationOrchestratorDependencies)
 
         // One model for this resolution: the fingerprint validates the cache and keys any disk compile
         val workspace = workspaceManager.current()
-        val configFingerprint = workspace.fingerprint
+        val configFingerprint = workspaceManager.fingerprintFor(uri, workspace)
 
         cacheService.getPendingCompilation(uri, configFingerprint)?.let { pending ->
             return awaitShared(uri, pending.identity)?.let { Resolution.Done(it) } ?: Resolution.Retired

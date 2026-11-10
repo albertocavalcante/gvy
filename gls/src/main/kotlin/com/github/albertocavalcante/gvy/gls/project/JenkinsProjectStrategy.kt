@@ -141,6 +141,8 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
         }
     }
 
+    override fun overridesClasspath(uri: URI): Boolean = workspaceManager?.isJenkinsFile(uri) == true
+
     override fun updateConfiguration(config: ServerConfiguration) {
         val currentWm = workspaceManager
         if (currentWm != null) {

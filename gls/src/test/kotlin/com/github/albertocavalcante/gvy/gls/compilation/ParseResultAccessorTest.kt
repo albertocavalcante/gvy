@@ -312,7 +312,10 @@ class ParseResultAccessorTest {
         val freshResult = createMockParseResult(ast = mockk<ModuleNode>(relaxed = true))
         coEvery { workerSessionManager.parse(any<ParseRequest>()) } returns freshResult
         every { workspaceManager.getClasspathForFile(any(), any()) } returns emptyList()
+        every { workspaceManager.getClasspathForFile(any(), any(), any()) } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } returns "fp-1"
+        every { workspaceManager.current() } returns testWorkspace("fp-1")
+        workspaceManager.delegateCompileContextToLegacyStubs()
 
         accessor.getValidParseResult(uri)
 

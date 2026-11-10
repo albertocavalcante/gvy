@@ -61,6 +61,7 @@ class CompilationOrchestratorTest {
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns listOf(workspaceSource)
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = listOf(workspaceSource))
         }
@@ -114,6 +115,7 @@ class CompilationOrchestratorTest {
         every { workspaceManager.getSourceRoots() } returns emptyList()
         every { workspaceManager.getWorkspaceSources() } returns emptyList()
         every { workspaceManager.getConfigurationFingerprint() } answers { currentFingerprint }
+        workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace(currentFingerprint, sourceRoots = emptyList(), sources = emptyList())
         }
@@ -182,6 +184,7 @@ class CompilationOrchestratorTest {
         every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
         every { workspaceManager.getBoundedWorkspaceSources(capture(boundedUrisSlot), any()) } returns boundedSources
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = fullWorkspaceSources)
         }
@@ -248,6 +251,7 @@ class CompilationOrchestratorTest {
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = fullWorkspaceSources)
         }
@@ -305,6 +309,7 @@ class CompilationOrchestratorTest {
         every { workspaceManager.getSourceRoots() } returns listOf(tempDir)
         every { workspaceManager.getWorkspaceSources() } returns fullWorkspaceSources
         every { workspaceManager.getConfigurationFingerprint() } returns "test-fingerprint"
+        workspaceManager.delegateCompileContextToLegacyStubs()
         every { workspaceManager.current() } answers {
             testWorkspace("test-fingerprint", sourceRoots = listOf(tempDir), sources = fullWorkspaceSources)
         }

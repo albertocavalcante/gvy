@@ -47,7 +47,7 @@ class ParseResultAccessor(
      * @return ParseResult if cached, null otherwise
      */
     fun getParseResult(uri: URI): ParseResult? =
-        cacheService.getCachedWithContent(uri, workspaceManager.getConfigurationFingerprint())?.second
+        cacheService.getCachedWithContent(uri, workspaceManager.fingerprintFor(uri))?.second
 
     /**
      * Gets the AST (ModuleNode) for a URI.
@@ -140,7 +140,8 @@ class ParseResultAccessor(
     suspend fun getValidParseResult(uri: URI): ParseResult? {
         // Owned before the cache and disk are read: an invalidation meanwhile discards the re-parse below.
         val ticket = cacheService.ownership.begin(uri)
-        val fingerprint = workspaceManager.getConfigurationFingerprint()
+        val workspace = workspaceManager.current()
+        val fingerprint = workspaceManager.fingerprintFor(uri, workspace)
         val (cachedContent, cachedResult) = cacheService.getCachedWithContent(uri, fingerprint) ?: return null
 
         // Use helper function to check for suspicious Script node
@@ -157,7 +158,7 @@ class ParseResultAccessor(
                 ParseRequest(
                     uri = uri,
                     content = content,
-                    classpath = workspaceManager.getClasspathForFile(uri, content),
+                    classpath = workspaceManager.getClasspathForFile(uri, content, workspace),
                     // Don't add source roots - prevents classloader from finding .groovy file
                     sourceRoots = emptyList(),
                     // Don't add other sources - causes Script fallback
