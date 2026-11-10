@@ -34,11 +34,12 @@ internal class SpockCompletionStrategy : CompletionStrategy {
             return CompletionStrategy.notApplicable("SpockCompletionStrategy")
         }
         val offset = offsetAt(base.content, base.content.split('\n'), base.line, base.character)
-        val isSpockSpec = isSpecificationAt(context)
+        val source = base.moduleNode?.let { SpockSourceContext.from(it, isPartial = false) }
+        val isSpockSpec = isSpecificationAt(context, source)
         if (!isSpockSpec || base.tokenIndex?.isInCommentOrString(offset) == true) {
             return CompletionStrategy.notApplicable("SpockCompletionStrategy")
         }
-        val dataItems = dataCompletions(context, line)
+        val dataItems = source?.let { dataCompletions(context, line, it) }.orEmpty()
         val labels = if (isLineIndentOnlyBeforeCursor(base.content, base.line, base.character)) {
             completions { addSpockBlockLabels() }
         } else {
@@ -55,12 +56,13 @@ internal class SpockCompletionStrategy : CompletionStrategy {
     /**
      * Whether the cursor sits in a Spock specification (#974). A confident AST verdict for the declared
      * owner at the cursor decides; anonymous bodies belong to their declaring spec. An UNCERTAIN
-     * verdict, a cursor outside every class, or a missing AST keeps the previous text heuristic.
+     * verdict or a missing AST keeps the previous text heuristic. A cursor in script code also falls
+     * back, but only because Groovy gives the synthetic script class no source position, so
+     * `declaredOwnerAt` finds no owner there; it is not an explicit script check.
      */
-    private fun isSpecificationAt(context: CompletionStrategyContext): Boolean {
+    private fun isSpecificationAt(context: CompletionStrategyContext, source: SpockSourceContext.Available?): Boolean {
         val base = context.baseContext
-        val owner = base.moduleNode
-            ?.let { SpockSourceContext.from(it, isPartial = false).declaredOwnerAt(base.line, base.character) }
+        val owner = source?.declaredOwnerAt(base.line, base.character)
         return when (owner?.status) {
             SpecificationStatus.SPECIFICATION -> true
             SpecificationStatus.NOT_SPECIFICATION -> false
@@ -75,12 +77,15 @@ internal class SpockCompletionStrategy : CompletionStrategy {
         SpecificationStatus.UNCERTAIN -> SpockDetector.isSpockSpec(owner.classNode, module)
     }
 
-    private fun dataCompletions(context: CompletionStrategyContext, line: String): List<CompletionItem> {
+    private fun dataCompletions(
+        context: CompletionStrategyContext,
+        line: String,
+        source: SpockSourceContext.Available,
+    ): List<CompletionItem> {
         val base = context.baseContext
         val module = base.moduleNode ?: return emptyList()
         val prefix = line.take(base.character.coerceIn(0, line.length))
             .takeLastWhile { Character.isJavaIdentifierPart(it) }
-        val source = SpockSourceContext.from(module, isPartial = false)
         val names = source.classes.filter { owner -> !owner.classNode.isScript && isSpecification(owner, module) }
             .map { it.classNode }
             .flatMap { it.methods }
