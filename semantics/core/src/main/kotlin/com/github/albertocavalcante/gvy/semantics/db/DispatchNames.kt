@@ -89,18 +89,29 @@ internal object DispatchNames {
 
     private val accessorPrefix = Regex("^(get|set|is)(\\p{Lu}.*)$")
 
-    // The owner part is the trait's name with dots as `_`, so the first `__` ends it; the field may contain `__`
-    // or non-ASCII letters (`a__b`, `ação`).
-    private val traitFieldHelper = Regex("^.*?__([^$]+)\\$(get|set)$")
-
     /**
-     * The trait field behind the helper the trait transform calls for it (`T__cnt$get`, `T__cnt$set`), with how
-     * the field is used; null for any other name.
+     * The trait fields a helper the trait transform calls may stand for, with how they are used; empty for any
+     * other name. Groovy names the helper `<trait FQN with . as _>__<field>$get` (or `$set`, static fields too),
+     * so a trait or package name containing `__` or ending in `_` makes the split ambiguous: every split after a
+     * `__` is a candidate (`T___cnt$get` gives `_cnt` and `cnt`). Extra candidates are harmless here.
      */
-    fun traitField(method: String): Pair<String, Access>? {
-        val match = traitFieldHelper.matchEntire(method) ?: return null
-        return match.groupValues[1] to if (match.groupValues[2] == "get") Access.READ else Access.WRITE
+    fun traitField(method: String): List<Pair<String, Access>> {
+        val access = when {
+            method.endsWith(TRAIT_GETTER) -> Access.READ
+            method.endsWith(TRAIT_SETTER) -> Access.WRITE
+            else -> return emptyList()
+        }
+        val body = method.dropLast(TRAIT_GETTER.length)
+        return generateSequence(body.indexOf("__")) { body.indexOf("__", it + 1).takeIf { next -> next >= 0 } }
+            .takeWhile { it >= 0 }
+            .map { body.substring(it + 2) }
+            .filter { it.isNotEmpty() }
+            .map { it to access }
+            .toList()
     }
+
+    private const val TRAIT_GETTER = "\$get"
+    private const val TRAIT_SETTER = "\$set"
 
     /**
      * The property an accessor-shaped call may stand for: `getTarget`/`isTarget`/`setTarget` give `target`

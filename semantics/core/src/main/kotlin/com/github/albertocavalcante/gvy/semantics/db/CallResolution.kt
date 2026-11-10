@@ -540,13 +540,20 @@ internal object GroovyDispatch {
     /**
      * Whether [type], a source or a compiled class, answers calls or reads by itself: what [isDynamic] and
      * [interceptsProperties] see, plus a `setProperty` override (writes), but only for hooks the source wrote
-     * (the ones Groovy generates into every member class do not count here). The index of what stays
+     * (the bridges Groovy generates into every member class do not count here). The index of what stays
      * unattributed uses this, so a class that does is a site where any name may be meant.
      */
     fun dispatchesByItself(type: ClassNode): Boolean =
         (type.isPrimaryClassNode && (addsMethods(type) || isInterceptable(type))) ||
             type.name == MAP || type.implementsInterface(ClassHelper.MAP_TYPE) ||
-            type.methods.any { (!type.isPrimaryClassNode || it.lineNumber > 0) && it.name in selfDispatchMethods }
+            type.methods.any { it.name in selfDispatchMethods && (it.lineNumber > 0 || !isGeneratedMemberHook(type)) }
+
+    /**
+     * Groovy gives every member class position-less `methodMissing`/`propertyMissing` bridges to its outer class;
+     * those are not the class dispatching by itself. Any other position-less hook (a custom AST transform's,
+     * or one on a compiled class) still counts.
+     */
+    private fun isGeneratedMemberHook(type: ClassNode): Boolean = type.isPrimaryClassNode && type.outerClass != null
 
     private val selfDispatchMethods = dispatchMethods + propertyDispatchMethods + "setProperty"
     private const val MAP = "java.util.Map"

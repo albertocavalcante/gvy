@@ -350,11 +350,10 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
         assertEquals(true, "known" in enumBody)
         val both = names("trait T { def target() {}; def run() { target(); this.target() } }")
         assertEquals(true, "target" in both)
-        val props =
-            names(
-                "class P { String target }\ntrait T { String target; def run(P p) { this.target; target; p.target } }",
-            )
-        assertEquals(true, "target" in props)
+        // Each property form on its own, so one form cannot pass for another.
+        assertEquals(true, "target" in names("trait T { String target; def run() { this.target } }"))
+        assertEquals(true, "target" in names("trait T { String target; def run() { target } }"))
+        assertEquals(true, "target" in names("class P { String target }\ntrait T { def run(P p) { p.target } }"))
         val anonymous = names("class C { def run() { new Object() { def target; def r() { target } } } }")
         assertEquals(true, "target" in anonymous)
     }
@@ -369,6 +368,17 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
         assertEquals(emptySet<String>(), compound.filter { '$' in it }.toSet())
         assertEquals(true, "a__b" in names("trait T { int a__b = 0; def go() { a__b } }"))
         assertEquals(true, "ação" in names("trait T { int ação = 0; def go() { ação } }"))
+        assertEquals(true, "cnt" in names("trait T_ { int cnt = 0; def go() { cnt } }"), "trait name ending in _")
+        assertEquals(true, "cnt" in names("package a__b\ntrait T { int cnt = 0; def go() { cnt } }"))
+        assertEquals(true, "\$cnt" in names("trait T { int \$cnt = 0; def go() { \$cnt } }"))
+        assertEquals(true, "cnt" in names("trait T { static int cnt = 0; static go() { cnt } }"), "static field")
+        assertEquals(true, names("trait T { int cnt = 0; def go() { cnt++ } }").containsAll(setOf("getCnt", "setCnt")))
+    }
+
+    @Test
+    @DisplayName("a user name starting with \$ is kept inside a trait")
+    fun dollarNamesInTraits() {
+        assertEquals(true, "\$target" in names("trait T { def run(o) { o.\$target() } }"))
     }
 
     @Test

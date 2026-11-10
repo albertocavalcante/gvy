@@ -35,9 +35,9 @@ internal class UnresolvedNames {
     fun isSource(node: ASTNode): Boolean = inTraitHelper || node.lineNumber > 0
 
     private fun put(found: String) {
-        // The trait transform's own names (`$self`, `$init$`, `T__cnt$get`) say nothing about the source.
-        val synthetic = inTraitHelper && (found.startsWith('$') || DispatchNames.traitField(found) != null)
-        if (!synthetic) names += found
+        // Only the trait transform's exact own names are left out; anything else, its field helpers included,
+        // is kept, since a needless name costs nothing and a dropped one hides a use.
+        if (!(inTraitHelper && found in TRAIT_GENERATED_NAMES)) names += found
     }
 
     private fun put(found: Collection<String>) = found.forEach(::put)
@@ -61,7 +61,7 @@ internal class UnresolvedNames {
     fun call(call: MethodCallExpression, attributed: Boolean) {
         val name = call.methodAsString
         put(DispatchNames.namedArguments(call.arguments))
-        name?.let(DispatchNames::traitField)?.let { (field, access) -> member(field, access) }
+        name?.let(DispatchNames::traitField)?.forEach { (field, access) -> member(field, access) }
         if (name == null || !attributed || call.isSpreadSafe) callee(name)
         if (name in REFLECTIVE) {
             val first = (call.arguments as? TupleExpression)?.expressions?.firstOrNull() ?: return
@@ -71,7 +71,7 @@ internal class UnresolvedNames {
 
     /** A call that was not attributed: its name, and the property it may be the accessor of (`getName` is `name`). */
     fun callee(name: String?) {
-        name?.let(DispatchNames::traitField)?.let { (field, access) -> member(field, access) }
+        name?.let(DispatchNames::traitField)?.forEach { (field, access) -> member(field, access) }
         name(name)
         if (name != null) put(DispatchNames.propertyOf(name))
     }
@@ -139,5 +139,8 @@ internal class UnresolvedNames {
 
         /** Reflective entry points whose first argument is the name they act on. */
         private val REFLECTIVE = setOf("invokeMethod", "getProperty", "setProperty", "respondsTo", "hasProperty")
+
+        /** Names the trait transform generates into a helper class; nothing in the source is spelled this way. */
+        private val TRAIT_GENERATED_NAMES = setOf("\$self", "\$static\$self", "\$init\$", "\$static\$init\$")
     }
 }
