@@ -75,7 +75,7 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
     @Test
     @DisplayName("an unattributed property read on a Map is recorded")
     fun mapPropertyRead() {
-        assertEquals(setOf("size"), names("class C { Object run(Map m) { m.size } }"))
+        assertEquals(setOf("size", "getSize", "isSize"), names("class C { Object run(Map m) { m.size } }"))
     }
 
     @Test
@@ -89,7 +89,7 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
     @DisplayName("a bare name that is neither a local nor a field is recorded")
     fun bareName() {
         assertEquals(true, "ghost" in names("ghost + 1"))
-        assertEquals(emptySet<String>(), names("class C { String f; Object run(int p) { int l = p; f + l } }"))
+        assertEquals(emptySet<String>(), names("class C { String f; Object run(int p) { int l = p; [f, l] } }"))
     }
 
     @Test
@@ -111,5 +111,169 @@ class UnresolvedNamesTest : SymbolIdTestSupport() {
     @DisplayName("a method pointer to an unattributed name is recorded")
     fun methodPointer() {
         assertEquals(true, "go" in names("class C { Object run(Object o) { o.&go } }"))
+    }
+
+    // Groovy rewrites static-import and static-context implicit-this calls into StaticMethodCallExpression.
+
+    @Test
+    @DisplayName("a call through a static import is recorded")
+    fun staticImportCall() {
+        val found = names("import static C.helper\nclass C { static helper() {} }\nclass D { def m() { helper() } }")
+        assertEquals(true, "helper" in found)
+    }
+
+    @Test
+    @DisplayName("an implicit-this call from a static method is recorded")
+    fun staticContextCall() {
+        assertEquals(true, "b" in names("class C { static a() { b() }; static b() {} }"))
+    }
+
+    @Test
+    @DisplayName("a call to a statically imported JDK method is recorded")
+    fun staticJdkImportCall() {
+        val found = names("import static java.util.Collections.emptyList\nclass D { def m() { emptyList() } }")
+        assertEquals(true, "emptyList" in found)
+    }
+
+    // Operators dispatch to methods the source never names.
+
+    private fun operatorNames(expression: String, params: String = "Object a, Object b") =
+        names("class C { def run($params) { $expression } }")
+
+    @Test
+    @DisplayName("binary operators on untyped operands record the method they dispatch to")
+    fun binaryOperators() {
+        val expected = mapOf(
+            "a + b" to "plus", "a - b" to "minus", "a * b" to "multiply", "a / b" to "div", "a % b" to "mod",
+            "a ** b" to "power", "a << b" to "leftShift", "a >> b" to "rightShift", "a | b" to "or",
+            "a & b" to "and", "a ^ b" to "xor", "a <=> b" to "compareTo", "a < b" to "compareTo",
+            "a >= b" to "compareTo", "a == b" to "equals", "a != b" to "equals", "a in b" to "isCase",
+            "a as String" to "asType", "-a" to "negative", "a++" to "next", "--a" to "previous",
+            "a[0]" to "getAt", "a[0] = b" to "putAt", "a += b" to "plus",
+        )
+        expected.forEach { (code, method) ->
+            assertEquals(true, method in operatorNames(code), "`$code` should record $method")
+        }
+    }
+
+    @Test
+    @DisplayName("numeric operands do not dispatch to anything user-defined")
+    fun numericOperators() {
+        val found = operatorNames("[a + b, a < b, a++, -a, a == 1]", "int a, int b")
+        assertEquals(emptySet<String>(), found)
+    }
+
+    @Test
+    @DisplayName("case and for-in record isCase and iterator")
+    fun statements() {
+        assertEquals(true, "isCase" in operatorNames("switch (a) { case b: return 1 }"))
+        assertEquals(true, "iterator" in operatorNames("for (x in a) { x }"))
+        assertEquals(emptySet<String>(), operatorNames("for (x in [1, 2]) { x }", "int a"))
+    }
+
+    // A getter or setter is how the source names a property read or write.
+
+    @Test
+    @DisplayName("a property read records the getters it may call, a write the setter")
+    fun accessorNames() {
+        val decl = "String getName() { 'x' }\nvoid setName(String s) {}\n"
+        assertEquals(
+            setOf("name", "getName", "isName"),
+            names("class C { ${decl}Object run(C c) { c.name } }"),
+        )
+        assertEquals(
+            setOf("name", "setName"),
+            names("class C { ${decl}void run(C c) { c.name = 'y' } }"),
+        )
+        assertEquals(
+            setOf("name", "getName", "isName", "setName"),
+            names("class C { ${decl}void run(C c) { c.name += 'y' } }").minus("plus"),
+        )
+    }
+
+    // Annotation members are named by the source and attributed to nothing.
+
+    @Test
+    @DisplayName("annotation member names are recorded wherever the annotation sits")
+    fun annotationMembers() {
+        assertEquals(true, "v" in names("@interface A { int v() }\n@A(v = 1) class C {}"))
+        assertEquals(true, "v" in names("@interface A { int v() }\nclass C { @A(v = 1) void m() {} }"))
+        assertEquals(true, "v" in names("@interface A { int v() }\nclass C { @A(v = 1) String f }"))
+        assertEquals(true, "v" in names("@interface A { int v() }\nclass C { void m(@A(v = 1) String p) {} }"))
+        assertEquals(true, "v" in names("@interface A { int v() }\n@A(v = 1) def f() {}\nf()"))
+    }
+
+    // One definition of "dispatches by itself": GroovyDispatch.
+
+    @Test
+    @DisplayName("@Delegate and a setProperty override are dynamic sites; a plain script is not")
+    fun dispatchHooks() {
+        assertEquals(true, "*" in names("class W { @Delegate List<String> inner }"))
+        assertEquals(true, "*" in names("class S { void setProperty(String n, Object v) {} }"))
+        assertEquals(true, "*" !in names("def x = 1\nprintln x"))
+    }
+
+    // Cases found by independent review of the first version.
+
+    @Test
+    @DisplayName("a bare call to a static method is recorded from a static and from an instance context")
+    fun staticBareCalls() {
+        assertEquals(true, "target" in names("class C { static void target() {}; void run() { target() } }"))
+        assertEquals(true, "target" in names("class C { static void target() {}; static void run() { target() } }"))
+    }
+
+    @Test
+    @DisplayName("a static import records the member, and the original name behind an alias")
+    fun staticImports() {
+        val aliased = "import static C.target as tgt\nclass C { static target() {} }\nclass D { def m() { tgt() } }"
+        assertEquals(true, "target" in names(aliased))
+        val field = "import static C.FIELD\nclass C { static final String FIELD = 'x' }\nclass D { def m() { FIELD } }"
+        assertEquals(true, "FIELD" in names(field))
+    }
+
+    @Test
+    @DisplayName("named arguments record the property keys and their setters, on a constructor and on a call")
+    fun namedArguments() {
+        val found = names("class P { String target }\nclass Q { def m() { new P(target: 'x') } }")
+        assertEquals(true, "target" in found && "setTarget" in found)
+        assertEquals(true, "target" in names("def x = foo(target: 1)"))
+    }
+
+    @Test
+    @DisplayName("instance initializer blocks and parameter default values are visited")
+    fun initializersAndDefaults() {
+        assertEquals(true, "hidden" in names("class C { { hidden() } }"))
+        assertEquals(true, "hidden" in names("class C { def m(o = hidden()) {} }"))
+    }
+
+    @Test
+    @DisplayName("a trait, alone or implemented, is not a dynamic site")
+    fun traits() {
+        assertEquals(false, "*" in names("trait T { def run() { this.target } }"))
+        val implemented = "trait T { def target() {} }\nclass C implements T { def run() { target() } }"
+        assertEquals(false, "*" in names(implemented))
+    }
+
+    @Test
+    @DisplayName("compiler-generated code leaves no names behind")
+    fun generated() {
+        assertEquals(emptySet<String>(), names("enum E { A, B }"))
+        val traits = names("trait T { def x() { 1 } }\nclass C implements T {}")
+        assertEquals(emptySet<String>(), traits.filter { '$' in it }.toSet())
+    }
+
+    @Test
+    @DisplayName("the recorded set cannot be modified")
+    fun unmodifiable() {
+        @Suppress("UNCHECKED_CAST")
+        val names = names("class C {}") as MutableSet<String>
+        org.junit.jupiter.api.Assertions.assertThrows(UnsupportedOperationException::class.java) { names.add("x") }
+    }
+
+    @Test
+    @DisplayName("respondsTo and hasProperty with a constant name record that name")
+    fun reflection() {
+        assertEquals(true, "target" in names("class C { def run(Object o) { o.respondsTo('target') } }"))
+        assertEquals(true, "target" in names("class C { def run(Object o) { o.hasProperty('target') } }"))
     }
 }

@@ -533,6 +533,14 @@ internal object GroovyDispatch {
             type.methods.any { it.name in propertyDispatchMethods }
 
     private val propertyDispatchMethods = setOf("getProperty", "propertyMissing")
+
+    /**
+     * Whether [type], a source or a compiled class, answers calls or reads by itself: [isDynamic],
+     * [interceptsProperties], or a `setProperty` override (writes). The index of what stays unattributed
+     * uses this, so a class that does is a site where any name may be meant.
+     */
+    fun dispatchesByItself(type: ClassNode): Boolean = isDynamic(type) || interceptsProperties(type) ||
+        type.methods.any { it.name in dispatchMethods || it.name == "setProperty" }
     private const val MAP = "java.util.Map"
 
     /** Properties of `java.lang.Class` (`name`, `simpleName`...), which `Person.name` reads on a class reference. */
