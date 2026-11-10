@@ -61,6 +61,26 @@ class ImportActionWorkspaceLookupTest {
     }
 
     @Test
+    fun `a class differing only in case is neither offered nor ambiguous`(): Unit = runBlocking {
+        // The name index folds case for prefix lookups; an exact lookup still compares names exactly.
+        val upper = tempDir.resolve("Upper.groovy").apply { writeText("package app\nclass Greeter {}") }.toUri()
+        val lower = tempDir.resolve("Lower.groovy").apply { writeText("package low\nclass greeter {}") }.toUri()
+        listOf(upper, lower).forEach { compilation.symbolIndexingService.indexFile(it) }
+
+        assertEquals(listOf("Import 'app.Greeter'"), titles("Greeter"))
+        assertEquals(listOf("Import 'low.greeter'"), titles("greeter"))
+        assertTrue(titles("GREETER").isEmpty())
+    }
+
+    @Test
+    fun `a lowercase class is no candidate for its capitalized name`(): Unit = runBlocking {
+        val lower = tempDir.resolve("Foo.groovy").apply { writeText("package low\nclass foo {}") }.toUri()
+        compilation.symbolIndexingService.indexFile(lower)
+
+        assertTrue(titles("Foo").isEmpty())
+    }
+
+    @Test
     fun `the lookup does not scan every indexed file`(): Unit = runBlocking {
         val closed = tempDir.resolve("Greeter.groovy").apply { writeText("package app\nclass Greeter {}") }.toUri()
         compilation.symbolIndexingService.indexFile(closed)
