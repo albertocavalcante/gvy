@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.groovyparser
 
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import com.github.albertocavalcante.nativeapi.ParserSeverity
 import groovy.lang.GroovyClassLoader
 import org.codehaus.groovy.control.CompilationUnit
 import org.codehaus.groovy.control.CompilerConfiguration
@@ -22,6 +23,10 @@ import kotlin.test.assertTrue
  * global AST transformation (registered at CANONICALIZATION here) through
  * `META-INF/services/org.codehaus.groovy.transform.ASTTransformation`. Analysis must never run it. The transform
  * below only writes a marker file named by a system property. The control test proves the scenario can run it.
+ *
+ * Three defenses each hide the transform (the facade disables the service-declared classes found on the classpath,
+ * its project loader hides the service file, and its transform loader never sees workspace jars), so this test
+ * proves their combination, not any single layer. A manual mutation check is recorded in the pull request.
  */
 class ClasspathGlobalTransformTest {
     @TempDir
@@ -96,14 +101,21 @@ class ClasspathGlobalTransformTest {
 
         for (phase in listOf(Phases.CONVERSION, Phases.SEMANTIC_ANALYSIS, Phases.CANONICALIZATION)) {
             // Sharing Groovy's loader makes the jar's transform a valid ASTTransformation, as in the control
-            GroovyParserFacade(GroovyClassLoader::class.java.classLoader).parse(
+            val result = GroovyParserFacade(GroovyClassLoader::class.java.classLoader).parse(
                 ParseRequest(
-                    uri = URI.create("file:///Jenkinsfile"),
-                    content = "node { echo 'x' }",
+                    uri = URI.create("file:///Probe.groovy"),
+                    content = "class Probe {}",
                     classpath = listOf(jar),
                     compilePhase = phase,
                 ),
             )
+
+            // The compile must really have reached the requested phase, or "no marker" would prove nothing
+            assertTrue(
+                result.diagnostics.none { it.severity == ParserSeverity.ERROR },
+                "phase $phase: ${result.diagnostics.map { it.message }}",
+            )
+            assertTrue(result.ast?.classes?.any { it.name == "Probe" } == true, "phase $phase: no AST for Probe")
             assertFalse(marker.exists(), "the classpath jar's global transform ran at phase $phase")
         }
     }
