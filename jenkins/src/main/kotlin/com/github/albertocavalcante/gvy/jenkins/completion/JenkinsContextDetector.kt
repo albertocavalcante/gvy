@@ -38,6 +38,17 @@ object JenkinsContextDetector {
         "allOf" to Regex("""\ballOf\s*\{"""),
         "anyOf" to Regex("""\banyOf\s*\{"""),
         "not" to Regex("""\bnot\s*\{"""),
+        // Sub-blocks whose contents the schema models (#1290): their own entries, not the enclosing block's.
+        "parallel" to Regex("""\bparallel\s*\{"""),
+        "matrix" to Regex("""\bmatrix\s*\{"""),
+        "axes" to Regex("""\baxes\s*\{"""),
+        "axis" to Regex("""\baxis\s*\{"""),
+        "excludes" to Regex("""\bexcludes\s*\{"""),
+        "exclude" to Regex("""\bexclude\s*\{"""),
+        "input" to Regex("""\binput\s*\{"""),
+        "docker" to Regex("""\bdocker\s*\{"""),
+        "dockerfile" to Regex("""\bdockerfile\s*\{"""),
+        "kubernetes" to Regex("""\bkubernetes\s*\{"""),
         "script" to Regex("""\bscript\s*\{"""),
         "node" to Regex("""\bnode\s*(?:\([^)]*\))?\s*\{"""),
     )
@@ -134,7 +145,7 @@ object JenkinsContextDetector {
      * `allOf { | }` (auto-closed by the editor) or a one-line `when { ...; | } }` keeps its blocks.
      *
      * Every `{` gets one stack slot: its block name when a tracked pattern opens it, `null` for
-     * untracked braces (`if (...) {`, `timeout(...) {`, `parallel {`, `docker {`). Each `}` then pops
+     * untracked braces (`if (...) {`, `timeout(...) {`). Each `}` then pops
      * exactly the brace it closes, so a child that closes inside an untracked block cannot leave a
      * stale entry behind (#1290).
      */
