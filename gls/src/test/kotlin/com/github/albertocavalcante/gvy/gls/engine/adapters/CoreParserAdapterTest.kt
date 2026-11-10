@@ -11,7 +11,6 @@ import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -234,13 +233,32 @@ class CoreParserAdapterTest {
         CoreParserAdapter(GroovyParser(ParserConfiguration()).parse(code), "file:///Test.groovy")
 
     @Test
-    fun `nodeAt picks the enclosing node when the cursor is just past a member`() {
-        // The method is "def m() {}" at 0-based [10, 20); character 20 is the space after it, inside class A.
-        val adapter = adapterFor("class A { def m() {} }")
+    fun `nodeAt prefers the identifier ending at the cursor over its parent property expression`() {
+        // "a.b": the cursor between "a" and "." (0-based character 1) belongs to "a"
+        val node = adapterFor("a.b").nodeAt(Position(0, 1))
 
-        // inside the method body the most specific node is the member's own (unnamed block / method), not the class
-        assertNotEquals("A", adapter.nodeAt(Position(0, 19))?.name)
-        assertEquals("A", adapter.nodeAt(Position(0, 20))?.name)
+        assertNotNull(node)
+        assertEquals(Position(0, 0), node.range?.start)
+        assertEquals(Position(0, 1), node.range?.end)
+    }
+
+    @Test
+    fun `nodeAt prefers the operand ending at the cursor in a binary expression`() {
+        // "x+y": character 1 is the '+'; the cursor right after "x" belongs to "x"
+        val node = adapterFor("x+y").nodeAt(Position(0, 1))
+
+        assertNotNull(node)
+        assertEquals(Position(0, 0), node.range?.start)
+        assertEquals(Position(0, 1), node.range?.end)
+    }
+
+    @Test
+    fun `nodeAt keeps the callee when the cursor is right before the argument list`() {
+        // "foo(x)": character 3 is the '('; it is the end of "foo", not the start of the arguments
+        val node = adapterFor("foo(x)").nodeAt(Position(0, 3))
+
+        assertNotNull(node)
+        assertEquals(Position(0, 0), node.range?.start)
     }
 
     @Test

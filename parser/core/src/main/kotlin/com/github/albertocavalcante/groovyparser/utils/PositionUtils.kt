@@ -50,7 +50,10 @@ object PositionUtils {
     fun rangesOverlap(a: Range, b: Range): Boolean = !(a.end.isBefore(b.begin) || b.end.isBefore(a.begin))
 
     /**
-     * Returns true if position is within the range (inclusive).
+     * Returns true if position is within the range, with BOTH ends inclusive.
+     *
+     * This is a deliberately lenient utility (a position right after the last character still counts) and is
+     * different from [Range.contains], whose end is exclusive like Groovy's `lastColumnNumber`.
      */
     fun isInRange(position: Position, range: Range): Boolean =
         (position.isAfter(range.begin) || position == range.begin) &&
