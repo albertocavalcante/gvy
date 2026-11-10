@@ -340,6 +340,43 @@ class JenkinsCompletionExactSetTest {
 
         assertTrue("label:" in node.labels(), "node(|) offers label:")
         assertTrue("returnStdout:" in sh.labels(), "sh(|) offers returnStdout:")
+||||||| parent of a1f4bf95 (fix(jenkins): complete directive entry keys inside their directive)
+    fun `string parameter arguments offer the string parameter keys`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    parameters {\n        string()\n    }\n}"
+        val items = completeAt(code, line = 3, character = 15)
+
+        assertEquals(
+            setOf("name:", "defaultValue:", "description:", "trim:"),
+            items.labels(CompletionItemKind.Property),
+        )
+    }
+
+    @Test
+    fun `credentials string arguments still offer the credentials binding keys`(): Unit = runTest {
+        val code = "node {\n    withCredentials([string()]) {\n    }\n}"
+        val items = completeAt(code, line = 1, character = 28)
+
+        val keys = items.labels(CompletionItemKind.Property)
+        assertTrue("credentialsId:" in keys && "variable:" in keys, "credentials binding keys: $keys")
+        assertTrue("defaultValue:" !in keys, "parameter keys must not leak outside parameters {}")
+    }
+
+    @Test
+    fun `trigger and tool entries offer their own keys`(): Unit = runTest {
+        val pollScm =
+            completeAt(
+                "pipeline {\n    agent any\n    triggers {\n        pollSCM()\n    }\n}",
+                line = 3,
+                character = 16,
+            )
+        val choice = completeAt(
+            "pipeline {\n    agent any\n    parameters {\n        choice()\n    }\n}",
+            line = 3,
+            character = 15,
+        )
+
+        assertEquals(setOf("scmpoll_spec:", "ignorePostCommitHooks:"), pollScm.labels(CompletionItemKind.Property))
+        assertEquals(setOf("name:", "choices:", "description:"), choice.labels(CompletionItemKind.Property))
     }
 
     private companion object {

@@ -132,11 +132,18 @@ internal object JenkinsCompletionProvider {
         }
     }
 
+    /**
+     * Map-key completions for the step call around the cursor.
+     *
+     * @param directive the declarative directive the cursor is in (see
+     *   [JenkinsStepCompletionProvider.getParameterCompletions]); `null` outside one.
+     */
     fun CompletionsBuilder.addJenkinsMapKeyCompletions(
         ctx: CompletionContext,
         nodeAtCursor: ASTNode?,
         astModel: GroovyAstModel,
         metadata: MergedJenkinsMetadata,
+        directive: String? = null,
     ) {
         // After a complete command-expression argument the dummy identifier turns `sh 'ls' |` into the
         // property access `sh('ls').<dummy>`. That receiver is the step call only when there is no real dot;
@@ -176,6 +183,7 @@ internal object JenkinsCompletionProvider {
             existingKeys,
             metadata,
             isCommand,
+            directive,
         )
         val typedWord = if (isCommand) typedWordBeforeCursor(ctx) else null
         bundledParamCompletions.forEach { item ->

@@ -58,6 +58,7 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                     nodeAtCursor = context.nodeAtCursor,
                     astModel = context.baseContext.astModel,
                     metadata = metadata,
+                    directive = blockContext?.currentBlock?.takeIf { it in metadata.directiveEntries },
                 )
 
                 // Add Jenkins step completions if allowed by block context
