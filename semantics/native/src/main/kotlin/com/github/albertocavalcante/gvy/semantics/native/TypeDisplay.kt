@@ -24,8 +24,16 @@ fun Parameter.isVarargs(): Boolean {
     return type.isArray && context?.ELLIPSIS() != null
 }
 
-/** A parameter's type as source writes it: `String... parts` stays `String...`, arrays stay `String[]`. */
-fun Parameter.displayType(): String = if (isVarargs()) type.componentType.displayName() + "..." else type.displayName()
+/**
+ * A parameter's type as source writes it, with [render] formatting each type: `String... parts` renders
+ * its element type followed by `...`; every other parameter renders its own type (`String[]` stays an array).
+ * The single varargs display rule; callers with their own type renderer pass it here.
+ */
+fun Parameter.displayType(render: (ClassNode) -> String): String =
+    if (isVarargs()) render(type.componentType) + "..." else render(type)
+
+/** [displayType] with the shared [displayName] rule. */
+fun Parameter.displayType(): String = displayType(ClassNode::displayName)
 
 /** The node-metadata key under which Groovy's AstBuilder keeps a parameter's parse context. */
 private const val PARAMETER_CONTEXT = "_PARAMETER_CONTEXT"
