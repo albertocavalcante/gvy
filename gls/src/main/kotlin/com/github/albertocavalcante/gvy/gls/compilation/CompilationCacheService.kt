@@ -21,6 +21,7 @@ class CompilationCacheService(
     val ownership: ArtifactOwnership = ArtifactOwnership(),
 ) {
     private val cache = CompilationCache(maxEntries, isOpen)
+
     /*
      * Swapped by [detach] (#1342). A registration racing a swap may land in the old map: such a job was claimed
      * before the global retirement, so its old-epoch ticket can never commit, and it is at most wasted work. Each

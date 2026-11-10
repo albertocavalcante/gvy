@@ -65,6 +65,7 @@ class SemanticIndexer(
     }
 
     private val logger = KotlinLogging.logger {}
+
     /*
      * Replaced, never emptied, by [clear] (#1342). Every write re-reads it under [swap]'s read lock, which [clear]
      * holds for writing while it swaps both this map and the index's graph: a write that began before the swap

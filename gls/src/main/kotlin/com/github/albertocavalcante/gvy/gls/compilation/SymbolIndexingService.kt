@@ -66,6 +66,7 @@ class SymbolIndexingService(
     }
 
     private val logger = KotlinLogging.logger {}
+
     // Every change to [entries] goes through [classNames] so the two stay consistent; [clear] swaps it under the same
     // lock that every write holds, so a write never lands in the map a clear just replaced (#1342).
     @Volatile private var entries = ConcurrentHashMap<URI, Prepared>()
