@@ -57,4 +57,12 @@ class CompletionBuildersTest {
         assertEquals("\\\$run(\${1:Outer\\\$1 x}, \${2:Weird\\}\\\\ y})", item.insertText)
         assertEquals("void \$run(Outer\$1 x, Weird}\\ y)", item.detail)
     }
+
+    @Test
+    fun `function snippets escape snippet syntax in the name`() {
+        val item = FunctionCompletionBuilder().build("my\$fn")
+
+        assertEquals("my\\\$fn(\$1)", item.insertText)
+        assertEquals("void my\$fn()", item.detail)
+    }
 }
