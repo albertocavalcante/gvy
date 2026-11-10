@@ -692,7 +692,8 @@
         },
         "groovy.codenarc.propertiesFile": {
           "type": "string",
-          "description": "Path to custom CodeNarc configuration file (.properties or .groovy). If not set, auto-detection is used."
+          "scope": "machine",
+          "description": "Path to a custom CodeNarc .properties file. If not set, auto-detection is used. Rulesets (.groovy) from the workspace are never evaluated."
         },
         "groovy.codenarc.autoDetect": {
           "type": "boolean",

@@ -97,6 +97,9 @@ class HierarchicalRulesetResolver(
         )
     }
 
+    /** Workspace ruleset files already reported, so the warning is logged once rather than on every analysis. */
+    private val warned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     override fun resolve(context: WorkspaceContext): RulesetConfiguration {
         logger.debug { "Resolving ruleset configuration for context: $context" }
 
@@ -210,7 +213,7 @@ class HierarchicalRulesetResolver(
      */
     private fun findWorkspaceRulesets(workspaceRoot: Path): List<String> =
         WORKSPACE_CONFIG_FILES.filter { workspaceRoot.resolve(it).isRegularFile() }.also { ignored ->
-            ignored.forEach {
+            ignored.filter { warned.add("$workspaceRoot/$it") }.forEach {
                 logger.warn { "Ignoring workspace CodeNarc ruleset $it: workspace rulesets are not evaluated" }
             }
         }
