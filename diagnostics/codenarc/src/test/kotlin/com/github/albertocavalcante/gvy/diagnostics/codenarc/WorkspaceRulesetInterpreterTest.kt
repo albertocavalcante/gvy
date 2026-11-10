@@ -81,7 +81,7 @@ class WorkspaceRulesetInterpreterTest {
     fun `caps size and nesting`() {
         assertTrue(
             rejected(
-                "ruleset { description '" + "x".repeat(WorkspaceRulesetInterpreter.MAX_BYTES) + "' }",
+                "ruleset { description '" + "x".repeat(64 * 1024) + "' }",
             ).contains("larger"),
         )
         val deep = "ruleset { " + "x { ".repeat(5_000) + "}".repeat(5_000) + " }"

@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.diagnostics.codenarc
 
-import io.github.oshai.kotlinlogging.KotlinLogging
+import com.github.albertocavalcante.groovyparser.api.untrusted.UntrustedAstParser
+import com.github.albertocavalcante.groovyparser.api.untrusted.UntrustedParseLimits
+import com.github.albertocavalcante.groovyparser.api.untrusted.UntrustedParseResult
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
@@ -9,10 +11,6 @@ import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.ast.stmt.Statement
-import org.codehaus.groovy.control.CompilationFailedException
-import org.codehaus.groovy.control.CompilerConfiguration
-import org.codehaus.groovy.control.ErrorCollector
-import org.codehaus.groovy.control.SourceUnit
 
 /** Thrown for any construct outside the declarative subset; carries the reason shown to the user. */
 internal class Rejection(message: String) : RuntimeException(message, null, false, false)
@@ -29,11 +27,7 @@ internal class Rejection(message: String) : RuntimeException(message, null, fals
  * filesystem or `file:` references, imports, extra classes or methods) rejects the whole file.
  */
 internal object WorkspaceRulesetInterpreter {
-    private val logger = KotlinLogging.logger {}
-
-    const val MAX_BYTES = 64 * 1024
-    private const val MAX_STATEMENTS = 2_000
-    private const val MAX_DEPTH = 8
+    private val LIMITS = UntrustedParseLimits()
     private val CLASSPATH_RULESET = Regex("rulesets/[A-Za-z0-9_-]+\\.xml")
 
     sealed interface Result {
@@ -42,48 +36,14 @@ internal object WorkspaceRulesetInterpreter {
     }
 
     fun interpret(text: String): Result {
-        if (text.length > MAX_BYTES) return Result.Rejected("larger than $MAX_BYTES characters")
-        // Parsing deeply nested input is expensive, so bound the nesting before the parser sees it.
-        if (maxBraceDepth(text) > MAX_DEPTH) return Result.Rejected("nested deeper than $MAX_DEPTH levels")
-        return try {
-            Result.Accepted(render(parse(text)))
-        } catch (e: Rejection) {
-            Result.Rejected(e.message ?: "rejected")
-        } catch (e: CompilationFailedException) {
-            Result.Rejected("not parseable: ${e.message?.lineSequence()?.firstOrNull()}")
-        } catch (e: StackOverflowError) {
-            logger.debug(e) { "workspace ruleset too deeply nested" }
-            Result.Rejected("too deeply nested")
-        }
-    }
-
-    /** Deepest `{`/`(`/`[` nesting in [text]; a cheap over-approximation (strings are not skipped). */
-    private fun maxBraceDepth(text: String): Int {
-        var depth = 0
-        var max = 0
-        for (c in text) {
-            when (c) {
-                '{', '(', '[' -> max = maxOf(max, ++depth)
-                '}', ')', ']' -> depth = maxOf(0, depth - 1)
+        val parsed = UntrustedAstParser.parse(text, "workspace-ruleset", LIMITS)
+        return when (parsed) {
+            is UntrustedParseResult.Rejected -> Result.Rejected(parsed.reason)
+            is UntrustedParseResult.Parsed -> try {
+                Result.Accepted(render(parsed.module))
+            } catch (e: Rejection) {
+                Result.Rejected(e.message ?: "rejected")
             }
-        }
-        return max
-    }
-
-    private fun parse(text: String): ModuleNode {
-        val config = CompilerConfiguration()
-        return SourceUnit("workspace-ruleset", text, config, null, ErrorCollector(config)).run {
-            parse()
-            completePhase()
-            nextPhase()
-            convert()
-            ast
-        }
-    }
-
-    private class Counter(var statements: Int = 0) {
-        fun tick() {
-            if (++statements > MAX_STATEMENTS) fail("more than $MAX_STATEMENTS statements")
         }
     }
 
@@ -99,36 +59,34 @@ internal object WorkspaceRulesetInterpreter {
 
         val out = StringBuilder()
         out.append("<?xml version=\"1.0\"?>\n<ruleset xmlns=\"http://codenarc.org/ruleset/1.0\">\n")
-        val counter = Counter()
-        closureOf(call.arguments)?.let { body(it, out, counter) }
+        closureOf(call.arguments)?.let { body(it, out) }
         out.append("</ruleset>\n")
         return out.toString()
     }
 
-    private fun body(closure: ClosureExpression, out: StringBuilder, counter: Counter) {
+    private fun body(closure: ClosureExpression, out: StringBuilder) {
         for (statement in statementsOf(closure)) {
-            counter.tick()
             val expression = (statement as? ExpressionStatement)?.expression ?: fail("unsupported statement")
             when {
                 expression is VariableExpression -> rule(expression.name, emptyMap(), out)
-                expression is MethodCallExpression -> bodyCall(statement, out, counter)
+                expression is MethodCallExpression -> bodyCall(statement, out)
                 else -> fail("unsupported expression: ${expression.text}")
             }
         }
     }
 
-    private fun bodyCall(statement: Statement, out: StringBuilder, counter: Counter) {
+    private fun bodyCall(statement: Statement, out: StringBuilder) {
         val call = callOf(statement) ?: fail("qualified or dynamic call")
         val name = call.methodAsString!!
         val arguments = args(call)
         when (name) {
             "description" -> out.append("  <description>").append(xml(stringArg(arguments))).append("</description>\n")
-            "ruleset" -> ruleSetReference(call, out, counter)
+            "ruleset" -> ruleSetReference(call, out)
             else -> rule(name, properties(call), out)
         }
     }
 
-    private fun ruleSetReference(call: MethodCallExpression, out: StringBuilder, counter: Counter) {
+    private fun ruleSetReference(call: MethodCallExpression, out: StringBuilder) {
         val path = stringArg(args(call).filter { it !is ClosureExpression })
         if (!CLASSPATH_RULESET.matches(path)) fail("only classpath rulesets/*.xml references are allowed: $path")
         out.append("  <ruleset-ref path=\"").append(xml(path)).append("\"")
@@ -139,7 +97,6 @@ internal object WorkspaceRulesetInterpreter {
         }
         out.append(">\n")
         for (statement in statementsOf(closure)) {
-            counter.tick()
             referenceEntry(statement, out)
         }
         out.append("  </ruleset-ref>\n")

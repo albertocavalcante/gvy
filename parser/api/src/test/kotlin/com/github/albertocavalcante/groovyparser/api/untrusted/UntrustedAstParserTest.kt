@@ -1,0 +1,86 @@
+package com.github.albertocavalcante.groovyparser.api.untrusted
+
+import org.junit.jupiter.api.Test
+import java.io.File
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
+
+class UntrustedAstParserTest {
+    private fun rejected(source: String, limits: UntrustedParseLimits = UntrustedParseLimits()) =
+        assertIs<UntrustedParseResult.Rejected>(UntrustedAstParser.parse(source, "test", limits))
+
+    @Test
+    fun `parses declarative text`() {
+        val result = UntrustedAstParser.parse("ruleset { description 'x' }", "test")
+
+        assertIs<UntrustedParseResult.Parsed>(result)
+    }
+
+    @Test
+    fun `never runs phase operations or transforms while parsing`() {
+        val marker = File.createTempFile("untrusted", ".marker").also { it.delete() }
+        val path = marker.path.replace("\\", "/")
+        val source = """
+            @groovy.transform.ASTTest(value={ new File('$path').text = 'x' })
+            @Grab('org.apache.commons:commons-lang3:3.14.0')
+            class A {}
+            new File('$path').text = 'y'
+        """.trimIndent()
+
+        UntrustedAstParser.parse(source, "test")
+
+        assertFalse(marker.exists(), "parsing executed code")
+    }
+
+    @Test
+    fun `rejects text over the size cap before parsing`() {
+        assertTrue(rejected("x".repeat(100), UntrustedParseLimits(maxChars = 10)).reason.contains("larger"))
+    }
+
+    @Test
+    fun `bounds nesting before the parser sees the text and does not hang`() {
+        val deep = "ruleset { " + "x { ".repeat(5_000) + "}".repeat(5_000) + " }"
+
+        assertTrue(rejected(deep).reason.contains("nested"))
+    }
+
+    @Test
+    fun `brackets inside strings and comments do not count as nesting`() {
+        val source = "ruleset { description 'a {{{{{{{{{{{{ (((( [[[[[' // {{{{{{{{{{\n /* {{{{{{{{{{ */ }"
+
+        assertIs<UntrustedParseResult.Parsed>(
+            UntrustedAstParser.parse(source, "test", UntrustedParseLimits(maxNesting = 2)),
+        )
+    }
+
+    @Test
+    fun `counts statements recursively including closures`() {
+        val source = "contributor { " + "method(name: 'x')\n".repeat(30) + " }"
+
+        val result = rejected(source, UntrustedParseLimits(maxStatements = 20))
+
+        assertTrue(result.reason.contains("statements"), result.reason)
+    }
+
+    @Test
+    fun `reports the position of a syntax error`() {
+        val result = rejected("ruleset {\n  TrailingWhitespace )\n}")
+
+        assertNotNull(result.line)
+        assertTrue(result.reason.startsWith("not parseable"))
+    }
+
+    @Test
+    fun `limits are parameters`() {
+        val big = "ruleset { description '" + "y".repeat(100_000) + "' }"
+
+        assertIs<UntrustedParseResult.Rejected>(UntrustedAstParser.parse(big, "t"))
+        assertEquals(
+            true,
+            UntrustedAstParser.parse(big, "t", UntrustedParseLimits(maxChars = 200_000)) is UntrustedParseResult.Parsed,
+        )
+    }
+}
