@@ -127,4 +127,49 @@ class TestDiscoveryProviderTest {
 
         assertTrue(suites.isEmpty())
     }
+
+    @Test
+    fun `a local class named Specification is not a Spock suite even with a spock star import`(): Unit = runBlocking {
+        val suites = discover(
+            """
+                import spock.lang.*
+                class Specification {}
+                class Rule extends Specification {
+                    def "looks like a feature"() {
+                        expect: true
+                    }
+                }
+            """.trimIndent(),
+        )
+
+        assertTrue(suites.none { it.suite == "Rule" }, "Rule must not be discovered: $suites")
+    }
+
+    @Test
+    fun `an uncertain external base keeps the previous detector`(): Unit = runBlocking {
+        val suites = discover(
+            """
+            class ExampleSpec extends BaseSpec {
+                def "feature"() {
+                    expect: true
+                }
+            }
+            """.trimIndent(),
+        )
+
+        assertTrue(suites.isEmpty())
+    }
+
+    private suspend fun discover(content: String) = run {
+        val uri = URI.create("file:///Probe.groovy")
+        val realService = GroovyCompilationService(TestDiscoveryProviderTest::class.java.classLoader)
+        realService.compile(uri, content)
+        val parseResult = realService.getParseResult(uri)!!
+        val mockService = mockk<GroovyCompilationService>()
+        val mockWorkspaceManager = mockk<WorkspaceManager>()
+        every { mockService.workspaceManager } returns mockWorkspaceManager
+        every { mockWorkspaceManager.getWorkspaceSourceUris() } returns listOf(uri)
+        coEvery { mockService.getValidParseResult(uri) } returns parseResult
+        TestDiscoveryProvider(mockService, registry).discoverTests("file:///")
+    }
 }
