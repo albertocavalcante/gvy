@@ -469,7 +469,8 @@ class StubGenerator {
 
 - `groovy-jenkins/build-tools/StubGenerator.kt`
 - `groovy-jenkins/src/main/resources/jenkins-lsp-sdk.jar` (generated)
-- `groovy-jenkins/src/main/resources/jenkins-stubs-metadata.json` (generated)
+- `groovy-jenkins/src/main/resources/jenkins-stubs-metadata.json` (generated; its `directiveEntries` section is
+  hand-curated, so keep it when regenerating)
 
 **Testing**:
 

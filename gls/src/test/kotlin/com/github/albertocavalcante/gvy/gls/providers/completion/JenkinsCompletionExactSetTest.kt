@@ -252,6 +252,69 @@ class JenkinsCompletionExactSetTest {
         assertTrue(metadata.globalVariables.keys.all { it in items.labels(CompletionItemKind.Variable) })
     }
 
+    @Test
+    fun `triggers block offers exactly the trigger entries`(): Unit = runTest {
+        val items = completeAt("pipeline {\n    agent any\n    triggers {\n        \n    }\n}", line = 3, character = 8)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("cron", "pollSCM", "upstream"), items.labels())
+    }
+
+    @Test
+    fun `parameters block offers exactly the parameter types`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    parameters {\n        \n    }\n}"
+        val items = completeAt(code, line = 3, character = 8)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("booleanParam", "choice", "password", "string", "text"), items.labels())
+    }
+
+    @Test
+    fun `tools block offers exactly the tool types`(): Unit = runTest {
+        val items = completeAt("pipeline {\n    agent any\n    tools {\n        \n    }\n}", line = 3, character = 8)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("gradle", "jdk", "maven"), items.labels())
+    }
+
+    @Test
+    fun `stage-level tools block offers exactly the tool types`(): Unit = runTest {
+        val code = "pipeline {\n    agent any\n    stages {\n        stage('Build') {\n            tools {\n" +
+            "                \n            }\n        }\n    }\n}"
+        val items = completeAt(code, line = 5, character = 16)
+
+        assertNoDuplicateLabels(items)
+        assertEquals(setOf("gradle", "jdk", "maven"), items.labels())
+    }
+
+    @Test
+    fun `directive entries are not offered inside an entry's arguments`(): Unit = runTest {
+        val cron =
+            completeAt(
+                "pipeline {\n    agent any\n    triggers {\n        cron('')\n    }\n}",
+                line = 3,
+                character = 14,
+            )
+        val string = completeAt(
+            "pipeline {\n    agent any\n    parameters {\n        string()\n    }\n}",
+            line = 3,
+            character = 15,
+        )
+
+        assertEquals(emptySet(), cron.labels() intersect setOf("cron", "pollSCM", "upstream"))
+        assertEquals(
+            emptySet(),
+            string.labels() intersect setOf("booleanParam", "choice", "password", "string", "text"),
+        )
+    }
+
+    @Test
+    fun `trigger entries are not offered in options`(): Unit = runTest {
+        val items = completeAt("pipeline {\n    options {\n        \n    }\n}", line = 2, character = 8)
+
+        assertTrue("cron" !in items.labels() && "string" !in items.labels(), "options offers only options")
+    }
+
     private companion object {
         /** `when` conditions from the declarative schema, valid in `when {}` and its combinators. */
         val WHEN_CONDITIONS = setOf(

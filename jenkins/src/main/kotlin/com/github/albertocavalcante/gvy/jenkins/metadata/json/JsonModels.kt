@@ -22,6 +22,8 @@ data class MetadataJson(
     val postConditions: Map<String, PostConditionJson> = emptyMap(),
     val declarativeOptions: Map<String, DeclarativeOptionJson> = emptyMap(),
     val agentTypes: Map<String, AgentTypeJson> = emptyMap(),
+    /** Entries of declarative directives such as `triggers`, `parameters` and `tools`, keyed by directive. */
+    val directiveEntries: Map<String, Map<String, DeclarativeOptionJson>> = emptyMap(),
 )
 
 @Serializable
@@ -77,6 +79,9 @@ fun MetadataJson.toBundledMetadata(): BundledJenkinsMetadata = BundledJenkinsMet
     },
     declarativeOptions = declarativeOptions.mapValues { (optName, opt) -> opt.toDomain(optName) },
     agentTypes = agentTypes.mapValues { (agentName, agent) -> agent.toDomain(agentName) },
+    directiveEntries = directiveEntries.mapValues { (_, entries) ->
+        entries.mapValues { (entryName, entry) -> entry.toDomain(entryName) }
+    },
     jenkinsVersion = jenkinsVersion,
 )
 

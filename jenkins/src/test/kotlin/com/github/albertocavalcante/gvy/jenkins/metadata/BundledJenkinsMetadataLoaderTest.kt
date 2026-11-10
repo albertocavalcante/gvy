@@ -201,4 +201,15 @@ class BundledJenkinsMetadataLoaderTest {
             assertNotNull(meta, "Should have metadata for '$agentType' agent type")
         }
     }
+
+    @Test
+    fun `merged metadata carries directive entries with their parameters`() {
+        val merged = VersionedMetadataLoader().loadMerged()
+
+        assertEquals(setOf("parameters", "tools", "triggers"), merged.directiveEntries.keys)
+        val string = assertNotNull(merged.directiveEntries["parameters"]?.get("string"))
+        assertEquals(setOf("name", "defaultValue", "description", "trim"), string.parameters.keys)
+        assertTrue(string.parameters.getValue("name").required)
+        assertEquals("jenkins-core", merged.directiveEntries.getValue("triggers").getValue("cron").plugin)
+    }
 }

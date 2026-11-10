@@ -204,6 +204,16 @@ data class BundledJenkinsMetadata(
      * Agent types (any, none, label, docker, etc.)
      */
     val agentTypes: Map<String, AgentTypeMetadata> = emptyMap(),
+
+    /**
+     * Entries of declarative directives whose contents are calls (`triggers { cron(...) }`,
+     * `parameters { string(...) }`, `tools { maven '...' }`), keyed by directive name.
+     *
+     * Hand-curated in `jenkins-stubs-metadata.json` from the Jenkins core `@DataBoundConstructor` and
+     * `@DataBoundSetter` signatures. The `tools` entries are the "Supported Tools" the declarative
+     * syntax documents (maven, jdk, gradle); a real `tools {}` accepts any configured tool type.
+     */
+    val directiveEntries: Map<String, Map<String, DeclarativeOptionMetadata>> = emptyMap(),
 ) {
     /**
      * Query for a step by name.
