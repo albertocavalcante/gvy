@@ -68,7 +68,10 @@ class SymbolIndexingService(
     private val entries = ConcurrentHashMap<URI, Prepared>()
 
     // Every change to [entries] goes through [classNames] so the two stay consistent.
-    internal val classNames = WorkspaceClassNames()
+    private val classNames = WorkspaceClassNames()
+
+    /** Recorded class-name keys, for tests that prove removals leave nothing behind. */
+    internal val classNameKeys: Set<String> get() = classNames.keys()
 
     /** Gets the stored symbol index for a file, or null if none has been built. */
     fun getSymbolIndex(uri: URI): SymbolIndex? = entries[uri]?.index

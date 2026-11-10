@@ -74,39 +74,53 @@ class SymbolIndexingClassLookupTest {
 
         assertTrue(service.findClasses(ClassNameQuery.Exact("Greeter")).isEmpty(), "Stale class must disappear")
         assertEquals(listOf("Welcomer"), fqns(service.findClasses(ClassNameQuery.Exact("Welcomer"))))
-        assertEquals(setOf("welcomer"), service.classNames.keys())
+        assertEquals(setOf("welcomer"), service.classNameKeys)
     }
 
     @Test
     fun `a deleted file leaves no class names`(): Unit = runBlocking {
         val uri = write("Deleted.groovy", "class Deleted {}")
         service.indexFile(uri)
+        assertEquals(setOf("deleted"), service.classNameKeys, "setup must index the class")
 
         Files.delete(tempDir.resolve("Deleted.groovy"))
         service.indexFile(uri)
 
         assertTrue(service.findClasses(ClassNameQuery.Exact("Deleted")).isEmpty())
-        assertEquals(emptySet(), service.classNames.keys())
+        assertEquals(emptySet(), service.classNameKeys)
     }
 
     @Test
     fun `an invalidated file leaves no class names`(): Unit = runBlocking {
         val uri = write("Invalidated.groovy", "class Invalidated {}")
         service.indexFile(uri)
+        assertEquals(setOf("invalidated"), service.classNameKeys, "setup must index the class")
 
         service.invalidate(uri)
 
-        assertEquals(emptySet(), service.classNames.keys())
+        assertEquals(emptySet(), service.classNameKeys)
+    }
+
+    @Test
+    fun `removing one of two files that share a class name keeps the name`(): Unit = runBlocking {
+        val first = write("First.groovy", "package a\nclass Shared {}")
+        val second = write("Second.groovy", "package b\nclass Shared {}")
+        service.indexAllWorkspaceSources(listOf(first, second))
+
+        service.invalidate(first)
+
+        assertEquals(setOf("shared"), service.classNameKeys)
+        assertEquals(listOf("b.Shared"), fqns(service.findClasses(ClassNameQuery.Exact("Shared"))))
     }
 
     @Test
     fun `clear leaves no class names`(): Unit = runBlocking {
         service.indexAllWorkspaceSources(listOf(write("A.groovy", "class A {}"), write("B.groovy", "class B {}")))
-        assertEquals(setOf("a", "b"), service.classNames.keys())
+        assertEquals(setOf("a", "b"), service.classNameKeys)
 
         service.clear()
 
-        assertEquals(emptySet(), service.classNames.keys())
+        assertEquals(emptySet(), service.classNameKeys)
     }
 
     @Test
@@ -114,11 +128,11 @@ class SymbolIndexingClassLookupTest {
         val untitled = URI.create("untitled:Untitled-1")
         val buffer = "class Scratch {}"
         service.ensureIndexed(ownership.begin(untitled), buffer) { parse(untitled, buffer) }
-        assertEquals(setOf("scratch"), service.classNames.keys())
+        assertEquals(setOf("scratch"), service.classNameKeys)
 
         service.refreshAfterClose(untitled)
 
-        assertEquals(emptySet(), service.classNames.keys())
+        assertEquals(emptySet(), service.classNameKeys)
     }
 
     @Test
