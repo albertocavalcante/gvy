@@ -268,7 +268,7 @@ object CompletionProvider {
             )
 
         // Build strategy context
-        val jenkinsMetadata = jenkinsCapabilities?.takeIf { isJenkinsFile }?.getAllMetadata()
+        val jenkinsMetadata = jenkinsCapabilities?.takeIf { isJenkinsFile }?.getAllMetadata(ctx.uri)
         val jenkinsBlockContext = buildJenkinsBlockContext(ctx, isJenkinsFile)
 
         val strategyContext = CompletionStrategyContext(

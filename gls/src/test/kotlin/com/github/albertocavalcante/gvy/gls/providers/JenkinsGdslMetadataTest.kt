@@ -50,7 +50,7 @@ class JenkinsGdslMetadataTest {
         )
         manager.loadGdslMetadata()
         capabilities = mockk(relaxed = true)
-        every { capabilities.getAllMetadata() } answers { manager.getAllMetadata() }
+        every { capabilities.getAllMetadata(any()) } answers { manager.getAllMetadata(firstArg()) }
         every { capabilities.getGlobalVariables() } returns emptyList()
         modeResolver = mockk()
         every { modeResolver.isJenkinsModeEnabled(jenkinsFileUri) } returns true
@@ -58,7 +58,9 @@ class JenkinsGdslMetadataTest {
 
     @Test
     fun `completion offers a GDSL step`() {
-        val labels = JenkinsStepCompletionProvider.getStepCompletions(manager.getAllMetadata()).map { it.label }
+        val labels = JenkinsStepCompletionProvider.getStepCompletions(manager.getAllMetadata(jenkinsFileUri)).map {
+            it.label
+        }
 
         assertThat(labels).contains("myStep")
     }

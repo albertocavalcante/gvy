@@ -12,14 +12,27 @@ import java.util.concurrent.ConcurrentHashMap
  * Manages Jenkins workspace context separately from regular Groovy sources.
  * Provides Jenkins-specific classpath and prevents symbol leakage.
  */
-class JenkinsWorkspaceManager(
+class JenkinsWorkspaceManager internal constructor(
     private val configuration: JenkinsConfiguration,
     private val workspaceRoot: Path,
-    private val pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
-    private val stubsCacheRoot: Path? = null,
+    private val pluginManager: JenkinsPluginManager,
+    private val stubsCacheRoot: Path?,
+    private val jenkinsContext: JenkinsContext,
 ) {
+    constructor(
+        configuration: JenkinsConfiguration,
+        workspaceRoot: Path,
+        pluginManager: JenkinsPluginManager = JenkinsPluginManager(),
+        stubsCacheRoot: Path? = null,
+    ) : this(
+        configuration,
+        workspaceRoot,
+        pluginManager,
+        stubsCacheRoot,
+        JenkinsContext(configuration, workspaceRoot, pluginManager, stubsCacheRoot),
+    )
+
     private val logger = KotlinLogging.logger {}
-    private val jenkinsContext = JenkinsContext(configuration, workspaceRoot, pluginManager, stubsCacheRoot)
     private val varsProvider = VarsGlobalVariableProvider(workspaceRoot)
     private val librarySourceLoader = LibrarySourceLoader()
 
@@ -27,6 +40,11 @@ class JenkinsWorkspaceManager(
     private data class CacheEntry(val contentHash: Int, val libraries: List<LibraryReference>)
 
     private val libraryCache = ConcurrentHashMap<URI, CacheEntry>()
+
+    /** The scan key of the classpath each Jenkinsfile was last compiled with, for [getAllMetadata]; LRU-bounded. */
+    private val classpathByUri = object : LinkedHashMap<URI, List<Path>>(INITIAL_URI_CAPACITY, LOAD_FACTOR, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<URI, List<Path>>) = size > MAX_TRACKED_FILES
+    }
 
     /**
      * Checks if the given URI represents a Jenkins pipeline file.
@@ -85,7 +103,9 @@ class JenkinsWorkspaceManager(
         }
 
         // Build classpath from references AND project dependencies
-        val classpath = jenkinsContext.buildClasspath(libraries, projectDependencies)
+        val scoped = jenkinsContext.buildScopedClasspath(libraries, projectDependencies)
+        synchronized(classpathByUri) { classpathByUri[uri] = scoped.scanKey }
+        val classpath = scoped.entries
 
         // Extract library sources for navigation
         extractLibrarySources(libraries)
@@ -148,4 +168,18 @@ class JenkinsWorkspaceManager(
      * Get combined metadata (bundled + dynamic) from context.
      */
     fun getAllMetadata() = jenkinsContext.getAllMetadata()
+
+    /**
+     * Metadata for the Jenkinsfile [uri]: bundled and GDSL metadata plus the library steps scanned from the
+     * classpath it was last compiled with, never another file's (#1242). Before its first compile (or after
+     * its classpath was evicted) it has no scanned steps.
+     */
+    fun getAllMetadata(uri: URI) = jenkinsContext.getAllMetadata(synchronized(classpathByUri) { classpathByUri[uri] })
+
+    private companion object {
+        /** Jenkinsfiles whose classpath is remembered; each entry is a short list of paths. */
+        const val MAX_TRACKED_FILES = 256
+        const val INITIAL_URI_CAPACITY = 16
+        const val LOAD_FACTOR = 0.75f
+    }
 }

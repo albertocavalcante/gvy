@@ -117,7 +117,7 @@ class JenkinsProjectStrategy(private val coroutineScope: CoroutineScope) :
 
     override fun getGlobalVariables(): List<GlobalVariable> = workspaceManager?.getGlobalVariables() ?: emptyList()
 
-    override fun getAllMetadata(): MergedJenkinsMetadata? = workspaceManager?.getAllMetadata()
+    override fun getAllMetadata(uri: URI): MergedJenkinsMetadata? = workspaceManager?.getAllMetadata(uri)
 
     override fun reloadGdsl() {
         workspaceManager?.reloadGdslMetadata()
