@@ -40,6 +40,13 @@ object DeclarativePipelineSchema {
     fun getInnerInstructions(blockName: String?): Set<String> =
         blockIndex[blockName]?.innerInstructions?.toSet().orEmpty()
 
+    /**
+     * The [getInnerInstructions] of [blockName] that are statements (`image 'maven'`, `reuseNode true`), not blocks:
+     * completion inserts them as `name ` instead of `name {`.
+     */
+    fun getStatementInstructions(blockName: String?): Set<String> =
+        blockIndex[blockName]?.statementInstructions?.toSet().orEmpty()
+
     private fun loadSchema(): Schema {
         val resource = requireNotNull(
             DeclarativePipelineSchema::class.java.classLoader.getResource(
@@ -89,5 +96,7 @@ object DeclarativePipelineSchema {
         val allowedIn: List<String> = emptyList(),
         val innerInstructions: List<String> = emptyList(),
         val completionCategories: List<CompletionCategory> = emptyList(),
+        /** Inner instructions written as statements (`name value`), not blocks. */
+        val statementInstructions: List<String> = emptyList(),
     )
 }

@@ -307,11 +307,7 @@ class JenkinsCompletionExactSetTest {
 
     /** Labels at an empty line inside the innermost of [openers], each opened on its own line in a stage. */
     private suspend fun labelsInStage(vararg openers: String): Set<String> {
-        val opened = openers.mapIndexed { depth, opener -> "    ".repeat(depth + 3) + opener }
-        val closed = openers.indices.reversed().map { depth -> "    ".repeat(depth + 3) + "}" }
-        val lines = listOf("pipeline {", "    agent any", "    stages {", "        stage('S') {") + opened +
-            "    ".repeat(openers.size + 3) + closed + listOf("        }", "    }", "}")
-        val items = completeAt(lines.joinToString("\n"), line = 4 + openers.size, character = 4 * (openers.size + 3))
+        val items = completeInStage(*openers)
         assertNoDuplicateLabels(items)
         return items.labels()
     }
@@ -331,12 +327,16 @@ class JenkinsCompletionExactSetTest {
     }
 
     /** Insert text by label at an empty line inside the innermost of [openers] in a stage. */
-    private suspend fun insertTextsInStage(vararg openers: String): Map<String, String?> {
+    private suspend fun insertTextsInStage(vararg openers: String): Map<String, String?> =
+        completeInStage(*openers).associate { it.label to it.insertText }
+
+    /** Completion at an empty line inside the innermost of [openers], each opened on its own line in a stage. */
+    private suspend fun completeInStage(vararg openers: String): List<CompletionItem> {
         val opened = openers.mapIndexed { depth, opener -> "    ".repeat(depth + 3) + opener }
+        val closed = openers.indices.reversed().map { depth -> "    ".repeat(depth + 3) + "}" }
         val lines = listOf("pipeline {", "    agent any", "    stages {", "        stage('S') {") + opened +
-            "    ".repeat(openers.size + 3)
+            "    ".repeat(openers.size + 3) + closed + listOf("        }", "    }", "}")
         return completeAt(lines.joinToString("\n"), line = 4 + openers.size, character = 4 * (openers.size + 3))
-            .associate { it.label to it.insertText }
     }
 
     @Test

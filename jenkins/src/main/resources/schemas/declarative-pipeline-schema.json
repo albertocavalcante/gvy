@@ -59,6 +59,16 @@
         "registryUrl",
         "registryCredentialsId",
         "reuseNode"
+      ],
+      "statementInstructions": [
+        "image",
+        "args",
+        "label",
+        "alwaysPull",
+        "customWorkspace",
+        "registryUrl",
+        "registryCredentialsId",
+        "reuseNode"
       ]
     },
     {
@@ -76,6 +86,17 @@
         "registryUrl",
         "registryCredentialsId",
         "reuseNode"
+      ],
+      "statementInstructions": [
+        "filename",
+        "dir",
+        "label",
+        "additionalBuildArgs",
+        "args",
+        "customWorkspace",
+        "registryUrl",
+        "registryCredentialsId",
+        "reuseNode"
       ]
     },
     {
@@ -84,6 +105,20 @@
         "agent"
       ],
       "innerInstructions": [
+        "yaml",
+        "yamlFile",
+        "label",
+        "cloud",
+        "defaultContainer",
+        "inheritFrom",
+        "namespace",
+        "serviceAccount",
+        "nodeSelector",
+        "workingDir",
+        "customWorkspace",
+        "retries"
+      ],
+      "statementInstructions": [
         "yaml",
         "yamlFile",
         "label",
@@ -198,6 +233,10 @@
         "axes"
       ],
       "innerInstructions": [
+        "name",
+        "values"
+      ],
+      "statementInstructions": [
         "name",
         "values"
       ]
@@ -422,6 +461,13 @@
         "submitter",
         "submitterParameter",
         "parameters"
+      ],
+      "statementInstructions": [
+        "message",
+        "id",
+        "ok",
+        "submitter",
+        "submitterParameter"
       ]
     }
   ]

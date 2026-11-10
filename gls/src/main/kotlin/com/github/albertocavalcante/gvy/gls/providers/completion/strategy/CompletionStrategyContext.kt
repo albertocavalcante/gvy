@@ -46,4 +46,6 @@ internal data class JenkinsBlockContext(
     val innerInstructions: Set<String>,
     val isStrictDeclarative: Boolean,
     val enclosingBlocks: List<String> = emptyList(),
+    /** The [innerInstructions] that are statements (`image 'maven'`), completed without an opening brace. */
+    val statementInstructions: Set<String> = emptySet(),
 )

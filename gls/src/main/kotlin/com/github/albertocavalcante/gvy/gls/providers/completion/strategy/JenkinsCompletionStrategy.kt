@@ -146,11 +146,13 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
             }
         }
         blockContext.innerInstructions.forEach { instruction ->
+            // A statement (`image 'maven'`, `reuseNode true`) takes a value, not a block.
+            val isStatement = instruction in blockContext.statementInstructions
             completion {
                 label(instruction)
                 kind(CompletionItemKind.Keyword)
-                detail("Declarative directive")
-                insertText("$instruction {")
+                detail(if (isStatement) "Declarative option" else "Declarative directive")
+                insertText(if (isStatement) "$instruction " else "$instruction {")
                 sortText("0-directive-$instruction")
             }
         }

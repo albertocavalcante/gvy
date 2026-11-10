@@ -338,6 +338,8 @@ object CompletionProvider {
         val currentBlock = detected.currentBlock
         val blockCategories = currentBlock?.let(DeclarativePipelineSchema::getCompletionCategories) ?: emptySet()
         val innerInstructions = currentBlock?.let(DeclarativePipelineSchema::getInnerInstructions) ?: emptySet()
+        val statementInstructions =
+            currentBlock?.let(DeclarativePipelineSchema::getStatementInstructions) ?: emptySet()
         val isStrictDeclarative = detected.isDeclarativePipeline && currentBlock != null && currentBlock != "script"
 
         return JenkinsBlockContext(
@@ -346,6 +348,7 @@ object CompletionProvider {
             innerInstructions = innerInstructions,
             isStrictDeclarative = isStrictDeclarative,
             enclosingBlocks = detected.enclosingBlocks,
+            statementInstructions = statementInstructions,
         )
     }
 
