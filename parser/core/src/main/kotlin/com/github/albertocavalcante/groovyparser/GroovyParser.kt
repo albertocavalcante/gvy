@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.groovyparser.api.AnalysisCompilerPolicy
 import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.internal.GroovyAstConverter
 import groovy.lang.GroovyClassLoader
@@ -94,7 +95,7 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
                 )
                 compilationUnit.addSource(sourceUnit)
 
-                val hadCompilationError = runCompilation(compilationUnit)
+                val hadCompilationError = runCompilation(compilationUnit, problems)
                 if (hadCompilationError && !configuration.lenientMode) {
                     collectProblems(compilationUnit.errorCollector, problems)
                     return@use ParseResult(null, problems)
@@ -108,11 +109,16 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         }
     }
 
-    private fun runCompilation(compilationUnit: GroovyCompilationUnit): Boolean = try {
+    private fun runCompilation(compilationUnit: GroovyCompilationUnit, problems: MutableList<Problem>): Boolean = try {
         compilationUnit.compile(Phases.CONVERSION)
         false
     } catch (e: CompilationFailedException) {
         logger.debug { "Compilation failed: ${e.message}" }
+        true
+    } catch (e: NoClassDefFoundError) {
+        // A transform needed a class the server does not ship; keep the rest of the pipeline alive.
+        logger.warn(e) { "Compilation hit a missing class" }
+        problems.add(Problem.error("Compilation hit a missing class: NoClassDefFoundError: ${e.message}"))
         true
     }
 
@@ -164,6 +170,8 @@ class GroovyParser(val configuration: ParserConfiguration = ParserConfiguration(
         sourceEncoding = configuration.characterEncoding.name()
         // Configure tolerance level for parsing
         tolerance = if (configuration.lenientMode) DEFAULT_LENIENT_TOLERANCE else 0
+        // Never run transforms that need dependencies the server does not ship (or that fetch from the network).
+        disabledGlobalASTTransformations = AnalysisCompilerPolicy.DISABLED_GLOBAL_TRANSFORMS
     }
 
     private fun collectProblems(errorCollector: ErrorCollector?, problems: MutableList<Problem>) {

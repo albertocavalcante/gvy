@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.groovyparser
 
+import com.github.albertocavalcante.groovyparser.api.AnalysisCompilerPolicy
 import com.github.albertocavalcante.groovyparser.ast.NodeRelationshipTracker
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
 import com.github.albertocavalcante.groovyparser.ast.visitor.RecursiveAstVisitor
@@ -46,12 +47,7 @@ private const val AST_TRANSFORMATION_SERVICE_FILE =
  * classpath of a test run): Spock's rewrites feature methods and drops the block labels the LSP reads,
  * and it would key off a stubbed `spock.lang.Specification` just as off the real one.
  */
-private val ALWAYS_DISABLED_TRANSFORMS = setOf(
-    "org.spockframework.compiler.SpockTransform",
-    // @Grab resolves dependencies through Ivy (not shipped with the server, so it throws NoClassDefFoundError)
-    // and would download artifacts from the network just because a file was opened.
-    "groovy.grape.GrabAnnotationTransformation",
-)
+private val ALWAYS_DISABLED_TRANSFORMS = AnalysisCompilerPolicy.DISABLED_GLOBAL_TRANSFORMS
 private const val COMPILATION_FAILED_MESSAGE_PREFIX = "Compilation failed:"
 private const val UNATTRIBUTED_ERROR_REASON =
     "an open buffer was dropped because the compile failed with an error no source could be blamed for"
@@ -98,8 +94,8 @@ private class TransformFilteringClassLoader(parent: ClassLoader) : GroovyClassLo
 
 private val compileLogger = KotlinLogging.logger {}
 
-/** Outcome of a compile that did not complete; [linkageMessage] is set when a needed class was missing. */
-private class CompileFailure(val linkageMessage: String? = null)
+/** Outcome of a compile that did not complete; [missingClassMessage] is set when a needed class was missing. */
+private class CompileFailure(val missingClassMessage: String? = null)
 
 private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequest): CompileFailure? = try {
     compilationUnit.compile(request.compilePhase)
@@ -107,11 +103,12 @@ private fun compileCatching(compilationUnit: CompilationUnit, request: ParseRequ
 } catch (e: CompilationFailedException) {
     compileLogger.debug { "Compilation failed for ${request.uri}: ${e.message}" }
     CompileFailure()
-} catch (e: LinkageError) {
+} catch (e: NoClassDefFoundError) {
     // A transform needed a class the server does not ship; surface it as a diagnostic for this
     // source instead of aborting the caller (e.g. workspace indexing).
-    val message = "${e.javaClass.simpleName}: ${e.message}"
-    compileLogger.warn { "Compilation of ${request.uri} hit a missing class: $message" }
+    val cause = e.cause?.message?.let { " (caused by: $it)" }.orEmpty()
+    val message = "NoClassDefFoundError: ${e.message}$cause"
+    compileLogger.warn(e) { "Compilation of ${request.uri} hit a missing class" }
     CompileFailure(message)
 } finally {
     // The unit is cached with the result; don't keep the caller's job alive through it.
@@ -401,7 +398,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
 
         val failure = compileCatching(compilationUnit, request)
         val compilationFailed = failure != null
-        val linkageFailure = failure?.linkageMessage
+        val linkageFailure = failure?.missingClassMessage
 
         val tokenIndex = GroovyTokenIndex.build(request.content)
 

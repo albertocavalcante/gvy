@@ -38,4 +38,14 @@ class GroovyParserGrabTest {
 
         assertTrue(result.ast != null)
     }
+
+    @Test
+    fun `a missing class thrown by a transform becomes a diagnostic instead of escaping`() {
+        val result = parser.parse(ParseRequest(URI.create("file:///LinkageBomb.groovy"), "class LinkageBomb {}"))
+
+        assertTrue(
+            result.diagnostics.any { it.message.contains("NoClassDefFoundError") },
+            "expected a diagnostic naming the missing class, got ${result.diagnostics.map { it.message }}",
+        )
+    }
 }
