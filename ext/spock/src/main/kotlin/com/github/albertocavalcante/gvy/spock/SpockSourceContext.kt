@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.spock
 
+import com.github.albertocavalcante.gvy.common.ast.isStubSourceName
 import com.github.albertocavalcante.nativeapi.ParseResult
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
@@ -109,6 +110,12 @@ enum class SpecificationEvidence {
     /** A resolved hierarchy does (SPECIFICATION) or does not (NOT_SPECIFICATION) contain the Spock base. */
     RESOLVED_HIERARCHY,
 
+    /**
+     * The superclass is a source class from another file of the same compilation unit, and every link up
+     * to `spock.lang.Specification` (resolved by full name) or Object is such a class or JVM-resolved.
+     */
+    COMPILED_SOURCE_HIERARCHY,
+
     /** The superclass is spelled `spock.lang.Specification`. */
     QUALIFIED_SUPERCLASS,
 
@@ -174,8 +181,51 @@ private class SpecificationClassifier(private val module: ModuleNode) {
                 context(node, SpecificationStatus.NOT_SPECIFICATION, SpecificationEvidence.NO_SUPERCLASS)
             superClass.isResolved -> resolved(node, superClass)
             bound != null && enclosingScopesKnown(node) -> inherit(node, classify(bound))
-            else -> bySourceName(node, superClass.name)
+            else -> compiledSourceHierarchy(node, superClass) ?: bySourceName(node, superClass.name)
         }
+    }
+
+    /**
+     * Trusts the compiler's binding across files, but only for primary source classes compiled in this
+     * module's own compilation unit. Generated missing-class stubs (empty stand-ins compiled into the same
+     * unit), placeholders and decompiled or cached classes do not qualify.
+     * Each link must be such a class or JVM-resolved; the walk ends at `spock.lang.Specification` resolved
+     * by full name or at Object. Any other link, a cycle, or an unknown enclosing scope returns null so the
+     * source-name rules decide (UNCERTAIN for a base outside the module). The verdict is only as current
+     * as the compilation unit that produced the AST.
+     */
+    private fun compiledSourceHierarchy(node: ClassNode, superClass: ClassNode): SpockClassContext? {
+        if (!inCompilationUnit(superClass) || !enclosingScopesKnown(node)) return null
+        return compiledChainStatus(superClass.redirect())
+            ?.let { context(node, it, SpecificationEvidence.COMPILED_SOURCE_HIERARCHY) }
+    }
+
+    /**
+     * Walks superclasses with an identity visited set and plain node properties only. Groovy's own
+     * hierarchy helpers (`isScript`, `isDerivedFrom`) loop forever on a cycle (#1369). Null when a link
+     * is neither in this compilation unit nor JVM-resolved, the chain cycles, or it ends elsewhere.
+     */
+    private fun compiledChainStatus(start: ClassNode): SpecificationStatus? {
+        val seen: MutableSet<ClassNode> = Collections.newSetFromMap(IdentityHashMap())
+        var link: ClassNode? = start
+        var status: SpecificationStatus? = null
+        while (link != null && status == null && seen.add(link)) {
+            when {
+                link.name == ClassHelper.OBJECT_TYPE.name -> status = SpecificationStatus.NOT_SPECIFICATION
+                link.name == SPECIFICATION_FQN && link.isResolved -> status = SpecificationStatus.SPECIFICATION
+                link.isResolved || inCompilationUnit(link) -> link = link.superClass?.redirect()
+                else -> link = null
+            }
+        }
+        return status
+    }
+
+    private fun inCompilationUnit(type: ClassNode): Boolean {
+        val target = type.redirect()
+        val owner = target.module ?: return false
+        val unit = module.unit ?: return false
+        return target.isPrimaryClassNode && !isStubSourceName(owner.context?.name) &&
+            owner.unit === unit && unit.modules.any { it === owner }
     }
 
     /**
