@@ -273,26 +273,31 @@ internal class SpockVerdictMemory {
         }
     }
 
-    private companion object {
-        val DECLARATION_KEYWORDS = setOf(
+    // Not private so tests can exercise the prelude scan directly; the class itself is internal.
+    companion object {
+        private val DECLARATION_KEYWORDS = setOf(
             GroovyLangLexer.CLASS,
             GroovyLangLexer.INTERFACE,
             GroovyLangLexer.TRAIT,
             GroovyLangLexer.ENUM,
         )
-        val NAME_TOKENS = setOf(GroovyLangLexer.Identifier, GroovyLangLexer.CapitalizedIdentifier, GroovyLangLexer.DOT)
-        val OBJECT_SPELLINGS = setOf("java.lang.Object", "Object")
-        const val MAX_SOURCE_CHARS = 1_000_000
+        private val NAME_TOKENS = setOf(
+            GroovyLangLexer.Identifier,
+            GroovyLangLexer.CapitalizedIdentifier,
+            GroovyLangLexer.DOT,
+        )
+        private val OBJECT_SPELLINGS = setOf("java.lang.Object", "Object")
+        private const val MAX_SOURCE_CHARS = 1_000_000
 
-        fun isDegraded(outcome: ParseOutcome): Boolean =
+        private fun isDegraded(outcome: ParseOutcome): Boolean =
             outcome.fallback != null || outcome.excludedSources.isNotEmpty() || outcome.stubbedClasses.isNotEmpty()
 
-        fun importsOf(module: ModuleNode): String = (
+        private fun importsOf(module: ModuleNode): String = (
             module.imports.map { "${it.className} as ${it.alias}" } + module.starImports.map { "${it.packageName}*" }
             ).joinToString(";")
 
         /** Superclass and interface spellings as written, for [node] and each enclosing class, plus [imports]. */
-        fun declaration(node: ClassNode, imports: String): String = generateSequence(node) { it.outerClass }
+        private fun declaration(node: ClassNode, imports: String): String = generateSequence(node) { it.outerClass }
             .joinToString("|") { type ->
                 val superclass = type.getUnresolvedSuperClass(false)?.unresolvedName
                 val interfaces = type.getUnresolvedInterfaces(false).orEmpty().joinToString(",") { it.unresolvedName }
@@ -333,7 +338,7 @@ internal class SpockVerdictMemory {
             MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
 
         /** Source unit names and excluded-source locators as normalized paths (`file:` URLs or plain paths). */
-        fun sourceKey(name: String): String = runCatching {
+        private fun sourceKey(name: String): String = runCatching {
             val path = if (name.startsWith("file:")) Path.of(URI(name)) else Path.of(name)
             path.toAbsolutePath().normalize().toString()
         }.getOrDefault(name)
