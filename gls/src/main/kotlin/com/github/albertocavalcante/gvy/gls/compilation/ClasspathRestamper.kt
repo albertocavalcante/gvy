@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -80,13 +81,33 @@ class ClasspathRestamper internal constructor(
         if (directories.isEmpty()) return
         synchronized(lock) {
             pending += directories
-            if (draining?.isActive != true) {
-                draining = scope.launch(dispatcher) {
-                    delay(debounce)
-                    runSuspendCatching { drain() }
-                        .onFailure { logger.warn(it) { "Classpath directory re-stamp failed" } }
+            if (draining == null) {
+                draining = scope.launch(dispatcher) { drainUntilIdle() }
+            }
+        }
+    }
+
+    /**
+     * Drains after [debounce] until nothing is pending. Events that arrive during a walk land in [pending] while this
+     * job still owns draining, so they are picked up by the next round instead of waiting for a later event; the job
+     * hands draining back only under [lock], after seeing nothing pending, so no event can fall in between.
+     */
+    private suspend fun drainUntilIdle() {
+        val self = currentCoroutineContext()[Job]
+        try {
+            while (true) {
+                delay(debounce)
+                runSuspendCatching { drain() }.onFailure { logger.warn(it) { "Classpath directory re-stamp failed" } }
+                synchronized(lock) {
+                    if (pending.isEmpty()) {
+                        draining = null
+                        return
+                    }
                 }
             }
+        } finally {
+            // Cancelled, or ended by an Error: a later event must still be able to schedule a drain
+            synchronized(lock) { if (draining === self) draining = null }
         }
     }
 
