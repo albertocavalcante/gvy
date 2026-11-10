@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution
 
-import com.github.albertocavalcante.groovyparser.ast.symbols.Symbol
+import com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.providers.definition.DefinitionResolver
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -30,14 +30,14 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         // Extract simple name from potentially fully-qualified name for matching
         val simpleClassName = className.substringAfterLast('.')
 
-        // Search all symbol indices across workspace files
-        for ((uri, index) in compilationService.getAllSymbolStorages()) {
-            val symbols = index.getSymbols(uri).filterIsInstance<Symbol.Class>()
-            // Match against both simple name and fully qualified name
-            val matchingSymbol = symbols.find {
-                it.name == simpleClassName || it.fullyQualifiedName == className
-            } ?: continue
-
+        // Workspace classes with this simple name, in file order, from the indexed lookup rather than a scan
+        // of every file (#1312). As before, the simple name decides the match (a fully qualified name's own
+        // class always shares it) and each file offers its first such class.
+        val candidates = compilationService.symbolIndexingService
+            .findClasses(ClassNameQuery.Exact(simpleClassName))
+            .distinctBy { it.uri }
+        for (matchingSymbol in candidates) {
+            val uri = matchingSymbol.uri
             // Found it in the index, now load the actual ClassNode from AST
             val classNode = loadClassNodeFromAst(uri, matchingSymbol.fullyQualifiedName)
             if (classNode != null) {

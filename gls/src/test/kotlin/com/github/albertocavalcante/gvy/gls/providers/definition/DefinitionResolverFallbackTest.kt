@@ -269,9 +269,11 @@ class DefinitionResolverFallbackTest {
                 dateHelperNode,
                 otherUri,
             )
-            val symbolIndex = com.github.albertocavalcante.groovyparser.ast.symbols.SymbolIndex().add(symbol)
-
-            every { compilationService.getAllSymbolStorages() } returns mapOf(otherUri to symbolIndex)
+            every {
+                compilationService.symbolIndexingService.findClasses(
+                    com.github.albertocavalcante.gvy.gls.compilation.ClassNameQuery.Exact("DateHelper"),
+                )
+            } returns listOf(symbol)
             every { compilationService.getAst(currentUri) } returns null
 
             val otherAst = mockk<org.codehaus.groovy.ast.ModuleNode>()
