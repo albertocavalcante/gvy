@@ -34,8 +34,13 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
         // is exactly the reference wins (#1336): `b.Shared` must not open `a.Shared`. Without such a class, the
         // simple name decides and each file offers its first match, as before.
         val matches = compilationService.symbolIndexingService.findClasses(ClassNameQuery.Exact(simpleClassName))
-        val candidates = matches.filter { it.fullyQualifiedName == className }
-            .ifEmpty { matches.distinctBy { it.uri } }
+        val exact = if (className.contains('.') || referencedFromDefaultPackage(context.documentUri)) {
+            matches.filter { it.fullyQualifiedName == className }
+        } else {
+            emptyList()
+        }
+        // Exact matches first; if none loads, the simple-name candidates follow as before.
+        val candidates = (exact + matches.distinctBy { it.uri }).distinct()
         for (matchingSymbol in candidates) {
             val uri = matchingSymbol.uri
             // Found it in the index, now load the actual ClassNode from AST
@@ -54,6 +59,15 @@ class GlobalClassResolutionStrategy(private val compilationService: GroovyCompil
             "Class $className not found in workspace symbol index",
             STRATEGY_NAME,
         )
+    }
+
+    /**
+     * A bare name is the full name of a default-package class, but only default-package code can use such a
+     * class on the JVM. Packaged (or unknown) referencing files keep the URI-order simple-name result.
+     */
+    private fun referencedFromDefaultPackage(documentUri: java.net.URI): Boolean {
+        val module = compilationService.getAst(documentUri) as? ModuleNode ?: return false
+        return module.packageName.isNullOrBlank()
     }
 
     @Suppress("ReturnCount") // Multiple validation checks require early returns
