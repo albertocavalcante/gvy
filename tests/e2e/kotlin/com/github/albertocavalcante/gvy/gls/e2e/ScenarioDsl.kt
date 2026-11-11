@@ -185,7 +185,7 @@ class ScenarioBuilder(private val source: String? = null) {
     /**
      * Change document content.
      */
-    fun changeDocument(path: String, text: String, version: Int = 2) {
+    fun changeDocument(path: String, text: String, version: Int? = null) {
         steps.add(
             ScenarioStep.ChangeDocument(
                 path = path,

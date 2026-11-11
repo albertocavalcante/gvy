@@ -115,6 +115,17 @@ their own keys. For example, a numeric check is `expect: { type: GTE, value: 1 }
 `jsonPath` and `expect`, rather than inside `expect`. Equality checks require a `value`; `value: null` explicitly
 represents JSON null. An empty `expect: {}` checks existence. Snapshot expectations take only a nonblank string path.
 
+## Document Versions
+
+`openDocument` defaults to version 1. When `changeDocument.version` is omitted, YAML and Kotlin steps send the next
+version for that URI. Explicit versions are sent unchanged, so scenarios can exercise stale or out-of-order changes; a
+later automatic version advances past the highest version prepared in that document lifecycle. Closing and reopening a
+document starts a new sequence.
+
+Automatic versions require an earlier high-level `openDocument` or an explicit `changeDocument.version`. Raw
+`notification` steps do not update this bookkeeping; use explicit versions when mixing raw document notifications with
+high-level change steps. This tracks versions, rather than applying or validating the document's text edits.
+
 ## Adding New Scenarios
 
 1. Create `your-test.yaml` in this directory

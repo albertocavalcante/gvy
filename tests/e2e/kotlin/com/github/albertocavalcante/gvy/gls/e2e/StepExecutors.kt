@@ -248,6 +248,7 @@ class OpenDocumentStepExecutor : StepExecutor<ScenarioStep.OpenDocument> {
         }
 
         context.session.server.textDocumentService.didOpen(DidOpenTextDocumentParams(textDocument))
+        context.documentVersions.opened(uri, step.version)
 
         context.lastResult = buildJsonObject {
             put("uri", uri)
@@ -266,7 +267,6 @@ private fun fileContents(uri: String): String = runCatching {
 class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
     override fun execute(step: ScenarioStep.ChangeDocument, context: ScenarioContext, nextStep: ScenarioStep?) {
         val uri = context.resolveUri(step.uri, step.path)
-        val identifier = VersionedTextDocumentIdentifier(uri, step.version)
 
         // If text field is provided and contentChanges is empty, treat as full-document replacement
         val changes: List<TextDocumentContentChangeEvent> =
@@ -289,11 +289,13 @@ class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
                 }
             }
 
+        val version = context.documentVersions.next(uri, step.version)
+        val identifier = VersionedTextDocumentIdentifier(uri, version)
         context.session.server.textDocumentService.didChange(DidChangeTextDocumentParams(identifier, changes))
 
         context.lastResult = buildJsonObject {
             put("uri", uri)
-            put("version", step.version)
+            put("version", version)
             put("changes", JsonBridge.toJsonElement(changes))
         }
     }
@@ -318,6 +320,7 @@ class CloseDocumentStepExecutor : StepExecutor<ScenarioStep.CloseDocument> {
         val uri = context.resolveUri(step.uri, step.path)
         val params = DidCloseTextDocumentParams(TextDocumentIdentifier(uri))
         context.session.server.textDocumentService.didClose(params)
+        context.documentVersions.closed(uri)
         context.lastResult = JsonBridge.toJsonElement(params)
     }
 }
