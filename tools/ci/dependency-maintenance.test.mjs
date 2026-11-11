@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { inventory, evaluate, fingerprint } from './dependency-maintenance.mjs';
 
 const today = new Date('2026-11-11T22:00:00Z');
@@ -98,7 +99,7 @@ test('manual workaround anchors require an existing exact source and detect edit
 test('CLI fails closed for unknown flags and malformed ledger, and prints all owned debt', t => {
   const root = mkdtempSync(join(tmpdir(), 'gvy-dependency-test-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
-  const script = new URL('./dependency-maintenance.mjs', import.meta.url);
+  const script = fileURLToPath(new URL('./dependency-maintenance.mjs', import.meta.url));
   spawnSync('git', ['init', '-q', root]);
   mkdirSync(join(root, 'tools/ci'), { recursive: true });
   writeFileSync(join(root, 'MODULE.bazel'), 'archive_override(module_name="rules_kotlin", urls=["https://example.test/a"])');
@@ -106,8 +107,12 @@ test('CLI fails closed for unknown flags and malformed ledger, and prints all ow
   const entry = { ...record(), lastVerified: new Date().toISOString().slice(0, 10), reviewDue: new Date().toISOString().slice(0, 10), sources: discovered };
   const ledger = join(root, 'tools/ci/dependency-maintenance.json');
   writeFileSync(ledger, JSON.stringify({ records: [entry], manualSources: [] }));
-  const run = (...args) => spawnSync(process.execPath, [script.pathname, '--root', root, ...args], { encoding: 'utf8' });
+  const summary = join(root, 'github-step-summary.md');
+  const run = (...args) => spawnSync(process.execPath, [script, '--root', root, ...args], {
+    encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: summary },
+  });
   assert.equal(run().status, 0);
+  assert.match(readFileSync(summary, 'utf8'), /Temporary dependency maintenance/);
   assert.match(run().stdout, /Released; integration pending/);
   assert.match(run().stdout, /1618/);
   assert.equal(run('--ignore-overdue').status, 1);
@@ -180,4 +185,23 @@ test('GMM graph evidence expires when install artifacts or versions change with 
     assert.notEqual(before.sha256, after.sha256, artifacts);
     assert.match(evaluate([after], [{ ...record(), sources: [before] }], today).errors.join('\n'), /Changed source needs verification/);
   }
+});
+
+test('synthetic CLI tests leave an inherited CI summary untouched', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'gvy-summary-isolation-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const summary = join(dir, 'real-ci-summary.md');
+  const sentinel = '# Actual CI evidence\n';
+  writeFileSync(summary, sentinel);
+  const env = { ...process.env, GITHUB_STEP_SUMMARY: summary };
+  delete env.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, [
+    '--test', '--test-reporter=tap',
+    '--test-name-pattern=^(?:CLI fails closed|a failed build still reports)',
+    fileURLToPath(new URL('./dependency-maintenance.test.mjs', import.meta.url)),
+    fileURLToPath(new URL('./bazel-diagnostics.test.mjs', import.meta.url)),
+  ], { encoding: 'utf8', env, timeout: 30_000 });
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /# pass 3\b/);
+  assert.equal(readFileSync(summary, 'utf8'), sentinel);
 });
