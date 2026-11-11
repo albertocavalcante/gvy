@@ -1,28 +1,27 @@
-# User-specific Bazel Configuration
-# Copy this file to user.bazelrc (which is gitignored) and customize as needed
+# Copy to ignored user.bazelrc. Keep credentials outside this file and Git.
+# See docs/build-observability.md. Remote upload is currently disabled.
 
-# Example: Override cache location
-# build --disk_cache=/custom/path/to/cache
+# Shared downloads/action caches may live on another volume. Do not share one
+# output_base between worktrees; use a private output_user_root if relocation is
+# needed, so Bazel derives a distinct output base from each workspace path.
+# startup --output_user_root=/path/to/private/bazel-output
+# common --repository_cache=/path/to/shared/bazel-repo
+# build --disk_cache=/path/to/shared/bazel-disk
 
-# Example: Adjust number of jobs
-# build --jobs=8
+# Apply machine budgets deliberately; memory is in MB and is a scheduling budget,
+# not a limit on each process. Worker limits apply per worker key.
+# build --jobs=2
+# build --local_resources=cpu=2
+# build --local_resources=memory=4096
+# build --jvmopt=-Xmx768m
+# build --host_jvmopt=-Xmx1536m
 
-# Example: Enable more verbose output
-# build --announce_rc
-# build --explain=/tmp/bazel_explain.txt
-# build --verbose_explanations
+# --config=local updates MODULE.bazel.lock; --config=ci rejects lockfile drift.
+# --config=debug prints action commands and retains sandbox files.
+# BEP/profile destinations must be unique per invocation, supplied on the command
+# line together with the invocation UUID and build metadata (see the guide).
 
-# Example: Disable sandboxing for debugging
-# build --spawn_strategy=local
-
-# Example: Custom test configuration
-# test --test_output=all
-# test --test_verbose_timeout_warnings
-
-# Example: Remote execution/caching (if available)
-# build --remote_cache=grpc://localhost:9092
-# build --remote_executor=grpc://localhost:9092
-
-# Example: Memory settings
-# build --local_ram_resources=HOST_RAM*.8
-# build --local_cpu_resources=HOST_CPUS*.75
+# BES remains disabled by owner choice. The bes profile sets bounded synchronous
+# transport behavior only. Do not add a destination or authentication until a
+# specific private endpoint and credential helper have been verified and remote
+# upload has been explicitly enabled. Never paste a token into --remote_header.
