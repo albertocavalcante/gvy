@@ -1,0 +1,56 @@
+name: repro-diagnostics-missing-abstract-method
+description: A non-abstract class implementing an interface without its methods reports an error
+xfail:
+  issue: 1541
+  reason: a class that does not implement the abstract methods of its interface gets no diagnostic
+  match: 'abstract.*Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/shapes/Shape.groovy: |
+      package demo.shapes
+
+      interface Shape {
+          double area()
+          String getName()
+      }
+    src/main/groovy/demo/shapes/Hexagon.groovy: |
+      package demo.shapes
+
+      import java.util.concurrent.TimeUnit
+
+      class |^u|Hexagon implements Shape {
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.u.path}}"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: diags
+      checks:
+        - jsonPath: $.uri
+          expect: { type: EQUALS, value: "{{cursor.u.uri}}" }
+        # Sentinel: a deliberately unused import. The first publish is empty, so wait for this one.
+        - jsonPath: $.diagnostics[?(@.message =~ /.*[Uu]nused import.*TimeUnit.*/)]
+          expect: { type: NOT_EMPTY }
+
+      timeoutMs: 20000
+  - assert:
+      source: diags
+      checks:
+        - jsonPath: "$.diagnostics[?(@.message =~ /.*abstract.*/)]"
+          expect: { type: NOT_EMPTY }
+  - shutdown: {}
+  - exit: {}

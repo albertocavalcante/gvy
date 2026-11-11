@@ -1,0 +1,54 @@
+name: repro-diagnostics-unused-import-nested-type
+description: Importing Outer2 and writing `extends Outer2.Inner` does not report the import as unused
+xfail:
+  issue: 1536
+  reason: the outer class import is reported unused when only Outer.Inner is written
+  match: '(?s)Actual:.*Unused import: demo.nesting.Outer2'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/nesting/Outers.groovy: |
+      package demo.nesting
+
+      class Outer2 {
+          static class Inner { String greet(String who) { "hi ${who}" } }
+      }
+    src/main/groovy/demo/scratch/U1.groovy: |
+      package demo.scratch
+
+      import demo.nesting.Outer2
+      import java.util.concurrent.TimeUnit
+
+      class |^u|U1 extends Outer2.Inner {}
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.u.path}}"
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      saveAs: diags
+      checks:
+        - jsonPath: $.uri
+          expect: { type: EQUALS, value: "{{cursor.u.uri}}" }
+        # Sentinel: a deliberately unused import proves the unused-import pass has run.
+        - jsonPath: $.diagnostics[?(@.message =~ /.*[Uu]nused import.*TimeUnit.*/)]
+          expect: { type: NOT_EMPTY }
+      timeoutMs: 20000
+  - assert:
+      source: diags
+      checks:
+        - jsonPath: "$.diagnostics[?(@.message =~ /.*[Uu]nused import.*Outer2.*/)]"
+          expect: { type: EMPTY }
+  - shutdown: {}
+  - exit: {}
