@@ -455,6 +455,41 @@ class OpenRewriteFormatterTest {
             assertRawFormatsTo(input, input)
         }
 
+        /** A comment inside a declaration must not gain a space on every format (#1524). */
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def /* c */ x = 1",
+                "def f(String /* c */ s) {\n    s\n}",
+                "def f(/* c */ x) {\n    x\n}",
+                "def a = 1 /* c */ , b = 2",
+                "def a = 1, /* c */ b = 2",
+                "final /* c */ x = 1",
+                "try {\n    f()\n} catch (/* c */ e) {\n    e\n}",
+            ],
+        )
+        fun `keeps comments inside declarations in place (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def a  =  \"x    y\"\nprintln  a",
+                "def f(String s,x, y) {\ndef z = 1\n}",
+                "String  /* c */  s = 'x'",
+                "def f(String /* c */ s) {\ns\n}",
+                "def a = 1 /* c */ , b = 2",
+                "def a = 1 ,b = 2",
+                "for (x in list) {\nprintln x\n}",
+                "def x = 1    // aligned\nprintln x",
+            ],
+        )
+        fun `formatting twice gives the same result as once (#1524)`(input: String) {
+            val once = formatter.formatUnchecked(input)
+            assertThat(formatter.formatUnchecked(once)).isEqualTo(once)
+        }
+
         @Test
         fun `keeps the spaces before a trailing comment (#1524)`() {
             val input = "def x = 1    // aligned\ndef yy = 2  /* aligned */\nprintln x"

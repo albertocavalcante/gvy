@@ -162,11 +162,13 @@ class OpenRewriteFormatter internal constructor(
         ): J.VariableDeclarations.NamedVariable {
             val named = super.visitVariable(variable, p)
             val namePrefix = named.name.prefix
-            val splitRun = named.prefix.isInlineWhitespace() && namePrefix.isInlineWhitespace() &&
-                namePrefix.whitespace.isNotEmpty()
-            if (!splitRun) return named
-            // The variable's prefix and its name's prefix print back to back; keep one of them.
-            val merged = if (named.prefix.whitespace.isEmpty()) namePrefix else named.prefix
+            val mergeable = named.prefix.isInlineWhitespace() && '\n' !in namePrefix.whitespace &&
+                (namePrefix.whitespace.isNotEmpty() || namePrefix.comments.isNotEmpty())
+            if (!mergeable) return named
+            // The variable's prefix and its name's prefix print back to back: move the name's prefix,
+            // comments included, into the variable's prefix and keep a single run of whitespace.
+            val whitespace = named.prefix.whitespace.ifEmpty { namePrefix.whitespace }
+            val merged = namePrefix.withWhitespace(whitespace)
             return named.withPrefix(merged).withName(named.name.withPrefix(Space.EMPTY))
         }
 
@@ -184,36 +186,55 @@ class OpenRewriteFormatter internal constructor(
                 declarations.modifiers.isNotEmpty() ||
                 declarations.markers.findFirst(MultiVariable::class.java).isPresent ||
                 declarations.markers.findFirst(RedundantDef::class.java).isPresent
-            val variablePrefix = if (precededByText) Space.SINGLE_SPACE else Space.EMPTY
-            return declarations
-                .withTypeExpression(declarations.typeExpression?.withPrefix(Space.EMPTY))
-                .withVariables(listOf(firstVariable.withPrefix(variablePrefix)) + declarations.variables.drop(1))
+            val separator = if (precededByText) " " else ""
+            val typePrefix = declarations.typeExpression?.prefix ?: Space.EMPTY
+            return if (typePrefix.comments.isEmpty()) {
+                // The empty type prints nothing: one separator before the name, comments included.
+                declarations
+                    .withTypeExpression(declarations.typeExpression?.withPrefix(Space.EMPTY))
+                    .withVariables(
+                        listOf(firstVariable.withPrefix(firstVariable.prefix.withWhitespace(separator))) +
+                            declarations.variables.drop(1),
+                    )
+            } else {
+                // A comment sits where the type would be (`def /* c */ x`): its suffix separates it
+                // from the name, so the name needs no space of its own.
+                declarations
+                    .withTypeExpression(declarations.typeExpression?.withPrefix(typePrefix.withWhitespace(separator)))
+                    .withVariables(listOf(firstVariable.withPrefix(Space.EMPTY)) + declarations.variables.drop(1))
+            }
         }
 
         /**
          * The `,` that continues a multi-variable declaration directly follows the previous variable.
          * rewrite-groovy prints the declaration's own prefix and the marker's prefix before that `,`.
+         * A comment before the `,` keeps one space in front of it.
          */
         private fun J.VariableDeclarations.withoutSpaceBeforeComma(): J.VariableDeclarations {
             val comma = markers.findFirst(MultiVariable::class.java).orElse(null) ?: return this
-            val commaFirst = leadingAnnotations.isEmpty() && modifiers.isEmpty()
-            val inline = prefix.isInlineWhitespace() && comma.prefix.isInlineWhitespace()
-            return if (commaFirst && inline) {
-                withPrefix(Space.EMPTY).withMarkers(markers.setByType(comma.withPrefix(Space.EMPTY)))
-            } else {
-                this
-            }
+            val commaFirst = leadingAnnotations.isEmpty() && modifiers.isEmpty() &&
+                markers.findFirst(RedundantDef::class.java).isEmpty
+            if (!commaFirst || '\n' in prefix.whitespace || !comma.prefix.isInlineWhitespace()) return this
+            val beforeComma = if (prefix.comments.isEmpty()) Space.EMPTY else prefix.withWhitespace(" ")
+            return withPrefix(beforeComma).withMarkers(markers.setByType(comma.withPrefix(Space.EMPTY)))
         }
 
-        /** True when the declaration prints no type, so only the name follows its modifiers. */
+        /**
+         * True when the declaration prints no type, so only the name follows its modifiers, and the
+         * spaces in front of the name sit on one line. Comments may sit in the empty type's slot or in
+         * front of the name, but not in both.
+         */
         private fun J.VariableDeclarations.isUntypedWithInlineSpacing(
             firstVariable: J.VariableDeclarations.NamedVariable,
         ): Boolean {
             val type = typeExpression
             val untyped = type == null ||
                 (type is J.Identifier && type.simpleName.isEmpty() && type.annotations.isEmpty())
-            return untyped && varargs == null && (type == null || type.prefix.isInlineWhitespace()) &&
-                firstVariable.prefix.isInlineWhitespace()
+            val typePrefix = type?.prefix ?: Space.EMPTY
+            val variablePrefix = firstVariable.prefix
+            val oneLine = '\n' !in typePrefix.whitespace && '\n' !in variablePrefix.whitespace &&
+                (typePrefix.comments.isEmpty() || variablePrefix.isInlineWhitespace())
+            return untyped && varargs == null && oneLine
         }
 
         private fun Space.isInlineWhitespace(): Boolean = comments.isEmpty() && '\n' !in whitespace
