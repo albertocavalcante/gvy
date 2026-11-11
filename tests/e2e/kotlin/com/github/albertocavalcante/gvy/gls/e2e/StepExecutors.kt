@@ -691,7 +691,8 @@ class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
     }
 }
 
-class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
+class GoldenAssertStepExecutor(private val environment: Map<String, String?> = System.getenv()) :
+    StepExecutor<ScenarioStep.GoldenAssert> {
 
     companion object {
         private const val WORKSPACE_PLACEHOLDER = "{{workspace}}"
@@ -707,7 +708,7 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
         val goldenDir = resolveResourceDir("groovy.lsp.e2e.goldenDir")?.let { Path.of(it) }
             ?: Path.of("e2e/resources/golden").toAbsolutePath()
 
-        val expectedFile = goldenDir.resolve(expectedRelPath)
+        val expectedFile = resolveArtifactPath(goldenDir, expectedRelPath, "golden")
 
         // Ensure actual file exists
         if (!Files.exists(actualFile)) {
@@ -727,6 +728,13 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
         val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"
 
         if (updateSnapshot) {
+            requireLocalArtifactUpdateAllowed(
+                environment = environment,
+                kind = "golden files",
+                markerProperty = "groovy.lsp.e2e.goldenDir.marker",
+                updateProperty = "groovy.lsp.e2e.updateGolden",
+                properties = System::getProperty,
+            )
             logger.warn { "Updating golden file: $expectedFile" }
             Files.createDirectories(expectedFile.parent)
 
