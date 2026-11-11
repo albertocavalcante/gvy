@@ -328,6 +328,10 @@ export function buildServerSettingsMap(): Record<string, unknown> {
       "gradle.targetClasspaths.enabled",
       false,
     ),
+    "groovy.gradle.daemon.idleTimeoutMinutes": config.get<number>(
+      "gradle.daemon.idleTimeoutMinutes",
+      10,
+    ),
   };
 
   const javaHome = config.get<string>("java.home");

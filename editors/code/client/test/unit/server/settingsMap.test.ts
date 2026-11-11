@@ -59,4 +59,21 @@ describe("server settings map", () => {
       true,
     );
   });
+
+  it("forwards the Gradle daemon idle timeout, ten minutes by default", () => {
+    assert.strictEqual(
+      client.buildServerSettingsMap()[
+        "groovy.gradle.daemon.idleTimeoutMinutes"
+      ],
+      10,
+    );
+
+    configured["gradle.daemon.idleTimeoutMinutes"] = 3;
+    assert.strictEqual(
+      client.buildServerSettingsMap()[
+        "groovy.gradle.daemon.idleTimeoutMinutes"
+      ],
+      3,
+    );
+  });
 });

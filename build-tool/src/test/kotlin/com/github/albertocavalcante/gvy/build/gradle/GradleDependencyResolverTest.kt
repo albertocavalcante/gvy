@@ -26,6 +26,8 @@ class GradleDependencyResolverTest {
         // Builders are fluent: the resolver attaches a cancellation token and keeps using the same builder.
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
     }
 
     @Test
@@ -39,14 +41,7 @@ class GradleDependencyResolverTest {
 
         // Return our modelBuilder mock instead of a relaxed one
         every { connection.model(IdeaProject::class.java) } returns modelBuilder
-        every {
-            modelBuilder.withArguments(
-                "-Dorg.gradle.daemon=true",
-                "-Dorg.gradle.parallel=true",
-                "-Dorg.gradle.configureondemand=true",
-                "-Dorg.gradle.vfs.watch=true",
-            )
-        } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every {
             modelBuilder.setJvmArguments("-Xmx1g", "-XX:+UseG1GC")
         } returns modelBuilder
@@ -179,5 +174,60 @@ class GradleDependencyResolverTest {
 
         // Then
         verify { compatibilityService.isCompatible("8.0", runtimeVersion) }
+    }
+
+    @Test
+    fun `pre-flight and model operations pass identical daemon arguments`() {
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
+        every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
+        every { connectionFactory.getConnection(any(), any()) } returns connection
+        every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { connection.model(IdeaProject::class.java) } returns modelBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "8.5"
+        every { compatibilityService.isCompatible(any(), any()) } returns true
+        every { modelBuilder.get() } returns ideaProject
+
+        GradleDependencyResolver(
+            connectionFactory = connectionFactory,
+            compatibilityService = compatibilityService,
+            failureAnalyzer = failureAnalyzer,
+        ).resolveDependencies(Paths.get("/tmp/project"))
+
+        // A pre-flight with different arguments would start a second daemon beside the model daemon.
+        val expected = GradleOperationArguments.buildArguments(GradleDaemonSettings())
+        verify(exactly = 1) { buildEnvBuilder.withArguments(*expected) }
+        verify(exactly = 1) { modelBuilder.withArguments(*expected) }
+        verify(exactly = 1) { buildEnvBuilder.setJvmArguments("-Xmx1g", "-XX:+UseG1GC") }
+        verify(exactly = 1) { modelBuilder.setJvmArguments("-Xmx1g", "-XX:+UseG1GC") }
+    }
+
+    @Test
+    fun `holds a lease on the connection for the whole resolution when the factory supports it`() {
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
+        every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
+        val leasing = mockk<LeasingConnectionFactory>()
+        every { leasing.withConnection<Any?>(any(), any(), any()) } answers {
+            thirdArg<(ProjectConnection) -> Any?>().invoke(connection)
+        }
+        every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { connection.model(IdeaProject::class.java) } returns modelBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
+        every { buildEnvironment.gradle.gradleVersion } returns "8.5"
+        every { compatibilityService.isCompatible(any(), any()) } returns true
+        every { modelBuilder.get() } returns ideaProject
+
+        GradleDependencyResolver(
+            connectionFactory = leasing,
+            compatibilityService = compatibilityService,
+            failureAnalyzer = failureAnalyzer,
+        ).resolveDependencies(Paths.get("/tmp/project"))
+
+        verify(exactly = 1) { leasing.withConnection<Any?>(any(), any(), any()) }
+        verify(exactly = 0) { leasing.getConnection(any(), any()) }
     }
 }

@@ -836,6 +836,12 @@
           "scope": "machine",
           "markdownDescription": "Compile each Gradle source set's files against that source set's own compile classpath (for example, test-only dependencies stay out of `main`). Runs one more Gradle Tooling API operation per dependency resolution, so the classpath appears later. Can only be set in user (or remote machine) settings, because it runs the build's configuration."
         },
+        "groovy.gradle.daemon.idleTimeoutMinutes": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "markdownDescription": "Minutes the Gradle daemon started for dependency resolution stays alive while idle before it exits (Gradle's own default is 3 hours). Applies to daemons started after the server starts. Values below 1 use the default."
+        },
         "groovy.codelens.test.enabled": {
           "type": "boolean",
           "default": true,

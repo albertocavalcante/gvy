@@ -94,6 +94,7 @@ class ScenarioInitializationOptionsTest {
             "groovy.diagnostics.rules.analysisTypes.disabled",
             "groovy.gradle.buildStrategy",
             "groovy.gradle.targetClasspaths.enabled",
+            "groovy.gradle.daemon.idleTimeoutMinutes",
             "groovy.mode",
             "groovy.trace.server",
             // JenkinsConfiguration.fromMap

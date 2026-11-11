@@ -52,7 +52,7 @@ class GradleDependencyResolverRetryTest {
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
 
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         val error = RuntimeException(
@@ -62,6 +62,8 @@ class GradleDependencyResolverRetryTest {
         every { modelBuilder.get() } throws error
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { firstConnection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { secondConnection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
@@ -114,7 +116,7 @@ class GradleDependencyResolverRetryTest {
         val connection = mockk<ProjectConnection>()
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
         every { modelBuilder.get() } throws RuntimeException("some other failure")
         every { connection.model(IdeaProject::class.java) } returns modelBuilder
@@ -146,13 +148,15 @@ class GradleDependencyResolverRetryTest {
         val ideaProject = mockk<IdeaProject>()
         val emptyModules = mockk<DomainObjectSet<IdeaModule>>(relaxed = true)
 
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
         every { ideaProject.modules } returns emptyModules
 
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
 
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
@@ -203,12 +207,14 @@ class GradleDependencyResolverRetryTest {
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
 
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
 
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
@@ -382,7 +388,7 @@ class GradleDependencyResolverRetryTest {
             }
             val ideaProject = mockk<IdeaProject>()
             every { ideaProject.modules } returns mockk<DomainObjectSet<IdeaModule>>(relaxed = true)
-            every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+            every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
             every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
             every { modelBuilder.get() } answers {
                 modelCalls++
@@ -391,6 +397,8 @@ class GradleDependencyResolverRetryTest {
             }
             val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
             every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+            every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+            every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
             val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
             every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
             every { buildEnvBuilder.get() } returns buildEnvironment

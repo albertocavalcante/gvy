@@ -7,6 +7,8 @@ import com.github.albertocavalcante.gvy.build.ResolutionCodes
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import com.github.albertocavalcante.gvy.build.gradle.GradleBuildTool
+import com.github.albertocavalcante.gvy.build.gradle.GradleConnectionPool
+import com.github.albertocavalcante.gvy.build.gradle.GradleDaemonSettings
 import com.github.albertocavalcante.gvy.build.gradle.GradleFailureAnalyzer
 import com.github.albertocavalcante.gvy.build.gradle.GradleScopedDependencyProducer
 import com.github.albertocavalcante.gvy.gls.compilation.ClasspathRestamper
@@ -292,10 +294,13 @@ class ProjectStartupManager(
 
         val javaHomePath = config.javaHome?.let { Paths.get(it) }
 
+        val gradleDaemonSettings = GradleDaemonSettings.withDaemonIdleMinutes(config.gradleDaemonIdleTimeoutMinutes)
+        GradleConnectionPool.configure(gradleDaemonSettings)
+
         // Re-create build tools with configuration (specifically Gradle needs javaHome)
         val configuredBuildTools = availableBuildTools.map { tool ->
             if (tool is GradleBuildTool) {
-                GradleBuildTool(javaHome = javaHomePath)
+                GradleBuildTool(javaHome = javaHomePath, daemonSettings = gradleDaemonSettings)
             } else {
                 tool
             }

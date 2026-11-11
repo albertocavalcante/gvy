@@ -6,41 +6,99 @@ import org.gradle.tooling.GradleConnector
 import org.gradle.tooling.ProjectConnection
 import java.io.File
 import java.nio.file.Path
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.TimeUnit
 
 /**
  * Manages a pool of Gradle project connections for improved performance.
  * Reuses existing connections and provides warm-up capabilities to reduce
  * cold start times when resolving dependencies.
+ *
+ * Connections unused for [GradleDaemonSettings.connectionIdleTimeout] are closed by a background sweep (and all of
+ * them on [shutdown]). Closing a connection drops the client-side Tooling API state only; the daemon's own lifetime
+ * is bounded by the idle timeout the resolver passes with each operation.
  */
-object GradleConnectionPool : GradleConnectionFactory {
+object GradleConnectionPool : LeasingConnectionFactory {
     private val logger = KotlinLogging.logger {}
+
+    private const val SWEEP_INTERVAL_SECONDS = 60L
 
     private data class ConnectionKey(val projectDir: Path, val gradleUserHomeDir: Path?)
 
-    // Thread-safe map of project directories (and optional user home) to their connections
-    private val connections = ConcurrentHashMap<ConnectionKey, ProjectConnection>()
+    @Volatile
+    private var settings = GradleDaemonSettings()
+
+    // Thread-safe cache of project directories (and optional user home) to their connections
+    private val connections = IdleReleasingCache<ConnectionKey, ProjectConnection>(
+        create = { key ->
+            logger.debug {
+                "Creating new Gradle connection for: ${key.projectDir} " +
+                    "(userHome=${key.gradleUserHomeDir?.fileName ?: "default"})"
+            }
+            createConnection(key.projectDir, key.gradleUserHomeDir)
+        },
+        close = ::closeQuietly,
+        clockNanos = System::nanoTime,
+        idleTimeout = { settings.connectionIdleTimeout },
+    )
+
+    private var sweeper: ScheduledExecutorService? = null
+
+    /** Applies [newSettings]; only the connection idle timeout is used here, and it applies from the next sweep. */
+    fun configure(newSettings: GradleDaemonSettings) {
+        settings = newSettings
+        logger.info { "Gradle daemon settings: $newSettings" }
+    }
 
     /**
      * Gets or creates a Gradle project connection for the given directory.
      * Reuses existing connections for better performance.
+     *
+     * The connection may be closed by the idle sweep once unused; callers that run long operations should prefer
+     * [withConnection], which keeps it open for the duration.
      *
      * @param projectDir The project directory to connect to
      * @param gradleUserHomeDir Optional Gradle user home directory to isolate from user init scripts
      * @return A connected ProjectConnection
      */
     override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection {
-        val normalizedProjectDir = projectDir.toAbsolutePath().normalize()
-        val normalizedUserHome = gradleUserHomeDir?.toPath()?.toAbsolutePath()?.normalize()
-        val key = ConnectionKey(projectDir = normalizedProjectDir, gradleUserHomeDir = normalizedUserHome)
+        ensureSweeper()
+        return connections.get(keyOf(projectDir, gradleUserHomeDir))
+    }
 
-        return connections.computeIfAbsent(key) { createdKey ->
-            logger.debug {
-                "Creating new Gradle connection for: ${createdKey.projectDir} " +
-                    "(userHome=${createdKey.gradleUserHomeDir?.fileName ?: "default"})"
-            }
-            createConnection(createdKey.projectDir, createdKey.gradleUserHomeDir)
+    override fun <T> withConnection(projectDir: Path, gradleUserHomeDir: File?, block: (ProjectConnection) -> T): T {
+        ensureSweeper()
+        return connections.lease(keyOf(projectDir, gradleUserHomeDir), block)
+    }
+
+    private fun keyOf(projectDir: Path, gradleUserHomeDir: File?) = ConnectionKey(
+        projectDir = projectDir.toAbsolutePath().normalize(),
+        gradleUserHomeDir = gradleUserHomeDir?.toPath()?.toAbsolutePath()?.normalize(),
+    )
+
+    @Synchronized
+    private fun ensureSweeper() {
+        if (sweeper != null) return
+        sweeper = Executors.newSingleThreadScheduledExecutor { runnable ->
+            Thread(runnable, "gradle-connection-idle-sweep").apply { isDaemon = true }
+        }.also { executor ->
+            executor.scheduleWithFixedDelay(
+                {
+                    runCatching { connections.releaseIdle() }
+                        .onFailure { logger.warn(it) { "Idle Gradle connection sweep failed" } }
+                },
+                SWEEP_INTERVAL_SECONDS,
+                SWEEP_INTERVAL_SECONDS,
+                TimeUnit.SECONDS,
+            )
         }
+    }
+
+    @Synchronized
+    private fun stopSweeper() {
+        sweeper?.shutdownNow()
+        sweeper = null
     }
 
     /**
@@ -48,25 +106,19 @@ object GradleConnectionPool : GradleConnectionFactory {
      *
      * @param projectDir The project directory whose connection to close
      */
-    // Generic exception handling removed
     fun closeConnection(projectDir: Path) {
         val normalizedProjectDir = projectDir.toAbsolutePath().normalize()
-        val keys = connections.keys.asSequence().filter { it.projectDir == normalizedProjectDir }.toList()
-        keys.forEach { key ->
-            closeConnection(key)
-        }
+        connections.remove { it.projectDir == normalizedProjectDir }
     }
 
-    private fun closeConnection(key: ConnectionKey) {
-        connections.remove(key)?.let { connection ->
-            try {
-                connection.close()
-                logger.debug { "Closed Gradle connection for: ${key.projectDir}" }
-            } catch (e: GradleConnectionException) {
-                logger.warn { "Gradle connection error while closing for ${key.projectDir}: ${e.message}" }
-            } catch (e: IllegalStateException) {
-                logger.warn { "Illegal state while closing connection for ${key.projectDir}: ${e.message}" }
-            }
+    private fun closeQuietly(key: ConnectionKey, connection: ProjectConnection) {
+        try {
+            connection.close()
+            logger.debug { "Closed Gradle connection for: ${key.projectDir}" }
+        } catch (e: GradleConnectionException) {
+            logger.warn { "Gradle connection error while closing for ${key.projectDir}: ${e.message}" }
+        } catch (e: IllegalStateException) {
+            logger.warn { "Illegal state while closing connection for ${key.projectDir}: ${e.message}" }
         }
     }
 
@@ -77,10 +129,7 @@ object GradleConnectionPool : GradleConnectionFactory {
     fun shutdown() {
         logger.info { "Shutting down Gradle connection pool (${connections.size} connections)" }
 
-        connections.keys.toList().forEach { key ->
-            closeConnection(key)
-        }
-
+        stopSweeper()
         connections.clear()
         logger.info { "Gradle connection pool shutdown complete" }
     }
@@ -114,8 +163,6 @@ object GradleConnectionPool : GradleConnectionFactory {
         if (gradleUserHomeDir != null) {
             connector.useGradleUserHomeDir(gradleUserHomeDir.toFile())
         }
-
-        // Note: Gradle connector optimizations are handled by the Gradle daemon automatically
 
         return connector.connect()
     }

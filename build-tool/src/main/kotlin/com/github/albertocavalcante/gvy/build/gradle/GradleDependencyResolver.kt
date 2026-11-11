@@ -35,6 +35,7 @@ class GradleDependencyResolver(
     private val failureAnalyzer: GradleFailureAnalyzer = GradleFailureAnalyzer(),
     private val javaHome: Path? = null,
     private val retryConfig: RetryConfig = RetryConfig(),
+    private val daemonSettings: GradleDaemonSettings = GradleDaemonSettings(),
 ) : DependencyResolver {
 
     /**
@@ -197,6 +198,8 @@ class GradleDependencyResolver(
                 "to avoid incompatible user init scripts"
         }
 
+        // TODO(#1565): reuse the user's ~/.gradle/wrapper/dists instead of downloading the distribution again.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1565
         val isolatedUserHome = isolatedGradleUserHomeDir()
         return runCatching {
             resolveWithGradleUserHome(projectDir, isolatedUserHome.toFile(), cancellation)
@@ -227,20 +230,22 @@ class GradleDependencyResolver(
         gradleUserHomeDir: File?,
         cancellation: ResolutionCancellation,
     ): WorkspaceResolution {
-        val connection = connectionFactory.getConnection(projectDir, gradleUserHomeDir)
+        // Leasing keeps the pooled connection open for the whole resolution, which can outlast the idle timeout
+        // (for example during a distribution download).
+        val leasing = connectionFactory as? LeasingConnectionFactory
+        return if (leasing != null) {
+            leasing.withConnection(projectDir, gradleUserHomeDir) { resolveOn(it, cancellation) }
+        } else {
+            resolveOn(connectionFactory.getConnection(projectDir, gradleUserHomeDir), cancellation)
+        }
+    }
 
+    private fun resolveOn(connection: ProjectConnection, cancellation: ResolutionCancellation): WorkspaceResolution {
         // Pre-flight check: validate JDK/Gradle compatibility before attempting model fetch
         checkJdkGradleCompatibility(connection, cancellation)
         cancellation.throwIfCancelled()
 
-        val modelBuilder = connection.model(IdeaProject::class.java)
-            .withArguments(
-                "-Dorg.gradle.daemon=true",
-                "-Dorg.gradle.parallel=true",
-                "-Dorg.gradle.configureondemand=true",
-                "-Dorg.gradle.vfs.watch=true",
-            )
-            .setJvmArguments("-Xmx1g", "-XX:+UseG1GC")
+        val modelBuilder = connection.model(IdeaProject::class.java).also { it.applyDaemonArguments() }
 
         // Inject configured JAVA_HOME if available
         if (javaHome != null) {
@@ -275,7 +280,9 @@ class GradleDependencyResolver(
     private fun checkJdkGradleCompatibility(connection: ProjectConnection, cancellation: ResolutionCancellation) {
         // Fetching BuildEnvironment installs the distribution on first use, so it must be cancellable too.
         val gradleVersion = runCatching {
-            connection.model(BuildEnvironment::class.java).getCancellable(cancellation).gradle.gradleVersion
+            connection.model(BuildEnvironment::class.java)
+                .also { it.applyDaemonArguments() }
+                .getCancellable(cancellation).gradle.gradleVersion
         }.getOrNull() ?: return // If we can't get version, proceed and let it fail naturally
 
         // If javaHome is configured, we should check compatibility for THAT JDK.
@@ -331,6 +338,19 @@ class GradleDependencyResolver(
      * that read times out (the distribution's network timeout, 10 s by default). That thread is the Tooling API's
      * own and holds neither our IO thread nor the install lock meanwhile.
      */
+
+    /**
+     * Gives every operation the same daemon-affecting arguments. Without them the pre-flight check would start a
+     * default-argument daemon next to the model daemon, so one resolution would leave two JVMs behind. (With a
+     * configured Java home the pre-flight still runs on the server's own JDK, so a second daemon remains possible;
+     * both exit on the shared idle timeout.)
+     */
+    @Suppress("SpreadOperator") // a handful of strings, once per Tooling API operation
+    private fun ModelBuilder<*>.applyDaemonArguments() {
+        withArguments(*GradleOperationArguments.buildArguments(daemonSettings))
+        setJvmArguments(*GradleOperationArguments.JVM_ARGUMENTS)
+    }
+
     private fun <T> ModelBuilder<T>.getCancellable(cancellation: ResolutionCancellation): T {
         val source = GradleConnector.newCancellationTokenSource()
         withCancellationToken(source.token())

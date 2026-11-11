@@ -67,6 +67,7 @@ export const RESTART_REQUIRED_SETTINGS: readonly string[] = [
   "repl.sessionTimeoutMinutes",
   "gradle.buildStrategy",
   "gradle.targetClasspaths.enabled",
+  "gradle.daemon.idleTimeoutMinutes",
 ];
 
 /** Applied by the server through workspace/didChangeConfiguration. */

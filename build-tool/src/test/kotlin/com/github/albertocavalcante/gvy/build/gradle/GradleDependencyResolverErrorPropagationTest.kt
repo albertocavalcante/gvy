@@ -35,12 +35,14 @@ class GradleDependencyResolverErrorPropagationTest {
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
 
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         // Mock BuildEnvironment for compatibility check
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
@@ -84,12 +86,14 @@ class GradleDependencyResolverErrorPropagationTest {
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
 
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         // Mock BuildEnvironment for compatibility check
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
@@ -125,12 +129,14 @@ class GradleDependencyResolverErrorPropagationTest {
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
 
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         // Mock BuildEnvironment for compatibility check
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
@@ -166,12 +172,14 @@ class GradleDependencyResolverErrorPropagationTest {
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
         every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
 
-        every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         // Mock BuildEnvironment for compatibility check
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
         every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
+        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
