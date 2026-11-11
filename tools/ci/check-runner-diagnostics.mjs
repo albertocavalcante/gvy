@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evaluate } from './bazel-diagnostics.mjs';
+import { readEvidenceText } from './read-evidence.mjs';
 
 const OBSERVER_NAME = 'Validation Check';
 const MAX_PAGES = 100;
@@ -139,8 +140,7 @@ function contextFromEnvironment() {
   // identify the synthetic merge checkout, which is recorded separately.
   let headSha = process.env.GITHUB_SHA;
   if (process.env.GITHUB_EVENT_PATH) {
-    if (statSync(process.env.GITHUB_EVENT_PATH).size > 4 * 1024 * 1024) throw new Error('GitHub event exceeds size limit');
-    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+    const event = JSON.parse(readEvidenceText(process.env.GITHUB_EVENT_PATH, 4 * 1024 * 1024));
     if (event.pull_request) headSha = event.pull_request.head?.sha;
   } else if (process.env.GITHUB_EVENT_NAME?.startsWith('pull_request')) throw new Error('PR observation requires GitHub event context');
   const attempt = process.env.GITHUB_RUN_ATTEMPT;

@@ -1,6 +1,7 @@
-import { readFileSync, statSync, writeFileSync } from 'node:fs';
+import { statSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readEvidenceText } from './read-evidence.mjs';
 
 const MAX_BEP_BYTES = 256 * 1024 * 1024;
 const METADATA_FIELDS = { headSha: 'HEAD_SHA', testedSha: 'TESTED_SHA', runId: 'RUN_ID', runAttempt: 'RUN_ATTEMPT' };
@@ -173,10 +174,9 @@ function main(args) {
   let context;
   const inputErrors = [];
   try {
-    if (statSync(options['--bep']).size > MAX_BEP_BYTES) throw new Error('BEP exceeds 256 MiB limit');
-    text = readFileSync(options['--bep'], 'utf8');
+    text = readEvidenceText(options['--bep'], MAX_BEP_BYTES);
   } catch { inputErrors.push('Cannot read BEP or BEP exceeds 256 MiB limit'); }
-  try { context = JSON.parse(readFileSync(options['--context'], 'utf8')); } catch { inputErrors.push('Cannot read context JSON'); }
+  try { context = JSON.parse(readEvidenceText(options['--context'], 4 * 1024 * 1024)); } catch { inputErrors.push('Cannot read context JSON'); }
   if (options['--profile']) {
     try {
       const info = statSync(options['--profile']);

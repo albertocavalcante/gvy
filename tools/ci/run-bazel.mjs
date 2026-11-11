@@ -1,10 +1,11 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createWriteStream, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { constants } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { finished } from 'node:stream/promises';
 import { evaluateEvidence } from './check-bazel-evidence.mjs';
+import { readEvidenceText } from './read-evidence.mjs';
 
 function parseArgs(args) {
   const options = { startup: [] };
@@ -50,8 +51,7 @@ function createContext(command, invocationId) {
   if (process.env.GITHUB_EVENT_PATH) {
     let event;
     try {
-      if (statSync(process.env.GITHUB_EVENT_PATH).size > 4 * 1024 * 1024) throw new Error('Large event');
-      event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+      event = JSON.parse(readEvidenceText(process.env.GITHUB_EVENT_PATH, 4 * 1024 * 1024));
     } catch { throw new Error('Cannot read GitHub event JSON'); }
     if (event.pull_request) headSha = event.pull_request.head?.sha;
   }
@@ -121,8 +121,7 @@ async function main(args) {
     let bep = '';
     const errors = [];
     try {
-      if (statSync(join(dir, 'bep.json')).size > 256 * 1024 * 1024) throw new Error('Large BEP');
-      bep = readFileSync(join(dir, 'bep.json'), 'utf8');
+      bep = readEvidenceText(join(dir, 'bep.json'), 256 * 1024 * 1024);
     } catch { errors.push('Cannot read BEP or BEP exceeds 256 MiB limit'); }
     try {
       const profile = statSync(join(dir, 'profile.json.gz'));

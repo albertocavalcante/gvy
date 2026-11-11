@@ -1,11 +1,12 @@
 import { isUtf8 } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFileSync, createWriteStream, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { constants } from 'node:os';
 import { join } from 'node:path';
 import { finished } from 'node:stream/promises';
 import { checkGradleDiagnostics, renderSummary } from './check-gradle-diagnostics.mjs';
+import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
 
 function parseArgs(args) {
   const options = {};
@@ -40,8 +41,7 @@ function createContext(invocationId) {
   if (process.env.GITHUB_EVENT_PATH) {
     let event;
     try {
-      if (statSync(process.env.GITHUB_EVENT_PATH).size > 4 * 1024 * 1024) throw new Error('Large event');
-      event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+      event = JSON.parse(readEvidenceText(process.env.GITHUB_EVENT_PATH, 4 * 1024 * 1024));
     } catch { throw new Error('Cannot read GitHub event JSON'); }
     if (event.pull_request) headSha = event.pull_request.head?.sha;
   }
@@ -102,8 +102,7 @@ async function main(args) {
     worktreeDirty = Boolean(git(['status', '--porcelain', '--untracked-files=normal']));
     status = await capture([...options.gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true'], dir);
     // Oversize logs stay intact as artifacts; evidence fails instead of truncating.
-    if (statSync(join(dir, 'console.log')).size > 128 * 1024 * 1024) throw new Error('Gradle console log exceeds 128 MiB analysis limit');
-    bytes = readFileSync(join(dir, 'console.log'));
+    bytes = readEvidenceBytes(join(dir, 'console.log'), 128 * 1024 * 1024);
   } catch (error) { errors.push(error.message); }
   const result = checkGradleDiagnostics({
     log: bytes?.toString('utf8'), exceptions,
