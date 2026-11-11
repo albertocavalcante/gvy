@@ -175,16 +175,16 @@
       "lastVerified": "2026-11-11",
       "reviewDue": "2026-11-18",
       "reason": "Skip metadata-only KMP targets and historical wrongly expanded BOM/cycle edges for serialization, coroutines, Groovy and Jackson.",
-      "upstreamStatus": "Upstream GMM tracker #909 remains open. Exact broad filter cases have not been checked against stable Coursier; no current upstream diagnosis assumed.",
+      "upstreamStatus": "Known first-party patch defect: applying this patch to exact 6.9 and inspecting 6.10 yields an unconditional skip of all Jackson dependency edges. Stable upstream GMM attribution remains unestablished; #909 is open.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail. Independent exact 6.9 patch-application source check confirms the unconditional Jackson continue; sibling 6.10 applied-source inspection agrees. Minimal runtime red/green correction is pending.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
         "https://github.com/albertocavalcante/gvy/issues/1029"
       ],
-      "nextAction": "Reduce each filtered edge to published metadata plus a resolver-only repro. Replace broad historical filters with verified correct graphs, retaining runtime edges.",
+      "nextAction": "Correct the unconditional Jackson skip and retain required runtime edges with a minimal Jackson-module runtime regression first. Then reduce each remaining filtered edge to published metadata plus a resolver-only repro.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
       "sources": [
         {
