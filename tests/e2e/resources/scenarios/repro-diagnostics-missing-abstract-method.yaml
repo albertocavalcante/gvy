@@ -17,6 +17,8 @@ workspace:
     src/main/groovy/demo/shapes/Hexagon.groovy: |
       package demo.shapes
 
+      import java.util.concurrent.TimeUnit
+
       class |^u|Hexagon implements Shape {
       }
 steps:
@@ -40,6 +42,9 @@ steps:
       checks:
         - jsonPath: $.uri
           expect: { type: EQUALS, value: "{{cursor.u.uri}}" }
+        # Sentinel: a deliberately unused import. The first publish is empty, so wait for this one.
+        - jsonPath: $.diagnostics[?(@.message =~ /.*[Uu]nused import.*TimeUnit.*/)]
+          expect: { type: NOT_EMPTY }
 
       timeoutMs: 20000
   - assert:

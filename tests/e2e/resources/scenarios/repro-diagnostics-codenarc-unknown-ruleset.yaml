@@ -26,6 +26,8 @@ steps:
   - initialize:
       initializationOptions:
         groovy.languageServer.engine: native
+        groovy.codenarc.enabled: true
+        groovy.codenarc.autoDetect: true
   - initialized: {}
   - waitNotification:
       method: groovy/status

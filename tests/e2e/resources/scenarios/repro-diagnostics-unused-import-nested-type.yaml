@@ -3,7 +3,7 @@ description: Importing Outer2 and writing `extends Outer2.Inner` does not report
 xfail:
   issue: 1536
   reason: the outer class import is reported unused when only Outer.Inner is written
-  match: 'Unused import: demo.nesting.Outer2'
+  match: '(?s)Actual:.*Unused import: demo.nesting.Outer2'
 workspace:
   fixture: empty-workspace
   files:
@@ -17,6 +17,7 @@ workspace:
       package demo.scratch
 
       import demo.nesting.Outer2
+      import java.util.concurrent.TimeUnit
 
       class |^u|U1 extends Outer2.Inner {}
 steps:
@@ -40,7 +41,8 @@ steps:
       checks:
         - jsonPath: $.uri
           expect: { type: EQUALS, value: "{{cursor.u.uri}}" }
-        - jsonPath: $.diagnostics
+        # Sentinel: a deliberately unused import proves the unused-import pass has run.
+        - jsonPath: $.diagnostics[?(@.message =~ /.*[Uu]nused import.*TimeUnit.*/)]
           expect: { type: NOT_EMPTY }
       timeoutMs: 20000
   - assert:
