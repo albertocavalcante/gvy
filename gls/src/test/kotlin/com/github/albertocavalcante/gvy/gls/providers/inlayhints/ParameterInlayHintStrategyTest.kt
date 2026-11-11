@@ -385,7 +385,7 @@ class ParameterInlayHintStrategyTest {
 
         return HintContext(
             astModel = parseResult.astModel,
-            moduleNode = parseResult.ast as? ModuleNode,
+            moduleNode = parseResult.ast,
             symbolTable = null,
             workspaceSymbols = workspaceSymbols,
             compilationService = compilationService,

@@ -13,6 +13,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
 import org.eclipse.lsp4j.InitializeParams
@@ -20,6 +24,7 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.WorkspaceSymbolParams
+import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
@@ -49,6 +54,7 @@ class ShadowedListedSpellingTest {
     private lateinit var compilation: GroovyCompilationService
     private lateinit var textDocuments: GroovyTextDocumentService
     private lateinit var workspace: GroovyWorkspaceService
+    private val jsonHandler = MessageJsonHandler(emptyMap())
     private var reads = 0
 
     @AfterEach
@@ -100,8 +106,12 @@ class ShadowedListedSpellingTest {
 
     private fun close(uri: URI) = textDocuments.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier("$uri")))
 
-    private fun symbolUris(query: String): List<String> =
-        workspace.symbol(WorkspaceSymbolParams(query)).get().left.map { it.location.uri }
+    private fun symbolUris(query: String): List<String> {
+        val response = workspace.symbol(WorkspaceSymbolParams(query)).get()
+        assertTrue(response.isLeft, "workspace symbols retain the legacy response branch")
+        val payload = Json.parseToJsonElement(jsonHandler.format(response.left)).jsonArray
+        return payload.map { it.jsonObject.getValue("location").jsonObject.getValue("uri").jsonPrimitive.content }
+    }
 
     @Test
     fun `a buffer open under the real path compiles without its listed copy`(): Unit = runBlocking {

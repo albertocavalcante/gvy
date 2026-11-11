@@ -262,7 +262,7 @@ class TypeInlayHintStrategyTest {
 
         return HintContext(
             astModel = parseResult.astModel,
-            moduleNode = parseResult.ast as? org.codehaus.groovy.ast.ModuleNode,
+            moduleNode = parseResult.ast,
             symbolTable = null,
             workspaceSymbols = emptyList(),
             compilationService = compilationService,
