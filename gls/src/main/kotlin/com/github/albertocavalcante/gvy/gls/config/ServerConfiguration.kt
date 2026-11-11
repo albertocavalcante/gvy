@@ -70,6 +70,12 @@ data class ServerConfiguration(
      */
     val gradleTargetClasspathsEnabled: Boolean = false,
 
+    /**
+     * Minutes a Gradle daemon started for dependency resolution stays alive while idle. Gradle's own default is
+     * 3 hours; the server uses a short one so the daemon does not outlive the resolution as a second JVM.
+     */
+    val gradleDaemonIdleTimeoutMinutes: Int = DEFAULT_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES,
+
     // Language mode - controls which framework-specific features are enabled
     val groovyMode: GroovyMode = GroovyMode.AUTO,
 ) {
@@ -118,6 +124,8 @@ data class ServerConfiguration(
 
     companion object {
         const val DEFAULT_COMPILATION_CACHE_MAX_ENTRIES = CompilationCache.DEFAULT_MAX_ENTRIES
+        const val DEFAULT_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES = 10
+        const val MAX_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES = 180
 
         private val logger = KotlinLogging.logger {}
 
@@ -181,6 +189,12 @@ data class ServerConfiguration(
                     ),
 
                     gradleTargetClasspathsEnabled = map["groovy.gradle.targetClasspaths.enabled"] == true,
+
+                    gradleDaemonIdleTimeoutMinutes = (map["groovy.gradle.daemon.idleTimeoutMinutes"] as? Number)
+                        ?.toInt()
+                        ?.takeIf { it > 0 }
+                        ?.coerceAtMost(MAX_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES)
+                        ?: DEFAULT_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES,
 
                     // Language mode
                     groovyMode = GroovyMode.fromString(map["groovy.mode"] as? String),

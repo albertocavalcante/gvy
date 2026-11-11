@@ -51,6 +51,17 @@ class ServerConfigurationTest {
     }
 
     @Test
+    fun `gradle daemon idle timeout defaults to ten minutes and rejects non-positive values`() {
+        assertEquals(10, ServerConfiguration().gradleDaemonIdleTimeoutMinutes)
+        assertEquals(10, ServerConfiguration.fromMap(emptyMap()).gradleDaemonIdleTimeoutMinutes)
+        val key = "groovy.gradle.daemon.idleTimeoutMinutes"
+        assertEquals(3, ServerConfiguration.fromMap(mapOf(key to 3)).gradleDaemonIdleTimeoutMinutes)
+        assertEquals(10, ServerConfiguration.fromMap(mapOf(key to 0)).gradleDaemonIdleTimeoutMinutes)
+        assertEquals(180, ServerConfiguration.fromMap(mapOf(key to 100_000)).gradleDaemonIdleTimeoutMinutes)
+        assertEquals(10, ServerConfiguration.fromMap(mapOf(key to "soon")).gradleDaemonIdleTimeoutMinutes)
+    }
+
+    @Test
     fun `gradle target classpaths are off unless enabled`() {
         assertEquals(false, ServerConfiguration.fromMap(emptyMap()).gradleTargetClasspathsEnabled)
         assertEquals(false, ServerConfiguration().gradleTargetClasspathsEnabled)

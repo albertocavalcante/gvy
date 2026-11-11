@@ -36,6 +36,7 @@ class GradleScopedDependencyProducer(
     private val connectionFactory: GradleConnectionFactory = GradleConnectionPool,
     private val javaHome: Path? = null,
     private val initScriptDirectory: Path? = GradleScopedInitScript.defaultDirectory(),
+    private val daemonSettings: GradleDaemonSettings = GradleDaemonSettings(),
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -50,7 +51,7 @@ class GradleScopedDependencyProducer(
      * COMPLETE describes the enumerated property only, not complete graph or framework identity.
      * Configuration names indicate observed ordered-file equivalence, not property origin or
      * compiler-task binding. A build without any source set yields Legacy, not an empty result.
-     * Connections are borrowed from [connectionFactory] and never closed here. Unlike legacy
+     * Connections are leased from [connectionFactory] for the operation and never closed here. Unlike legacy
      * resolution there is no isolated-Gradle-home retry: that build would omit the user's
      * `gradle.properties` and init scripts, so it would not observe the user's effective build.
      * Without an absolute user home there is no trusted script directory, which also yields Legacy.
@@ -105,21 +106,31 @@ class GradleScopedDependencyProducer(
 
     private suspend fun fetch(projectDirectory: Path, script: Path): GradleScopedDependencyModel? {
         val cancellation = GradleConnector.newCancellationTokenSource()
-        val builder = connectionFactory.getConnection(projectDirectory, null)
-            .model(GradleScopedDependencyModel::class.java)
-            .withArguments("--no-configure-on-demand", "--init-script", script.toString())
-            .withCancellationToken(cancellation.token())
-        javaHome?.let { builder.setJavaHome(it.toFile()) }
-        return suspendCancellableCoroutine<GradleScopedDependencyModel?> { continuation ->
-            continuation.invokeOnCancellation { cancellation.cancel() }
-            builder.get(
-                object : ResultHandler<GradleScopedDependencyModel> {
-                    override fun onComplete(result: GradleScopedDependencyModel?) = continuation.resume(result)
+        // The lease spans the whole asynchronous operation so the idle sweep cannot close the connection under it.
+        return connectionFactory.acquire(projectDirectory, null).use { lease ->
+            // The idle timeout is what bounds the daemon this may start; it is not part of daemon compatibility, so
+            // reuse of the user's own daemon is unchanged.
+            val builder = lease.connection
+                .model(GradleScopedDependencyModel::class.java)
+                .withArguments(
+                    "--no-configure-on-demand",
+                    "--init-script",
+                    script.toString(),
+                    GradleOperationArguments.idleTimeoutArgument(daemonSettings),
+                )
+                .withCancellationToken(cancellation.token())
+            javaHome?.let { builder.setJavaHome(it.toFile()) }
+            suspendCancellableCoroutine<GradleScopedDependencyModel?> { continuation ->
+                continuation.invokeOnCancellation { cancellation.cancel() }
+                builder.get(
+                    object : ResultHandler<GradleScopedDependencyModel> {
+                        override fun onComplete(result: GradleScopedDependencyModel?) = continuation.resume(result)
 
-                    override fun onFailure(failure: GradleConnectionException) =
-                        continuation.resumeWithException(failure)
-                },
-            )
+                        override fun onFailure(failure: GradleConnectionException) =
+                            continuation.resumeWithException(failure)
+                    },
+                )
+            }
         }
     }
 

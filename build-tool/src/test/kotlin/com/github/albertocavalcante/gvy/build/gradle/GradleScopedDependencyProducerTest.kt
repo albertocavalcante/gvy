@@ -53,6 +53,7 @@ class GradleScopedDependencyProducerTest {
     private val connection = mockk<ProjectConnection>()
     private val builder = mockk<ModelBuilder<GradleScopedDependencyModel>>()
     private val scripts = CopyOnWriteArrayList<Path>()
+    private val argumentLists = CopyOnWriteArrayList<List<String>>()
     private val tokens = CopyOnWriteArrayList<CancellationToken>()
     private val handlers = CopyOnWriteArrayList<ResultHandler<in GradleScopedDependencyModel>>()
     private val model = Model(listOf(Target()))
@@ -63,6 +64,7 @@ class GradleScopedDependencyProducerTest {
         listOf(builder).forEach { modelBuilder ->
             every { modelBuilder.withArguments(*anyVararg()) } answers {
                 val arguments = firstArg<Array<String>>().toList()
+                argumentLists.add(arguments)
                 assertTrue("--no-configure-on-demand" in arguments)
                 scripts.add(Path.of(arguments[arguments.indexOf("--init-script") + 1]))
                 modelBuilder
@@ -98,6 +100,32 @@ class GradleScopedDependencyProducerTest {
         every { get(any<ResultHandler<in GradleScopedDependencyModel>>()) } answers {
             handlers.add(firstArg())
         }
+    }
+
+    @Test
+    fun `passes the idle timeout so the daemon it may start does not live for hours`() = runBlocking {
+        builder.completes(model)
+
+        producer().resolve(directory, provenance)
+
+        assertEquals("-Dorg.gradle.daemon.idletimeout=600000", argumentLists.single().last())
+    }
+
+    @Test
+    fun `leases the connection for the whole operation when the factory supports it`() = runBlocking {
+        val leasing = mockk<LeasingConnectionFactory>()
+        var released = false
+        every { leasing.acquire(directory, null) } returns ConnectionLease(connection) { released = true }
+        builder.completes(model)
+
+        GradleScopedDependencyProducer(
+            leasing,
+            null,
+            initScriptDirectory = temporary.resolve("init-scripts"),
+        ).resolve(directory, provenance)
+
+        assertTrue(released)
+        verify(exactly = 0) { leasing.getConnection(any(), any()) }
     }
 
     @Test

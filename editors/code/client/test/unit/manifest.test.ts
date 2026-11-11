@@ -132,6 +132,7 @@ describe("package.json manifest", () => {
       "groovy.ai.tools.enabled",
       "groovy.ai.tools.allowed",
       "groovy.gradle.targetClasspaths.enabled",
+      "groovy.gradle.daemon.idleTimeoutMinutes",
     ]) {
       assert.ok(properties[key], `${key} is not contributed`);
       assert.ok(

@@ -26,6 +26,7 @@ class GradleBuildTool(
     private val failureAnalyzer: GradleFailureAnalyzer = GradleFailureAnalyzer(),
     private val javaHome: Path? = null,
     retryConfig: GradleDependencyResolver.RetryConfig = GradleDependencyResolver.RetryConfig(),
+    daemonSettings: GradleDaemonSettings = GradleDaemonSettings(),
 ) : NativeGradleBuildTool {
 
     private val logger = KotlinLogging.logger {}
@@ -35,6 +36,7 @@ class GradleBuildTool(
         failureAnalyzer = failureAnalyzer,
         javaHome = javaHome,
         retryConfig = retryConfig,
+        daemonSettings = daemonSettings,
     )
 
     override val name: String = "Gradle"

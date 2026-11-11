@@ -35,6 +35,7 @@ class GradleDependencyResolver(
     private val failureAnalyzer: GradleFailureAnalyzer = GradleFailureAnalyzer(),
     private val javaHome: Path? = null,
     private val retryConfig: RetryConfig = RetryConfig(),
+    private val daemonSettings: GradleDaemonSettings = GradleDaemonSettings(),
 ) : DependencyResolver {
 
     /**
@@ -197,6 +198,8 @@ class GradleDependencyResolver(
                 "to avoid incompatible user init scripts"
         }
 
+        // TODO(#1565): reuse the user's ~/.gradle/wrapper/dists instead of downloading the distribution again.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1565
         val isolatedUserHome = isolatedGradleUserHomeDir()
         return runCatching {
             resolveWithGradleUserHome(projectDir, isolatedUserHome.toFile(), cancellation)
@@ -227,20 +230,19 @@ class GradleDependencyResolver(
         gradleUserHomeDir: File?,
         cancellation: ResolutionCancellation,
     ): WorkspaceResolution {
-        val connection = connectionFactory.getConnection(projectDir, gradleUserHomeDir)
+        // The lease keeps the pooled connection open for the whole resolution, which can outlast the idle timeout
+        // (for example during a distribution download).
+        return connectionFactory.acquire(projectDir, gradleUserHomeDir).use { lease ->
+            resolveOn(lease.connection, cancellation)
+        }
+    }
 
+    private fun resolveOn(connection: ProjectConnection, cancellation: ResolutionCancellation): WorkspaceResolution {
         // Pre-flight check: validate JDK/Gradle compatibility before attempting model fetch
         checkJdkGradleCompatibility(connection, cancellation)
         cancellation.throwIfCancelled()
 
-        val modelBuilder = connection.model(IdeaProject::class.java)
-            .withArguments(
-                "-Dorg.gradle.daemon=true",
-                "-Dorg.gradle.parallel=true",
-                "-Dorg.gradle.configureondemand=true",
-                "-Dorg.gradle.vfs.watch=true",
-            )
-            .setJvmArguments("-Xmx1g", "-XX:+UseG1GC")
+        val modelBuilder = connection.model(IdeaProject::class.java).also { it.applyDaemonArguments() }
 
         // Inject configured JAVA_HOME if available
         if (javaHome != null) {
@@ -322,6 +324,18 @@ class GradleDependencyResolver(
         } else {
             version.substringBefore(".").toIntOrNull()
         }
+    }
+
+    /**
+     * Gives the model operation the daemon-affecting arguments: the short idle timeout and the JVM arguments. They
+     * are a pure function of [daemonSettings], so repeated resolutions request an identical daemon. The JDK
+     * pre-flight needs none: the Tooling API builds the BuildEnvironment in-process, before any daemon client
+     * exists, so it never starts a daemon.
+     */
+    @Suppress("SpreadOperator") // a handful of strings, once per Tooling API operation
+    private fun ModelBuilder<*>.applyDaemonArguments() {
+        withArguments(*GradleOperationArguments.buildArguments(daemonSettings))
+        setJvmArguments(*GradleOperationArguments.JVM_ARGUMENTS)
     }
 
     /**
