@@ -156,7 +156,15 @@ if (!(endpoint in data)) process.exit(2); console.log(JSON.stringify(data[endpoi
   assert.equal(result.ok, true);
   assert.match(readFileSync(join(report, 'summary.md'), 'utf8'), /unfinished|observer/i);
   const calls = readFileSync(env.FAKE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-  assert.ok(calls.every(args => args.includes('GET') && args.includes('github.com') && args.at(-1).startsWith(base)));
+  for (const args of calls) {
+    const hostnameIndex = args.indexOf('--hostname');
+    const methodIndex = args.indexOf('--method');
+    assert.notEqual(hostnameIndex, -1);
+    assert.notEqual(methodIndex, -1);
+    assert.equal(args[hostnameIndex + 1], 'github.com');
+    assert.equal(args[methodIndex + 1], 'GET');
+    assert.match(args.at(-1), /^\/repos\/albertocavalcante\/gvy\/(?:actions|check-runs)\//);
+  }
   const failed = execute({ FAKE_FAIL: '1' });
   assert.equal(failed.status, 1);
   assert.ok(!failed.stdout.includes('secret-token-value') && !failed.stderr.includes('secret-token-value'));
