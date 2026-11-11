@@ -20,8 +20,38 @@ Agreement between two features using the same compiler is not independent eviden
    dependency. Record **reproduced upstream bug** with its tested versions and environment when that repro fails. Record
    upstream acknowledgement separately; a local reproduction does not imply upstream has accepted the diagnosis.
 
-A result on one pinned version does not establish that the latest release has the same bug. Check newer releases when
-practical and record untested versions explicitly. Avoid broad claims about a dependency from one failing construct.
+A result on one pinned version establishes a bug in that version. Determine whether it remains a current upstream bug
+before adding a workaround or describing its upstream status. Avoid broad claims from one failing construct.
+
+## Check released fixes and upgrade options
+
+1. Record gvy's exact resolved version. Search upstream release notes, issues, pull requests, and relevant source
+   history for the failure. Follow linked reports to their fixing commits and the first release containing the fix.
+2. Check the publisher's current artifact repository as well as release tags. Record publication date, coordinates,
+   repository, availability, and any authentication requirements. The newest version visible on one registry may lag the
+   publisher's releases. A tag or release note alone does not establish that gvy can resolve the artifact.
+3. Run the same minimal repro against the pinned version and a candidate fixed release, with exact runtime and
+   dependency versions recorded. Show raw dependency output without gvy workarounds. Treat a release-note claim, a
+   passing standalone repro, and a passing gvy integration check as separate evidence.
+4. If a released upgrade fixes the defect, evaluate upgrading before introducing or retaining a workaround. Validate
+   gvy's affected call paths, regressions, and dependency compatibility before adopting it or removing protection.
+   Record any blocker, responsible scope, next action, and exit criteria. An upgrade fixing one defect does not prove
+   that every workaround for that dependency can be removed.
+
+For every defect, keep these facts distinct in its tracker:
+
+| Fact            | What to record                                                                          |
+| --------------- | --------------------------------------------------------------------------------------- |
+| Pinned version  | Version and environment where the failure was reproduced.                               |
+| Upstream report | Linked issue or PR and its state, or dated searches with no matching report found.      |
+| Upstream fix    | Fixing commit and first fixed release, or that no fix was found in the recorded search. |
+| Candidate test  | Version, source repository, runtime, commands, and observed result; otherwise pending.  |
+| gvy adoption    | Proposed or installed version, integration checks, and mitigation/removal status.       |
+
+Use **fixed upstream; gvy upgrade pending** when that is the evidence. Use **still reproduced on version X** only after
+testing X. Use **no matching upstream report found as of DATE** with the searches performed; search absence does not
+prove that a bug has never been reported. State **not submitted by gvy** separately from whether a report already
+exists.
 
 ## Track the bug in gvy
 
@@ -37,8 +67,10 @@ The tracker must record:
   Link the gvy fix and its code TODO to this tracker.
 - **Ownership and next action:** responsible person or scope, the reason work remains open, and the next investigation,
   release check, or patch task.
-- **Upstream status:** existing upstream links, or an explicit status such as unreported, local draft, awaiting human
-  review, approved for submission, submitted, or fixed upstream. Keep this separate from confidence in the diagnosis.
+- **Upstream status:** report/fix links, first fixed release, candidate-version test, and gvy adoption status as above.
+  Record gvy's own submission stage separately: not submitted, local draft, awaiting human review, approved, or
+  submitted. Keep both separate from confidence in the diagnosis. For a tracker covering multiple defects, record these
+  per defect.
 - **Exit criteria:** the upstream version or commit to verify, tests that must pass without the workaround, and the
   steps to upgrade gvy and remove the workaround.
 
@@ -71,3 +103,20 @@ Before requesting that approval:
 Record any eventual submission, review outcome, and released fix in the gvy tracker. Keep local protections until the
 fixed dependency passes gvy's checks. An upstream diagnosis does not transfer responsibility for user safety away from
 gvy.
+
+## Label dependency issues
+
+Add these labels alongside gvy's existing type, area, priority, and size labels. Definitions live in
+[`tools/github-issues/github-labels.json`](../tools/github-issues/github-labels.json); scoped sync commands are in the
+[issue workflow](../.agent/workflows/github-issues.md#dependency-bug-labels).
+
+| Label                                               | Apply when                                                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `dependency-bug`                                    | Tracking a suspected or reproduced defect in a third-party dependency. Ordinary version bumps do not qualify.      |
+| `dep/openrewrite`, `dep/rules_kotlin`, `dep/groovy` | Identifying the affected dependency. Add further `dep/<name>` definitions when needed.                             |
+| `upstream/reported`                                 | A linked upstream issue or pull request covers the defect, regardless of who submitted it or whether it is closed. |
+| `upstream/fix-released`                             | A release contains the fix for the issue's defect scope. This does not imply gvy has adopted or verified it.       |
+
+Attribution confidence, tested versions, and gvy integration status remain in the issue body. Absence of a status label
+does not mean the defect is unreported or unfixed. For aggregate trackers, apply `upstream/fix-released` only when fixes
+cover the full defect scope; otherwise use per-defect status in the body or linked focused issues.
