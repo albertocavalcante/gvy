@@ -130,6 +130,12 @@ test('changing the declared patched module version requires renewed verification
 test('Maven lock escape requires a nonempty literal path and literal strict repin enforcement', () => {
   const unsafe = [
     '', 'lock_file=None,', 'lock_file="",', 'lock_file="   ",',
+    'lock_file="""""", fail_if_repin_required=True,',
+    "lock_file='''''', fail_if_repin_required=True,",
+    'lock_file="""   """, fail_if_repin_required=True,',
+    "lock_file='''   ''', fail_if_repin_required=True,",
+    'lock_file=r"//:lock.json", fail_if_repin_required=True,',
+    'lock_file="//:lock\\.json", fail_if_repin_required=True,',
     'lock_file=LOCK_PATH, fail_if_repin_required=True,',
     'lock_file="//:maven_install.json",',
     'lock_file="//:maven_install.json", fail_if_repin_required=False,',

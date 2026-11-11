@@ -93,7 +93,9 @@ export function inventory(files, manualSources = []) {
         const prefix = `${path}:maven.install:${name}`;
         const lock = call.attributes.get('lock_file');
         const strict = call.attributes.get('fail_if_repin_required');
-        const literalPath = lock?.length === 1 && /^['"]/.test(lock[0]) && lock[0].slice(1, -1).trim();
+        // Unknown/triple/raw/escaped strings remain debt; do not partially decode delimiters.
+        const plainString = lock?.length === 1 && /^(?:"[^"\\\r\n]*"|'[^'\\\r\n]*')$/.test(lock[0]);
+        const literalPath = plainString && lock[0].slice(1, -1).trim();
         if (!literalPath || strict?.join('') !== 'True') {
           add(`${prefix}:unlocked`, JSON.stringify([lock ?? [], strict ?? []]));
         }
