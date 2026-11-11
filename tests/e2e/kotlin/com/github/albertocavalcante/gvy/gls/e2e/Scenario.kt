@@ -117,6 +117,7 @@ class JacksonScenarioParser : ScenarioParser {
         /** Types that reject unknown keys; checked-in scenarios use none in them. The rest stay lenient for now. */
         val STRICT_TYPES: Set<Class<*>> = setOf(
             WorkspaceConfig::class.java,
+            Xfail::class.java,
             ScenarioStep.Completion::class.java,
             ScenarioStep.Rename::class.java,
         )
@@ -126,6 +127,11 @@ class JacksonScenarioParser : ScenarioParser {
         // YAML file structure matches Scenario, so we parse Scenario and wrap it
         requireWellFormedSnapshotExpectations(objectMapper.readTree(yaml))
         val scenario = objectMapper.readValue(yaml, Scenario::class.java)
+        scenario.xfail?.let { xfail ->
+            require(xfail.issue > 0) { "xfail.issue must be a gvy issue number" }
+            require(xfail.reason.isNotBlank()) { "xfail.reason must say what is wrong" }
+            xfail.match?.let { Regex(it) } // an invalid regex is a parse error, not a runtime surprise
+        }
         ScenarioDefinition(scenario = scenario)
     } catch (e: Exception) {
         throw ScenarioParseException("Failed to parse scenario YAML", e)
@@ -172,8 +178,17 @@ data class Scenario(
     val description: String? = null,
     val server: ServerConfig = ServerConfig(),
     val workspace: WorkspaceConfig? = null,
+    val xfail: Xfail? = null,
     val steps: List<ScenarioStep>,
 )
+
+/**
+ * Marks a scenario as a known product bug: it must fail until the bug is fixed, then the marker must go.
+ *
+ * [issue] is the gvy issue number, [reason] says what is wrong, and [match] (optional regex searched in the failure
+ * message) keeps a different failure from being accepted as the known one.
+ */
+data class Xfail(val issue: Int, val reason: String, val match: String? = null)
 
 data class ServerConfig(
     val args: List<String> = emptyList(),

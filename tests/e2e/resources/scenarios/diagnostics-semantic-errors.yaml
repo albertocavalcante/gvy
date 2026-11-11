@@ -1,9 +1,13 @@
-# TODO(DEFERRED): #433 - Test disabled. Semantic diagnostics need @TypeChecked.
-# See: https://github.com/albertocavalcante/groovy-devtools/issues/433
+# Known failure: Groovy is dynamically typed, so `undefinedVar` is not a compile error without @TypeChecked.
+# Tracked by https://github.com/albertocavalcante/gvy/issues/433.
 name: diagnostics-semantic-errors
 description: Detects semantic errors like undefined variables and type mismatches.
+xfail:
+  issue: 433
+  reason: undefined variables are not reported as errors without static type checking
+  match: 'undefinedVar.*SIZE\. Actual: \[\]'
 workspace:
-  fixture: gradle-dependency
+  fixture: empty-workspace
 steps:
   - initialize: {}
   - initialized: {}

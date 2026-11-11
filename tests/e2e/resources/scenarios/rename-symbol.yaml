@@ -1,12 +1,16 @@
-# Disabled: rename stays within one file until the workspace index gives locals, parameters and
+# Known failure: rename stays within one file until the workspace index gives locals, parameters and
 # overloads distinct symbol ids (today every local of a class shares an id with a same-named field,
 # and untyped receivers are credited to the enclosing class), so cross-file rename could edit
 # unrelated code. Find-references and incoming calls do use the index. The assertions below are
-# exact and ready once the ids are fixed.
+# exact and ready once the ids are fixed. Tracked by gvy#1587 (see also #1384).
 name: rename-symbol
 description: Rename a method reference across multiple files.
+xfail:
+  issue: 1587
+  reason: cross-file method rename is refused instead of applied
+  match: 'renaming across files is not supported'
 workspace:
-  fixture: gradle-dependency
+  fixture: empty-workspace
 steps:
   - initialize: {}
   - initialized: {}

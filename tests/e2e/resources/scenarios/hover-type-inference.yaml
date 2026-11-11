@@ -1,9 +1,13 @@
-# TODO(DEFERRED): #432 - Test disabled. Hover shows raw AST instead of inferred type.
-# See: https://github.com/albertocavalcante/groovy-devtools/issues/432
+# Known failure: hover on a `def` variable shows no inferred type.
+# Tracked by https://github.com/albertocavalcante/gvy/issues/432.
 name: hover-type-inference
 description: Hover on def variables shows inferred types.
+xfail:
+  issue: 432
+  reason: hover on def variables does not show the inferred type
+  match: '(?s)Actual:.*\(Variable\)'
 workspace:
-  fixture: gradle-dependency
+  fixture: empty-workspace
 steps:
   - initialize: {}
   - initialized: {}

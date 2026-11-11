@@ -336,7 +336,7 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
     override fun execute(step: ScenarioStep.SendRequest, context: ScenarioContext, nextStep: ScenarioStep?) {
         val paramsNode = context.interpolateNode(step.params)
         val paramsObject = paramsNode?.toJavaObject()
-        val timeout = step.timeoutMs ?: 30_000L
+        val timeout = context.effectiveTimeoutMs(step.timeoutMs ?: 30_000L)
 
         logger.info { "Sending request '${step.method}' with params: $paramsObject" }
 
@@ -436,7 +436,12 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
             }
         }
 
-        val timeout = step.timeoutMs ?: 30_000L
+        val requestedTimeout = step.timeoutMs ?: 30_000L
+        val timeout = if (XfailOutcome.isReadinessWait(step.method)) {
+            requestedTimeout
+        } else {
+            context.effectiveTimeoutMs(requestedTimeout)
+        }
         val checkFailureReasons = mutableListOf<String>()
 
         val earlySkipPredicate: (() -> Boolean)? = if (step.optional && nextStep is ScenarioStep.WaitNotification) {

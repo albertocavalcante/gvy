@@ -27,7 +27,11 @@ data class ScenarioContext(
         ignoreUnknownKeys = true
     },
     val jsonPathConfig: Configuration,
+    /** Upper bound for step timeouts; set for `xfail` scenarios so a hang costs little. */
+    val timeoutCapMs: Long? = null,
 ) {
+    fun effectiveTimeoutMs(requestedMs: Long): Long = XfailOutcome.capTimeout(requestedMs, timeoutCapMs)
+
     val state: ScenarioState = ScenarioState()
     val variables: MutableMap<String, JsonElement> = mutableMapOf()
     val savedResults: MutableMap<String, JsonElement> = mutableMapOf()

@@ -30,7 +30,7 @@ This directory contains YAML scenario files that define end-to-end LSP test case
 ## Server Mode Migration
 
 > **Note**: Scenarios are being migrated from `mode: stdio` to `mode: inProcess` for faster test execution. See the
-> parent [README.md](../README.md) for details.
+> parent [README.md](../../README.md) for details.
 
 Currently migrated:
 
@@ -117,4 +117,4 @@ Scenario parsing rejects duplicate YAML keys and unknown keys in `workspace`, `c
 2. Define the server mode, workspace fixture, and steps
 3. Run with `./gradlew :tests:e2eTest -Dgroovy.lsp.e2e.filter=your-test`
 
-See [../README.md](../README.md) for full scenario format documentation.
+See [../../README.md](../../README.md) for full scenario format documentation.

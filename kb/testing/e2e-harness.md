@@ -70,8 +70,21 @@ see step-by-step progress like:
 Shutdown requests use a dedicated timeout (`groovy.lsp.e2e.shutdownTimeoutMs`, default 30s) to let Gradle daemons close
 cleanly on busy runners.
 
+## Scenario Features
+
+Details and examples are in [`tests/e2e/README.md`](../../tests/e2e/README.md).
+
+- **Cursor markers**: `|^|` or `|^name|` in `openDocument.text`, full-text `changeDocument.text` and `workspace.files`
+  are stripped before the server sees the text and exposed as `{{cursor}}` / `{{cursor.name}}` (UTF-16 columns).
+- **Inline files**: `workspace.files` maps workspace-relative paths to text, written over the fixture before
+  `initialize`; the file is indexed but not opened unless the scenario opens it.
+- **Snapshots**: `expect: { snapshot: <path> }` compares with `tests/e2e/resources/snapshots/<path>`;
+  `-Dgroovy.lsp.e2e.updateSnapshots=true` rewrites them locally (refused on CI and under Bazel).
+- **Known failures**: `xfail: { issue, reason, match? }` keeps a scenario for an open bug in the suite. It aborts with
+  the reason while it fails and fails with "appears fixed" once it passes, so the marker cannot go stale. `_`-prefixed
+  files are skipped but must parse and carry a `# disabled:` header.
+
 ## Next Steps
 
-- Extend the step DSL with document operations (`didOpen`, `completion`, etc.).
-- Capture responses for JSONPath assertions and snapshot testing.
 - Add socket-mode launch as an opt-in for CLI parity.
+- Add repros for the open scenario bugs (#1523-#1543) as `xfail` scenarios, one per issue.
