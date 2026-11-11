@@ -46,7 +46,16 @@ export function auditPublicRoot(root, expected = {}, readBytes = readEvidenceByt
     if (!isUtf8(bytes)) throw new Error('Invalid public UTF-8');
     return bytes.toString('utf8');
   };
-  const parseJson = bytes => { try { return JSON.parse(text(bytes)); } catch { throw new Error('Invalid public JSON'); } };
+  const parseJson = bytes => {
+    try {
+      const serialized = text(bytes);
+      const value = JSON.parse(serialized);
+      // Parsed objects lose shadowed duplicate keys and noncanonical escapes.
+      // Certify the producer's exact public bytes, not only its last values.
+      if (canonicalJson(value) !== serialized) throw new Error('Noncanonical public JSON');
+      return value;
+    } catch { throw new Error('Invalid public JSON'); }
+  };
   const json = path => parseJson(readBytes(path, 4 * 1024 * 1024));
   try {
     if (lstatSync(root).isSymbolicLink() || !lstatSync(root).isDirectory()) throw new Error('Public root must be a real directory');

@@ -9,6 +9,7 @@ import { auditPublicRoot, publicSummary, writePublicManifest } from './audit-pub
 import { projectBep, projectProfile } from './public-bazel-evidence.mjs';
 
 const canary = 'synthetic-unpublishable-audit-canary';
+const canonicalJson = value => JSON.stringify(value, null, 2) + '\n';
 const context = { schemaVersion: 1, headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: 1, invocationId: '12345678-1234-4234-8234-123456789abc', command: 'build' };
 function fixture(t, code = 0) {
   const dir = mkdtempSync(join(tmpdir(), 'gvy-public-audit-'));
@@ -26,10 +27,10 @@ function fixture(t, code = 0) {
   const bep = projectBep(events.map(event => JSON.stringify(event)).join('\n'), context);
   const profile = projectProfile(gzipSync(JSON.stringify({ traceEvents: [{ ph: 'X', name: 'phase', pid: 1, tid: 1, ts: 0, dur: 1 }] })));
   const summary = publicSummary(bep, context, { commandExitCode: code, captureExitCode: 0, commandSignal: null }, 'bazel-build', false);
-  writeFileSync(join(invocation, 'context.json'), JSON.stringify(context));
+  writeFileSync(join(invocation, 'context.json'), canonicalJson(context));
   writeFileSync(join(invocation, 'bep.json'), bep);
   writeFileSync(join(invocation, 'profile.json.gz'), profile);
-  writeFileSync(join(invocation, 'summary.json'), JSON.stringify(summary));
+  writeFileSync(join(invocation, 'summary.json'), canonicalJson(summary));
   writePublicManifest(invocation, context);
   const reseal = () => { unlinkSync(join(invocation, 'public-evidence.json')); writePublicManifest(invocation, context); };
   return { dir, root, invocation, reseal };
@@ -64,7 +65,7 @@ test('audit rejects raw trace args, arbitrary summary fields, unknown files and 
   assert.equal(auditPublicRoot(profile.root).ok, false);
   const summary = fixture(t);
   const data = JSON.parse(readFileSync(join(summary.invocation, 'summary.json')));
-  writeFileSync(join(summary.invocation, 'summary.json'), JSON.stringify({ ...data, rawEnv: canary }));
+  writeFileSync(join(summary.invocation, 'summary.json'), canonicalJson({ ...data, rawEnv: canary }));
   summary.reseal();
   assert.equal(auditPublicRoot(summary.root).ok, false);
   const raw = fixture(t);
@@ -97,12 +98,12 @@ test('audit CLI binds current workflow context and publishes only a controlled s
 
 test('audit does not allow an existing unsafe safety marker or untyped status fields', t => {
   const marker = fixture(t);
-  writeFileSync(join(marker.root, 'public-audit.json'), JSON.stringify({ schemaVersion: 1, contract: 'gvy-public-bazel-v1', ok: true, errors: [], invocations: 1, raw: canary }));
+  writeFileSync(join(marker.root, 'public-audit.json'), canonicalJson({ schemaVersion: 1, contract: 'gvy-public-bazel-v1', ok: true, errors: [], invocations: 1, raw: canary }));
   assert.equal(auditPublicRoot(marker.root).ok, false);
   const status = fixture(t);
   const data = JSON.parse(readFileSync(join(status.invocation, 'summary.json')));
   data.commandExitCode = canary;
-  writeFileSync(join(status.invocation, 'summary.json'), JSON.stringify(data));
+  writeFileSync(join(status.invocation, 'summary.json'), canonicalJson(data));
   status.reseal();
   assert.equal(auditPublicRoot(status.root).ok, false);
 });
@@ -121,3 +122,26 @@ test('a changing file cannot be validated as safe bytes but hashed as different 
   assert.equal(result.ok, false);
   assert.equal(reads, 1);
 });
+
+for (const file of ['context.json', 'summary.json', 'public-evidence.json', 'public-audit.json']) {
+  for (const escapedKey of [false, true]) {
+    test(`audit rejects shadowed credential bytes in ${file}${escapedKey ? ' through an escaped duplicate key' : ''}`, t => {
+      const f = fixture(t);
+      const path = file === 'public-audit.json' ? join(f.root, file) : join(f.invocation, file);
+      if (file === 'public-audit.json') writeFileSync(path, canonicalJson({ schemaVersion: 1, contract: 'gvy-public-bazel-v1', ok: true, errors: [], invocations: 1 }));
+      assert.equal(auditPublicRoot(f.root).ok, true);
+      const key = file === 'context.json' ? 'headSha' : file === 'summary.json' ? 'producer' : 'contract';
+      const marker = '  "' + key + '": ';
+      const shadowKey = escapedKey ? '\\u' + key.charCodeAt(0).toString(16).padStart(4, '0') + key.slice(1) : key;
+      const original = readFileSync(path, 'utf8');
+      const modified = original.replace(marker, '  "' + shadowKey + '": ' + JSON.stringify(canary) + ',\n' + marker);
+      assert.notEqual(modified, original);
+      assert.deepEqual(JSON.parse(modified), JSON.parse(original));
+      writeFileSync(path, modified);
+      if (['context.json', 'summary.json'].includes(file)) f.reseal();
+      const result = auditPublicRoot(f.root);
+      assert.equal(result.ok, false);
+      assert.equal(JSON.stringify(result).includes(canary), false);
+    });
+  }
+}
