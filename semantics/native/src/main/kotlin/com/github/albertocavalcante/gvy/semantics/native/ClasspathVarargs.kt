@@ -5,7 +5,6 @@ import groovy.transform.Trait
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassVisitor
 import org.objectweb.asm.Opcodes
-import java.io.IOException
 import java.lang.reflect.Executable
 
 /**
@@ -17,7 +16,7 @@ fun Executable.displayParameterTypes(render: (Class<*>) -> String = Class<*>::ge
     val types = parameterTypes
     val varargs = isDeclaredVarargs()
     return types.mapIndexed { index, type ->
-        if (varargs && index == types.lastIndex) render(type.componentType) + "..." else render(type)
+        if (varargs && type.isArray && index == types.lastIndex) render(type.componentType) + "..." else render(type)
     }
 }
 
@@ -43,8 +42,11 @@ private const val GROOVY_SOURCE = ".groovy"
 
 /**
  * The class file's `SourceFile` attribute, or null when the bytes are unavailable (classes defined in
- * memory) or unreadable (a class file newer than ASM supports): such classes then read as not Groovy.
+ * memory) or unreadable (a class file newer than ASM supports, or malformed bytes, which ASM reports as
+ * assorted runtime exceptions such as `ArrayIndexOutOfBoundsException`): such classes then read as not
+ * Groovy, and the answer is cached like any other so a bad class costs one parse, not one per call.
  */
+@Suppress("TooGenericExceptionCaught") // ASM's failure modes on user-classpath bytes are unbounded
 private fun sourceFile(type: Class<*>): String? = try {
     type.getResourceAsStream("/" + type.name.replace('.', '/') + ".class")?.use { input ->
         var source: String? = null
@@ -58,8 +60,6 @@ private fun sourceFile(type: Class<*>): String? = try {
         )
         source
     }
-} catch (_: IOException) {
-    null
-} catch (_: IllegalArgumentException) {
+} catch (_: Exception) {
     null
 }
