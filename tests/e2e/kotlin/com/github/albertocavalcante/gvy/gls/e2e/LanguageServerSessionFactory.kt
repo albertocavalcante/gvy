@@ -7,42 +7,44 @@ import com.github.albertocavalcante.gvy.gls.testing.client.HarnessLanguageClient
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
-import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
+import org.eclipse.lsp4j.services.LanguageClientAware
 import org.eclipse.lsp4j.services.LanguageServer
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.PipedInputStream
 import java.io.PipedOutputStream
-import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Duration
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
-import java.util.concurrent.Future
 import java.util.concurrent.TimeUnit
 
 /** Test-JVM system properties forwarded to a language-server subprocess. */
 private val FORWARDED_PROPERTIES = listOf(JenkinsStubsLocation.CACHE_ROOT_PROPERTY)
 
-class LanguageServerSessionFactory {
+class LanguageServerSessionFactory(
+    private val startProcess: (ProcessBuilder) -> Process = ProcessBuilder::start,
+    private val createServer: ((Int) -> Unit) -> LanguageServer = { onExit ->
+        GroovyLanguageServer(exitProcess = onExit)
+    },
+) {
     private val logger = KotlinLogging.logger {}
-
-    // Cached server executor for in-process mode to allow cleanly shutting down the thread
-    private val inProcessExecutor = Executors.newCachedThreadPool { r ->
-        Thread(r, "groovy-lsp-in-process-server").apply { isDaemon = true }
-    }
 
     private val execJar: Path? = System.getProperty("groovy.lsp.e2e.execJar")
         ?.let { BazelRunfiles.resolve(it) }
 
     private val serverClasspath: String? = System.getProperty("groovy.lsp.e2e.serverClasspath")
     private val mainClass: String? = System.getProperty("groovy.lsp.e2e.mainClass")
-    private val gradleUserHome: Path? = resolveGradleUserHome()
+    private val gradleUserHome: Path by lazy { resolveGradleUserHome() }
 
     fun start(serverConfig: ServerConfig, scenarioName: String): LanguageServerSession {
         val launchMode = serverConfig.mode
 
         return if (launchMode == ServerLaunchMode.InProcess) {
+            require(serverConfig.args.isEmpty()) { "In-process mode cannot apply server args" }
+            require(serverConfig.env.isEmpty()) { "In-process mode cannot apply server env overrides" }
             createInProcessSession(scenarioName)
         } else {
             createProcessSession(serverConfig, scenarioName, launchMode)
@@ -58,54 +60,47 @@ class LanguageServerSessionFactory {
             "Only stdio launch mode is currently supported (requested: $launchMode) for scenario '$scenarioName'"
         }
 
-        val command = buildCommand(launchMode)
+        val command = buildCommand(serverConfig)
         logger.info {
             "Starting language server for scenario '$scenarioName' using command: ${command.joinToString(" ")}"
         }
-
-        val processBuilder = ProcessBuilder(command)
-            .redirectErrorStream(false)
-
-        gradleUserHome?.let {
-            processBuilder.environment()["GRADLE_USER_HOME"] = it.toAbsolutePath().toString()
-            logger.info { "Using isolated Gradle user home for scenario '$scenarioName': $it" }
+        val processBuilder = ProcessBuilder(command).redirectErrorStream(false)
+        if ("GRADLE_USER_HOME" !in serverConfig.env) {
+            processBuilder.environment()["GRADLE_USER_HOME"] = gradleUserHome.toAbsolutePath().toString()
         }
+        // Explicit authored environment wins over the isolated default, including GRADLE_USER_HOME.
+        processBuilder.environment().putAll(serverConfig.env)
 
-        val process = processBuilder.start()
+        return SessionResources().use { pending ->
+            val executor = pending.own(ListenerExecutor(scenarioName))
+            val ownedProcess = pending.own(ServerProcess(startProcess(processBuilder), pending.interruption))
+            val process = ownedProcess.process
+            ownedProcess.stderrPump = startErrorPump(process, scenarioName)
+            val client = HarnessLanguageClient()
+            val launcher = Launcher.Builder<GroovyLanguageServerProtocol>()
+                .setLocalService(client)
+                .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
+                .setInput(process.inputStream)
+                .setOutput(process.outputStream)
+                .setExecutorService(executor.service)
+                .create()
+            val listening = launcher.startListening()
+            pending.own(AutoCloseable { listening.cancel(true) })
 
-        val client = HarnessLanguageClient()
-
-        // Use Launcher.Builder with GroovyLanguageServerProtocol to properly deserialize
-        // custom @JsonRequest method responses. LSPLauncher.createClientLauncher only
-        // creates a proxy for the standard LanguageServer interface, causing
-        // endpoint.request() to return null for custom methods like groovy/discoverTests.
-        //
-        // @see https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol
-        val launcher = Launcher.Builder<GroovyLanguageServerProtocol>()
-            .setLocalService(client)
-            .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
-            .setInput(process.inputStream)
-            .setOutput(process.outputStream)
-            .create()
-        val listening = launcher.startListening()
-
-        val stderrPump = startErrorPump(process, scenarioName)
-
-        return LanguageServerSession(
-            process = process,
-            server = launcher.remoteProxy,
-            endpoint = launcher.remoteEndpoint,
-            client = client,
-            listening = listening,
-            stderrPump = stderrPump,
-            serverFuture = null,
-            typedServerProxy = launcher.remoteProxy,
-        )
+            val proxy = launcher.remoteProxy
+            LanguageServerSession(
+                process = process,
+                server = proxy,
+                endpoint = launcher.remoteEndpoint,
+                client = client,
+                typedServerProxy = proxy,
+                resources = pending.transfer(),
+            )
+        }
     }
 
-    private fun buildCommand(mode: ServerLaunchMode): List<String> {
-        val javaBinary = resolveJavaBinary()
-        val jvm = listOf(javaBinary) + forwardedSystemProperties()
+    private fun buildCommand(config: ServerConfig): List<String> {
+        val jvm = listOf(resolveJavaBinary(), "-Xmx1g") + forwardedSystemProperties()
         val launchArgs = when {
             serverClasspath != null && mainClass != null -> jvm + listOf("-cp", serverClasspath, mainClass)
             execJar != null -> jvm + listOf("-jar", execJar.toString())
@@ -114,12 +109,8 @@ class LanguageServerSessionFactory {
                     "(groovy.lsp.e2e.serverClasspath & groovy.lsp.e2e.mainClass) system properties",
             )
         }
-
-        return launchArgs + when (mode) {
-            ServerLaunchMode.Stdio -> listOf("stdio")
-            ServerLaunchMode.Socket -> error("Socket mode is not yet implemented in the e2e harness")
-            ServerLaunchMode.InProcess -> error("In-process mode should not invoke buildCommand")
-        }
+        require(config.mode == ServerLaunchMode.Stdio) { "Only stdio can launch a subprocess" }
+        return launchArgs + "stdio" + config.args
     }
 
     /** Test-JVM properties the server subprocess must inherit to stay isolated. */
@@ -127,9 +118,11 @@ class LanguageServerSessionFactory {
         System.getProperty(key)?.takeIf { it.isNotBlank() }?.let { "-D$key=$it" }
     }
 
-    private fun resolveGradleUserHome(): Path? {
-        val override = System.getProperty("groovy.lsp.e2e.gradleUserHome")
-            ?: System.getenv("GROOVY_LSP_E2E_GRADLE_USER_HOME")
+    private fun resolveGradleUserHome(): Path {
+        val override = sequenceOf(
+            System.getProperty("groovy.lsp.e2e.gradleUserHome"),
+            System.getenv("GROOVY_LSP_E2E_GRADLE_USER_HOME"),
+        ).firstOrNull { !it.isNullOrBlank() }
 
         // Use unique suffix per JVM to support parallel test execution.
         // Multiple test forks can safely share the parent directory (Gradle handles locking),
@@ -137,10 +130,12 @@ class LanguageServerSessionFactory {
         val uniqueSuffix = ProcessHandle.current().pid()
         val target = when {
             !override.isNullOrBlank() -> Paths.get(override)
-            else -> Paths.get("").toAbsolutePath().resolve("build/e2e-gradle-home-$uniqueSuffix")
+            else -> defaultIsolatedGradleHome(System.getenv(), Paths.get("").toAbsolutePath(), uniqueSuffix)
         }
 
-        return GradleWrapperDistributions.prepareIsolatedHome(target, ::shareFixtureDistributions)
+        return checkNotNull(GradleWrapperDistributions.prepareIsolatedHome(target, ::shareFixtureDistributions)) {
+            "Cannot prepare isolated Gradle user home at $target"
+        }
     }
 
     /** Reuses the host's installed fixture Gradle distributions instead of downloading them per JVM. */
@@ -158,86 +153,51 @@ class LanguageServerSessionFactory {
         )
     }
 
-    private fun createInProcessSession(scenarioName: String): LanguageServerSession {
-        val (clientIn, serverOut) = createPipePair()
-        val (serverIn, clientOut) = createPipePair()
+    private fun createInProcessSession(scenarioName: String): LanguageServerSession =
+        SessionResources().use { pending ->
+            val executor = pending.own(ListenerExecutor(scenarioName))
+            val clientIn = pending.own(PipedInputStream())
+            val serverOut = pending.own(PipedOutputStream(clientIn))
+            val serverIn = pending.own(PipedInputStream())
+            val clientOut = pending.own(PipedOutputStream(serverIn))
+            val exitCode = CompletableFuture<Int>()
+            val server = createServer { exitCode.complete(it) }
+            pending.own(AutoCloseable { server.shutdown().get(SERVER_SHUTDOWN_TIMEOUT.seconds, TimeUnit.SECONDS) })
+            require(server is LanguageClientAware) { "In-process server must accept a language client" }
+            val serverLauncher = Launcher.Builder<GroovyLanguageClient>()
+                .setLocalService(server)
+                .setRemoteInterface(GroovyLanguageClient::class.java)
+                .setInput(serverIn)
+                .setOutput(serverOut)
+                .setExecutorService(executor.service)
+                .create()
+            server.connect(serverLauncher.remoteProxy)
+            val serverListening = serverLauncher.startListening()
+            pending.own(AutoCloseable { serverListening.cancel(true) })
 
-        // In-process server: `exit` must not terminate the test JVM.
-        val server = GroovyLanguageServer(exitProcess = {})
+            val client = HarnessLanguageClient()
+            val clientLauncher = Launcher.Builder<GroovyLanguageServerProtocol>()
+                .setLocalService(client)
+                .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
+                .setInput(clientIn)
+                .setOutput(clientOut)
+                .setExecutorService(executor.service)
+                .create()
+            val clientListening = clientLauncher.startListening()
+            pending.own(AutoCloseable { clientListening.cancel(true) })
+            logger.info { "Started in-process language server for scenario '$scenarioName'" }
 
-        val serverLauncher = Launcher.Builder<GroovyLanguageClient>()
-            .setLocalService(server)
-            .setRemoteInterface(GroovyLanguageClient::class.java)
-            .setInput(serverIn)
-            .setOutput(serverOut)
-            .create()
-
-        server.connect(serverLauncher.remoteProxy)
-
-        // Start the server's JSON-RPC listener in a background thread
-        val serverListening = inProcessExecutor.submit {
-            try {
-                serverLauncher.startListening().get()
-            } catch (e: Exception) {
-                logger.error(e) { "In-process server error for scenario '$scenarioName'" }
-            }
+            val proxy = clientLauncher.remoteProxy
+            LanguageServerSession(
+                process = null,
+                server = proxy,
+                endpoint = clientLauncher.remoteEndpoint,
+                client = client,
+                exitCode = exitCode,
+                typedServerProxy = proxy,
+                resources = pending.transfer(),
+            )
         }
-
-        // Create the client-side launcher with typed GroovyLanguageServerProtocol interface.
-        // This enables proper deserialization of custom @JsonRequest method responses.
-        // @see https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol
-        val client = HarnessLanguageClient()
-        val clientLauncher = Launcher.Builder<GroovyLanguageServerProtocol>()
-            .setLocalService(client)
-            .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
-            .setInput(clientIn)
-            .setOutput(clientOut)
-            .create()
-        val clientListening = clientLauncher.startListening()
-
-        // MINIMAL WAIT: Piped I/O synchronization for LSP4J launchers.
-        //
-        // This brief pause allows the piped streams to stabilize after startListening().
-        // The server-side launcher creates a RemoteProxy for the client asynchronously,
-        // and without this wait, early messages may be lost.
-        //
-        // Note: This is NOT the server readiness wait. For proper E2E test synchronization
-        // with server initialization, tests should wait for client.readyFuture after calling
-        // the `initialized` step. See: https://github.com/albertocavalcante/groovy-lsp/issues/314
-        //
-        // This small delay is acceptable because:
-        // 1. It's only for in-process testing (not production)
-        // 2. It's minimal (50ms) compared to typical test scenarios
-        // 3. The alternative (polling/handshake) adds significant complexity for marginal benefit
-        Thread.sleep(50)
-
-        // Force proxy creation by accessing it - this triggers LSP4J to complete setup
-        try {
-            serverLauncher.remoteProxy // Force proxy creation
-        } catch (e: Exception) {
-            logger.warn { "Could not access server's remote proxy: ${e.message}" }
-        }
-
-        logger.info { "Started in-process language server for scenario '$scenarioName'" }
-
-        return LanguageServerSession(
-            process = null,
-            server = clientLauncher.remoteProxy,
-            endpoint = clientLauncher.remoteEndpoint,
-            client = client,
-            listening = clientListening, // We track client's listener; server's is managed by executor
-            stderrPump = null,
-            serverFuture = serverListening,
-            typedServerProxy = clientLauncher.remoteProxy,
-        )
-    }
-
-    private fun createPipePair(): Pair<PipedInputStream, PipedOutputStream> {
-        val output = PipedOutputStream()
-        val input = PipedInputStream()
-        input.connect(output)
-        return input to output
-    }
 
     private fun startErrorPump(process: Process, scenarioName: String): Thread {
         val thread = Thread(
@@ -256,81 +216,59 @@ class LanguageServerSessionFactory {
         thread.start()
         return thread
     }
+
+    private companion object {
+        val SERVER_SHUTDOWN_TIMEOUT: Duration = Duration.ofSeconds(20)
+    }
 }
 
-/**
- * Represents an active LSP session with the language server.
- *
- * Provides access to both the standard [LanguageServer] interface and the
- * typed [GroovyLanguageServerProtocol] for custom method invocation.
- *
- * ## Why both server types?
- *
- * [server] is the standard LSP interface for core protocol methods.
- * [groovyServer] provides typed access to custom @JsonRequest methods like
- * `groovy/discoverTests` and `groovy/runTest`. Without this typed interface,
- * LSP4J's [RemoteEndpoint.request] returns null for custom methods.
- *
- * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending Protocol</a>
- */
-class LanguageServerSession(
-    val process: Process?,
-    val server: LanguageServer,
-    val endpoint: RemoteEndpoint,
-    val client: HarnessLanguageClient,
-    private val listening: Future<Void>,
-    private val stderrPump: Thread?,
-    private val serverFuture: Future<*>? = null,
-    private val typedServerProxy: GroovyLanguageServerProtocol? = null,
-) : AutoCloseable {
-    private val logger = KotlinLogging.logger {}
-
-    /**
-     * Typed server proxy for invoking custom @JsonRequest methods.
-     *
-     * Returns the [GroovyLanguageServerProtocol] proxy which provides compile-time
-     * type safety for custom LSP methods. Throws if typed server is not available
-     * (e.g., if session was created with legacy launcher).
-     *
-     * @throws IllegalStateException if typed server proxy is not available
-     */
-    val groovyServer: GroovyLanguageServerProtocol
-        get() = typedServerProxy ?: error(
-            "Typed server proxy not available. " +
-                "Ensure session was created with Launcher.Builder using GroovyLanguageServerProtocol.",
-        )
+/** Owns the shared launcher executor, so cancelling listeners also retires their idle threads. */
+private class ListenerExecutor(scenarioName: String) : AutoCloseable {
+    val service: ExecutorService = Executors.newCachedThreadPool { runnable ->
+        Thread(runnable, "groovy-lsp-e2e-$scenarioName").apply { isDaemon = true }
+    }
 
     override fun close() {
-        try {
-            if (process != null && process.isAlive) {
-                logger.debug { "Waiting for language server process to finish" }
-                process.waitFor(SHUTDOWN_TIMEOUT.seconds, TimeUnit.SECONDS)
-            }
-        } catch (ex: InterruptedException) {
-            Thread.currentThread().interrupt()
-            logger.warn(ex) { "Interrupted while waiting for language server process shutdown" }
-        } finally {
-            if (process != null && process.isAlive) {
-                logger.warn { "Language server process still alive after timeout; terminating forcibly" }
-                process.destroyForcibly()
-            }
+        service.shutdownNow()
+        check(service.awaitTermination(CLOSE_TIMEOUT.seconds, TimeUnit.SECONDS)) {
+            "LSP listener executor did not stop"
         }
+    }
+}
 
-        listening.cancel(true)
-        serverFuture?.cancel(true)
+/** Terminates an owned subprocess before closing streams that may have blocked readers. */
+private class ServerProcess(val process: Process, private val interruption: CleanupInterruption) : AutoCloseable {
+    var stderrPump: Thread? = null
 
-        if (stderrPump != null && stderrPump.isAlive) {
-            try {
-                stderrPump.join(STDERR_PUMP_JOIN_TIMEOUT.toMillis())
-            } catch (ex: InterruptedException) {
-                Thread.currentThread().interrupt()
-                logger.debug(ex) { "Interrupted while waiting for stderr pump thread" }
+    override fun close() {
+        AutoCloseable { closeStreams() }.use {
+            if (process.isAlive) process.destroyForcibly()
+            check(interruption.observe { process.waitFor(CLOSE_TIMEOUT.seconds, TimeUnit.SECONDS) }) {
+                "LSP process did not stop"
             }
         }
     }
 
-    companion object {
-        private val SHUTDOWN_TIMEOUT: Duration = Duration.ofSeconds(5)
-        private val STDERR_PUMP_JOIN_TIMEOUT: Duration = Duration.ofSeconds(2)
+    private fun closeStreams() {
+        process.inputStream.use {
+            process.outputStream.use {
+                process.errorStream.use {
+                    interruption.observe { stderrPump?.join(CLOSE_TIMEOUT.toMillis()) }
+                    check(stderrPump?.isAlive != true) { "LSP stderr reader did not stop" }
+                }
+            }
+        }
     }
+}
+
+private val CLOSE_TIMEOUT: Duration = Duration.ofSeconds(5)
+
+internal fun defaultIsolatedGradleHome(
+    environment: Map<String, String>,
+    workingDirectory: Path,
+    processId: Long,
+): Path {
+    val parent = environment["TEST_TMPDIR"]?.takeIf(String::isNotBlank)?.let(Paths::get)
+        ?: workingDirectory.resolve("build")
+    return parent.resolve("e2e-gradle-home-$processId")
 }

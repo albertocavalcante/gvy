@@ -48,33 +48,32 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
         val (workspace, inlineMarkers) = prepareWorkspace(definition)
         val scenario = definition.scenario
 
-        val session = sessionFactory.start(scenario.server, scenario.name)
+        AutoCloseable { workspace.cleanup() }.use {
+            sessionFactory.start(scenario.server, scenario.name).use { session ->
+                val context = ScenarioContext(
+                    definition = definition,
+                    session = session,
+                    workspace = workspace,
+                    json = json,
+                    jsonPathConfig = jsonPathConfig,
+                    timeoutCapMs = scenario.xfail?.let { XfailOutcome.STEP_TIMEOUT_CAP_MS },
+                )
+                context.registerBuiltInVariables()
+                inlineMarkers.forEach { (path, markers) ->
+                    context.registerCursors(workspace.resolveUri(path), markers)
+                }
 
-        try {
-            val context = ScenarioContext(
-                definition = definition,
-                session = session,
-                workspace = workspace,
-                json = json,
-                jsonPathConfig = jsonPathConfig,
-                timeoutCapMs = scenario.xfail?.let { XfailOutcome.STEP_TIMEOUT_CAP_MS },
-            )
-            context.registerBuiltInVariables()
-            inlineMarkers.forEach { (path, markers) ->
-                context.registerCursors(workspace.resolveUri(path), markers)
+                scenario.steps.forEachIndexed { index, step ->
+                    logger.info {
+                        "Running step ${index + 1} (${step::class.simpleName}) for scenario '${scenario.name}'"
+                    }
+                    context.currentStepIndex = index
+                    context.totalSteps = scenario.steps.size
+                    val nextStep = scenario.steps.getOrNull(index + 1)
+
+                    executeStep(step, context, nextStep)
+                }
             }
-
-            scenario.steps.forEachIndexed { index, step ->
-                logger.info { "Running step ${index + 1} (${step::class.simpleName}) for scenario '${scenario.name}'" }
-                context.currentStepIndex = index
-                context.totalSteps = scenario.steps.size
-                val nextStep = scenario.steps.getOrNull(index + 1)
-
-                executeStep(step, context, nextStep)
-            }
-        } finally {
-            session.close()
-            workspace.cleanup()
         }
     }
 
@@ -112,11 +111,15 @@ internal fun writeInlineFilesOrCleanUp(
     root: java.nio.file.Path,
     scenarioName: String,
     files: Map<String, String>,
-): Map<String, List<CursorMarker>> = runCatching { InlineFiles.write(root, files) }.getOrElse { failure ->
-    WorkspaceFixture.cleanup(root)
-    throw if (failure is IllegalArgumentException) {
-        IllegalArgumentException("Scenario '$scenarioName': ${failure.message}", failure)
-    } else {
-        failure
+): Map<String, List<CursorMarker>> {
+    var written = false
+    return AutoCloseable { if (!written) WorkspaceFixture.cleanup(root) }.use {
+        val markers = try {
+            InlineFiles.write(root, files)
+        } catch (failure: IllegalArgumentException) {
+            throw IllegalArgumentException("Scenario '$scenarioName': ${failure.message}", failure)
+        }
+        written = true
+        markers
     }
 }

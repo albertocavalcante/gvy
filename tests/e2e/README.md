@@ -41,6 +41,16 @@ tests/e2e/
 | `stdio`     | Spawns separate JVM process | Slow (~2-5s startup)       | Realistic integration testing |
 | `inProcess` | Runs in same JVM as tests   | Fast (no startup overhead) | Development, CI optimization  |
 
+For `stdio`, `server.args` follows the `stdio` command and `server.env` overrides inherited environment values. An
+explicit `GRADLE_USER_HOME` also overrides the isolated runtime home; otherwise the harness must prepare an isolated
+home successfully. Bazel uses `TEST_TMPDIR` for that default. The server JVM defaults to a 1 GiB maximum heap.
+In-process mode rejects process arguments and environment overrides, since it shares the test JVM.
+
+`LanguageServerSession.exit()` waits for the process exit or in-process exit callback and checks its code (zero by
+default). Closing a session releases its resources independently, so failed scenarios can be cleaned up without claiming
+a successful protocol exit. The YAML `exit` step expects code zero; nonzero expectations currently use the Kotlin
+session API.
+
 ### Future: In-Process by Default
 
 > **Planned Migration**: All scenarios will be migrated to `mode: inProcess` by default to significantly reduce E2E test
