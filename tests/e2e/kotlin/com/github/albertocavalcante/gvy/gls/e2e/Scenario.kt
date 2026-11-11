@@ -385,7 +385,12 @@ data class JsonExpectation(
     val type: ExpectationType = ExpectationType.EXISTS,
     val value: JsonElement? = null,
     val values: List<JsonElement> = emptyList(),
-    /** Name of a snapshot file under the snapshot directory; compared instead of [type], so it excludes [value]. */
+    /**
+     * Name of a snapshot file under the snapshot directory; compared instead of [type], so it excludes [value].
+     *
+     * Inside `waitNotification` a snapshot does not select the notification: while waiting it only requires the
+     * JSONPath to exist. Add a content check, or `saveAs` the notification and snapshot it in a later `assert` step.
+     */
     val snapshot: String? = null,
 ) {
     init {

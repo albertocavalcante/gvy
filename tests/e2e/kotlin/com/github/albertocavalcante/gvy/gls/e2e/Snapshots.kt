@@ -179,10 +179,10 @@ internal object Snapshots {
         val b = actual.removeSuffix("\n").lines()
         if (a.size > MAX_DIFF_LINES || b.size > MAX_DIFF_LINES) {
             val first = a.zip(b).indexOfFirst { (x, y) -> x != y }.let { if (it < 0) minOf(a.size, b.size) else it }
+            val expectedLine = a.getOrElse(first) { "<end>" }
+            val actualLine = b.getOrElse(first) { "<end>" }
             return "Too large to diff line by line (expected ${a.size} lines, actual ${b.size} lines). " +
-                "First difference at line ${first + 1}:\n- ${a.getOrElse(first) {
-                    "<end>"
-                }}\n+ ${b.getOrElse(first) { "<end>" }}\n"
+                "First difference at line ${first + 1}:\n- $expectedLine\n+ $actualLine\n"
         }
         val lcs = Array(a.size + 1) { IntArray(b.size + 1) }
         for (i in a.indices.reversed()) {

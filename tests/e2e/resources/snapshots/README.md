@@ -23,7 +23,11 @@ Review the diff the failing test prints. If the new output is right, rewrite the
 ./gradlew :tests:e2eTest --rerun --tests '*ScenarioRunnerTest' -Dgroovy.lsp.e2e.updateSnapshots=true
 ```
 
-Then review `git diff` before committing. Update mode is refused when `GITHUB_ACTIONS` is set and under Bazel. Pass
-`--rerun` so Gradle does not serve the result from its build cache.
+Then review `git diff` before committing. Update mode is refused when `CI` or `GITHUB_ACTIONS` is set and under
+Bazel. It also refuses to write `[]` or `null` (usually a filter or wildcard that matched nothing); write such a file by
+hand if it is really expected. Pass `--rerun` so Gradle does not serve the result from its build cache.
 
 This `README.md` also marks the directory for Bazel, which has no directory labels.
+
+Inside `waitNotification`, a snapshot does not select the notification: while waiting it only requires the JSONPath to
+exist. Add a content check, or use `saveAs` and snapshot it in a later `assert` step.
