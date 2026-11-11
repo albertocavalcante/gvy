@@ -140,4 +140,61 @@ class ScenarioParserTest {
             },
         )
     }
+
+    private fun snapshotScenario(expectLines: List<String>) = (
+        listOf(
+            "name: snap",
+            "steps:",
+            "  - assert:",
+            "      source: r",
+            "      checks:",
+            "        - jsonPath: \$.a",
+            "          expect:",
+        ) + expectLines.map { "            $it" }
+        ).joinToString("\n")
+
+    private fun parsedExpectation(expect: String): JsonExpectation {
+        val step = parser.parseScenarioDefinition(snapshotScenario(expect.lines())).scenario.steps.single()
+        return (step as ScenarioStep.Assert).checks.single().expect
+    }
+
+    @Test
+    fun `snapshot expectation is parsed`() {
+        val expectation = parsedExpectation("snapshot: hover/println.md")
+
+        assertThat(expectation.snapshot).isEqualTo("hover/println.md")
+    }
+
+    @Test
+    fun `unknown key next to a snapshot is rejected`() {
+        assertThatThrownBy { parsedExpectation("snapshto: x\nsnapshot: a.md") }
+            .isInstanceOf(ScenarioParseException::class.java)
+            .hasRootCauseMessage(
+                "A snapshot expectation takes the single key 'snapshot'; found keys [snapshto, snapshot]",
+            )
+    }
+
+    @Test
+    fun `misspelled snapshot key on its own is rejected instead of defaulting to EXISTS`() {
+        assertThatThrownBy { parsedExpectation("snapshto: a.md") }
+            .isInstanceOf(ScenarioParseException::class.java)
+            .hasRootCauseMessage("A snapshot expectation takes the single key 'snapshot'; found keys [snapshto]")
+    }
+
+    @Test
+    fun `type next to a snapshot is rejected`() {
+        assertThatThrownBy { parsedExpectation("type: EQUALS\nsnapshot: a.md") }
+            .isInstanceOf(ScenarioParseException::class.java)
+    }
+
+    @Test
+    fun `other expectations still tolerate unknown keys`() {
+        assertThat(parsedExpectation("type: EXISTS\nmessage: hi").snapshot).isNull()
+    }
+
+    @Test
+    fun `snapshot combined with value is rejected at parse time`() {
+        assertThatThrownBy { parsedExpectation("snapshot: a.md\nvalue: x") }
+            .isInstanceOf(ScenarioParseException::class.java)
+    }
 }

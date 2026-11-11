@@ -700,8 +700,7 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
 
         // Resolve golden file relative to the configured directory or default
         // Supports both direct path (Gradle) and marker file (Bazel)
-        val goldenDir = System.getProperty("groovy.lsp.e2e.goldenDir")?.let { Path.of(it) }
-            ?: System.getProperty("groovy.lsp.e2e.goldenDir.marker")?.let { Path.of(it).parent }
+        val goldenDir = resolveResourceDir("groovy.lsp.e2e.goldenDir")?.let { Path.of(it) }
             ?: Path.of("e2e/resources/golden").toAbsolutePath()
 
         val expectedFile = goldenDir.resolve(expectedRelPath)

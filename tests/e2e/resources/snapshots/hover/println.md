@@ -1,0 +1,5 @@
+```groovy
+println(...)
+```
+
+*(Method call)*
