@@ -72,8 +72,10 @@ Step-by-step: `tests/e2e/resources/scenarios/README.md`; harness design: `kb/tes
 
 ## Where docs go
 
-`docs/` is for users and contributors (Quality Bar, usage, feature matrix). `kb/` holds design records, RFCs, audits and
-plans.
+Follow the [documentation audience map](CONTRIBUTING.md#where-documentation-belongs). Keep the README focused on
+external users, human development procedures in contributor guides, and agent execution rules in `AGENTS.md` and
+`.agent/`. `docs/README.md` separates user and contributor entry points; `kb/` holds design records, RFCs, audits, and
+plans. Link to canonical procedures instead of duplicating them.
 
 ## Commits
 

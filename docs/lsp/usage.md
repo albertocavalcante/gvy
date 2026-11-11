@@ -1,43 +1,59 @@
-# Using the Groovy Language Server
+# Run the standalone language server
 
-## Requirements
+Connect gvy to an editor with a Language Server Protocol (LSP) client. If you use VS Code or a compatible editor, the
+[extension](../../editors/code/README.md#setup) bundles and starts the server for you.
 
-- Java 17 or newer
-- Groovy 4.0+
+## Install
 
-## Build
+You need **Java 17 or newer**. The server JAR includes its Groovy runtime; a separate Groovy installation is not
+required to start it.
+
+1. Download `gls-<version>.jar` from the [latest release](https://github.com/albertocavalcante/gvy/releases/latest).
+2. Save it as `gls.jar` in a directory of your choice.
+3. From that directory, verify that Java can start it:
+
+   ```bash
+   java -Xmx2g -jar gls.jar --help
+   ```
+
+The command prints the server's CLI help. The examples below use the renamed `gls.jar`; use its absolute path when
+configuring an editor launched from another directory.
+
+To build a JAR from source, follow the [contributor guide](../../CONTRIBUTING.md#build-and-run-the-server). Source
+builds produce `gls/build/libs/gls-<version>-all.jar`, which differs from the release asset name.
+
+## Connect over standard input/output
+
+Configure your editor's LSP client to launch:
 
 ```bash
-./gradlew build
+java -Xmx2g -jar gls.jar
 ```
 
-This produces a fat JAR under `build/libs/`.
+Standard input/output (stdio) is the default transport. The process exchanges LSP messages with the editor; it does not
+open an interactive prompt. No listening port is required.
 
-## Run
+## Connect over a socket
 
-### Stdio mode (default)
+Start the server, then configure your LSP client to connect to `127.0.0.1:8080`:
 
 ```bash
-java -jar build/libs/groovy-lsp-<version>.jar
+java -Xmx2g -jar gls.jar lsp socket --port 8080 --host 127.0.0.1
 ```
 
-### Socket mode
+The legacy `socket 8080` form also remains available. Without `--host`, socket mode binds the JVM's loopback address,
+normally `127.0.0.1`. For IPv6 loopback, select `--host ::1` and configure the client to use that address.
 
-```bash
-java -jar build/libs/groovy-lsp-<version>.jar socket 8080
-```
+Binding to a non-loopback address, such as `--host 0.0.0.0` in a container, exposes the unauthenticated server to the
+network. Use it only on trusted networks.
 
-Socket mode listens on the IPv4 loopback address (`127.0.0.1`) only. To bind another address, such as `0.0.0.0` inside a
-container or `::1` for IPv6 loopback, use the `lsp` command, for example
-`java -jar build/libs/groovy-lsp-<version>.jar lsp socket -p 8080 --host 0.0.0.0` (the legacy `socket 8080` form always
-binds loopback). Non-loopback addresses expose the unauthenticated server to the network, so only use them on trusted
-networks.
+## Check support and troubleshoot
 
-## Editors
+- Check [LSP feature support](feature-support.md) for protocol methods and known limits.
+- If Java cannot open the JAR, check `java -version` and the absolute JAR path configured in your editor.
+- For socket connections, check that the client's address and port match the server's, including the IP address family.
+- For extension settings and logs, use the [editor guide](../../editors/code/README.md#troubleshooting).
+- To report a problem, include reproduction steps, a small Groovy example, and your server, Java, and editor versions in
+  a [GitHub issue](https://github.com/albertocavalcante/gvy/issues).
 
-- VS Code extension: `../../editors/code/README.md`
-- Jupyter kernels: `../../jupyter/` (early WIP)
-
-## Troubleshooting
-
-For internal troubleshooting notes, see `../../kb/TROUBLESHOOTING.md`.
+Contributor debugging notes live in the [knowledge base](../../kb/TROUBLESHOOTING.md).
