@@ -1,11 +1,13 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { createWriteStream, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { constants } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { finished } from 'node:stream/promises';
 import { evaluateEvidence } from './check-bazel-evidence.mjs';
-import { readEvidenceText } from './read-evidence.mjs';
+import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
+import { bazelChildEnvironment, MAX_BEP_BYTES, MAX_COMPRESSED_PROFILE_BYTES, projectBep, projectProfile } from './public-bazel-evidence.mjs';
+import { publicSummary, writePublicManifest } from './audit-public-bazel-evidence.mjs';
 
 function parseArgs(args) {
   const options = { startup: [] };
@@ -13,7 +15,7 @@ function parseArgs(args) {
   for (; index < args.length && !['build', 'test'].includes(args[index]); index += 2) {
     const name = args[index];
     const value = args[index + 1];
-    if (!['--report-root', '--producer', '--startup-arg'].includes(name) || !value) throw new Error('Usage: run-bazel.mjs --report-root DIR --producer NAME [--startup-arg FLAG] build|test [BAZEL_ARGS...]');
+    if (!['--report-root', '--private-report-root', '--producer', '--startup-arg'].includes(name) || !value) throw new Error('Usage: run-bazel.mjs --report-root PUBLIC_DIR [--private-report-root PRIVATE_DIR] --producer NAME [--startup-arg FLAG] build|test [BAZEL_ARGS...]');
     if (name === '--startup-arg') options.startup.push(value);
     else {
       if (Object.hasOwn(options, name)) throw new Error('Duplicate wrapper option');
@@ -69,9 +71,9 @@ function createContext(command, invocationId) {
 
 async function capture(args, dir) {
   let captureExitCode = 0;
-  const streams = ['stdout.log', 'stderr.log', 'console.log'].map(name => createWriteStream(join(dir, name), { flags: 'wx' }));
+  const streams = ['stdout.log', 'stderr.log', 'console.log'].map(name => createWriteStream(join(dir, name), { flags: 'wx', mode: 0o600 }));
   const settled = streams.map(stream => finished(stream).catch(() => { captureExitCode = 1; }));
-  const child = spawn('bazel', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn('bazel', args, { env: bazelChildEnvironment(process.env), stdio: ['ignore', 'pipe', 'pipe'] });
   // pipe() applies backpressure across all sinks, keeping large output bounded.
   child.stdout.pipe(streams[0]);
   child.stdout.pipe(streams[2], { end: false });
@@ -96,56 +98,76 @@ async function capture(args, dir) {
   };
 }
 
+function canonicalRoot(path) {
+  let parent = resolve(path);
+  const suffix = [];
+  while (true) {
+    try { return join(realpathSync(parent), ...suffix.reverse()); }
+    catch (error) {
+      if (error.code !== 'ENOENT' || parent === dirname(parent) || suffix.length > 128) throw new Error('Invalid evidence root');
+      suffix.push(parent.slice(dirname(parent).length + (dirname(parent) === sep ? 0 : 1)));
+      parent = dirname(parent);
+    }
+  }
+}
+function roots(options) {
+  const publicRoot = canonicalRoot(options['--report-root']);
+  if (process.env.GITHUB_ACTIONS === 'true' && !options['--private-report-root']) throw new Error('CI requires an explicit private evidence root');
+  const privateRoot = canonicalRoot(options['--private-report-root'] ?? publicRoot + '-private');
+  const contains = (outer, inner) => { const path = relative(outer, inner); return path === '' || (!path.startsWith('..' + sep) && path !== '..' && !isAbsolute(path)); };
+  if (contains(publicRoot, privateRoot) || contains(privateRoot, publicRoot)) throw new Error('Public and private evidence roots must be disjoint');
+  return { publicRoot, privateRoot };
+}
+
 async function main(args) {
   const options = parseArgs(args);
+  const location = roots(options);
   const invocationId = randomUUID();
-  const dir = join(options['--report-root'], `${options['--producer']}-${options.command}-${invocationId}`);
-  mkdirSync(dir, { recursive: true });
+  const name = options['--producer'] + '-' + options.command + '-' + invocationId;
+  const dir = join(location.publicRoot, name);
+  const privateDir = join(location.privateRoot, name);
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  mkdirSync(privateDir, { recursive: true, mode: 0o700 });
   let result;
   let status = { commandExitCode: 2, captureExitCode: 0, commandSignal: null };
   let dirty = null;
   let context;
+  let stage = 'Invocation preflight';
   try {
     validateStartup(options.startup);
     context = createContext(options.command, invocationId);
-    // Reuse the checker's context contract before starting any build. A missing
-    // BEP is expected here; all other context errors must abort invocation.
-    const preflight = evaluateEvidence('', context, 0);
-    if (!preflight.context) throw new Error(preflight.errors[0]);
-    writeFileSync(join(dir, 'context.json'), `${JSON.stringify(context, null, 2)}\n`, { flag: 'wx' });
+    if (!evaluateEvidence('', context, 0).context) throw new Error('Invalid invocation context');
+    writeFileSync(join(dir, 'context.json'), JSON.stringify(context, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
     dirty = Boolean(git(['status', '--porcelain', '--untracked-files=normal']));
     const separator = options.bazelArgs.indexOf('--');
     const userFlags = separator < 0 ? options.bazelArgs : options.bazelArgs.slice(0, separator);
     const targetSuffix = separator < 0 ? [] : options.bazelArgs.slice(separator);
     const telemetry = [
       '--config=bep', '--config=profile', '--bes_backend=', '--remote_cache=', '--remote_executor=', '--noremote_upload_local_results',
-      `--invocation_id=${invocationId}`, `--build_event_json_file=${join(dir, 'bep.json')}`, `--profile=${join(dir, 'profile.json.gz')}`,
-      ...Object.entries({ HEAD_SHA: context.headSha, TESTED_SHA: context.testedSha, RUN_ID: context.runId, RUN_ATTEMPT: String(context.runAttempt) }).map(([key, value]) => `--build_metadata=${key}=${value}`),
+      '--invocation_id=' + invocationId, '--build_event_json_file=' + join(privateDir, 'bep.json'), '--profile=' + join(privateDir, 'profile.json.gz'),
+      ...Object.entries({ HEAD_SHA: context.headSha, TESTED_SHA: context.testedSha, RUN_ID: context.runId, RUN_ATTEMPT: String(context.runAttempt) }).map(([key, value]) => '--build_metadata=' + key + '=' + value),
     ];
-    status = await capture(['--nohome_rc', ...options.startup, options.command, '--config=ci', ...userFlags, ...telemetry, ...targetSuffix], dir);
-    let bep = '';
-    const errors = [];
-    try {
-      bep = readEvidenceText(join(dir, 'bep.json'), 256 * 1024 * 1024);
-    } catch { errors.push('Cannot read BEP or BEP exceeds 256 MiB limit'); }
-    try {
-      const profile = statSync(join(dir, 'profile.json.gz'));
-      if (!profile.isFile() || !profile.size) throw new Error('Empty profile');
-    } catch { errors.push('Missing or empty trace profile'); }
-    result = evaluateEvidence(bep, context, status.commandExitCode, status.captureExitCode);
-    result.errors.push(...errors);
-    result.ok &&= errors.length === 0;
-  } catch (error) {
-    result = evaluateEvidence('', context, status.commandExitCode, status.captureExitCode);
-    result.errors.push(error.message);
+    stage = 'Bazel capture';
+    status = await capture(['--nohome_rc', ...options.startup, options.command, '--config=ci', ...userFlags, ...telemetry, ...targetSuffix], privateDir);
+    stage = 'Public evidence projection';
+    const bep = projectBep(readEvidenceText(join(privateDir, 'bep.json'), MAX_BEP_BYTES), context);
+    const profile = projectProfile(readEvidenceBytes(join(privateDir, 'profile.json.gz'), MAX_COMPRESSED_PROFILE_BYTES));
+    writeFileSync(join(dir, 'bep.json'), bep, { flag: 'wx', mode: 0o600 });
+    writeFileSync(join(dir, 'profile.json.gz'), profile, { flag: 'wx', mode: 0o600 });
+    result = publicSummary(bep, context, status, options['--producer'], dirty);
+    stage = 'Public evidence manifest';
+    writeFileSync(join(dir, 'summary.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+    writePublicManifest(dir, context);
+  } catch {
+    // Exception text can contain raw JSON, command arguments or private paths.
+    // Public failures use only controlled stage names; raw inputs stay private.
+    result = publicSummary('', context, status, options['--producer'], dirty);
+    result.errors.push(stage + ' failed; raw evidence was not published');
+    result.ok = false;
+    writeFileSync(join(dir, 'summary.json'), JSON.stringify(result, null, 2) + '\n', { mode: 0o600 });
   }
-  result.producer = options['--producer'];
-  result.remoteTelemetry = 'disabled-by-owner';
-  result.worktreeDirty = dirty;
-  result.commandSignal = status.commandSignal;
-  writeFileSync(join(dir, 'summary.json'), `${JSON.stringify(result, null, 2)}\n`);
-  console.log(`Bazel evidence ${result.ok ? 'passed' : 'failed'}: ${dir}`);
+  console.log('Bazel evidence ' + (result.ok ? 'passed' : 'failed') + ': ' + dir);
   process.exitCode = status.commandExitCode !== 0 ? status.commandExitCode : result.ok ? 0 : 1;
 }
 
-try { await main(process.argv.slice(2)); } catch (error) { console.error(error.message); process.exitCode = 2; }
+try { await main(process.argv.slice(2)); } catch { console.error('Bazel evidence configuration failed'); process.exitCode = 2; }

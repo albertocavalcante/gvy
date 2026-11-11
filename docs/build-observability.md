@@ -1,9 +1,9 @@
 # Bazel configuration and build evidence
 
 The repository pins Bazel **9.0.0**. Local JSON Build Event Protocol (BEP) and JSON trace profiles provide build
-evidence without a remote service. Remote upload is **disabled by owner choice**: the base configuration clears the BES,
-remote cache and executor destinations and disables uploading local action results. No account, endpoint or credential
-is required for local artifacts.
+evidence without a remote service. BES and remote-cache upload are **disabled by owner choice**: the base configuration
+clears the BES, remote cache and executor destinations and disables uploading local action results. No account, endpoint
+or credential is required for local artifacts.
 
 ## Profiles and resource budgets
 
@@ -43,23 +43,63 @@ invalid evidence still fails the wrapper.
 
 ```bash
 build-slot --slots 1 -- node tools/ci/run-bazel.mjs \
-  --report-root "$HOME/.local/state/gvy/build-evidence" --producer bazel-test \
+  --report-root "$HOME/.local/state/gvy/build-evidence/public" \
+  --private-report-root "$HOME/.local/state/gvy/build-evidence/private" --producer bazel-test \
   test //common:common_test
 ```
 
-Each directory is named `<producer>-<command>-<uuid>` and contains `context.json`, `bep.json`, `profile.json.gz`,
-`stdout.log`, `stderr.log`, `console.log` and `summary.json`. Preserve failed invocation directories too. The wrapper
-uses `--config=ci` by default to reject lockfile drift; add `--config=local` when intentionally updating the graph. It
-records whether the worktree was dirty, so local edits are visible as a validation limit.
+Each invocation directory is named `<producer>-<command>-<uuid>`. The report root is **public-only**. It contains
+projected `bep.json`, projected `profile.json.gz`, approved `context.json`, `summary.json` and a versioned
+`public-evidence.json` checksum manifest. The separate private root contains raw BEP/profile and `stdout.log`,
+`stderr.log`, `console.log`. CI must pass the private root explicitly; locally it defaults to a sibling named
+`<report-root>-private`. The roots must be disjoint, including through existing symlinks.
+
+The wrapper uses `--config=ci` by default to reject lockfile drift; add `--config=local` when intentionally updating the
+graph. It records whether the worktree was dirty. It computes Git/GitHub identity in the parent, then starts Bazel with
+a minimal explicit environment of platform identity, temporary-directory and tool/cache paths. Credential variables,
+GitHub context and injected Java options do not inherit. Bazelisk bootstrapping with an action token happens separately,
+before the credential-free build invocation. This environment boundary is not a filesystem sandbox.
 
 The wrapper disables the home rc file and forces remote-off settings and identity/artifact flags after user options. A
 standalone `--` target separator remains supported. Optional `--startup-arg FLAG` values before `build|test` are
 restricted to `--batch`, an explicit `--host_jvm_args=-Xmx...` of at most 4 GiB, and absolute `--output_user_root=...` /
-`--output_base=...` paths. No shell expansion or environment dump is involved. The caller owns slot coordination; the
-wrapper does not acquire another build slot.
+`--output_base=...` paths. The caller owns slot coordination; the wrapper acquires no nested slot.
 
-Trace profiles can be opened in a locally installed trace viewer. The checker requires a requested profile to exist and
-be nonempty; it does not validate trace semantics or claim that every action produced profiling data.
+## Public artifact privacy contract
+
+**gvy is public. Its Actions artifacts must be treated as public.** Raw Bazel evidence can contain unmasked client
+environment values, command arguments, credentials, source paths, URLs and test output. Never upload the private root,
+raw test logs or diagnostic reports copied from raw logs. Raw console output remains available through normal CI log
+handling; diagnostic classification reads the private console files, and those diagnostic reports stay outside the
+public upload root.
+
+The versioned `gvy-public-bazel-v1` projection publishes approved identity/timing, four build-metadata fields, true
+build/action/test outcomes, cache counts and typed numeric metrics. It removes command-line/options/client-environment
+payload contents, started option descriptions, action command lines, arbitrary metadata, output text and artifact URIs.
+Every string within graph IDs is mapped consistently to an opaque digest while event kinds, child edges, nested ID
+shapes and numeric retry/run/shard fields remain intact. Target, action, runner and file labels are therefore
+unavailable in public artifacts; use normal CI diagnostics for actionable target names.
+
+Published trace profiles retain finite numeric timestamps, durations, thread IDs and counters. Source names, metadata
+and args are discarded; names are generic ordinal labels, and counter args are regenerated from numeric values only
+under fixed synthetic keys. These profiles show timing and resource tracks, with reduced semantic attribution.
+
+Before upload, run:
+
+```bash
+node tools/ci/audit-public-bazel-evidence.mjs --report-root "$PUBLIC_EVIDENCE_ROOT"
+```
+
+The audit checks every invocation against the projection contract, approved workflow identity, recomputed summary and
+file hashes. It rejects stale contexts, unknown files, symlinks, raw fields, malformed/oversized inputs and unsupported
+projection versions. Only invocation directories and the generated `public-audit.json` marker are permitted at the root;
+aggregate readiness and diagnostic reports belong elsewhere. Upload must depend on audit success. A passing privacy
+audit permits publishing a failed build's genuine projected outcomes; it does not make the build pass.
+
+Malformed or over-limit raw evidence never falls back to raw publication. BEP input/output is limited to 256 MiB;
+compressed profiles to 32 MiB and decompressed JSON to 128 MiB. Public failures use controlled stage errors without
+input snippets. Descriptor-based reads require supported no-follow semantics and fail closed when unavailable; this path
+is validated on macOS/Linux, with no unsupported-platform publication fallback.
 
 ## Validate and interpret evidence
 
@@ -95,16 +135,15 @@ action/cache/runner, timing, memory and target metrics. `actionsExecuted` includ
 action-cache hits; it must not be interpreted as a count of fresh compiler executions. Missing metrics remain absent,
 not fabricated zero measurements. Raw BEP is bounded to 256 MiB for validation; exceeding that limit fails explicitly.
 
-The summary does not copy BEP command lines, environment, stdout or artifact URIs. **Raw BEP, trace profiles and console
-logs can contain sensitive information**, including source paths, action commands, repository URLs and test output.
-Retain them with the repository's private CI artifact access/retention policy. JSON BEP references local test logs;
-those references alone do not archive their contents. Existing CI diagnostic checks still inspect warnings and
-dependency advice; BEP success does not replace that policy.
+Public summaries are recomputed from projected BEP and preserve genuine failure verdicts. Raw log references and test
+outputs are not archived by the public projection. Existing diagnostic checks still inspect warnings and dependency
+advice from the separate private console captures; BEP success does not replace that policy.
 
 Run the checker regressions with:
 
 ```bash
-node --test tools/ci/check-bazel-evidence.test.mjs tools/ci/run-bazel.test.mjs
+node --test tools/ci/check-bazel-evidence.test.mjs tools/ci/run-bazel.test.mjs \
+  tools/ci/public-bazel-evidence.test.mjs tools/ci/audit-public-bazel-evidence.test.mjs
 ```
 
 ## Optional BES state

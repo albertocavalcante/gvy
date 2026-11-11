@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -20,6 +20,16 @@ test('reads exact original bytes at the limit without decoding valid or invalid 
   assert.throws(() => readEvidenceBytes(file, bytes.length - 1), /exceeds/);
   writeFileSync(file, '');
   assert.equal(readEvidenceBytes(file, 1).length, 0);
+});
+
+test('refuses a symlink instead of reading a different private evidence target', t => {
+  const dir = mkdtempSync(join(tmpdir(), 'gvy-read-evidence-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const target = join(dir, 'target');
+  const link = join(dir, 'link');
+  writeFileSync(target, 'private synthetic canary');
+  symlinkSync(target, link);
+  assert.throws(() => readEvidenceBytes(link, 1024));
 });
 
 test('rejects missing, nonregular and over-limit files before reading unbounded content', (t) => {
