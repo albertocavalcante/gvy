@@ -114,6 +114,19 @@ That's it! The extension will find Java automatically from your PATH or `JAVA_HO
 - **`groovy.project.javaHome`**: Java installation for project build and test execution (Maven/Gradle). This can be
   different from the Language Server Java. If not set, uses your system's `JAVA_HOME`.
 
+- **`groovy.server.vmargs`** / **`groovy.server.vmargsDefaults`**: the server JVM starts with memory-friendly defaults
+  (heap bounded at 2 GB, G1 with an idle GC every 60 s that returns unused memory to the OS, exit on out-of-memory so
+  the server restarts). `groovy.server.vmargs` is appended after them, so your `-X`/`-XX` options win. A default is
+  dropped only when it would conflict with yours: `-Xmx2g` when you set a maximum heap (`-Xmx`, `-XX:MaxRAMPercentage`,
+  ...) or an initial heap above 2g, `-Xms64m` when your maximum is below 64m, a `HeapFreeRatio` default when your other
+  bound would contradict it, and the G1-only defaults when you pick another collector (for example
+  `-XX:+UseParallelGC`). `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and `_JAVA_OPTIONS` are taken into account too (for
+  example `-XX:MaxRAMPercentage` there replaces `-Xmx2g`); `@argfiles`, `-XX:VMOptionsFile` and `-XX:Flags` are not
+  inspected. Changing either setting prompts for a server restart.
+
+  **Upgrading:** a custom `groovy.server.vmargs` list (including `[]`) no longer replaces the defaults. Set
+  `groovy.server.vmargsDefaults` to `false` to use only your own list.
+
 - **`groovy.java.home`**: **DEPRECATED**. This setting is replaced by `groovy.languageServer.javaHome` and will be
   removed in a future version. For backward compatibility, it still works but you should migrate to the new setting
   names.

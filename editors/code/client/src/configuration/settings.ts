@@ -7,6 +7,8 @@ export interface GroovyConfiguration {
   serverPath: string | undefined;
   /** Raw `groovy.server.vmargs`; sanitized when the command line is built. */
   serverVmArgs: unknown;
+  /** Raw `groovy.server.vmargsDefaults`; only `false` disables the defaults. */
+  serverVmArgsDefaults: unknown;
   /** Seconds to wait for the server to start; 0 waits indefinitely. */
   startTimeoutSeconds: number;
 }
@@ -28,6 +30,7 @@ export function getConfiguration(): GroovyConfiguration {
     maxNumberOfProblems: config.get<number>("server.maxNumberOfProblems", 100),
     serverPath: config.get<string>("server.path"),
     serverVmArgs: config.get<unknown>("server.vmargs"),
+    serverVmArgsDefaults: config.get<unknown>("server.vmargsDefaults"),
     startTimeoutSeconds: startTimeoutFrom(
       config.get<unknown>("server.startTimeoutSeconds"),
     ),
@@ -59,6 +62,7 @@ export const RESTART_REQUIRED_SETTINGS: readonly string[] = [
   "java.home",
   "server.path",
   "server.vmargs",
+  "server.vmargsDefaults",
   "server.logLevel",
   "languageServer.engine",
   "compilation.mode",
