@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
@@ -12,8 +11,8 @@ import java.net.URI
  * Abstract base class for diagnostic rules providing common utilities.
  *
  * Subclasses only need to implement analyzeImpl() with their specific logic.
- * This base class handles error recovery and provides helper methods for
- * creating diagnostics.
+ * This base class handles syntax-error skips and provides helper methods for
+ * creating diagnostics. Failures propagate to the provider's rule-cohort boundary.
  */
 abstract class AbstractDiagnosticRule : DiagnosticRule {
 
@@ -26,13 +25,7 @@ abstract class AbstractDiagnosticRule : DiagnosticRule {
             return emptyList()
         }
 
-        return runCatching { analyzeImpl(uri, content, context) }
-            .onFailure { error ->
-                if (error is CancellationException) throw error
-                // Log error but don't propagate - rules should be isolated
-                logger.error(error) { "Rule $id failed" }
-            }
-            .getOrElse { emptyList() }
+        return analyzeImpl(uri, content, context)
     }
 
     /**

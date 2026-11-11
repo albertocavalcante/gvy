@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import java.net.URI
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class AbstractDiagnosticRuleTest {
@@ -75,21 +76,45 @@ class AbstractDiagnosticRuleTest {
     }
 
     @Test
-    fun `should handle exceptions gracefully`(): Unit = runBlocking {
+    fun `ordinary rule failures preserve their identity`(): Unit = runBlocking {
+        val failure = IllegalStateException("Test exception")
         val rule = object : AbstractDiagnosticRule() {
             override val id = "test-rule"
             override val description = "Test rule"
 
             override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
-                error("Test exception")
+                throw failure
         }
 
         val context = mockk<RuleContext>()
         every { context.hasErrors() } returns false
 
-        val diagnostics = rule.analyze(URI.create("file:///test.groovy"), "test", context)
+        assertSame(
+            failure,
+            assertFailsWith<IllegalStateException> {
+                rule.analyze(URI.create("file:///test.groovy"), "test", context)
+            },
+        )
+    }
 
-        assertTrue(diagnostics.isEmpty(), "Should return empty list on exception")
+    @Test
+    fun `fatal rule failures preserve their identity`(): Unit = runBlocking {
+        val failure = LinkageError("Rule linkage failed")
+        val rule = object : AbstractDiagnosticRule() {
+            override val id = "fatal-rule"
+            override val description = "Fatal rule"
+            override suspend fun analyzeImpl(uri: URI, content: String, context: RuleContext): List<Diagnostic> =
+                throw failure
+        }
+        val context = mockk<RuleContext>()
+        every { context.hasErrors() } returns false
+
+        assertSame(
+            failure,
+            assertFailsWith<LinkageError> {
+                rule.analyze(URI.create("file:///test.groovy"), "test", context)
+            },
+        )
     }
 
     @Test
