@@ -1,0 +1,51 @@
+name: repro-definition-parameter-type
+description: Go to definition on `Money` in a parameter declaration reaches the class in another file
+xfail:
+  issue: 1532
+  reason: definition on a parameter type returns the parameter itself instead of the class
+  match: 'Actual: \[\s*"[^"]*Use\.groovy"'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/money/Money.groovy: |
+      package demo.money
+
+      class |^moneyDecl|Money {}
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      import demo.money.Money
+
+      class Use {
+          Object run(|^use|Money param) {
+              param
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.use.path}}"
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].uri"
+          expect: { type: CONTAINS, value: "{{cursor.moneyDecl.path}}" }
+  - shutdown: {}
+  - exit: {}

@@ -1,0 +1,51 @@
+name: repro-definition-super-call
+description: Go to definition on `go` in `super.go()` reaches the superclass method in another file
+xfail:
+  issue: 1533
+  reason: definition on super.go() returns the overriding method that contains the call
+  match: 'Actual: \[\s*"[^"]*Kid\.groovy"'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/MiscA.groovy: |
+      package demo
+
+      class MiscA {
+          String |^goDecl|go() { 'a' }
+      }
+    src/main/groovy/demo/Kid.groovy: |
+      package demo
+
+      class Kid extends MiscA {
+          String go() {
+              super.|^use|go()
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.use.path}}"
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].uri"
+          expect: { type: CONTAINS, value: "{{cursor.goDecl.path}}" }
+  - shutdown: {}
+  - exit: {}

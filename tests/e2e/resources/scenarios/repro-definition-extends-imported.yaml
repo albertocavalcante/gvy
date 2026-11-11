@@ -1,0 +1,47 @@
+name: repro-definition-extends-imported
+description: Go to definition on `Base` in `class Sub extends Base` reaches the base class in another file
+xfail:
+  issue: 1532
+  reason: definition on a type name in `extends` returns the enclosing class instead of the base class
+  match: 'Actual: \[\s*"[^"]*Sub\.groovy"'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/base/Base.groovy: |
+      package demo.base
+
+      class |^baseDecl|Base {}
+    src/main/groovy/demo/Sub.groovy: |
+      package demo
+
+      import demo.base.Base
+
+      class Sub extends |^use|Base {}
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.use.path}}"
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].uri"
+          expect: { type: CONTAINS, value: "{{cursor.baseDecl.path}}" }
+  - shutdown: {}
+  - exit: {}

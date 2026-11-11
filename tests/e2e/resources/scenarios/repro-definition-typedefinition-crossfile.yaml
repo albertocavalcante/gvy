@@ -1,0 +1,52 @@
+name: repro-definition-typedefinition-crossfile
+description: Go to type definition on `typed` (declared `Order`, class in another file) reaches Order
+xfail:
+  issue: 1535
+  reason: typeDefinition on a variable declared with a class from another file returns nothing
+  match: 'Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/order/Order.groovy: |
+      package demo.order
+
+      class |^orderDecl|Order { String customer }
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      import demo.order.Order
+
+      class Use {
+          void run(Order other) {
+              Order |^use|typed = other
+              println typed
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.use.path}}"
+  - request:
+      method: textDocument/typeDefinition
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].uri"
+          expect: { type: CONTAINS, value: "{{cursor.orderDecl.path}}" }
+  - shutdown: {}
+  - exit: {}
