@@ -93,7 +93,7 @@ fun AstVisualizerApp() {
                 ) {
                     CodePanel(
                         sourceCode = viewModel.sourceCode,
-                        selectedNode = viewModel.selectedNode,
+                        sourceNavigation = viewModel.sourceNavigation,
                         errors = viewModel.parseErrors,
                         onCodeChange = { code ->
                             viewModel.updateSourceCode(code)

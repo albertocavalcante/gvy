@@ -41,6 +41,14 @@ data class CodeError(
     val endColumn: Int = -1,
 )
 
+data class SourceNavigation(val sequence: Long, val range: RangeDto)
+
+private fun codeError(message: String, range: RangeDto?): CodeError = if (range == null) {
+    CodeError(message)
+} else {
+    CodeError(message, range.startLine, range.startColumn, range.endLine, range.endColumn)
+}
+
 /**
  * View model for the AST Visualizer application.
  *
@@ -56,6 +64,7 @@ class AstViewModel {
 
     // Selected parser
     var selectedParser by mutableStateOf(ParserType.CORE)
+        private set
 
     // Parsed AST tree
     var astTree by mutableStateOf<AstNodeDto?>(null)
@@ -65,6 +74,10 @@ class AstViewModel {
     var selectedNode by mutableStateOf<AstNodeDto?>(null)
         private set
 
+    var sourceNavigation by mutableStateOf<SourceNavigation?>(null)
+        private set
+    private var navigationSequence = 0L
+
     // Last used directory for file picker
     var lastDirectory by mutableStateOf(prefs.get("lastDirectory", System.getProperty("user.home")))
         private set
@@ -73,7 +86,10 @@ class AstViewModel {
      * Select a node in the tree.
      */
     fun selectNode(node: AstNodeDto?) {
+        fun contains(root: AstNodeDto): Boolean = root === node || root.children.any(::contains)
+        if (node != null && astTree?.let(::contains) != true) return
         selectedNode = node
+        sourceNavigation = node?.range?.let { SourceNavigation(++navigationSequence, it) }
     }
 
     /**
@@ -92,26 +108,44 @@ class AstViewModel {
     fun selectNodeAt(line: Int, column: Int) {
         val root = astTree ?: return
         val node = findSmallestNodeAt(root, line, column)
-        if (node != null && node != selectedNode) {
-            selectedNode = node
-        }
+        selectedNode = node
     }
 
     private fun findSmallestNodeAt(node: AstNodeDto, line: Int, column: Int): AstNodeDto? {
-        val smallestChild = node.children.asSequence()
-            .mapNotNull { child -> findSmallestNodeAt(child, line, column) }
-            .firstOrNull()
+        val coordinates = SourceCoordinates(sourceCode)
+        val cursor = coordinates.offset(line, column) ?: return null
+        data class Candidate(val node: AstNodeDto, val length: Int, val depth: Int)
+        var best: Candidate? = null
+        fun visit(current: AstNodeDto, depth: Int) {
+            current.range?.let { range ->
+                val start = coordinates.offset(range.startLine, range.startColumn) ?: return@let
+                val end = coordinates.offset(range.endLine, range.endColumn) ?: return@let
+                val validRange = start < end
+                val containsCursor = cursor >= start && cursor < end
+                if (!validRange || !containsCursor) return@let
 
-        return node.range?.let { range ->
-            val containsCursor = when {
-                line < range.startLine || line > range.endLine -> false
-                line == range.startLine && column < range.startColumn -> false
-                line == range.endLine && column > range.endColumn -> false
-                else -> true
+                val candidate = Candidate(current, end - start, depth)
+                val previous = best
+                // Equal spans prefer the deeper node, then the first in tree order.
+                if (previous == null) {
+                    best = candidate
+                } else {
+                    val smallerSpan = candidate.length < previous.length
+                    val deeperEqualSpan = candidate.length == previous.length && candidate.depth > previous.depth
+                    if (smallerSpan || deeperEqualSpan) best = candidate
+                }
             }
+            current.children.forEach { visit(it, depth + 1) }
+        }
+        visit(node, 0)
+        return best?.node
+    }
 
-            if (!containsCursor) null else smallestChild ?: node
-        } ?: smallestChild
+    private fun invalidateParse() {
+        astTree = null
+        selectedNode = null
+        sourceNavigation = null
+        parseErrors = emptyList()
     }
 
     // Parse errors
@@ -144,12 +178,15 @@ class AstViewModel {
     @Suppress("TooGenericExceptionCaught")
     fun loadFile(file: File) {
         try {
-            sourceCode = file.readText()
+            val contents = file.readText()
+            invalidateParse()
+            sourceCode = contents
             currentFilePath = file.absolutePath
             inputPath = file.absolutePath
             updateLastDirectory(file.absolutePath)
             parseCode()
         } catch (e: Exception) {
+            invalidateParse()
             parseErrors = listOf(CodeError("Failed to load file: ${e.message}"))
         }
     }
@@ -158,6 +195,7 @@ class AstViewModel {
      * Update source code directly (for paste or manual entry).
      */
     fun updateSourceCode(code: String) {
+        if (sourceCode != code) invalidateParse()
         sourceCode = code
         currentFilePath = null
     }
@@ -171,6 +209,7 @@ class AstViewModel {
         if (file.exists() && file.isFile) {
             loadFile(file)
         } else {
+            invalidateParse()
             parseErrors = listOf(CodeError("File not found or invalid: $inputPath"))
         }
     }
@@ -179,9 +218,8 @@ class AstViewModel {
      * Parse the current source code with the selected parser.
      */
     fun parseCode() {
+        invalidateParse()
         if (sourceCode.isBlank()) {
-            astTree = null
-            parseErrors = emptyList()
             return
         }
 
@@ -255,12 +293,6 @@ class AstViewModel {
             val converter = NativeAstConverter()
             astTree = converter.convert(moduleNode, sourceCode)
         }
-    }
-
-    private fun codeError(message: String, range: RangeDto?): CodeError = if (range == null) {
-        CodeError(message)
-    } else {
-        CodeError(message, range.startLine, range.startColumn, range.endLine, range.endColumn)
     }
 
     private fun parseRewriteAst() {
