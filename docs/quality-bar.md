@@ -8,11 +8,14 @@ the sentence above. The page changes rarely; live status of the tracks is tracke
 
 ## Properties
 
+These are the targets every change is held to, not a description of today; the [scorecard](#scorecard) shows how close
+gvy is.
+
 | Property    | What it means                                                                                                                                                                                                  |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Correct** | Types, resolution and diagnostics come from the Groovy compiler, including its static type checker. gvy adds editor concerns on top (partial code, error tolerance) instead of keeping a parallel type system. |
 | **Honest**  | Unknown is shown as unknown, inferred guesses are labelled, and refactorings refuse rather than guess. No AST class names or `@hash` strings reach the user.                                                   |
-| **Fast**    | Each LSP method has a latency budget, measured at p95 on the fixture workspace.                                                                                                                                |
+| **Fast**    | Each LSP method gets a latency budget, measured at p95 on the fixture workspace.                                                                                                                               |
 | **Safe**    | Formatting, rename and code actions never change program meaning. They are guarded by checks that need no expected output; when in doubt, gvy returns no edit.                                                 |
 
 ## Working rules
