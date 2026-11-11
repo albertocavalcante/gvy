@@ -438,7 +438,7 @@
     },
     "//tools/build_defs:wire_compiler.bzl%wire_compiler": {
       "general": {
-        "bzlTransitiveDigest": "6pq9ATrdoJjSnMJ03E5CP1+2dwLPdl3vbvTImpdihe4=",
+        "bzlTransitiveDigest": "Rbv2U6Fe7jD9vy/o7jN2XQeFUH5KfohDzcrWRYfNngU=",
         "usagesDigest": "97UaqHALi2GRhm3182cgOi1+oH4I2eDjEqtpC6dtXe4=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"

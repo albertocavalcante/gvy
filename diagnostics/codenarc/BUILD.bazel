@@ -23,6 +23,7 @@ kt_library(
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_codenarc_CodeNarc",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
+        "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
     ],
 )
 
