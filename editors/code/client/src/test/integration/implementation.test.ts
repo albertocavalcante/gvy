@@ -69,6 +69,34 @@ suite("Implementation navigation with the current server", () => {
     );
   }
 
+  // NOTE: Restoring editor text does not acknowledge server analysis; each mutating case owns its URI.
+  async function openRenameFixture(fileName: string) {
+    const workspace = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(workspace, "Rename fixtures require the editor test workspace");
+    const fixture = await vscode.workspace.openTextDocument(
+      vscode.Uri.joinPath(workspace.uri, fileName),
+    );
+    await vscode.window.showTextDocument(fixture);
+    return fixture;
+  }
+
+  async function restoreRenameFixture(
+    fixture: vscode.TextDocument,
+    original: string,
+  ) {
+    const restore = new vscode.WorkspaceEdit();
+    restore.replace(
+      fixture.uri,
+      new vscode.Range(
+        fixture.positionAt(0),
+        fixture.positionAt(fixture.getText().length),
+      ),
+      original,
+    );
+    assert.ok(await vscode.workspace.applyEdit(restore));
+    assert.strictEqual(fixture.getText(), original);
+  }
+
   test("CodeNarc diagnostics underline original source tokens without edits", async () => {
     const workspace = vscode.workspace.workspaceFolders?.[0];
     assert.ok(workspace);
@@ -712,16 +740,16 @@ suite("Implementation navigation with the current server", () => {
   });
 
   test("Rename applies exact parameter edits through the current server", async () => {
-    await vscode.window.showTextDocument(document);
-    const original = document.getText();
+    const fixture = await openRenameFixture("RenameParameter.groovy");
+    const original = fixture.getText();
     const declaration = "String convert(String value) { value }";
     const offset = original.indexOf(declaration);
     assert.ok(offset >= 0);
     const parameterOffset = offset + declaration.indexOf("value");
     const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
       "vscode.executeDocumentRenameProvider",
-      document.uri,
-      document.positionAt(parameterOffset),
+      fixture.uri,
+      fixture.positionAt(parameterOffset),
       "convertedValue",
     );
     assert.ok(edit, "The server must return a rename edit");
@@ -729,90 +757,76 @@ suite("Implementation navigation with the current server", () => {
     assert.strictEqual(entries.length, 1);
     assert.strictEqual(
       realpathSync(entries[0][0].fsPath),
-      realpathSync(document.uri.fsPath),
+      realpathSync(fixture.uri.fsPath),
     );
     const edits = entries[0][1];
     assert.deepStrictEqual(
       edits
-        .map((entry) => document.offsetAt(entry.range.start))
+        .map((entry) => fixture.offsetAt(entry.range.start))
         .sort((a, b) => a - b),
       [parameterOffset, offset + declaration.lastIndexOf("value")],
     );
     for (const entry of edits) {
-      assert.strictEqual(document.getText(entry.range), "value");
+      assert.strictEqual(fixture.getText(entry.range), "value");
       assert.strictEqual(entry.newText, "convertedValue");
     }
     try {
       assert.ok(await vscode.workspace.applyEdit(edit));
       assert.strictEqual(
-        document.getText(),
+        fixture.getText(),
         original.replace(
           declaration,
           declaration.replace(/\bvalue\b/g, "convertedValue"),
         ),
       );
     } finally {
-      const restore = new vscode.WorkspaceEdit();
-      restore.replace(
-        document.uri,
-        new vscode.Range(
-          document.positionAt(0),
-          document.positionAt(document.getText().length),
-        ),
-        original,
-      );
-      assert.ok(await vscode.workspace.applyEdit(restore));
-      assert.strictEqual(document.getText(), original);
+      await restoreRenameFixture(fixture, original);
     }
   });
-  for (const declaration of [
-    "def defaults(value, copy = value) { value }",
-    "String memoized(String value) { value }",
+  for (const { fileName, declaration } of [
+    {
+      fileName: "RenameDefaults.groovy",
+      declaration: "def defaults(value, copy = value) { value }",
+    },
+    {
+      fileName: "RenameMemoized.groovy",
+      declaration: "String memoized(String value) { value }",
+    },
   ]) {
     test(`Rename from a body updates all bindings in ${declaration}`, async () => {
-      await vscode.window.showTextDocument(document);
-      const original = document.getText();
+      const fixture = await openRenameFixture(fileName);
+      const original = fixture.getText();
       const offset = original.indexOf(declaration);
       assert.ok(offset >= 0);
       const edit = await vscode.commands.executeCommand<vscode.WorkspaceEdit>(
         "vscode.executeDocumentRenameProvider",
-        document.uri,
-        document.positionAt(offset + declaration.lastIndexOf("value")),
+        fixture.uri,
+        fixture.positionAt(offset + declaration.lastIndexOf("value")),
         "renamedValue",
       );
       assert.ok(edit, "The server must return a complete rename edit");
       const entries = edit.entries();
       assert.strictEqual(entries.length, 1);
-      assert.strictEqual(entries[0][0].toString(), document.uri.toString());
+      assert.strictEqual(entries[0][0].toString(), fixture.uri.toString());
       assert.strictEqual(
         entries[0][1].length,
         (declaration.match(/\bvalue\b/g) || []).length,
       );
       for (const entry of entries[0][1]) {
-        assert.strictEqual(document.getText(entry.range), "value");
+        assert.strictEqual(fixture.getText(entry.range), "value");
         assert.strictEqual(entry.newText, "renamedValue");
       }
       try {
         assert.ok(await vscode.workspace.applyEdit(edit));
         assert.strictEqual(
-          document.getText(),
+          fixture.getText(),
           original.replace(
             declaration,
             declaration.replace(/\bvalue\b/g, "renamedValue"),
           ),
         );
       } finally {
-        const restore = new vscode.WorkspaceEdit();
-        restore.replace(
-          document.uri,
-          new vscode.Range(
-            document.positionAt(0),
-            document.positionAt(document.getText().length),
-          ),
-          original,
-        );
-        assert.ok(await vscode.workspace.applyEdit(restore));
-        assert.strictEqual(document.getText(), original);
+        await restoreRenameFixture(fixture, original);
       }
     });
   }
