@@ -488,7 +488,7 @@ class CrossFileRenameGuardTest {
         Files.writeString(locked.resolve("B.groovy"), "class B { def run(x) { x.greet() } }\n")
         withUnreadable(locked) {
             val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
-            assertTrue("cannot be read" in message && "locked" in message, message)
+            assertTrue("cannot be read" in message && "/locked/" in message, message)
         }
     }
 
@@ -527,7 +527,8 @@ class CrossFileRenameGuardTest {
         withUnreadable(*outputs.toTypedArray()) {
             val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
             assertTrue("cannot be read" in message, message)
-            outputs.forEach { assertTrue(it.fileName.toString() in message, "$it is named in: $message") }
+            // A directory's URI ends in '/', so the whole segment is matched rather than a substring.
+            outputs.forEach { assertTrue("/${it.fileName}/" in message, "$it is named in: $message") }
         }
     }
 
@@ -550,7 +551,7 @@ class CrossFileRenameGuardTest {
 
         withUnreadable(nested) {
             val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
-            assertTrue("cannot be read" in message && "build" in message, message)
+            assertTrue("cannot be read" in message && "/docs/build/" in message, message)
         }
     }
 
