@@ -325,6 +325,33 @@ class StepExecutorsTest {
     }
 
     @Test
+    fun `new text drops old cursors even when the URI is spelled differently`() {
+        // Inline files register under the normalized URI; scenarios often write `{{workspace.uri}}/Jenkinsfile`.
+        context.registerCursors(workspace.resolveUri("Jenkinsfile"), listOf(CursorMarker("old", 0, 0)))
+        val doubleSlashUri = workspace.rootUri + "/Jenkinsfile"
+        assertThat(doubleSlashUri).contains("//Jenkinsfile")
+
+        OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(uri = doubleSlashUri, text = "x|^new|"), context)
+
+        assertThatThrownBy { context.interpolateString("{{cursor.old}}") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("old")
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.new}}"))).isEqualTo(position(0, 1))
+        assertThat(context.interpolateString("{{cursor.new.path}}")).isEqualTo("Jenkinsfile")
+    }
+
+    @Test
+    fun `openDocument without text keeps the inline-file cursors`() {
+        java.nio.file.Files.writeString(workspaceRoot.resolve("A.groovy"), "class A {}")
+        context.registerCursors(workspace.resolveUri("A.groovy"), listOf(CursorMarker("decl", 0, 6)))
+
+        OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "A.groovy"), context)
+
+        verify { session.server.textDocumentService.didOpen(match { it.textDocument.text == "class A {}" }) }
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.decl}}"))).isEqualTo(position(0, 6))
+    }
+
+    @Test
     fun `cursor path is workspace-relative and decoded however the document was named`() {
         OpenDocumentStepExecutor().execute(
             ScenarioStep.OpenDocument(path = "./src/My Café.groovy", text = "|^byPath|x"),

@@ -74,10 +74,18 @@ data class ScenarioContext(
         } catch (ex: IllegalArgumentException) {
             throw IllegalArgumentException("Document '$uri': ${ex.message}", ex)
         }
-        cursors.values.removeAll { it.uri == uri }
+        val document = documentIdentity(uri)
+        cursors.values.removeAll { documentIdentity(it.uri) == document }
         registerCursors(uri, marked.markers)
         return marked.text
     }
+
+    /**
+     * Compares documents by their normalized file path, so `{{workspace.uri}}/A.groovy` (a double slash) and the
+     * URI an inline file registers under are the same document. Non-file URIs compare as written.
+     */
+    private fun documentIdentity(uri: String): String =
+        runCatching { java.nio.file.Path.of(java.net.URI.create(uri)).normalize().toString() }.getOrDefault(uri)
 
     /** The decoded, `/`-separated path of [uri] relative to the workspace root, or null when it lies outside. */
     private fun workspaceRelativePath(uri: String): String? = runCatching {
