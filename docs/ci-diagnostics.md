@@ -65,7 +65,9 @@ candidates and removal criteria remain tracked in [#1603](https://github.com/alb
 exceptions are debt, not proof that newer plugin releases have the same limitation.
 
 Unit/E2E jobs also require JUnit report files and preserve their HTML/XML reports as artifacts. Test jobs have read-only
-tokens, including fork PRs; optional check-publishing actions are unnecessary for the required producer verdict.
+tokens, including fork PRs; optional check-publishing actions are unnecessary for the required producer verdict. The
+build explicitly executes both protobuf generators with their 512 MiB JVM bounds before compilation; cached task outputs
+cannot substitute for this generator acceptance check.
 
 Gradle's indented captured test output is outside the tool classifier. Runtime warnings need scenario/test identity and
 executed negative-test assertions; they cannot be safely accepted by baselining a whole console stream.

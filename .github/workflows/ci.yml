@@ -417,6 +417,11 @@ jobs:
       # modules that depend on it (two steps put a full barrier in between). classes and testClasses
       # keep compiling modules without tests. Lint runs in a separate parallel job; unit tests
       # also feed the coverage reports below.
+      - name: Verify protobuf generation with bounded JVMs
+        run: >-
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer proto-generation
+          :schemas:generateProtos :indexer:scip:generateProtos --rerun-tasks --build-cache --stacktrace
+
       - name: Compile and Run Unit Tests
         timeout-minutes: 25
         run: |
