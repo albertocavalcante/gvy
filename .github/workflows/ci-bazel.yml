@@ -59,7 +59,7 @@ jobs:
 
       - name: Bootstrap pinned Bazel without recording credentials
         run: |
-          bazel --nohome_rc --version
+          bazel --nohome_rc --batch version
           echo 'BAZELISK_GITHUB_TOKEN=' >> "$GITHUB_ENV"
 
       - name: Build all targets and capture evidence
