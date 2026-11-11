@@ -57,6 +57,7 @@ class ServerConfigurationTest {
         val key = "groovy.gradle.daemon.idleTimeoutMinutes"
         assertEquals(3, ServerConfiguration.fromMap(mapOf(key to 3)).gradleDaemonIdleTimeoutMinutes)
         assertEquals(10, ServerConfiguration.fromMap(mapOf(key to 0)).gradleDaemonIdleTimeoutMinutes)
+        assertEquals(180, ServerConfiguration.fromMap(mapOf(key to 100_000)).gradleDaemonIdleTimeoutMinutes)
         assertEquals(10, ServerConfiguration.fromMap(mapOf(key to "soon")).gradleDaemonIdleTimeoutMinutes)
     }
 

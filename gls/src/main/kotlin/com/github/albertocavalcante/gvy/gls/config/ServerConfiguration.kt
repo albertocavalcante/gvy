@@ -125,6 +125,7 @@ data class ServerConfiguration(
     companion object {
         const val DEFAULT_COMPILATION_CACHE_MAX_ENTRIES = CompilationCache.DEFAULT_MAX_ENTRIES
         const val DEFAULT_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES = 10
+        const val MAX_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES = 180
 
         private val logger = KotlinLogging.logger {}
 
@@ -192,6 +193,7 @@ data class ServerConfiguration(
                     gradleDaemonIdleTimeoutMinutes = (map["groovy.gradle.daemon.idleTimeoutMinutes"] as? Number)
                         ?.toInt()
                         ?.takeIf { it > 0 }
+                        ?.coerceAtMost(MAX_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES)
                         ?: DEFAULT_GRADLE_DAEMON_IDLE_TIMEOUT_MINUTES,
 
                     // Language mode

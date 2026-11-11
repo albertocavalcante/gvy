@@ -7,6 +7,7 @@ import org.gradle.tooling.ModelBuilder
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.model.build.BuildEnvironment
 import org.gradle.tooling.model.idea.IdeaProject
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.nio.file.Paths
 
@@ -177,17 +178,15 @@ class GradleDependencyResolverTest {
     }
 
     @Test
-    fun `pre-flight and model operations pass identical daemon arguments`() {
-        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
-        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
-        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
-        every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
+    fun `model operation gets the idle timeout and jvm arguments, pre-flight gets none`() {
         every { connectionFactory.getConnection(any(), any()) } returns connection
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { connection.model(IdeaProject::class.java) } returns modelBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "8.5"
         every { compatibilityService.isCompatible(any(), any()) } returns true
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
+        every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.get() } returns ideaProject
 
         GradleDependencyResolver(
@@ -196,29 +195,26 @@ class GradleDependencyResolverTest {
             failureAnalyzer = failureAnalyzer,
         ).resolveDependencies(Paths.get("/tmp/project"))
 
-        // A pre-flight with different arguments would start a second daemon beside the model daemon.
+        // The BuildEnvironment is produced in-process by the Tooling API and never starts a daemon.
         val expected = GradleOperationArguments.buildArguments(GradleDaemonSettings())
-        verify(exactly = 1) { buildEnvBuilder.withArguments(*expected) }
         verify(exactly = 1) { modelBuilder.withArguments(*expected) }
-        verify(exactly = 1) { buildEnvBuilder.setJvmArguments("-Xmx1g", "-XX:+UseG1GC") }
         verify(exactly = 1) { modelBuilder.setJvmArguments("-Xmx1g", "-XX:+UseG1GC") }
+        verify(exactly = 0) { buildEnvBuilder.withArguments(*anyVararg()) }
+        verify(exactly = 0) { buildEnvBuilder.setJvmArguments(*anyVararg()) }
     }
 
     @Test
     fun `holds a lease on the connection for the whole resolution when the factory supports it`() {
-        every { buildEnvBuilder.withArguments(*anyVararg()) } returns buildEnvBuilder
-        every { buildEnvBuilder.setJvmArguments(*anyVararg()) } returns buildEnvBuilder
-        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
-        every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
         val leasing = mockk<LeasingConnectionFactory>()
-        every { leasing.withConnection<Any?>(any(), any(), any()) } answers {
-            thirdArg<(ProjectConnection) -> Any?>().invoke(connection)
-        }
+        var released = false
+        every { leasing.acquire(any(), any()) } returns ConnectionLease(connection) { released = true }
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { connection.model(IdeaProject::class.java) } returns modelBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "8.5"
         every { compatibilityService.isCompatible(any(), any()) } returns true
+        every { modelBuilder.withArguments(*anyVararg()) } returns modelBuilder
+        every { modelBuilder.setJvmArguments(*anyVararg()) } returns modelBuilder
         every { modelBuilder.get() } returns ideaProject
 
         GradleDependencyResolver(
@@ -227,7 +223,8 @@ class GradleDependencyResolverTest {
             failureAnalyzer = failureAnalyzer,
         ).resolveDependencies(Paths.get("/tmp/project"))
 
-        verify(exactly = 1) { leasing.withConnection<Any?>(any(), any(), any()) }
+        verify(exactly = 1) { leasing.acquire(any(), any()) }
         verify(exactly = 0) { leasing.getConnection(any(), any()) }
+        assertTrue(released, "the lease must be released when the resolution ends")
     }
 }

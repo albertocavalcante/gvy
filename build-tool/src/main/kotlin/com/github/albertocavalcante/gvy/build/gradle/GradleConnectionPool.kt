@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit
  * them on [shutdown]). Closing a connection drops the client-side Tooling API state only; the daemon's own lifetime
  * is bounded by the idle timeout the resolver passes with each operation.
  */
+@Suppress("TooManyFunctions") // one cohesive pool: lease API, lifecycle, stats and test hook
 object GradleConnectionPool : LeasingConnectionFactory {
     private val logger = KotlinLogging.logger {}
 
@@ -45,6 +46,10 @@ object GradleConnectionPool : LeasingConnectionFactory {
 
     private var sweeper: ScheduledExecutorService? = null
 
+    /** Set by [shutdown]; a pool that is shut down keeps no connections and runs no sweeper. */
+    @Volatile
+    private var closed = false
+
     /** Applies [newSettings]; only the connection idle timeout is used here, and it applies from the next sweep. */
     fun configure(newSettings: GradleDaemonSettings) {
         settings = newSettings
@@ -63,13 +68,24 @@ object GradleConnectionPool : LeasingConnectionFactory {
      * @return A connected ProjectConnection
      */
     override fun getConnection(projectDir: Path, gradleUserHomeDir: File?): ProjectConnection {
+        check(!closed) { "Gradle connection pool is shut down" }
         ensureSweeper()
         return connections.get(keyOf(projectDir, gradleUserHomeDir))
     }
 
-    override fun <T> withConnection(projectDir: Path, gradleUserHomeDir: File?, block: (ProjectConnection) -> T): T {
+    /**
+     * Borrows a pooled connection until the lease is closed. After [shutdown] the pool no longer retains anything:
+     * the lease wraps a private connection that is closed with the lease, and the sweeper is not restarted.
+     */
+    override fun acquire(projectDir: Path, gradleUserHomeDir: File?): ConnectionLease {
+        if (closed) {
+            val key = keyOf(projectDir, gradleUserHomeDir)
+            val connection = createConnection(key.projectDir, key.gradleUserHomeDir)
+            return ConnectionLease(connection) { closeQuietly(key, connection) }
+        }
         ensureSweeper()
-        return connections.lease(keyOf(projectDir, gradleUserHomeDir), block)
+        val lease = connections.acquire(keyOf(projectDir, gradleUserHomeDir))
+        return ConnectionLease(lease.value) { lease.close() }
     }
 
     private fun keyOf(projectDir: Path, gradleUserHomeDir: File?) = ConnectionKey(
@@ -79,7 +95,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
 
     @Synchronized
     private fun ensureSweeper() {
-        if (sweeper != null) return
+        if (sweeper != null || closed) return
         sweeper = Executors.newSingleThreadScheduledExecutor { runnable ->
             Thread(runnable, "gradle-connection-idle-sweep").apply { isDaemon = true }
         }.also { executor ->
@@ -111,6 +127,7 @@ object GradleConnectionPool : LeasingConnectionFactory {
         connections.remove { it.projectDir == normalizedProjectDir }
     }
 
+    @Suppress("TooGenericExceptionCaught") // closing must never throw: a failure may not strand other entries
     private fun closeQuietly(key: ConnectionKey, connection: ProjectConnection) {
         try {
             connection.close()
@@ -119,19 +136,28 @@ object GradleConnectionPool : LeasingConnectionFactory {
             logger.warn { "Gradle connection error while closing for ${key.projectDir}: ${e.message}" }
         } catch (e: IllegalStateException) {
             logger.warn { "Illegal state while closing connection for ${key.projectDir}: ${e.message}" }
+        } catch (e: RuntimeException) {
+            // For example an UncheckedException from a Tooling API executor interrupted during shutdown.
+            logger.warn(e) { "Failed to close Gradle connection for ${key.projectDir}" }
         }
     }
 
     /**
-     * Closes all connections and clears the pool.
-     * Should be called during shutdown.
+     * Closes all connections and clears the pool, and stops the sweeper. Should be called during shutdown. Afterwards
+     * [getConnection] throws and [acquire] hands out connections that are closed with their lease.
      */
     fun shutdown() {
         logger.info { "Shutting down Gradle connection pool (${connections.size} connections)" }
 
+        closed = true
         stopSweeper()
         connections.clear()
         logger.info { "Gradle connection pool shutdown complete" }
+    }
+
+    /** Test hook: makes a pool that was shut down usable again. */
+    internal fun reopenForTesting() {
+        closed = false
     }
 
     /**

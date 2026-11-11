@@ -27,7 +27,7 @@ internal class IdleReleasingCache<K : Any, V : Any>(
     private val clockNanos: () -> Long,
     private val idleTimeout: () -> Duration,
 ) {
-    private class Entry<V>(val value: V, var lastUsedNanos: Long, var leases: Int = 0)
+    class Entry<V>(val value: V, var lastUsedNanos: Long, var leases: Int = 0)
 
     private val lock = Any()
     private val entries = HashMap<K, Entry<V>>()
@@ -39,18 +39,28 @@ internal class IdleReleasingCache<K : Any, V : Any>(
     /** Returns the cached value, creating it if absent, and marks it used now. */
     fun get(key: K): V = synchronized(lock) { touch(key).value }
 
-    /** Runs [block] with the value for [key] protected from idle release until [block] returns. */
-    fun <T> lease(key: K, block: (V) -> T): T {
-        val entry = synchronized(lock) { touch(key).also { it.leases++ } }
-        try {
-            return block(entry.value)
-        } finally {
+    /** A borrowed value; closing it ends the borrow and restarts the idle clock. */
+    inner class Lease internal constructor(val value: V, private val entry: Entry<V>) : AutoCloseable {
+        private var open = true
+
+        override fun close() {
             synchronized(lock) {
+                if (!open) return
+                open = false
                 entry.leases--
                 entry.lastUsedNanos = clockNanos()
             }
         }
     }
+
+    /** Borrows the value for [key], protected from idle release until the lease is closed. */
+    fun acquire(key: K): Lease = synchronized(lock) {
+        val entry = touch(key).also { it.leases++ }
+        Lease(entry.value, entry)
+    }
+
+    /** Runs [block] with the value for [key] protected from idle release until [block] returns. */
+    fun <T> lease(key: K, block: (V) -> T): T = acquire(key).use { block(it.value) }
 
     /** Closes and removes every idle, unleased entry. Returns how many were released. */
     fun releaseIdle(): Int {
@@ -61,7 +71,7 @@ internal class IdleReleasingCache<K : Any, V : Any>(
             }
         }
         // Closing may block on in-flight operations, so it runs outside the lock.
-        released.forEach { (key, value) -> close(key, value) }
+        released.forEach { (key, value) -> closeQuietly(key, value) }
         return released.size
     }
 
@@ -70,7 +80,12 @@ internal class IdleReleasingCache<K : Any, V : Any>(
         val removed = synchronized(lock) {
             entries.keys.filter(predicate).mapNotNull { key -> entries.remove(key)?.let { key to it.value } }
         }
-        removed.forEach { (key, value) -> close(key, value) }
+        removed.forEach { (key, value) -> closeQuietly(key, value) }
+    }
+
+    /** One failing close must not leave the remaining entries open, so failures are contained per entry. */
+    private fun closeQuietly(key: K, value: V) {
+        runCatching { close(key, value) }.onFailure { if (it is Error) throw it }
     }
 
     fun clear() = remove { true }

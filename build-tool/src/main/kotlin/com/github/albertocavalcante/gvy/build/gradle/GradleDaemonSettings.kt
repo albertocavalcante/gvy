@@ -18,8 +18,8 @@ data class GradleDaemonSettings(
     val connectionIdleTimeout: Duration = DEFAULT_CONNECTION_IDLE_TIMEOUT,
 ) {
     init {
-        require(daemonIdleTimeout.isPositive() && daemonIdleTimeout.inWholeMilliseconds <= Int.MAX_VALUE) {
-            "daemonIdleTimeout must be positive and fit in an int of milliseconds: $daemonIdleTimeout"
+        require(daemonIdleTimeout.isPositive() && daemonIdleTimeout <= MAX_DAEMON_IDLE_TIMEOUT) {
+            "daemonIdleTimeout must be positive and at most $MAX_DAEMON_IDLE_TIMEOUT: $daemonIdleTimeout"
         }
         require(connectionIdleTimeout.isPositive()) {
             "connectionIdleTimeout must be positive: $connectionIdleTimeout"
@@ -30,12 +30,13 @@ data class GradleDaemonSettings(
         val DEFAULT_DAEMON_IDLE_TIMEOUT: Duration = 10.minutes
         val DEFAULT_CONNECTION_IDLE_TIMEOUT: Duration = 5.minutes
 
-        /** Gradle takes the idle timeout as an int of milliseconds; larger values are clamped to this many minutes. */
-        private const val MAX_DAEMON_IDLE_MINUTES = Int.MAX_VALUE / 60_000
+        /** A longer-lived daemon defeats the purpose of the setting; larger requests are clamped to 3 hours. */
+        private const val MAX_DAEMON_IDLE_MINUTES = 180
+        val MAX_DAEMON_IDLE_TIMEOUT: Duration = MAX_DAEMON_IDLE_MINUTES.minutes
 
         /**
          * Builds settings from a user-facing minutes value; null or non-positive falls back to the default and
-         * very large values are clamped to what Gradle can represent.
+         * very large values are clamped to [MAX_DAEMON_IDLE_TIMEOUT].
          */
         fun withDaemonIdleMinutes(minutes: Int?): GradleDaemonSettings = GradleDaemonSettings(
             daemonIdleTimeout = minutes?.takeIf { it > 0 }?.coerceAtMost(MAX_DAEMON_IDLE_MINUTES)?.minutes
@@ -45,10 +46,10 @@ data class GradleDaemonSettings(
 }
 
 /**
- * The arguments every language-server Tooling API operation passes to Gradle. They are shared by all operations
- * (the JDK/Gradle pre-flight check and the IDEA model fetch) and are constants, so successive resolutions request
- * the same daemon: Gradle reuses a daemon only on an exact match of JVM args and properties, and any difference
- * would start another daemon per call.
+ * The arguments the language server passes to every daemon-backed Tooling API operation it starts (the IDEA model
+ * fetch and the opt-in scoped-dependency model). They depend only on the settings, so successive operations request
+ * the same daemon: Gradle reuses a daemon only on a compatible match of JVM args and properties, and any
+ * difference would start another daemon per call.
  */
 internal object GradleOperationArguments {
     /**
@@ -61,8 +62,11 @@ internal object GradleOperationArguments {
         "-Dorg.gradle.parallel=true",
         "-Dorg.gradle.configureondemand=true",
         "-Dorg.gradle.vfs.watch=true",
-        "-Dorg.gradle.daemon.idletimeout=${settings.daemonIdleTimeout.inWholeMilliseconds}",
+        idleTimeoutArgument(settings),
     )
+
+    fun idleTimeoutArgument(settings: GradleDaemonSettings): String =
+        "-Dorg.gradle.daemon.idletimeout=${settings.daemonIdleTimeout.inWholeMilliseconds}"
 
     /**
      * `-Xmx` is a ceiling, not a reservation: the daemon only grows to what the build's configuration needs, and the

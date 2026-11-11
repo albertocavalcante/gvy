@@ -12,12 +12,17 @@ class IdleReleasingCacheTest {
     private val created = mutableListOf<String>()
     private val closed = mutableListOf<String>()
 
+    private val failingKeys = mutableSetOf<String>()
+
     private val cache = IdleReleasingCache<String, StringBuilder>(
         create = { key ->
             created += key
             StringBuilder(key)
         },
-        close = { key, _ -> closed += key },
+        close = { key, _ ->
+            closed += key
+            check(key !in failingKeys) { "close failed: $key" }
+        },
         clockNanos = { nowNanos },
         idleTimeout = { 5.minutes },
     )
@@ -124,5 +129,43 @@ class IdleReleasingCacheTest {
 
         assertEquals(listOf("drop"), closed)
         assertEquals(listOf("keep"), cache.keys)
+    }
+
+    @Test
+    fun `acquire protects the entry until the lease is closed, even across suspension points`() {
+        val lease = cache.acquire("a")
+        advance(30.minutes)
+        assertEquals(0, cache.releaseIdle())
+
+        lease.close()
+        lease.close() // closing twice must not corrupt the count
+        advance(6.minutes)
+
+        assertEquals(1, cache.releaseIdle())
+    }
+
+    @Test
+    fun `a failing close does not stop the remaining entries from being closed`() {
+        failingKeys += "bad"
+        cache.get("bad")
+        cache.get("good1")
+        cache.get("good2")
+        advance(6.minutes)
+
+        assertEquals(3, cache.releaseIdle())
+
+        assertEquals(setOf("bad", "good1", "good2"), closed.toSet())
+        assertEquals(0, cache.size)
+    }
+
+    @Test
+    fun `clear closes every entry even when one close throws`() {
+        failingKeys += "a"
+        cache.get("a")
+        cache.get("b")
+
+        cache.clear()
+
+        assertEquals(setOf("a", "b"), closed.toSet())
     }
 }

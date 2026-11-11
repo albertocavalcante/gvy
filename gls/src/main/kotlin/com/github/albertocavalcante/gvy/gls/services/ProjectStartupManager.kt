@@ -314,7 +314,9 @@ class ProjectStartupManager(
         // Opt-in (#1235): one more Gradle operation per attempt, before the single model publication
         val targetObserver = if (config.gradleTargetClasspathsEnabled) {
             logger.info { "Gradle target classpaths enabled" }
-            GradleTargetObserver(GradleScopedDependencyProducer(javaHome = javaHomePath))
+            GradleTargetObserver(
+                GradleScopedDependencyProducer(javaHome = javaHomePath, daemonSettings = gradleDaemonSettings),
+            )
         } else {
             null
         }

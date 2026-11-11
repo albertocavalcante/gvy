@@ -23,11 +23,9 @@ class GradleDaemonSettingsTest {
         assertEquals(10.minutes, GradleDaemonSettings.withDaemonIdleMinutes(0).daemonIdleTimeout)
         assertEquals(10.minutes, GradleDaemonSettings.withDaemonIdleMinutes(-1).daemonIdleTimeout)
         assertEquals(10.minutes, GradleDaemonSettings.withDaemonIdleMinutes(null).daemonIdleTimeout)
-        // Clamped rather than rejected, so a silly setting cannot break startup.
-        assertEquals(
-            Int.MAX_VALUE / 60_000,
-            GradleDaemonSettings.withDaemonIdleMinutes(Int.MAX_VALUE).daemonIdleTimeout.inWholeMinutes.toInt(),
-        )
+        // Clamped to three hours rather than rejected, so a silly setting cannot break startup.
+        assertEquals(180.minutes, GradleDaemonSettings.withDaemonIdleMinutes(Int.MAX_VALUE).daemonIdleTimeout)
+        assertEquals(180.minutes, GradleDaemonSettings.withDaemonIdleMinutes(180).daemonIdleTimeout)
     }
 
     @Test

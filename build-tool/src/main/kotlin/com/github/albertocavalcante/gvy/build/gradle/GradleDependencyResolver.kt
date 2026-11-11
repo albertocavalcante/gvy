@@ -230,13 +230,10 @@ class GradleDependencyResolver(
         gradleUserHomeDir: File?,
         cancellation: ResolutionCancellation,
     ): WorkspaceResolution {
-        // Leasing keeps the pooled connection open for the whole resolution, which can outlast the idle timeout
+        // The lease keeps the pooled connection open for the whole resolution, which can outlast the idle timeout
         // (for example during a distribution download).
-        val leasing = connectionFactory as? LeasingConnectionFactory
-        return if (leasing != null) {
-            leasing.withConnection(projectDir, gradleUserHomeDir) { resolveOn(it, cancellation) }
-        } else {
-            resolveOn(connectionFactory.getConnection(projectDir, gradleUserHomeDir), cancellation)
+        return connectionFactory.acquire(projectDir, gradleUserHomeDir).use { lease ->
+            resolveOn(lease.connection, cancellation)
         }
     }
 
@@ -280,9 +277,7 @@ class GradleDependencyResolver(
     private fun checkJdkGradleCompatibility(connection: ProjectConnection, cancellation: ResolutionCancellation) {
         // Fetching BuildEnvironment installs the distribution on first use, so it must be cancellable too.
         val gradleVersion = runCatching {
-            connection.model(BuildEnvironment::class.java)
-                .also { it.applyDaemonArguments() }
-                .getCancellable(cancellation).gradle.gradleVersion
+            connection.model(BuildEnvironment::class.java).getCancellable(cancellation).gradle.gradleVersion
         }.getOrNull() ?: return // If we can't get version, proceed and let it fail naturally
 
         // If javaHome is configured, we should check compatibility for THAT JDK.
@@ -332,18 +327,10 @@ class GradleDependencyResolver(
     }
 
     /**
-     * Runs this Tooling API operation with a cancellation token tied to [cancellation]. Cancelling the token stops
-     * the operation cooperatively, including a distribution download, which releases the distribution install lock.
-     * The resolution returns at once; a download read already blocked on a stalled connection still ends only when
-     * that read times out (the distribution's network timeout, 10 s by default). That thread is the Tooling API's
-     * own and holds neither our IO thread nor the install lock meanwhile.
-     */
-
-    /**
-     * Gives every operation the same daemon-affecting arguments. Without them the pre-flight check would start a
-     * default-argument daemon next to the model daemon, so one resolution would leave two JVMs behind. (With a
-     * configured Java home the pre-flight still runs on the server's own JDK, so a second daemon remains possible;
-     * both exit on the shared idle timeout.)
+     * Gives the model operation the daemon-affecting arguments: the short idle timeout and the JVM arguments. They
+     * are a pure function of [daemonSettings], so repeated resolutions request an identical daemon. The JDK
+     * pre-flight needs none: the Tooling API builds the BuildEnvironment in-process, before any daemon client
+     * exists, so it never starts a daemon.
      */
     @Suppress("SpreadOperator") // a handful of strings, once per Tooling API operation
     private fun ModelBuilder<*>.applyDaemonArguments() {
@@ -351,6 +338,13 @@ class GradleDependencyResolver(
         setJvmArguments(*GradleOperationArguments.JVM_ARGUMENTS)
     }
 
+    /**
+     * Runs this Tooling API operation with a cancellation token tied to [cancellation]. Cancelling the token stops
+     * the operation cooperatively, including a distribution download, which releases the distribution install lock.
+     * The resolution returns at once; a download read already blocked on a stalled connection still ends only when
+     * that read times out (the distribution's network timeout, 10 s by default). That thread is the Tooling API's
+     * own and holds neither our IO thread nor the install lock meanwhile.
+     */
     private fun <T> ModelBuilder<T>.getCancellable(cancellation: ResolutionCancellation): T {
         val source = GradleConnector.newCancellationTokenSource()
         withCancellationToken(source.token())
