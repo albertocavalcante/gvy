@@ -295,7 +295,7 @@ jobs:
     needs: [check-paths, check-runner]
     # Run if paths require CI and no provisioning triggered
     if: |
-      always() && (
+      !cancelled() && (
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
         (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
       )
@@ -332,7 +332,7 @@ jobs:
     # 1. workflow_run from successful provisioning (check-runner was skipped), OR
     # 2. Normal trigger (push/PR/dispatch) with relevant paths AND no provisioning triggered
     if: |
-      always() && (
+      !cancelled() && (
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
         (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
       )
@@ -601,7 +601,7 @@ jobs:
     # cache), and waiting on the build only added its duration to the critical path.
     needs: [check-paths, check-runner]
     if: |
-      always() && (
+      !cancelled() && (
         (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
         (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
       )
