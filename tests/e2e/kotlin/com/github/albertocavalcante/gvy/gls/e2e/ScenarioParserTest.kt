@@ -140,4 +140,44 @@ class ScenarioParserTest {
             },
         )
     }
+
+    private fun snapshotScenario(expectLines: List<String>) = (
+        listOf(
+            "name: snap",
+            "steps:",
+            "  - assert:",
+            "      source: r",
+            "      checks:",
+            "        - jsonPath: \$.a",
+            "          expect:",
+        ) + expectLines.map { "            $it" }
+        ).joinToString("\n")
+
+    private fun parsedExpectation(expect: String): JsonExpectation {
+        val step = parser.parseScenarioDefinition(snapshotScenario(expect.lines())).scenario.steps.single()
+        return (step as ScenarioStep.Assert).checks.single().expect
+    }
+
+    @Test
+    fun `snapshot expectation is parsed`() {
+        val expectation = parsedExpectation("snapshot: hover/println.md")
+
+        assertThat(expectation.snapshot).isEqualTo("hover/println.md")
+        expectation.requireKnownKeys()
+    }
+
+    @Test
+    fun `unknown key next to a snapshot is rejected`() {
+        val expectation = parsedExpectation("snapshto: x\nsnapshot: a.md")
+
+        assertThatThrownBy { expectation.requireKnownKeys() }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("snapshto")
+    }
+
+    @Test
+    fun `snapshot combined with value is rejected at parse time`() {
+        assertThatThrownBy { parsedExpectation("snapshot: a.md\nvalue: x") }
+            .isInstanceOf(ScenarioParseException::class.java)
+    }
 }

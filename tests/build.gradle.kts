@@ -161,6 +161,12 @@ testing {
                             filter.includeTestsMatching("*.ScenarioRunnerTest")
                         }
                         systemProperty("groovy.lsp.e2e.updateGolden", System.getProperty("groovy.lsp.e2e.updateGolden"))
+                        // Local-only: rewrites snapshot files (refused on CI and under Bazel). Re-run with --rerun,
+                        // because Gradle may serve the test task from its build cache.
+                        systemProperty(
+                            "groovy.lsp.e2e.updateSnapshots",
+                            System.getProperty("groovy.lsp.e2e.updateSnapshots"),
+                        )
                         // Lets the isolated E2E Gradle home link fixture distributions this build installed.
                         systemProperty("groovy.lsp.e2e.hostGradleUserHome", gradle.gradleUserHomeDir.absolutePath)
                         systemProperty(
@@ -173,6 +179,13 @@ testing {
                             "groovy.lsp.e2e.goldenDir",
                             layout.projectDirectory
                                 .dir("e2e/resources/golden")
+                                .asFile.absolutePath,
+                        )
+
+                        systemProperty(
+                            "groovy.lsp.e2e.snapshotDir",
+                            layout.projectDirectory
+                                .dir("e2e/resources/snapshots")
                                 .asFile.absolutePath,
                         )
 

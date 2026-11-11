@@ -15,22 +15,24 @@ import java.io.File
  *
  * Bazel doesn't have directory labels, so we pass a marker file path and derive the directory.
  */
-internal fun resolveScenarioDir(): String {
-    // Try direct path first (Gradle)
-    System.getProperty("groovy.lsp.e2e.scenarioDir")?.let { return it }
-
-    // Try marker file (Bazel) - derive directory from file path
-    System.getProperty("groovy.lsp.e2e.scenarioDir.marker")?.let { markerPath ->
-        return File(markerPath).parent
-            ?: error("Could not derive directory from marker file: $markerPath")
-    }
-
-    error(
+internal fun resolveScenarioDir(): String = resolveResourceDir("groovy.lsp.e2e.scenarioDir")
+    ?: error(
         "System property 'groovy.lsp.e2e.scenarioDir' not set. " +
             "Configure this system property in the test environment " +
             "(for example via -Dgroovy.lsp.e2e.scenarioDir=/path/to/e2e/resources/scenarios) " +
             "to point to the directory containing e2e scenario definitions.",
     )
+
+/**
+ * Resolves a resource directory from system properties, or null when neither is set:
+ * - `<prop>` points straight at the directory (Gradle)
+ * - `<prop>.marker` points at a file inside it (Bazel has no directory labels, so the parent is used)
+ */
+internal fun resolveResourceDir(prop: String): String? {
+    System.getProperty(prop)?.let { return it }
+    return System.getProperty("$prop.marker")?.let { markerPath ->
+        File(markerPath).parent ?: error("Could not derive directory from marker file: $markerPath")
+    }
 }
 
 /**

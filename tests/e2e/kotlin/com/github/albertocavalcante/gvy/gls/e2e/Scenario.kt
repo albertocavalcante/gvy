@@ -361,7 +361,31 @@ data class JsonExpectation(
     val type: ExpectationType = ExpectationType.EXISTS,
     val value: JsonElement? = null,
     val values: List<JsonElement> = emptyList(),
-)
+    /** Name of a snapshot file under the snapshot directory; compared instead of [type], so it excludes [value]. */
+    val snapshot: String? = null,
+) {
+    /** Keys Jackson did not recognize. Most expectations tolerate them (see TODO(#1546)); a snapshot rejects them. */
+    @get:com.fasterxml.jackson.annotation.JsonIgnore
+    val unknownKeys: MutableSet<String> = linkedSetOf()
+
+    @com.fasterxml.jackson.annotation.JsonAnySetter
+    fun recordUnknownKey(key: String, @Suppress("UNUSED_PARAMETER") ignored: Any?) {
+        unknownKeys += key
+    }
+
+    init {
+        require(snapshot == null || (value == null && values.isEmpty())) {
+            "A snapshot expectation cannot also set value or values"
+        }
+    }
+
+    /** Fails if this snapshot expectation carries keys the model does not know, such as a misspelled `snapshto`. */
+    fun requireKnownKeys() {
+        require(unknownKeys.isEmpty()) {
+            "Unknown key(s) ${unknownKeys.sorted()} in a snapshot expectation; allowed keys are snapshot only"
+        }
+    }
+}
 
 enum class ExpectationType {
     EXISTS,

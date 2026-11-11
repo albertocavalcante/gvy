@@ -29,6 +29,7 @@ kt_test(
         # The test code derives the directory from this file path
         "-Dgroovy.lsp.e2e.scenarioDir.marker=$(rootpath e2e/resources/scenarios/README.md)",
         "-Dgroovy.lsp.e2e.goldenDir.marker=$(rootpath e2e/resources/golden/index-lsif-calculator.lsif)",
+        "-Dgroovy.lsp.e2e.snapshotDir.marker=$(rootpath e2e/resources/snapshots/README.md)",
         # Use rootpath - path relative to runfiles where the test JVM runs
         "-Dgroovy.lsp.e2e.execJar=$(rootpath //gls:gls_deploy_deploy.jar)",
         # Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache (expanded by the launcher).
@@ -46,6 +47,7 @@ kt_test(
         "@maven//:com_jayway_jsonpath_json_path",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
+        "@maven//:org_opentest4j_opentest4j",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",

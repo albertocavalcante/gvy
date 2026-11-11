@@ -26,11 +26,6 @@ steps:
       checks:
         - jsonPath: $.contents.value
           expect:
-            type: CONTAINS
-            value: "Method"
-        - jsonPath: $.contents.value
-          expect:
-            type: CONTAINS
-            value: "println("
+            snapshot: hover/println.md
   - shutdown: {}
   - exit: {}

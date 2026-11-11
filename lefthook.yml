@@ -32,6 +32,8 @@ pre-commit:
       run: ghalint -c tools/lint/ghalint.yaml run && actionlint {staged_files}
     markdown-lint:
       glob: '**/*.md'
+      # Snapshot files hold server output verbatim; dprint would rewrite their Markdown.
+      exclude: 'tests/e2e/resources/snapshots/**'
       run: dprint check --config dprint.json {staged_files}
 
 pre-push:
