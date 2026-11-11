@@ -17,26 +17,27 @@ dependencies {
 }
 
 // Manual Wire generation task
-val generateProtos by tasks.registering(JavaExec::class) {
-    group = "build"
-    description = "Generates Kotlin code from Proto files using Wire"
+val generateProtos =
+    tasks.register<JavaExec>("generateProtos") {
+        group = "build"
+        description = "Generates Kotlin code from Proto files using Wire"
 
-    val outputDir = layout.buildDirectory.dir("generated/source/wire")
-    val protoDir = layout.projectDirectory.dir("src/main/proto")
-    val protoFile = protoDir.file("scip.proto")
+        val outputDir = layout.buildDirectory.dir("generated/source/wire")
+        val protoDir = layout.projectDirectory.dir("src/main/proto")
+        val protoFile = protoDir.file("scip.proto")
 
-    inputs.dir(protoDir)
-    outputs.dir(outputDir)
+        inputs.dir(protoDir)
+        outputs.dir(outputDir)
 
-    classpath = wireCompiler
-    mainClass.set("com.squareup.wire.WireCompiler")
+        classpath = wireCompiler
+        mainClass.set("com.squareup.wire.WireCompiler")
 
-    args(
-        "--proto_path=${protoDir.asFile.absolutePath}",
-        "--kotlin_out=${outputDir.get().asFile.absolutePath}",
-        protoFile.asFile.name, // Source file relative to proto_path
-    )
-}
+        args(
+            "--proto_path=${protoDir.asFile.absolutePath}",
+            "--kotlin_out=${outputDir.get().asFile.absolutePath}",
+            protoFile.asFile.name, // Source file relative to proto_path
+        )
+    }
 
 sourceSets.main {
     kotlin.srcDir(generateProtos)

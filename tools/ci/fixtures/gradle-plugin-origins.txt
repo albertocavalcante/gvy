@@ -1,0 +1,230 @@
+# Gradle 9.8.2 / Kotlin plugin 2.3.0 / Detekt 1.23.8 / Kover 0.9.11 / Hot Reload 1.0.0.
+# Captured configuration and formatting warning snippets; only headers, warnings and the first ten stack frames retained.
+> Configure project :
+The ReportingExtension.file(String) method has been deprecated. This is scheduled to be removed in Gradle 10. Please use the getBaseDirectory().file(String) or getBaseDirectory().dir(String) method instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#reporting_extension_file
+	at org.gradle.api.reporting.ReportingExtension.file(ReportingExtension.java:102)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:28)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:18)
+	at org.gradle.api.internal.plugins.ImperativeOnlyPluginTarget.applyImperative(ImperativeOnlyPluginTarget.java:54)
+	at org.gradle.api.internal.plugins.RuleBasedPluginTarget.applyImperative(RuleBasedPluginTarget.java:52)
+	at org.gradle.api.internal.plugins.DefaultPluginManager.addPlugin(DefaultPluginManager.java:191)
+	at org.gradle.api.internal.plugins.DefaultPluginManager.access$200(DefaultPluginManager.java:53)
+	at org.gradle.api.internal.plugins.DefaultPluginManager$AddPluginBuildOperation.run(DefaultPluginManager.java:286)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:30)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:27)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies(DetektPlugin.kt:99)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:36)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:18)
+	at org.gradle.api.internal.plugins.ImperativeOnlyPluginTarget.applyImperative(ImperativeOnlyPluginTarget.java:54)
+	at org.gradle.api.internal.plugins.RuleBasedPluginTarget.applyImperative(RuleBasedPluginTarget.java:52)
+	at org.gradle.api.internal.plugins.DefaultPluginManager.addPlugin(DefaultPluginManager.java:191)
+	at org.gradle.api.internal.plugins.DefaultPluginManager.access$200(DefaultPluginManager.java:53)
+	at org.gradle.api.internal.plugins.DefaultPluginManager$AddPluginBuildOperation.run(DefaultPluginManager.java:286)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies$lambda$14(DetektPlugin.kt:107)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies$lambda$15(DetektPlugin.kt:106)
+	at org.gradle.api.internal.AbstractNamedDomainObjectContainer.create(AbstractNamedDomainObjectContainer.java:87)
+	at org.gradle.api.internal.AbstractValidatingNamedDomainObjectContainer.create(AbstractValidatingNamedDomainObjectContainer.java:60)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies(DetektPlugin.kt:106)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:36)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:18)
+	at org.gradle.api.internal.plugins.ImperativeOnlyPluginTarget.applyImperative(ImperativeOnlyPluginTarget.java:54)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asBucket(Configurations.kt:112)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$koverBucketConfiguration$1.execute(PrepareKover.kt:26)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$koverBucketConfiguration$1.execute(PrepareKover.kt:25)
+	at org.gradle.api.internal.AbstractNamedDomainObjectContainer.create(AbstractNamedDomainObjectContainer.java:87)
+	at org.gradle.api.internal.AbstractValidatingNamedDomainObjectContainer.create(AbstractValidatingNamedDomainObjectContainer.java:60)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt.prepare(PrepareKover.kt:25)
+	at kotlinx.kover.gradle.plugin.KoverGradlePlugin.apply(KoverGradlePlugin.kt:29)
+	at kotlinx.kover.gradle.plugin.KoverGradlePlugin.apply(KoverGradlePlugin.kt:21)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asTransitiveDependencies(Configurations.kt:95)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$agentClasspath$1.execute(PrepareKover.kt:43)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$agentClasspath$1.execute(PrepareKover.kt:42)
+	at org.gradle.api.internal.AbstractNamedDomainObjectContainer.create(AbstractNamedDomainObjectContainer.java:87)
+	at org.gradle.api.internal.AbstractValidatingNamedDomainObjectContainer.create(AbstractValidatingNamedDomainObjectContainer.java:60)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt.prepare(PrepareKover.kt:42)
+	at kotlinx.kover.gradle.plugin.KoverGradlePlugin.apply(KoverGradlePlugin.kt:29)
+	at kotlinx.kover.gradle.plugin.KoverGradlePlugin.apply(KoverGradlePlugin.kt:21)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asTransitiveDependencies(Configurations.kt:95)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$reporterClasspath$1.execute(PrepareKover.kt:78)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$reporterClasspath$1.execute(PrepareKover.kt:77)
+	at org.gradle.api.internal.AbstractNamedDomainObjectContainer.create(AbstractNamedDomainObjectContainer.java:87)
+	at org.gradle.api.internal.AbstractValidatingNamedDomainObjectContainer.create(AbstractValidatingNamedDomainObjectContainer.java:60)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt.prepare(PrepareKover.kt:77)
+	at kotlinx.kover.gradle.plugin.KoverGradlePlugin.apply(KoverGradlePlugin.kt:29)
+	at kotlinx.kover.gradle.plugin.KoverGradlePlugin.apply(KoverGradlePlugin.kt:21)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:51)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:47)
+	at org.gradle.api.internal.DefaultMutationGuard$1.execute(DefaultMutationGuard.java:66)
+	at org.gradle.internal.code.DefaultUserCodeApplicationContext$CurrentApplication$1.execute(DefaultUserCodeApplicationContext.java:124)
+	at org.gradle.api.internal.DefaultCollectionCallbackActionDecorator$BuildOperationEmittingAction$1.run(DefaultCollectionCallbackActionDecorator.java:109)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:30)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:27)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$2.execute(DefaultBuildOperationRunner.java:67)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asProducer(Configurations.kt:126)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:52)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:47)
+	at org.gradle.api.internal.DefaultMutationGuard$1.execute(DefaultMutationGuard.java:66)
+	at org.gradle.internal.code.DefaultUserCodeApplicationContext$CurrentApplication$1.execute(DefaultUserCodeApplicationContext.java:124)
+	at org.gradle.api.internal.DefaultCollectionCallbackActionDecorator$BuildOperationEmittingAction$1.run(DefaultCollectionCallbackActionDecorator.java:109)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:30)
+	at org.gradle.internal.operations.DefaultBuildOperationRunner$1.execute(DefaultBuildOperationRunner.java:27)
+The ReportingExtension.file(String) method has been deprecated. This is scheduled to be removed in Gradle 10. Please use the getBaseDirectory().file(String) or getBaseDirectory().dir(String) method instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#reporting_extension_file
+	at org.gradle.api.reporting.ReportingExtension.file(ReportingExtension.java:102)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.apply(DetektPlugin.kt:28)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies(DetektPlugin.kt:99)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at io.gitlab.arturbosch.detekt.DetektPlugin.configurePluginDependencies$lambda$14(DetektPlugin.kt:107)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asBucket(Configurations.kt:112)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asTransitiveDependencies(Configurations.kt:95)
+> Configure project :build-tool
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.DefaultKotlinBasePlugin.apply(KotlinPluginWrapper.kt:94)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.KotlinBasePluginWrapper.apply(KotlinPluginWrapper.kt:251)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultDependencyScopeConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:130)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultDependencyScopeConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:138)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultDependencyScopeConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:146)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultDependencyScopeConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:151)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultResolvableConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultResolvableConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:172)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:201)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultDependencyScopeConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.scripting.internal.ScriptingGradleSubplugin$Companion$configureForSourceSet$discoveryConfiguration$1.invoke(ScriptingGradleSubplugin.kt:51)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.abi.UtilsKt.prepareAbiClasspath(Utils.kt:66)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.appliers.PrepareKoverKt$prepare$2.execute(PrepareKover.kt:51)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asProducer(Configurations.kt:126)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultDependencyScopeConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.KotlinTargetSoftwareComponentImplKt$KotlinTargetSoftwareComponent$1$1$configuration$1.invoke(KotlinTargetSoftwareComponentImpl.kt:37)
+> Configure project :gls
+> Configure project :viz:ast-model
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:172)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:64)
+The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration
+	at org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)
+	at org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)
+	at org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)
+	at org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)
+	at org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)
+	at org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)
+	at org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:65)
+	at org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)
+The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration
+	at org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)
+	at org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)
+	at org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)
+	at org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)
+	at org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)
+	at org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)
+	at org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:65)
+	at org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)
+> Configure project :viz:desktop
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at org.jetbrains.compose.reload.gradle.ComposeHotReloadRuntime._get_composeHotReloadRuntimeConfiguration_$lambda$0(runtimeConfiguration.kt:37)
+Using type 'org.jetbrains.compose.reload.gradle.HotReloadUsageType' as a value type for attribute 'org.jetbrains.compose.reload.usageType' has been deprecated. This will fail with an error in Gradle 10. Attribute values must be of type String, Boolean, a subtype of Number, or implement org.gradle.api.Named. Using an unsupported type may cause failures during dependency resolution, publishing, or configuration cache serialization. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#unsupported_attribute_value_type
+	at org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:83)
+	at org.gradle.api.attributes.Attribute.of(Attribute.java:56)
+	at org.jetbrains.compose.reload.gradle.HotReloadUsageType.<clinit>(HotReloadUsage.kt:17)
+> Task :help
+> Configure project :viz:desktop
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at com.diffplug.gradle.spotless.GradleProvisioner.lambda$forConfigurationContainer$1(GradleProvisioner.java:124)
+> Task :spotlessInternalRegisterDependencies
+> Configure project :viz:desktop
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at kotlinx.kover.gradle.plugin.appliers.artifacts.AbstractVariantArtifacts$2.execute(AbstractVariantArtifacts.kt:52)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)
+BUILD SUCCESSFUL in 17s

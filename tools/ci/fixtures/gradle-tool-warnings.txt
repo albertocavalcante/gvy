@@ -1,0 +1,22 @@
+> Configure project :
+The ReportingExtension.file(String) method has been deprecated. This is scheduled to be removed in Gradle 10. Please use the getBaseDirectory().file(String) or getBaseDirectory().dir(String) method instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#reporting_extension_file
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+> Configure project :gls
+The 'val name: Type by extra' property delegate syntax has been deprecated. This is scheduled to be removed in Gradle 10. Use 'val property = extra[name] as Type' instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kotlin_dsl_delegated_properties
+	at Build_gradle.<init>(build.gradle.kts:34)
+The 'val name by creating { }' property delegate syntax has been deprecated. This is scheduled to be removed in Gradle 10. Use 'val element = create(name) { }' instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kotlin_dsl_delegated_properties
+> Configure project :schemas
+The 'val name by registering(Type::class) { }' property delegate syntax has been deprecated. This is scheduled to be removed in Gradle 10. Use 'val element = register<Type>(name) { }' instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kotlin_dsl_delegated_properties
+> Configure project :viz:ast-model
+The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration
+> Configure project :viz:desktop
+Using type 'org.jetbrains.compose.reload.gradle.HotReloadUsageType' as a value type for attribute 'org.jetbrains.compose.reload.usageType' has been deprecated. This will fail with an error in Gradle 10. Attribute values must be of type String, Boolean, a subtype of Number, or implement org.gradle.api.Named. Using an unsupported type may cause failures during dependency resolution, publishing, or configuration cache serialization. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#unsupported_attribute_value_type
+> Task :gls:compileKotlin
+w: Kotlin compiler plugin uses an unsupported experimental API.
+w: gls/src/Foo.kt:4:3 'old' is deprecated.
+> Task :gls:compileJava
+gls/src/Foo.java:4: warning: [removal] OldApi has been deprecated and marked for removal
+> Task :gls:test
+OpenJDK 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+BUILD SUCCESSFUL in 1s

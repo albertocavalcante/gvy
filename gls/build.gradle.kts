@@ -1,5 +1,6 @@
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestListener
 import org.gradle.api.tasks.testing.TestResult
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.process.ExecOperations
@@ -39,7 +40,7 @@ buildscript {
     }
 }
 
-val baseVersion: String by rootProject.extra
+val baseVersion = rootProject.extensions.extraProperties["baseVersion"] as String
 
 version =
     when {
@@ -48,10 +49,11 @@ version =
         else -> "$baseVersion-SNAPSHOT"
     }
 
-val proguardLibrary by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
+val proguardLibrary =
+    configurations.create("proguardLibrary") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+    }
 
 dependencies {
     // LSP4J - Language Server Protocol implementation
@@ -206,20 +208,31 @@ tasks.test {
     val slowTestThresholdMs = 60_000L
     val verySlowTestThresholdMs = 180_000L
 
-    afterTest(
-        KotlinClosure2<TestDescriptor, TestResult, Unit>({
-            descriptor,
-            result,
-            ->
-            val duration = result.endTime - result.startTime
-            if (duration > verySlowTestThresholdMs) { // Error if test took >3 minutes
-                logger.error(
-                    "❌ VERY SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms - possible deadlock?",
-                )
-            } else if (duration > slowTestThresholdMs) { // Warn if test took >1 minute
-                logger.warn("⚠️  SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms")
+    addTestListener(
+        object : TestListener {
+            override fun beforeSuite(suite: TestDescriptor) = Unit
+
+            override fun afterSuite(
+                suite: TestDescriptor,
+                result: TestResult,
+            ) = Unit
+
+            override fun beforeTest(testDescriptor: TestDescriptor) = Unit
+
+            override fun afterTest(
+                descriptor: TestDescriptor,
+                result: TestResult,
+            ) {
+                val duration = result.endTime - result.startTime
+                if (duration > verySlowTestThresholdMs) { // Error if test took >3 minutes
+                    logger.error(
+                        "❌ VERY SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms - possible deadlock?",
+                    )
+                } else if (duration > slowTestThresholdMs) { // Warn if test took >1 minute
+                    logger.warn("⚠️  SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms")
+                }
             }
-        }),
+        },
     )
 
     // Log test environment on start - helps diagnose Runner-specific issues

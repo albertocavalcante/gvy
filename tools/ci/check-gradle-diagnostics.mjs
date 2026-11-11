@@ -1,0 +1,182 @@
+import { createHash } from 'node:crypto';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { evaluate } from './bazel-diagnostics.mjs';
+
+export const schemaVersion = 1;
+
+function plain(log) {
+  return log.replace(/\x1b\[[0-9;]*m/g, '').replaceAll('\r\n', '\n');
+}
+
+// Tool output is separate from test STANDARD_OUT/ERR. Runtime/server diagnostics
+// require a harness producer with test/scenario identity and explicit assertions.
+export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
+  const diagnostics = new Set();
+  let context = 'gradle';
+  let pending;
+  const flush = () => {
+    if (pending) diagnostics.add(pending);
+    pending = undefined;
+  };
+  const root = rootDir.replaceAll('\\', '/').replace(/\/$/, '');
+  for (const raw of plain(log).split('\n')) {
+    const header = raw.match(/^> (Configure project|Task) (:\S*)/);
+    if (header) {
+      flush();
+      context = `${header[1] === 'Task' ? 'task' : 'project'} ${header[2]}`;
+      continue;
+    }
+    const line = raw.trim();
+    const source = line.match(/^at Build_gradle[^\n]*\(([^():]+\.gradle\.kts:\d+)\)$/);
+    if (pending && source) {
+      const project = context.startsWith('project ') ? context.slice('project :'.length).replaceAll(':', '/') : '';
+      pending += ` [source ${project ? `${project}/` : ''}${source[1]}]`;
+      flush();
+      continue;
+    }
+    const origin = line.match(/^at ((?!(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.))[^ ]+\([^()]+\))$/);
+    if (pending && /deprecated/.test(pending) && origin) {
+      pending += ` [origin ${origin[1]}]`;
+      flush();
+      continue;
+    }
+    if (!line) flush();
+    if (/^.+ > .+ (?:PASSED|FAILED|SKIPPED|STANDARD_OUT|STANDARD_ERROR)$/.test(line)) continue;
+    const compiler = /^(?:w: |(?:file:\/\/\/)?\S+\.(?:kt|kts|java|groovy):\d+(?::\d+)?:?\s*(?:warning:|[Ww]arning\b))/.test(line);
+    // Gradle indents captured test output; compiler diagnostics sometimes indent.
+    if (/^\s/.test(raw) && !compiler) continue;
+    const warning = /\b(?:has been|have been|is|are) deprecated\b|^Deprecated Gradle features were used|\b(?:warning:|WARNING:|WARN:)|^WARN(?:ING)?(?:\s|:)|^\[WARN(?:ING)?\]|^⚠/.test(line);
+    if (!compiler && !warning) continue;
+    const normalized = line.replaceAll('\\', '/')
+      .replaceAll(`file://${root}/`, '')
+      .replaceAll(`${root}/`, '')
+      .replace(/\s+/g, ' ');
+    flush();
+    pending = `[${context}] ${normalized}`;
+  }
+  flush();
+  return [...diagnostics].sort();
+}
+
+function validExit(value) {
+  return Number.isInteger(value) && value >= 0 && value <= 255;
+}
+
+export function checkGradleDiagnostics({ log, commandExitCode, captureExitCode, exceptions, now = new Date(), rootDir }) {
+  const errors = [];
+  const text = typeof log === 'string' ? plain(log) : '';
+  const diagnostics = collectDiagnostics(text, { rootDir });
+  if (!text.trim()) errors.push('Missing or empty Gradle log');
+  if (text && !text.endsWith('\n')) errors.push('Gradle log is truncated (missing final newline)');
+  if (/[\ufffd\x00\x1b\r]/.test(text)) errors.push('Gradle log contains invalid encoding or non-plain console output');
+  if (!validExit(commandExitCode)) errors.push('Missing or invalid original command exit code');
+  if (!validExit(captureExitCode) || captureExitCode !== 0) errors.push('Missing or failed log capture exit code');
+  const markers = [...text.matchAll(/^BUILD (SUCCESSFUL|FAILED) in .+$/gm)];
+  if (markers.length !== 1) errors.push('Expected exactly one final Gradle BUILD SUCCESSFUL/FAILED marker');
+  else {
+    if ((markers[0][1] === 'SUCCESSFUL') !== (commandExitCode === 0)) {
+      errors.push('Gradle completion marker contradicts original command exit code');
+    }
+    if (/^> (?:Task|Configure project) /m.test(text.slice(markers[0].index + markers[0][0].length))) {
+      errors.push('Gradle work appears after the final completion marker');
+    }
+  }
+  const complete = errors.length === 0;
+  let policy = { ok: false, unexpected: diagnostics, accepted: [], exceptions: [] };
+  try {
+    policy = evaluate(diagnostics, exceptions, now);
+  } catch (error) {
+    errors.push(`Diagnostic policy: ${error.message}`);
+  }
+  if (validExit(commandExitCode) && commandExitCode !== 0) errors.push(`Gradle command failed with exit ${commandExitCode}`);
+  return {
+    schemaVersion, complete,
+    commandExitCode: commandExitCode ?? null, captureExitCode: captureExitCode ?? null,
+    diagnostics, ...policy, errors,
+    // Policy evaluates warning debt only; the producer also requires complete,
+    // successful command evidence. Never let an accepted warning hide failure.
+    ok: complete && policy.ok && commandExitCode === 0 && errors.length === 0,
+  };
+}
+
+const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+
+export function renderSummary(result) {
+  const debts = new Map();
+  for (const entry of result.exceptions) {
+    const key = JSON.stringify([entry.owner, entry.issue, entry.reason, entry.nextAction, entry.acceptance, entry.expires]);
+    const debt = debts.get(key) ?? { ...entry, count: 0 };
+    debt.count++;
+    debts.set(key, debt);
+  }
+  return [
+    '## Gradle diagnostic accountability', '',
+    `**${result.ok ? 'PASS' : 'FAIL'}** (${escape(result.producer)}): ${result.diagnostics.length} diagnostics; ${result.unexpected.length} unexpected; evidence ${result.complete ? 'complete' : 'incomplete'}.`, '',
+    `Original command exit: ${result.commandExitCode}; log capture exit: ${result.captureExitCode}.`, '',
+    ...result.errors.map(value => `- ${escape(value)}`), '',
+    ...result.unexpected.map(value => `<pre>${escape(value)}</pre>`), '',
+    '### Tracked debt (including exceptions absent from cached output)', '',
+    ...[...debts.values()].map(entry => `- ${entry.count} exact exceptions: [${escape(entry.owner)}](${entry.issue}), expires ${entry.expires}: ${escape(entry.reason)} Next: ${escape(entry.nextAction)} Acceptance: ${escape(entry.acceptance)}`), '',
+    '<details><summary>Exact exception fingerprints</summary>', '',
+    ...result.exceptions.map(entry => `<pre>${escape(entry.diagnostic)}</pre>`), '', '</details>', '',
+    'Raw tool logs are retained with this report. Passing-test runtime/server output requires its separate harness producer; see docs/ci-diagnostics.md.', '',
+  ].join('\n');
+}
+
+function parseArgs(args) {
+  const allowed = new Set(['log', 'exit-code', 'capture-exit-code', 'producer', 'baseline', 'report', 'root']);
+  const values = {};
+  for (let index = 0; index < args.length; index += 2) {
+    const key = args[index].replace(/^--/, '');
+    if (!args[index].startsWith('--') || !allowed.has(key) || values[key] !== undefined || !args[index + 1]) {
+      throw new Error(`Invalid or duplicate option: ${args[index]}`);
+    }
+    values[key] = args[index + 1];
+  }
+  for (const key of ['log', 'exit-code', 'capture-exit-code', 'producer', 'baseline', 'report']) {
+    if (!values[key]) throw new Error(`Required option: --${key}`);
+  }
+  if (!/^[a-z0-9][a-z0-9._/-]*$/.test(values.producer)) throw new Error('Producer requires a stable lowercase identifier');
+  return values;
+}
+
+function main(args) {
+  const options = parseArgs(args);
+  mkdirSync(options.report, { recursive: true });
+  const errors = [];
+  let log;
+  let bytes;
+  let exceptions;
+  try {
+    bytes = readFileSync(options.log);
+    log = bytes.toString('utf8');
+  } catch (error) { errors.push(`Cannot read Gradle log: ${error.code ?? error.message}`); }
+  try { exceptions = JSON.parse(readFileSync(options.baseline, 'utf8')); }
+  catch (error) { errors.push(`Cannot read diagnostic policy: ${error.message}`); }
+  const exitCode = value => /^\d+$/.test(value) ? Number(value) : undefined;
+  const result = checkGradleDiagnostics({
+    log, commandExitCode: exitCode(options['exit-code']), captureExitCode: exitCode(options['capture-exit-code']),
+    exceptions, rootDir: options.root,
+  });
+  result.producer = options.producer;
+  result.log = bytes ? { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } : null;
+  if (errors.length) {
+    result.ok = false;
+    result.errors.push(...errors);
+  }
+  // A failed/missing producer cannot leave stale successful evidence behind.
+  writeFileSync(resolve(options.report, 'raw.log'), bytes ?? '');
+  const summary = renderSummary(result);
+  writeFileSync(resolve(options.report, 'summary.md'), summary);
+  writeFileSync(resolve(options.report, 'diagnostics.json'), `${JSON.stringify(result, null, 2)}\n`);
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+  console.log(summary);
+  if (!result.ok) process.exitCode = 1;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  try { main(process.argv.slice(2)); }
+  catch (error) { console.error(error.message); process.exitCode = 1; }
+}

@@ -270,6 +270,13 @@ subprojects {
             // Shared JVM args for better test performance
             jvmArgs("-XX:+UseG1GC", "-XX:MaxMetaspaceSize=512m")
 
+            if (project.path == ":gls" || project.path == ":tests") {
+                // MockK injects bootstrap dispatcher classes; select a compatible test JVM mode
+                // instead of mapping a CDS archive that instrumentation immediately invalidates.
+                // https://github.com/mockk/mockk/blob/1.14.12/doc/md/jep451-dynamic-agent-loading.md
+                jvmArgs("-Xshare:off")
+            }
+
             // Fail on discovery warnings. JUnit silently skips a @Test that returns a value (e.g. a Kotlin
             // `fun x() = runBlocking { ...; assertNotNull(y) }`); this turns that into a build failure.
             systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")
