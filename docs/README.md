@@ -5,6 +5,7 @@ Start with the guide for your task. For a short introduction and installation st
 
 ## Use gvy
 
+- [Install and update gvy](installation.md): Homebrew, direct VSIX installation, Java setup, and updates.
 - [Editor guide](../editors/code/README.md): install the extension, configure Java and language features, and
   troubleshoot.
 - [Standalone language server](lsp/usage.md): connect another editor over standard input/output or a socket.
