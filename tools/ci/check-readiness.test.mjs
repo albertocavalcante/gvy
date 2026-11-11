@@ -71,10 +71,22 @@ test('malformed needs fails closed with a report', () => {
   for (const value of [null, undefined, [], {}, 'success']) assert.equal(evaluateReadiness(value).ok, false);
 });
 
+const context = { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: '2' };
+const attemptStartedAt = '2026-11-11T12:22:40Z';
+function currentReceipt() {
+  return {
+    schemaVersion: 1, ok: true, observationComplete: true, context, attemptStartedAt,
+    jobs: [{
+      jobId: 2, checkId: 2, name: 'check-paths', headSha: context.headSha,
+      status: 'completed', conclusion: 'success', annotationsObserved: true,
+      startedAt: '2026-11-11T12:22:41Z',
+    }],
+  };
+}
+
 test('final policy verdict requires the current successful Actions diagnostic receipt', () => {
-  const context = { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: '2' };
   const graph = evaluateReadiness(successful());
-  const runner = { schemaVersion: 1, ok: true, observationComplete: true, context };
+  const runner = currentReceipt();
   assert.equal(combineReadiness(graph, runner, context).ok, true);
   for (const bad of [undefined, { ...runner, ok: false }, { ...runner, observationComplete: false }]) {
     assert.equal(combineReadiness(graph, bad, context).ok, false);
@@ -83,4 +95,45 @@ test('final policy verdict requires the current successful Actions diagnostic re
     assert.equal(combineReadiness(graph, { ...runner, context: { ...context, [field]: 'stale' } }, context).ok, false, field);
   }
   assert.equal(combineReadiness(evaluateReadiness({}), runner, context).ok, false);
+});
+
+const partialSnapshots = [
+  ['missing attempt start', value => { delete value.attemptStartedAt; }],
+  ['invalid attempt start', value => { value.attemptStartedAt = 'not-a-date'; }],
+  ['missing job list', value => { delete value.jobs; }],
+  ['empty snapshot', value => { value.jobs = []; }],
+  ['observer only', value => { value.jobs[0].name = 'Validation Check'; }],
+  ['unrelated producer only', value => { value.jobs[0].name = 'Lint'; }],
+  ['reused current-attempt clone with old execution', value => { value.jobs[0].startedAt = '2026-11-11T12:14:11Z'; }],
+  ['missing execution start', value => { delete value.jobs[0].startedAt; }],
+  ['invalid execution start', value => { value.jobs[0].startedAt = 'invalid'; }],
+  ['unfinished anchor', value => { value.jobs[0].status = 'in_progress'; }],
+  ['failed anchor', value => { value.jobs[0].conclusion = 'failure'; }],
+  ['skipped anchor', value => { value.jobs[0].conclusion = 'skipped'; }],
+  ['unobserved anchor', value => { value.jobs[0].annotationsObserved = false; }],
+  ['different source anchor', value => { value.jobs[0].headSha = 'c'.repeat(40); }],
+  ['ambiguous anchor', value => { value.jobs.push({ ...value.jobs[0], jobId: 3, checkId: 3 }); }],
+];
+for (const [name, alter] of partialSnapshots) {
+  test(`partial rerun cannot satisfy readiness: ${name}`, () => {
+    for (const applies of [false, true]) {
+      const graph = evaluateReadiness(successful(applies, applies));
+      const runner = currentReceipt();
+      assert.equal(combineReadiness(graph, runner, context).ok, true);
+      alter(runner);
+      const result = combineReadiness(graph, runner, context);
+      assert.equal(result.ok, false);
+      assert.match(result.errors.join('\n'), /fresh.*check-paths.*rerun all/i);
+    }
+  });
+}
+
+test('a complete rerun passes with an anchor starting in the attempt first second', () => {
+  const runner = currentReceipt();
+  runner.jobs[0].startedAt = attemptStartedAt;
+  for (const main of [false, true]) {
+    for (const bazel of [false, true]) {
+      assert.equal(combineReadiness(evaluateReadiness(successful(main, bazel)), runner, context).ok, true);
+    }
+  }
 });

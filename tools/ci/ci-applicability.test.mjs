@@ -32,7 +32,8 @@ test('Bazel configuration has its own required validation', () => {
 });
 
 test('new code and release branches cannot bypass validation', () => {
-  for (const path of ['new-module/src/Foo.kt', 'build.gradle.kts', '.github/workflows/ci.yml', 'tools/ci/check-readiness.mjs']) {
+  for (const path of ['new-module/src/Foo.kt', 'build.gradle.kts', '.github/workflows/ci.yml', 'tools/ci/check-readiness.mjs',
+    'buildSrc/src/main/kotlin/Example.kt', 'buildSrc/build.gradle.kts']) {
     const report = classifyPaths(['CHANGELOG.md', path]);
     assert.equal(report.runMain, true);
     assert.equal(report.runBazel, true);

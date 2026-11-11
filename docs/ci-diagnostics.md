@@ -125,6 +125,12 @@ unfinished and observer-excluded jobs; its snapshot is not a claim that its own 
 workflow was inspected. New runner/action diagnostics require the same exact, owned, expiring policy. Maintained main-CI
 actions use verified Node 24 versions; removing old annotations from logs alone would not satisfy this check.
 
+GitHub selective reruns can copy earlier successful job outputs into a new attempt while omitting their annotations. The
+snapshot retains the trusted attempt start and each job's actual execution start. Required readiness demands one
+successful, annotation-observed `check-paths` execution that started in the current attempt; that job is an ancestor of
+the required producer graph. Retry CI with **Re-run all jobs** so policy, applicability and producer evidence share the
+attempt. A validation-only or partial downstream rerun cannot clear earlier warnings through copied success records.
+
 Passing-test server output remains outside these tool gates. The runtime producer/consumer contract is coordinated with
 the E2E harness work and tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). It must preserve
 complete server logs from passing tests, bind them to actual execution/assertion IDs and reject unexpected warnings

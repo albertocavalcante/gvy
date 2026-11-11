@@ -3,6 +3,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+const timestampMillis = value => typeof value === 'string' &&
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) ? Date.parse(value) : NaN;
 
 /** Evaluate the current workflow's needs graph, never an earlier run's status. */
 export function evaluateReadiness(needs) {
@@ -42,6 +44,17 @@ export function combineReadiness(graph, runner, context) {
   }
   for (const field of ['headSha', 'testedSha', 'runId', 'runAttempt']) {
     if (!context[field] || String(runner?.context?.[field]) !== String(context[field])) report.errors.push(`Actions diagnostic ${field} does not match this workflow.`);
+  }
+  // Selective reruns relabel reused successes with new attempt IDs but can drop
+  // their annotations. A fresh execution of this ancestor reruns its dependents.
+  const anchors = Array.isArray(runner?.jobs) ? runner.jobs.filter(job => record(job) && job.name === 'check-paths') : [];
+  const anchor = anchors[0];
+  const attemptStart = timestampMillis(runner?.attemptStartedAt);
+  const executionStart = timestampMillis(anchor?.startedAt);
+  if (anchors.length !== 1 || anchor?.status !== 'completed' || anchor.conclusion !== 'success' ||
+      anchor.annotationsObserved !== true || anchor.headSha !== context.headSha ||
+      !Number.isFinite(attemptStart) || !Number.isFinite(executionStart) || executionStart < attemptStart) {
+    report.errors.push('A fresh successful observed check-paths execution is required for this attempt; rerun all CI jobs.');
   }
   report.ok = report.errors.length === 0;
   return report;
