@@ -10,7 +10,6 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -51,13 +50,9 @@ class CliProcessTerminationTest {
     }
 
     private fun execute(process: InterruptedTerminationProcess): Pair<Throwable, Boolean> {
-        lateinit var stdout: Path
-        lateinit var stderr: Path
+        lateinit var command: ProcessBuilder
         val executor = CliCommandStepExecutor { builder ->
-            stdout = builder.redirectOutput().file().toPath()
-            stderr = builder.redirectError().file().toPath()
-            Files.writeString(stdout, "hello")
-            Files.writeString(stderr, "")
+            command = builder
             process
         }
         val context = ScenarioContext(
@@ -68,8 +63,8 @@ class CliProcessTerminationTest {
         )
         try {
             val failure = checkNotNull(catchThrowable { executor.execute(ScenarioStep.CliCommand("tool"), context) })
-            assertThat(stdout).doesNotExist()
-            assertThat(stderr).doesNotExist()
+            assertThat(command.redirectOutput()).isEqualTo(ProcessBuilder.Redirect.PIPE)
+            assertThat(command.redirectError()).isEqualTo(ProcessBuilder.Redirect.PIPE)
             assertThat(process.closedStreams).isEqualTo(STREAM_COUNT)
             return failure to Thread.currentThread().isInterrupted
         } finally {

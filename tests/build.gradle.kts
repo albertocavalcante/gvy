@@ -157,6 +157,9 @@ testing {
                         System.getProperty("groovy.lsp.e2e.scenarioTimeoutMs")?.let { timeout ->
                             systemProperty("groovy.lsp.e2e.scenarioTimeoutMs", timeout)
                         }
+                        System.getProperty("groovy.lsp.e2e.cliOutputLimitBytes")?.let { limit ->
+                            systemProperty("groovy.lsp.e2e.cliOutputLimitBytes", limit)
+                        }
                         systemProperty("groovy.lsp.e2e.filter", System.getProperty("groovy.lsp.e2e.filter"))
                         systemProperty("groovy.lsp.e2e.shard", System.getProperty("groovy.lsp.e2e.shard"))
                         // Shards split only the scenario suite; the other e2e classes run once, in shard 0.
