@@ -130,7 +130,7 @@ steps:
               range:
                 start:
                   line: 8
-            message: "Should find DataObject at line 8 (implements JsonSerializable which extends Serializable)"
+          message: "Should find DataObject at line 8 (implements JsonSerializable which extends Serializable)"
 
   # ============================================================================
   # TEST 2: Superclass interface - Find classes that inherit interface through superclass
@@ -158,7 +158,7 @@ steps:
               range:
                 start:
                   line: 4
-            message: "Should NOT find Shape (abstract class) at line 4"
+          message: "Should NOT find Shape (abstract class) at line 4"
 
         - jsonPath: $.items[*]
           expect:
@@ -168,7 +168,7 @@ steps:
               range:
                 start:
                   line: 9
-            message: "Should find Circle at line 9 (extends Shape which implements Drawable)"
+          message: "Should find Circle at line 9 (extends Shape which implements Drawable)"
 
         - jsonPath: $.items[*]
           expect:
@@ -178,7 +178,7 @@ steps:
               range:
                 start:
                   line: 13
-            message: "Should find Rectangle at line 13 (extends Shape which implements Drawable)"
+          message: "Should find Rectangle at line 13 (extends Shape which implements Drawable)"
 
   # ============================================================================
   # TEST 3: Method implementation through superclass interface
@@ -225,7 +225,7 @@ steps:
               range:
                 start:
                   line: 12
-            message: "Should find Button at line 12 (implements Component transitively through UIComponent and Widget)"
+          message: "Should find Button at line 12 (implements Component transitively through UIComponent and Widget)"
 
   - shutdown: {}
   - exit: {}

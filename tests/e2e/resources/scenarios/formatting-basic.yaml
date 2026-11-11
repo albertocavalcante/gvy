@@ -45,7 +45,7 @@ steps:
         - jsonPath: $
           expect:
             type: NOT_EMPTY
-            message: "Expected formatting edits for code that needs reformatting"
+          message: "Expected formatting edits for code that needs reformatting"
 
   # Test 2: Document Issue #393 - closure brace spacing regression
   # KNOWN BUG: formatter changes "{ a -> a * 2 }" to "{a -> a * 2 }"
@@ -76,7 +76,7 @@ steps:
         - jsonPath: $
           expect:
             type: NOT_EMPTY
-            message: "Issue #393 ACTIVE: formatter incorrectly modifies closure brace spacing"
+          message: "Issue #393 ACTIVE: formatter incorrectly modifies closure brace spacing"
 
   - shutdown: {}
   - exit: {}

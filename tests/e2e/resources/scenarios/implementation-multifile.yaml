@@ -145,7 +145,7 @@ steps:
                 start:
                   line: 4
                   character: 0
-            message: "Should find UserRepository in different file"
+          message: "Should find UserRepository in different file"
 
         - jsonPath: $.items[*]
           expect:
@@ -156,7 +156,7 @@ steps:
                 start:
                   line: 4
                   character: 0
-            message: "Should find ProductRepository in different file"
+          message: "Should find ProductRepository in different file"
 
   # ============================================================================
   # TEST 2: Multi-file method implementation discovery
@@ -183,7 +183,7 @@ steps:
                 start:
                   line: 5
                   character: 4
-            message: "Should find UserRepository.save() in different file"
+          message: "Should find UserRepository.save() in different file"
 
         - jsonPath: $.items[*]
           expect:
@@ -194,7 +194,7 @@ steps:
                 start:
                   line: 5
                   character: 4
-            message: "Should find ProductRepository.save() in different file"
+          message: "Should find ProductRepository.save() in different file"
 
   # ============================================================================
   # TEST 3: FQN matching - com.a.Shape should only find com.a.Circle
@@ -221,14 +221,14 @@ steps:
                 start:
                   line: 2
                   character: 0
-            message: "Should find com.a.Circle (implements com.a.Shape)"
+          message: "Should find com.a.Circle (implements com.a.Shape)"
 
         - jsonPath: $.items[*]
           expect:
             type: NOT_CONTAINS
             value:
               uri: "{{workspace.uri}}src/com/b/Rectangle.groovy"
-            message: "Should NOT find com.b.Rectangle (implements com.b.Shape, not com.a.Shape)"
+          message: "Should NOT find com.b.Rectangle (implements com.b.Shape, not com.a.Shape)"
 
   # ============================================================================
   # TEST 4: FQN matching - com.b.Shape should only find com.b.Rectangle
@@ -255,14 +255,14 @@ steps:
                 start:
                   line: 2
                   character: 0
-            message: "Should find com.b.Rectangle (implements com.b.Shape)"
+          message: "Should find com.b.Rectangle (implements com.b.Shape)"
 
         - jsonPath: $.items[*]
           expect:
             type: NOT_CONTAINS
             value:
               uri: "{{workspace.uri}}src/com/a/Circle.groovy"
-            message: "Should NOT find com.a.Circle (implements com.a.Shape, not com.b.Shape)"
+          message: "Should NOT find com.a.Circle (implements com.a.Shape, not com.b.Shape)"
 
   - shutdown: {}
   - exit: {}

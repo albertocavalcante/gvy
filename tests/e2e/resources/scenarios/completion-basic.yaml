@@ -74,7 +74,7 @@ steps:
         - jsonPath: "$[?(@.label == 'println')]"
           expect:
             type: NOT_EMPTY
-            message: Should have println completion item
+          message: Should have println completion item
 
   # Strict: verify println signature detail is present
   - assert:

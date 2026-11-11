@@ -104,7 +104,7 @@ steps:
                 start:
                   line: 5
                   character: 0
-            message: "Should find BasicCalculator"
+          message: "Should find BasicCalculator"
 
         - jsonPath: $.items[*]
           expect:
@@ -115,7 +115,7 @@ steps:
                 start:
                   line: 10
                   character: 0
-            message: "Should find ScientificCalculator"
+          message: "Should find ScientificCalculator"
 
   # ============================================================================
   # TEST 2: Interface method with parameters -> Multiple implementations
@@ -143,7 +143,7 @@ steps:
                 start:
                   line: 6
                   character: 4
-            message: "Should find BasicCalculator.add()"
+          message: "Should find BasicCalculator.add()"
 
         - jsonPath: $.items[*]
           expect:
@@ -154,7 +154,7 @@ steps:
                 start:
                   line: 11
                   character: 4
-            message: "Should find ScientificCalculator.add()"
+          message: "Should find ScientificCalculator.add()"
 
   # ============================================================================
   # TEST 3: Abstract method -> Concrete implementations
@@ -182,7 +182,7 @@ steps:
                 start:
                   line: 6
                   character: 4
-            message: "Should find Dog.makeSound()"
+          message: "Should find Dog.makeSound()"
 
         - jsonPath: $.items[*]
           expect:
@@ -193,7 +193,7 @@ steps:
                 start:
                   line: 10
                   character: 4
-            message: "Should find Cat.makeSound()"
+          message: "Should find Cat.makeSound()"
 
   # ============================================================================
   # TEST 4: Abstract class -> Concrete implementations
@@ -221,7 +221,7 @@ steps:
                 start:
                   line: 5
                   character: 0
-            message: "Should find Dog class"
+          message: "Should find Dog class"
 
         - jsonPath: $.items[*]
           expect:
@@ -232,7 +232,7 @@ steps:
                 start:
                   line: 9
                   character: 0
-            message: "Should find Cat class"
+          message: "Should find Cat class"
 
   # ============================================================================
   # TEST 5: Verify abstract classes are excluded from interface implementations
@@ -249,7 +249,7 @@ steps:
                 start:
                   line: 16
                   character: 0
-            message: "Should NOT find AbstractCalculator (abstract classes excluded)"
+          message: "Should NOT find AbstractCalculator (abstract classes excluded)"
 
   - shutdown: {}
   - exit: {}

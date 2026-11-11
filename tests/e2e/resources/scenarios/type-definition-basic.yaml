@@ -57,14 +57,14 @@ steps:
           expect:
             type: SIZE
             value: 1
-            message: "Should find 1 type definition"
+          message: "Should find 1 type definition"
         
         # Verify it points to line 0 (class MyType)
         - jsonPath: $.items[0].range.start.line
           expect:
             type: EQUALS
             value: 0
-            message: "Should point to line 0 (MyType definition)"
+          message: "Should point to line 0 (MyType definition)"
 
   - shutdown: {}
   - exit: {}

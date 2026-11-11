@@ -60,28 +60,28 @@ steps:
           expect:
             type: SIZE
             value: 3
-            message: "Should find 3 highlights for 'foo'"
+          message: "Should find 3 highlights for 'foo'"
         
         # Verify Declaration (Line 2)
         - jsonPath: $[?(@.range.start.line == 2)]
           expect:
             type: SIZE
             value: 1
-            message: "Should highlight declaration on line 2"
+          message: "Should highlight declaration on line 2"
 
         # Verify Usage 1 (Line 3)
         - jsonPath: $[?(@.range.start.line == 3)]
           expect:
             type: SIZE
             value: 1
-            message: "Should highlight usage on line 3"
+          message: "Should highlight usage on line 3"
 
         # Verify Usage 2 (Line 4)
         - jsonPath: $[?(@.range.start.line == 4)]
           expect:
             type: SIZE
             value: 1
-            message: "Should highlight usage on line 4"
+          message: "Should highlight usage on line 4"
 
   - shutdown: {}
   - exit: {}
