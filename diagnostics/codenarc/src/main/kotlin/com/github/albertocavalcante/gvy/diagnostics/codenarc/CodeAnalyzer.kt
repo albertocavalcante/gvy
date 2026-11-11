@@ -15,6 +15,7 @@ import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.util.HexFormat
 import java.util.UUID
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.system.measureTimeMillis
 
@@ -74,9 +75,8 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
         val safeFileName = resolveSafeFileName(fileName)
         val tempSourceFile = analysisDir.resolve(safeFileName)
 
-        val rulesetFile = resolveRulesetFile(analysisDir, rulesetContent)
-
         return try {
+            val rulesetFile = resolveRulesetFile(analysisDir, rulesetContent)
             // Efficient write with NIO - direct UTF-8 bytes
             Files.write(tempSourceFile, sourceCode.toByteArray(StandardCharsets.UTF_8))
 
@@ -117,6 +117,8 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
             }
 
             results
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.error(e) { "Failed to execute CodeNarc analysis for $fileName" }
             throw CodeAnalysisException("CodeNarc analysis failed for $fileName", e)
@@ -138,6 +140,8 @@ class DefaultCodeAnalyzer internal constructor(private val rulesetFilePathProvid
 
     internal fun resolveRulesetFile(analysisDir: Path, rulesetContent: String): Path = try {
         rulesetFilePathProvider(rulesetContent)
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (e: Exception) {
         // NOTE: Ruleset caching is a performance optimization; failing to cache must not break analysis.
         //       In this fallback path we create a temporary per-analysis ruleset file inside analysisDir,
