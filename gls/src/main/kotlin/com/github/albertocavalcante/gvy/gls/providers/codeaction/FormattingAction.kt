@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.codeaction
 
+import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.gls.services.Formatter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.CodeAction
@@ -24,8 +25,8 @@ class FormattingAction(private val formatter: Formatter) {
     fun createFormattingAction(uriString: String, content: String): CodeAction? {
         logger.debug { "Checking if formatting action is needed for $uriString" }
 
-        val formattedContent = try {
-            formatter.format(content)
+        val outcome = try {
+            formatter.formatChecked(content)
         } catch (e: IllegalStateException) {
             logger.debug(e) { "Formatter failed, not offering formatting action" }
             return null
@@ -33,6 +34,14 @@ class FormattingAction(private val formatter: Formatter) {
             logger.debug(e) { "Formatter failed, not offering formatting action" }
             return null
         }
+
+        // Code actions are requested often, so a refusal is logged at debug only; formatting the
+        // document reports it at WARN.
+        if (outcome is FormatOutcome.Refused) {
+            logger.debug { "Not offering formatting for $uriString: ${outcome.reason}" }
+            return null
+        }
+        val formattedContent = outcome.text
 
         // No action if already formatted
         if (formattedContent == content) {

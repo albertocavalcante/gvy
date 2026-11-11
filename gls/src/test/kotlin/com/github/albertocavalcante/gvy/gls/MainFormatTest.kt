@@ -34,6 +34,30 @@ class MainFormatTest {
     }
 
     @Test
+    fun `format warns on stderr and prints the input when the result would change the program`() {
+        val tempFile = File.createTempFile("Refused", ".groovy")
+        val input = "def y = x as BigDecimal\n"
+        tempFile.writeText(input)
+        tempFile.deleteOnExit()
+
+        val originalErr = System.err
+        val err = ByteArrayOutputStream()
+        System.setErr(PrintStream(err, true, Charsets.UTF_8))
+        val output = try {
+            captureOutput { runWithContext("format", tempFile.absolutePath) }
+        } finally {
+            System.setErr(originalErr)
+        }
+
+        assertTrue(output.contains("def y = x as BigDecimal"), "Expected the unchanged input, got: $output")
+        val warning = err.toString(Charsets.UTF_8)
+        assertTrue(
+            warning.contains("left unformatted") && warning.contains(tempFile.path),
+            "Expected a refusal warning on stderr, got: $warning",
+        )
+    }
+
+    @Test
     fun `format throws for missing files`() {
         // Clikt will throw an exception for non-existent files when mustExist = true
         // Use CliktError as the base type since the specific exception type may vary

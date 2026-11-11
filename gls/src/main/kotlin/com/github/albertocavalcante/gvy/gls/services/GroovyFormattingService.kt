@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.fmt.OpenRewriteFormatter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.currentCoroutineContext
@@ -16,11 +17,22 @@ import kotlin.math.max
 
 fun interface Formatter {
     fun format(text: String): String
+
+    /**
+     * Formats [text] and says whether the result was refused as unsafe. Formatters that check
+     * their own output override this; the default treats every result as accepted.
+     */
+    fun formatChecked(text: String): FormatOutcome = format(text).let { formatted ->
+        if (formatted == text) FormatOutcome.Unchanged(text) else FormatOutcome.Formatted(formatted)
+    }
 }
 
 internal enum class FormatterStatus {
     SUCCESS,
     NO_OP,
+
+    /** The formatter produced a result that would change the program, so no edit was sent. */
+    REFUSED,
     ERROR,
     NOT_FOUND,
 }
@@ -70,10 +82,10 @@ class GroovyFormattingService(
 
         currentCoroutineContext().ensureActive()
 
-        val formattedResult = runCatching { formatter.format(currentContent) }
+        val formattedResult = runCatching { formatter.formatChecked(currentContent) }
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLISECOND
 
-        val formattedContent = formattedResult.getOrElse { throwable ->
+        val outcome = formattedResult.getOrElse { throwable ->
             val failureMessage = throwable.message ?: throwable.javaClass.simpleName
             logger.warn { "Formatter failed for $uriString: $failureMessage" }
             if (logger.isDebugEnabled()) {
@@ -91,10 +103,18 @@ class GroovyFormattingService(
 
         currentCoroutineContext().ensureActive()
 
-        val (status, edits) = if (formattedContent == currentContent) {
-            FormatterStatus.NO_OP to emptyList()
-        } else {
-            FormatterStatus.SUCCESS to listOf(TextEdit(currentContent.toFullDocumentRange(), formattedContent))
+        val (status, edits) = when {
+            outcome is FormatOutcome.Refused -> {
+                logger.warn {
+                    "Refusing formatting result for $uriString that would change the program: ${outcome.reason}"
+                }
+                outcome.cause?.let { cause -> logger.debug(cause) { "Token stream check failure for $uriString" } }
+                FormatterStatus.REFUSED to emptyList()
+            }
+
+            outcome.text == currentContent -> FormatterStatus.NO_OP to emptyList()
+
+            else -> FormatterStatus.SUCCESS to listOf(TextEdit(currentContent.toFullDocumentRange(), outcome.text))
         }
 
         publishTelemetry(
@@ -169,4 +189,5 @@ private fun String.toFullDocumentRange(): Range {
 internal class OpenRewriteFormatterAdapter : Formatter {
     private val delegate = OpenRewriteFormatter()
     override fun format(text: String): String = delegate.format(text)
+    override fun formatChecked(text: String): FormatOutcome = delegate.formatChecked(text)
 }

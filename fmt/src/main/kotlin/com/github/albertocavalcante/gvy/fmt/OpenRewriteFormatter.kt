@@ -12,7 +12,10 @@ import org.openrewrite.java.tree.Space
 import org.slf4j.LoggerFactory
 import java.util.stream.Collectors
 
-class OpenRewriteFormatter {
+class OpenRewriteFormatter internal constructor(
+    private val checker: (original: String, edited: String) -> TokenStreamVerdict,
+) {
+    constructor() : this(TokenStreamGuard::check)
 
     private val parser: GroovyParser = GroovyParser.builder().build()
 
@@ -22,7 +25,42 @@ class OpenRewriteFormatter {
     }
     private val recipe = AutoFormat()
 
+    /**
+     * Formats [text], or returns it unchanged when formatting would change more than layout.
+     *
+     * Same as [formatChecked], for callers that only need the text. A refusal is logged at WARN
+     * with the first token difference; callers that know the document should use [formatChecked]
+     * and report the refusal themselves.
+     */
     fun format(text: String): String {
+        val outcome = formatChecked(text)
+        if (outcome is FormatOutcome.Refused) {
+            logger.warn("Refusing formatting result that would change the program: {}", outcome.reason, outcome.cause)
+        }
+        return outcome.text
+    }
+
+    /**
+     * Formats [text] and checks the result with [TokenStreamGuard] before it leaves the formatter,
+     * so the LSP formatting request, the "Format document" code action and `gls format` all share
+     * the check. Does not log refusals: the caller knows which document they belong to.
+     */
+    fun formatChecked(text: String): FormatOutcome {
+        val formatted = formatUnchecked(text)
+        if (formatted == text) return FormatOutcome.Unchanged(text)
+
+        val verdict = runCatching { checker(text, formatted) }.getOrElse { failure ->
+            // A guard that cannot run cannot vouch for the edit.
+            return FormatOutcome.Refused(text, "the token stream check failed: $failure", failure)
+        }
+        return if (verdict.isSafe) {
+            FormatOutcome.Formatted(formatted)
+        } else {
+            FormatOutcome.Refused(text, verdict.describe())
+        }
+    }
+
+    private fun formatUnchecked(text: String): String {
         if (text.isBlank()) return text
 
         // NOTE: Shebang extraction is a heuristic workaround. OpenRewrite's GroovyParser doesn't
