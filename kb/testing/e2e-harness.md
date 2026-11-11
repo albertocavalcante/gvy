@@ -1,5 +1,8 @@
 # End-to-End Harness (Scaffolding)
 
+The [hardening delivery plan](e2e-hardening-plan.md) tracks the assertion, lifecycle, protocol and coverage acceptance
+gates for the current harness work.
+
 The E2E harness drives full LSP sessions against the `groovy-lsp` process. It launches the server in **stdio** mode
 (matching VS Code’s behaviour), copies a fixture workspace into a temporary directory, and executes YAML-defined steps.
 
