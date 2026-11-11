@@ -19,8 +19,8 @@ the sentence above. The page changes rarely; live status of the lanes is tracked
 
 ## Scorecard
 
-The quality harness computes the scorecard for every commit. Targets are set once the first run gives a baseline; until
-then only the direction is fixed.
+The quality harness will compute the scorecard for every commit. Targets are set once the first run gives a baseline;
+until then only the direction is fixed.
 
 | Metric                                                                         | Direction     |
 | ------------------------------------------------------------------------------ | ------------- |
@@ -49,7 +49,7 @@ Each lane is an epic with its own plan and acceptance criteria.
 | [Review findings](https://github.com/albertocavalcante/gvy/issues/1522)              | The technical-debt lane.                                                                                                                                                                                                            |
 | Dogfooding bugs                                                                      | Each verified bug from the first dogfooding pass ([#1523](https://github.com/albertocavalcante/gvy/issues/1523) to [#1543](https://github.com/albertocavalcante/gvy/issues/1543)) gets an `xfail` repro in the harness, then a fix. |
 
-### Current order
+### Dependency order
 
 ```mermaid
 flowchart LR
@@ -59,13 +59,10 @@ flowchart LR
   W --> D[Baseline dumps<br/>+ scorecard]
   D --> S[Type-checker spike<br/>decision record]
   S --> E[One engine,<br/>one resolver]
-  classDef now fill:#d4edda,stroke:#2e7d32,color:#000
-  classDef next fill:#fff3cd,stroke:#b8860b,color:#000
-  class H1,F now
-  class R,W,D next
 ```
 
-Green items come first. Formatter safety runs in parallel because it is the only lane that fixes code-damaging bugs.
+Formatter safety runs in parallel with the rest because it is the only lane that fixes code-damaging bugs. Which steps
+are in progress is tracked in [#1551](https://github.com/albertocavalcante/gvy/issues/1551).
 
 ### Continuing work
 
@@ -78,7 +75,7 @@ Work that predates the lanes continues where it serves the North Star. Its desig
   [versioned metadata](../kb/specs/VERSIONED_METADATA.md), [user overrides](../kb/specs/USER_OVERRIDES.md).
 - Spock: [support notes](../kb/SPOCK_SUPPORT.md), [AST support](../kb/SPOCK_AST_SUPPORT.md).
 - Build-tool integration: [build server research](../kb/GRADLE_BUILD_SERVER_INTEGRATION.md).
-- Workspace-scale behaviour (file watching, symbol accuracy) and editor polish.
+- Workspace-scale accuracy (symbol accuracy, watched-file correctness) and editor polish.
 
 ### Feature backlog
 
