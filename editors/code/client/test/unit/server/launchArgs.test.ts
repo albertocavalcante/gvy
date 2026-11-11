@@ -130,8 +130,11 @@ describe("server/launchArgs", () => {
   it("strips quotes and reads _JAVA_OPTIONS from the environment", () => {
     expect(
       envJavaOptions({ _JAVA_OPTIONS: "\"-XX:+UseParallelGC\" '-Xmx1g'" }),
-    ).to.deep.equal(["-XX:+UseParallelGC", "-Xmx1g"]);
-    expect(envJavaOptions({ JAVA_TOOL_OPTIONS: "   " })).to.deep.equal([]);
+    ).to.deep.equal({ before: [], after: ["-XX:+UseParallelGC", "-Xmx1g"] });
+    expect(envJavaOptions({ JAVA_TOOL_OPTIONS: "   " })).to.deep.equal({
+      before: [],
+      after: [],
+    });
   });
 
   const without = (...drop: string[]) =>
@@ -258,11 +261,10 @@ describe("server/launchArgs", () => {
       JAVA_TOOL_OPTIONS: "-XX:+UseParallelGC  -Dx=y",
       JDK_JAVA_OPTIONS: "-XX:MaxRAMPercentage=12.5",
     });
-    expect(env).to.deep.equal([
-      "-XX:+UseParallelGC",
-      "-Dx=y",
-      "-XX:MaxRAMPercentage=12.5",
-    ]);
+    expect(env).to.deep.equal({
+      before: ["-XX:+UseParallelGC", "-Dx=y", "-XX:MaxRAMPercentage=12.5"],
+      after: [],
+    });
     // MaxRAMPercentage conflicts with -Xmx2g only; -Xms64m stays.
     expect(resolveVmArgs([], true, undefined, env)).to.deep.equal([
       "-XX:+ExitOnOutOfMemoryError",
@@ -270,6 +272,37 @@ describe("server/launchArgs", () => {
       "-XX:MinHeapFreeRatio=20",
       "-XX:MaxHeapFreeRatio=40",
     ]);
-    expect(envJavaOptions({})).to.deep.equal([]);
+    expect(envJavaOptions({})).to.deep.equal({ before: [], after: [] });
+  });
+
+  it("evaluates env options in JVM order: tool/jdk before vmargs, _JAVA_OPTIONS after", () => {
+    // user -Xmx32m wins over JAVA_TOOL_OPTIONS -Xmx4g (command line is later),
+    // so -Xms64m must go.
+    expect(
+      resolveVmArgs(
+        ["-Xmx32m"],
+        true,
+        undefined,
+        envJavaOptions({ JAVA_TOOL_OPTIONS: "-Xmx4g" }),
+      ),
+    ).to.deep.equal([...without("-Xms64m", "-Xmx2g"), "-Xmx32m"]);
+    // user -Xms4g wins over JAVA_TOOL_OPTIONS -Xms1g, so -Xmx2g must go.
+    expect(
+      resolveVmArgs(
+        ["-Xms4g"],
+        true,
+        undefined,
+        envJavaOptions({ JAVA_TOOL_OPTIONS: "-Xms1g" }),
+      ),
+    ).to.deep.equal([...without("-Xmx2g"), "-Xms4g"]);
+    // _JAVA_OPTIONS is applied last, so its -Xmx32m beats a user -Xmx4g.
+    expect(
+      resolveVmArgs(
+        ["-Xmx4g"],
+        true,
+        undefined,
+        envJavaOptions({ _JAVA_OPTIONS: "-Xmx32m" }),
+      ),
+    ).to.deep.equal([...without("-Xms64m", "-Xmx2g"), "-Xmx4g"]);
   });
 });

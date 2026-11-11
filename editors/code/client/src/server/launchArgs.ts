@@ -162,20 +162,31 @@ function conflictingDefaults(intent: readonly string[]): Set<string> {
 }
 
 /**
+ * JVM options from the environment, in HotSpot order: JAVA_TOOL_OPTIONS and
+ * JDK_JAVA_OPTIONS are processed before the command line, _JAVA_OPTIONS after.
+ */
+export interface EnvJavaOptions {
+  before: readonly string[];
+  after: readonly string[];
+}
+
+/**
  * Splits the JVM option variables the java launcher honours; they are
  * applied alongside our flags and can clash with them in the same way.
  */
 export function envJavaOptions(
   env: Readonly<Record<string, string | undefined>>,
-): string[] {
-  return ["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"].flatMap(
-    (name) =>
-      (env[name] ?? "")
-        .split(/\s+/)
-        // The JVM strips quotes around options.
-        .map((arg) => arg.replace(/^["']+|["']+$/g, ""))
-        .filter((arg) => arg.length > 0),
-  );
+): EnvJavaOptions {
+  const split = (name: string): string[] =>
+    (env[name] ?? "")
+      .split(/\s+/)
+      // The JVM strips quotes around options.
+      .map((arg) => arg.replace(/^["']+|["']+$/g, ""))
+      .filter((arg) => arg.length > 0);
+  return {
+    before: [...split("JAVA_TOOL_OPTIONS"), ...split("JDK_JAVA_OPTIONS")],
+    after: split("_JAVA_OPTIONS"),
+  };
 }
 
 /**
@@ -214,14 +225,15 @@ export function resolveVmArgs(
   userValue: unknown,
   useDefaults: unknown = true,
   warn?: (message: string) => void,
-  envArgs: readonly string[] = [],
+  env: EnvJavaOptions = { before: [], after: [] },
 ): string[] {
   const user = sanitizeVmArgs(userValue, warn);
   if (useDefaults === false) {
     return user;
   }
-  // The environment counts as user intent for conflict detection.
-  const intent = [...user, ...envArgs];
+  // The environment counts as user intent for conflict detection, listed in
+  // the order HotSpot applies it so that "last wins" evaluates correctly.
+  const intent = [...env.before, ...user, ...env.after];
   const dropG1 = selectsOtherCollector(intent);
   const dropped = conflictingDefaults(intent);
   const defaults = DEFAULT_SERVER_VM_ARGS.filter(
@@ -237,7 +249,7 @@ export interface JavaArgsInput {
   /** `groovy.server.vmargsDefaults`; only `false` disables the defaults. */
   useDefaultVmArgs?: unknown;
   /** Options from JAVA_TOOL_OPTIONS and friends; see {@link envJavaOptions}. */
-  envArgs?: readonly string[];
+  env?: EnvJavaOptions;
   warn?: (message: string) => void;
 }
 
@@ -247,7 +259,7 @@ export function buildJavaArgs(input: JavaArgsInput): string[] {
     input.vmArgs,
     input.useDefaultVmArgs,
     input.warn,
-    input.envArgs,
+    input.env,
   );
   // Java 16+ requires --enable-native-access=ALL-UNNAMED for JNA
   // to suppress "WARNING: A restricted method in java.lang.System has been called"

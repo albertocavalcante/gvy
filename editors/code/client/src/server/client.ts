@@ -222,7 +222,7 @@ function currentJavaArgs(jarPath: string, javaVersion?: number): string[] {
     javaVersion,
     vmArgs: config.serverVmArgs,
     useDefaultVmArgs: config.serverVmArgsDefaults,
-    envArgs: envJavaOptions(process.env),
+    env: envJavaOptions(process.env),
   });
 }
 
