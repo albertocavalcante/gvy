@@ -234,7 +234,8 @@ sealed interface ScenarioStep {
     data class ChangeDocument(
         val uri: String? = null,
         val path: String? = null,
-        val version: Int = 1,
+        /** Omitted versions advance the last high-level document version; explicit values are sent unchanged. */
+        val version: Int? = null,
         val text: String? = null, // Full document replacement (null range in LSP)
         val contentChanges: List<TestTextDocumentContentChangeEvent> = emptyList(),
     ) : ScenarioStep

@@ -33,6 +33,7 @@ data class ScenarioContext(
     fun effectiveTimeoutMs(requestedMs: Long): Long = XfailOutcome.capTimeout(requestedMs, timeoutCapMs)
 
     val state: ScenarioState = ScenarioState()
+    internal val documentVersions: DocumentVersions = DocumentVersions()
     val variables: MutableMap<String, JsonElement> = mutableMapOf()
     val savedResults: MutableMap<String, JsonElement> = mutableMapOf()
 
