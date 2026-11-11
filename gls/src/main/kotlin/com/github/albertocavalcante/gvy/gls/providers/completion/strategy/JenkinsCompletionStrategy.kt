@@ -145,21 +145,29 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 sortText("0-entry-${entry.name}")
             }
         }
-        blockContext.innerInstructions.forEach { instruction ->
-            // A statement (`image 'maven'`, `reuseNode true`) takes a value, not a block.
-            val isStatement = instruction in blockContext.statementInstructions
-            val insert = when {
-                instruction in NO_ARGUMENT_CONDITIONS -> "$instruction()"
-                isStatement -> "$instruction "
-                else -> "$instruction {"
-            }
-            completion {
-                label(instruction)
-                kind(CompletionItemKind.Keyword)
-                detail(if (isStatement) "Declarative option" else "Declarative directive")
-                insertText(insert)
-                sortText("0-directive-$instruction")
-            }
+        blockContext.innerInstructions.forEach { instruction -> addInstruction(blockContext, instruction) }
+    }
+
+    private fun CompletionsBuilder.addInstruction(blockContext: JenkinsBlockContext, instruction: String) {
+        // A statement (`image 'maven'`, `reuseNode true`) takes a value, not a block.
+        val isStatement = instruction in blockContext.statementInstructions
+        val inWhen = blockContext.currentBlock == "when"
+        val insert = when {
+            inWhen && instruction in NO_ARGUMENT_CONDITIONS -> "$instruction()"
+            isStatement -> "$instruction "
+            else -> "$instruction {"
+        }
+        val detail = when {
+            inWhen -> "Declarative condition"
+            isStatement -> "Declarative option"
+            else -> "Declarative directive"
+        }
+        completion {
+            label(instruction)
+            kind(CompletionItemKind.Keyword)
+            detail(detail)
+            insertText(insert)
+            sortText("0-directive-$instruction")
         }
     }
 }

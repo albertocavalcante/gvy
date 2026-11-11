@@ -397,6 +397,17 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
+    fun `when conditions are described as conditions, other statements as options, and only when takes calls`(): Unit =
+        runTest {
+            val whenItems = completeInStage("when {").associate { it.label to it.detail }
+            val axisItems = completeInStage("matrix {", "axes {", "axis {").associate { it.label to it.detail }
+
+            assertEquals("Declarative condition", whenItems["branch"])
+            assertEquals("Declarative condition", whenItems["allOf"])
+            assertEquals("Declarative option", axisItems["values"])
+        }
+
+    @Test
     fun `agent block inserts label without a brace`(): Unit = runTest {
         val code = "pipeline {\n    agent {\n        \n    }\n}"
         val inserts = completeAt(code, line = 2, character = 8).associate { it.label to it.insertText }
@@ -413,8 +424,8 @@ class JenkinsCompletionExactSetTest {
             "            yaml '''",
             "apiVersion: v1",
             "kind: Pod",
-            // The unbalanced `{` below only stays harmless through the detector\'s multi-line string handling.
-            "spec: { containers: [ { name: maven } ]",
+            // The extra `}` would close `pipeline` early under line-by-line brace counting.
+            "spec: { containers: [ { name: maven } ] } }",
             "            '''",
             "        }",
             "    }",
