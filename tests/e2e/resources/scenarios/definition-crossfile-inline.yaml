@@ -1,0 +1,86 @@
+name: definition-crossfile-inline
+description: Cross-file go-to-definition between two inline workspace files, positioned with named cursor markers
+
+workspace:
+  fixture: empty-workspace
+  # Written to disk before initialize, so the target file is indexed but never opened.
+  files:
+    src/main/groovy/com/example/Greeter.groovy: |
+      package com.example
+
+      class |^greeterDecl|Greeter {
+          String |^greetDecl|greet(String name) {
+              return "Hello, ${name}!"
+          }
+      }
+    src/main/groovy/com/example/App.groovy: |
+      package com.example
+
+      class App {
+          String run() {
+              def greeter = new |^greeterUse|Greeter()
+              return greeter.|^greetUse|greet("World")
+          }
+      }
+
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.server.logLevel: DEBUG
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+
+  # Opened without text: the editor sends the file as written to disk (markers already stripped).
+  - openDocument:
+      path: "{{cursor.greeterUse.path}}"
+
+  - waitNotification:
+      method: textDocument/publishDiagnostics
+      timeoutMs: 20000
+
+  # Constructor call -> class declaration in the other file.
+  # NOTE: the declared type of a local (`Greeter greeter = ...`) still resolves to the local itself (#1532).
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{cursor.greeterUse.uri}}"
+        position: "{{cursor.greeterUse}}"
+      saveAs: classResult
+  - assert:
+      source: classResult
+      checks:
+        - jsonPath: $.items
+          expect: { type: SIZE, value: 1 }
+        - jsonPath: $.items[0].uri
+          expect: { type: CONTAINS, value: "{{cursor.greeterDecl.path}}" }
+        - jsonPath: $.items[0].range.start.line
+          expect: { type: EQUALS, value: "{{cursor.greeterDecl.line}}" }
+
+  # Method call -> method declaration in the other file.
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument:
+          uri: "{{cursor.greetUse.uri}}"
+        position: "{{cursor.greetUse}}"
+      saveAs: methodResult
+  - assert:
+      source: methodResult
+      checks:
+        - jsonPath: $.items
+          expect: { type: SIZE, value: 1 }
+        - jsonPath: $.items[0].uri
+          expect: { type: CONTAINS, value: "{{cursor.greetDecl.path}}" }
+        - jsonPath: $.items[0].range.start.line
+          expect: { type: EQUALS, value: "{{cursor.greetDecl.line}}" }
+
+  - shutdown: {}
+  - exit: {}

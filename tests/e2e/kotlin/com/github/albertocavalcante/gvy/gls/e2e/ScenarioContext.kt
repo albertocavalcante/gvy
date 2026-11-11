@@ -31,6 +31,9 @@ data class ScenarioContext(
     val state: ScenarioState = ScenarioState()
     val variables: MutableMap<String, JsonElement> = mutableMapOf()
     val savedResults: MutableMap<String, JsonElement> = mutableMapOf()
+
+    /** Cursor markers seen so far, keyed by name; the anonymous `|^|` marker uses the empty name. */
+    val cursors: MutableMap<String, CursorLocation> = mutableMapOf()
     var lastResult: JsonElement? = null
     var currentStepIndex: Int = 0
     var totalSteps: Int = 0
@@ -52,13 +55,60 @@ data class ScenarioContext(
         else -> error("Document reference must specify either uri or path")
     }
 
+    /** Records where [markers] point in the document at [uri], replacing earlier cursors with the same name. */
+    fun registerCursors(uri: String, markers: List<CursorMarker>) {
+        val path = workspaceRelativePath(uri)
+        markers.forEach { marker ->
+            cursors[marker.name.orEmpty()] = CursorLocation(uri, path, marker.line, marker.character)
+        }
+    }
+
+    /**
+     * Strips cursor markers from [text], the new full text of the document at [uri], and returns the text to send.
+     * Cursors from the document's previous text are dropped first, so a name the new text no longer marks
+     * cannot resolve to a stale position.
+     */
+    fun stripCursorMarkers(uri: String, text: String): String {
+        val marked = try {
+            CursorMarkers.strip(text)
+        } catch (ex: IllegalArgumentException) {
+            throw IllegalArgumentException("Document '$uri': ${ex.message}", ex)
+        }
+        val document = documentIdentity(uri)
+        cursors.values.removeAll { documentIdentity(it.uri) == document }
+        registerCursors(uri, marked.markers)
+        return marked.text
+    }
+
+    /**
+     * Compares documents by their normalized file path, so `{{workspace.uri}}/A.groovy` (a double slash) and the
+     * URI an inline file registers under are the same document. Non-file URIs compare as written.
+     */
+    private fun documentIdentity(uri: String): String =
+        runCatching { java.nio.file.Path.of(java.net.URI.create(uri)).normalize().toString() }.getOrDefault(uri)
+
+    /** The decoded, `/`-separated path of [uri] relative to the workspace root, or null when it lies outside. */
+    private fun workspaceRelativePath(uri: String): String? = runCatching {
+        val file = java.nio.file.Path.of(java.net.URI.create(uri)).normalize()
+        val root = workspace.rootDir.toAbsolutePath().normalize()
+        if (file.startsWith(root)) root.relativize(file).joinToString("/") else null
+    }.getOrNull()
+
     fun saveResult(name: String, node: JsonElement) {
+        requireAssignable(name)
         savedResults[name] = node
         variables[name] = node
     }
 
     fun setVariable(name: String, node: JsonElement) {
+        requireAssignable(name)
         variables[name] = node
+    }
+
+    private fun requireAssignable(name: String) {
+        require(name != CURSOR_ROOT && !name.startsWith("$CURSOR_ROOT.")) {
+            "Variable name '$name' is reserved for cursor markers ({{cursor}}, {{cursor.name}})"
+        }
     }
 
     fun interpolateString(value: String): String {
@@ -76,7 +126,11 @@ data class ScenarioContext(
         return when (node) {
             is JsonPrimitive -> {
                 if (node.isString) {
-                    JsonPrimitive(interpolateString(node.content))
+                    // A string that is exactly one placeholder takes the value's JSON type, so
+                    // `position: "{{cursor.dot}}"` becomes an object and `"{{cursor.dot.line}}"` a number.
+                    PLACEHOLDER_REGEX.matchEntire(node.content)
+                        ?.let { resolveNode(it.groupValues[1].trim()) }
+                        ?: JsonPrimitive(interpolateString(node.content))
                 } else {
                     node
                 }
@@ -88,7 +142,16 @@ data class ScenarioContext(
         }
     }
 
-    private fun resolveExpression(expr: String): String {
+    private fun resolveExpression(expr: String): String = when (val targetNode = resolveNode(expr)) {
+        is JsonPrimitive -> targetNode.content // content handles strings, numbers, booleans effectively
+        is JsonNull -> "null"
+        else -> json.encodeToString(JsonElement.serializer(), targetNode)
+    }
+
+    private fun resolveNode(expr: String): JsonElement {
+        if (expr == CURSOR_ROOT || expr.startsWith("$CURSOR_ROOT.")) {
+            return resolveCursor(expr)
+        }
         val (variableName, jsonPath) = if (expr.contains(".")) {
             val firstDot = expr.indexOf('.')
             expr.substring(0, firstDot) to expr.substring(firstDot + 1)
@@ -99,7 +162,7 @@ data class ScenarioContext(
         val variableNode = variables[variableName]
             ?: error("Unknown variable '$variableName' in expression '{{$expr}}'")
 
-        val targetNode = if (jsonPath != null) {
+        return if (jsonPath != null) {
             val javaObject = variableNode.toJavaObject()
             val document = JsonPath.using(jsonPathConfig).parse(javaObject)
             val value = try {
@@ -111,12 +174,46 @@ data class ScenarioContext(
         } else {
             variableNode
         }
+    }
 
-        return when (targetNode) {
-            is JsonPrimitive -> targetNode.content // content handles strings, numbers, booleans effectively
-            is JsonNull -> "null"
-            else -> json.encodeToString(JsonElement.serializer(), targetNode)
+    /**
+     * Resolves `cursor`, `cursor.<field>`, `cursor.<name>` and `cursor.<name>.<field>`, where a field is one of
+     * [CursorMarkers.RESERVED_NAMES]. Without a field the value is an LSP position `{line, character}`.
+     */
+    private fun resolveCursor(expr: String): JsonElement {
+        val segments = expr.split('.').drop(1)
+        val (name, field) = when {
+            segments.isEmpty() -> "" to null
+            segments.size == 1 && segments[0] in CursorMarkers.RESERVED_NAMES -> "" to segments[0]
+            segments.size == 1 -> segments[0] to null
+            segments.size == 2 -> segments[0] to segments[1]
+            else -> throw IllegalArgumentException("Cannot resolve '{{$expr}}': expected cursor[.name][.field]")
         }
+        require(field == null || field in CursorMarkers.RESERVED_NAMES) {
+            "Unknown cursor field '$field' in '{{$expr}}'; fields are ${CursorMarkers.RESERVED_NAMES}"
+        }
+        val location = cursors[name] ?: throw IllegalArgumentException(
+            if (name.isEmpty()) {
+                "'{{$expr}}' needs an anonymous cursor marker |^| in an earlier step or in workspace.files"
+            } else {
+                "Unknown cursor '$name' in '{{$expr}}'; registered cursors: " +
+                    cursors.keys.map { if (it.isEmpty()) "|^|" else it }.sorted()
+            },
+        )
+        return location.field(field, expr)
+    }
+
+    private fun CursorLocation.field(field: String?, expr: String): JsonElement = when (field) {
+        null -> buildJsonObject {
+            put("line", line)
+            put("character", character)
+        }
+        "line" -> JsonPrimitive(line)
+        "character" -> JsonPrimitive(character)
+        "uri" -> JsonPrimitive(uri)
+        else -> JsonPrimitive(
+            requireNotNull(path) { "Cursor '{{$expr}}' points at '$uri', which is outside the workspace" },
+        )
     }
 
     fun evaluateCheck(node: JsonElement, check: JsonCheck, quiet: Boolean = false): Boolean {
@@ -204,14 +301,17 @@ data class ScenarioContext(
 
     companion object {
         private val PLACEHOLDER_REGEX = "\\{\\{([^}]+)}}".toRegex()
+        private const val CURSOR_ROOT = "cursor"
     }
 
-    private fun JsonExpectation.interpolate(context: ScenarioContext): JsonExpectation = JsonExpectation(
-        type = this.type,
+    private fun JsonExpectation.interpolate(context: ScenarioContext): JsonExpectation = copy(
         value = context.interpolateNode(this.value),
         values = this.values.map { context.interpolateNode(it) ?: JsonNull },
     )
 }
+
+/** Where a cursor marker points: a document, its path when known, and an LSP position in UTF-16 units. */
+data class CursorLocation(val uri: String, val path: String?, val line: Int, val character: Int)
 
 data class ScenarioState(var initializedResult: InitializeResult? = null)
 

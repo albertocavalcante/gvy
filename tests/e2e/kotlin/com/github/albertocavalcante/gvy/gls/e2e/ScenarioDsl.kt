@@ -83,7 +83,8 @@ class ScenarioBuilder(private val source: String? = null) {
     private var scenarioName: String = "unnamed-scenario"
     private var scenarioDescription: String? = null
     private var serverConfig: ServerConfig = ServerConfig()
-    private var workspaceConfig: WorkspaceConfig? = null
+    private var fixtureName: String? = null
+    private val workspaceFiles = linkedMapOf<String, String>()
     private val steps = mutableListOf<ScenarioStep>()
 
     /**
@@ -113,7 +114,15 @@ class ScenarioBuilder(private val source: String? = null) {
      * Set the workspace fixture name.
      */
     fun workspace(fixtureName: String) {
-        this.workspaceConfig = WorkspaceConfig(fixture = fixtureName)
+        this.fixtureName = fixtureName
+    }
+
+    /**
+     * Write a file into the workspace before the server starts, over any fixture file at [path].
+     * Cursor markers (`|^|`, `|^name|`) in [text] are stripped and become `{{cursor}}` / `{{cursor.name}}`.
+     */
+    fun workspaceFile(path: String, text: String) {
+        require(workspaceFiles.putIfAbsent(path, text) == null) { "Workspace file '$path' is declared twice" }
     }
 
     /**
@@ -437,7 +446,11 @@ class ScenarioBuilder(private val source: String? = null) {
                 name = scenarioName,
                 description = scenarioDescription,
                 server = serverConfig,
-                workspace = workspaceConfig,
+                workspace = if (fixtureName == null && workspaceFiles.isEmpty()) {
+                    null
+                } else {
+                    WorkspaceConfig(fixture = fixtureName, files = workspaceFiles.toMap())
+                },
                 steps = steps,
             ),
             source = effectiveSource,
