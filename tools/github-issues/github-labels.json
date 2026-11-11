@@ -55,6 +55,11 @@
     "description": "Upstream fix released; gvy adoption and verification may still be pending"
   },
   {
+    "name": "viz",
+    "color": "c2e0c6",
+    "description": "AST visualizer desktop app, DTOs, converters, and related integrations"
+  },
+  {
     "name": "lsp/lifecycle",
     "color": "c2e0c6",
     "description": "Initialize, shutdown, capabilities"
