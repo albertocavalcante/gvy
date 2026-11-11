@@ -42,7 +42,8 @@ object JsonBridge {
 
     /**
      * Wraps a Java object back into a kotlinx JsonElement.
-     * Handles primitives, collections, and POJOs (via Gson fallback for LSP4J types).
+     * Handles primitives, collections, and POJOs (via Gson for LSP4J types).
+     * Serialization failures propagate to the caller.
      */
     fun wrapJavaObject(obj: Any?): JsonElement = when (obj) {
         null -> JsonNull
@@ -52,13 +53,7 @@ object JsonBridge {
         is List<*> -> JsonArray(obj.map { wrapJavaObject(it) })
         is Map<*, *> -> JsonObject(obj.entries.associate { (k, v) -> k.toString() to wrapJavaObject(v) })
         // For POJOs (like LSP4J types), use Gson to serialize then convert
-        else -> {
-            try {
-                gson.toJsonTree(obj).toKotlinxJsonElement()
-            } catch (e: Exception) {
-                JsonPrimitive(obj.toString())
-            }
-        }
+        else -> toJsonElement(obj)
     }
 
     /**
