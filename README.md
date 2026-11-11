@@ -11,7 +11,7 @@ pipelines and Spock tests.
 - Spock: spec detection and block awareness; richer DSL support in progress
 - Editors: VS Code/Cursor/VSCodium extension in `editors/code/`
 
-See [`docs/north-star.md`](docs/north-star.md) for the goal, principles and lanes of work.
+See [`docs/quality-bar.md`](docs/quality-bar.md) for the goal, properties and tracks of work.
 
 ## Documentation
 

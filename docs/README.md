@@ -4,7 +4,7 @@
 
 ## Start here
 
-- [North Star](north-star.md): the goal, principles, scorecard and lanes of work. This is gvy's only roadmap.
+- [Quality Bar](quality-bar.md): the goal, properties, scorecard and tracks of work. This is gvy's only roadmap.
 - [Overview](overview.md): the modules in this repository.
 - [Using the language server](lsp/usage.md)
 - [LSP feature support](lsp/feature-support.md)
