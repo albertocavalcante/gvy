@@ -85,17 +85,27 @@ sealed interface TokenStreamVerdict {
  * - line breaks the parser ignores: the lexer hides those inside `(...)` and `[...]`;
  * - how many line breaks separate two tokens, and their style (`\n` versus `\r\n`): the grammar
  *   treats one line break and a run of them alike;
- * - indentation and trailing spaces on each line of a comment.
+ * - line breaks in places where the grammar accepts optional newlines anyway: after `{`, `;` and
+ *   `->`, and before `}`, `;`, `else`, `catch` and `finally`. Comments in between do not count,
+ *   since the grammar absorbs them there too. A line break after `}` or before `{` and `->` stays
+ *   significant: `foo {}` followed by `(x)` on the next line is a different program from
+ *   `foo {} (x)`, and a `case` label must keep its `->` on the same line;
+ * - other tokens the lexer puts on the hidden channel, which the parser never sees;
+ * - indentation and trailing spaces on each line of a comment. Runtime groovydoc (a doc comment
+ *   opened with an `@`) is kept at runtime, so re-indenting it is visible through reflection;
+ *   we accept that;
+ * - `\r\n` versus `\n` inside string literals: the compiler turns `\r\n` into `\n` in every
+ *   literal that can span lines (triple-quoted, slashy and dollar-slashy strings and GStrings).
  *
  * Everything else is significant:
  * - every token's exact text, including whitespace inside string literals, GStrings, slashy and
  *   dollar-slashy strings and triple-quoted strings;
  * - comment text apart from per-line indentation;
- * - whether at least one statement-level line break separates two tokens. In Groovy a line break
- *   can end a statement (`return` followed by a line break returns null), so joining or splitting
- *   lines outside brackets is reported as a change even when it would be harmless. This is
+ * - whether at least one statement-level line break separates two tokens, outside the places listed
+ *   above. In Groovy a line break can end a statement (`return` followed by a line break returns
+ *   null), so joining or splitting other lines is reported as a change even when harmless. This is
  *   deliberately conservative: a false alarm costs one skipped format, a missed change costs code;
- * - the `#!` script header, which the lexer itself skips.
+ * - the leading `#!` script header lines, which the lexer itself skips.
  *
  * Because only tokens the parser ignores are normalised away, an edit with an equal token stream
  * cannot introduce a parse error, so no separate parse is needed. A lexer error that appears only
@@ -151,12 +161,48 @@ object TokenStreamGuard {
             )
         }
 
-        return errors.first?.let { Lexed.Failed(it) } ?: Lexed.Tokens(collector.tokens)
+        return errors.first?.let { Lexed.Failed(it) } ?: Lexed.Tokens(dropOptionalSeparators(collector.tokens))
     }
+
+    // Token kinds whose neighbouring line breaks the grammar treats as optional (`nls` or `sep?`).
+    private val ABSORBS_FOLLOWING_LINE_BREAK =
+        symbolicNames(GroovyLangLexer.LBRACE, GroovyLangLexer.SEMI, GroovyLangLexer.ARROW)
+    private val ABSORBS_PRECEDING_LINE_BREAK = symbolicNames(
+        GroovyLangLexer.RBRACE,
+        GroovyLangLexer.SEMI,
+        GroovyLangLexer.ELSE,
+        GroovyLangLexer.CATCH,
+        GroovyLangLexer.FINALLY,
+    )
+
+    private val STRING_TOKEN_TYPES = setOf(
+        GroovyLangLexer.StringLiteral,
+        GroovyLangLexer.GStringBegin,
+        GroovyLangLexer.GStringPart,
+        GroovyLangLexer.GStringEnd,
+    )
+
+    private fun symbolicNames(vararg types: Int): Set<String> =
+        types.toList().mapNotNull { GroovyLangLexer.VOCABULARY.getSymbolicName(it) }.toSet()
+
+    private fun dropOptionalSeparators(tokens: List<SignificantToken>): List<SignificantToken> =
+        tokens.filterIndexed { index, token ->
+            token.kind != SignificantToken.SEPARATOR || !isOptionalSeparator(tokens, index)
+        }
+
+    private fun isOptionalSeparator(tokens: List<SignificantToken>, index: Int): Boolean {
+        val before = tokens.subList(0, index).lastOrNull { it.isCode() }
+        val after = tokens.subList(index + 1, tokens.size).firstOrNull { it.isCode() }
+        return before?.kind in ABSORBS_FOLLOWING_LINE_BREAK || after?.kind in ABSORBS_PRECEDING_LINE_BREAK
+    }
+
+    private fun SignificantToken.isCode(): Boolean =
+        kind != SignificantToken.SEPARATOR && kind != SignificantToken.COMMENT
 
     /**
      * Turns raw lexer tokens into significant tokens: drops layout and folds each run of
      * statement-level line breaks into one [SignificantToken.SEPARATOR] between two tokens.
+     * [dropOptionalSeparators] then removes the separators the grammar treats as optional.
      */
     private class SignificantTokenCollector(private val vocabulary: Vocabulary, shebang: SignificantToken?) {
         val tokens: MutableList<SignificantToken> = listOfNotNull(shebang).toMutableList()
@@ -176,8 +222,12 @@ object TokenStreamGuard {
         private fun classify(token: Token): SignificantToken? {
             val text = token.text.orEmpty()
             return when {
-                token.type != GroovyLangLexer.NL ->
-                    token.toSignificant(vocabulary.getSymbolicName(token.type) ?: token.type.toString(), text)
+                // Hidden-channel tokens never reach the parser (for example GString look-ahead artefacts).
+                token.type != GroovyLangLexer.NL && token.channel != Token.DEFAULT_CHANNEL -> null
+
+                token.type in STRING_TOKEN_TYPES -> token.toSignificant(kindOf(token), text.replace("\r\n", "\n"))
+
+                token.type != GroovyLangLexer.NL -> token.toSignificant(kindOf(token), text)
 
                 // The Groovy lexer reports comments as NL tokens that keep the comment text.
                 text.startsWith("//") || text.startsWith("/*") ->
@@ -186,6 +236,8 @@ object TokenStreamGuard {
                 else -> null
             }
         }
+
+        private fun kindOf(token: Token): String = vocabulary.getSymbolicName(token.type) ?: token.type.toString()
 
         // Line breaks inside (...) and [...] are put on the hidden channel by the lexer: the parser ignores them.
         private fun isStatementLineBreak(token: Token): Boolean =
@@ -202,7 +254,8 @@ object TokenStreamGuard {
 
     private fun shebangToken(source: String): SignificantToken? {
         if (!source.startsWith("#!")) return null
-        val header = source.lineSequence().first().trimEnd()
+        // The lexer skips the whole run of leading `#!` lines as one header.
+        val header = source.lineSequence().takeWhile { it.startsWith("#!") }.joinToString("\n") { it.trimEnd() }
         return SignificantToken(SignificantToken.SHEBANG, header, line = 1, column = 1)
     }
 

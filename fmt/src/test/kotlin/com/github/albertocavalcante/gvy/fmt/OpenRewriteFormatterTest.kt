@@ -440,6 +440,27 @@ class OpenRewriteFormatterTest {
         }
 
         @Test
+        fun `still formats a one-line class onto several lines`() {
+            assertFormatsTo(
+                input = "class A{def f(){1}}",
+                expected = "class A {\n    def f() {\n        1\n    }\n}",
+            )
+        }
+
+        @Test
+        fun `still formats a closure with an arrow`() {
+            assertFormatsTo(input = "def c = {  x->x * 2 }\nc(1)", expected = "def c = {x ->\n    x * 2\n}\nc(1)")
+        }
+
+        @Test
+        fun `still formats a block whose first statement follows a comment`() {
+            assertFormatsTo(
+                input = "def make() { /* c */ new Date();  1 }",
+                expected = "def make() { /* c */\n    new Date();\n    1\n}",
+            )
+        }
+
+        @Test
         fun `still formats layout when the token stream is unchanged`() {
             assertFormatsTo(
                 input = "def x = foo(  1,2 )\nif(x){\nprintln x\n}",

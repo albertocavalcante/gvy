@@ -66,6 +66,54 @@ class TokenStreamGuardTest {
         }
 
         @Test
+        fun `line breaks inserted after an opening brace and before a closing brace`() {
+            assertSafe(
+                "class FormatTest{def run(){println \"test\"}}\n",
+                "class FormatTest {\n    def run() {\n        println \"test\"\n    }\n}\n",
+            )
+        }
+
+        @Test
+        fun `line break after a closure arrow`() {
+            assertSafe("def c = { int value -> value * factor }\n", "def c = { int value ->\n    value * factor\n}\n")
+        }
+
+        @Test
+        fun `comments between a brace and a statement`() {
+            assertSafe(
+                "def make() { /* c */ new Left(); new Right() }\n",
+                "def make() {\n    /* c */\n    new Left();\n    new Right()\n}\n",
+            )
+        }
+
+        @Test
+        fun `line break after a semicolon`() {
+            assertSafe("def a = 1; def b = 2\n", "def a = 1;\ndef b = 2\n")
+        }
+
+        @Test
+        fun `else, catch and finally joined onto the closing brace`() {
+            assertSafe(
+                "if (x) {\n    a()\n}\nelse {\n    b()\n}\ntry {\n    c()\n}\ncatch (e) {\n}\nfinally {\n}\n",
+                "if (x) {\n    a()\n} else {\n    b()\n}\ntry {\n    c()\n} catch (e) {\n} finally {\n}\n",
+            )
+        }
+
+        @Test
+        fun `GString at the end of the file gains a trailing newline`() {
+            assertSafe("def s = \"\$a\"", "def s = \"\$a\"\n")
+        }
+
+        @Test
+        fun `CRLF inside multi-line string literals, which the compiler normalises`() {
+            val tq = "\"\"\""
+            assertSafe(
+                "def s = '''a\r\nb'''\r\ndef r = /x\r\ny/\r\ndef g = $tq\${a}\r\nb$tq\r\n",
+                "def s = '''a\nb'''\ndef r = /x\ny/\ndef g = $tq\${a}\nb$tq\n",
+            )
+        }
+
+        @Test
         fun `shebang kept while the body is re-indented`() {
             assertSafe("#!/usr/bin/env groovy\n\n\n  println 1\n", "#!/usr/bin/env groovy\n\nprintln 1\n")
         }
@@ -155,6 +203,25 @@ class TokenStreamGuardTest {
         }
 
         @Test
+        fun `joining a closure onto the call on the previous line`() {
+            // `foo {}` then `(x)` on its own line is two statements; `foo {} (x)` calls the result.
+            val divergence = diverged("foo {}\n(x)\n", "foo {} (x)\n")
+            assertThat(divergence.expected?.kind).isEqualTo(SignificantToken.SEPARATOR)
+        }
+
+        @Test
+        fun `joining a block onto the call on the previous line`() {
+            diverged("foo()\n{ println 1 }\n", "foo() { println 1 }\n")
+        }
+
+        @Test
+        fun `moving a case arrow onto its own line`() {
+            val original = "def r = switch (x) {\n    case 1 -> 'a'\n    default -> 'b'\n}\n"
+            val edited = "def r = switch (x) {\n    case 1\n    -> 'a'\n    default -> 'b'\n}\n"
+            assertThat(TokenStreamGuard.check(original, edited).isSafe).isFalse()
+        }
+
+        @Test
         fun `comment text`() {
             val divergence = diverged("// keep   this\ndef x = 1\n", "// keep this\ndef x = 1\n")
             assertThat(divergence.expected?.kind).isEqualTo(SignificantToken.COMMENT)
@@ -168,6 +235,11 @@ class TokenStreamGuardTest {
         @Test
         fun `comment inside parentheses`() {
             diverged("foo(1, /* a */ 2)\n", "foo(1, /* b */ 2)\n")
+        }
+
+        @Test
+        fun `changed second shebang line`() {
+            diverged("#!/a\n#!b\nprintln 1\n", "#!/a\n#!c\nprintln 1\n")
         }
 
         @Test
