@@ -68,3 +68,7 @@ deprecated DSL/plugin APIs remain tracked in [#1603](https://github.com/albertoc
 Bazel module-lock drift fails CI. Full Maven resolution reproducibility remains tracked in
 [#1029](https://github.com/albertocavalcante/gvy/issues/1029): GMM variant checksums differ across environments, so the
 separate Maven lock is still disabled.
+
+Temporary forks, patches, custom dependency downloads and resolver escapes also have a separate lightweight
+[maintenance inventory and review-date gate](dependency-maintenance.md). It checks declarations on every PR and daily,
+including sources absent from warm-cache logs; passing diagnostic output does not renew dependency retirement debt.

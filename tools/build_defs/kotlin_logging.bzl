@@ -1,10 +1,10 @@
 """Module extension to download kotlin-logging jar directly.
 
-GMM (Gradle Module Metadata) causes rules_jvm_external to incorrectly resolve
-kotlin-logging-jvm to the sources jar instead of the classes jar. We download
-the classes jar directly via http_file to work around this bug.
+Historical GMM resolution selected sources instead of classes. The direct
+classes download remains until a released resolver candidate and source
+fetching are verified; current upstream failure has not been established.
 
-Tracking: https://github.com/albertocavalcante/gvy/issues/1031
+Tracking: https://github.com/albertocavalcante/gvy/issues/1620
 """
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")

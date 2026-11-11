@@ -1,17 +1,17 @@
 """Module extension to download JUnit jars directly.
 
-GMM (Gradle Module Metadata) creates circular dependencies between JUnit modules
-when using variant selection. We download the jars directly via http_file to
-work around this bug.
+Historical GMM (Gradle Module Metadata) resolution produced JUnit cycles.
+The direct downloads remain until a released resolver candidate is verified;
+this source is not evidence that current upstream still has the same defect.
 
-GMM creates cycles like:
+Historical reports described cycles like:
 - launcher -> engine -> launcher (Platform modules)
 - jupiter-engine -> jupiter-params -> jupiter-engine (Jupiter modules)
 
-These cycles are caused by GMM generating incorrect bidirectional dependencies
-that don't exist in the actual Maven POMs.
+Compare candidate graphs with the published POM/module metadata before
+attributing these cycles to a current upstream version.
 
-Tracking: https://github.com/albertocavalcante/gvy/issues/1032
+Tracking: https://github.com/albertocavalcante/gvy/issues/1621
 """
 
 load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_file")

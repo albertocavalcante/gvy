@@ -1,7 +1,8 @@
 """Module extension to download Wire compiler shadow jar.
 
-GMM (Gradle Module Metadata) causes rules_jvm_external to resolve wire-compiler
-incorrectly. We download the shadow jar directly to avoid this issue.
+Historical GMM resolution did not select the runnable Wire shadow jar.
+This direct download remains until a released resolver candidate is verified;
+current upstream failure has not been established.
 
 TODO(rules_wire): Consider spinning off Wire support into a standalone ruleset.
 This module extension + wire_proto_library macro could form the basis of rules_wire.
