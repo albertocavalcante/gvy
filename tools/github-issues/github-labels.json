@@ -25,6 +25,36 @@
     "description": "Refactoring and code quality"
   },
   {
+    "name": "dependency-bug",
+    "color": "d876e3",
+    "description": "Suspected or reproduced defect in a third-party dependency"
+  },
+  {
+    "name": "dep/openrewrite",
+    "color": "c5def5",
+    "description": "OpenRewrite dependency behaviour and upstream follow-up"
+  },
+  {
+    "name": "dep/rules_kotlin",
+    "color": "c5def5",
+    "description": "rules_kotlin dependency behaviour and upstream follow-up"
+  },
+  {
+    "name": "dep/groovy",
+    "color": "c5def5",
+    "description": "Groovy compiler/runtime dependency behaviour and upstream follow-up"
+  },
+  {
+    "name": "upstream/reported",
+    "color": "1d76db",
+    "description": "Linked upstream issue or PR; does not imply a released fix"
+  },
+  {
+    "name": "upstream/fix-released",
+    "color": "0e8a16",
+    "description": "Upstream fix released; gvy adoption and verification may still be pending"
+  },
+  {
     "name": "lsp/lifecycle",
     "color": "c2e0c6",
     "description": "Initialize, shutdown, capabilities"
