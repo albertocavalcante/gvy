@@ -19,6 +19,7 @@ class BuildInfoTest {
         version=0.5.4-SNAPSHOT
         baseVersion=0.5.4
         displayVersion=0.5.4-dev+g6c6f023
+        release=false
         gitSha=$sha
         gitShaShort=6c6f023
         gitDirty=false
@@ -44,6 +45,31 @@ class BuildInfoTest {
         assertEquals(Instant.parse("2026-11-10T12:30:00Z"), info.commitTime)
         assertEquals("https://github.com/o/r/actions/runs/42", info.ciRunUrl)
         assertTrue(info.isStamped)
+    }
+
+    @Test
+    fun `release shape reports the bare base version and is flagged as release`() {
+        val info = BuildInfo.fromProperties(
+            props(
+                "version=0.5.4\nbaseVersion=0.5.4\ndisplayVersion=0.5.4\nrelease=true\n" +
+                    "gitSha=$sha\ngitShaShort=6c6f023\ngitDirty=false",
+            ),
+        )
+
+        assertTrue(info.release)
+        assertTrue(info.isStamped)
+        assertEquals("0.5.4", info.displayVersion)
+        assertFalse(info.displayVersion.contains(info.gitShaShort), "releases carry no sha in the version string")
+        assertTrue(info.report().contains(sha))
+    }
+
+    @Test
+    fun `non-ascii values survive a utf-8 properties round trip`() {
+        val text = "gitBranch=feature/caf\u00e9\n"
+        val info = BuildInfo.fromProperties(
+            Properties().apply { load(text.byteInputStream(Charsets.UTF_8).reader(Charsets.UTF_8)) },
+        )
+        assertEquals("feature/caf\u00e9", info.gitBranch)
     }
 
     @Test

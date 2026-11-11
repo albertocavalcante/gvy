@@ -1,10 +1,15 @@
 import * as assert from "assert";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
+import { zip } from "./zipFixture";
 import {
   buildVersionRecord,
   describeRecord,
   parseVersionProperties,
-  parseVersionRecord,
+  assessLocalJar,
+  readJarProvenance,
   provenanceFromProperties,
   requireFresh,
 } from "../../../../tools/jar-provenance.js";
@@ -68,9 +73,9 @@ describe("version record", () => {
     });
     assert.strictEqual(record.source, "local");
     assert.strictEqual(record.dirty, true);
-    const parsed = parseVersionRecord(JSON.stringify(record));
-    assert.strictEqual(parsed?.tag, "local");
-    assert.strictEqual(parsed?.gitSha, record.gitSha);
+    const parsed = JSON.parse(JSON.stringify(record));
+    assert.strictEqual(parsed.tag, "local");
+    assert.strictEqual(parsed.gitSha, record.gitSha);
   });
 
   it("records unknown provenance when the jar has none", () => {
@@ -95,12 +100,6 @@ describe("version record", () => {
     );
   });
 
-  it("reads a legacy plain-text marker and rejects garbage", () => {
-    assert.deepStrictEqual(parseVersionRecord("v0.4.8\n"), { tag: "v0.4.8" });
-    assert.strictEqual(parseVersionRecord("{oops"), null);
-    assert.strictEqual(parseVersionRecord("  "), null);
-  });
-
   it("describes a record on one line", () => {
     const line = describeRecord(
       buildVersionRecord({ tag: "local", source: "reused", provenance }),
@@ -108,6 +107,86 @@ describe("version record", () => {
     assert.match(line, /0\.5\.4-dev\+g6c6f023\.dirty/);
     assert.match(line, /dirty d6fc16819240/);
     assert.match(line, /source=reused/);
+  });
+});
+
+describe("describeRecord sanitizing", () => {
+  it("strips control characters that came from inside a jar", () => {
+    const line = describeRecord({
+      version: "1.0\nFAKE LOG LINE",
+      gitSha: "abc\u001b[31m",
+      dirty: false,
+      dirtyHash: "",
+      source: "local",
+      tag: "local",
+    });
+    assert.ok(!/\p{Cc}/u.test(line), JSON.stringify(line));
+  });
+});
+
+describe("readJarProvenance", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "gls-prov-"));
+  });
+  afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
+
+  it("reads version.properties from a real jar archive, as UTF-8", () => {
+    const jar = path.join(dir, "gls.jar");
+    fs.writeFileSync(
+      jar,
+      zip({
+        "META-INF/MANIFEST.MF": Buffer.from("Manifest-Version: 1.0\n"),
+        "version.properties": Buffer.from(
+          `${STAMPED}\ngitBranch=caf\u00e9\n`,
+          "utf8",
+        ),
+      }),
+    );
+    const provenance = readJarProvenance(jar);
+    assert.strictEqual(provenance?.version, "0.5.4-dev+g6c6f023.dirty");
+    assert.strictEqual(provenance?.dirty, true);
+  });
+
+  it("returns null for a jar without version.properties or a non-zip", () => {
+    const jar = path.join(dir, "bare.jar");
+    fs.writeFileSync(jar, zip({ "a.txt": Buffer.from("x") }));
+    assert.strictEqual(readJarProvenance(jar), null);
+    const junk = path.join(dir, "junk.jar");
+    fs.writeFileSync(junk, "not a zip");
+    assert.strictEqual(readJarProvenance(junk), null);
+  });
+});
+
+describe("assessLocalJar", () => {
+  const sha = "a".repeat(40);
+  const jar = (over = {}) => ({
+    version: "x",
+    gitSha: sha,
+    dirty: false,
+    dirtyHash: "",
+    ...over,
+  });
+
+  it("is fresh when the jar was built from HEAD on a clean tree", () => {
+    assert.strictEqual(assessLocalJar(jar(), sha).state, "fresh");
+  });
+  it("is stale for another commit or no provenance", () => {
+    assert.strictEqual(assessLocalJar(jar(), "b".repeat(40)).state, "stale");
+    assert.strictEqual(assessLocalJar(null, sha).state, "stale");
+    assert.strictEqual(
+      assessLocalJar(jar({ gitSha: "unknown" }), sha).state,
+      "stale",
+    );
+  });
+  it("flags a dirty build of HEAD without calling it stale", () => {
+    assert.strictEqual(
+      assessLocalJar(jar({ dirty: true, dirtyHash: "abc" }), sha).state,
+      "dirty",
+    );
+  });
+  it("cannot judge without a HEAD", () => {
+    assert.strictEqual(assessLocalJar(jar(), null).state, "unverifiable");
   });
 });
 

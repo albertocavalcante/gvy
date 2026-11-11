@@ -85,35 +85,49 @@ function buildVersionRecord({ tag, source, provenance }) {
   };
 }
 
-/**
- * Parses server/.gls-version: the JSON record, or the legacy plain-text tag.
- * @param {string} content
- * @returns {{tag: string} & Partial<ReturnType<typeof buildVersionRecord>> | null}
- */
-function parseVersionRecord(content) {
-  const trimmed = String(content).trim();
-  if (!trimmed) return null;
-  if (trimmed.startsWith("{")) {
-    try {
-      const record = JSON.parse(trimmed);
-      const tag = record.tag ?? record.version;
-      return typeof tag === "string" && tag ? { ...record, tag } : null;
-    } catch {
-      return null;
-    }
-  }
-  return { tag: trimmed };
-}
-
 /** One human-readable line describing a record, for logs. */
 function describeRecord(record) {
+  // Values come from inside a jar: never let them forge log lines.
+  const clean = (value) => String(value).replace(/\p{Cc}/gu, "?");
   const dirty =
     record.dirty === true
       ? `dirty${record.dirtyHash ? ` ${record.dirtyHash}` : ""}`
       : record.dirty === false
         ? "clean"
         : "dirty state unknown";
-  return `${record.version} (git ${record.gitSha}, ${dirty}, source=${record.source})`;
+  return `${clean(record.version)} (git ${clean(record.gitSha)}, ${clean(dirty)}, source=${clean(record.source)})`;
+}
+
+/**
+ * Compares a local jar's provenance with the checkout's HEAD.
+ *  - fresh:        built from HEAD on a clean tree
+ *  - dirty:        built from HEAD, but from uncommitted changes (cannot be verified; warn only)
+ *  - stale:        built from another commit, or carries no provenance
+ *  - unverifiable: HEAD is unknown, so nothing can be compared
+ * @param {ReturnType<typeof provenanceFromProperties>|null} provenance
+ * @param {string|null} head
+ * @returns {{state: "fresh"|"dirty"|"stale"|"unverifiable", reason: string}}
+ */
+function assessLocalJar(provenance, head) {
+  if (!head) {
+    return { state: "unverifiable", reason: "checkout HEAD is unknown" };
+  }
+  if (!provenance || provenance.gitSha === "unknown") {
+    return { state: "stale", reason: "the jar carries no git provenance" };
+  }
+  if (provenance.gitSha !== head) {
+    return {
+      state: "stale",
+      reason: `the jar was built from ${provenance.gitSha}, but the checkout is at ${head}`,
+    };
+  }
+  if (provenance.dirty !== false) {
+    return {
+      state: "dirty",
+      reason: `the jar was built from ${head} with uncommitted changes${provenance.dirtyHash ? ` (${provenance.dirtyHash})` : ""}`,
+    };
+  }
+  return { state: "fresh", reason: "the jar matches HEAD" };
 }
 
 /**
@@ -131,7 +145,7 @@ module.exports = {
   provenanceFromProperties,
   readJarProvenance,
   buildVersionRecord,
-  parseVersionRecord,
   describeRecord,
+  assessLocalJar,
   requireFresh,
 };

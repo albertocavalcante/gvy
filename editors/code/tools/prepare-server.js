@@ -19,6 +19,7 @@ const { extractOrCopyJar, isZipFile } = require("./zip.js");
 const {
   readJarProvenance,
   buildVersionRecord,
+  assessLocalJar,
   describeRecord,
   requireFresh,
 } = require("./jar-provenance.js");
@@ -662,6 +663,56 @@ function buildLocalJar() {
 }
 
 /**
+ * HEAD of the monorepo checkout, or null when it cannot be read.
+ */
+function readCheckoutHead() {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: getMonorepoRoot() ?? undefined,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Checks a local build against the checkout before it is bundled. A jar built
+ * from an old commit is the stale-jar hazard: warn loudly by default; under
+ * GLS_REQUIRE_FRESH rebuild when allowed, otherwise fail. All IO is injected.
+ * @returns the jar to use (possibly rebuilt)
+ */
+function ensureFreshLocalJar(jarPath, deps) {
+  const { readProvenance, getHead, strict, rebuild, findJar, warn } = deps;
+  const assess = (jar) => assessLocalJar(readProvenance(jar), getHead());
+  const first = assess(jarPath);
+  if (first.state === "fresh" || first.state === "unverifiable") {
+    return jarPath;
+  }
+  warn(
+    `⚠️  Local server JAR may be out of date: ${sanitizeForLog(first.reason)} (${sanitizeForLog(jarPath)}).`,
+  );
+  if (first.state === "dirty" || !strict) {
+    return jarPath;
+  }
+  if (!rebuild) {
+    throw new Error(
+      `GLS_REQUIRE_FRESH is set and the local JAR is stale: ${sanitizeForLog(first.reason)}. Rebuild with ./gradlew :gls:stageEditorServer (or BUILD_LOCAL=true).`,
+    );
+  }
+  rebuild();
+  const rebuilt = findJar();
+  const second = rebuilt ? assess(rebuilt) : null;
+  if (!rebuilt || second.state === "stale") {
+    throw new Error(
+      `GLS_REQUIRE_FRESH is set and the rebuilt local JAR is still stale: ${sanitizeForLog(second?.reason ?? "no JAR found")}`,
+    );
+  }
+  return rebuilt;
+}
+
+/**
  * Main function to prepare the server JAR
  */
 async function prepareServer(runtimeOptions = {}) {
@@ -825,6 +876,14 @@ async function prepareServer(runtimeOptions = {}) {
       }
 
       if (localJarPath) {
+        localJarPath = ensureFreshLocalJar(localJarPath, {
+          readProvenance: readJarProvenance,
+          getHead: readCheckoutHead,
+          strict: requireFresh(process.env),
+          rebuild: effectiveBuildLocal ? buildLocalJar : null,
+          findJar: findLocalGroovyLspJar,
+          warn: (message) => console.warn(message),
+        });
         copyLocalJar(localJarPath, { forceDownload });
         return;
       } else if (effectiveBuildLocal) {
@@ -884,13 +943,8 @@ async function prepareServer(runtimeOptions = {}) {
         existingJarRejected = true;
       }
       if (matchesRelease) {
-        if (requireFresh(process.env)) {
-          throw new Error(
-            `GLS_REQUIRE_FRESH is set but ${CANONICAL_JAR_NAME} already exists for ${target.tag}; refusing to reuse it. Remove ${JAR_PATH} or set FORCE_DOWNLOAD=true.`,
-          );
-        }
         console.warn(
-          `⚠️  REUSING existing ${CANONICAL_JAR_NAME} for ${target.tag} (checksum matches; no download). Set FORCE_DOWNLOAD=true to refresh, or GLS_REQUIRE_FRESH=1 to forbid reuse.`,
+          `⚠️  REUSING existing ${CANONICAL_JAR_NAME} for ${target.tag} (checksum matches; no download). (provably the requested release; set FORCE_DOWNLOAD=true to refresh anyway).`,
         );
         writeInstalledVersion(target.tag, "reused");
         return;
@@ -1100,7 +1154,7 @@ Environment Variables:
     PREFER_LOCAL=true         Use local build from ../groovy-lsp/build/libs/
     BUILD_LOCAL=true          Build local JAR via './gradlew :gls:stageEditorServer' if not found (monorepo only)
     FORCE_DOWNLOAD=true       Re-download even if JAR exists
-    GLS_REQUIRE_FRESH=1       Fail instead of reusing an existing server/gls.jar
+    GLS_REQUIRE_FRESH=1       Rebuild (or fail) when the local build is from another commit than HEAD
     GLS_ALLOW_PINNED_FALLBACK=true  Fall back to pinned on network failure
     SKIP_PREPARE_SERVER=true  Skip server preparation entirely
 
@@ -1123,4 +1177,5 @@ module.exports = {
   hasExplicitVersionSelection,
   installVerifiedJar,
   requireChecksum,
+  ensureFreshLocalJar,
 };

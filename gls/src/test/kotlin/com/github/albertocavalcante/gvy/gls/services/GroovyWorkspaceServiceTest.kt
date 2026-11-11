@@ -69,7 +69,7 @@ class GroovyWorkspaceServiceTest {
 
         val result = service.executeCommand(ExecuteCommandParams("groovy.version", emptyList())).get()
 
-        assertEquals(Version.current, result)
+        assertEquals(Version.display, result)
     }
 
     @Test

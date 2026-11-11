@@ -24,8 +24,12 @@ export declare function buildVersionRecord(input: {
   source: VersionRecord["source"];
   provenance: JarProvenance | null;
 }): VersionRecord;
-export declare function parseVersionRecord(
-  content: string,
-): ({ tag: string } & Partial<VersionRecord>) | null;
 export declare function describeRecord(record: VersionRecord): string;
 export declare function requireFresh(env: NodeJS.ProcessEnv): boolean;
+export declare function assessLocalJar(
+  provenance: JarProvenance | null,
+  head: string | null,
+): {
+  state: "fresh" | "dirty" | "stale" | "unverifiable";
+  reason: string;
+};

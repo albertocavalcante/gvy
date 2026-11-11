@@ -64,7 +64,8 @@ object Version {
         }
 
         try {
-            inputStream.use(properties::load)
+            // The build writes UTF-8; Properties.load(InputStream) would decode ISO-8859-1.
+            inputStream.reader(Charsets.UTF_8).use(properties::load)
             logger.debug { "Successfully loaded version properties" }
         } catch (e: IOException) {
             logger.error(e) { "Failed to read $resourceName" }

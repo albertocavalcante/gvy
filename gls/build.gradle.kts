@@ -2,6 +2,7 @@ import org.gradle.api.tasks.testing.TestDescriptor
 import org.gradle.api.tasks.testing.TestResult
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.process.ExecOperations
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
@@ -358,8 +359,10 @@ tasks.named("startShadowScripts") {
 }
 
 // Build provenance: which commit (and working-tree state) produced this jar.
-// Read through a ValueSource so it is configuration-cache safe: Gradle re-runs obtain() every build and
-// invalidates the cache entry only when the result (HEAD, dirty state) changes.
+// Read through a ValueSource: Gradle evaluates it lazily when the task graph needs it (never at configuration
+// time for tasks that don't), and the result is a task input, so the task re-runs only when HEAD or the dirty
+// state changes. Same commit + same branch + clean tree gives a byte-identical version.properties; gitBranch is
+// deliberately included for humans, so the same commit built on another branch or worktree differs.
 abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvenanceSource.Params> {
     interface Params : ValueSourceParameters {
         val rootDir: DirectoryProperty
@@ -373,14 +376,16 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
 
     override fun obtain(): Map<String, String> {
         val base = parameters.baseVersion.get()
+        val release = parameters.release.get()
         // Kept in the legacy shape: jar file names and `Version.isSnapshot` consumers depend on it.
-        val legacyVersion = if (parameters.release.get()) base else "$base-SNAPSHOT"
-        val sha = git("rev-parse", "HEAD")?.trim().orEmpty()
-        if (sha.isEmpty()) {
+        val legacyVersion = if (release) base else "$base-SNAPSHOT"
+        val sha = trustedHead()
+        if (sha == null) {
             return linkedMapOf(
                 "version" to legacyVersion,
                 "baseVersion" to base,
-                "displayVersion" to if (parameters.release.get()) base else "$base-dev+unknown",
+                "displayVersion" to if (release) base else "$base-dev+unknown",
+                "release" to release.toString(),
                 "gitSha" to UNKNOWN,
                 "gitShaShort" to UNKNOWN,
                 "gitDirty" to UNKNOWN,
@@ -394,10 +399,28 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
         val untracked =
             git("ls-files", "--others", "--exclude-standard", "-z")
                 ?.split('\u0000')
-                ?.filter {
-                    it.isNotEmpty()
-                }.orEmpty()
-        val diff = gitBytes("diff", "HEAD", "--no-color", "--no-ext-diff", "--no-textconv") ?: ByteArray(0)
+                ?.filter { it.isNotEmpty() }
+                .orEmpty()
+        // Fixed options so user config (diff.noprefix, external diff, abbrev, renames) cannot change the digest.
+        val diff =
+            gitBytes(
+                "-c",
+                "core.abbrev=40",
+                "-c",
+                "diff.noprefix=false",
+                "-c",
+                "diff.mnemonicPrefix=false",
+                "diff",
+                "HEAD",
+                "--full-index",
+                "--binary",
+                "--no-renames",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--no-color",
+                "--src-prefix=a/",
+                "--dst-prefix=b/",
+            ) ?: ByteArray(0)
         val dirty = diff.isNotEmpty() || untracked.isNotEmpty() || !git("status", "--porcelain")?.trim().isNullOrEmpty()
         val commitTime = git("log", "-1", "--format=%cI", "HEAD")?.trim().orEmpty().ifEmpty { UNKNOWN }
         val branch =
@@ -406,7 +429,7 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
             }
         val display =
             when {
-                parameters.release.get() -> base
+                release -> base
                 dirty -> "$base-dev+g$short.dirty"
                 else -> "$base-dev+g$short"
             }
@@ -414,6 +437,7 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
             "version" to legacyVersion,
             "baseVersion" to base,
             "displayVersion" to display,
+            "release" to release.toString(),
             "gitSha" to sha,
             "gitShaShort" to short,
             "gitDirty" to dirty.toString(),
@@ -425,6 +449,32 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
         )
     }
 
+    /** HEAD of the repository rooted exactly at rootDir, or null (with a warning) when git can't vouch for it. */
+    private fun trustedHead(): String? {
+        val root =
+            parameters.rootDir
+                .get()
+                .asFile.canonicalFile
+        val top =
+            git(
+                "rev-parse",
+                "--show-toplevel",
+            )?.trim()?.takeIf { it.isNotEmpty() }?.let { File(it).canonicalFile }
+        val sha = git("rev-parse", "HEAD")?.trim().orEmpty()
+        val reason =
+            when {
+                top == null || sha.isEmpty() ->
+                    "git is unavailable, this is not a git checkout, or git refused the repository (e.g. dubious ownership)"
+                top != root -> "the sources are inside another repository ($top), not their own"
+                else -> return sha
+            }
+        Logging
+            .getLogger(
+                GitProvenanceSource::class.java,
+            ).warn("Git provenance unavailable: $reason; stamping 'unknown'.")
+        return null
+    }
+
     private fun dirtyHash(
         diff: ByteArray,
         untracked: List<String>,
@@ -432,11 +482,28 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(diff)
         val root = parameters.rootDir.get().asFile
+        // Hash untracked files by content through git (streamed, any size); names with newlines can't go through
+        // --stdin-paths, so they contribute their name only.
+        val hashable = untracked.sorted().filter { '\n' !in it && File(root, it).isFile }
+        val blobIds =
+            if (hashable.isEmpty()) {
+                emptyList()
+            } else {
+                gitBytes(
+                    "hash-object",
+                    "--no-filters",
+                    "--stdin-paths",
+                    stdin = hashable.joinToString("\n", postfix = "\n").toByteArray(),
+                )?.toString(Charsets.UTF_8)
+                    ?.lines()
+                    ?.filter { it.isNotEmpty() }
+                    .orEmpty()
+            }
+        val ids = hashable.zip(blobIds).toMap()
         untracked.sorted().forEach { name ->
             digest.update(name.toByteArray())
             digest.update(0)
-            val file = File(root, name)
-            if (file.isFile && file.length() <= MAX_HASHED_FILE_BYTES) digest.update(file.readBytes())
+            digest.update((ids[name] ?: "-").toByteArray())
             digest.update(0)
         }
         return digest.digest().joinToString("") { "%02x".format(it) }.take(DIRTY_HASH_LENGTH)
@@ -444,7 +511,10 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
 
     private fun git(vararg args: String): String? = gitBytes(*args)?.toString(Charsets.UTF_8)
 
-    private fun gitBytes(vararg args: String): ByteArray? =
+    private fun gitBytes(
+        vararg args: String,
+        stdin: ByteArray? = null,
+    ): ByteArray? =
         try {
             val out = ByteArrayOutputStream()
             val result =
@@ -453,6 +523,7 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
                     workingDir = parameters.rootDir.get().asFile
                     standardOutput = out
                     errorOutput = ByteArrayOutputStream()
+                    if (stdin != null) standardInput = ByteArrayInputStream(stdin)
                     isIgnoreExitValue = true
                 }
             if (result.exitValue == 0) out.toByteArray() else null
@@ -464,7 +535,6 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
         const val UNKNOWN = "unknown"
         const val SHORT_SHA_LENGTH = 7
         const val DIRTY_HASH_LENGTH = 12
-        const val MAX_HASHED_FILE_BYTES = 16L * 1024 * 1024
     }
 }
 
@@ -525,13 +595,6 @@ tasks.register("generateVersionProperties") {
         outFile.parentFile.mkdirs()
         outFile.writeText(props.entries.joinToString("\n", postfix = "\n") { (k, v) -> "$k=${escape(v)}" })
         logger.lifecycle("Generated version.properties: {}", props.entries.joinToString(", ") { (k, v) -> "$k=$v" })
-    }
-}
-
-// Provenance changes on every commit and edit; it must not invalidate test results, which only depend on code.
-normalization {
-    runtimeClasspath {
-        ignore("version.properties")
     }
 }
 

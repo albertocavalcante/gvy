@@ -20,6 +20,8 @@ data class BuildInfo(
     val baseVersion: String,
     /** Human-facing version: `<base>-dev+g<sha7>[.dirty]` for development builds, `<base>` for releases. */
     val displayVersion: String,
+    /** Release builds report the bare base version and carry no `-dev+g<sha>` suffix. */
+    val release: Boolean,
     val gitSha: String,
     val gitShaShort: String,
     /** `null` when the build could not tell (no git checkout). */
@@ -63,6 +65,7 @@ data class BuildInfo(
             "version" to JsonPrimitive(displayVersion),
             "baseVersion" to JsonPrimitive(baseVersion),
             "legacyVersion" to JsonPrimitive(version),
+            "release" to JsonPrimitive(release),
             "gitSha" to JsonPrimitive(gitSha),
             "gitShaShort" to JsonPrimitive(gitShaShort),
             "gitDirty" to (gitDirty?.let(::JsonPrimitive) ?: JsonNull),
@@ -85,6 +88,7 @@ data class BuildInfo(
                 baseVersion = text("baseVersion") ?: UNKNOWN,
                 // Pre-provenance jars only carry `version`.
                 displayVersion = text("displayVersion") ?: version,
+                release = text("release")?.toBooleanStrictOrNull() ?: false,
                 gitSha = text("gitSha") ?: UNKNOWN,
                 gitShaShort = text("gitShaShort") ?: UNKNOWN,
                 gitDirty = text("gitDirty")?.toBooleanStrictOrNull(),
