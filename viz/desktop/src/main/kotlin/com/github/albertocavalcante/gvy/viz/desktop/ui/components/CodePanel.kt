@@ -34,7 +34,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.albertocavalcante.gvy.viz.desktop.state.CodeError
-import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
+import com.github.albertocavalcante.gvy.viz.desktop.state.SourceNavigation
+import com.github.albertocavalcante.gvy.viz.desktop.state.sourceOffset
 
 /**
  * Panel displaying the source code in an editor-like style.
@@ -43,7 +44,7 @@ import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 @Suppress("LongParameterList")
 fun CodePanel(
     sourceCode: String,
-    selectedNode: AstNodeDto?,
+    sourceNavigation: SourceNavigation?,
     errors: List<CodeError>,
     onCodeChange: (String) -> Unit,
     onCursorChange: (Int, Int) -> Unit,
@@ -62,11 +63,11 @@ fun CodePanel(
     }
 
     // Sync external selection (from tree) to editor
-    LaunchedEffect(selectedNode) {
-        selectedNode?.range?.let { range ->
+    LaunchedEffect(sourceNavigation) {
+        sourceNavigation?.range?.let { range ->
             val start = getOffset(textFieldValue.text, range.startLine, range.startColumn)
             val end = getOffset(textFieldValue.text, range.endLine, range.endColumn)
-            if (start != -1 && end != -1) {
+            if (start != -1 && end > start) {
                 val targetSelection = TextRange(start, end)
                 if (textFieldValue.selection != targetSelection) {
                     textFieldValue = textFieldValue.copy(selection = targetSelection)
@@ -189,41 +190,7 @@ private fun endOfLineOffset(text: String, lines: List<String>, line: Int, fallba
     return if (lineStartOffset != -1) lineStartOffset + lineLength else fallbackStart + 1
 }
 
-private fun getOffset(text: String, line: Int, column: Int): Int {
-    if (line < 1) return -1
-
-    var currentLine = 1
-    var index = 0
-    var lineStart = 0
-
-    // Advance through the text until we reach the start of the requested line,
-    // correctly handling '\n', '\r', and '\r\n' line endings.
-    while (index < text.length && currentLine < line) {
-        val ch = text[index]
-        if (ch == '\n') {
-            currentLine++
-            index++
-            lineStart = index
-        } else if (ch == '\r') {
-            currentLine++
-            index++
-            // Handle CRLF as a single line break
-            if (index < text.length && text[index] == '\n') {
-                index++
-            }
-            lineStart = index
-        } else {
-            index++
-        }
-    }
-
-    // If we exited the loop without reaching the requested line, the line does not exist.
-    if (currentLine != line) return -1
-
-    val col = column.coerceAtLeast(1)
-    val offset = lineStart + col - 1
-    return offset.coerceIn(0, text.length)
-}
+private fun getOffset(text: String, line: Int, column: Int): Int = sourceOffset(text, line, column) ?: -1
 
 private fun getLineAndColumn(text: String, offset: Int): Pair<Int, Int> {
     val target = offset.coerceIn(0, text.length)
