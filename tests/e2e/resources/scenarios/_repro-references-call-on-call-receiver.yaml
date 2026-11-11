@@ -1,3 +1,4 @@
+# disabled: pending decision in #1539 (widen read-only references or close as intended)
 name: repro-references-call-on-call-receiver
 description: Find references on a method lists a call whose receiver is itself a call (`Money.of(1).format()`)
 xfail:

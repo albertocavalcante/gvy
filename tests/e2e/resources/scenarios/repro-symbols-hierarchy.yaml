@@ -37,6 +37,9 @@ steps:
   - assert:
       source: result
       checks:
+        # Anchor: the Circle symbol exists in this response shape.
+        - jsonPath: "$[?(@.right.name == 'Circle')].right.name"
+          expect: { type: CONTAINS, value: Circle }
         - jsonPath: "$[?(@.right.name == 'Circle')].right.children[*].name"
           expect: { type: CONTAINS, value: "area" }
   - shutdown: {}
