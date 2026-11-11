@@ -394,6 +394,15 @@ class GroovyCompilationService internal constructor(
     /** Applies a new compilation cache cap; closed files beyond it are evicted and recompiled on demand. */
     fun updateCompilationCacheLimit(maxEntries: Int) = cacheService.resize(maxEntries)
 
+    /**
+     * Publishes the startup model for [workspaceRoot] ([WorkspaceManager.initializeWorkspace]); buffers opened
+     * before it are spelled against its discovered roots now, off the request path (#1446).
+     */
+    fun initializeWorkspace(workspaceRoot: Path) {
+        workspaceManager.initializeWorkspace(workspaceRoot)
+        shadows.refresh()
+    }
+
     fun updateWorkspaceModel(
         workspaceRoot: Path,
         dependencies: List<Path>,

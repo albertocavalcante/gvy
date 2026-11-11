@@ -256,7 +256,7 @@ class ProjectStartupManager(
     }
 
     private fun initializeWorkspaces(workspaceRoot: Path, config: ServerConfiguration) {
-        compilationService.workspaceManager.initializeWorkspace(workspaceRoot)
+        compilationService.initializeWorkspace(workspaceRoot)
         sourceRootWatchers.sync(compilationService.workspaceManager.getSourceRoots(), workspaceRoot)
 
         // Set strategy registry on workspace manager

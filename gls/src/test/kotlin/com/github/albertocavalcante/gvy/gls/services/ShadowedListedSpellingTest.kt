@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.DocumentTargetSelector
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.WorkspaceManager
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.project.ProjectStrategyRegistry
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
@@ -14,8 +15,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
 import org.eclipse.lsp4j.DidOpenTextDocumentParams
+import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
+import org.eclipse.lsp4j.WorkspaceFolder
 import org.eclipse.lsp4j.WorkspaceSymbolParams
 import org.eclipse.lsp4j.services.LanguageClient
 import org.junit.jupiter.api.AfterEach
@@ -215,6 +218,37 @@ class ShadowedListedSpellingTest {
         assertNotNull(compilation.compile(opened, TEXT))
         symbolUris("Shadowed")
         assertEquals(0, reads, "real-path reads on the first requests after a listing change")
+    }
+
+    @Test
+    fun `a buffer opened before the workspace initialises shadows once the roots are discovered`(): Unit = runBlocking {
+        start(caseInsensitive = true)
+        // A Jenkins-style workspace: its bare `src` is discovered as the root when the workspace initialises.
+        val src = Files.createDirectories(workspaceRoot.resolve("src"))
+        val listed = Files.writeString(src.resolve("X.groovy"), TEXT).toUri()
+        val opened = src.resolve("x.groovy").toUri()
+        open(opened) // before any root is known: nothing to shadow yet
+
+        startUp()
+        compilation.indexAllWorkspaceSources(listOf(listed))
+        reads = 0
+
+        assertEquals(listOf(opened.toString()), symbolUris("Shadowed").distinct(), "listed under both spellings")
+        assertEquals(0, reads, "real-path reads on the first request after the workspace initialised")
+    }
+
+    /**
+     * Runs the startup path up to dependency resolution, which never runs: its scope is cancelled, so the model
+     * published by resolution cannot refresh the spellings in the startup model's place.
+     */
+    private fun startUp() {
+        val cancelled = CoroutineScope(SupervisorJob()).apply { cancel() }
+        val startup = ProjectStartupManager(compilation, emptyList(), cancelled, ProjectStrategyRegistry())
+        val params = InitializeParams().apply {
+            workspaceFolders = listOf(WorkspaceFolder(workspaceRoot.toUri().toString(), "ws"))
+        }
+        startup.startAsyncDependencyResolution(null, params, null, {})
+        assertEquals(listOf(workspaceRoot.resolve("src")), compilation.workspaceManager.getSourceRoots(), "startup")
     }
 
     private companion object {

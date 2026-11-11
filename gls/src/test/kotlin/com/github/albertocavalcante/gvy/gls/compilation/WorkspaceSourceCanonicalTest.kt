@@ -167,10 +167,16 @@ class WorkspaceSourceCanonicalTest {
     }
 
     @Test
-    fun `a root whose name has no letters cannot be probed and is treated as case-sensitive`() {
-        val digits = Files.createDirectories(base.resolve("2026"))
+    fun `a root whose name has no letters is probed at its nearest ancestor with letters`() {
+        val digits = Files.createDirectories(base.resolve("Probe/2026/07"))
+        val folds = Files.exists(base.resolve("pROBE"))
 
-        assertEquals(false, probeCaseInsensitive(digits))
+        assertEquals(folds, probeCaseInsensitive(digits))
+    }
+
+    @Test
+    fun `a path with no letters at all cannot be probed and is treated as case-sensitive`() {
+        assertEquals(false, probeCaseInsensitive(Path.of("2026", "07")))
     }
 
     @Test
