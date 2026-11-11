@@ -394,6 +394,118 @@ class OpenRewriteFormatterTest {
     }
 
     /**
+     * Asserts on the formatter's own output, before [TokenStreamGuard] can refuse it, so a
+     * damaging transformation shows up as a wrong result instead of an unchanged document.
+     */
+    @Nested
+    inner class `Raw output keeps string and comment text` {
+
+        private fun assertRawFormatsTo(input: String, expected: String) {
+            val actual = formatter.formatUnchecked(input)
+            assertThat(actual)
+                .withFailMessage { "Raw formatter output differs.\nExpected:\n$expected\n\nActual:\n$actual" }
+                .isEqualTo(expected)
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def a = \"x    y\"",
+                "def b = 'p     q'",
+                "def c = /r    s/",
+                "def d = $/t    u/$",
+                "def e = \"\${a}    \${b}  !\"",
+                "def f = '''g    h'''",
+                "def g = \"\"\"\\\n    |a:    1\n    |bb:   2\n    \"\"\".stripMargin()",
+            ],
+        )
+        fun `keeps runs of spaces inside string literals (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "// See:   #1524\ndef x = 1",
+                "/* a:    1\n * bb:   2 */\ndef x = 1",
+                "/**\n * @param a   the a\n */\ndef f(a) {\n    a\n}",
+            ],
+        )
+        fun `keeps runs of spaces inside comments (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        /** Collapsing on the LST must still produce single spaces where `AutoFormat` splits a run (#1524). */
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def f(String s, x, y) {\n    def z = 1\n}",
+                "def f(Map params = [:], Closure body) {\n    body()\n}",
+                "private static final int A = 1",
+                "for (String s : list) {\n    println s\n}",
+                "try {\n    f()\n} catch (Exception e) {\n    println e\n}",
+                "try {\n    f()\n} catch (e) {\n    println e\n}",
+                "for (x in list) {\n    println x\n}",
+                "def a = 1, b = 2",
+                "int a, b",
+                "String a = 'x', b",
+            ],
+        )
+        fun `keeps single spaces in declarations (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        /** A comment inside a declaration must not gain a space on every format (#1524). */
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def /* c */ x = 1",
+                "def f(String /* c */ s) {\n    s\n}",
+                "def f(/* c */ x) {\n    x\n}",
+                "def a = 1 /* c */ , b = 2",
+                "def a = 1, /* c */ b = 2",
+                "final /* c */ x = 1",
+                "try {\n    f()\n} catch (/* c */ e) {\n    e\n}",
+            ],
+        )
+        fun `keeps comments inside declarations in place (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def a  =  \"x    y\"\nprintln  a",
+                "def f(String s,x, y) {\ndef z = 1\n}",
+                "String  /* c */  s = 'x'",
+                "def f(String /* c */ s) {\ns\n}",
+                "def a = 1 /* c */ , b = 2",
+                "def a = 1 ,b = 2",
+                "for (x in list) {\nprintln x\n}",
+                "def x = 1    // aligned\nprintln x",
+            ],
+        )
+        fun `formatting twice gives the same result as once (#1524)`(input: String) {
+            val once = formatter.formatUnchecked(input)
+            assertThat(formatter.formatUnchecked(once)).isEqualTo(once)
+        }
+
+        @Test
+        fun `keeps the spaces before a trailing comment (#1524)`() {
+            val input = "def x = 1    // aligned\ndef yy = 2  /* aligned */\nprintln x"
+            assertRawFormatsTo(input, input)
+        }
+
+        @Test
+        fun `still collapses redundant spaces between tokens next to a spaced-out string (#1524)`() {
+            assertRawFormatsTo(
+                input = "def a  =  \"x    y\"\nprintln  a",
+                expected = "def a = \"x    y\"\nprintln a",
+            )
+        }
+    }
+
+    /**
      * The formatter must never change program meaning (Quality Bar: Safe). Each case reproduces a
      * damaging edit from an issue; the result must keep the code intact, whether the formatter
      * handles the construct or refuses to format the document.
@@ -437,6 +549,26 @@ class OpenRewriteFormatterTest {
                 .contains("/r    s/")
                 .contains("|a:    1")
                 .contains("|bb:   2")
+        }
+
+        @Test
+        fun `formats a document with spaced-out strings and comments instead of refusing it (#1524)`() {
+            assertFormatsTo(
+                input = listOf(
+                    "def a  =  \"x    y\"",
+                    "if(a){",
+                    "println  'p     q' /* a:   1 */",
+                    "}",
+                    "// See:   #1524",
+                ).joinToString("\n"),
+                expected = listOf(
+                    "def a = \"x    y\"",
+                    "if (a) {",
+                    "    println 'p     q' /* a:   1 */",
+                    "}",
+                    "// See:   #1524",
+                ).joinToString("\n"),
+            )
         }
 
         @Test

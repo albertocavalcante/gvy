@@ -275,6 +275,28 @@ class GroovyTextDocumentServiceFormattingTest {
     }
 
     @Test
+    fun `a document with spaced-out strings and comments gets formatted instead of refused (#1524)`() {
+        val source = "def s  =  \"a    b\"  // See:   #1524\nif(s){\nprintln  'p     q'\n}"
+        val documentProvider = DocumentProvider().apply { put(uri, source) }
+        val service = GroovyTextDocumentService(
+            coroutineScope = coroutineScope,
+            compilationService = compilationService,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = OpenRewriteFormatterAdapter(),
+            ),
+        )
+
+        val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        assertEquals(
+            "def s = \"a    b\"  // See:   #1524\nif (s) {\n    println 'p     q'\n}",
+            edits.single().newText,
+        )
+    }
+
+    @Test
     fun `formatting never returns an edit that changes the program (#1523)`() {
         client.telemetryEvents.clear()
         val source = listOf(

@@ -46,11 +46,22 @@ class OpenRewriteFormatterErrorReportingTest {
         assertThat((event.throwableProxy as ThrowableProxy).throwable).isSameAs(failure)
     }
 
+    /**
+     * A formatter whose guard sees the damage from #1523 (`x as BigDecimal` printed as
+     * `xasBigDecimal`), so these tests do not depend on the formatter still having that bug.
+     */
+    private fun formatterSeeingAsCastDamage() = OpenRewriteFormatter { original, _ ->
+        TokenStreamGuard.check(original, original.replace("x as BigDecimal", "xasBigDecimal"))
+    }
+
+    // `println  y` gives the formatter something to change, so the result reaches the guard.
+    private val damagedInput = "def y = x as BigDecimal\nprintln  y\n"
+
     @Test
     fun `a refused formatting result is logged at warn with the first token difference`() {
-        val input = "def y = x as BigDecimal\n"
+        val input = damagedInput
 
-        val result = OpenRewriteFormatter().format(input)
+        val result = formatterSeeingAsCastDamage().format(input)
 
         assertThat(result).isEqualTo(input)
         val event = logs.list.single { it.level == Level.WARN }
@@ -79,7 +90,7 @@ class OpenRewriteFormatterErrorReportingTest {
 
     @Test
     fun `formatChecked reports refusals without logging them`() {
-        val outcome = OpenRewriteFormatter().formatChecked("def y = x as BigDecimal\n")
+        val outcome = formatterSeeingAsCastDamage().formatChecked(damagedInput)
 
         assertThat(outcome).isInstanceOf(FormatOutcome.Refused::class.java)
         assertThat((outcome as FormatOutcome.Refused).reason).contains("'xasBigDecimal' at 1:9")
