@@ -77,16 +77,19 @@ jq '[.[] | select(.name == "dependency-bug" or (.name | startswith("dep/")) or (
 Apply only that set to gvy, preserving the existing label taxonomy:
 
 ```bash
-jq -c '.[] | select(.name == "dependency-bug" or (.name | startswith("dep/")) or (.name | startswith("upstream/")))' \
-  tools/github-issues/github-labels.json |
-  while IFS= read -r entry; do
-    label_name=$(jq -r '.name' <<<"$entry")
-    label_color=$(jq -r '.color' <<<"$entry")
-    label_description=$(jq -r '.description' <<<"$entry")
-    gh label create "$label_name" --repo albertocavalcante/gvy --force \
-      --color "$label_color" --description "$label_description" || exit 1
-  done
+(
+  set -euo pipefail
+  jq -c '.[] | select(.name == "dependency-bug" or (.name | startswith("dep/")) or (.name | startswith("upstream/")))' \
+    tools/github-issues/github-labels.json |
+    while IFS= read -r entry; do
+      label_name=$(jq -r '.name' <<<"$entry")
+      label_color=$(jq -r '.color' <<<"$entry")
+      label_description=$(jq -r '.description' <<<"$entry")
+      gh label create "$label_name" --repo albertocavalcante/gvy --force \
+        --color "$label_color" --description "$label_description" || exit 1
+    done
+)
 ```
 
 Use this scoped sync for these labels. The legacy `setup-labels.sh` targets former repository names and has broader side
-effects; its replacement is separate maintenance work.
+effects; [#1614](https://github.com/albertocavalcante/gvy/issues/1614) tracks its replacement.
