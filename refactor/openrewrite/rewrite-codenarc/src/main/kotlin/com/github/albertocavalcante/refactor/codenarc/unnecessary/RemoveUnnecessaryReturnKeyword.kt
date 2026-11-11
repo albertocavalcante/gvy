@@ -5,7 +5,7 @@ import org.openrewrite.Recipe
 import org.openrewrite.Tree
 import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
-import org.openrewrite.groovy.marker.ImplicitReturn
+import org.openrewrite.java.marker.ImplicitReturn
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
 
@@ -62,8 +62,12 @@ class RemoveUnnecessaryReturnKeyword : Recipe() {
             // We only care if the last statement is an explicit 'return' with an expression
             // e.g. 'return 1' vs 'return' (void) or just '1'
             if (lastStat is J.Return && lastStat.expression != null) {
-                // Check if already marked as implicit (shouldn't happen for J.Return usually, but good safety)
-                if (lastStat.markers.findFirst(ImplicitReturn::class.java).isPresent) {
+                // Accept existing trees carrying the legacy Groovy marker, as GroovyPrinter does.
+                // TODO(#1600): Retire legacy marker recognition after compatibility coverage.
+                @Suppress("DEPRECATION")
+                val isImplicitReturn = lastStat.markers.findFirst(ImplicitReturn::class.java).isPresent ||
+                    lastStat.markers.findFirst(org.openrewrite.groovy.marker.ImplicitReturn::class.java).isPresent
+                if (isImplicitReturn) {
                     return block
                 }
 

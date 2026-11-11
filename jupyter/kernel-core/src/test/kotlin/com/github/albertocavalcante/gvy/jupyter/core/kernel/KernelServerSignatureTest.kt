@@ -10,8 +10,8 @@ import com.github.albertocavalcante.gvy.jupyter.core.security.HmacSigner
 import com.github.albertocavalcante.gvy.jupyter.core.zmq.JupyterConnection
 import com.github.albertocavalcante.gvy.jupyter.core.zmq.WireMessage
 import io.mockk.mockk
-import kotlin.test.AfterTest
-import kotlin.test.Test
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 class KernelServerSignatureTest {
@@ -25,7 +25,7 @@ class KernelServerSignatureTest {
 
     private val connections = mutableListOf<JupyterConnection>()
 
-    @AfterTest
+    @AfterEach
     fun tearDown() = connections.forEach { it.close() }
 
     private fun server(key: String, handler: MessageHandler): KernelServer {

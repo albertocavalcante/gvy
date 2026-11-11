@@ -14,12 +14,14 @@ kt_library(
 
 kt_test(
     name = "groovy-spock_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":spock"],
     test_packages = ["com.github.albertocavalcante.gvy.spock"],
     deps = [
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
         "@maven//:org_spockframework_spock_core",
     ],

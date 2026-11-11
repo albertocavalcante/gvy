@@ -63,7 +63,7 @@ class SpockTestDetector internal constructor(private val classify: (ModuleNode) 
             null
         }
         val owner = module?.let { contextFor(classNode, it) }
-        val result = if (owner != null && module != null) {
+        val result = if (owner != null) {
             owner.isSpecification(module, specClassNode)
         } else {
             SpockDetector.isSpockSpec(classNode, module, specClassNode)

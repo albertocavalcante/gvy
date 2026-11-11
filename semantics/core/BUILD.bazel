@@ -14,11 +14,14 @@ kt_library(
 
 kt_test(
     name = "core_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":core"],
     test_packages = ["com.github.albertocavalcante.gvy"],
     deps = [
+        "//common",
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )

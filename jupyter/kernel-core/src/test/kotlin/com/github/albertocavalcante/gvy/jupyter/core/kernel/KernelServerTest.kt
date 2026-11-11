@@ -7,7 +7,7 @@ import com.github.albertocavalcante.gvy.jupyter.core.protocol.ConnectionFile
 import com.github.albertocavalcante.gvy.jupyter.core.protocol.MessageType
 import com.github.albertocavalcante.gvy.jupyter.core.security.HmacSigner
 import io.mockk.mockk
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull

@@ -3,7 +3,7 @@ package com.github.albertocavalcante.groovyparser.ast.groovydoc
 import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.ast.JavadocComment
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull

@@ -50,6 +50,10 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
    issues, PRs, or comments autonomously. Upstream submission needs explicit approval of the specific material and
    target, plus a check of that project's contribution and AI policies. gvy's routine PR authority does not cover
    upstream repos.
+8. **CI accountability**: Read `docs/ci-diagnostics.md`. Review the complete CI result for the publication head,
+   including warnings, dependency advice, skipped checks and diagnostic artifacts. Fix new diagnostics or record a
+   narrowly reviewed, owned, expiring exception linked to an issue. Report remaining debt and validation limits; a green
+   command exit alone is insufficient evidence. Never silently expand a baseline or suppress a category.
 
 ## Architecture
 

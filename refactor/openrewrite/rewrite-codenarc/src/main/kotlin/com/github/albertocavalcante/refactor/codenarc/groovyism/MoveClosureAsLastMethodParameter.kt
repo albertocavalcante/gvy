@@ -42,8 +42,10 @@ class MoveClosureAsLastMethodParameter : Recipe() {
                 return m
             }
 
-            // Check if it already has OmitParentheses marker (either Java or Groovy marker)
-            // We'll add the Java marker as recommended
+            // Accept existing trees carrying the legacy Groovy marker, as GroovyPrinter does.
+            // New markers use the supported Java type.
+            // TODO(#1600): Retire legacy marker recognition after compatibility coverage.
+            @Suppress("DEPRECATION")
             val hasOmitMarker = lastArg.markers.findFirst(OmitParentheses::class.java).isPresent ||
                 lastArg.markers.findFirst(org.openrewrite.groovy.marker.OmitParentheses::class.java).isPresent
 

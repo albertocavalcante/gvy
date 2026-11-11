@@ -4,7 +4,7 @@ import arrow.core.Either
 import arrow.core.left
 import arrow.core.right
 import io.github.oshai.kotlinlogging.KotlinLogging
-import kotlinx.coroutines.CancellationException
+import java.util.concurrent.CancellationException
 
 /**
  * Composable pipeline interface for strategy-based processing.

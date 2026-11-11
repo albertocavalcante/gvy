@@ -5,8 +5,8 @@ import com.github.albertocavalcante.gvy.jupyter.core.protocol.Header
 import com.github.albertocavalcante.gvy.jupyter.core.protocol.JupyterMessage
 import com.github.albertocavalcante.gvy.jupyter.core.protocol.MessageType
 import com.github.albertocavalcante.gvy.repl.GroovyExecutor
-import kotlin.test.BeforeTest
-import kotlin.test.Test
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -26,7 +26,7 @@ class ExecuteHandlerTest {
     private lateinit var executor: GroovyKernelExecutorAdapter
     private lateinit var handler: ExecuteHandler
 
-    @BeforeTest
+    @BeforeEach
     fun setup() {
         executor = GroovyKernelExecutorAdapter(GroovyExecutor())
         handler = ExecuteHandler(executor)

@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.indexing
 
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertTrue
 
 class UnifiedIndexerTest {

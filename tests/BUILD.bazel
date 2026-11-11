@@ -3,15 +3,11 @@ load("//tools/build_defs:kotlin.bzl", "kt_test")
 # E2E tests for the Groovy LSP
 kt_test(
     name = "e2e_test",
+    size = "large",  # 900s timeout for the whole scenario suite
     srcs = glob([
         "e2e/kotlin/**/*.kt",
         "lsp-client/kotlin/**/*.kt",
     ]),
-    size = "large",  # 900s timeout for the whole scenario suite
-    # no-sandbox: Allow access to ~/.gradle for Gradle wrapper/tooling API
-    # The language server subprocess needs to resolve Gradle dependencies
-    tags = ["no-sandbox"],
-    test_packages = ["com.github.albertocavalcante.gvy.gls.e2e"],
     data = glob(
         [
             "e2e/resources/**",
@@ -23,7 +19,10 @@ kt_test(
     ],
     # Inherit JAVA_HOME for JDK version and HOME for ~/.gradle access.
     # Without this, Bazel's hermetic sandbox won't pass through these env vars.
-    env_inherit = ["JAVA_HOME", "HOME"],
+    env_inherit = [
+        "JAVA_HOME",
+        "HOME",
+    ],
     jvm_flags = [
         # Pass scenario directory path via a marker file (Bazel doesn't have directory labels)
         # The test code derives the directory from this file path
@@ -35,25 +34,32 @@ kt_test(
         # Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache (expanded by the launcher).
         "-Dgroovy.lsp.jenkins.stubsCacheRoot=${TEST_TMPDIR}/jenkins-stubs-cache",
     ],
+    # no-sandbox: Allow access to ~/.gradle for Gradle wrapper/tooling API
+    # The language server subprocess needs to resolve Gradle dependencies
+    tags = ["no-sandbox"],
+    test_packages = ["com.github.albertocavalcante.gvy.gls.e2e"],
     deps = [
-        "//fmt",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "//jenkins",
         "//gls:gls-lib",
-        "@maven//:ch_qos_logback_logback_classic",
+        "//tools:kotlin_logging",
+        "@maven//:com_fasterxml_jackson_core_jackson_annotations",
+        "@maven//:com_fasterxml_jackson_core_jackson_core",
         "@maven//:com_fasterxml_jackson_core_jackson_databind",
         "@maven//:com_fasterxml_jackson_dataformat_jackson_dataformat_yaml",
         # Note: jackson-bom is a BOM (POM-only), not a JAR - removed
         "@maven//:com_fasterxml_jackson_module_jackson_module_kotlin",
+        "@maven//:com_google_code_gson_gson",
         "@maven//:com_jayway_jsonpath_json_path",
+        "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
         "@maven//:org_opentest4j_opentest4j",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         "@maven//:org_slf4j_slf4j_api",
-        "@maven//:org_spockframework_spock_core",
         "@maven//:org_assertj_assertj_core",
     ],
 )

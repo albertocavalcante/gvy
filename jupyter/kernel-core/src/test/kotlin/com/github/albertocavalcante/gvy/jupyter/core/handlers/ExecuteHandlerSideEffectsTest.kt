@@ -11,8 +11,8 @@ import io.mockk.just
 import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
-import kotlin.test.BeforeTest
-import kotlin.test.Test
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 
 /**
  * Tests for the side effects of ExecuteHandler (sending messages).
@@ -24,7 +24,7 @@ class ExecuteHandlerSideEffectsTest {
     private lateinit var statusPublisher: StatusPublisher
     private lateinit var executor: KernelExecutor
 
-    @BeforeTest
+    @BeforeEach
     fun setup() {
         // Setup mocks
         connection = mockk(relaxed = true)

@@ -24,6 +24,7 @@ kt_library(
 
 kt_test(
     name = "maven-bsp_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":maven-bsp"],
     data = glob(["src/test/resources/**"]),

@@ -21,6 +21,7 @@ kt_library(
 
 kt_test(
     name = "ast-model_test",
+    timeout = "short",
     srcs = glob([
         "src/commonTest/kotlin/**/*.kt",
         "src/jvmTest/kotlin/**/*.kt",
@@ -32,6 +33,9 @@ kt_test(
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_assertj_assertj_core",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        # TODO(#1601): Required annotation metadata; jdeps reports it unused after typealias erasure.
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],

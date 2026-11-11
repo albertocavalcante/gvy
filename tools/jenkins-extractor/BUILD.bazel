@@ -16,6 +16,7 @@ kt_library(
 
 kt_test(
     name = "jenkins-extractor_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     test_packages = ["com.github.albertocavalcante.gvy.jenkins.extractor"],
     deps = [

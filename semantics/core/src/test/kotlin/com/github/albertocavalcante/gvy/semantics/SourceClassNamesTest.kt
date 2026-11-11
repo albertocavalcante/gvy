@@ -10,7 +10,7 @@ import kotlin.test.assertEquals
 class SourceClassNamesTest {
     @Test
     fun `reflected nested classes retain source names when Groovy has no outer node`() {
-        listOf(java.util.Map.Entry::class.java, Thread.State::class.java, java.util.AbstractMap.SimpleEntry::class.java)
+        listOf(Map.Entry::class.java, Thread.State::class.java, java.util.AbstractMap.SimpleEntry::class.java)
             .forEach { type -> assertEquals(type.simpleName, ClassHelper.make(type).sourceSimpleName()) }
     }
 

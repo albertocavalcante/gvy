@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.common.text
 
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 class GroovyCodeCleanerTest {

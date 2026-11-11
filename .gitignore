@@ -71,6 +71,7 @@ __pycache__/
 # Bazel
 user.bazelrc
 bazel-*
+!tools/ci/bazel-diagnostics*
 .bazelproject
 # Note: maven_install.json is tracked for reproducible builds
 

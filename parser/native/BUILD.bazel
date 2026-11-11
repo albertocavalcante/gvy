@@ -16,14 +16,17 @@ kt_library(
 
 kt_test(
     name = "native_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":native"],
     resources = glob(["src/test/resources/**/*"]),
     test_packages = ["com.github.albertocavalcante.groovyparser"],
     deps = [
+        "//common",
         "//parser/api",
         "@maven//:net_jqwik_jqwik_api",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_jetbrains_kotlinx_kotlinx_collections_immutable_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_junit_jupiter_junit_jupiter_params",

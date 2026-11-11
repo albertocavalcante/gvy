@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.groovyparser.printer
 
 import com.github.albertocavalcante.groovyparser.GroovyParser
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertTrue
 
 class DotPrinterTest {

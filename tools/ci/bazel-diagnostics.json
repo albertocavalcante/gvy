@@ -1,0 +1,65 @@
+[
+  {
+    "diagnostic": "[//indexer/scip:scip_proto] generated/scip/Descriptor.kt:226:9: warning: duplicate branch condition in 'when'.",
+    "owner": "build tooling maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1599",
+    "reason": "Wire 5.4.0 emits this diagnostic in generated SCIP sources; protocol aliases must remain compatible.",
+    "nextAction": "Verify an upstream generator fix with SCIP compatibility regressions.",
+    "acceptance": "Generated sources compile without this diagnostic and SCIP wire compatibility tests pass.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[//indexer/scip:scip_proto] generated/scip/Occurrence.kt:349:20: warning: unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.",
+    "owner": "build tooling maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1599",
+    "reason": "Wire 5.4.0 emits this diagnostic in generated SCIP sources; protocol aliases must remain compatible.",
+    "nextAction": "Verify an upstream generator fix with SCIP compatibility regressions.",
+    "acceptance": "Generated sources compile without this diagnostic and SCIP wire compatibility tests pass.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[//indexer/scip:scip_proto] generated/scip/Occurrence.kt:368:30: warning: unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.",
+    "owner": "build tooling maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1599",
+    "reason": "Wire 5.4.0 emits this diagnostic in generated SCIP sources; protocol aliases must remain compatible.",
+    "nextAction": "Verify an upstream generator fix with SCIP compatibility regressions.",
+    "acceptance": "Generated sources compile without this diagnostic and SCIP wire compatibility tests pass.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[//indexer/scip:scip_proto] generated/scip/SyntaxKind.kt:194:7: warning: duplicate branch condition in 'when'.",
+    "owner": "build tooling maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1599",
+    "reason": "Wire 5.4.0 emits this diagnostic in generated SCIP sources; protocol aliases must remain compatible.",
+    "nextAction": "Verify an upstream generator fix with SCIP compatibility regressions.",
+    "acceptance": "Generated sources compile without this diagnostic and SCIP wire compatibility tests pass.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[//indexer/scip:scip_proto] generated/scip/SyntaxKind.kt:205:7: warning: duplicate branch condition in 'when'.",
+    "owner": "build tooling maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1599",
+    "reason": "Wire 5.4.0 emits this diagnostic in generated SCIP sources; protocol aliases must remain compatible.",
+    "nextAction": "Verify an upstream generator fix with SCIP compatibility regressions.",
+    "acceptance": "Generated sources compile without this diagnostic and SCIP wire compatibility tests pass.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "INFO: ** Please remove the following dependencies: @maven//:org_jetbrains_kotlin_kotlin_test_junit5 from //viz/ast-model:ast-model_test",
+    "owner": "build tooling maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1601",
+    "reason": "KMP commonTest imports the compile-time kotlin.test.Test typealias; jdeps cannot see the erased metadata dependency.",
+    "nextAction": "Add an upstream metadata dependency regression and adopt corrected unused-dependency accounting.",
+    "acceptance": "Platform-neutral tests compile and dependency analysis no longer reports their required annotation adapter.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "WARNING: //build-tool:build-tool_test: Test execution time (<elapsed>s excluding execution overhead) outside of range for MODERATE tests. Consider setting timeout=\"short\" or size=\"small\".",
+    "owner": "build and test maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1607",
+    "reason": "Observed build-tool runtime is 52.6s on macOS vs 20.8s on Linux; a portable moderate budget avoids a fragile 60s timeout.",
+    "nextAction": "Measure representative cross-platform setup costs and split slow cases before shortening the portable timeout.",
+    "acceptance": "A justified portable budget no longer emits sizing guidance across supported runners, and the exception is removed.",
+    "expires": "2026-12-11"
+  }
+]

@@ -9,10 +9,12 @@ define_kt_toolchain(
     name = "kotlin_toolchain",
     api_version = "2.3",  # Kotlin 2.3 features (nested type aliases, etc.)
     experimental_multiplex_workers = True,  # Better worker utilization
+    # TODO(#1601): jdeps cannot see commonTest's erased kotlin.test.Test dependency.
+    # CI gates every advisory, with one exact expiring exception for that metadata limitation.
     experimental_report_unused_deps = "warn",
 
-    # Strictness (start with warn, upgrade to error later)
-    experimental_strict_kotlin_deps = "warn",
+    # Missing direct dependencies are build failures, including in local builds.
+    experimental_strict_kotlin_deps = "error",
 
     # Performance optimizations
     experimental_use_abi_jars = True,  # 20-40% faster incremental builds
@@ -155,6 +157,6 @@ java_import(
 java_binary(
     name = "wire_compiler",
     main_class = "com.squareup.wire.WireCompiler",
-    runtime_deps = [":wire_compiler_jar_import"],
     visibility = ["//visibility:public"],
+    runtime_deps = [":wire_compiler_jar_import"],
 )

@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovyparser.utils
 
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue

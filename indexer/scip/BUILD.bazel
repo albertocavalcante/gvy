@@ -31,11 +31,13 @@ kt_library(
 
 kt_test(
     name = "scip_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     test_packages = ["com.github.albertocavalcante.groovylsp"],
     deps = [
         ":scip",
         ":scip_proto",
         "//indexer/core",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )
