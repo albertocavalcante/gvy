@@ -366,7 +366,7 @@ maven.artifact(
         "org.apache.groovy:groovy-xml",
     ],
     group = "org.codenarc",
-    version = "3.7.0-groovy-4.0",
+    version = "3.7.0",
 )
 
 # OpenRewrite Groovy with exclusions to avoid Groovy 3.x conflicts
