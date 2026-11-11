@@ -6,6 +6,7 @@ import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.java.tree.Expression
 import org.openrewrite.java.tree.J
+import org.openrewrite.java.tree.Space
 
 /**
  * Recipe to simplify ternary expressions to Elvis operator.
@@ -13,6 +14,7 @@ import org.openrewrite.java.tree.J
  * This aligns with CodeNarc rule: SimplifyTernaryToElvis
  *
  * e.g. x ? x : y -> x ?: y
+ * Only repeated literals are currently eligible; identifier safety needs binding and truthiness proof (#1651).
  *
  * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#simplifyternarytoelvis">
  *     CodeNarc Rule</a>
@@ -21,7 +23,7 @@ class SimplifyTernaryToElvis : Recipe() {
 
     override fun getDisplayName(): String = "Simplify ternary to elvis"
 
-    override fun getDescription(): String = "Replaces `x ? x : y` with `x ?: y`."
+    override fun getDescription(): String = "Replaces ternaries with repeated literal operands with the Elvis operator."
 
     override fun getVisitor(): TreeVisitor<*, ExecutionContext> = object : GroovyIsoVisitor<ExecutionContext>() {
         override fun visitTernary(ternary: J.Ternary, ctx: ExecutionContext): J.Ternary {
@@ -42,6 +44,13 @@ class SimplifyTernaryToElvis : Recipe() {
                         t.withMarkers(
                             t.markers.addIfAbsent(org.openrewrite.groovy.marker.Elvis(org.openrewrite.Tree.randomId())),
                         )
+                    // Groovy's Elvis printer retains both the old colon padding and the fallback's
+                    // prefix. Drop redundant inline separator whitespace while keeping comments.
+                    val fallback = t.padding.falsePart
+                    val before = fallback.before
+                    if (before.comments.isEmpty() && '\n' !in before.whitespace && '\r' !in before.whitespace) {
+                        t = t.padding.withFalsePart(fallback.withBefore(Space.EMPTY))
+                    }
                 }
             }
             return t
@@ -49,58 +58,27 @@ class SimplifyTernaryToElvis : Recipe() {
 
         /**
          * Checks if two expressions are structurally equivalent.
-         * This is heuristic and conservative; we only simplify if we are sure they are the same.
+         * Only literals qualify. Identifier reads can invoke getters, and user-defined Groovy
+         * truthiness can change even a local binding before the repeated read.
+         * TODO(#1651): prove binding and truthiness safety before enabling identifier simplification.
+         *   See: https://github.com/albertocavalcante/gvy/issues/1651
          */
-        @Suppress("ReturnCount") // Guard clauses for early exit validation
         private fun areEquivalent(e1: Expression, e2: Expression): Boolean {
-            if (e1 === e2) return true
-
-            // Unwrap parentheses to compare the core expressions
+            // The condition remains in the output, so its parentheses and comments are preserved.
+            // The repeated branch is removed; accept only a literal with no prefix comment.
             val u1 = unwrap(e1)
-            val u2 = unwrap(e2)
-
-            if (u1.javaClass != u2.javaClass) return false
+            val u2 = e2
+            if (u2.prefix.comments.isNotEmpty()) return false
 
             return when (u1) {
-                // J.Empty often represents an implicit receiver in method invocations (e.g. `foo()` is `J.Empty.foo()`)
-                // Two empty expressions are effectively equivalent here.
-                is J.Empty -> true
-
-                is J.Identifier -> {
-                    u2 as J.Identifier
-                    u1.simpleName == u2.simpleName
-                }
-
-                is J.Literal -> {
-                    u2 as J.Literal
-                    // Compare valueSource to ensure exact same source representation
-                    // (e.g. hex vs decimal, string quotes)
-                    u1.valueSource == u2.valueSource
-                }
-
-                is J.MethodInvocation -> {
-                    u2 as J.MethodInvocation
-                    if (u1.simpleName != u2.simpleName) return false
-
-                    // Check select (receiver), which might be null or J.Empty
-                    if (!areEquivalentOrNull(u1.select, u2.select)) return false
-
-                    // Check arguments recursively
-                    if (u1.arguments.size != u2.arguments.size) return false
-                    u1.arguments.zip(u2.arguments).all { (a1, a2) -> areEquivalent(a1, a2) }
-                }
+                // Preserve the exact literal representation, including quoting and number format.
+                is J.Literal -> u2 is J.Literal && u1.valueSource == u2.valueSource
 
                 // Conservative default: if we don't know the type, assume they are different.
                 // We intentionally avoid side-effecting expressions like assignment or increment/decrement
                 // unless we could guarantee they are pure (which we can't easily here).
                 else -> false
             }
-        }
-
-        private fun areEquivalentOrNull(e1: Expression?, e2: Expression?): Boolean {
-            if (e1 == null && e2 == null) return true
-            if (e1 == null || e2 == null) return false
-            return areEquivalent(e1, e2)
         }
 
         /**

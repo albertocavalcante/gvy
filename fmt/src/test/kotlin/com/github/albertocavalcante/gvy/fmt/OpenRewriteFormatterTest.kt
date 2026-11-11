@@ -426,6 +426,38 @@ class OpenRewriteFormatterTest {
         @ParameterizedTest
         @ValueSource(
             strings = [
+                "\"\"\"\\\n    |a:    1\n    |bb:   2\n    \"\"\"",
+                "\"\"\"one line    content\"\"\"",
+                "\"\"\"\n    a    b\n    \"\"\"",
+                "'''\\\n    a    b\n    '''",
+                "\"\"\"\${name}    content\n    \"\"\"",
+                "/a    b/",
+                "$/a    b/$",
+            ],
+        )
+        fun `formats surrounding code without rewriting Groovy literal text`(literal: String) {
+            val input = "def g  =  $literal.stripMargin()\nprintln  g"
+            val expected = "def g = $literal.stripMargin()\nprintln g"
+
+            assertRawFormatsTo(input, expected)
+            assertRawFormatsTo(expected, expected)
+            assertThat(formatter.formatChecked(input)).isEqualTo(FormatOutcome.Formatted(expected))
+        }
+
+        @Test
+        fun `normalizes CRLF in a literal without changing its Groovy content`() {
+            val literal = "\"\"\"\\\r\n    a    b\r\n    \"\"\""
+            val input = "def g  =  $literal\r\nprintln  g"
+            val expected = "def g = ${literal.replace("\r\n", "\n")}\nprintln g"
+
+            assertRawFormatsTo(input, expected)
+            assertThat(formatter.formatChecked(input)).isEqualTo(FormatOutcome.Formatted(expected))
+            assertRawFormatsTo(expected, expected)
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
                 "// See:   #1524\ndef x = 1",
                 "/* a:    1\n * bb:   2 */\ndef x = 1",
                 "/**\n * @param a   the a\n */\ndef f(a) {\n    a\n}",

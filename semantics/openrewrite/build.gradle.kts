@@ -6,12 +6,10 @@ group = "com.github.albertocavalcante"
 version = rootProject.version
 
 dependencies {
-    // Semantics core (exclude Groovy to avoid conflict with OpenRewrite's Groovy 3.x)
-    implementation(project(":semantics:core")) {
-        exclude(group = "org.apache.groovy")
-    }
+    // Share semantics:core's selected Groovy 4 version with the server and OpenRewrite.
+    implementation(project(":semantics:core"))
 
-    // OpenRewrite (uses Groovy 3.x internally)
+    // OpenRewrite uses Groovy 4 as well.
     implementation(libs.rewrite.groovy)
 
     // Arrow for Either types

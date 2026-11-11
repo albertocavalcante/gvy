@@ -600,32 +600,37 @@ module and round-trips a value to verify that required transitive runtime jars r
 `//tools/ci/jackson:jackson_yaml_runtime_test` separately checks YAML round trips from only `jackson-dataformat-yaml`,
 including its SnakeYAML dependency.
 
-The selected Jackson Gradle Module Metadata (`runtimeElements`, with platform BOM constraints excluded) declares:
+With OpenRewrite 8.79.0, the selected Jackson Gradle Module Metadata (`runtimeElements`, with platform BOM constraints
+excluded) declares:
 
 | Artifact                       | Version | Runtime dependencies                                  |
 | ------------------------------ | ------- | ----------------------------------------------------- |
-| jackson-annotations            | 2.20    | None                                                  |
-| jackson-core                   | 2.20.1  | None                                                  |
-| jackson-databind               | 2.20.1  | jackson-core, jackson-annotations                     |
-| jackson-module-kotlin          | 2.20.1  | jackson-databind, jackson-annotations, kotlin-reflect |
-| jackson-dataformat-yaml        | 2.20.1  | jackson-databind, jackson-core, SnakeYAML             |
-| jackson-dataformat-smile       | 2.20.1  | jackson-databind, jackson-core                        |
-| jackson-datatype-jsr310        | 2.20.1  | jackson-databind, jackson-core, jackson-annotations   |
-| jackson-module-parameter-names | 2.20.1  | jackson-databind, jackson-core                        |
+| jackson-annotations            | 2.21    | None                                                  |
+| jackson-core                   | 2.21.2  | None                                                  |
+| jackson-databind               | 2.21.2  | jackson-core, jackson-annotations                     |
+| jackson-module-kotlin          | 2.21.2  | jackson-databind, jackson-annotations, kotlin-reflect |
+| jackson-dataformat-yaml        | 2.21.2  | jackson-databind, jackson-core, SnakeYAML             |
+| jackson-dataformat-smile       | 2.21.2  | jackson-databind, jackson-core                        |
+| jackson-datatype-jsr310        | 2.21.2  | jackson-databind, jackson-core, jackson-annotations   |
+| jackson-module-parameter-names | 2.21.2  | jackson-databind, jackson-core                        |
 
 For example, the published metadata for
-[core](https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.20.1/jackson-core-2.20.1.module),
-[databind](https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.20.1/jackson-databind-2.20.1.module),
-[Kotlin](https://repo1.maven.org/maven2/com/fasterxml/jackson/module/jackson-module-kotlin/2.20.1/jackson-module-kotlin-2.20.1.module)
+[core](https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.21.2/jackson-core-2.21.2.module),
+[databind](https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.21.2/jackson-databind-2.21.2.module),
+[Kotlin](https://repo1.maven.org/maven2/com/fasterxml/jackson/module/jackson-module-kotlin/2.21.2/jackson-module-kotlin-2.21.2.module)
 and
-[YAML](https://repo1.maven.org/maven2/com/fasterxml/jackson/dataformat/jackson-dataformat-yaml/2.20.1/jackson-dataformat-yaml-2.20.1.module)
+[YAML](https://repo1.maven.org/maven2/com/fasterxml/jackson/dataformat/jackson-dataformat-yaml/2.21.2/jackson-dataformat-yaml-2.21.2.module)
 distinguishes real dependencies from platform constraints. Coursier's expanded BOM edges incorrectly make core depend on
 databind, creating a cycle. The patch keeps core/annotations as leaves, retains the real core dependencies of other
 modules and preserves non-Jackson dependencies such as Kotlin reflection and SnakeYAML. The existing cross-extension
 filter is still needed for phantom BOM edges; none of these eight selected modules declares a real cross-extension
-Jackson dependency. This is evidence for this pinned graph, not proof for other artifacts or future versions. Validate
-the metadata and isolated runtimes again when upgrading. Resolver replacement remains tracked in
+Jackson dependency. This is evidence for this validated graph, not proof for other artifacts or future versions.
+Validate the metadata and isolated runtimes again when upgrading. Resolver replacement remains tracked in
 [#1029](https://github.com/albertocavalcante/gvy/issues/1029).
+
+The selected Kotlin module declares kotlin-reflect 2.1.21, resolved to 2.2.21 in the current Bazel graph; YAML declares
+SnakeYAML 2.5, resolved to 2.6. The isolated runtime roots above pass with these selected versions and Jackson 2.21.2.
+This validates the current closure without adding direct dependencies that could conceal missing edges.
 
 The fork's tagged source is an ancestor of v2.3.0, but the old publishing helper built moving upstream `master` while
 using a separate release tag. That tag alone cannot prove the old tarball's build source. The helper has been removed;

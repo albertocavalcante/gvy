@@ -2,6 +2,8 @@ package com.github.albertocavalcante.gvy.gls
 
 import com.github.ajalt.clikt.core.CliktError
 import com.github.ajalt.clikt.core.parse
+import com.github.albertocavalcante.gvy.fmt.FormatOutcome
+import com.github.albertocavalcante.gvy.gls.cli.FormatCommand
 import com.github.albertocavalcante.gvy.gls.cli.GlsCommand
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -16,8 +18,8 @@ class MainFormatTest {
      * Helper to run a subcommand through the root GlsCommand,
      * ensuring proper context setup (e.g., Terminal object).
      */
-    private fun runWithContext(vararg args: String) {
-        GlsCommand().parse(args.toList())
+    private fun runWithContext(vararg args: String, formatCommand: FormatCommand = FormatCommand()) {
+        GlsCommand(formatCommand).parse(args.toList())
     }
 
     @Test
@@ -44,7 +46,13 @@ class MainFormatTest {
         val err = ByteArrayOutputStream()
         System.setErr(PrintStream(err, true, Charsets.UTF_8))
         val output = try {
-            captureOutput { runWithContext("format", tempFile.absolutePath) }
+            captureOutput {
+                runWithContext(
+                    "format",
+                    tempFile.absolutePath,
+                    formatCommand = FormatCommand { original -> FormatOutcome.Refused(original, "known unsafe edit") },
+                )
+            }
         } finally {
             System.setErr(originalErr)
         }
@@ -54,6 +62,20 @@ class MainFormatTest {
         assertTrue(
             warning.contains("left unformatted") && warning.contains(tempFile.path),
             "Expected a refusal warning on stderr, got: $warning",
+        )
+    }
+
+    @Test
+    fun `format prints a formatted document containing as casts`() {
+        val tempFile = File.createTempFile("Cast", ".groovy")
+        tempFile.writeText("class A {\ndef f(Object x) {\ndef y = x as BigDecimal\n}\n}")
+        tempFile.deleteOnExit()
+
+        val output = captureOutput { runWithContext("format", tempFile.absolutePath) }
+
+        assertTrue(
+            output.contains("class A {\n    def f(Object x) {\n        def y = x as BigDecimal\n    }\n}"),
+            "Expected a formatted document with intact cast tokens, got: $output",
         )
     }
 
