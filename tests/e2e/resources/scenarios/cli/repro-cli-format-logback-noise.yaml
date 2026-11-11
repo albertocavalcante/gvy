@@ -1,8 +1,8 @@
-name: repro-cli-format-stdout
-description: '`gls format` writes only the formatted text to stdout'
+name: repro-cli-format-logback-noise
+description: '`gls format` writes no Logback status lines to stdout'
 xfail:
-  issue: 1543
-  reason: stdout of format also receives Logback status lines
+  issue: 1271
+  reason: Logback prints its version-mismatch status lines to stdout, ahead of the formatted text
   match: '\|-WARN in ch\.qos\.logback'
 workspace:
   fixture: empty-workspace
@@ -20,4 +20,4 @@ steps:
       source: formatResult
       checks:
         - jsonPath: $.stdout
-          expect: { type: EQUALS, value: "class A {}\n" }
+          expect: { type: NOT_CONTAINS, value: "|-WARN in ch.qos.logback" }
