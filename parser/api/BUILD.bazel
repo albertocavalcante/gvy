@@ -12,6 +12,7 @@ kt_library(
 
 kt_test(
     name = "api_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":api"],
     test_packages = ["com.github.albertocavalcante.groovyparser"],

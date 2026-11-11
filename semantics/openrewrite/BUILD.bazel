@@ -13,6 +13,7 @@ kt_library(
 
 kt_test(
     name = "openrewrite_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":openrewrite"],
     test_packages = ["com.github.albertocavalcante.gvy"],

@@ -16,6 +16,7 @@ kt_library(
 
 kt_test(
     name = "native_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":native"],
     resources = glob(["src/test/resources/**/*"]),

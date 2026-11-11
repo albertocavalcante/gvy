@@ -12,6 +12,7 @@ kt_library(
 
 kt_test(
     name = "results_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":results"],
     resources = glob(["src/test/resources/**/*"]),

@@ -15,6 +15,7 @@ kt_library(
 
 kt_test(
     name = "core_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":core"],
     test_packages = ["com.github.albertocavalcante.groovylsp"],

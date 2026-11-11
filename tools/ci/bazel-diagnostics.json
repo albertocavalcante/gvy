@@ -52,5 +52,14 @@
     "nextAction": "Add an upstream metadata dependency regression and adopt corrected unused-dependency accounting.",
     "acceptance": "Platform-neutral tests compile and dependency analysis no longer reports their required annotation adapter.",
     "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "WARNING: //build-tool:build-tool_test: Test execution time (<elapsed>s excluding execution overhead) outside of range for MODERATE tests. Consider setting timeout=\"short\" or size=\"small\".",
+    "owner": "build and test maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1607",
+    "reason": "Observed build-tool runtime is 52.6s on macOS vs 20.8s on Linux; a portable moderate budget avoids a fragile 60s timeout.",
+    "nextAction": "Measure representative cross-platform setup costs and split slow cases before shortening the portable timeout.",
+    "acceptance": "A justified portable budget no longer emits sizing guidance across supported runners, and the exception is removed.",
+    "expires": "2026-12-11"
   }
 ]

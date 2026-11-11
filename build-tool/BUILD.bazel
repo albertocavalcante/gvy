@@ -26,6 +26,7 @@ kt_library(
 
 kt_test(
     name = "build-tool_test",
+    # TODO(#1607): Retain a portable moderate timeout until cross-platform headroom is proven.
     srcs = glob(
         ["src/test/kotlin/**/*.kt"],
         allow_empty = True,

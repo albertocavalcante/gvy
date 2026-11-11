@@ -17,6 +17,7 @@ kt_library(
 
 kt_test(
     name = "rewrite_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":rewrite"],
     test_packages = ["com.github.albertocavalcante.groovyparser"],

@@ -21,6 +21,7 @@ kt_library(
 
 kt_test(
     name = "ast-model_test",
+    timeout = "short",
     srcs = glob([
         "src/commonTest/kotlin/**/*.kt",
         "src/jvmTest/kotlin/**/*.kt",

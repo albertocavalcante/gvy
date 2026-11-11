@@ -11,6 +11,7 @@ kt_library(
 
 kt_test(
     name = "markdown_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":markdown"],
     test_packages = ["com.github.albertocavalcante.groovylsp"],

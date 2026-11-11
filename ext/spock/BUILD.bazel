@@ -14,6 +14,7 @@ kt_library(
 
 kt_test(
     name = "groovy-spock_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":spock"],
     test_packages = ["com.github.albertocavalcante.gvy.spock"],

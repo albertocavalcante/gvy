@@ -12,6 +12,7 @@ kt_library(
 
 kt_test(
     name = "coverage_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":coverage"],
     resources = glob(["src/test/resources/**/*"]),

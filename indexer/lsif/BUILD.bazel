@@ -13,6 +13,7 @@ kt_library(
 
 kt_test(
     name = "lsif_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     test_packages = ["com.github.albertocavalcante.groovylsp"],
     deps = [

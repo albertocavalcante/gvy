@@ -13,6 +13,7 @@ kt_library(
 
 kt_test(
     name = "core_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":core"],
     # The test-only global transform is registered through META-INF/services under src/test/resources.

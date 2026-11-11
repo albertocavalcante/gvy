@@ -17,6 +17,7 @@ kt_library(
 
 kt_test(
     name = "kernel-core_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     # Grants the tests access to the library's `internal` API (e.g. KernelServer.dispatchFrames).
     associates = [":kernel-core"],

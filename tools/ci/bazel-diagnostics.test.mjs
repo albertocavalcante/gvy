@@ -32,6 +32,14 @@ test('the same generated warning in a different action target is new debt', () =
   assert.equal(evaluate(found, [exception], now).unexpected.length, 1);
 });
 
+test('timeout sizing advice stays attributable while host-specific elapsed times normalize', () => {
+  const advice = 'WARNING: //build-tool:build-tool_test: Test execution time (20.8s excluding execution overhead) outside of range for MODERATE tests. Consider setting timeout="short" or size="small".';
+  assert.deepEqual(collectDiagnostics(advice), collectDiagnostics(advice.replace('20.8s', '52.6s')));
+  assert.notDeepEqual(collectDiagnostics(advice), collectDiagnostics(advice.replace('//build-tool:build-tool_test', '//other:test')));
+  assert.notDeepEqual(collectDiagnostics(advice), collectDiagnostics(advice.replace('timeout="short"', 'timeout="long"')));
+  assert.equal(collectDiagnostics('There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.').length, 1);
+});
+
 test('catches compiler, repository, dependency and unknown warning formats', () => {
   const result = collectDiagnostics([
     'INFO: Build completed successfully, 12 total actions',
@@ -94,12 +102,18 @@ test('a failed build still reports its warnings when the subsequent test log is 
   const log = join(dir, 'build.log');
   const report = join(dir, 'report');
   const expires = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-  writeFileSync(baseline, JSON.stringify([{ ...exception, expires }]));
+  writeFileSync(baseline, JSON.stringify([
+    { ...exception, expires },
+    { ...exception, expires, diagnostic: diagnostic.replace('Descriptor.kt', 'Other.kt') },
+  ]));
   writeFileSync(log, 'WARNING: newly introduced warning\nERROR: build failed\n');
   const result = spawnSync(process.execPath, ['tools/ci/bazel-diagnostics.mjs', '--baseline', baseline,
     '--report', report, log, join(dir, 'missing-test.log')], { encoding: 'utf8' });
   assert.notEqual(result.status, 0);
   const evidence = JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8'));
   assert.deepEqual(evidence.unexpected, ['WARNING: newly introduced warning']);
-  assert.equal(evidence.exceptions.length, 1);
+  assert.equal(evidence.exceptions.length, 2);
+  const summary = readFileSync(join(report, 'summary.md'), 'utf8');
+  assert.match(summary, /2 exact exceptions/);
+  assert.equal(summary.split(exception.reason).length - 1, 1);
 });

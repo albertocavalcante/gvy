@@ -12,6 +12,7 @@ export function collectDiagnostics(log) {
       .replace(/\S*\/_srcjars\//g, 'generated/')
       .replaceAll(`${process.cwd()}/`, '')
       .replace(/bazel-out\/[^/]+\/bin\//g, 'bazel-out/bin/')
+      .replace(/Test execution time \([0-9.]+s excluding execution overhead\)/g, 'Test execution time (<elapsed>s excluding execution overhead)')
       .trim().replace(/\s+/g, ' ');
     const actionHeader = line.match(/^INFO: From \S+ (@?@?\/\/\S+) /);
     if (actionHeader) action = actionHeader[1].replace(/^@+/, '');
@@ -27,7 +28,7 @@ export function collectDiagnostics(log) {
       }
       continue;
     }
-    if (/\bWARNING\b|\bwarning:|\bWARN\b|Found duplicate artifact versions|canonical reproducible form|Please remove the following dependencies:/.test(line)) {
+    if (/\bWARNING\b|\bwarning:|\bWARN\b|Found duplicate artifact versions|canonical reproducible form|Please remove the following dependencies:|There were tests whose specified size is too big/.test(line)) {
       diagnostics.add(line.startsWith('generated/') ? `[${action}] ${line}` : line);
     }
   }
@@ -89,6 +90,13 @@ function main(args) {
   }
   result.ok &&= errors.length === 0;
   const escape = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
+  const debts = new Map();
+  for (const entry of result.exceptions) {
+    const key = JSON.stringify([entry.owner, entry.issue, entry.reason, entry.nextAction, entry.acceptance, entry.expires]);
+    const debt = debts.get(key) ?? { ...entry, count: 0 };
+    debt.count++;
+    debts.set(key, debt);
+  }
   const summary = [
     '## Bazel diagnostic accountability',
     '',
@@ -99,7 +107,7 @@ function main(args) {
     '',
     '### Tracked debt (including exceptions not emitted by this cache state)',
     '',
-    ...result.exceptions.map(entry => `- [${escape(entry.owner)}](${entry.issue}), expires ${entry.expires}: ${escape(entry.reason)} Next: ${escape(entry.nextAction)} Acceptance: ${escape(entry.acceptance)}`),
+    ...[...debts.values()].map(entry => `- ${entry.count} exact exception${entry.count === 1 ? '' : 's'}: [${escape(entry.owner)}](${entry.issue}), expires ${entry.expires}: ${escape(entry.reason)} Next: ${escape(entry.nextAction)} Acceptance: ${escape(entry.acceptance)}`),
     '',
     'Fix new diagnostics. Any unavoidable exception requires independent review, an exact diagnostic, an owner, an issue, a reason, a next action, acceptance criteria and an expiry. See docs/ci-diagnostics.md.',
     '',

@@ -17,6 +17,7 @@ kt_library(
 
 kt_test(
     name = "groovy-repl_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":repl"],
     test_packages = ["com.github.albertocavalcante.gvy.repl"],

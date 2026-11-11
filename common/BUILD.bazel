@@ -12,6 +12,7 @@ kt_library(
 
 kt_test(
     name = "common_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":common"],
     test_packages = ["com.github.albertocavalcante.gvy.common"],

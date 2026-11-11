@@ -19,6 +19,7 @@ kt_library(
 
 kt_test(
     name = "groovy-formatter_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":fmt"],
     test_packages = ["com.github.albertocavalcante.gvy.fmt"],

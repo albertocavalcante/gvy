@@ -23,8 +23,8 @@ Run the same checks locally:
 node --test tools/ci/bazel-diagnostics.test.mjs
 mkdir -p /tmp/gvy-diagnostics
 set -o pipefail
-bazel build //... --color=no --curses=no 2>&1 | tee /tmp/gvy-diagnostics/build.log
-bazel test //... --test_output=errors --color=no --curses=no 2>&1 | tee /tmp/gvy-diagnostics/test.log
+bazel build //... --lockfile_mode=error --keep_going --color=no --curses=no 2>&1 | tee /tmp/gvy-diagnostics/build.log
+bazel test //... --lockfile_mode=error --test_output=errors --test_verbose_timeout_warnings --color=no --curses=no 2>&1 | tee /tmp/gvy-diagnostics/test.log
 node tools/ci/bazel-diagnostics.mjs --baseline tools/ci/bazel-diagnostics.json \
   --report /tmp/gvy-diagnostics /tmp/gvy-diagnostics/build.log /tmp/gvy-diagnostics/test.log
 ```
@@ -47,6 +47,12 @@ exception ledger. Narrow deprecated-API compatibility paths are tracked in
 [recipe and Maven migration](https://github.com/albertocavalcante/gvy/issues/1600); suppressions document their purpose
 at the compatibility boundary. These items remain debt until their acceptance criteria are met.
 
+Timeout advice is emitted per target with `--test_verbose_timeout_warnings`; the unqualified summary also fails if
+encountered. Only elapsed seconds within that advice are normalized. Fast module tests have explicit short timeouts
+while retaining their medium memory sizing. The portable build-tool budget and its exact shorter-timeout advisory are
+tracked in [#1607](https://github.com/albertocavalcante/gvy/issues/1607); a new target or a recommendation to lengthen a
+timeout still fails.
+
 ## Coverage limits
 
 This gate enforces the Bazel build/test diagnostic stream. Native checks and independent review still apply to every
@@ -58,3 +64,7 @@ equivalent enforcement.
 Passing tests' captured runtime logs are outside this gate (`--test_output=errors` only emits failing test output).
 Gradle deprecations are now visible instead of globally suppressed; equivalent Gradle enforcement and migration of known
 deprecated DSL/plugin APIs remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603).
+
+Bazel module-lock drift fails CI. Full Maven resolution reproducibility remains tracked in
+[#1029](https://github.com/albertocavalcante/gvy/issues/1029): GMM variant checksums differ across environments, so the
+separate Maven lock is still disabled.

@@ -29,6 +29,7 @@ kt_library(
 
 kt_test(
     name = "codenarc_test",
+    timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":codenarc"],
     test_packages = ["com.github.albertocavalcante.gvy.diagnostics.codenarc"],
