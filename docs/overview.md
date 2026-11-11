@@ -25,4 +25,4 @@ Jenkins metadata, test discovery, and editor integrations.
 - Running the language server: `lsp/usage.md`
 - LSP feature coverage: `lsp/feature-support.md`
 - Semantics and type inference: `semantics/design.md`
-- Roadmap and current priorities: `roadmap.md`
+- Goal, principles and lanes of work: `north-star.md`

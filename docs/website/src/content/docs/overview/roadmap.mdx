@@ -1,25 +1,14 @@
 ---
 title: Roadmap
-description: Development roadmap and current status
+description: Where gvy's roadmap lives
 sidebar:
   order: 2
 ---
 
-Groovy Devtools is under active development. The language server is usable for core Groovy projects today, while the
-broader monorepo is expanding to cover Jenkins pipelines, Spock, testing, and notebooks.
+gvy has one roadmap: the [North Star](https://github.com/albertocavalcante/gvy/blob/main/docs/north-star.md).
 
-## Current Status
+> **gvy gives correct, honest and fast answers about Groovy code, and never damages it.**
 
-| Area | Status |
-|------|--------|
-| Core LSP | Completion, hover, navigation, formatting, diagnostics, code actions, rename, semantic tokens (Groovy and Jenkins) |
-| Jenkins pipelines | Metadata-driven completion and diagnostics; deeper context support in progress |
-| Spock | Spec detection and block awareness; richer DSL support in progress |
-| Testing | CodeLens run/debug for tests, shared test discovery utilities |
-| Jupyter | Early kernel prototypes for Groovy and Jenkins |
-
-## Near-term Focus
-
-- Stability and performance for indexing and compilation
-- Workspace-scale features (config refresh, file watching, symbol accuracy)
-- Editor polish in VS Code and other clients
+The North Star page states the principles, the scorecard and the lanes of work. Live status is tracked in
+[issue #1551](https://github.com/albertocavalcante/gvy/issues/1551), and current LSP support is listed in the
+[feature matrix](https://github.com/albertocavalcante/gvy/blob/main/docs/lsp/feature-support.md).

@@ -11,7 +11,7 @@ pipelines and Spock tests.
 - Spock: spec detection and block awareness; richer DSL support in progress
 - Editors: VS Code/Cursor/VSCodium extension in `editors/code/`
 
-See `docs/roadmap.md` for the user-facing roadmap.
+See [`docs/north-star.md`](docs/north-star.md) for the goal, principles and lanes of work.
 
 ## Documentation
 
