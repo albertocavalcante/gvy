@@ -220,6 +220,7 @@ class NativeAstConverter {
             is ClassNode -> node.modifiers
             is MethodNode -> node.modifiers
             is FieldNode -> node.modifiers
+            is PropertyNode -> node.modifiers
             else -> 0
         }
 

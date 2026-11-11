@@ -1,7 +1,12 @@
 package com.github.albertocavalcante.gvy.viz.converters
 
 import com.github.albertocavalcante.groovyparser.GroovyParser
+import com.github.albertocavalcante.groovyparser.ast.Node
+import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -190,6 +195,62 @@ class CoreAstConverterTest {
 
         // Should have isStatic property
         assertEquals("true", methodNode.properties["isStatic"])
+    }
+
+    @Test
+    fun `expression metadata distinguishes operators names and unary forms`() {
+        val code = """
+            class Example {
+                def work(obj, x) {
+                    1 + 2
+                    1 * 2
+                    ++x
+                    x++
+                    foo()
+                    bar()
+                    obj.left
+                    obj.right
+                    outer(inner())
+                    obj?.safe()
+                }
+            }
+        """.trimIndent()
+        val result = parser.parse(code)
+        assertTrue(result.isSuccessful)
+        val source = result.result.get()
+        val dto = converter.convert(source)
+        var nextId = 0
+        fun assertStructure(raw: Node, converted: AstNodeDto) {
+            assertEquals("node-${++nextId}", converted.id)
+            assertEquals(raw.javaClass.simpleName, converted.type)
+            assertEquals(raw.range?.begin?.line, converted.range?.startLine)
+            assertEquals(raw.range?.begin?.column, converted.range?.startColumn)
+            assertEquals(raw.range?.end?.line, converted.range?.endLine)
+            assertEquals(raw.range?.end?.column, converted.range?.endColumn)
+            assertEquals(raw.getChildNodes().size, converted.children.size)
+            raw.getChildNodes().zip(converted.children).forEach { (child, childDto) ->
+                assertStructure(child, childDto)
+            }
+        }
+        assertStructure(source, dto)
+        fun flatten(node: AstNodeDto): List<AstNodeDto> = listOf(node) + node.children.flatMap(::flatten)
+        val nodes = flatten(dto)
+        fun values(type: String, key: String): List<String?> =
+            nodes.filter { it.type == type }.map { it.properties[key] }
+
+        assertThat(values("BinaryExpr", "operator")).contains("+", "*")
+        val unary = nodes.filter { it.type == "UnaryExpr" && it.properties["operator"] == "++" }
+        assertThat(unary.map { it.properties["isPrefix"] }).containsExactly("true", "false")
+        assertThat(values("MethodCallExpr", "methodName")).contains("foo", "bar", "outer", "inner", "safe")
+        assertThat(values("PropertyExpr", "propertyName")).contains("left", "right")
+        val outer = nodes.single { it.type == "MethodCallExpr" && it.properties["methodName"] == "outer" }
+        assertTrue(outer.children.any { it.type == "MethodCallExpr" && it.properties["methodName"] == "inner" })
+        val json = Json.encodeToString<AstNodeDto>(dto)
+        assertTrue(json.contains("\"operator\":\"+\""))
+        assertTrue(json.contains("\"methodName\":\"foo\""))
+        assertTrue(json.contains("\"propertyName\":\"left\""))
+        assertEquals(nodes.size, nodes.map { it.id }.toSet().size)
+        assertEquals(dto, Json.decodeFromString<AstNodeDto>(json))
     }
 
     private fun countNodes(node: CoreAstNodeDto): Int {
