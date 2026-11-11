@@ -87,8 +87,13 @@ class TokenStreamGuardTest {
         }
 
         @Test
-        fun `line break after a semicolon`() {
+        fun `line break added after a semicolon`() {
             assertSafe("def a = 1; def b = 2\n", "def a = 1;\ndef b = 2\n")
+        }
+
+        @Test
+        fun `line break before a semicolon and before a closing brace after one`() {
+            assertSafe("def f() { a(); b(); }\n", "def f() {\n    a()\n    ;\n    b();\n}\n")
         }
 
         @Test
@@ -212,6 +217,14 @@ class TokenStreamGuardTest {
         @Test
         fun `joining a block onto the call on the previous line`() {
             diverged("foo()\n{ println 1 }\n", "foo() { println 1 }\n")
+        }
+
+        @Test
+        fun `joining a statement onto an empty statement`() {
+            // `if (false) ;` then `println 'C'` prints C; on one line it is a syntax error.
+            val divergence = diverged("if (false) ;\nprintln 'C'\n", "if (false) ; println 'C'\n")
+            assertThat(divergence.expected?.kind).isEqualTo(SignificantToken.SEPARATOR_AFTER_SEMICOLON)
+            assertThat(divergence.actual?.text).isEqualTo("println")
         }
 
         @Test

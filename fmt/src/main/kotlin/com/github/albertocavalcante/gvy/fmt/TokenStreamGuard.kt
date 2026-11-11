@@ -26,6 +26,9 @@ data class SignificantToken(val kind: String, val text: String, val line: Int, v
         /** A run of one or more statement-separating line breaks. */
         const val SEPARATOR = "NEWLINE"
 
+        /** A [SEPARATOR] right after `;`: an edit may add one, but never remove one. */
+        const val SEPARATOR_AFTER_SEMICOLON = "NEWLINE_AFTER_SEMI"
+
         /** A line or block comment. */
         const val COMMENT = "COMMENT"
 
@@ -85,11 +88,15 @@ sealed interface TokenStreamVerdict {
  * - line breaks the parser ignores: the lexer hides those inside `(...)` and `[...]`;
  * - how many line breaks separate two tokens, and their style (`\n` versus `\r\n`): the grammar
  *   treats one line break and a run of them alike;
- * - line breaks in places where the grammar accepts optional newlines anyway: after `{`, `;` and
- *   `->`, and before `}`, `;`, `else`, `catch` and `finally`. Comments in between do not count,
- *   since the grammar absorbs them there too. A line break after `}` or before `{` and `->` stays
+ * - line breaks in places where the grammar accepts optional newlines anyway: after `{` and `->`,
+ *   and before `}`, `;`, `else`, `catch` and `finally`. Comments in between do not count, since
+ *   the grammar absorbs them there too. A line break after `}`, or before `{` and `->`, stays
  *   significant: `foo {}` followed by `(x)` on the next line is a different program from
  *   `foo {} (x)`, and a `case` label must keep its `->` on the same line;
+ * - a line break the edit adds after `;`. Removing one is a change: `if (c) ;` (an empty
+ *   statement) cannot take the next statement on its line. Adding one is safe only because the
+ *   original parses, so `;` followed by more code on its line was a separator; callers must not
+ *   use the guard to vouch for edits to code that does not parse;
  * - other tokens the lexer puts on the hidden channel, which the parser never sees;
  * - indentation and trailing spaces on each line of a comment. Runtime groovydoc (a doc comment
  *   opened with an `@`) is kept at runtime, so re-indenting it is visible through reflection;
@@ -126,13 +133,37 @@ object TokenStreamGuard {
             is Lexed.Tokens -> lexed.tokens
         }
 
-        val firstDifference = before.indices.firstOrNull { index ->
-            index >= after.size || !before[index].sameAs(after[index])
-        } ?: if (after.size > before.size) before.size else null
+        return firstDifference(before, after)
+            ?.let { (index, actual) -> TokenStreamVerdict.Diverged(index, before.getOrNull(index), actual) }
+            ?: TokenStreamVerdict.Preserved
+    }
 
-        return firstDifference?.let { index ->
-            TokenStreamVerdict.Diverged(index, before.getOrNull(index), after.getOrNull(index))
-        } ?: TokenStreamVerdict.Preserved
+    /**
+     * Walks both streams in step and returns the original index and edited token of the first
+     * difference. The edit may add a line break after `;`: in code that parses, a `;` followed by
+     * another statement on the same line is a separator, never an empty statement.
+     */
+    private fun firstDifference(
+        before: List<SignificantToken>,
+        after: List<SignificantToken>,
+    ): Pair<Int, SignificantToken?>? {
+        var i = 0
+        var j = 0
+        while (i < before.size || j < after.size) {
+            val expected = before.getOrNull(i)
+            val actual = after.getOrNull(j)
+            when {
+                expected != null && actual != null && expected.sameAs(actual) -> {
+                    i++
+                    j++
+                }
+
+                actual?.kind == SignificantToken.SEPARATOR_AFTER_SEMICOLON -> j++
+
+                else -> return i to actual
+            }
+        }
+        return null
     }
 
     internal sealed interface Lexed {
@@ -161,12 +192,14 @@ object TokenStreamGuard {
             )
         }
 
-        return errors.first?.let { Lexed.Failed(it) } ?: Lexed.Tokens(dropOptionalSeparators(collector.tokens))
+        return errors.first?.let { Lexed.Failed(it) }
+            ?: Lexed.Tokens(markSeparatorsAfterSemicolons(dropOptionalSeparators(collector.tokens)))
     }
 
     // Token kinds whose neighbouring line breaks the grammar treats as optional (`nls` or `sep?`).
-    private val ABSORBS_FOLLOWING_LINE_BREAK =
-        symbolicNames(GroovyLangLexer.LBRACE, GroovyLangLexer.SEMI, GroovyLangLexer.ARROW)
+    // SEMI is deliberately absent: `;` can be an empty statement, so `if (c) ;` followed by a line break
+    // and a statement differs from the same text on one line (a syntax error). See firstDifference.
+    private val ABSORBS_FOLLOWING_LINE_BREAK = symbolicNames(GroovyLangLexer.LBRACE, GroovyLangLexer.ARROW)
     private val ABSORBS_PRECEDING_LINE_BREAK = symbolicNames(
         GroovyLangLexer.RBRACE,
         GroovyLangLexer.SEMI,
@@ -196,8 +229,18 @@ object TokenStreamGuard {
         return before?.kind in ABSORBS_FOLLOWING_LINE_BREAK || after?.kind in ABSORBS_PRECEDING_LINE_BREAK
     }
 
-    private fun SignificantToken.isCode(): Boolean =
-        kind != SignificantToken.SEPARATOR && kind != SignificantToken.COMMENT
+    private fun markSeparatorsAfterSemicolons(tokens: List<SignificantToken>): List<SignificantToken> =
+        tokens.mapIndexed { index, token ->
+            val afterSemicolon = token.kind == SignificantToken.SEPARATOR &&
+                tokens.subList(0, index).lastOrNull { it.isCode() }?.kind in SEMICOLON
+            if (afterSemicolon) token.copy(kind = SignificantToken.SEPARATOR_AFTER_SEMICOLON) else token
+        }
+
+    private val SEMICOLON = symbolicNames(GroovyLangLexer.SEMI)
+
+    private fun SignificantToken.isCode(): Boolean = kind != SignificantToken.SEPARATOR &&
+        kind != SignificantToken.SEPARATOR_AFTER_SEMICOLON &&
+        kind != SignificantToken.COMMENT
 
     /**
      * Turns raw lexer tokens into significant tokens: drops layout and folds each run of
