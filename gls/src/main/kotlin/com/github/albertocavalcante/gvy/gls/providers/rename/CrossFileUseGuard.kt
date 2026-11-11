@@ -51,7 +51,8 @@ private const val MAX_REPORTED = 3
  * "may be used"; the absence of one is not proof that no other file uses the symbol.
  *
  * Not covered: symlinked directories (the walk does not follow links, which could loop), files in `.git`,
- * `node_modules` and similar directories, and build output directly under a workspace or module root.
+ * `node_modules` and similar directories, and build output directly under a workspace or module root, whether or
+ * not they can be read. Any other directory or source file that cannot be read refuses.
  *
  * Files are compared by real path, not URI spelling: the index keys files by `Path.toUri()` while editors send
  * their own spelling (`file:///c:/…` vs `file:///C:/…`, percent-encoded characters), and the document being
@@ -79,9 +80,10 @@ internal class CrossFileUseGuard(
             val roots = layout.roots()
             val keys = FileKeys(roots)
             diskText.rebind(roots)
-            val self = keys.of(documentUri)
+            val self = SelfKey(keys, documentUri)
             val used = index.findReferenceDocuments(symbolId).keys
-                .filter { keys.of(it) != self }.sortedBy { it.toString() }
+                .filter { uri -> keys.inScopeKey(uri)?.let { !self.matches(it) } == true }
+                .sortedBy { it.toString() }
             if (used.size >= MAX_REPORTED) return@withContext CrossFileUses(used = used, truncated = true)
 
             val snapshot = index.implementationSnapshot
@@ -90,7 +92,7 @@ internal class CrossFileUseGuard(
             val found = CandidateCollector(keys, limits.maxFiles)
                 .collect(sourcesKeyed(keys), snapshot.keys + buffers.keys, walked)
             val usedKeys = used.mapNotNullTo(HashSet(), keys::of)
-            val candidates = found.files.filterKeys { it != self && it !in usedKeys }
+            val candidates = found.files.filterKeys { !self.matches(it) && it !in usedKeys }
             if (found.overflow) {
                 return@withContext CrossFileUses(used = used, unverifiable = true)
             }

@@ -7,6 +7,7 @@ import java.io.IOException
 import java.net.URI
 import java.nio.file.FileVisitResult
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.SimpleFileVisitor
 import java.nio.file.attribute.BasicFileAttributes
@@ -44,7 +45,8 @@ internal fun isSourceFile(path: Path): Boolean {
 /**
  * File identities for one check. Under a (real) workspace root a path's normalized form is its key, which costs
  * no filesystem calls; anything else is resolved to its real path, so `/tmp` and `/private/tmp` match.
- * With no [roots] (files opened without a folder) nothing is out of scope.
+ * A key under a root keeps any symlinked directory in it, so one file can have two keys; [SelfKey] settles that
+ * for the document being renamed. With no [roots] (files opened without a folder) nothing is out of scope.
  */
 internal class FileKeys(roots: List<Path>) {
     val rootKeys: List<Path> = roots.map(::realKey).distinct()
@@ -58,6 +60,29 @@ internal class FileKeys(roots: List<Path>) {
 
     /** Whether a file at [key] is part of the workspace: under a root, or anywhere when there is no root. */
     fun inScope(key: Path): Boolean = rootKeys.isEmpty() || rootKeys.any(key::startsWith)
+
+    /** The key of the file [uri] names when that file is part of the workspace; null for `untitled:`, `jar:` etc. */
+    fun inScopeKey(uri: URI): Path? = of(uri)?.takeIf(::inScope)
+}
+
+/**
+ * Recognizes the document at [uri] under any key it has in one check. Its key keeps an in-root symlinked directory
+ * (see [FileKeys.of]) while the walk, which does not follow links, finds the real path, so a key with the
+ * document's file name (or its real file name) is compared by real path. Only such keys cost a filesystem call;
+ * a link to the document under an unrelated name still counts as another file.
+ */
+internal class SelfKey(keys: FileKeys, uri: URI) {
+    private val path = UriPathConverter.toPath(uri)
+    private val key = path?.let(keys::of)
+    private val real = path?.let(::realKey)
+    private val names = setOfNotNull(key?.fileName, real?.fileName)
+
+    fun matches(other: Path): Boolean = when {
+        key == null -> false
+        other == key || other == real -> true
+        other.fileName in names -> realKey(other) == real
+        else -> false
+    }
 }
 
 /** Where the workspace's files are, as lambdas because the layout changes while the server runs. */
@@ -143,8 +168,20 @@ internal fun walkWorkspace(
         }
 
         override fun visitFileFailed(file: Path, exc: IOException): FileVisitResult {
-            unreadable.add(file)
+            if (mayHideSources(file)) unreadable.add(file)
             return FileVisitResult.CONTINUE
+        }
+
+        /**
+         * Whether a path the walk could not read may be or hold a source file. A directory that cannot be opened
+         * never reaches [preVisitDirectory], so the skip rules apply here: an unreadable `node_modules/`, or a
+         * `build/` at a module root (whose contents cannot be checked for sources), would be skipped anyway.
+         * A path whose kind cannot be read counts.
+         */
+        private fun mayHideSources(path: Path): Boolean = when {
+            Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) -> !isSkipped(path)
+            Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) -> isSourceFile(path)
+            else -> true
         }
 
         private fun isModuleOrWorkspaceRoot(dir: Path) = dir in roots || MODULE_FILES.any { hasFile(dir, it) }

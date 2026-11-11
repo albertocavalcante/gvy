@@ -6,10 +6,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
+import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -186,6 +188,30 @@ class CrossFileGuardInternalsTest {
         Files.setLastModifiedTime(dir, FileTime.from(old.toInstant().plusSeconds(30)))
         cache.get("k", walk)
         assertEquals(4, cache.walks, "and so does a deletion")
+    }
+
+    @Test
+    fun `a walk reports unreadable directories that could hide sources and ignores skipped ones`() {
+        val root = tempDir.toRealPath()
+        Files.writeString(root.resolve("build.gradle"), "// module marker\n")
+        val skipped = listOf("build", "target", "node_modules", ".gradle").map {
+            Files.createDirectories(root.resolve(it))
+        }
+        val volume = Files.createDirectories(root.resolve("data/postgres"))
+        // Path is an Iterable<Path>, so skipped + volume would add its name segments instead of the directory.
+        val locked = skipped + listOf(volume)
+        locked.forEach { runCatching { Files.setPosixFilePermissions(it, emptySet()) } }
+        try {
+            Assumptions.assumeTrue(locked.none(Files::isReadable), "directories stay readable (Windows or root)")
+
+            val walked = walkWorkspace(listOf(root), emptyList(), 100, 1_000) {}
+
+            assertEquals(listOf(volume), walked.unreadable, "only a directory the walk would have listed counts")
+        } finally {
+            locked.forEach {
+                runCatching { Files.setPosixFilePermissions(it, PosixFilePermissions.fromString("rwx------")) }
+            }
+        }
     }
 
     @Test

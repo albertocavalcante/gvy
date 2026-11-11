@@ -496,6 +496,83 @@ class CrossFileRenameGuardTest {
         }
     }
 
+    /** Runs [block] with [dirs] unreadable, or skips the test where permissions cannot make them so. */
+    private fun withUnreadable(vararg dirs: Path, block: () -> Unit) {
+        val locked = dirs.map { it to runCatching { Files.setPosixFilePermissions(it, emptySet()) } }
+        try {
+            val stayReadable = locked.filter { (dir, set) -> set.isFailure || Files.isReadable(dir) }
+            Assumptions.assumeTrue(stayReadable.isEmpty(), "directories stay readable (Windows or root)")
+            block()
+        } finally {
+            dirs.forEach {
+                runCatching { Files.setPosixFilePermissions(it, PosixFilePermissions.fromString("rwxr-xr-x")) }
+            }
+        }
+    }
+
+    @Test
+    fun `unreadable build output and node_modules directories do not refuse`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        Files.writeString(tempDir.resolve("build.gradle"), "// module marker\n")
+        val build = Files.createDirectories(tempDir.resolve("build"))
+        val modules = Files.createDirectories(tempDir.resolve("web/node_modules"))
+        walks.invalidate()
+
+        withUnreadable(build, modules) { assertRenames(uri, a, "greet") }
+    }
+
+    @Test
+    fun `an unreadable directory named like build output where it is not build output still refuses`() {
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        val nested = Files.createDirectories(tempDir.resolve("docs/build"))
+        walks.invalidate()
+
+        withUnreadable(nested) {
+            val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
+            assertTrue("cannot be read" in message && "build" in message, message)
+        }
+    }
+
+    @Test
+    fun `a document opened through a symlinked directory in the workspace is not another file`(): Unit = runBlocking {
+        val own = "class A {\n    def greet() { 'hi' }\n    def run() { greet() }\n}\n"
+        // The real root (macOS temp dirs are links): under a root a path's key is its normalized form.
+        val root = tempDir.toRealPath()
+        val real = Files.createDirectories(root.resolve("src/real"))
+        Files.writeString(real.resolve("A.groovy"), own)
+        val link = runCatching { Files.createSymbolicLink(root.resolve("src/link"), real) }
+        Assumptions.assumeTrue(link.isSuccess, "symbolic links are not supported here")
+        service.workspaceManager.initializeWorkspace(root)
+        service.getWorkspaceCompiler().compileWorkspace()
+        val uri = root.resolve("src/link/A.groovy").toUri()
+        documents.put(uri, own)
+        service.compile(uri, own)
+
+        val edit = provider.provideRename(uri.toString(), positionOf(own, "greet"), "hello")
+
+        assertEquals(2, edit.documentChanges.filter { it.isLeft }.sumOf { it.left.edits.size })
+    }
+
+    @Test
+    fun `indexed uses in an untitled buffer or a file outside the workspace do not refuse`(): Unit = runBlocking {
+        val uri = workspace(mapOf("A.groovy" to a, "B.groovy" to "class B {\n}\n"), open = "A.groovy")
+        val untitled = URI.create("untitled:Untitled-1")
+        val outside = Files.createDirectories(otherDir.resolve("outside-workspace")).resolve("C.groovy").toUri()
+        val caller = "new A().greet()\n"
+        listOf(untitled, outside).forEach {
+            documents.put(it, caller)
+            service.compile(it, caller)
+        }
+        val index = checkNotNull(service.getWorkspaceSymbolIndex())
+        val module = checkNotNull(service.getValidParseResult(uri)?.ast)
+        val owner = module.classes.single { it.nameWithoutPackage == "A" }
+        val greet = SemanticDocumentBuilder.createMethodSymbolId(owner, owner.getMethods("greet").single())
+        val proven = index.findReferenceDocuments(greet).keys
+        assertTrue(untitled in proven && outside in proven, "the index proves both uses: $proven")
+
+        assertRenames(uri, a, "greet")
+    }
+
     @Test
     fun `an external edit to a closed indexed file is seen without a watcher event`() {
         val files = mapOf("A.groovy" to a, "B.groovy" to "class B {\n    def run() { 1 }\n}\n")
