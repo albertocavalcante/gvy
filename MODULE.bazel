@@ -14,28 +14,20 @@ bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.1", dev_dependency = True)
 
 bazel_dep(name = "rules_java", version = "9.3.0")
-bazel_dep(name = "rules_kotlin", version = "2.2.2")
-
-# Override with fork-built rules_kotlin (Kotlin 2.3.0)
-# Published from: https://github.com/albertocavalcante/fork-rules_kotlin
-# To update: ./tools/scripts/publish-rules-kotlin-fork.sh --build --version v2.3.0-fork.N
-archive_override(
-    module_name = "rules_kotlin",
-    integrity = "sha256-9vOI0nezePk0rrm7HaQ9h+MVvgo3H6h71Cl37UMZp1A=",
-    urls = ["https://github.com/albertocavalcante/fork-rules_kotlin/releases/download/v2.3.0-fork.1/rules_kotlin_release.tgz"],
-)
+bazel_dep(name = "rules_kotlin", version = "2.3.0")
 
 # Register custom Kotlin toolchain
 register_toolchains("//tools:kotlin_toolchain")
 
-bazel_dep(name = "rules_jvm_external", version = "6.9")
+bazel_dep(name = "rules_jvm_external", version = "6.10")
 
 # ==============================================================================
 # Coursier GMM (Gradle Module Metadata) Patch
 # ==============================================================================
 #
 # Compose Multiplatform Desktop requires GMM support for correct platform variant selection.
-# GMM was added in Coursier v2.1.25-M* milestones (not yet in stable v2.1.24).
+# The bundled Coursier v2.1.24 lacks GMM; this workaround uses v2.1.25-M23.
+# Stable v2.1.26 is available, but migration still needs validation in #1029.
 #
 # PATCH DETAILS:
 #   Upgrades Coursier v2.1.24 -> v2.1.25-M23
@@ -144,7 +136,7 @@ maven.install(
         "ui=awt",  # skiko: select AWT variant over Android
     ],
     artifacts = [
-        # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
+        # Kotlin - versions aligned with rules_kotlin 2.3.0 (Kotlin 2.3.0)
         "org.jetbrains.kotlin:kotlin-stdlib:2.3.0",
         # Note: kotlin-stdlib-common is filtered by HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch
         "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2",

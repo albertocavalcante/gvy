@@ -4,7 +4,7 @@ load("@rules_java//java:defs.bzl", "java_binary", "java_import")
 load("@rules_kotlin//kotlin:core.bzl", "define_kt_toolchain")
 
 # Kotlin toolchain with performance optimizations
-# Using Kotlin 2.3.0 compiler from locally-built rules_kotlin (master branch)
+# Using the official rules_kotlin 2.3.0 prebuilt release (Kotlin 2.3.0 compiler)
 define_kt_toolchain(
     name = "kotlin_toolchain",
     api_version = "2.3",  # Kotlin 2.3 features (nested type aliases, etc.)

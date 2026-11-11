@@ -1,0 +1,30 @@
+"""Runtime regression for the patched Maven dependency graph."""
+
+load("@rules_java//java:defs.bzl", "java_test")
+
+java_test(
+    name = "jackson_runtime_test",
+    size = "small",
+    timeout = "short",
+    srcs = ["JacksonRuntimeTest.java"],
+    args = ["kotlin"],
+    jvm_flags = ["-Xmx256m"],
+    main_class = "com.github.albertocavalcante.gvy.build.JacksonRuntimeTest",
+    use_testrunner = False,
+    # Keep this as the only runtime root: direct core/databind/stdlib dependencies
+    # would mask missing transitive edges in the patched Maven repository.
+    runtime_deps = ["@maven//:com_fasterxml_jackson_module_jackson_module_kotlin"],
+)
+
+java_test(
+    name = "jackson_yaml_runtime_test",
+    size = "small",
+    timeout = "short",
+    srcs = ["JacksonRuntimeTest.java"],
+    args = ["yaml"],
+    jvm_flags = ["-Xmx256m"],
+    main_class = "com.github.albertocavalcante.gvy.build.JacksonRuntimeTest",
+    use_testrunner = False,
+    # YAML must supply both Jackson core dependencies and SnakeYAML transitively.
+    runtime_deps = ["@maven//:com_fasterxml_jackson_dataformat_jackson_dataformat_yaml"],
+)

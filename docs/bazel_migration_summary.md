@@ -580,50 +580,90 @@ For questions about this migration, see project maintainers in main repository.
 
 ---
 
-## Current Limitations (as of 2026-01-11)
+## Official Kotlin rules (2026-11-11)
 
-### Kotlin Version Constraint: 2.2.21
+The build uses the official `rules_kotlin` **2.3.0** prebuilt release from the Bazel Central Registry. It keeps the
+Kotlin compiler, serialization plugin and standard library at **2.3.0**. The custom toolchain retains language/API 2.3,
+JVM target 17, ABI jars, multiplex workers, strict direct dependencies and gated unused-dependency diagnostics.
 
-**Problem:** `rules_kotlin 2.2.2` has a **hard dependency** on Kotlin 2.2.21.
+The temporary `v2.3.0-fork.1` archive supplied Kotlin 2.3 tooling before an official release was available. Upstream
+[published v2.3.0 on 2026-02-17](https://github.com/bazel-contrib/rules_kotlin/releases/tag/v2.3.0). The
+[BCR source descriptor](https://github.com/bazelbuild/bazel-central-registry/blob/main/modules/rules_kotlin/2.3.0/source.json)
+selects its prebuilt archive with SHA256 `6d008622fc15bc56f9eba3eebef28af63abf0d07b97cb3971401e7a6d7c15227`. This
+retirement deliberately preserves compiler-version parity; a later Kotlin upgrade is a separate change.
 
-**Root Cause Architecture:**
+The official module also requires `rules_jvm_external` 6.10. Its existing Coursier GMM patches remain in use; the
+repeated-option patch is refreshed for that release so ordered `--variant` flags keep their separate values. The
+migration also corrects an existing unconditional Jackson dependency skip. The isolated
+`//tools/ci/jackson:jackson_runtime_test` uses only `jackson-module-kotlin` as its runtime root, registers the Kotlin
+module and round-trips a value to verify that required transitive runtime jars remain reachable.
+`//tools/ci/jackson:jackson_yaml_runtime_test` separately checks YAML round trips from only `jackson-dataformat-yaml`,
+including its SnakeYAML dependency.
 
-```
-rules_kotlin 2.2.2
-└── kotlinbuilder (pre-compiled JAR)
-    └── Built against Kotlin 2.2.21
-    └── Compiler plugins load INTO kotlinbuilder's classloader
-        └── Plugin versions MUST match kotlinbuilder's Kotlin version
-```
+The selected Jackson Gradle Module Metadata (`runtimeElements`, with platform BOM constraints excluded) declares:
 
-**Why `kotlinc_version` extension doesn't help:**
+| Artifact                       | Version | Runtime dependencies                                  |
+| ------------------------------ | ------- | ----------------------------------------------------- |
+| jackson-annotations            | 2.20    | None                                                  |
+| jackson-core                   | 2.20.1  | None                                                  |
+| jackson-databind               | 2.20.1  | jackson-core, jackson-annotations                     |
+| jackson-module-kotlin          | 2.20.1  | jackson-databind, jackson-annotations, kotlin-reflect |
+| jackson-dataformat-yaml        | 2.20.1  | jackson-databind, jackson-core, SnakeYAML             |
+| jackson-dataformat-smile       | 2.20.1  | jackson-databind, jackson-core                        |
+| jackson-datatype-jsr310        | 2.20.1  | jackson-databind, jackson-core, jackson-annotations   |
+| jackson-module-parameter-names | 2.20.1  | jackson-databind, jackson-core                        |
 
-- The `kotlinc_version` extension only overrides the **compiler download**
-- It does NOT rebuild `kotlinbuilder` (the compilation wrapper)
-- Compiler plugins (like kotlinx-serialization) are loaded by kotlinbuilder
-- Plugin class compatibility is checked against kotlinbuilder's bundled Kotlin
+For example, the published metadata for
+[core](https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-core/2.20.1/jackson-core-2.20.1.module),
+[databind](https://repo1.maven.org/maven2/com/fasterxml/jackson/core/jackson-databind/2.20.1/jackson-databind-2.20.1.module),
+[Kotlin](https://repo1.maven.org/maven2/com/fasterxml/jackson/module/jackson-module-kotlin/2.20.1/jackson-module-kotlin-2.20.1.module)
+and
+[YAML](https://repo1.maven.org/maven2/com/fasterxml/jackson/dataformat/jackson-dataformat-yaml/2.20.1/jackson-dataformat-yaml-2.20.1.module)
+distinguishes real dependencies from platform constraints. Coursier's expanded BOM edges incorrectly make core depend on
+databind, creating a cycle. The patch keeps core/annotations as leaves, retains the real core dependencies of other
+modules and preserves non-Jackson dependencies such as Kotlin reflection and SnakeYAML. The existing cross-extension
+filter is still needed for phantom BOM edges; none of these eight selected modules declares a real cross-extension
+Jackson dependency. This is evidence for this pinned graph, not proof for other artifacts or future versions. Validate
+the metadata and isolated runtimes again when upgrading. Resolver replacement remains tracked in
+[#1029](https://github.com/albertocavalcante/gvy/issues/1029).
 
-**To use Kotlin 2.3.0:**
+The fork's tagged source is an ancestor of v2.3.0, but the old publishing helper built moving upstream `master` while
+using a separate release tag. That tag alone cannot prove the old tarball's build source. The helper has been removed;
+historical fork releases and assets remain available to old commits.
 
-- Requires `rules_kotlin` with commit `f08e668` ("Update Kotlin to 2.3.0")
-- As of 2026-01-11, this commit is NOT in any released version
-- Monitor: https://github.com/bazelbuild/rules_kotlin/releases
+Using only `kotlinc_version` with rules_kotlin 2.2.2 is not the same migration. Upstream
+[PR #1410](https://github.com/bazel-contrib/rules_kotlin/pull/1410) also changed internal compiler plugins and
+build-tool compatibility. The official prebuilt release supplies those changes together.
 
-**Why git_override / archive_override doesn't work:**
+### Validation and remaining investigations
 
-```
-# This FAILS - kotlinbuilder built from source is missing Dagger shading:
-git_override(
+Use `bazel mod show_repo @rules_kotlin` to inspect the selected official archive, then build and test with
+`--lockfile_mode=error`. The CI diagnostic gate reviews all advisories rather than hiding them in a successful build.
+
+- [#1601](https://github.com/albertocavalcante/gvy/issues/1601) tracks metadata-only unused dependencies in KMP common
+  tests. Retain its exact expiring exception until the compiler accounting case is demonstrably fixed.
+- [#1416](https://github.com/albertocavalcante/gvy/issues/1416) tracks intermittent worker/ABI compilation failures. A
+  passing migration build does not meet its separate requirement for ten consecutive clean CI builds.
+
+### Rollback
+
+If compatibility regresses, revert the retirement change and regenerate `MODULE.bazel.lock`. The previous declaration
+used rules_kotlin 2.2.2 plus this exact archive override:
+
+```starlark
+archive_override(
     module_name = "rules_kotlin",
-    remote = "https://github.com/bazelbuild/rules_kotlin.git",
-    commit = "f08e66864553f61836d68f780620e42b5a09e003",
+    integrity = "sha256-9vOI0nezePk0rrm7HaQ9h+MVvgo3H6h71Cl37UMZp1A=",
+    urls = ["https://github.com/albertocavalcante/fork-rules_kotlin/releases/download/v2.3.0-fork.1/rules_kotlin_release.tgz"],
 )
-# Error: java.lang.NoClassDefFoundError: dagger/internal/Preconditions
 ```
 
-The released versions work because they include **pre-built kotlinbuilder JARs** with all dependencies properly shaded.
-When overriding from source, Bazel tries to build kotlinbuilder from source, but the rules_kotlin build process doesn't
-properly shade Dagger dependencies.
+Do not republish that tag or replace its asset. Existing commits depend on its pinned bytes.
+
+## Historical migration limitations (2026-01-11)
+
+The following observations describe the initial migration snapshot and are retained as history, not current setup
+instructions. Check the current `BUILD.bazel` files and CI evidence for module readiness.
 
 ### Disabled Modules
 
@@ -638,7 +678,7 @@ properly shade Dagger dependencies.
 
 ### Source Code Incompatibilities
 
-The following Kotlin 2.2+ features are used in source but NOT available with Kotlin 2.2.21:
+The initial report listed the following source/API migration concerns:
 
 1. **Multi-dollar string interpolation** (Kotlin 2.2)
    - Location: `groovy-lsp/.../CompletionBuilders.kt:210`
@@ -662,27 +702,15 @@ The following Kotlin 2.2+ features are used in source but NOT available with Kot
 - `parser/rewrite` → `RewriteParserProvider` class
 - `groovy-diagnostics/sarif` → SARIF support
 
-### Workaround Strategy
-
-**Option A: Fix source code** (recommended for production)
-
-- Rewrite Kotlin 2.2 features to 2.1-compatible syntax
-- Update Mordant API calls
-- Create stubs or conditionally compile missing module references
-
-**Option B: Wait for rules_kotlin update**
-
-- Monitor rules_kotlin releases for Kotlin 2.3.0 support
-- Once released, update `bazel_dep(name = "rules_kotlin", version = "X.Y.Z")`
-
-**Option C: Build rules_kotlin from HEAD** (advanced)
-
-- Use `git_override` in MODULE.bazel to point to rules_kotlin HEAD
-- Risk: Unstable, may break with updates
+The initial workarounds considered rewriting language features, waiting for an upstream release or building upstream
+HEAD. The official prebuilt release above supersedes that Kotlin release-availability decision.
 
 ---
 
 ## Version History
+
+- **v1.2 (2026-11-11):** Retired the temporary fork in favor of official rules_kotlin 2.3.0, documented rollback and
+  retained the initial limitations as historical evidence.
 
 - **v1.1 (2026-01-11):** Added Current Limitations section
   - Documented Kotlin 2.2.21 constraint from rules_kotlin architecture
