@@ -2,7 +2,7 @@
 
 GRADLE_ARGS ?=
 
-.PHONY: run build clean package dmg install
+.PHONY: run build clean package dmg app-image install test-install
 
 # Run the app locally
 run:
@@ -24,23 +24,25 @@ package:
 dmg:
 	../../gradlew :viz:desktop:packageDmg $(GRADLE_ARGS)
 
+# Build the application image needed for a local install.
+app-image:
+	../../gradlew :viz:desktop:createDistributable $(GRADLE_ARGS)
+
 # Install the app to /Applications (macOS)
-# Assumes the app is built to the standard location
+# The destination must exist and be writable by the current user.
+# Override INSTALL_DIR to use a different directory.
 APP_NAME := Groovy AST Visualizer.app
 BUILD_APP_PATH := build/compose/binaries/main/app/$(APP_NAME)
-INSTALL_DIR := /Applications
+INSTALL_DIR ?= /Applications
+export BUILD_APP_PATH INSTALL_DIR
 
-install: package
+install: app-image
 	@if [ "$$(uname)" != "Darwin" ]; then \
 		echo "❌ Install is only supported on macOS"; \
 		exit 1; \
 	fi
-	@echo "Installing to $(INSTALL_DIR)... (may require sudo password)"
-	@if [ -d "$(BUILD_APP_PATH)" ]; then \
-		sudo rm -rf "$(INSTALL_DIR)/$(APP_NAME)" && \
-		sudo cp -R "$(BUILD_APP_PATH)" "$(INSTALL_DIR)/" && \
-		echo "✅ Installed '$(APP_NAME)' to $(INSTALL_DIR)"; \
-	else \
-		echo "❌ App bundle not found at $(BUILD_APP_PATH). Build might have failed."; \
-		exit 1; \
-	fi
+	@sh ./install-app.sh "$$BUILD_APP_PATH" "$$INSTALL_DIR"
+
+# Exercise installation safety without changing /Applications.
+test-install:
+	@sh ./tests/install-app-test.sh
