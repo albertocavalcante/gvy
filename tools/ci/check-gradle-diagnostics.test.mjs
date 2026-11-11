@@ -190,10 +190,20 @@ test('CLI always publishes structured evidence and a raw copy, including warning
   const baseline = join(dir, 'baseline.json');
   const log = join(dir, 'gradle.log');
   const report = join(dir, 'report');
+  const liveSummary = join(dir, 'live-summary.md');
+  const previousSummary = process.env.GITHUB_STEP_SUMMARY;
+  process.env.GITHUB_STEP_SUMMARY = liveSummary;
+  t.after(() => {
+    if (previousSummary === undefined) delete process.env.GITHUB_STEP_SUMMARY;
+    else process.env.GITHUB_STEP_SUMMARY = previousSummary;
+  });
+  writeFileSync(liveSummary, 'Live job evidence only.\n');
   writeFileSync(baseline, '[]\n');
   const run = (exit = '0') => spawnSync(process.execPath, ['tools/ci/check-gradle-diagnostics.mjs',
     '--log', log, '--exit-code', exit, '--capture-exit-code', '0', '--producer', 'gradle-lint',
-    '--baseline', baseline, '--report', report], { encoding: 'utf8' });
+    '--baseline', baseline, '--report', report], {
+    encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: '' },
+  });
   assert.notEqual(run().status, 0);
   assert.equal(JSON.parse(readFileSync(join(report, 'diagnostics.json'))).complete, false);
   const text = `> Configure project :\n${warning}\nBUILD FAILED in 1s\n`;
@@ -227,4 +237,5 @@ test('CLI always publishes structured evidence and a raw copy, including warning
   writeFileSync(log, text);
   assert.notEqual(run('1').status, 0);
   assert.deepEqual(JSON.parse(readFileSync(join(report, 'diagnostics.json'))).diagnostics, [diagnostic]);
+  assert.equal(readFileSync(liveSummary, 'utf8').length, 'Live job evidence only.\n'.length);
 });
