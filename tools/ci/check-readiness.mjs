@@ -53,14 +53,24 @@ export function combineReadiness(graph, runner, context) {
   }
   // Selective reruns relabel reused successes with new attempt IDs but can drop
   // their annotations. A fresh execution of this ancestor reruns its dependents.
-  const anchors = Array.isArray(runner?.jobs) ? runner.jobs.filter(job => record(job) && job.name === 'check-paths') : [];
+  const jobs = Array.isArray(runner?.jobs) ? runner.jobs.filter(record) : [];
+  const anchors = jobs.filter(job => job.name === 'check-paths');
   const anchor = anchors[0];
   const attemptStart = timestampKey(runner?.attemptStartedAt);
-  const executionStart = timestampKey(anchor?.startedAt);
+  const freshObserved = job => {
+    const executionStart = timestampKey(job.startedAt);
+    return job.annotationsObserved === true && job.headSha === context.headSha &&
+      attemptStart !== null && executionStart !== null && executionStart >= attemptStart;
+  };
   if (anchors.length !== 1 || anchor?.status !== 'completed' || anchor.conclusion !== 'success' ||
-      anchor.annotationsObserved !== true || anchor.headSha !== context.headSha ||
-      attemptStart === null || executionStart === null || executionStart < attemptStart) {
+      !freshObserved(anchor)) {
     report.errors.push('A fresh successful observed check-paths execution is required for this attempt; rerun all CI jobs.');
+  }
+  // Independent advisory jobs are not descendants of check-paths. Their reused
+  // completed records can lose annotations too, so the ancestor alone is insufficient.
+  const completed = jobs.filter(job => job.name !== 'Validation Check' && job.status === 'completed' && job.conclusion !== 'skipped');
+  if (completed.some(job => !freshObserved(job))) {
+    report.errors.push('A completed job has reused or unobserved execution evidence; rerun all CI jobs.');
   }
   report.ok = report.errors.length === 0;
   return report;

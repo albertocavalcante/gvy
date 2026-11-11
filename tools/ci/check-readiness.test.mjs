@@ -153,3 +153,31 @@ test('timestamp precision preserves equality and a genuinely later execution', (
     assert.equal(combineReadiness(evaluateReadiness(successful()), runner, context).ok, true);
   }
 });
+
+for (const [name, alter] of [
+  ['reused execution', value => { value.startedAt = '2026-11-11T12:14:11Z'; }],
+  ['unobserved annotations', value => { value.annotationsObserved = false; }],
+  ['different source', value => { value.headSha = 'c'.repeat(40); }],
+]) {
+  test(`a fresh ancestor cannot hide an independent completed job: ${name}`, () => {
+    const runner = currentReceipt();
+    const advisory = { ...runner.jobs[0], jobId: 3, checkId: 3, name: 'Check Dependencies' };
+    runner.jobs.push(advisory);
+    const graph = evaluateReadiness(successful());
+    assert.equal(combineReadiness(graph, runner, context).ok, true);
+    alter(advisory);
+    const result = combineReadiness(graph, runner, context);
+    assert.equal(result.ok, false);
+    assert.match(result.errors.join('\n'), /rerun all CI jobs/);
+  });
+}
+
+test('skipped and unfinished optional jobs retain their explicit snapshot boundary', () => {
+  const runner = currentReceipt();
+  runner.jobs.push(
+    { ...runner.jobs[0], jobId: 3, name: 'Skipped advisory', conclusion: 'skipped', startedAt: '2026-11-11T12:14:11Z' },
+    { ...runner.jobs[0], jobId: 4, name: 'Running advisory', status: 'in_progress', conclusion: null, startedAt: null, annotationsObserved: false },
+    { ...runner.jobs[0], jobId: 5, name: 'Validation Check', status: 'in_progress', conclusion: null, startedAt: null, annotationsObserved: false },
+  );
+  assert.equal(combineReadiness(evaluateReadiness(successful()), runner, context).ok, true);
+});
