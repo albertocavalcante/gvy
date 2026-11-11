@@ -44,6 +44,10 @@ steps:
       source: result
       checks:
         - jsonPath: "$.items[?(@.label == 'Rectangle')].additionalTextEdits[0].newText"
-          expect: { type: CONTAINS, value: "import demo.shapes.Rectangle" }
+          expect: { type: ANY_CONTAINS, value: "import demo.shapes.Rectangle\n" }
+        - jsonPath: "$.items[?(@.label == 'Rectangle')]"
+          expect: { type: SIZE, value: 1 }
+        - jsonPath: "$.items[?(@.label == 'Rectangle')].additionalTextEdits[*]"
+          expect: { type: SIZE, value: 1 }
   - shutdown: {}
   - exit: {}

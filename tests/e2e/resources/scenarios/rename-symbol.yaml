@@ -81,32 +81,18 @@ steps:
         # One edit in Definitions.groovy: the method name only
         - jsonPath: "$.documentChanges[?(@.textDocument.uri == '{{workspace.uri}}src/main/groovy/Definitions.groovy')].edits[*]"
           expect:
-            type: SIZE
-            value: 1
-        - jsonPath: "$.documentChanges[?(@.textDocument.uri == '{{workspace.uri}}src/main/groovy/Definitions.groovy')].edits[*].range.start"
-          expect:
-            type: CONTAINS
-            value: { line: 3, character: 9 }
+            type: EQUALS
+            value:
+              - range: { start: { line: 3, character: 9 }, end: { line: 3, character: 22 } }
+                newText: doSomething
 
         # One edit in Usages.groovy: the call's method name only
         - jsonPath: "$.documentChanges[?(@.textDocument.uri == '{{workspace.uri}}src/main/groovy/Usages.groovy')].edits[*]"
           expect:
-            type: SIZE
-            value: 1
-        - jsonPath: "$.documentChanges[?(@.textDocument.uri == '{{workspace.uri}}src/main/groovy/Usages.groovy')].edits[*].range.start"
-          expect:
-            type: CONTAINS
-            value: { line: 5, character: 10 }
-
-        # Every edit is the new name and ends where 'performAction' ends: the name only, not the node
-        - jsonPath: "$.documentChanges[*].edits[*].newText"
-          expect:
-            type: CONTAINS_ALL
-            values: ["doSomething"]
-        - jsonPath: "$.documentChanges[*].edits[*].range.end"
-          expect:
-            type: CONTAINS_ALL
-            values: [{ line: 3, character: 22 }, { line: 5, character: 23 }]
+            type: EQUALS
+            value:
+              - range: { start: { line: 5, character: 10 }, end: { line: 5, character: 23 } }
+                newText: doSomething
 
   - shutdown: {}
   - exit: {}

@@ -45,21 +45,19 @@ steps:
   - assert:
       source: symbolResult
       checks:
-        # Expect Controller and Method (depending on how fuzzy search works)
-        # Usually exact or prefix match
-        - jsonPath: $.length()
-          expect:
-            type: GTE
-            value: 1
-        
-        - jsonPath: "$[?(@.name == 'UniqueController')]"
+        # Keep this exact missing-symbol check first so only the known failure matches xfail.
+        - jsonPath: "$.items[?(@.name == 'UniqueController')]"
           expect:
             type: SIZE
             value: 1
-        - jsonPath: "$[?(@.name == 'UniqueController')].kind"
+        - jsonPath: "$.items[?(@.name == 'UniqueController')].kind"
           expect:
             type: EQUALS
-            value: 5 # Class = 5
+            value: [Class]
+        - jsonPath: "$.items[?(@.name == 'UniqueController')].location.uri"
+          expect:
+            type: EQUALS
+            value: ["{{workspace.uri}}src/main/groovy/Symbols.groovy"]
 
   # Search for 'uniqueMethod'
   - request:
@@ -71,14 +69,18 @@ steps:
   - assert:
       source: methodSymbolResult
       checks:
-        - jsonPath: "$.[?(@.name == 'uniqueMethod')]"
+        - jsonPath: "$.items[?(@.name == 'uniqueMethod')]"
           expect:
             type: SIZE
             value: 1
-        - jsonPath: "$.[?(@.name == 'uniqueMethod')].kind"
+        - jsonPath: "$.items[?(@.name == 'uniqueMethod')].kind"
           expect:
             type: EQUALS
-            value: 6 # Method = 6
+            value: [Method]
+        - jsonPath: "$.items[?(@.name == 'uniqueMethod')].location.uri"
+          expect:
+            type: EQUALS
+            value: ["{{workspace.uri}}src/main/groovy/Symbols.groovy"]
 
   - shutdown: {}
   - exit: {}

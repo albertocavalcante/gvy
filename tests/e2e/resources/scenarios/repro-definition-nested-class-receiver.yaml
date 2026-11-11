@@ -48,6 +48,12 @@ steps:
       source: result
       checks:
         - jsonPath: "$.items[*].uri"
-          expect: { type: CONTAINS, value: "{{cursor.nestedGoDecl.path}}" }
+          expect: { type: CONTAINS, value: "{{cursor.nestedGoDecl.uri}}" }
+        - jsonPath: "$.items"
+          expect: { type: SIZE, value: 1 }
+        - jsonPath: "$.items[0].range"
+          expect:
+            type: EQUALS
+            value: { start: { line: 4, character: 8 }, end: { line: 4, character: 33 } }
   - shutdown: {}
   - exit: {}

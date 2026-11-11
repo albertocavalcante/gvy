@@ -42,6 +42,13 @@ steps:
       source: result
       checks:
         - jsonPath: "$.items[*].uri"
-          expect: { type: CONTAINS, value: "{{cursor.baseDecl.path}}" }
+          expect: { type: CONTAINS, value: "{{cursor.baseDecl.uri}}" }
+        - jsonPath: "$.items"
+          expect: { type: SIZE, value: 1 }
+        # Location.range spans the class declaration, not just its identifier.
+        - jsonPath: "$.items[0].range"
+          expect:
+            type: EQUALS
+            value: { start: { line: 2, character: 0 }, end: { line: 2, character: 13 } }
   - shutdown: {}
   - exit: {}
