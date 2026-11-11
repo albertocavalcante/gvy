@@ -4,17 +4,32 @@ import com.github.albertocavalcante.gvy.diagnostics.api.DiagnosticProvider
 import com.github.albertocavalcante.gvy.gls.config.DiagnosticConfig
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.DiagnosticProviderAdapter
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.StreamingDiagnosticProvider
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
+import java.io.IOException
 import java.net.URI
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+
+private const val COORDINATED_TEST_TIMEOUT_MS = 10_000L
 
 class DiagnosticsServiceTest {
 
@@ -254,7 +269,7 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `logs provider ID when catching exceptions`(): Unit = runBlocking {
+    fun `records provider ID when catching exceptions`(): Unit = runBlocking {
         // Given
         val failingProvider = TestStreamingDiagnosticProvider(
             id = "failing-provider-with-clear-id",
@@ -267,12 +282,12 @@ class DiagnosticsServiceTest {
         )
 
         // When
-        val result = service.getDiagnostics(testUri, "test content")
+        val result = service.collectDiagnostics(testUri, "test content")
 
         // Then
-        assertTrue(result.isEmpty())
-        // NOTE: Logger output verification would require log capture setup
-        // For now, we verify the service doesn't crash and returns empty list
+        assertTrue(result.diagnostics.isEmpty())
+        assertEquals(listOf("failing-provider-with-clear-id"), result.failures.map { it.providerId })
+        assertFalse(result.isSuccessful)
     }
 
     @Test
@@ -304,6 +319,198 @@ class DiagnosticsServiceTest {
         )
     }
 
+    @Test
+    fun `provider cancellation aborts collection`(): Unit = runBlocking {
+        val provider = object : StreamingDiagnosticProvider {
+            override val id = "cancelled-provider"
+
+            override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
+                throw CancellationException("Provider aborted")
+            }
+        }
+        val service = DiagnosticsService(listOf(provider))
+
+        val failure = assertFailsWith<CancellationException> {
+            service.getDiagnostics(testUri, "test content")
+        }
+        assertEquals("Provider aborted", failure.message)
+    }
+
+    @Nested
+    inner class CollectionOutcomes {
+        @Test
+        fun `empty provider cohort completes successfully`() = runBlocking {
+            val result = DiagnosticsService(emptyList()).collectDiagnostics(testUri, "test content")
+
+            assertTrue(result.diagnostics.isEmpty())
+            assertTrue(result.providerIds.isEmpty())
+            assertTrue(result.failures.isEmpty())
+            assertTrue(result.isSuccessful)
+        }
+
+        @Test
+        fun `enabled cohort order is independent of diagnostic arrival order`() = runBoundedTest {
+            val secondEmitted = CompletableDeferred<Unit>()
+            val first = streamingProvider("first") {
+                secondEmitted.await()
+                emit(createTestDiagnostic("First provider"))
+            }
+            val second = streamingProvider("second") {
+                emit(createTestDiagnostic("Second provider"))
+                secondEmitted.complete(Unit)
+            }
+            val disabled = TestStreamingDiagnosticProvider("disabled", enabledByDefault = false, shouldFail = true)
+
+            val result = DiagnosticsService(listOf(first, disabled, second)).collectDiagnostics(testUri, "test content")
+
+            assertEquals(listOf("first", "second"), result.providerIds)
+            assertEquals(listOf("Second provider", "First provider"), result.diagnostics.map { it.message })
+            assertTrue(result.failures.isEmpty())
+            assertTrue(result.isSuccessful)
+        }
+
+        @Test
+        fun `partial failures retain their diagnostics and healthy peers`() = runBlocking {
+            val partial = TestStreamingDiagnosticProvider(
+                id = "partial",
+                diagnosticsToEmit = listOf(createTestDiagnostic("Before failure")),
+                shouldFailAfterEmitting = true,
+            )
+            val healthy = streamingProvider("healthy") { emit(createTestDiagnostic("Healthy")) }
+
+            val result = DiagnosticsService(listOf(partial, healthy)).collectDiagnostics(testUri, "test content")
+
+            assertEquals(setOf("Before failure", "Healthy"), result.diagnostics.map { it.message }.toSet())
+            assertEquals(listOf("partial", "healthy"), result.providerIds)
+            assertEquals(
+                listOf(
+                    DiagnosticProviderFailure(
+                        providerId = "partial",
+                        exceptionType = RuntimeException::class.java.name,
+                        message = "Provider partial failed after emitting diagnostics",
+                    ),
+                ),
+                result.failures,
+            )
+            assertFalse(result.isSuccessful)
+        }
+
+        @Test
+        fun `failure before flow creation records type and nullable message`() = runBlocking {
+            val provider = object : StreamingDiagnosticProvider {
+                override val id = "before-flow"
+
+                override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> =
+                    throw IllegalArgumentException()
+            }
+
+            val result = DiagnosticsService(listOf(provider)).collectDiagnostics(testUri, "test content")
+
+            assertTrue(result.diagnostics.isEmpty())
+            assertEquals(
+                listOf(DiagnosticProviderFailure("before-flow", IllegalArgumentException::class.java.name, null)),
+                result.failures,
+            )
+            assertFalse(result.isSuccessful)
+        }
+
+        @Test
+        fun `checked provider exceptions retain healthy diagnostics`() = runBlocking {
+            val failing = streamingProvider("io") { throw IOException("Provider read failed") }
+            val healthy = streamingProvider("healthy") { emit(createTestDiagnostic("Healthy")) }
+
+            val result = DiagnosticsService(listOf(failing, healthy)).collectDiagnostics(testUri, "test content")
+
+            assertEquals(listOf("Healthy"), result.diagnostics.map { it.message })
+            assertEquals(
+                DiagnosticProviderFailure("io", IOException::class.java.name, "Provider read failed"),
+                result.failures.single(),
+            )
+            assertFalse(result.isSuccessful)
+        }
+
+        @Test
+        fun `failures follow registration order after reverse completion`() = runBoundedTest {
+            val secondFinished = CompletableDeferred<Unit>()
+            val first = streamingProvider("first") {
+                secondFinished.await()
+                error("First failed")
+            }
+            val second = streamingProvider("second") {
+                currentCoroutineContext().job.invokeOnCompletion { secondFinished.complete(Unit) }
+                error("Second failed")
+            }
+
+            val result = DiagnosticsService(listOf(first, second)).collectDiagnostics(testUri, "test content")
+
+            assertEquals(listOf("first", "second"), result.providerIds)
+            assertEquals(listOf("first", "second"), result.failures.map { it.providerId })
+            assertFalse(result.isSuccessful)
+        }
+
+        @Test
+        fun `provider cancellation releases an active peer`() = runBoundedTest {
+            val started = CompletableDeferred<Unit>()
+            val released = CompletableDeferred<Unit>()
+            val waiting = streamingProvider("waiting") {
+                try {
+                    started.complete(Unit)
+                    awaitCancellation()
+                } finally {
+                    released.complete(Unit)
+                }
+            }
+            val cancelled = streamingProvider("cancelled") {
+                started.await()
+                throw CancellationException("Provider aborted")
+            }
+
+            val failure = assertFailsWith<CancellationException> {
+                DiagnosticsService(listOf(waiting, cancelled)).collectDiagnostics(testUri, "test content")
+            }
+
+            assertEquals("Provider aborted", failure.message)
+            assertTrue(released.isCompleted)
+        }
+
+        @Test
+        fun `fatal provider errors propagate`() = runBlocking {
+            val fatal = streamingProvider("fatal") { throw LinkageError("Broken provider") }
+
+            val failure = assertFailsWith<LinkageError> {
+                DiagnosticsService(listOf(fatal)).collectDiagnostics(testUri, "test content")
+            }
+
+            assertEquals("Broken provider", failure.message)
+        }
+
+        @Test
+        fun `a provider cancelling its own coroutine cannot report success`() = runBlocking {
+            val cancelled = streamingProvider("self-cancelled") {
+                currentCoroutineContext().cancel(CancellationException("Provider stopped"))
+            }
+
+            val failure = assertFailsWith<CancellationException> {
+                DiagnosticsService(listOf(cancelled)).collectDiagnostics(testUri, "test content")
+            }
+
+            assertEquals("Provider stopped", failure.message)
+        }
+
+        private fun <T> runBoundedTest(block: suspend CoroutineScope.() -> T): T = runBlocking {
+            withTimeout(COORDINATED_TEST_TIMEOUT_MS, block)
+        }
+
+        private fun streamingProvider(
+            id: String,
+            block: suspend FlowCollector<Diagnostic>.() -> Unit,
+        ): StreamingDiagnosticProvider = object : StreamingDiagnosticProvider {
+            override val id = id
+
+            override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow(block)
+        }
+    }
+
     // ==================== Integration Tests ====================
 
     @Test
@@ -331,10 +538,8 @@ class DiagnosticsServiceTest {
     }
 
     @Test
-    fun `handles CodeNarcDiagnosticProvider via adapter`(): Unit = runBlocking {
-        // NOTE: This is a slower integration test with real CodeNarc
-        // Given: Groovy code with a known CodeNarc violation (trailing whitespace)
-        val groovySourceWithViolation = """
+    fun `adapts a legacy provider registered as CodeNarc`(): Unit = runBlocking {
+        val groovySource = """
             class Example {
                 def method() {
                     println "hello"
@@ -342,8 +547,7 @@ class DiagnosticsServiceTest {
             }
         """.trimIndent()
 
-        // This test would require real CodeNarcDiagnosticProvider setup
-        // For now, we test the adapter pattern works with mock
+        // Check the adapter and CodeNarc provider ID using a legacy provider test double.
         val mockDiagnostic = createTestDiagnostic("TrailingWhitespace", 2)
         val mockCodeNarc = TestLegacyDiagnosticProvider(listOf(mockDiagnostic))
         val adapter = DiagnosticProviderAdapter(
@@ -358,7 +562,7 @@ class DiagnosticsServiceTest {
         )
 
         // When
-        val result = service.getDiagnostics(testUri, groovySourceWithViolation)
+        val result = service.getDiagnostics(testUri, groovySource)
 
         // Then
         assertEquals(1, result.size)
