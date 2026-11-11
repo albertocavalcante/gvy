@@ -126,6 +126,7 @@ describe("package.json manifest", () => {
       "groovy.languageServer.javaHome",
       "groovy.java.home",
       "groovy.server.vmargs",
+      "groovy.server.vmargsDefaults",
       "groovy.configuration.runtimes",
       "groovy.project.javaHome",
       "groovy.ai.tools.enabled",

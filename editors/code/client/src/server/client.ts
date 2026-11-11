@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { workspace, ExtensionContext, window, commands } from "vscode";
 import {
   CloseAction,
+  CloseHandlerResult,
   ErrorHandler,
   LanguageClient,
   LanguageClientOptions,
@@ -56,6 +57,9 @@ let clientResources: vscode.Disposable[] = [];
  * client that is still starting, so overlapping calls used to orphan a JVM.
  */
 let lifecycle: Promise<unknown> = Promise.resolve();
+/** Args array shared with the current client's ServerOptions; see refreshLaunchArgs. */
+let launchArgs:
+  { args: string[]; jarPath: string; javaVersion?: number } | undefined;
 
 const startedListeners = new Set<() => void>();
 
@@ -77,13 +81,23 @@ export function onClientStarted(listener: () => void): vscode.Disposable {
 function abandonableErrorHandler(
   fallback: () => ErrorHandler,
   isAbandoned: () => boolean,
+  beforeRestart: () => void = () => undefined,
 ): ErrorHandler {
   return {
     error: (error, message, count) => fallback().error(error, message, count),
-    closed: () =>
-      isAbandoned()
-        ? { action: CloseAction.DoNotRestart, handled: true }
-        : fallback().closed(),
+    closed: () => {
+      if (isAbandoned()) {
+        return { action: CloseAction.DoNotRestart, handled: true };
+      }
+      const refresh = (result: CloseHandlerResult): CloseHandlerResult => {
+        if (result.action === CloseAction.Restart) {
+          beforeRestart();
+        }
+        return result;
+      };
+      const result = fallback().closed();
+      return result instanceof Promise ? result.then(refresh) : refresh(result);
+    },
   };
 }
 
@@ -198,6 +212,29 @@ async function getServerJarPath(): Promise<string> {
   }
 }
 
+function currentJavaArgs(jarPath: string, javaVersion?: number): string[] {
+  const config = getConfiguration();
+  return buildJavaArgs({
+    jarPath,
+    javaVersion,
+    vmArgs: config.serverVmArgs,
+    useDefaultVmArgs: config.serverVmArgsDefaults,
+  });
+}
+
+/**
+ * The languageclient re-reads the (shared) args array each time it respawns
+ * a crashed server, so rebuilding it in place makes automatic restarts use
+ * the current `groovy.server.vmargs` instead of the activation-time value.
+ */
+function refreshLaunchArgs(): void {
+  if (!launchArgs) {
+    return;
+  }
+  const { args, jarPath, javaVersion } = launchArgs;
+  args.splice(0, args.length, ...currentJavaArgs(jarPath, javaVersion));
+}
+
 /**
  * Creates server options for launching the Groovy Language Server
  */
@@ -216,12 +253,10 @@ async function createServerOptions(): Promise<ServerOptions> {
 
   const javaExecutable = getJavaExecutable(javaValidation.resolution);
 
-  // JVM options (user-configurable) go before -jar
-  const args = buildJavaArgs({
-    jarPath,
-    javaVersion: javaValidation.resolution?.version,
-    vmArgs: getConfiguration().serverVmArgs,
-  });
+  // JVM options (defaults + user-configurable) go before -jar
+  const javaVersion = javaValidation.resolution?.version;
+  const args = currentJavaArgs(jarPath, javaVersion);
+  launchArgs = { args, jarPath, javaVersion };
 
   // Server launch options
   const serverOptions: ServerOptions = {
@@ -471,6 +506,7 @@ async function doStart(): Promise<void> {
     clientOptions.errorHandler = abandonableErrorHandler(
       () => (defaultErrorHandler ??= created.createDefaultErrorHandler()),
       () => abandoned,
+      refreshLaunchArgs,
     );
 
     // The id is the configuration section the client reads

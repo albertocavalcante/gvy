@@ -618,10 +618,14 @@
           "items": {
             "type": "string"
           },
-          "default": [
-            "-XX:+ExitOnOutOfMemoryError"
-          ],
-          "description": "JVM options passed to the language server before -jar, for example [\"-Xmx2g\"]. The default makes the server exit on OutOfMemoryError so it is restarted automatically. Setting this replaces the default list. Non-string entries are ignored. Requires a server restart."
+          "default": [],
+          "description": "Extra JVM options for the language server, for example [\"-Xmx4g\"]. They are appended after the built-in defaults (see groovy.server.vmargsDefaults), so for -X/-XX options yours win. Selecting another collector such as -XX:+UseParallelGC drops the defaults that only apply to G1. Non-string entries are ignored. Requires a server restart."
+        },
+        "groovy.server.vmargsDefaults": {
+          "scope": "machine",
+          "type": "boolean",
+          "default": true,
+          "description": "Prepend the built-in memory-friendly JVM defaults (-XX:+ExitOnOutOfMemoryError -Xms64m -Xmx2g -XX:+UseG1GC -XX:G1PeriodicGCInterval=60000 -XX:MinHeapFreeRatio=20 -XX:MaxHeapFreeRatio=40 -XX:+UseStringDeduplication) to groovy.server.vmargs. Set to false to pass only groovy.server.vmargs. Requires a server restart."
         },
         "groovy.server.logLevel": {
           "type": "string",
