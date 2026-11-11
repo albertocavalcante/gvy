@@ -265,29 +265,29 @@ data class ScenarioContext(
         return true
     }
 
-    private fun evaluateSnapshot(check: JsonCheck, pathExists: Boolean, readValue: Any?, quiet: Boolean): Boolean {
+    /**
+     * Quiet mode is the matcher of a notification wait, which runs once per candidate notification: there a snapshot
+     * check only needs its JSONPath to exist. The compare, and the update in update mode, happen in the final
+     * non-quiet pass over the notification that was accepted, so a mismatch keeps its diff and an update writes once.
+     */
+    internal fun evaluateSnapshot(check: JsonCheck, pathExists: Boolean, readValue: Any?, quiet: Boolean): Boolean {
         val name = checkNotNull(check.expect.snapshot)
-        check.expect.requireKnownKeys()
         if (!pathExists) {
             if (quiet) return false
             throw AssertionError("Snapshot '$name' needs jsonPath '${check.jsonPath}', but the path was not found")
         }
+        if (quiet) return true
         val update = System.getProperty(Snapshots.UPDATE_PROPERTY) == "true"
-        if (update && !quiet) Snapshots.requireUpdateAllowed(System.getenv()) { System.getProperty(it) }
+        if (update) Snapshots.requireUpdateAllowed(System.getenv()) { System.getProperty(it) }
         val dir = resolveResourceDir(Snapshots.DIR_PROPERTY)
             ?: error("System property '${Snapshots.DIR_PROPERTY}' not set; it must point at e2e/resources/snapshots")
-        try {
-            Snapshots.verify(
-                dir = java.nio.file.Path.of(dir),
-                name = name,
-                node = wrapJavaObject(readValue),
-                forms = WorkspaceForms.of(workspace.rootDir),
-                update = update && !quiet,
-            )
-        } catch (ex: AssertionError) {
-            if (quiet) return false
-            throw ex
-        }
+        Snapshots.verify(
+            dir = java.nio.file.Path.of(dir),
+            name = name,
+            node = wrapJavaObject(readValue),
+            forms = WorkspaceForms.of(workspace.rootDir),
+            update = update,
+        )
         return true
     }
 

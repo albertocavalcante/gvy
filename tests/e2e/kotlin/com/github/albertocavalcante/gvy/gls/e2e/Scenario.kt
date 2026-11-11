@@ -124,10 +124,34 @@ class JacksonScenarioParser : ScenarioParser {
 
     override fun parseScenarioDefinition(yaml: String): ScenarioDefinition = try {
         // YAML file structure matches Scenario, so we parse Scenario and wrap it
+        requireWellFormedSnapshotExpectations(objectMapper.readTree(yaml))
         val scenario = objectMapper.readValue(yaml, Scenario::class.java)
         ScenarioDefinition(scenario = scenario)
     } catch (e: Exception) {
         throw ScenarioParseException("Failed to parse scenario YAML", e)
+    }
+}
+
+/**
+ * Rejects an `expect:` object that uses `snapshot`, or a key that looks like a misspelling of it (`snapshto`).
+ *
+ * Other expectation types still ignore unknown keys (see TODO(#1546)), so without this check a typo would silently
+ * turn the expectation into the default `EXISTS` and always pass. A snapshot expectation holds `snapshot` alone.
+ */
+internal fun requireWellFormedSnapshotExpectations(node: com.fasterxml.jackson.databind.JsonNode) {
+    when {
+        node.isObject -> node.fields().forEach { (key, child) ->
+            if (key == "expect" && child.isObject) {
+                val keys = child.fieldNames().asSequence().toList()
+                val snapLike = keys.filter { it.startsWith("snap", ignoreCase = true) }
+                require(snapLike.isEmpty() || keys == listOf("snapshot")) {
+                    "A snapshot expectation takes the single key 'snapshot'; found keys $keys"
+                }
+            }
+            requireWellFormedSnapshotExpectations(child)
+        }
+
+        node.isArray -> node.forEach { requireWellFormedSnapshotExpectations(it) }
     }
 }
 
@@ -364,25 +388,9 @@ data class JsonExpectation(
     /** Name of a snapshot file under the snapshot directory; compared instead of [type], so it excludes [value]. */
     val snapshot: String? = null,
 ) {
-    /** Keys Jackson did not recognize. Most expectations tolerate them (see TODO(#1546)); a snapshot rejects them. */
-    @get:com.fasterxml.jackson.annotation.JsonIgnore
-    val unknownKeys: MutableSet<String> = linkedSetOf()
-
-    @com.fasterxml.jackson.annotation.JsonAnySetter
-    fun recordUnknownKey(key: String, @Suppress("UNUSED_PARAMETER") ignored: Any?) {
-        unknownKeys += key
-    }
-
     init {
         require(snapshot == null || (value == null && values.isEmpty())) {
             "A snapshot expectation cannot also set value or values"
-        }
-    }
-
-    /** Fails if this snapshot expectation carries keys the model does not know, such as a misspelled `snapshto`. */
-    fun requireKnownKeys() {
-        require(unknownKeys.isEmpty()) {
-            "Unknown key(s) ${unknownKeys.sorted()} in a snapshot expectation; allowed keys are snapshot only"
         }
     }
 }

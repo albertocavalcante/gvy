@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -9,6 +10,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import org.opentest4j.AssertionFailedError
 import java.nio.file.Files
 import java.nio.file.Path
+
+private val logger = KotlinLogging.logger("Snapshots")
 
 /**
  * The textual forms a workspace root takes in server output. [uris] and [paths] are replaced by
@@ -28,17 +31,26 @@ internal data class WorkspaceForms(val uris: List<String>, val paths: List<Strin
             val paths = linkedSetOf<String>()
             for ((path, uri) in roots) {
                 val trimmedPath = path.trimEnd('/', '\\')
-                paths += trimmedPath
-                paths += trimmedPath.replace('\\', '/')
-                paths += trimmedPath.replace('/', '\\')
+                for (form in listOf(trimmedPath, trimmedPath.replace('\\', '/'), trimmedPath.replace('/', '\\'))) {
+                    paths += form
+                    if (WINDOWS_DRIVE.containsMatchIn(form)) paths += form.replaceFirstChar { it.lowercaseChar() }
+                }
 
                 val trimmedUri = uri.trimEnd('/')
                 val authorityless = trimmedUri.replaceFirst("file:///", "file:/")
                 for (form in listOf(trimmedUri, authorityless)) {
-                    uris += form
-                    uris += form.replace(DRIVE_REGEX) { "${it.groupValues[1]}${it.groupValues[2].lowercase()}:" }
-                    uris += form.replace(DRIVE_REGEX) { "${it.groupValues[1]}${it.groupValues[2].lowercase()}%3A" }
-                    uris += form.replace(DRIVE_REGEX) { "${it.groupValues[1]}${it.groupValues[2]}%3A" }
+                    val variants = listOf(
+                        form,
+                        form.replace(DRIVE_REGEX) { "${it.groupValues[1]}${it.groupValues[2].lowercase()}:" },
+                        form.replace(DRIVE_REGEX) { "${it.groupValues[1]}${it.groupValues[2].lowercase()}%3A" },
+                        form.replace(DRIVE_REGEX) { "${it.groupValues[1]}${it.groupValues[2]}%3A" },
+                    )
+                    for (variant in variants) {
+                        uris += variant
+                        // Servers differ on percent-escape case (%3a vs %3A) and on whether a space is escaped.
+                        uris += PERCENT_ESCAPE.replace(variant) { it.value.lowercase() }
+                        uris += variant.replace("%20", " ")
+                    }
                 }
             }
             uris.removeIf { it.isEmpty() || it == "file:/" }
@@ -46,6 +58,8 @@ internal data class WorkspaceForms(val uris: List<String>, val paths: List<Strin
             return WorkspaceForms(uris.sortedByDescending { it.length }, paths.sortedByDescending { it.length })
         }
 
+        private val WINDOWS_DRIVE = "^[A-Za-z]:[\\\\/]".toRegex()
+        private val PERCENT_ESCAPE = "%[0-9A-Fa-f]{2}".toRegex()
         private val DRIVE_REGEX = "(file:/+)([A-Za-z]):".toRegex()
     }
 }
@@ -61,7 +75,13 @@ internal object Snapshots {
     const val WORKSPACE_PATH = "{{workspace.path}}"
 
     /** Identity hash codes such as `Foo@1a2b3c4d` change per run, so a snapshot holding one can never be stable. */
-    private val IDENTITY_HASH = "[A-Za-z_$][\\w$]*@[0-9a-f]{6,8}\\b".toRegex()
+    private val IDENTITY_HASH = listOf(
+        "[A-Za-z_$][\\w$]*@[0-9a-f]{6,8}\\b", // Foo@1a2b3c4d
+        "[;\\]]@[0-9a-f]{1,8}\\b", // [Ljava.lang.String;@6d06d69c, int[]@1f
+        "(?:[a-z_$][\\w$]*\\.)+[A-Z_$][\\w$]*@[0-9a-f]{1,8}\\b", // java.lang.Object@1f (short hash)
+    ).joinToString("|").toRegex()
+
+    private const val MAX_DIFF_LINES = 2000
 
     private val prettyJson = Json { prettyPrint = true }
 
@@ -95,16 +115,27 @@ internal object Snapshots {
     }
 
     private fun normalizeTree(node: JsonElement, forms: WorkspaceForms): JsonElement = when (node) {
-        is JsonObject -> JsonObject(
-            node.entries
-                .map { (key, value) -> normalize(key, forms) to normalizeTree(value, forms) }
-                .sortedBy { it.first }
-                .toMap(LinkedHashMap()),
-        )
+        is JsonObject -> {
+            val entries = node.entries.map { (key, value) -> normalize(key, forms) to normalizeTree(value, forms) }
+            val collisions = entries.groupBy({ it.first }, { it.second }).filterValues { it.size > 1 }.keys
+            check(collisions.isEmpty()) {
+                "Object keys collide after workspace normalization: $collisions. " +
+                    "Assert a narrower jsonPath so each workspace file appears once."
+            }
+            JsonObject(entries.sortedBy { it.first }.toMap(LinkedHashMap()))
+        }
 
         is JsonArray -> JsonArray(node.map { normalizeTree(it, forms) })
         is JsonPrimitive -> if (node.isString) JsonPrimitive(normalize(node.content, forms)) else node
         JsonNull -> node
+    }
+
+    /** An empty result usually means a filter or wildcard matched nothing; never record that as expected output. */
+    private fun requireWorthWriting(name: String, node: JsonElement?) {
+        check(node != null && node !is JsonNull && !(node is JsonArray && node.isEmpty())) {
+            "Refusing to write snapshot '$name': the value is ${node ?: "null"}, so the jsonPath filter or wildcard " +
+                "probably matched nothing. Fix the path or the server output first."
+        }
     }
 
     /** Throws if [rendered] holds an identity hash code; runs in update mode too so none is ever written. */
@@ -122,6 +153,9 @@ internal object Snapshots {
     fun requireUpdateAllowed(env: Map<String, String?>, props: (String) -> String?) {
         check(env["GITHUB_ACTIONS"].isNullOrEmpty()) {
             "Refusing to update snapshots when GITHUB_ACTIONS is set; update locally and commit the files."
+        }
+        check(env["CI"].isNullOrEmpty()) {
+            "Refusing to update snapshots when CI is set; update locally and commit the files."
         }
         check(env["TEST_TARGET"].isNullOrEmpty() && props("$DIR_PROPERTY.marker") == null) {
             "Refusing to update snapshots under Bazel; run the Gradle e2eTest task with -D$UPDATE_PROPERTY=true."
@@ -143,6 +177,13 @@ internal object Snapshots {
     fun diff(expected: String, actual: String): String {
         val a = expected.removeSuffix("\n").lines()
         val b = actual.removeSuffix("\n").lines()
+        if (a.size > MAX_DIFF_LINES || b.size > MAX_DIFF_LINES) {
+            val first = a.zip(b).indexOfFirst { (x, y) -> x != y }.let { if (it < 0) minOf(a.size, b.size) else it }
+            return "Too large to diff line by line (expected ${a.size} lines, actual ${b.size} lines). " +
+                "First difference at line ${first + 1}:\n- ${a.getOrElse(first) {
+                    "<end>"
+                }}\n+ ${b.getOrElse(first) { "<end>" }}\n"
+        }
         val lcs = Array(a.size + 1) { IntArray(b.size + 1) }
         for (i in a.indices.reversed()) {
             for (j in b.indices.reversed()) {
@@ -179,9 +220,11 @@ internal object Snapshots {
         val actual = render(node, forms)
         requireStable(name, actual)
         if (update) {
+            requireWorthWriting(name, node)
             if (!Files.exists(file) || Files.readString(file).replace("\r\n", "\n") != actual) {
                 Files.createDirectories(file.parent)
                 Files.writeString(file, actual)
+                logger.warn { "Updated snapshot: $file" }
             }
             return
         }
@@ -194,9 +237,14 @@ internal object Snapshots {
         }
         val expected = Files.readString(file).replace("\r\n", "\n")
         if (expected != actual) {
+            val note = if (expected.trimEnd('\n') == actual.trimEnd('\n')) {
+                "The texts differ only in trailing newlines.\n"
+            } else {
+                ""
+            }
             throw AssertionFailedError(
                 "Snapshot '$name' differs ($file). Review the change, then run with -D$UPDATE_PROPERTY=true " +
-                    "(local runs only) to accept it.\n${diff(expected, actual)}",
+                    "(local runs only) to accept it.\n$note${diff(expected, actual)}",
                 expected,
                 actual,
             )

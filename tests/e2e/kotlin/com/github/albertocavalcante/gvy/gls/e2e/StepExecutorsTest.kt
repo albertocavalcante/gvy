@@ -475,4 +475,22 @@ class StepExecutorsTest {
                     "no unconsumed 'groovy/status' notification arrived",
             )
     }
+
+    @Test
+    fun `quiet snapshot check matches on path existence only and never touches snapshot files`() {
+        val check = JsonCheck("$.a", JsonExpectation(snapshot = "never/read.md"))
+        val node = buildJsonObject { put("a", JsonPrimitive("x")) }
+
+        // No snapshotDir property is set here: a quiet check must not need it, nor compare or write.
+        assertThat(context.evaluateCheck(node, check, quiet = true)).isTrue()
+        assertThat(context.evaluateCheck(buildJsonObject {}, check, quiet = true)).isFalse()
+    }
+
+    @Test
+    fun `non-quiet snapshot check compares and fails when the snapshot is missing`() {
+        val check = JsonCheck("$.a", JsonExpectation(snapshot = "x.md"))
+        val node = buildJsonObject { put("a", JsonPrimitive("x")) }
+
+        assertThatThrownBy { context.evaluateCheck(node, check) }.hasMessageContaining("not found")
+    }
 }

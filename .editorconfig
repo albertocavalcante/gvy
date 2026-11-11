@@ -25,6 +25,10 @@ indent_size = 2
 [*.{md,txt}]
 trim_trailing_whitespace = false
 
+# Snapshot files hold server output verbatim.
+[tests/e2e/resources/snapshots/**]
+trim_trailing_whitespace = false
+
 [*.{gradle,gradle.kts}]
 indent_size = 4
 

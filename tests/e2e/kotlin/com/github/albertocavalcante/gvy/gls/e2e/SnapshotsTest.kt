@@ -176,4 +176,67 @@ class SnapshotsTest {
             System.clearProperty("$prop.marker")
         }
     }
+
+    @Test
+    fun `object keys colliding after normalization fail`() {
+        val node = Json.parseToJsonElement(
+            """{"file:///private/var/folders/x/ws/A":1,"file:/private/var/folders/x/ws/A":2}""",
+        )
+
+        assertThatThrownBy { Snapshots.render(node, posix) }.hasMessageContaining("collide")
+    }
+
+    @Test
+    fun `trailing newline only difference is called out`() {
+        Files.writeString(tempDir.resolve("s.md"), "a\n\n")
+
+        assertThatThrownBy { Snapshots.verify(tempDir, "s.md", JsonPrimitive("a"), posix, update = false) }
+            .hasMessageContaining("only in trailing newlines")
+    }
+
+    @Test
+    fun `identity hash guard catches arrays and qualified names but not emails`() {
+        listOf("[Ljava.lang.String;@6d06d69c", "int[]@1f", "java.lang.Object@1f", "a.B@abc").forEach {
+            assertThatThrownBy { Snapshots.requireStable("n", "x $it y") }.hasMessageContaining("identity hash")
+        }
+        listOf("john.doe@abc.com", "me@dead", "a.b@c", "x@1f").forEach {
+            Snapshots.requireStable("n", "mail $it")
+        }
+    }
+
+    @Test
+    fun `update mode refuses empty results and logs nothing written`() {
+        listOf(Json.parseToJsonElement("[]"), kotlinx.serialization.json.JsonNull, null).forEach {
+            assertThatThrownBy { Snapshots.verify(tempDir, "e.json", it, posix, update = true) }
+                .hasMessageContaining("matched nothing")
+        }
+        assertThat(Files.exists(tempDir.resolve("e.json"))).isFalse()
+    }
+
+    @Test
+    fun `update mode is refused when CI is set`() {
+        assertThatThrownBy { Snapshots.requireUpdateAllowed(mapOf("CI" to "true")) { null } }
+            .hasMessageContaining("CI")
+    }
+
+    @Test
+    fun `normalizes lowercase drive letters and percent escape variants`() {
+        val forms = WorkspaceForms.from(listOf("C:\\My Ws" to "file:///C:/My%20Ws/"))
+
+        val text = "c:\\My Ws\\A file:///c%3a/My%20Ws/B file:///c:/My Ws/C"
+
+        assertThat(Snapshots.normalize(text, forms))
+            .isEqualTo("{{workspace.path}}\\A {{workspace.uri}}B {{workspace.uri}}C")
+    }
+
+    @Test
+    fun `huge diffs are summarized with the first differing line`() {
+        val expected = (1..3000).joinToString("\n") { "l$it" }
+        val actual = expected.replace("l1500\n", "changed\n")
+
+        val diff = Snapshots.diff(expected, actual)
+
+        assertThat(diff).contains("3000 lines", "First difference at line 1500", "- l1500", "+ changed")
+        assertThat(diff.lines().size).isLessThan(10)
+    }
 }

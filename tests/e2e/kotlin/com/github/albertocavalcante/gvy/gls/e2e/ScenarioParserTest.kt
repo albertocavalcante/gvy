@@ -163,16 +163,33 @@ class ScenarioParserTest {
         val expectation = parsedExpectation("snapshot: hover/println.md")
 
         assertThat(expectation.snapshot).isEqualTo("hover/println.md")
-        expectation.requireKnownKeys()
     }
 
     @Test
     fun `unknown key next to a snapshot is rejected`() {
-        val expectation = parsedExpectation("snapshto: x\nsnapshot: a.md")
+        assertThatThrownBy { parsedExpectation("snapshto: x\nsnapshot: a.md") }
+            .isInstanceOf(ScenarioParseException::class.java)
+            .hasRootCauseMessage(
+                "A snapshot expectation takes the single key 'snapshot'; found keys [snapshto, snapshot]",
+            )
+    }
 
-        assertThatThrownBy { expectation.requireKnownKeys() }
-            .isInstanceOf(IllegalArgumentException::class.java)
-            .hasMessageContaining("snapshto")
+    @Test
+    fun `misspelled snapshot key on its own is rejected instead of defaulting to EXISTS`() {
+        assertThatThrownBy { parsedExpectation("snapshto: a.md") }
+            .isInstanceOf(ScenarioParseException::class.java)
+            .hasRootCauseMessage("A snapshot expectation takes the single key 'snapshot'; found keys [snapshto]")
+    }
+
+    @Test
+    fun `type next to a snapshot is rejected`() {
+        assertThatThrownBy { parsedExpectation("type: EQUALS\nsnapshot: a.md") }
+            .isInstanceOf(ScenarioParseException::class.java)
+    }
+
+    @Test
+    fun `other expectations still tolerate unknown keys`() {
+        assertThat(parsedExpectation("type: EXISTS\nmessage: hi").snapshot).isNull()
     }
 
     @Test
