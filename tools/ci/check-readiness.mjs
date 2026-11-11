@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,6 +35,18 @@ export function evaluateReadiness(needs) {
   return { schemaVersion: 1, ok: errors.length === 0, applicability, jobs, errors };
 }
 
+export function combineReadiness(graph, runner, context) {
+  const report = { ...graph, errors: [...graph.errors], graphOk: graph.ok, context, runnerDiagnostics: runner ?? null };
+  if (runner?.schemaVersion !== 1 || runner?.ok !== true || runner?.observationComplete !== true) {
+    report.errors.push('Actions diagnostic observation failed or is missing/incomplete.');
+  }
+  for (const field of ['headSha', 'testedSha', 'runId', 'runAttempt']) {
+    if (!context[field] || String(runner?.context?.[field]) !== String(context[field])) report.errors.push(`Actions diagnostic ${field} does not match this workflow.`);
+  }
+  report.ok = report.errors.length === 0;
+  return report;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   let report;
   try {
@@ -42,18 +54,22 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } catch (error) {
     report = { schemaVersion: 1, ok: false, errors: [`Invalid needs JSON: ${error.message}`] };
   }
-  report.context = {
+  const context = {
     headSha: process.env.SOURCE_HEAD_SHA,
     testedSha: process.env.GITHUB_SHA,
     runId: process.env.GITHUB_RUN_ID,
     runAttempt: process.env.GITHUB_RUN_ATTEMPT,
   };
+  let runner;
+  try { runner = JSON.parse(readFileSync(process.argv[3], 'utf8')); }
+  catch (error) { report.errors.push(`Cannot read Actions diagnostic receipt: ${error.message}`); }
+  report = combineReadiness(report, runner, context);
   const output = process.argv[2];
-  if (!output) throw new Error('Usage: NEEDS_JSON=... node check-readiness.mjs REPORT.json');
+  if (!output) throw new Error('Usage: NEEDS_JSON=... node check-readiness.mjs REPORT.json RUNNER_REPORT.json');
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
   const summary = `## Required CI readiness: ${report.ok ? 'passed' : 'failed'}\n\n${
-    report.errors.length ? report.errors.map((error) => `- ${error}`).join('\n') : 'All applicable producers succeeded; excluded producers were explicitly skipped.'
+    report.errors.length ? report.errors.map((error) => `- ${error}`).join('\n') : 'All applicable producers succeeded; excluded producers were explicitly skipped; completed-job Actions diagnostics were accounted for.'
   }\n`;
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   console.log(summary);

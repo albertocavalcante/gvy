@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { evaluateReadiness } from './check-readiness.mjs';
+import { combineReadiness, evaluateReadiness } from './check-readiness.mjs';
 
 function successful(main = true, bazel = true) {
   return {
@@ -69,4 +69,18 @@ test('excluded jobs must be skipped; failures remain visible', () => {
 
 test('malformed needs fails closed with a report', () => {
   for (const value of [null, undefined, [], {}, 'success']) assert.equal(evaluateReadiness(value).ok, false);
+});
+
+test('final policy verdict requires the current successful Actions diagnostic receipt', () => {
+  const context = { headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: '2' };
+  const graph = evaluateReadiness(successful());
+  const runner = { schemaVersion: 1, ok: true, observationComplete: true, context };
+  assert.equal(combineReadiness(graph, runner, context).ok, true);
+  for (const bad of [undefined, { ...runner, ok: false }, { ...runner, observationComplete: false }]) {
+    assert.equal(combineReadiness(graph, bad, context).ok, false);
+  }
+  for (const field of Object.keys(context)) {
+    assert.equal(combineReadiness(graph, { ...runner, context: { ...context, [field]: 'stale' } }, context).ok, false, field);
+  }
+  assert.equal(combineReadiness(evaluateReadiness({}), runner, context).ok, false);
 });
