@@ -22,7 +22,7 @@ import java.nio.file.Paths
  * CRITICAL FIX: This implementation fixes the diagnostic triplication bug by ensuring
  * violations are only processed from leaf nodes in the CodeNarc Results hierarchy.
  */
-@Suppress("TooGenericExceptionCaught") // CodeNarc interop layer handles all analysis errors
+@Suppress("TooGenericExceptionCaught") // Legacy filename/conversion recovery; analysis failures propagate.
 class CodeNarcDiagnosticProvider(
     private val workspaceContext: WorkspaceContext,
     private val compilationAccessor: CompilationAccessor? = null,
@@ -69,7 +69,7 @@ class CodeNarcDiagnosticProvider(
      * @param uri The URI of the file (optional, used for AST-aware positioning)
      * @return List of LSP diagnostics representing violations found
      */
-    fun analyzeAndGetDiagnostics(sourceCode: String, fileName: String, uri: URI? = null): List<Diagnostic> = try {
+    fun analyzeAndGetDiagnostics(sourceCode: String, fileName: String, uri: URI? = null): List<Diagnostic> {
         logger.debug { "Starting CodeNarc analysis for: $fileName" }
 
         // Resolve the appropriate ruleset configuration
@@ -91,21 +91,7 @@ class CodeNarcDiagnosticProvider(
             ignoredRulesetNotice(rulesetConfig.ignoredWorkspaceRulesets, uri)
 
         logger.info { "CodeNarc analysis completed for $fileName: ${diagnostics.size} diagnostics" }
-        diagnostics
-    } catch (e: IllegalStateException) {
-        // Gracefully handle missing rulesets (e.g., when running as fat JAR without resources)
-        if (e.message?.contains("Failed to load any ruleset") == true) {
-            logger.info { "CodeNarc rulesets not available for $fileName - skipping analysis" }
-            emptyList()
-        } else {
-            // Re-throw other IllegalStateExceptions
-            logger.error(e) { "Failed to analyze file: $fileName" }
-            emptyList()
-        }
-    } catch (e: Exception) {
-        logger.error(e) { "Failed to analyze file: $fileName" }
-        // Return empty list on failure - LSP should continue functioning
-        emptyList()
+        return diagnostics
     }
 
     /**
