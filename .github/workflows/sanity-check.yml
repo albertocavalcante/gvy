@@ -18,7 +18,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -31,6 +31,19 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: bash tools/ci/check-conflict-markers.sh "origin/${BASE_REF}"
 
+  ext-latest-selftest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Self-test make ext-latest helpers
+        run: bash tools/ext-latest_test.sh
+
   check-file-size:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -38,7 +51,7 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false

@@ -13,7 +13,7 @@ ifeq ($(shell uname),Darwin)
     endif
 endif
 
-.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single ext-install ext-build ext-test ext-package
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single ext-install ext-build ext-test ext-package ext-latest ext-rollback ext-latest-test
 
 # Default target
 help:
@@ -39,6 +39,8 @@ help:
 	@echo "  ext-build   - Build the extension"
 	@echo "  ext-test    - Run extension tests"
 	@echo "  ext-package - Package the extension (.vsix)"
+	@echo "  ext-latest  - Install the newest green origin/main build (DRY_RUN=1 to preview)"
+	@echo "  ext-rollback - Reinstall the previous kept VSIX"
 	@echo ""
 	@echo "Install Extension to Editors:"
 	@echo "  ext-vscode    - Install to VS Code"
@@ -194,6 +196,19 @@ ext-editors: ext-package
 	fi
 	@command -v agy >/dev/null 2>&1 && agy --install-extension $(EXT_VSIX) --force && echo "✅ Antigravity" || echo "⏭️  Antigravity not found"
 	@command -v kiro >/dev/null 2>&1 && kiro --install-extension $(EXT_VSIX) --force && echo "✅ Kiro" || echo "⏭️  Kiro not found"
+
+# Install the newest origin/main build whose CI is green (#1576).
+# Builds in a dedicated cache clone, keeps the last VSIX files for rollback.
+# Usage: make ext-latest [DRY_RUN=1] [FORCE=1] [EXT_EDITORS=code,cursor]; make ext-rollback
+# Knobs and details: editors/code/README.md ("Run the latest green main").
+ext-latest:
+	DRY_RUN=$(DRY_RUN) FORCE=$(FORCE) tools/ext-latest.sh latest
+
+ext-rollback:
+	DRY_RUN=$(DRY_RUN) tools/ext-latest.sh rollback $(ROLLBACK_SHA)
+
+ext-latest-test:
+	bash tools/ext-latest_test.sh
 
 # Viz Desktop App
 viz-run:
