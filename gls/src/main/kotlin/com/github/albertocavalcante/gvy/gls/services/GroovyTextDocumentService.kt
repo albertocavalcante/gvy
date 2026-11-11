@@ -9,6 +9,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
+import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsRunResult
 import com.github.albertocavalcante.gvy.gls.documentation.DocumentationProvider
 import com.github.albertocavalcante.gvy.gls.providers.SignatureHelpProvider
 import com.github.albertocavalcante.gvy.gls.providers.callhierarchy.CallHierarchyProvider
@@ -709,6 +710,10 @@ class GroovyTextDocumentService(
     suspend fun awaitDiagnostics(uri: URI) {
         diagnosticsOrchestrator.awaitDiagnostics(uri)
     }
+
+    /** Returns the retained terminal analysis for the current buffer, including provider failures. */
+    internal suspend fun awaitCurrentDiagnostics(uri: URI, version: Int? = null): DiagnosticsRunResult =
+        diagnosticsOrchestrator.awaitCurrentDiagnostics(uri, version)
 
     /**
      * Notifies that CodeNarc rulesets should be reloaded: clears the resolver's cached project detection and default

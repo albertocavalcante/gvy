@@ -20,6 +20,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -65,7 +66,7 @@ class DiagnosticsOrchestratorSnapshotTest {
             every { result.diagnostics } returns listOf(diagnostic("parser"))
             every { result.parseCompleted } returns true
             coEvery { compilation.compileAsync(any(), uri, any()) } returns CompletableDeferred(result)
-            coEvery { diagnostics.collectDiagnostics(uri, any()) } returns
+            coEvery { diagnostics.collectDiagnostics(uri, any(), any()) } returns
                 DiagnosticsCollectionResult(listOf(diagnostic("provider")), emptyList(), emptyList())
             every { client.publishDiagnostics(capture(publications)) } just Runs
             orchestrator = DiagnosticsOrchestrator(
@@ -101,10 +102,15 @@ class DiagnosticsOrchestratorSnapshotTest {
             every { compilation.onShadowingDocumentClosed(any()) } returns null
             var generation = 0
             coEvery { compilation.compileAsync(any(), uri, any()) } answers {
-                val result = mockk<CompilationResult>()
-                every { result.diagnostics } returns listOf(Fixture.diagnostic("parse ${++generation}"))
-                every { result.parseCompleted } returns true
-                CompletableDeferred(result)
+                CompletableDeferred(
+                    CompilationResult(
+                        isSuccess = true,
+                        ast = null,
+                        diagnostics = listOf(Fixture.diagnostic("parse ${++generation}")),
+                        sourceText = thirdArg(),
+                        parseCompleted = true,
+                    ),
+                )
             }
             every { client.publishDiagnostics(capture(publications)) } just Runs
             val base = ServerConfiguration()
@@ -275,6 +281,10 @@ class DiagnosticsOrchestratorSnapshotTest {
         )
         advanceUntilIdle()
 
+        val result = fixture.service.awaitCurrentDiagnostics(uri, 2)
+        assertTrue(result.failures.isEmpty(), "The terminal analysis must succeed: ${result.failures}")
+        assertEquals(2, result.version)
+        assertEquals(listOf("parse 1"), result.diagnostics.map { it.message })
         assertEquals(listOf(2), fixture.publications.map { it.version })
         assertEquals(listOf("parse 1"), fixture.publications.single().diagnostics.map { it.message })
     }
@@ -295,6 +305,9 @@ class DiagnosticsOrchestratorSnapshotTest {
 
             fixture.service.didClose(DidCloseTextDocumentParams(TextDocumentIdentifier(uri.toString())))
 
+            val result = runBlocking { fixture.service.awaitCurrentDiagnostics(uri, 1) }
+            assertTrue(result.failures.isEmpty(), "The reopened analysis must succeed: ${result.failures}")
+            assertEquals(listOf("parse 2"), result.diagnostics.map { it.message })
             assertEquals(content, fixture.documents.get(uri))
             assertEquals("parse 2", fixture.publications.last().diagnostics.singleOrNull()?.message)
         } finally {

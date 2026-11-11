@@ -43,7 +43,7 @@ class DiagnosticsOrchestratorSharedCompilationIntegrationTest {
             val documents = DocumentProvider().apply { put(uri, content, 17) }
             val compilation = GroovyCompilationService(ioDispatcher = io, documentProvider = documents)
             val providers = mockk<DiagnosticsService>()
-            coEvery { providers.collectDiagnostics(any(), any()) } returns
+            coEvery { providers.collectDiagnostics(any(), any(), any()) } returns
                 DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
             val publications = mutableListOf<PublishDiagnosticsParams>()
             val client = mockk<LanguageClient>()

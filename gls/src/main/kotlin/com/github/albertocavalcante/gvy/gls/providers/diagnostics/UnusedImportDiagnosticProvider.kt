@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.flow.Flow
@@ -30,10 +31,25 @@ class UnusedImportDiagnosticProvider(private val compilationService: GroovyCompi
     // Enabled by default for better UX - this is a common feature users expect
     override val enabledByDefault: Boolean = true
 
-    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
+    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> =
+        diagnosticsFromAst(uri) { compilationService.getAst(uri) as? ModuleNode }
+
+    override suspend fun provideDiagnostics(
+        uri: URI,
+        content: String,
+        compilation: CompilationResult,
+    ): Flow<Diagnostic> = diagnosticsFromAst(uri) {
+        val ast = compilation.ast as? ModuleNode
+        check(ast != null || !compilation.isSuccess) {
+            "Completed compilation has no native AST for unused imports at $uri"
+        }
+        ast
+    }
+
+    private fun diagnosticsFromAst(uri: URI, getAst: () -> ModuleNode?): Flow<Diagnostic> = flow {
         logger.debug { "Checking unused imports for: $uri" }
 
-        val ast = compilationService.getAst(uri) as? ModuleNode
+        val ast = getAst()
         if (ast == null) {
             logger.debug { "No AST available for $uri, skipping unused import check" }
             return@flow

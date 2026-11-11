@@ -181,7 +181,7 @@ class DiagnosticsOrchestrator(
         // A worker/IO exception is not completed parsing, even when parser diagnostics are disabled.
         // Keep its ordinary parser publication, but never certify it as a settled analysis result.
         check(result.parseCompleted) { "Parsing did not complete for ${run.uri}" }
-        val collected = run.settings.service.collectDiagnostics(run.uri, run.snapshot.content)
+        val collected = run.settings.service.collectDiagnostics(run.uri, run.snapshot.content, result)
         val allDiagnostics = parserDiagnostics + collected.diagnostics
         scope.ensureActive()
         if (collected.diagnostics.isNotEmpty()) {

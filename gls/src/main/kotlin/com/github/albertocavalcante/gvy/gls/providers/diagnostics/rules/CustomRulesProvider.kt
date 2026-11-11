@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics.rules
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.DiagnosticRuleConfig
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
@@ -37,11 +38,18 @@ class CustomRulesProvider(
 
     override val enabledByDefault: Boolean = true
 
-    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> = flow {
-        logger.debug { "Running ${rules.size} custom rules for: $uri" }
+    override suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic> =
+        analyzeRules(uri, content) { createContext(uri) }
 
-        // Create context for rules
-        val context = createContext(uri)
+    override suspend fun provideDiagnostics(
+        uri: URI,
+        content: String,
+        compilation: CompilationResult,
+    ): Flow<Diagnostic> = analyzeRules(uri, content) { createContext(uri, compilation) }
+
+    private fun analyzeRules(uri: URI, content: String, contextFactory: () -> RuleContext): Flow<Diagnostic> = flow {
+        logger.debug { "Running ${rules.size} custom rules for: $uri" }
+        val context = contextFactory()
 
         val failures = mutableListOf<CustomRuleFailure>()
         // Execute each enabled rule; ordinary failures do not discard healthy later emissions.
@@ -77,14 +85,25 @@ class CustomRulesProvider(
         if (failures.isNotEmpty()) throw CustomRuleFailuresException(failures)
     }
 
-    private fun createContext(uri: URI): RuleContext = object : RuleContext {
+    private fun createContext(uri: URI, compilation: CompilationResult? = null): RuleContext = object : RuleContext {
         // Lazy AST retrieval - only fetch if rules need it
-        private val astLazy: Any? by lazy { compilationService.getAst(uri) }
+        private val astLazy: Any? by lazy {
+            if (compilation == null) {
+                compilationService.getAst(uri)
+            } else {
+                check(compilation.ast != null || !compilation.isSuccess) {
+                    "Completed compilation has no AST for custom rules at $uri"
+                }
+                compilation.ast
+            }
+        }
 
         override fun getAst(): Any? = astLazy
 
-        override fun hasErrors(): Boolean = compilationService.getDiagnostics(uri).any {
-            it.severity == DiagnosticSeverity.Error
+        override fun hasErrors(): Boolean = if (compilation == null) {
+            compilationService.getDiagnostics(uri).any { it.severity == DiagnosticSeverity.Error }
+        } else {
+            !compilation.isSuccess || compilation.diagnostics.any { it.severity == DiagnosticSeverity.Error }
         }
 
         override fun isJenkinsFile(uri: URI): Boolean {

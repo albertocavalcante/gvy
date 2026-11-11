@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.diagnostics
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import kotlinx.coroutines.flow.Flow
 import org.eclipse.lsp4j.Diagnostic
 import java.net.URI
@@ -38,4 +39,11 @@ interface StreamingDiagnosticProvider {
      * @return Flow of diagnostics emitted as they're discovered
      */
     suspend fun provideDiagnostics(uri: URI, content: String): Flow<Diagnostic>
+
+    /**
+     * Analysis bound to the caller's completed compilation. Providers that use parser state override this route;
+     * source-only providers can keep analyzing [content] independently through the legacy method.
+     */
+    suspend fun provideDiagnostics(uri: URI, content: String, compilation: CompilationResult): Flow<Diagnostic> =
+        provideDiagnostics(uri, content)
 }
