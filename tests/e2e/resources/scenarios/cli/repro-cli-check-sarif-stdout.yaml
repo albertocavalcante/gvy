@@ -1,0 +1,30 @@
+name: repro-cli-check-sarif-stdout
+description: '`gls check --format SARIF` writes only the SARIF document to stdout'
+xfail:
+  issue: 1543
+  reason: stdout of check --format SARIF also receives the CodeNarc runner summary line
+  match: 'CodeNarc completed'
+workspace:
+  fixture: empty-workspace
+  files:
+    A.groovy: |
+      class A {
+          String greet(String name) {
+              println "Hello, ${name}"
+              return name
+          }
+      }
+steps:
+  - cli:
+      command: gls check
+      args:
+        - "--format"
+        - "SARIF"
+        - "A.groovy"
+      saveAs: checkResult
+      timeoutSeconds: 60
+  - assert:
+      source: checkResult
+      checks:
+        - jsonPath: $.stdout
+          expect: { type: NOT_CONTAINS, value: "CodeNarc completed" }
