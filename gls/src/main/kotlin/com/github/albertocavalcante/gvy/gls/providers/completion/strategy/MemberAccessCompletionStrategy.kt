@@ -23,6 +23,7 @@ import com.github.albertocavalcante.gvy.semantics.db.ImplementationMethodSignatu
 import com.github.albertocavalcante.gvy.semantics.db.SymbolKind
 import com.github.albertocavalcante.gvy.semantics.native.DeclarationWalker
 import com.github.albertocavalcante.gvy.semantics.native.displayName
+import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
 import com.github.albertocavalcante.gvy.semantics.native.displayType
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -214,7 +215,10 @@ internal class MemberAccessCompletionStrategy(
                         MethodCandidate(
                             name = method.name,
                             returnType = method.returnType.simpleName,
-                            parameters = method.parameterTypes.map { CandidateParameter(it.typeName, it.simpleName) },
+                            // Identity keys on the JVM type; the display reads `Object...` when declared varargs.
+                            parameters = method.parameterTypes.zip(method.displayParameterTypes()) { type, shown ->
+                                CandidateParameter(type.typeName, shown)
+                            },
                             doc = "JDK/Classpath method from ${method.declaringClass.simpleName}",
                         ),
                     )
@@ -430,7 +434,7 @@ internal class MemberAccessCompletionStrategy(
                 builder.method(
                     name = method.name,
                     returnType = method.returnType,
-                    parameters = method.parameters,
+                    parameters = method.displayParameters,
                     doc = method.doc,
                 )
             }

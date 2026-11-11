@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.semantics.native.displayParameterTypes
 import io.github.oshai.kotlinlogging.KotlinLogging
 import java.lang.reflect.Modifier
 
@@ -35,6 +36,7 @@ class JvmClasspathReflection(private val classLoaderProvider: () -> ClassLoader)
                 isPublic = Modifier.isPublic(method.modifiers),
                 doc = "JDK/Classpath method from ${clazz.simpleName}",
                 declaringClass = method.declaringClass.name,
+                displayParameters = method.displayParameterTypes(),
             )
         }
     }.getOrElse { throwable ->

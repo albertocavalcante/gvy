@@ -444,7 +444,7 @@ private fun GdkExtensionMethod.toSignatureInformation(): SignatureInformation {
 }
 
 private fun ReflectedMethod.toSignatureInformation(): SignatureInformation {
-    val paramsInfo = parameters.map { paramType ->
+    val paramsInfo = displayParameters.map { paramType ->
         // ReflectedMethod params are currently just type strings?
         // Checking ReflectedMethod definition: val parameters: List<String>
         // These are FQCNs or SimpleNames.
@@ -458,7 +458,7 @@ private fun ReflectedMethod.toSignatureInformation(): SignatureInformation {
     val label = buildString {
         append(retTypeSimple).append(" ")
         append(name).append("(")
-        append(paramsInfo.joinToString(", ") { (it.label.left as String).substringAfterLast('.') })
+        append(paramsInfo.joinToString(", ") { withoutPackage(it.label.left as String) })
         append(")")
     }
 
@@ -466,6 +466,14 @@ private fun ReflectedMethod.toSignatureInformation(): SignatureInformation {
 }
 
 // --- Helpers ---
+
+/** `java.lang.Object...` reads `Object...`: only the package goes, never the varargs dots. */
+private fun withoutPackage(type: String): String {
+    val base = type.removeSuffix(VARARGS)
+    return base.substringAfterLast('.') + type.substring(base.length)
+}
+
+private const val VARARGS = "..."
 
 private fun determineActiveParameter(
     methodCall: MethodCallExpression,

@@ -289,7 +289,7 @@ internal class ImportCompletionStrategy(private val compilationService: GroovyCo
                 CompletionItem().apply {
                     label = method.name
                     kind = CompletionItemKind.Method
-                    detail = "${method.returnType} ${method.name}(${method.parameters.joinToString(", ")})"
+                    detail = "${method.returnType} ${method.name}(${method.displayParameters.joinToString(", ")})"
                     insertText = method.name
                     textEdit = Either.forLeft(TextEdit(range, "$className.${method.name}"))
                 },
