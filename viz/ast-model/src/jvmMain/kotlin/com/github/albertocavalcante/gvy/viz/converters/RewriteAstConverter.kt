@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.viz.converters
 
 import com.github.albertocavalcante.groovyparser.api.ParseUnit
+import com.github.albertocavalcante.groovyparser.api.model.Range
 import com.github.albertocavalcante.groovyparser.provider.RewriteParserProvider
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
@@ -37,12 +38,7 @@ class RewriteAstConverter(private val parser: RewriteParserProvider) {
             RewriteAstNodeDto(
                 id = "node-${idGenerator.incrementAndGet()}",
                 type = symbol.kind.name,
-                range = RangeDto(
-                    startLine = symbol.range.start.line,
-                    startColumn = symbol.range.start.column,
-                    endLine = symbol.range.end.line,
-                    endColumn = symbol.range.end.column,
-                ),
+                range = symbol.range.toDtoRange(),
                 children = emptyList(),
                 properties = buildMap {
                     put("name", symbol.name)
@@ -57,9 +53,8 @@ class RewriteAstConverter(private val parser: RewriteParserProvider) {
 
         val startLine = 1
         val startColumn = 1
-        val endLine = if (lines.isEmpty()) 1 else lines.size
-        // Use consistent endColumn calculation
-        val endColumn = if (lines.isEmpty()) 1 else lines.last().length.coerceAtLeast(1)
+        val endLine = lines.size
+        val endColumn = lines.last().length + 1
 
         return RewriteAstNodeDto(
             id = "node-0",
@@ -76,4 +71,9 @@ class RewriteAstConverter(private val parser: RewriteParserProvider) {
             ),
         )
     }
+}
+
+internal fun Range.toDtoRange(): RangeDto? {
+    if (start.line <= 0 || start.column <= 0 || end.line <= 0 || end.column <= 0 || end < start) return null
+    return RangeDto(start.line, start.column, end.line, end.column)
 }
