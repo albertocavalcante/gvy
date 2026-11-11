@@ -103,6 +103,6 @@ private class RewriteHoverProvider(private val parseUnit: ParseUnit) : HoverProv
         } else {
             MarkupContent(MarkupKind.PLAINTEXT, "")
         }
-        return Hover(markupContent)
+        return Hover(markupContent).apply { range = nodeInfo?.range }
     }
 }

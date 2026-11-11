@@ -41,6 +41,7 @@ class RewriteParserAdapter(private val parseUnit: ApiParseUnit, override val uri
             position.character + 1,
         )
         val nodeInfo = parseUnit.nodeAt(apiPosition) ?: return null
+        if (!nodeInfo.range.isAvailable()) return null
 
         return UnifiedNode(
             name = nodeInfo.name,
@@ -51,7 +52,8 @@ class RewriteParserAdapter(private val parseUnit: ApiParseUnit, override val uri
         )
     }
 
-    override fun allSymbols(): List<UnifiedSymbol> = parseUnit.symbols().map { symbol ->
+    override fun allSymbols(): List<UnifiedSymbol> = parseUnit.symbols().mapNotNull { symbol ->
+        if (!symbol.range.isAvailable()) return@mapNotNull null
         UnifiedSymbol(
             name = symbol.name,
             kind = symbol.kind.toUnifiedKind(),
@@ -109,3 +111,9 @@ private fun ApiRange.toLspRange(): Range = Range(
     Position((start.line - 1).coerceAtLeast(0), (start.column - 1).coerceAtLeast(0)),
     Position((end.line - 1).coerceAtLeast(0), (end.column - 1).coerceAtLeast(0)),
 )
+
+private fun ApiRange.isAvailable(): Boolean {
+    if (start.line <= 0 || start.column <= 0) return false
+    if (end.line <= 0 || end.column <= 0) return false
+    return end >= start
+}

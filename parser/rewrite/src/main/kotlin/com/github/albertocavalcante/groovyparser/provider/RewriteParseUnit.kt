@@ -16,10 +16,10 @@ import org.openrewrite.groovy.GroovyVisitor
 import org.openrewrite.groovy.tree.G
 import org.openrewrite.java.tree.J
 import java.nio.file.Path
-import org.openrewrite.marker.Range as RewriteRange
 
 /**
  * ParseUnit implementation wrapping OpenRewrite's G.CompilationUnit.
+ * Available ranges use 1-based lines and UTF-16 columns with exclusive ends.
  */
 class RewriteParseUnit(
     override val source: String,
@@ -29,16 +29,19 @@ class RewriteParseUnit(
 ) : ParseUnit {
 
     override val isSuccessful: Boolean = compilationUnit != null && parseError == null
+    private val sourceLines by lazy { source.lines() }
+    private val sourcePositions by lazy {
+        compilationUnit?.let { RewriteSourcePositions.create(source, it) }
+    }
 
     override fun nodeAt(position: Position): NodeInfo? {
         if (compilationUnit == null) return null
         if (position.line <= 0 || position.column <= 0) return null
+        val line = sourceLines.getOrNull(position.line - 1) ?: return null
+        if (position.column > line.length + 1) return null
 
-        // Convert 1-based to 0-based for OpenRewrite
-        val targetLine = position.line - 1
-        val targetColumn = position.column - 1
-
-        return NodeAtPositionFinder(targetLine, targetColumn).find(compilationUnit)
+        val positions = sourcePositions ?: return null
+        return NodeAtPositionFinder(position, positions).find(compilationUnit)
     }
 
     override fun diagnostics(): List<Diagnostic> {
@@ -59,7 +62,7 @@ class RewriteParseUnit(
 
     override fun symbols(): List<SymbolInfo> {
         if (compilationUnit == null) return emptyList()
-        return SymbolExtractorVisitor().extract(compilationUnit)
+        return SymbolExtractorVisitor(sourcePositions).extract(compilationUnit)
     }
 
     override fun typeAt(position: Position): TypeInfo? {
@@ -72,7 +75,7 @@ class RewriteParseUnit(
 /**
  * Visitor to find node at a specific position.
  */
-private class NodeAtPositionFinder(private val targetLine: Int, private val targetColumn: Int) {
+private class NodeAtPositionFinder(private val target: Position, private val positions: RewriteSourcePositions) {
     private var foundNode: NodeInfo? = null
 
     fun find(cu: G.CompilationUnit): NodeInfo? {
@@ -109,31 +112,10 @@ private class NodeAtPositionFinder(private val targetLine: Int, private val targ
     }
 
     private fun checkNode(tree: Tree, name: String?, kind: NodeKind) {
-        val range = tree.markers.findFirst(RewriteRange::class.java).orElse(null) ?: return
-        val startLine = range.start.line
-        val endLine = range.end.line
-        val startCol = range.start.column
-        val endCol = range.end.column
-
-        // Check if position is within this node's range
-        val inRange = when {
-            targetLine < startLine -> false
-            targetLine > endLine -> false
-            targetLine == startLine && targetColumn < startCol -> false
-            targetLine == endLine && targetColumn > endCol -> false
-            else -> true
-        }
-
-        if (inRange) {
-            // Keep the most specific (deepest) node
-            foundNode = NodeInfo(
-                kind = kind,
-                name = name,
-                range = Range(
-                    start = Position(startLine + 1, startCol + 1),
-                    end = Position(endLine + 1, endCol + 1),
-                ),
-            )
+        val range = positions.range(tree) ?: return
+        if (target >= range.start && target < range.end) {
+            // The visitor descends into children after checking their parent.
+            foundNode = NodeInfo(kind = kind, name = name, range = range)
         }
     }
 
@@ -148,7 +130,7 @@ private class NodeAtPositionFinder(private val targetLine: Int, private val targ
 /**
  * Visitor to extract symbols from the compilation unit.
  */
-private class SymbolExtractorVisitor {
+private class SymbolExtractorVisitor(private val positions: RewriteSourcePositions?) {
     private val symbols = mutableListOf<SymbolInfo>()
     private var currentContainer: String? = null
 
@@ -216,15 +198,5 @@ private class SymbolExtractorVisitor {
         return symbols
     }
 
-    private fun extractRange(tree: Tree): Range {
-        val marker = tree.markers.findFirst(RewriteRange::class.java).orElse(null)
-        return if (marker != null) {
-            Range(
-                start = Position(marker.start.line + 1, marker.start.column + 1),
-                end = Position(marker.end.line + 1, marker.end.column + 1),
-            )
-        } else {
-            Range.EMPTY
-        }
-    }
+    private fun extractRange(tree: Tree): Range = positions?.range(tree) ?: Range.EMPTY
 }

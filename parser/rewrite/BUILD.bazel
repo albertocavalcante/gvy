@@ -24,5 +24,8 @@ kt_test(
     deps = [
         "//parser/api",
         "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_openrewrite_rewrite_core",
+        "@maven//:org_openrewrite_rewrite_groovy",
+        "@maven//:org_openrewrite_rewrite_java",
     ],
 )
