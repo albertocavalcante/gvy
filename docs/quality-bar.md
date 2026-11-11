@@ -26,6 +26,11 @@ gvy is.
 | **Every bug is a test**          | A bug report ships as an executable repro, marked `xfail` until fixed; a fix is a test that flips.                                              |
 | **Learn widely, derive our own** | We study language servers and tooling across languages, judge what fits gvy, and write our own scenarios and design records. Nothing is copied. |
 
+Every dependency is fallible, including OpenRewrite, `rules_kotlin`, and Groovy itself. The compiler defines the
+language behaviour gvy targets, but a compiler defect remains a defect. Check dependency behaviour against independent
+evidence, track upstream bugs on gvy's issue board, and prepare contributions for human review under the
+[dependency bug policy](dependency-bugs.md). gvy remains responsible for the answers and edits it gives users.
+
 ## Scorecard
 
 The quality harness will compute the scorecard for every commit. Targets are set once the first run gives a baseline;

@@ -71,3 +71,20 @@ Please use GitHub Issues to report bugs or request features. Include:
 ## Questions?
 
 Feel free to open an issue for discussion or questions about contributing.
+
+## Dependency bugs and upstream contributions
+
+Every dependency can have bugs, including OpenRewrite, `rules_kotlin`, and the Groovy compiler. Using the compiler as
+the language authority does not make its implementation infallible. Investigate failures in both gvy and its
+dependencies.
+
+Track suspected and confirmed upstream bugs in [gvy's issue board](https://github.com/albertocavalcante/gvy/issues),
+including evidence, affected versions, local mitigations, and follow-up ownership. A local workaround does not resolve
+the upstream defect.
+
+Prepare minimal repros and useful patches as part of being a good upstream contributor. Agents must keep submissions
+local for human review until a maintainer explicitly approves the specific material and target. Check upstream's
+contribution and AI policies before submitting issues, pull requests, or comments. This avoids sending unverified or
+low-quality AI-generated material to maintainers.
+
+See the [dependency bug policy](docs/dependency-bugs.md) for evidence, tracking, and submission requirements.
