@@ -97,6 +97,11 @@ dprint check README.md CONTRIBUTING.md
 Pass the files you changed, check relative links and heading anchors, and verify commands against the current source.
 The editor directory also uses [Prettier](editors/code/.prettierrc); follow its contributor guide for local checks.
 
+Release maintainers must update the direct VSIX download links in `README.md` and `docs/installation.md` when a release
+is published. Keep the Homebrew JAR and VSIX URL/digest pairs in sync through reviewed tap PRs.
+[Distribution publishing](https://github.com/albertocavalcante/gvy/issues/1675) tracks automating those updates and
+enabling editor registry publishing.
+
 ### Editor extension
 
 Follow the [editor validation instructions](editors/code/CONTRIBUTING.md#testing). Use pnpm for `editors/code/`. Backend

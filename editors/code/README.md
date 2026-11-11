@@ -54,7 +54,11 @@ A VS Code extension that adds Groovy language support with syntax highlighting, 
 
 ## Setup
 
-**Requires Java 17+** to be installed on your system.
+On macOS or Linux,
+[install with Homebrew](https://github.com/albertocavalcante/gvy/blob/main/docs/installation.md#macos-and-linux-with-homebrew)
+to include Java and use the extension installer.
+
+For a manual installation, **Java 17+** must be installed on your system.
 
 1. Download `gvy-<version>.vsix` from the
    [latest GitHub Release](https://github.com/albertocavalcante/gvy/releases/latest). The extension is not published to
