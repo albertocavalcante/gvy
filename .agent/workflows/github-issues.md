@@ -38,6 +38,7 @@ gh issue create -R OWNER/REPO \
 - `lsp/diagnostics` - Diagnostic features
 - `lsp/hover` - Hover information
 - `lsp/symbols` - Symbol features
+- `viz` - AST visualizer desktop app, DTOs, converters, and related integrations
 
 ### Priority Labels
 
@@ -59,6 +60,37 @@ gh issue create -R OWNER/REPO \
 ```bash
 gh label create "lsp/completion" -c "c2e0c6" -d "Completion features"
 ```
+
+## Visualizer issues
+
+Use `viz` for visualizer work, alongside one existing type, priority, and size label. Keep the component in the title
+and source references; the shared label covers `viz/desktop`, `viz/ast-model`, and related integrations.
+
+Check [#604](https://github.com/albertocavalcante/gvy/issues/604) and existing `[viz]` issues before creating a new
+issue. Give each actionable finding its own reproduction or evidence, proposed scope, acceptance criteria, and
+validation limits. Link child issues from the tracker; keep platform proposals separate from correctness fixes.
+
+```bash
+gh issue create --repo albertocavalcante/gvy \
+  --title "[viz/desktop] Brief description" --body-file issue.md \
+  --label bug --label viz --label P2-should --label size/S
+```
+
+The versioned label definition is `tools/github-issues/github-labels.json`. Preview the `viz` entry, then sync only that
+label using its saved metadata:
+
+```bash
+viz_label=$(jq -ce '.[] | select(.name == "viz")' tools/github-issues/github-labels.json)
+gh label create viz --repo albertocavalcante/gvy --force \
+  --color "$(jq -r .color <<<"$viz_label")" \
+  --description "$(jq -r .description <<<"$viz_label")"
+```
+
+Avoid the legacy broad setup script described below.
+
+The legacy interactive wizard currently recognizes only `lsp/*` labels as areas;
+[#1636](https://github.com/albertocavalcante/gvy/issues/1636) tracks `viz` support. Use the direct CLI workflow above
+until that issue is resolved.
 
 ## Dependency bug labels
 
