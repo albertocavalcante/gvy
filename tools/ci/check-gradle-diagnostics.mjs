@@ -31,7 +31,9 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
       context = `${header[1] === 'Task' ? 'task' : 'project'} ${header[2]}`;
       continue;
     }
-    const testHeader = raw.match(/^\S+(?: > .+)? (PASSED|FAILED|SKIPPED|STARTED|STANDARD_OUT|STANDARD_ERROR)$/);
+    // A warning message can itself end in a test-output/status token.
+    const warningPrefix = /^(?:w:|warn(?:ing)?(?:[\s:\[]|$)|\[warn(?:ing)?\]|⚠)/i.test(raw);
+    const testHeader = warningPrefix ? null : raw.match(/^\S+(?: > .+)? (PASSED|FAILED|SKIPPED|STARTED|STANDARD_OUT|STANDARD_ERROR)$/);
     if (testHeader) {
       flush();
       capturedTestOutput = testHeader[1] === 'STANDARD_OUT' || testHeader[1] === 'STANDARD_ERROR';

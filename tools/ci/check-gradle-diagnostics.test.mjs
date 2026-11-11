@@ -137,6 +137,19 @@ test('a legitimate Unicode replacement character is valid log text', () => {
   assert.equal(check('> Task :gls:test\nSomeTest > replacement STANDARD_OUT\n    replacement character: \ufffd\nBUILD SUCCESSFUL in 1s\n').ok, true);
 });
 
+test('warning prefixes take precedence over class-level captured-output and test-status headers', () => {
+  const log = '> Task :gls:compileKotlin\nw: STANDARD_OUT\nWARNING: STANDARD_ERROR\nWARN: PASSED\nWARNING STANDARD_OUT\nwarning: STARTED\nBUILD SUCCESSFUL in 1s\n';
+  const result = check(log);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.unexpected, [
+    '[task :gls:compileKotlin] WARN: PASSED',
+    '[task :gls:compileKotlin] WARNING STANDARD_OUT',
+    '[task :gls:compileKotlin] WARNING: STANDARD_ERROR',
+    '[task :gls:compileKotlin] w: STANDARD_OUT',
+    '[task :gls:compileKotlin] warning: STARTED',
+  ]);
+});
+
 test('validates exact owned exceptions including cached-out and expired debt', () => {
   assert.equal(check(`> Configure project :\n${warning}\nBUILD SUCCESSFUL in 1s\n`, {
     exceptions: [exception],
