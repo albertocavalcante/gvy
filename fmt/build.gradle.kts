@@ -29,8 +29,8 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
-// rewrite-groovy brings Groovy 3 (org.codehaus.groovy). The server excludes it so Groovy 4 wins
-// (gls/build.gradle.kts); do the same here so fmt tests run the lexer and parser the server ships.
+// Keep legacy Groovy 3 dependencies off the formatter classpath. rewrite-groovy and the
+// explicit lexer dependency both use Groovy 4, resolved to the server's selected version.
 configurations.configureEach {
     exclude(group = "org.codehaus.groovy")
 }

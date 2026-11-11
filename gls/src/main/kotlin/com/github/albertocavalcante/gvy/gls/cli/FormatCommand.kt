@@ -14,7 +14,10 @@ import java.io.File
 /**
  * Formats Groovy source files using OpenRewrite.
  */
-class FormatCommand : CliktCommand(name = "format") {
+class FormatCommand internal constructor(private val formatSource: (String) -> FormatOutcome) :
+    CliktCommand(name = "format") {
+    constructor() : this(defaultFormatter())
+
     override fun help(context: Context) = "Format Groovy files"
 
     private val files by argument()
@@ -24,15 +27,14 @@ class FormatCommand : CliktCommand(name = "format") {
     private val terminal by requireObject<Terminal>()
 
     override fun run() {
-        val formatter = OpenRewriteFormatter()
         for (file in files) {
-            formatFile(file, formatter)
+            formatFile(file)
         }
     }
 
-    private fun formatFile(file: File, formatter: OpenRewriteFormatter) {
+    private fun formatFile(file: File) {
         val input = file.readText()
-        val outcome = formatter.formatChecked(input)
+        val outcome = formatSource(input)
         if (outcome is FormatOutcome.Refused) {
             // Exit status stays 0: the printed text is the unchanged input, which is still valid output.
             echo(
@@ -43,5 +45,12 @@ class FormatCommand : CliktCommand(name = "format") {
         val formatted = outcome.text
         terminal.print(formatted)
         if (!formatted.endsWith("\n")) terminal.println()
+    }
+
+    companion object {
+        private fun defaultFormatter(): (String) -> FormatOutcome {
+            val formatter by lazy { OpenRewriteFormatter() }
+            return { formatter.formatChecked(it) }
+        }
     }
 }

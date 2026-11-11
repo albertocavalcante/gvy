@@ -18,7 +18,9 @@ import com.github.albertocavalcante.gvy.gls.cli.jenkins.JenkinsCommand
  *
  * Supports NO_COLOR environment variable (https://no-color.org/) and --no-color flag.
  */
-class GlsCommand : CliktCommand(name = "gls") {
+class GlsCommand internal constructor(formatCommand: FormatCommand) : CliktCommand(name = "gls") {
+    constructor() : this(FormatCommand())
+
     /**
      * Disable colored output. Respects NO_COLOR environment variable by default.
      * See: https://no-color.org/
@@ -40,7 +42,7 @@ class GlsCommand : CliktCommand(name = "gls") {
             LspCommand(),
             CheckCommand(),
             ExecuteCommand(),
-            FormatCommand(),
+            formatCommand,
             VersionCommand(),
             StdioCommand(),
             SocketCommand(),

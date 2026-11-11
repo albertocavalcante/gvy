@@ -330,6 +330,30 @@ class GroovyTextDocumentServiceFormattingTest {
         assertEquals(FormatterStatus.REFUSED, telemetry.status)
     }
 
+    @Test
+    fun `formatting returns a formatted edit for a document containing as casts`() {
+        val source = "class A {\ndef f(Object x) {\ndef y = x as BigDecimal\nnew Date(x as long)\n}\n}"
+        val documentProvider = DocumentProvider().apply { put(uri, source) }
+        val service = GroovyTextDocumentService(
+            coroutineScope = coroutineScope,
+            compilationService = compilationService,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = OpenRewriteFormatterAdapter(),
+            ),
+        )
+
+        val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        assertEquals(
+            "class A {\n    def f(Object x) {\n        def y = x as BigDecimal\n        new Date(x as long)\n    }\n}",
+            edits.single().newText,
+        )
+        val telemetry = client.telemetryEvents.single() as FormatterTelemetryEvent
+        assertEquals(FormatterStatus.SUCCESS, telemetry.status)
+    }
+
     private fun formattingParams(targetUri: URI = uri): DocumentFormattingParams = DocumentFormattingParams().apply {
         textDocument = TextDocumentIdentifier(targetUri.toString())
         options = FormattingOptions(4, true)

@@ -38,19 +38,34 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     )
 
     @Test
-    fun `simplifies ternary with method call`() = rewriteRun(
+    fun `preserves repeated method invocations without proof of purity`() = rewriteRun(
         groovy(
             """
-            // Method call case: identical method invocations
-            // Note: This assumes the method call is side-effect free or the user accepts the risk.
-            // The logic checks for structural equality.
+            def getFoo() { "value" }
             def y = getFoo() ? getFoo() : "default"
             """,
+        ),
+    )
+
+    @Test
+    fun `preserves comments attached to the repeated expression`() = rewriteRun(
+        groovy(
             """
-            // Method call case: identical method invocations
-            // Note: This assumes the method call is side-effect free or the user accepts the risk.
-            // The logic checks for structural equality.
-            def y = getFoo() ?: "default"
+            def x = 1
+            def y = x ? /* keep this explanation */ x : 0
+            """,
+        ),
+    )
+
+    @Test
+    fun `preserves repeated calls that mutate state`() = rewriteRun(
+        groovy(
+            """
+            def calls = 0
+            def next = { ++calls }
+            def result = next() ? next() : 0
+            assert calls == 2
+            assert result == 2
             """,
         ),
     )
