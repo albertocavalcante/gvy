@@ -47,6 +47,8 @@ export function selectsOtherCollector(userArgs: readonly string[]): boolean {
   return userArgs.some(
     (arg) =>
       /^-XX:\+Use(Serial|Parallel|Z|Shenandoah|Epsilon)GC$/.test(arg) ||
+      // Silently selects ParallelGC and sizes the heap.
+      arg === "-XX:+AggressiveHeap" ||
       arg === "-XX:-UseG1GC",
   );
 }
@@ -55,9 +57,10 @@ export function selectsOtherCollector(userArgs: readonly string[]): boolean {
  * Options that size the heap. "Last wins" only holds per flag, so when the
  * user sets any of these our -Xms/-Xmx are dropped: e.g. a user -Xmx32m or
  * -Xms4g would otherwise contradict our -Xms64m/-Xmx2g and abort the JVM.
+ * Consequence: setting any of them means the user owns heap sizing.
  */
 const HEAP_SIZE_FLAG =
-  /^(-Xm[sx]|-XX:(Initial|Min|Max)HeapSize=|-XX:(Initial|Min|Max)RAMPercentage=|-XX:MaxRAM=)/;
+  /^(-Xm[sx]|-XX:(Initial|Min|Max)HeapSize=|-XX:(Initial|Min|Max)RAM(Percentage|Fraction)=|-XX:MaxRAM=|-XX:\+AggressiveHeap$)/;
 const HEAP_SIZING_DEFAULT = /^-Xm[sx]/;
 /** Min must not exceed Max, so a user value for either replaces both. */
 const FREE_RATIO_FLAG = /^-XX:M(in|ax)HeapFreeRatio=/;
@@ -70,7 +73,12 @@ export function envJavaOptions(
   env: Readonly<Record<string, string | undefined>>,
 ): string[] {
   return ["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"].flatMap(
-    (name) => (env[name] ?? "").split(/\s+/).filter((arg) => arg.length > 0),
+    (name) =>
+      (env[name] ?? "")
+        .split(/\s+/)
+        // The JVM strips quotes around options.
+        .map((arg) => arg.replace(/^["']+|["']+$/g, ""))
+        .filter((arg) => arg.length > 0),
   );
 }
 

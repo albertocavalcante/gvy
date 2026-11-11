@@ -11,7 +11,6 @@ import {
 
 const DEFAULTS = [...DEFAULT_SERVER_VM_ARGS];
 const NON_G1 = DEFAULTS.filter((arg) => !isG1OnlyFlag(arg));
-const NON_G1_KEEP_HEAP = NON_G1;
 
 describe("server/launchArgs", () => {
   it("defaults keep ExitOnOutOfMemoryError and bound the heap", () => {
@@ -67,7 +66,7 @@ describe("server/launchArgs", () => {
       "-XX:-UseG1GC",
     ]) {
       const args = resolveVmArgs([gc, "-Dx=y"]);
-      expect(args, gc).to.deep.equal([...NON_G1_KEEP_HEAP, gc, "-Dx=y"]);
+      expect(args, gc).to.deep.equal([...NON_G1, gc, "-Dx=y"]);
       expect(args.filter(isG1OnlyFlag).filter((a) => a !== gc)).to.deep.equal(
         [],
       );
@@ -143,6 +142,7 @@ describe("server/launchArgs", () => {
       "-Xmx32m",
       "-XX:MaxRAMPercentage=50",
       "-XX:MaxHeapSize=1g",
+      "-XX:MaxRAMFraction=8",
     ]) {
       expect(resolveVmArgs([flag]), flag).to.deep.equal([...rest, flag]);
     }
@@ -167,6 +167,23 @@ describe("server/launchArgs", () => {
         "-XX:+UseAdaptiveSizePolicyWithSystemGC",
       ]),
     ).to.equal(false);
+  });
+
+  it("treats AggressiveHeap as a collector selection", () => {
+    expect(selectsOtherCollector(["-XX:+AggressiveHeap"])).to.equal(true);
+    expect(resolveVmArgs(["-XX:+AggressiveHeap"])).to.deep.equal([
+      "-XX:+ExitOnOutOfMemoryError",
+      "-XX:MinHeapFreeRatio=20",
+      "-XX:MaxHeapFreeRatio=40",
+      "-XX:+AggressiveHeap",
+    ]);
+  });
+
+  it("strips quotes and reads _JAVA_OPTIONS from the environment", () => {
+    expect(
+      envJavaOptions({ _JAVA_OPTIONS: "\"-XX:+UseParallelGC\" '-Xmx1g'" }),
+    ).to.deep.equal(["-XX:+UseParallelGC", "-Xmx1g"]);
+    expect(envJavaOptions({ JAVA_TOOL_OPTIONS: "   " })).to.deep.equal([]);
   });
 
   it("honours JVM options set through the environment", () => {

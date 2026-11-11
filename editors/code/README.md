@@ -117,7 +117,9 @@ That's it! The extension will find Java automatically from your PATH or `JAVA_HO
 - **`groovy.server.vmargs`** / **`groovy.server.vmargsDefaults`**: the server JVM starts with memory-friendly defaults
   (heap bounded at 2 GB, G1 with an idle GC every 60 s that returns unused memory to the OS, exit on out-of-memory so
   the server restarts). `groovy.server.vmargs` is appended after them, so your `-Xmx` or other `-X`/`-XX` options win;
-  picking another collector (for example `-XX:+UseParallelGC`) drops the G1-only defaults. Set
+  setting any heap size option replaces the default `-Xms`/`-Xmx` (you then own heap sizing), either `HeapFreeRatio`
+  replaces both ratios, and picking another collector (for example `-XX:+UseParallelGC`) drops the G1-only defaults.
+  `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS` and `_JAVA_OPTIONS` are taken into account too. Set
   `groovy.server.vmargsDefaults` to `false` to use only your own list. Changing either setting prompts for a server
   restart. The full default list is in `client/src/server/launchArgs.ts` and the setting description.
 
