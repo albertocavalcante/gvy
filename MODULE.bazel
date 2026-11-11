@@ -67,8 +67,6 @@ single_version_override(
     ],
 )
 
-# Note: Additional patches for Gradle resolver + rules_java 9.x are available in
-# third_party/patches/ if Gradle resolver is needed in the future.
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "protobuf", version = "33.4")
 bazel_dep(name = "aspect_rules_js", version = "2.8.3")
@@ -207,7 +205,7 @@ maven.install(
         # Note: JUnit jars downloaded via http_file due to GMM cycle bugs
         # These artifacts are declared here for target existence, but maven.override
         # redirects them to //tools:junit_* targets with correct dependency graph
-        # See: https://github.com/albertocavalcante/gvy/issues/1032
+        # See: https://github.com/albertocavalcante/gvy/issues/1621
         "org.junit.jupiter:junit-jupiter:6.0.2",
         "org.junit.jupiter:junit-jupiter-api:6.0.2",
         "org.junit.jupiter:junit-jupiter-engine:6.0.2",
@@ -285,12 +283,13 @@ maven.install(
         "org.codehaus.groovy:groovy-templates",
         "org.codehaus.groovy:groovy-xml",
     ],
-    # DISABLED: fetch_sources causes GMM to incorrectly resolve classes jar to sources jar
-    # See: https://github.com/albertocavalcante/gvy/issues/1031
+    # Source fetching remains disabled after historical GMM classes/sources misselection.
+    # Current stable resolver candidates require verification; see the retirement tracker.
+    # See: https://github.com/albertocavalcante/gvy/issues/1620
     # fetch_sources = True,
     # fetch_javadoc = True,
-    # Google Maven doesn't publish checksum files for some AndroidX artifacts
-    # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
+    # Historical Google Maven missing-checksum escape; the exact current failing artifact is unverified.
+    # TODO(#1029): test strict checksums and restore enforcement; a sample sidecar now exists.
     fail_on_missing_checksum = False,
     # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
     # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
@@ -305,10 +304,11 @@ maven.install(
         "https://maven.pkg.jetbrains.space/public/p/compose/dev",  # JetBrains Compose
         "https://maven.google.com",  # Google Maven for AndroidX
     ],
-    # KNOWN ISSUE: GMM (--enable-modules) causes Coursier to compute different checksums
-    # locally vs CI due to variant selection differences. Lock file disabled until resolved.
+    # Maven lock remains disabled after historical GMM cross-environment checksum mismatches.
+    # Stable resolver candidates and fresh Linux/macOS lock agreement require verification.
     # Tracking: https://github.com/albertocavalcante/gvy/issues/1029
-    # Upstream: https://github.com/bazel-contrib/rules_jvm_external/issues/608
+    # Related cache context (not an isolated matching GMM defect):
+    # https://github.com/bazel-contrib/rules_jvm_external/issues/608
     # lock_file = "//:maven_install.json",
     # fail_if_repin_required = True,
 )
@@ -394,13 +394,13 @@ pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
 pnpm.pnpm(pnpm_version = "10.27.0")
 use_repo(pnpm, "pnpm")
 
-# Wire compiler - downloaded directly due to GMM variant selection issues
+# Wire compiler - direct download retained after historical GMM variant selection issues
 # See: https://github.com/albertocavalcante/gvy/issues/1029
 wire = use_extension("//tools/build_defs:wire_compiler.bzl", "wire_compiler")
 use_repo(wire, "wire_compiler_jar")
 
-# Kotlin-logging - downloaded directly due to GMM bug (resolves sources jar instead of classes)
-# See: https://github.com/albertocavalcante/gvy/issues/1031
+# Kotlin-logging - direct download retained after historical GMM sources/classes misselection
+# See: https://github.com/albertocavalcante/gvy/issues/1620
 kotlin_logging = use_extension("//tools/build_defs:kotlin_logging.bzl", "kotlin_logging")
 use_repo(kotlin_logging, "kotlin_logging_jar")
 
@@ -410,9 +410,8 @@ maven.override(
     target = "//tools:kotlin_logging",
 )
 
-# JUnit - downloaded directly due to GMM cycle bugs
-# GMM creates circular deps between Jupiter and Platform modules
-# See: https://github.com/albertocavalcante/gvy/issues/1032
+# JUnit - direct downloads retained after historical GMM cycles between Jupiter/Platform modules
+# See: https://github.com/albertocavalcante/gvy/issues/1621
 junit = use_extension("//tools/build_defs:junit.bzl", "junit")
 use_repo(
     junit,

@@ -81,7 +81,9 @@ test('CLI fails closed for absent, empty, incomplete and newly noisy logs and wr
   const report = join(dir, 'report');
   writeFileSync(baseline, JSON.stringify([]));
   const run = () => spawnSync(process.execPath, ['tools/ci/bazel-diagnostics.mjs', '--baseline', baseline,
-    '--report', report, log], { encoding: 'utf8' });
+    '--report', report, log], {
+    encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: join(dir, 'github-step-summary.md') },
+  });
   assert.notEqual(run().status, 0);
   writeFileSync(log, '');
   assert.notEqual(run().status, 0);
@@ -93,6 +95,7 @@ test('CLI fails closed for absent, empty, incomplete and newly noisy logs and wr
   assert.equal(JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8')).unexpected.length, 1);
   writeFileSync(log, 'INFO: Build completed successfully, 1 total action\n');
   assert.equal(run().status, 0);
+  assert.match(readFileSync(join(dir, 'github-step-summary.md'), 'utf8'), /Bazel diagnostic accountability/);
 });
 
 test('a failed build still reports its warnings when the subsequent test log is missing', t => {
@@ -108,7 +111,9 @@ test('a failed build still reports its warnings when the subsequent test log is 
   ]));
   writeFileSync(log, 'WARNING: newly introduced warning\nERROR: build failed\n');
   const result = spawnSync(process.execPath, ['tools/ci/bazel-diagnostics.mjs', '--baseline', baseline,
-    '--report', report, log, join(dir, 'missing-test.log')], { encoding: 'utf8' });
+    '--report', report, log, join(dir, 'missing-test.log')], {
+    encoding: 'utf8', env: { ...process.env, GITHUB_STEP_SUMMARY: join(dir, 'github-step-summary.md') },
+  });
   assert.notEqual(result.status, 0);
   const evidence = JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8'));
   assert.deepEqual(evidence.unexpected, ['WARNING: newly introduced warning']);
@@ -116,4 +121,5 @@ test('a failed build still reports its warnings when the subsequent test log is 
   const summary = readFileSync(join(report, 'summary.md'), 'utf8');
   assert.match(summary, /2 exact exceptions/);
   assert.equal(summary.split(exception.reason).length - 1, 1);
+  assert.match(readFileSync(join(dir, 'github-step-summary.md'), 'utf8'), /WARNING: newly introduced warning/);
 });
