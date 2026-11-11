@@ -7,8 +7,10 @@ import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import com.github.albertocavalcante.nativeapi.ParseRequest
+import kotlinx.coroutines.Dispatchers
 import java.io.File
 import java.net.URI
+import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -16,6 +18,19 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class AstViewModelTest {
+    private val models = mutableListOf<AstViewModel>()
+
+    private fun testModel(): AstViewModel = AstViewModel(
+        Dispatchers.Unconfined,
+        Dispatchers.Unconfined,
+        ::parseSnapshot,
+        3_600_000,
+        FileEnvironment(Dispatchers.Unconfined, prefs = InMemoryPreferences()),
+    ).also { models.add(it) }
+
+    @AfterTest
+    fun closeModels() = models.forEach { it.close() }
+
     private fun node(id: String, range: RangeDto?, vararg children: AstNodeDto) =
         CoreAstNodeDto(id, id, range, children.toList(), emptyMap())
 
@@ -27,7 +42,7 @@ class AstViewModelTest {
             Int::class.javaPrimitiveType,
         )
         method.isAccessible = true
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode("abc")
         return method.invoke(model, root, line, column) as AstNodeDto?
     }
@@ -45,7 +60,7 @@ class AstViewModelTest {
 
     @Test
     fun `editing and reparsing clear selection from the prior tree`() {
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode("def x = 1")
         model.parseCode()
         val oldNode = assertNotNull(model.astTree)
@@ -66,7 +81,7 @@ class AstViewModelTest {
 
     @Test
     fun `switching parser clears the previous node even when ids are reused`() {
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode("def x = 1")
         model.parseCode()
         model.selectNode(assertNotNull(model.astTree))
@@ -79,7 +94,7 @@ class AstViewModelTest {
         val source = "def x = )"
         val native = GroovyParserFacade().parse(ParseRequest(URI("file:///temp.groovy"), source)).diagnostics
         assertTrue(native.isNotEmpty())
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode(source)
         model.setParser(ParserType.NATIVE)
         assertEquals(native.size, model.parseErrors.size)
@@ -93,7 +108,7 @@ class AstViewModelTest {
 
     @Test
     fun `failed file load clears prior tree and selection`() {
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode("def x = 1")
         model.parseCode()
         model.selectNode(assertNotNull(model.astTree))
@@ -105,7 +120,7 @@ class AstViewModelTest {
 
     @Test
     fun `failed native parse does not keep the previous tree`() {
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode("def x = 1")
         model.setParser(ParserType.NATIVE)
         assertNotNull(model.astTree)
@@ -118,7 +133,7 @@ class AstViewModelTest {
 
     @Test
     fun `caret movement changes tree highlight without requesting editor selection`() {
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode("def x = 1")
         model.parseCode()
         model.selectNodeAt(1, 5)
@@ -142,7 +157,7 @@ class AstViewModelTest {
 
     @Test
     fun `multiline ranges use actual span length and deterministic depth ties`() {
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode("abc\r\ndef\nxy")
         val deep = node("deep", RangeDto(1, 3, 2, 2))
         val tied = node("tied", RangeDto(1, 3, 2, 2), deep)
@@ -163,7 +178,7 @@ class AstViewModelTest {
     fun `core errors retain their coordinates and any partial parse result`() {
         val source = "def x = )"
         val result = GroovyParser(ParserConfiguration()).parse(source)
-        val model = AstViewModel()
+        val model = testModel()
         model.updateSourceCode(source)
         model.parseCode()
         assertTrue(result.result.isPresent)
@@ -175,5 +190,15 @@ class AstViewModelTest {
         assertEquals(range.begin.column, displayed.startColumn)
         assertEquals(range.end.line, displayed.endLine)
         assertEquals(range.end.column, displayed.endColumn)
+    }
+
+    @Test
+    fun `native file URI preserves spaces and non ASCII characters`() {
+        val path = File("spaced name é.groovy").absoluteFile
+        val uri = nativeUri(path.path)
+        assertEquals(path.path, uri.path)
+        assertTrue(uri.toASCIIString().contains("%20"))
+        assertTrue(uri.toASCIIString().contains("%C3%A9"))
+        assertEquals(URI("file:///temp.groovy"), nativeUri(null))
     }
 }

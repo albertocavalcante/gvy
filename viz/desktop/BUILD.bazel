@@ -23,6 +23,7 @@ kt_library(
         "@maven//:org_jetbrains_compose_desktop_desktop_jvm",
         "@maven//:org_jetbrains_compose_material3_material3_desktop",
         "@maven//:org_jetbrains_compose_material_material_icons_extended_desktop",
+        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
 )

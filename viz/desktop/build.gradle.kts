@@ -20,10 +20,12 @@ dependencies {
     implementation(compose.material3)
     implementation(compose.materialIconsExtended)
 
+    implementation(libs.kotlin.coroutines.core)
     implementation(libs.kotlin.serialization.json)
     implementation(libs.kotlin.logging)
     runtimeOnly(libs.logback.classic)
 
+    testImplementation(libs.kotlin.coroutines.test)
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
     testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
@@ -58,8 +60,6 @@ tasks.test {
     systemProperty("java.awt.headless", "true")
 }
 
-// TODO(#604): Restore the desktop coverage gate after covering the remaining app/file/export flows.
-// Preserve the existing exemption while regression coverage is expanded.
-tasks.matching { it.name == "koverVerify" }.configureEach {
-    enabled = false
+tasks.check {
+    dependsOn("koverVerify")
 }
