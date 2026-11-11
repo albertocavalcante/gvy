@@ -1,0 +1,42 @@
+name: repro-symbols-interface-kind
+description: Document symbols report an interface with kind Interface
+xfail:
+  issue: 1538
+  reason: documentSymbol reports an interface as kind Class
+  match: 'Actual: \[\s*"Class"\s*\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/shapes/Shapes.groovy: |
+      package demo.shapes
+
+      interface |^c|Shape {
+          double area()
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/documentSymbol
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$[?(@.right.name == 'Shape')].right.kind"
+          expect: { type: CONTAINS, value: "Interface" }
+  - shutdown: {}
+  - exit: {}

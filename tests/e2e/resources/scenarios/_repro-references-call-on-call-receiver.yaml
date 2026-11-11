@@ -1,0 +1,56 @@
+# disabled: pending decision in #1539 (widen read-only references or close as intended)
+name: repro-references-call-on-call-receiver
+description: Find references on a method lists a call whose receiver is itself a call (`Money.of(1).format()`)
+xfail:
+  issue: 1539
+  reason: references miss a call whose receiver is a method call
+  match: 'Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/money/Money.groovy: |
+      package demo.money
+
+      class Money {
+          static Money of(Number n) { new Money() }
+          String |^decl|format() { 'x' }
+      }
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      import demo.money.Money
+
+      class Use {
+          String viaStatic() {
+              Money.of(1).format()
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.decl.path}}"
+  - request:
+      method: textDocument/references
+      params:
+        textDocument: { uri: "{{cursor.decl.uri}}" }
+        position: "{{cursor.decl}}"
+        context: { includeDeclaration: false }
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$[*].uri"
+          expect: { type: ANY_CONTAINS, value: "demo/Use.groovy" }
+  - shutdown: {}
+  - exit: {}

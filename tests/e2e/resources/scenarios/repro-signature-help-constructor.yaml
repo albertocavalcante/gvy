@@ -1,0 +1,53 @@
+name: repro-signature-help-constructor
+description: Signature help inside `new LineItem(` lists the constructor
+xfail:
+  issue: 1528
+  reason: signature help for a constructor call returns no signatures
+  match: 'signatures.*Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/LineItem.groovy: |
+      package demo
+
+      class LineItem {
+          String sku
+
+          LineItem(String sku) { this.sku = sku }
+      }
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      class Use {
+          Object run() {
+              new LineItem(|^c|'a')
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/signatureHelp
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+        position: "{{cursor.c}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.signatures[*].label"
+          expect: { type: CONTAINS, value: "LineItem(" }
+  - shutdown: {}
+  - exit: {}

@@ -1,0 +1,45 @@
+name: repro-callhierarchy-selection-range
+description: prepareCallHierarchy returns a selectionRange that starts at the method name, not at the return type
+xfail:
+  issue: 1537
+  reason: selectionRange of a method declared as `Type name(...)` starts at the return type
+  match: 'EQUALS\. Actual: 4'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/service/OrderService.groovy: |
+      package demo.service
+
+      class OrderService {
+          String |^decl|summary() {
+              'x'
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.decl.path}}"
+  - request:
+      method: textDocument/prepareCallHierarchy
+      params:
+        textDocument: { uri: "{{cursor.decl.uri}}" }
+        position: "{{cursor.decl}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$[0].selectionRange.start.character"
+          expect: { type: EQUALS, value: "{{cursor.decl.character}}" }
+  - shutdown: {}
+  - exit: {}

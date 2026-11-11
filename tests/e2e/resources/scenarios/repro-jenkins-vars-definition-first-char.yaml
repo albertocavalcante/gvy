@@ -1,0 +1,53 @@
+name: repro-jenkins-vars-definition-first-char
+description: Go to definition on the first character of a vars/ step call reaches vars/<step>.groovy
+xfail:
+  issue: 1540
+  reason: definition on the first two characters of an implicit global step call returns nothing
+  match: 'Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    vars/deployApp.groovy: |
+      def |^decl|call(Map args = [:]) {
+          echo "deploying ${args.name}"
+      }
+    Jenkinsfile: |
+      pipeline {
+          agent any
+          stages {
+              stage('Deploy') {
+                  steps {
+                      |^use|deployApp(name: 'x')
+                  }
+              }
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: core
+        jenkins.filePatterns: ["Jenkinsfile"]
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.use.path}}"
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].uri"
+          expect: { type: ANY_CONTAINS, value: "vars/deployApp.groovy" }
+  - shutdown: {}
+  - exit: {}

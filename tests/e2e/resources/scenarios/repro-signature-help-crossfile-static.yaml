@@ -1,0 +1,53 @@
+name: repro-signature-help-crossfile-static
+description: Signature help inside `Money.of(1)` from another file lists the Money.of signature
+xfail:
+  issue: 1528
+  reason: signature help for a static call on a workspace class in another file returns no signatures
+  match: 'signatures.*Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/money/Money.groovy: |
+      package demo.money
+
+      class Money {
+          static Money of(Number amount, String currency = 'USD') { new Money() }
+      }
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      import demo.money.Money
+
+      class Use {
+          Object run() {
+              Money.of(|^c|1)
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/signatureHelp
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+        position: "{{cursor.c}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.signatures[*].label"
+          expect: { type: CONTAINS, value: "Money of(Number amount, String currency" }
+  - shutdown: {}
+  - exit: {}
