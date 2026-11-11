@@ -14,6 +14,8 @@ import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.RewriteAstConverter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
+import com.github.albertocavalcante.gvy.viz.model.GroovyRangeGuard
+import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
@@ -206,25 +208,18 @@ class AstViewModel {
         val result = parser.parse(sourceCode)
 
         if (!result.isSuccessful) {
+            val guard = GroovyRangeGuard(sourceCode)
             parseErrors = result.problems.map { problem ->
-                val range = problem.range
-                if (range != null) {
-                    CodeError(
-                        message = problem.message,
-                        startLine = range.begin.line,
-                        startColumn = range.begin.column,
-                        endLine = range.end.line,
-                        endColumn = range.end.column,
-                    )
-                } else {
-                    CodeError(problem.message)
+                val range = problem.range?.let {
+                    guard.validRange(RangeDto(it.begin.line, it.begin.column, it.end.line, it.end.column))
                 }
+                codeError(problem.message, range)
             }
         }
 
         result.result.ifPresent { compilationUnit ->
             val converter = CoreAstConverter()
-            astTree = converter.convert(compilationUnit)
+            astTree = converter.convert(compilationUnit, sourceCode)
         }
     }
 
@@ -241,21 +236,31 @@ class AstViewModel {
         val result = parser.parse(request)
 
         if (result.diagnostics.isNotEmpty()) {
+            val guard = GroovyRangeGuard(sourceCode)
             parseErrors = result.diagnostics.map { diagnostic ->
-                CodeError(
-                    message = diagnostic.message,
-                    startLine = diagnostic.range.start.line,
-                    startColumn = diagnostic.range.start.character,
-                    endLine = diagnostic.range.end.line,
-                    endColumn = diagnostic.range.end.character,
+                val raw = diagnostic.range
+                val range = guard.validRange(
+                    RangeDto(
+                        raw.start.line + 1,
+                        raw.start.character + 1,
+                        raw.end.line + 1,
+                        raw.end.character + 1,
+                    ),
                 )
+                codeError(diagnostic.message, range)
             }
         }
 
         result.ast?.let { moduleNode ->
             val converter = NativeAstConverter()
-            astTree = converter.convert(moduleNode)
+            astTree = converter.convert(moduleNode, sourceCode)
         }
+    }
+
+    private fun codeError(message: String, range: RangeDto?): CodeError = if (range == null) {
+        CodeError(message)
+    } else {
+        CodeError(message, range.startLine, range.startColumn, range.endLine, range.endColumn)
     }
 
     private fun parseRewriteAst() {

@@ -29,8 +29,9 @@ class AstRequestHandler(
 ) {
     fun getAst(params: AstParams): CompletableFuture<AstResult> = CompletableFuture.supplyAsync {
         val uri = URI.create(params.uri)
-        val parseResult = compilationService.getParseResult(uri)
+        val snapshot = compilationService.getCompiledSnapshot(uri)
             ?: throw IllegalArgumentException("No compilation result found for URI: ${params.uri}")
+        val parseResult = snapshot.parseResult
 
         val nativeAst = parseResult.ast
             ?: error("AST not available for URI: ${params.uri}")
@@ -38,11 +39,11 @@ class AstRequestHandler(
         val astDto: AstNodeDto = when (params.parser.lowercase()) {
             "core" -> {
                 val coreAst = GroovyParser.convertFromNative(nativeAst)
-                coreConverter.convert(coreAst)
+                coreConverter.convert(coreAst, snapshot.sourceText)
             }
 
             "native" -> {
-                nativeConverter.convert(nativeAst)
+                nativeConverter.convert(nativeAst, snapshot.sourceText)
             }
 
             else -> throw IllegalArgumentException("Unsupported parser type: ${params.parser}")

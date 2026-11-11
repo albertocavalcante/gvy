@@ -4,8 +4,16 @@ import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.gvy.viz.model.NativeAstNodeDto
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.assertj.core.api.Assertions.assertThat
+import org.codehaus.groovy.ast.ClassHelper
+import org.codehaus.groovy.ast.ClassNode
+import org.codehaus.groovy.ast.FieldNode
+import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.control.SourceUnit
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -32,7 +40,7 @@ class NativeAstConverterTest {
         """.trimIndent()
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         assertNotNull(dto)
         assertEquals("ModuleNode", dto.type)
@@ -54,7 +62,7 @@ class NativeAstConverterTest {
         """.trimIndent()
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         val classNode = dto.children.find { it.type == "ClassNode" && it.properties["name"] == "MyClass" }
         assertNotNull(classNode)
@@ -81,7 +89,7 @@ class NativeAstConverterTest {
         """.trimIndent()
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         // Check that ranges are converted properly
         val classNode = dto.children.find { it.type == "ClassNode" && it.properties["name"] == "Foo" }
@@ -105,7 +113,7 @@ class NativeAstConverterTest {
         """.trimIndent()
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         // Collect all IDs
         val ids = mutableSetOf<String>()
@@ -131,7 +139,7 @@ class NativeAstConverterTest {
         """.trimIndent()
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         // Should have import nodes
         val imports = dto.children.filter { it.type == "ImportNode" }
@@ -148,7 +156,7 @@ class NativeAstConverterTest {
         """.trimIndent()
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         val classNode = dto.children.find { it.type == "ClassNode" && it.properties["name"] == "MyClass" }
         assertNotNull(classNode)
@@ -177,7 +185,7 @@ class NativeAstConverterTest {
         """.trimIndent()
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         val classNode = dto.children.find { it.type == "ClassNode" && it.properties["name"] == "MyClass" }
         assertNotNull(classNode)
@@ -200,7 +208,7 @@ class NativeAstConverterTest {
         val code = ""
 
         val moduleNode = parse(code)
-        val dto = converter.convert(moduleNode)
+        val dto = converter.convert(moduleNode, code)
 
         assertNotNull(dto)
         assertEquals("ModuleNode", dto.type)
@@ -209,18 +217,15 @@ class NativeAstConverterTest {
 
     @Test
     fun `property visibility remains distinct from its backing field`() {
-        val dto = converter.convert(
-            parse(
-                """
+        val code = """
             class Example {
                 String name
                 static final String version = '1'
                 private String hidden
                 protected void work() {}
             }
-                """.trimIndent(),
-            ),
-        )
+        """.trimIndent()
+        val dto = converter.convert(parse(code), code)
         val cls = dto.children.single { it.type == "ClassNode" && it.properties["name"] == "Example" }
 
         fun visibility(type: String, name: String): String {
@@ -234,6 +239,71 @@ class NativeAstConverterTest {
         assertEquals("PUBLIC", visibility("PropertyNode", "version"))
         assertEquals("PRIVATE", visibility("FieldNode", "hidden"))
         assertEquals("PROTECTED", visibility("MethodNode", "work"))
+    }
+
+    @Test
+    fun `supplementary characters invalidate ambiguous ranges but preserve safe source slices`() {
+        val source = "class Example { String before; String emoji = '😀'; String after }\r\n" +
+            "class Later {\r\n    String safe\r\n}"
+        val dto = converter.convert(parse(source), source)
+        val example = dto.children.single { it.type == "ClassNode" && it.properties["name"] == "Example" }
+        val later = dto.children.single { it.type == "ClassNode" && it.properties["name"] == "Later" }
+        fun field(node: com.github.albertocavalcante.gvy.viz.model.AstNodeDto, name: String) =
+            node.children.single { it.type == "FieldNode" && it.properties["name"] == name }
+        fun slice(node: com.github.albertocavalcante.gvy.viz.model.AstNodeDto): String {
+            val range = assertNotNull(node.range)
+            val line = source.split("\r\n")[range.startLine - 1]
+            assertEquals(range.startLine, range.endLine)
+            return line.substring(range.startColumn - 1, range.endColumn - 1)
+        }
+        assertEquals("String before", slice(field(example, "before")))
+        assertEquals(null, field(example, "emoji").range)
+        assertEquals(null, field(example, "after").range)
+        assertEquals(null, example.range)
+        assertEquals("String safe", slice(field(later, "safe")))
+    }
+
+    @Test
+    fun `conversion without source makes ranges unavailable`() {
+        val ast = parse("class Example {}")
+        val dto = converter.convert(ast)
+        val javaMethod = NativeAstConverter::class.java.getMethod("convert", ModuleNode::class.java)
+        assertEquals(dto, javaMethod.invoke(converter, ast))
+        assertEquals(null, dto.children.single { it.properties["name"] == "Example" }.range)
+    }
+
+    @Test
+    fun `concurrent conversions keep node IDs unique within each tree`() {
+        val entered = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val blockedClass = object : ClassNode("Blocked", 0, ClassHelper.OBJECT_TYPE) {
+            override fun getFields(): MutableList<FieldNode> {
+                entered.countDown()
+                check(resume.await(10, TimeUnit.SECONDS))
+                return mutableListOf(FieldNode("value", 0, ClassHelper.OBJECT_TYPE, this, null))
+            }
+        }
+        val first = object : ModuleNode(null as SourceUnit?) {
+            override fun getClasses(): MutableList<ClassNode> = mutableListOf(blockedClass)
+        }
+        val empty = object : ModuleNode(null as SourceUnit?) {
+            override fun getClasses(): MutableList<ClassNode> = mutableListOf()
+        }
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val future = executor.submit<com.github.albertocavalcante.gvy.viz.model.AstNodeDto> {
+                converter.convert(first)
+            }
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
+            converter.convert(empty)
+            resume.countDown()
+            val dto = future.get(10, TimeUnit.SECONDS)
+            val ids = listOf(dto.id, dto.children.single().id, dto.children.single().children.single().id)
+            assertEquals(ids.size, ids.toSet().size)
+        } finally {
+            resume.countDown()
+            executor.shutdownNow()
+        }
     }
 
     private fun countNodes(node: NativeAstNodeDto): Int {

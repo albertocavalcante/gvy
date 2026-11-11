@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.viz.converters
 
 import com.github.albertocavalcante.groovyparser.ast.isScriptSafe
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
+import com.github.albertocavalcante.gvy.viz.model.GroovyRangeGuard
 import com.github.albertocavalcante.gvy.viz.model.NativeAstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import com.github.albertocavalcante.gvy.viz.model.SymbolInfoDto
@@ -26,24 +27,23 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class NativeAstConverter {
 
-    private val idGenerator = AtomicInteger(0)
-
     /**
-     * Converts a ModuleNode to an AstNodeDto.
+     * Converts a ModuleNode to an AstNodeDto with unavailable source ranges.
      *
      * @param moduleNode The root of the Native Groovy AST.
      * @return The DTO representation with type and symbol information.
      */
-    fun convert(moduleNode: ModuleNode): AstNodeDto {
-        idGenerator.set(0)
-        return convertNode(moduleNode)
-    }
+    fun convert(moduleNode: ModuleNode): AstNodeDto = convert(moduleNode, null)
 
-    private fun convertNode(node: ASTNode): NativeAstNodeDto {
-        val id = "node-${idGenerator.incrementAndGet()}"
+    /** Converts using the exact parsed source; a null source makes all ranges unavailable. */
+    fun convert(moduleNode: ModuleNode, source: String?): AstNodeDto =
+        convertNode(moduleNode, AtomicInteger(0), source?.let(::GroovyRangeGuard))
+
+    private fun convertNode(node: ASTNode, ids: AtomicInteger, guard: GroovyRangeGuard?): NativeAstNodeDto {
+        val id = "node-${ids.incrementAndGet()}"
         val type = node.javaClass.simpleName
-        val range = extractRange(node)
-        val children = extractChildren(node)
+        val range = extractRange(node)?.let { guard?.validRange(it) }
+        val children = extractChildren(node, ids, guard)
         val properties = extractProperties(node)
         val symbolInfo = extractSymbolInfo(node)
         val typeInfo = extractTypeInfo(node)
@@ -66,54 +66,55 @@ class NativeAstConverter {
         val lastColumnNumber = node.lastColumnNumber
 
         // Check if position information is available
-        if (lineNumber <= 0 || columnNumber <= 0) {
+        if (lineNumber <= 0 || columnNumber <= 0 || lastLineNumber <= 0 || lastColumnNumber <= 0) {
             return null
         }
 
         return RangeDto(
             startLine = lineNumber,
             startColumn = columnNumber,
-            endLine = if (lastLineNumber > 0) lastLineNumber else lineNumber,
-            endColumn = if (lastColumnNumber > 0) lastColumnNumber else columnNumber,
+            endLine = lastLineNumber,
+            endColumn = lastColumnNumber,
         )
     }
 
-    private fun extractChildren(node: ASTNode): List<AstNodeDto> = buildList {
-        when (node) {
-            is ModuleNode -> {
-                // Add imports
-                node.imports?.forEach { add(convertNode(it)) }
-                node.starImports?.forEach { add(convertNode(it)) }
-                node.staticImports?.values?.forEach { add(convertNode(it)) }
-                node.staticStarImports?.values?.forEach { add(convertNode(it)) }
+    private fun extractChildren(node: ASTNode, ids: AtomicInteger, guard: GroovyRangeGuard?): List<AstNodeDto> =
+        buildList {
+            when (node) {
+                is ModuleNode -> {
+                    // Add imports
+                    node.imports?.forEach { add(convertNode(it, ids, guard)) }
+                    node.starImports?.forEach { add(convertNode(it, ids, guard)) }
+                    node.staticImports?.values?.forEach { add(convertNode(it, ids, guard)) }
+                    node.staticStarImports?.values?.forEach { add(convertNode(it, ids, guard)) }
 
-                // Add classes
-                node.classes?.forEach { add(convertNode(it)) }
+                    // Add classes
+                    node.classes?.forEach { add(convertNode(it, ids, guard)) }
+                }
+                is ClassNode -> {
+                    // Add fields
+                    node.fields?.forEach { add(convertNode(it, ids, guard)) }
+
+                    // Add properties
+                    node.properties?.forEach { add(convertNode(it, ids, guard)) }
+
+                    // Add methods
+                    node.methods?.forEach { add(convertNode(it, ids, guard)) }
+
+                    // Add constructors
+                    node.declaredConstructors?.forEach { add(convertNode(it, ids, guard)) }
+                }
+                is MethodNode -> {
+                    // Add parameters
+                    node.parameters?.forEach { add(convertNode(it, ids, guard)) }
+
+                    // Note: We skip method code/body to keep DTO simple
+                    // Can be added later if needed
+                }
+                // For other node types, we use reflection as fallback
+                // or simply don't extract children
             }
-            is ClassNode -> {
-                // Add fields
-                node.fields?.forEach { add(convertNode(it)) }
-
-                // Add properties
-                node.properties?.forEach { add(convertNode(it)) }
-
-                // Add methods
-                node.methods?.forEach { add(convertNode(it)) }
-
-                // Add constructors
-                node.declaredConstructors?.forEach { add(convertNode(it)) }
-            }
-            is MethodNode -> {
-                // Add parameters
-                node.parameters?.forEach { add(convertNode(it)) }
-
-                // Note: We skip method code/body to keep DTO simple
-                // Can be added later if needed
-            }
-            // For other node types, we use reflection as fallback
-            // or simply don't extract children
         }
-    }
 
     private fun extractProperties(node: ASTNode): Map<String, String> = buildMap {
         when (node) {

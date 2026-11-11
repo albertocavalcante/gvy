@@ -1,15 +1,20 @@
 package com.github.albertocavalcante.gvy.gls.providers.ast
 
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
 import com.github.albertocavalcante.groovyparser.ast.GroovyAstModel
 import com.github.albertocavalcante.groovyparser.ast.SymbolTable
+import com.github.albertocavalcante.gvy.gls.compilation.CompiledDocumentSnapshot
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
+import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
+import com.github.albertocavalcante.nativeapi.ParseRequest
 import com.github.albertocavalcante.nativeapi.ParseResult
 import io.mockk.coEvery
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.control.CompilationUnit
@@ -47,14 +52,15 @@ class AstRequestHandlerTest {
             astModel = astModel,
         )
 
-        coEvery { compilationService.getParseResult(URI.create(uri)) } returns parseResult
+        coEvery { compilationService.getCompiledSnapshot(URI.create(uri)) } returns
+            CompiledDocumentSnapshot("", parseResult)
 
         // Mock converter
         val astDto = CoreAstNodeDto("node-1", "CompilationUnit", null, emptyList(), emptyMap())
         // We are testing that the handler calls the converter.
         // Note: GroovyParser.convertFromNative is a static call that runs on the real implementation.
         // We mock the injected converter to return our expected DTO.
-        coEvery { coreConverter.convert(any()) } returns astDto
+        coEvery { coreConverter.convert(any(), "") } returns astDto
 
         val result = handler.getAst(params).get()
 
@@ -65,5 +71,25 @@ class AstRequestHandlerTest {
         val expectedElement = Json.parseToJsonElement(expectedJson)
         val actualElement = Json.parseToJsonElement(result.ast)
         assertEquals(expectedElement, actualElement)
+    }
+
+    @Test
+    fun `AST export omits ranges ambiguous after a supplementary character`(): Unit = runTest {
+        val uri = URI("file:///test.groovy")
+        val source = "class Example { String before; String emoji = '😀'; String after }"
+        val parsed = GroovyParserFacade().parse(ParseRequest(uri = uri, content = source))
+        assertNotNull(parsed.ast)
+        coEvery { compilationService.getCompiledSnapshot(uri) } returns CompiledDocumentSnapshot(source, parsed)
+        val realHandler = AstRequestHandler(compilationService, CoreAstConverter(), NativeAstConverter())
+
+        listOf("native", "core").forEach { parser ->
+            val result = realHandler.getAst(AstParams(uri.toString(), parser)).get()
+            val dto = Json.decodeFromString<AstNodeDto>(result.ast)
+            val cls = dto.children.single { it.properties["name"] == "Example" }
+            val after = cls.children.single {
+                it.properties["name"] == "after" && it.type in setOf("FieldNode", "FieldDeclaration")
+            }
+            assertEquals(null, after.range, parser)
+        }
     }
 }
