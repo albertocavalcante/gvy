@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.services
 import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.fmt.OpenRewriteFormatter
 import io.github.oshai.kotlinlogging.KotlinLogging
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.eclipse.lsp4j.DocumentFormattingParams
@@ -82,10 +83,13 @@ class GroovyFormattingService(
 
         currentCoroutineContext().ensureActive()
 
+        // TODO(#1686): Lower formatter stages can still hide failures before this callback boundary.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1686
         val formattedResult = runCatching { formatter.formatChecked(currentContent) }
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLISECOND
 
         val outcome = formattedResult.getOrElse { throwable ->
+            if (throwable is CancellationException || throwable !is Exception) throw throwable
             val failureMessage = throwable.message ?: throwable.javaClass.simpleName
             logger.warn { "Formatter failed for $uriString: $failureMessage" }
             if (logger.isDebugEnabled()) {
