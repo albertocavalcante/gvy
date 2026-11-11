@@ -129,4 +129,36 @@ class WorkspaceCaseContainmentTest {
 
         assertEquals(listOf(root.resolve("A.groovy")), manager.getWorkspaceSources(), "compared by component")
     }
+
+    @Test
+    fun `a workspace whose name has no letters is probed above it, so another case of it is refused`() {
+        // Real probe: only a case-insensitive disk has one directory for `Probe` and `PROBE`.
+        val workspace = Files.createDirectories(base.resolve("Probe/2024"))
+        Assumptions.assumeTrue(Files.exists(base.resolve("PROBE")), "needs a case-insensitive disk")
+        val root = outsideAncestorLink(base.resolve("PROBE/2024"))
+        val manager = WorkspaceManager()
+
+        manager.updateWorkspaceModel(workspace, emptyList(), listOf(root))
+
+        assertEquals(emptyList(), manager.getWorkspaceSources(), "the scan walked outside the workspace")
+    }
+
+    @Test
+    fun `a root spelled through the real path of a workspace opened through a link is refused the same way`() {
+        val real = Files.createDirectories(base.resolve("checkout"))
+        // The client opens the workspace through a link of another name; the build reports real paths.
+        val opened = Files.createSymbolicLink(base.resolve("opened"), real)
+        val root = outsideAncestorLink(real)
+        write(real.resolve("lib/Kept.groovy"))
+
+        listOf(false, true).forEach { folds ->
+            val leaking = manager(caseInsensitive = folds)
+            leaking.updateWorkspaceModel(opened, emptyList(), listOf(root))
+            assertEquals(emptyList(), leaking.getWorkspaceSources(), "folds=$folds: walked outside the workspace")
+
+            val kept = manager(caseInsensitive = folds)
+            kept.updateWorkspaceModel(opened, emptyList(), listOf(real.resolve("lib")))
+            assertEquals(listOf(real.resolve("lib/Kept.groovy")), kept.getWorkspaceSources(), "folds=$folds")
+        }
+    }
 }

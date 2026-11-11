@@ -332,27 +332,36 @@ class WorkspaceManager internal constructor(
      *
      * "Inside" is decided by component, and where the workspace's file system folds names, by the same case and
      * normalisation key as source membership ([isWithin]): `/WS/src` under a workspace `/ws` on a case-insensitive
-     * volume is inside it, so an ancestor link under it is refused too.
+     * volume is inside it, so an ancestor link under it is refused too. A root under the workspace's real path is
+     * inside it as well, for a workspace opened through a link of another name.
      */
     private fun scanStart(root: Path, workspaceRoot: Path?): Path? {
         val workspace = workspaceRoot?.toAbsolutePath()?.normalize()
         val absolute = root.toAbsolutePath().normalize()
+        if (Files.isSymbolicLink(absolute)) return followedLink(absolute, workspace)
+        if (workspace == null) return absolute
+        // Disk reads, each at most once per call and only when a comparison needs it.
+        val real by lazy(LazyThreadSafetyMode.NONE) { realWorkspace(workspace) }
+        val folds by lazy(LazyThreadSafetyMode.NONE) {
+            caseInsensitiveRoots[workspace] ?: isCaseInsensitive(workspace, real)
+        }
+        val foldsOnce = { folds }
         return when {
-            Files.isSymbolicLink(absolute) -> followedLink(absolute, workspace)
-            workspace == null || !isWithin(absolute, workspace, workspace) -> absolute
-            isWithin(DocumentTargetSelector.canonical(absolute), realWorkspace(workspace), workspace) -> absolute
+            !isWithin(absolute, workspace, foldsOnce) && !isWithin(absolute, real, foldsOnce) -> absolute
+            isWithin(DocumentTargetSelector.canonical(absolute), real, foldsOnce) -> absolute
             else -> null.also { refuse(absolute, "resolves outside the workspace through a linked ancestor") }
         }
     }
 
     /**
-     * Whether [path] lies at or under [ancestor], by component. Where [workspace]'s file system folds case (its
-     * probe), or the platform normalises names, the leading components are compared by key, so another case or
-     * normalisation of the same directory counts; `/wsx` never lies under `/ws` (#1424).
+     * Whether [path] lies at or under [ancestor], by component. Where the workspace's file system folds case
+     * ([foldsCase], its probe, asked only when the lexical test fails), or the platform normalises names, the
+     * leading components are compared by key, so another case or normalisation of the same directory counts;
+     * `/wsx` never lies under `/ws` (#1424).
      */
-    private fun isWithin(path: Path, ancestor: Path, workspace: Path): Boolean {
+    private fun isWithin(path: Path, ancestor: Path, foldsCase: () -> Boolean): Boolean {
         if (path.startsWith(ancestor)) return true
-        val folds = isCaseInsensitive(workspace, realWorkspace(workspace))
+        val folds = foldsCase()
         val comparable = (folds || normalisesNames) && ancestor.nameCount > 0 &&
             path.nameCount >= ancestor.nameCount && path.root == ancestor.root
         if (!comparable) return false
@@ -836,16 +845,20 @@ data class SourceListChange(val added: List<Path>, val removed: List<Path>) {
 
 /**
  * Whether names under [root] compare case-insensitively, probed by flipping the case of the root's last segment
- * and asking whether that names the same directory. A segment with no letters cannot be probed and is treated
- * as case-sensitive, as is any probe the file system refuses.
+ * and asking whether that names the same directory. A segment with no letters cannot be probed, so the nearest
+ * ancestor whose name has letters is probed instead (a workspace `/Users/a/2024`, #1424); a path with no letters
+ * at all is treated as case-sensitive, as is any probe the file system refuses. Like the root's own segment, an
+ * ancestor is looked up in its parent directory, so a probe can misjudge a root whose volume is mounted below it.
  */
 internal fun probeCaseInsensitive(root: Path): Boolean {
-    val name = root.fileName?.toString() ?: return false
-    val flipped = name.map { if (it.isUpperCase()) it.lowercaseChar() else it.uppercaseChar() }.joinToString("")
-    if (flipped == name) return false
-    val alias = root.resolveSibling(flipped)
+    val (probed, flipped) = generateSequence(root) { it.parent }.firstNotNullOfOrNull { candidate ->
+        val name = candidate.fileName?.toString() ?: return@firstNotNullOfOrNull null
+        val flipped = name.map { if (it.isUpperCase()) it.lowercaseChar() else it.uppercaseChar() }.joinToString("")
+        (candidate to flipped).takeUnless { flipped == name }
+    } ?: return false
+    val alias = probed.resolveSibling(flipped)
     return try {
-        Files.exists(alias) && Files.isSameFile(root, alias)
+        Files.exists(alias) && Files.isSameFile(probed, alias)
     } catch (_: IOException) {
         false
     } catch (_: SecurityException) {
