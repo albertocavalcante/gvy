@@ -391,6 +391,9 @@ class JenkinsCompletionExactSetTest {
         assertEquals("branch ", inserts["branch"])
         assertEquals("beforeAgent ", inserts["beforeAgent"])
         assertEquals("allOf {", inserts["allOf"])
+        listOf("buildingTag", "changeRequest", "isRestartedRun").forEach { name ->
+            assertEquals("$name()", inserts[name], "$name is a no-argument call")
+        }
     }
 
     @Test
@@ -410,7 +413,8 @@ class JenkinsCompletionExactSetTest {
             "            yaml '''",
             "apiVersion: v1",
             "kind: Pod",
-            "spec: { containers: [ { name: maven } ] }",
+            // The unbalanced `{` below only stays harmless through the detector\'s multi-line string handling.
+            "spec: { containers: [ { name: maven } ]",
             "            '''",
             "        }",
             "    }",

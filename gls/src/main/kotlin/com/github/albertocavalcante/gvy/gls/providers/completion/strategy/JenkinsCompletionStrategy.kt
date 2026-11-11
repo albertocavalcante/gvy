@@ -148,11 +148,16 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
         blockContext.innerInstructions.forEach { instruction ->
             // A statement (`image 'maven'`, `reuseNode true`) takes a value, not a block.
             val isStatement = instruction in blockContext.statementInstructions
+            val insert = when {
+                instruction in NO_ARGUMENT_CONDITIONS -> "$instruction()"
+                isStatement -> "$instruction "
+                else -> "$instruction {"
+            }
             completion {
                 label(instruction)
                 kind(CompletionItemKind.Keyword)
                 detail(if (isStatement) "Declarative option" else "Declarative directive")
-                insertText(if (isStatement) "$instruction " else "$instruction {")
+                insertText(insert)
                 sortText("0-directive-$instruction")
             }
         }
@@ -226,3 +231,6 @@ private fun JenkinsBlockContext.acceptsDeclarativeDirectives(): Boolean =
 private fun JenkinsBlockContext.isInsideGroovyBody(): Boolean = "script" in enclosingBlocks ||
     "expression" in enclosingBlocks ||
     ("node" in enclosingBlocks && "agent" !in enclosingBlocks)
+
+/** `when` conditions written as a call without arguments (`buildingTag()`), not as a statement or a block. */
+private val NO_ARGUMENT_CONDITIONS = setOf("buildingTag", "changeRequest", "isRestartedRun")
