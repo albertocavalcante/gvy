@@ -23,7 +23,7 @@ class CliCommandStepExecutorTest {
     lateinit var workspace: Path
 
     @Test
-    fun `successful CLI output is saved before its files and streams are released`() {
+    fun `successful CLI output is saved before its readers and streams are released`() {
         val process = ControlledProcess()
         val invocation = Invocation(process)
         val context = context()
@@ -36,7 +36,7 @@ class CliCommandStepExecutorTest {
     }
 
     @Test
-    fun `an unexpected exit still releases CLI files and streams`() {
+    fun `an unexpected exit still releases CLI readers and streams`() {
         val invocation = Invocation(ControlledProcess(exitCode = 7))
 
         assertThatThrownBy { invocation.executor.execute(ScenarioStep.CliCommand("tool"), context()) }
@@ -46,7 +46,7 @@ class CliCommandStepExecutorTest {
     }
 
     @Test
-    fun `a timed out CLI is terminated and awaited before its outputs are removed`() {
+    fun `a timed out CLI is terminated and awaited before its readers are released`() {
         val process = ControlledProcess(completed = false)
         val invocation = Invocation(process)
 
@@ -59,7 +59,7 @@ class CliCommandStepExecutorTest {
     }
 
     @Test
-    fun `an interrupted CLI wait still terminates the child and removes outputs`() {
+    fun `an interrupted CLI wait still terminates the child and releases readers`() {
         val process = ControlledProcess(completed = false, firstWaitFailure = InterruptedException("cancelled"))
         val invocation = Invocation(process)
 
@@ -94,20 +94,18 @@ class CliCommandStepExecutorTest {
     }
 
     @Test
-    fun `a failed CLI launch removes files created before starting the child`() {
-        lateinit var stdout: Path
-        lateinit var stderr: Path
+    fun `a failed CLI launch starts no readers or output files`() {
+        lateinit var invocation: ProcessBuilder
         val failure = IOException("cannot start CLI")
         val executor = CliCommandStepExecutor { builder ->
-            stdout = builder.redirectOutput().file().toPath()
-            stderr = builder.redirectError().file().toPath()
+            invocation = builder
             throw failure
         }
 
         assertThatThrownBy { executor.execute(ScenarioStep.CliCommand("tool"), context()) }.isSameAs(failure)
 
-        assertThat(stdout).doesNotExist()
-        assertThat(stderr).doesNotExist()
+        assertThat(invocation.redirectOutput()).isEqualTo(ProcessBuilder.Redirect.PIPE)
+        assertThat(invocation.redirectError()).isEqualTo(ProcessBuilder.Redirect.PIPE)
     }
 
     @Test
@@ -128,8 +126,8 @@ class CliCommandStepExecutorTest {
     }
 
     @Test
-    fun `a failure reading CLI output still releases files and streams`() {
-        val invocation = Invocation(ControlledProcess(), unreadableOutput = true)
+    fun `a failure reading CLI output still releases readers and streams`() {
+        val invocation = Invocation(ControlledProcess(readFailure = IOException("cannot read stdout")))
 
         assertThatThrownBy { invocation.executor.execute(ScenarioStep.CliCommand("tool"), context()) }
             .isInstanceOf(IOException::class.java)
@@ -164,25 +162,16 @@ class CliCommandStepExecutorTest {
         jsonPathConfig = Configuration.defaultConfiguration(),
     )
 
-    private class Invocation(private val process: ControlledProcess, unreadableOutput: Boolean = false) {
-        private lateinit var stdout: Path
-        private lateinit var stderr: Path
-        val executor = CliCommandStepExecutor { builder ->
-            stdout = builder.redirectOutput().file().toPath()
-            stderr = builder.redirectError().file().toPath()
-            if (unreadableOutput) {
-                Files.deleteIfExists(stdout)
-                Files.createDirectory(stdout)
-            } else {
-                Files.writeString(stdout, "hello")
-            }
-            Files.writeString(stderr, "stderr")
+    private class Invocation(private val process: ControlledProcess) {
+        private lateinit var builder: ProcessBuilder
+        val executor = CliCommandStepExecutor { command ->
+            builder = command
             process
         }
 
         fun assertReleased() {
-            assertThat(stdout).doesNotExist()
-            assertThat(stderr).doesNotExist()
+            assertThat(builder.redirectOutput()).isEqualTo(ProcessBuilder.Redirect.PIPE)
+            assertThat(builder.redirectError()).isEqualTo(ProcessBuilder.Redirect.PIPE)
             assertThat(process.streamsClosed).isEqualTo(PROCESS_STREAM_COUNT)
             assertThat(process.isAlive).isFalse()
         }
@@ -194,17 +183,22 @@ class CliCommandStepExecutorTest {
         private val firstWaitFailure: Exception? = null,
         private val terminationFailure: IOException? = null,
         private val streamFailure: IOException? = null,
+        private val readFailure: IOException? = null,
     ) : Process() {
         var streamsClosed = 0
         var destroyed = false
         var waitCalls = 0
         private var alive = !completed
-        private val stdout = object : ByteArrayInputStream(byteArrayOf()) {
+        private val stdout = object : ByteArrayInputStream("hello".toByteArray()) {
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                readFailure?.let { throw it }
+                return super.read(buffer, offset, length)
+            }
             override fun close() {
                 streamsClosed++
             }
         }
-        private val stderr = object : ByteArrayInputStream(byteArrayOf()) {
+        private val stderr = object : ByteArrayInputStream("stderr".toByteArray()) {
             override fun close() {
                 streamsClosed++
             }

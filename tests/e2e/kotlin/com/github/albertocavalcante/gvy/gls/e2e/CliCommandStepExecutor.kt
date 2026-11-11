@@ -3,39 +3,38 @@ package com.github.albertocavalcante.gvy.gls.e2e
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.nio.file.Files
 import java.util.concurrent.TimeUnit
-import java.util.concurrent.TimeoutException
 
 private val logger = KotlinLogging.logger("CliCommandStepExecutor")
 
-class CliCommandStepExecutor(private val processStart: (ProcessBuilder) -> Process = ProcessBuilder::start) :
-    StepExecutor<ScenarioStep.CliCommand> {
+class CliCommandStepExecutor internal constructor(
+    private val outputLimit: () -> Int,
+    private val processStart: (ProcessBuilder) -> Process,
+) : StepExecutor<ScenarioStep.CliCommand> {
+    constructor(processStart: (ProcessBuilder) -> Process = ProcessBuilder::start) :
+        this({ configuredCliOutputLimit() }, processStart)
+
     override fun execute(step: ScenarioStep.CliCommand, context: ScenarioContext, nextStep: ScenarioStep?) {
+        val limit = outputLimit()
         val command = context.interpolateString(step.command)
         val arguments = step.args.map { context.interpolateString(it) }
         val fullCommand = commandLine(command, arguments)
         logger.info { "Executing CLI command: ${fullCommand.joinToString(" ")}" }
         val builder = processBuilder(fullCommand, context)
 
-        SessionResources().use { resources ->
-            // TODO(#1669): Bound captured bytes while draining both output streams.
-            //   See: https://github.com/albertocavalcante/gvy/issues/1669
-            val capture = Files.createTempDirectory("gvy-cli-")
-            resources.own(AutoCloseable { WorkspaceFixture.cleanup(capture) })
-            val outputFile = capture.resolve("stdout.log").toFile()
-            val errorFile = capture.resolve("stderr.log").toFile()
-            builder.redirectOutput(outputFile)
-            builder.redirectError(errorFile)
-
-            val process = processStart(builder)
-            resources.own(CliProcess(process, resources.interruption))
-            context.checkActive()
-            if (!process.waitFor(step.timeoutSeconds, TimeUnit.SECONDS)) {
-                throw TimeoutException("CLI command timed out after ${step.timeoutSeconds}s: $fullCommand")
+        try {
+            SessionResources().use { resources ->
+                val capture = resources.own(CliOutputCapture(limit))
+                val process = processStart(builder)
+                resources.own(CliProcess(process, resources.interruption))
+                context.checkActive()
+                val output = capture.await(process, step.timeoutSeconds)
+                context.checkActive()
+                acceptResult(step, context, output.exitCode, output.stdout, output.stderr)
             }
-            context.checkActive()
-            acceptResult(step, context, process.exitValue(), outputFile.readText(), errorFile.readText())
+        } catch (failure: CliOutputLimitExceeded) {
+            failure.cleanupConfirmed = failure.suppressed.isEmpty()
+            throw failure
         }
     }
 
