@@ -313,6 +313,42 @@ pnpm install
 pnpm run compile
 ```
 
+### Run the latest green main
+
+Releases lag `main`, so for daily use run `make ext-latest` from a gvy checkout. It installs the extension and server
+jar built from the newest `origin/main` commit whose CI passed:
+
+```bash
+make ext-latest              # build + install the newest green main
+make ext-latest DRY_RUN=1    # show the chosen commit and what would happen
+make ext-rollback            # reinstall the previous kept VSIX
+```
+
+Then run **Developer: Reload Window**. The build runs in its own clone under `~/.cache/gvy/ext-latest/src`, never in
+your worktrees. A commit counts as green when the `CI` workflow succeeded and `Extension CI` either succeeded or did not
+run (path-filtered); pending, failed and cancelled commits are skipped, walking back up to 20 commits. The command exits
+early with "already up to date" when the installed server already reports that commit. The last 3 VSIX files are kept as
+`~/.local/share/gvy/vsix/gvy-<version>+g<sha7>.vsix`. Requires `gh` (authenticated), `jq`, `java`, `pnpm` and `unzip`;
+Gradle runs through `build-slot` when it is on `PATH`.
+
+| Variable                       | Default                                      | Meaning                                                     |
+| ------------------------------ | -------------------------------------------- | ----------------------------------------------------------- |
+| `EXT_EDITORS`                  | `code`                                       | Comma list of `code`, `cursor`, `windsurf`, `agy`, `kiro`   |
+| `EXT_LATEST_SHA`               | newest green                                 | Build this commit instead (its CI status is still reported) |
+| `EXT_LATEST_ALLOW_UNGREEN`     | `0`                                          | `1` allows a forced or newest commit without green CI       |
+| `EXT_LATEST_MAX_COMMITS`       | `20`                                         | How many commits to walk back looking for green             |
+| `EXT_LATEST_REQUIRED`          | `CI`                                         | Workflows (comma list) that must have succeeded             |
+| `EXT_LATEST_OPTIONAL`          | `Extension CI`                               | Workflows that must succeed only if they ran                |
+| `EXT_LATEST_KEEP`              | `3`                                          | VSIX files kept for rollback                                |
+| `EXT_LATEST_CACHE_DIR`         | `${XDG_CACHE_HOME:-~/.cache}/gvy/ext-latest` | Holds the build clone (`src/`)                              |
+| `EXT_LATEST_VSIX_DIR`          | `${XDG_DATA_HOME:-~/.local/share}/gvy/vsix`  | Kept VSIX files                                             |
+| `FORCE=1`                      | off                                          | Rebuild and reinstall even when up to date                  |
+| `ROLLBACK_SHA` (rollback only) | previous build                               | Reinstall the kept VSIX for this sha prefix                 |
+
+`make ext-rollback` installs the newest kept VSIX that differs from what is installed. Running this periodically
+(launchd, cron, a login item) is up to you; the repository ships no scheduler. A nightly pre-release VSIX and an update
+channel in the extension are tracked separately in #1576.
+
 ## Copilot coding agent
 
 See [COPILOT.md](COPILOT.md) for agent-specific setup and the `copilot-setup-steps` workflow.
