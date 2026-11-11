@@ -5,7 +5,7 @@ description: Completion for class should include auto-import text edit.
 xfail:
   issue: 116
   reason: completion offers no cross-package class with an import text edit
-  match: StringUtils
+  match: 'StringUtils.*SIZE\. Actual: \[\]'
 workspace:
   fixture: empty-workspace
   files:

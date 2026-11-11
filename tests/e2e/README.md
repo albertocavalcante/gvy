@@ -133,15 +133,19 @@ name: hover-type-inference
 xfail:
   issue: 432                        # gvy issue that tracks the bug (required)
   reason: hover shows no inferred type  # what is wrong (required)
-  match: "Integer"                  # optional regex the failure message must contain
+  match: "Actual:.*Variable"        # optional regex the failure message must contain
 ```
 
-- It runs as `[xfail gvy#432] hover-type-inference`. An assertion failure, a timeout or an LSP error response is
-  reported as aborted (skipped) with the reason; any other error (bad YAML, crashed server) still fails, and so does a
-  failure whose message does not match `match`.
+- It runs as `[xfail gvy#432] hover-type-inference`. An assertion failure or an LSP error response (or a timeout, only
+  when `match` is set) is reported as aborted (skipped) with the reason; any other error (bad YAML, crashed server)
+  still fails, and so does a failure whose message does not match `match`.
 - When the scenario passes, the test **fails** with `gvy#432 appears fixed: remove xfail from <file>`. Remove the block
   (and close or update the issue) in the fix that makes it pass.
-- Step timeouts are capped at 15 seconds so a hung request does not eat shard time.
+- Request and notification-wait timeouts are capped at 15 seconds so a hung request does not eat shard time.
+  `initialize` and the `groovy/status` readiness wait are never capped, since a slow machine would otherwise fail the
+  scenario.
+- Write `match` so it describes the expected failure (for example the actual value), not just the assertion path; a
+  timeout needs one because it can also be caused by a slow machine.
 - Unknown keys under `xfail` are rejected.
 
 Prefer `xfail` to the `_` filename prefix. A `_`-prefixed file is skipped by the runner but must still parse and must

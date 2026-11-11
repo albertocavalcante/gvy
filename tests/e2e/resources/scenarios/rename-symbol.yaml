@@ -8,7 +8,7 @@ description: Rename a method reference across multiple files.
 xfail:
   issue: 1587
   reason: cross-file method rename is refused instead of applied
-  match: renaming across files is not supported
+  match: 'renaming across files is not supported'
 workspace:
   fixture: empty-workspace
 steps:

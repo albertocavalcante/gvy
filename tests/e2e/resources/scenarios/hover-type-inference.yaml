@@ -5,7 +5,7 @@ description: Hover on def variables shows inferred types.
 xfail:
   issue: 432
   reason: hover on def variables does not show the inferred type
-  match: contents\.value
+  match: '(?s)Actual:.*\(Variable\)'
 workspace:
   fixture: empty-workspace
 steps:

@@ -177,7 +177,7 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
 
         val future = context.session.server.initialize(params)
 
-        val timeoutMs = context.effectiveTimeoutMs(30_000L)
+        val timeoutMs = 30_000L
         val start = System.currentTimeMillis()
         val process = context.session.process
 
@@ -436,7 +436,12 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
             }
         }
 
-        val timeout = context.effectiveTimeoutMs(step.timeoutMs ?: 30_000L)
+        val requestedTimeout = step.timeoutMs ?: 30_000L
+        val timeout = if (XfailOutcome.isReadinessWait(step.method)) {
+            requestedTimeout
+        } else {
+            context.effectiveTimeoutMs(requestedTimeout)
+        }
         val checkFailureReasons = mutableListOf<String>()
 
         val earlySkipPredicate: (() -> Boolean)? = if (step.optional && nextStep is ScenarioStep.WaitNotification) {

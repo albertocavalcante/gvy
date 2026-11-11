@@ -21,7 +21,7 @@ sealed interface XfailDecision {
  * Turns the result of a scenario that declares `xfail` into a test outcome.
  *
  * Only failures that look like the product misbehaving count as expected: an assertion that did not hold, a timeout,
- * or an LSP error response. A harness error (bad YAML, missing fixture, crashed process) is never hidden. When
+ * or an LSP error response (a timeout only when [Xfail.match] is set). A harness error (bad YAML, missing fixture, crashed process) is never hidden. When
  * [Xfail.match] is set the failure message must also match it, so a different failure in the same scenario is
  * not swallowed.
  */
@@ -32,6 +32,12 @@ object XfailOutcome {
     /** The step timeout to use: [requestedMs], lowered to [capMs] when a cap is set. */
     fun capTimeout(requestedMs: Long, capMs: Long?): Long = capMs?.let { minOf(requestedMs, it) } ?: requestedMs
 
+    /**
+     * Readiness waits are not part of the bug under test and depend on machine load (dependency resolution can be
+     * slow), so the cap never applies to them; `initialize` is likewise never capped.
+     */
+    fun isReadinessWait(method: String): Boolean = method == "groovy/status"
+
     fun displayName(scenario: Scenario): String =
         scenario.xfail?.let { "[xfail gvy#${it.issue}] ${scenario.name}" } ?: scenario.name
 
@@ -41,6 +47,8 @@ object XfailOutcome {
             return XfailDecision.Fixed("gvy#${xfail.issue} appears fixed: remove xfail from $source")
         }
         if (!isProductFailure(failure)) return XfailDecision.Unexpected(failure)
+        // A timeout says little about why, and a slow machine can cause one, so it only counts with a `match`.
+        if (failure is TimeoutException && xfail.match == null) return XfailDecision.Unexpected(failure)
         val pattern = xfail.match?.let(::Regex)
         if (pattern != null && !pattern.containsMatchIn(messageChain(failure))) {
             return XfailDecision.Unexpected(failure)

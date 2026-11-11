@@ -5,7 +5,7 @@ description: Detects semantic errors like undefined variables and type mismatche
 xfail:
   issue: 433
   reason: undefined variables are not reported as errors without static type checking
-  match: undefinedVar
+  match: 'undefinedVar.*SIZE\. Actual: \[\]'
 workspace:
   fixture: empty-workspace
 steps:

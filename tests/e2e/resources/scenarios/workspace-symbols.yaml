@@ -5,7 +5,7 @@ description: Search for symbols across the workspace.
 xfail:
   issue: 431
   reason: workspace/symbol misses symbols of documents opened via didOpen
-  match: UniqueController
+  match: 'UniqueController.*SIZE\. Actual: \[\]'
 workspace:
   fixture: empty-workspace
 steps:

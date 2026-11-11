@@ -23,8 +23,18 @@ class XfailOutcomeTest {
     }
 
     @Test
-    fun `timeout is expected`() {
-        assertThat(classify(failure = TimeoutException("slow"))).isInstanceOf(XfailDecision.Expected::class.java)
+    fun `timeout is expected only with a match`() {
+        val timeout = TimeoutException("Timeout waiting for notification 'x'")
+        assertThat(classify(failure = timeout)).isEqualTo(XfailDecision.Unexpected(timeout))
+        assertThat(classify(xfail.copy(match = "notification 'x'"), timeout))
+            .isInstanceOf(XfailDecision.Expected::class.java)
+        assertThat(classify(xfail.copy(match = "other"), timeout)).isEqualTo(XfailDecision.Unexpected(timeout))
+    }
+
+    @Test
+    fun `readiness waits are exempt from the cap`() {
+        assertThat(XfailOutcome.isReadinessWait("groovy/status")).isTrue()
+        assertThat(XfailOutcome.isReadinessWait("textDocument/publishDiagnostics")).isFalse()
     }
 
     @Test

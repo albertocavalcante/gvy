@@ -7,7 +7,7 @@ kt_test(
         "e2e/kotlin/**/*.kt",
         "lsp-client/kotlin/**/*.kt",
     ]),
-    size = "large",  # 900s timeout for 49 scenarios
+    size = "large",  # 900s timeout for the whole scenario suite
     # no-sandbox: Allow access to ~/.gradle for Gradle wrapper/tooling API
     # The language server subprocess needs to resolve Gradle dependencies
     tags = ["no-sandbox"],
