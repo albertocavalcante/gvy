@@ -1,32 +1,22 @@
 package com.github.albertocavalcante.gvy.fmt
 
 import com.github.albertocavalcante.gvy.common.text.ShebangUtils
-import org.openrewrite.ExecutionContext
-import org.openrewrite.InMemoryExecutionContext
+import org.openrewrite.ParseExceptionResult
 import org.openrewrite.SourceFile
 import org.openrewrite.groovy.GroovyIsoVisitor
-import org.openrewrite.groovy.GroovyParser
-import org.openrewrite.groovy.format.AutoFormat
 import org.openrewrite.groovy.marker.MultiVariable
-import org.openrewrite.internal.InMemoryLargeSourceSet
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
+import org.openrewrite.tree.ParseError
 import org.slf4j.LoggerFactory
 import java.util.UUID
-import java.util.stream.Collectors
 
 class OpenRewriteFormatter internal constructor(
     private val checker: (original: String, edited: String) -> TokenStreamVerdict,
+    private val operations: RewriteOperations,
 ) {
+    internal constructor(checker: (String, String) -> TokenStreamVerdict) : this(checker, RewriteOperations())
     constructor() : this(TokenStreamGuard::check)
-
-    private val parser: GroovyParser = GroovyParser.builder().build()
-
-    // Report recipe errors through the server log: a raw printStackTrace() bypasses Logback and its levels.
-    internal val executionContext: ExecutionContext = InMemoryExecutionContext { t: Throwable ->
-        logger.error("OpenRewrite formatting recipe failed", t)
-    }
-    private val recipe = AutoFormat()
 
     /**
      * Formats [text], or returns it unchanged when formatting would change more than layout.
@@ -48,14 +38,14 @@ class OpenRewriteFormatter internal constructor(
      * so the LSP formatting request, the "Format document" code action and `gls format` all share
      * the check. Does not log refusals: the caller knows which document they belong to.
      */
-    fun formatChecked(text: String): FormatOutcome {
-        val formatted = formatUnchecked(text)
-        if (formatted == text) return FormatOutcome.Unchanged(text)
+    fun formatChecked(text: String): FormatOutcome = preserveEngineFailure { checked(text) }
 
-        val verdict = runCatching { checker(text, formatted) }.getOrElse { failure ->
-            // A guard that cannot run cannot vouch for the edit.
-            return FormatOutcome.Refused(text, "the token stream check failed: $failure", failure)
-        }
+    private fun checked(text: String): FormatOutcome {
+        val outcome = rewrite(text)
+        if (outcome is FormatOutcome.Refused || outcome.text == text) return outcome
+
+        val formatted = outcome.text
+        val verdict = checker(text, formatted)
         return if (verdict.isSafe) {
             FormatOutcome.Formatted(formatted)
         } else {
@@ -68,8 +58,13 @@ class OpenRewriteFormatter internal constructor(
      *
      * Tests use this to assert what the formatter produces, independent of whether the guard would refuse it.
      */
-    internal fun formatUnchecked(text: String): String {
-        if (text.isBlank()) return text
+    internal fun formatUnchecked(text: String): String = preserveEngineFailure { rewrite(text).text }
+
+    private inline fun <T> preserveEngineFailure(action: () -> T): T =
+        runCatching(action).getOrElse { throw it.originalRecipeFailure() }
+
+    private fun rewrite(text: String): FormatOutcome {
+        if (text.isBlank()) return FormatOutcome.Unchanged(text)
 
         // NOTE: Shebang extraction is a heuristic workaround. OpenRewrite's GroovyParser doesn't
         // recognize shebangs because they're Unix shell directives, not Groovy syntax. We extract
@@ -79,33 +74,61 @@ class OpenRewriteFormatter internal constructor(
         val extraction = ShebangUtils.extractShebang(text)
 
         // Handle shebang-only files (no content to format)
-        if (extraction.shebang != null && extraction.content.isBlank()) {
-            return extraction.shebang!!.trimEnd()
+        extraction.shebang?.let { shebang ->
+            if (extraction.content.isBlank()) return result(text, shebang.trimEnd())
         }
 
-        val formattedText = runCatching {
-            val sourceFiles = parser.parse(extraction.content).collect(Collectors.toList())
-            val literalSpelling = literalSpellingRestorer(sourceFiles)
-            val formattedSource = recipe.run(InMemoryLargeSourceSet(sourceFiles), executionContext)
-                .changeset
-                .allResults
-                .mapNotNull { it.after }
-                .firstOrNull()
-                ?: return@runCatching extraction.content
+        return rewriteContent(text, extraction.content, extraction.shebang)
+    }
 
-            // Fix spacing on the LST only: a text-level pass over the printed source would also rewrite
-            // the inside of string literals and comments (#1524).
-            val literalsFixed = literalSpelling.visit(formattedSource, Unit) as SourceFile
-            val declarationsFixed = DeclarationSpacing().visit(literalsFixed, Unit) as SourceFile
-            val normalizedSource = PostFormatWhitespaceCollapser().visit(declarationsFixed, Unit) as SourceFile
-            normalizedSource.printAll().normalizeLineEndings()
-        }.getOrElse { return text }
+    private fun rewriteContent(original: String, content: String, shebang: String?): FormatOutcome {
+        val operation = RewriteOperation()
+        val sourceFiles = operations.parse(content, operation.context)
+        val parseErrors = sourceFiles.filterIsInstance<ParseError>()
+        operation.throwIfFailed(allowSourceErrors = parseErrors.isNotEmpty())
+        if (parseErrors.isNotEmpty()) {
+            val unknown = parseErrors.firstOrNull { !it.isExpectedSourceRefusal() }
+            if (unknown != null) throw unknown.toException()
+            return FormatOutcome.Refused(original, "the formatter cannot safely parse this source")
+        }
+        if (sourceFiles.size != 1 || sourceFiles.single().printAll() != content) {
+            return FormatOutcome.Refused(original, "the formatter cannot reproduce this source before formatting")
+        }
+
+        val formattedText = printFormatted(sourceFiles, content, operation)
 
         // Restore shebang with normalized spacing (always one blank line)
-        return extraction.shebang?.let { shebang ->
-            "$shebang\n${formattedText.trimStart()}"
+        val restored = shebang?.let {
+            "$it\n${formattedText.trimStart()}"
         } ?: formattedText
+        return result(original, restored)
     }
+
+    private fun printFormatted(sources: List<SourceFile>, original: String, operation: RewriteOperation): String {
+        val literalSpelling = literalSpellingRestorer(sources)
+        val formattedSource = operations.rewrite(sources, operation.context)
+        operation.throwIfFailed()
+        if (formattedSource == null) return original
+
+        // Change the LST only: a text-level pass would also rewrite string literals and comments (#1524).
+        val literalsFixed = literalSpelling.visit(formattedSource, Unit) as SourceFile
+        val declarationsFixed = DeclarationSpacing().visit(literalsFixed, Unit) as SourceFile
+        val normalizedSource = PostFormatWhitespaceCollapser().visit(declarationsFixed, Unit) as SourceFile
+        val printed = operations.print(normalizedSource).normalizeLineEndings()
+        operation.throwIfFailed()
+        return printed
+    }
+
+    private fun ParseError.isExpectedSourceRefusal(): Boolean {
+        val kind = markers.findFirst(ParseExceptionResult::class.java).orElse(null)?.exceptionType
+            ?.substringAfterLast('.')
+        return kind == "MultipleCompilationErrorsException" || kind == "CompilationFailedException" ||
+            kind == "GroovySyntaxError" ||
+            (kind == "IllegalStateException" && erroneous != null)
+    }
+
+    private fun result(original: String, formatted: String): FormatOutcome =
+        if (original == formatted) FormatOutcome.Unchanged(original) else FormatOutcome.Formatted(formatted)
 
     /**
      * Normalizes line endings to Unix style (LF) for consistency.

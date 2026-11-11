@@ -6,13 +6,18 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.spi.ThrowableProxy
 import ch.qos.logback.core.read.ListAppender
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.parallel.Isolated
+import org.openrewrite.ExecutionContext
+import org.openrewrite.SourceFile
 import org.slf4j.LoggerFactory
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 
+@Isolated("Captures the process error stream and formatter log events")
 class OpenRewriteFormatterErrorReportingTest {
 
     private val logs = ListAppender<ILoggingEvent>().apply { start() }
@@ -35,7 +40,14 @@ class OpenRewriteFormatterErrorReportingTest {
         val originalErr = System.err
         System.setErr(PrintStream(stderr, true, Charsets.UTF_8))
         try {
-            OpenRewriteFormatter().executionContext.onError.accept(failure)
+            val operations = object : RewriteOperations() {
+                override fun rewrite(sources: List<SourceFile>, context: ExecutionContext): SourceFile? {
+                    context.onError.accept(failure)
+                    return null
+                }
+            }
+            val formatter = OpenRewriteFormatter(TokenStreamGuard::check, operations)
+            assertThatThrownBy { formatter.formatChecked("def x = 1\n") }.isSameAs(failure)
         } finally {
             System.setErr(originalErr)
         }
@@ -72,20 +84,14 @@ class OpenRewriteFormatterErrorReportingTest {
     }
 
     @Test
-    fun `a token stream check that throws refuses the result`() {
+    fun `a token stream check failure remains an engine error rather than an intentional refusal`() {
         val failure = IllegalStateException("lexer exploded")
         val formatter = OpenRewriteFormatter { _, _ -> throw failure }
         val input = "def x=1\n"
 
-        val outcome = formatter.formatChecked(input)
-
-        assertThat(outcome).isInstanceOf(FormatOutcome.Refused::class.java)
-        assertThat(outcome.text).isEqualTo(input)
-        assertThat((outcome as FormatOutcome.Refused).cause).isSameAs(failure)
-
-        assertThat(formatter.format(input)).isEqualTo(input)
-        val event = logs.list.single { it.level == Level.WARN }
-        assertThat((event.throwableProxy as ThrowableProxy).throwable).isSameAs(failure)
+        assertThatThrownBy { formatter.formatChecked(input) }.isSameAs(failure)
+        assertThatThrownBy { formatter.format(input) }.isSameAs(failure)
+        assertThat(logs.list).noneMatch { it.level == Level.WARN }
     }
 
     @Test

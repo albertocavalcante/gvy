@@ -5,13 +5,20 @@ import com.github.ajalt.clikt.core.parse
 import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.gls.cli.FormatCommand
 import com.github.albertocavalcante.gvy.gls.cli.GlsCommand
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.api.parallel.Isolated
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.IOException
 import java.io.PrintStream
+import java.util.concurrent.CancellationException
 
+@Isolated("Captures the process output streams")
 class MainFormatTest {
 
     /**
@@ -86,6 +93,23 @@ class MainFormatTest {
         assertThrows<CliktError> {
             runWithContext("format", "does-not-exist.groovy")
         }
+    }
+
+    @Test
+    fun `engine failure propagates without printing a successful document`(@TempDir directory: File) {
+        val input = "def x = 1\n"
+        val file = File(directory, "Input.groovy").apply { writeText(input) }
+        listOf(IOException("engine failed"), CancellationException("engine cancelled"), LinkageError("engine fatal"))
+            .forEach { failure ->
+                val output = captureOutput {
+                    assertThatThrownBy {
+                        runWithContext("format", file.absolutePath, formatCommand = FormatCommand { throw failure })
+                    }.isSameAs(failure)
+                }
+
+                assertThat(output).isEmpty()
+                assertThat(file.readText()).isEqualTo(input)
+            }
     }
 
     /**
