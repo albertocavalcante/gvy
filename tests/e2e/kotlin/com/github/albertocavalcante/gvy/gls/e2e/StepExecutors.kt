@@ -16,8 +16,11 @@ import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
 import org.eclipse.lsp4j.DidChangeTextDocumentParams
 import org.eclipse.lsp4j.DidCloseTextDocumentParams
@@ -232,7 +235,10 @@ class ExitStepExecutor : StepExecutor<ScenarioStep.Exit> {
 class OpenDocumentStepExecutor : StepExecutor<ScenarioStep.OpenDocument> {
     override fun execute(step: ScenarioStep.OpenDocument, context: ScenarioContext, nextStep: ScenarioStep?) {
         val uri = context.resolveUri(step.uri, step.path)
-        val text = step.text?.let(context::interpolateString) ?: fileContents(uri)
+        val path = step.path?.let(context::interpolateString)
+        val text = step.text
+            ?.let { context.stripCursorMarkers(uri, path, context.interpolateString(it)) }
+            ?: fileContents(uri)
         val languageId = context.interpolateString(step.languageId)
 
         val textDocument = TextDocumentItem().apply {
@@ -266,7 +272,8 @@ class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
         // If text field is provided and contentChanges is empty, treat as full-document replacement
         val changes: List<TextDocumentContentChangeEvent> =
             if (step.text != null && step.contentChanges.isEmpty()) {
-                val interpolatedText = context.interpolateString(step.text)
+                val path = step.path?.let(context::interpolateString)
+                val interpolatedText = context.stripCursorMarkers(uri, path, context.interpolateString(step.text))
                 // Full document replacement - use simpler constructor (no range = replace all)
                 listOf(TextDocumentContentChangeEvent(interpolatedText))
             } else {
@@ -842,6 +849,32 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
 // ============================================================================
 
 /**
+ * The LSP position for a high-level step: [position] (typically `"{{cursor.name}}"`) or [line]/[character],
+ * which default to 0.
+ */
+internal fun ScenarioContext.resolvePosition(position: JsonElement?, line: Int?, character: Int?): JsonObject {
+    require(position == null || (line == null && character == null)) {
+        "Specify either position or line/character, not both"
+    }
+    if (position == null) {
+        return buildJsonObject {
+            put("line", line ?: 0)
+            put("character", character ?: 0)
+        }
+    }
+    val resolved = interpolateNode(position)
+    val resolvedLine = ((resolved as? JsonObject)?.get("line") as? JsonPrimitive)?.intOrNull
+    val resolvedCharacter = ((resolved as? JsonObject)?.get("character") as? JsonPrimitive)?.intOrNull
+    require(resolvedLine != null && resolvedCharacter != null) {
+        "position must resolve to {line, character}, got $resolved"
+    }
+    return buildJsonObject {
+        put("line", resolvedLine)
+        put("character", resolvedCharacter)
+    }
+}
+
+/**
  * Executor for high-level Completion step.
  * Translates to textDocument/completion request with assertions.
  */
@@ -857,13 +890,7 @@ class CompletionStepExecutor : StepExecutor<ScenarioStep.Completion> {
                     put("uri", uri)
                 },
             )
-            put(
-                "position",
-                buildJsonObject {
-                    put("line", step.line)
-                    put("character", step.character)
-                },
-            )
+            put("position", context.resolvePosition(step.position, step.line, step.character))
         }
 
         // Execute the request
@@ -1007,13 +1034,7 @@ class RenameStepExecutor : StepExecutor<ScenarioStep.Rename> {
                     put("uri", uri)
                 },
             )
-            put(
-                "position",
-                buildJsonObject {
-                    put("line", step.line)
-                    put("character", step.character)
-                },
-            )
+            put("position", context.resolvePosition(step.position, step.line, step.character))
             put("newName", step.newName)
         }
 

@@ -45,7 +45,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
     )
 
     fun execute(definition: ScenarioDefinition) {
-        val workspace = prepareWorkspace(definition)
+        val (workspace, inlineMarkers) = prepareWorkspace(definition)
         val scenario = definition.scenario
 
         val session = sessionFactory.start(scenario.server, scenario.name)
@@ -59,6 +59,9 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
                 jsonPathConfig = jsonPathConfig,
             )
             context.registerBuiltInVariables()
+            inlineMarkers.forEach { (path, markers) ->
+                context.registerCursors(workspace.resolveUri(path), path, markers)
+            }
 
             scenario.steps.forEachIndexed { index, step ->
                 logger.info { "Running step ${index + 1} (${step::class.simpleName}) for scenario '${scenario.name}'" }
@@ -86,10 +89,21 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
         logger.info { "Step ${context.currentStepIndex + 1} (${step::class.simpleName}) completed in $duration ms" }
     }
 
-    private fun prepareWorkspace(definition: ScenarioDefinition): ScenarioWorkspace = ScenarioWorkspace(
-        WorkspaceFixture.materialize(
+    /** Copies the fixture, writes `workspace.files` over it, and returns the cursor markers of those files. */
+    private fun prepareWorkspace(
+        definition: ScenarioDefinition,
+    ): Pair<ScenarioWorkspace, Map<String, List<CursorMarker>>> {
+        val config = definition.scenario.workspace
+        val root = WorkspaceFixture.materialize(
             scenarioSource = java.nio.file.Path.of(definition.source),
-            fixtureName = definition.scenario.workspace?.fixture,
-        ),
-    )
+            fixtureName = config?.fixture,
+        )
+        val markers = try {
+            InlineFiles.write(root, config?.files.orEmpty())
+        } catch (ex: IllegalArgumentException) {
+            WorkspaceFixture.cleanup(root)
+            throw IllegalArgumentException("Scenario '${definition.scenario.name}': ${ex.message}", ex)
+        }
+        return ScenarioWorkspace(root) to markers
+    }
 }

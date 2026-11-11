@@ -9,8 +9,11 @@ import com.fasterxml.jackson.core.JsonParser
 import com.fasterxml.jackson.core.TreeNode
 import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.DeserializationFeature
+import com.fasterxml.jackson.databind.JsonDeserializer
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.deser.DeserializationProblemHandler
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
+import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -59,6 +62,28 @@ object JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class
 }
 
 /**
+ * Fails on unknown keys for [strictTypes] while the rest of the scenario model stays lenient.
+ *
+ * Unknown keys are otherwise dropped silently, so a typo such as `postion:` turns into a default value
+ * and the scenario still passes.
+ */
+internal class StrictUnknownKeys(private val strictTypes: Set<Class<*>>) : DeserializationProblemHandler() {
+    override fun handleUnknownProperty(
+        ctxt: DeserializationContext,
+        p: JsonParser,
+        deserializer: JsonDeserializer<*>,
+        beanOrClass: Any?,
+        propertyName: String,
+    ): Boolean {
+        val type = beanOrClass as? Class<*> ?: beanOrClass?.javaClass
+        if (type in strictTypes) {
+            throw UnrecognizedPropertyException.from(p, beanOrClass, propertyName, deserializer.knownPropertyNames)
+        }
+        return false
+    }
+}
+
+/**
  * Jackson-based implementation of [ScenarioParser].
  *
  * Uses Jackson with YAML support for parsing scenario files.
@@ -74,12 +99,27 @@ class JacksonScenarioParser : ScenarioParser {
     }
 
     @Suppress("DEPRECATION")
-    private val objectMapper: ObjectMapper = ObjectMapper(YAMLFactory()).apply {
+    private val objectMapper: ObjectMapper = ObjectMapper(
+        YAMLFactory().enable(JsonParser.Feature.STRICT_DUPLICATE_DETECTION),
+    ).apply {
         registerKotlinModule()
         registerModule(jsonElementModule)
+        // TODO(#1546): Make every type strict once existing scenarios stop using unknown keys
+        //   (`message:` nested under `expect:`, `expect: { gte: 1 }`).
+        //   See: https://github.com/albertocavalcante/gvy/issues/1546
         configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
+        addHandler(StrictUnknownKeys(STRICT_TYPES))
         configure(DeserializationFeature.READ_ENUMS_USING_TO_STRING, true)
         enable(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
+    }
+
+    private companion object {
+        /** Types that reject unknown keys; checked-in scenarios use none in them. The rest stay lenient for now. */
+        val STRICT_TYPES: Set<Class<*>> = setOf(
+            WorkspaceConfig::class.java,
+            ScenarioStep.Completion::class.java,
+            ScenarioStep.Rename::class.java,
+        )
     }
 
     override fun parseScenarioDefinition(yaml: String): ScenarioDefinition = try {
@@ -123,7 +163,11 @@ enum class ServerLaunchMode {
     InProcess,
 }
 
-data class WorkspaceConfig(val fixture: String? = null)
+/**
+ * The scenario's temporary workspace: a copy of [fixture] (if any), then [files] written over it.
+ * [files] maps workspace-relative paths to file text; cursor markers in that text are stripped and registered.
+ */
+data class WorkspaceConfig(val fixture: String? = null, val files: Map<String, String> = emptyMap())
 
 /**
  * Represents a single step in a test scenario.
@@ -219,8 +263,10 @@ sealed interface ScenarioStep {
     data class Completion(
         val uri: String? = null,
         val path: String? = null,
-        val line: Int = 0,
-        val character: Int = 0,
+        val line: Int? = null,
+        val character: Int? = null,
+        /** A position object or a placeholder such as `"{{cursor.name}}"`; excludes [line] and [character]. */
+        val position: JsonElement? = null,
         val checks: List<JsonCheck> = emptyList(),
     ) : ScenarioStep
 
@@ -242,8 +288,10 @@ sealed interface ScenarioStep {
     data class Rename(
         val uri: String? = null,
         val path: String? = null,
-        val line: Int = 0,
-        val character: Int = 0,
+        val line: Int? = null,
+        val character: Int? = null,
+        /** A position object or a placeholder such as `"{{cursor.name}}"`; excludes [line] and [character]. */
+        val position: JsonElement? = null,
         val newName: String = "",
         val checks: List<JsonCheck> = emptyList(),
     ) : ScenarioStep

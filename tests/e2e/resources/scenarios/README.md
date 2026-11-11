@@ -40,6 +40,69 @@ Pending migration:
 
 - ⏳ All other scenarios
 
+## Cursor Markers and Inline Files
+
+Write `|^|` or `|^name|` where the cursor should be instead of counting lines and columns, and declare the files a
+cross-file scenario needs inline under `workspace.files`:
+
+```yaml
+name: definition-crossfile-inline
+workspace:
+  fixture: empty-workspace # optional; inline files are written over it
+  files:
+    src/main/groovy/com/example/Greeter.groovy: |
+      package com.example
+      class |^decl|Greeter {}
+    src/main/groovy/com/example/App.groovy: |
+      package com.example
+      new |^use|Greeter()
+steps:
+  # ...initialize, initialized, wait for groovy/status...
+  - openDocument:
+      path: "{{cursor.use.path}}" # no text: sends the file as written to disk
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}" # becomes { line: 1, character: 4 }
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: $.items[0].range.start.line
+          expect: { type: EQUALS, value: "{{cursor.decl.line}}" }
+```
+
+Markers:
+
+- Are recognized in `workspace.files`, `openDocument.text` and full-text `changeDocument.text`. They are stripped before
+  the text reaches the server or the disk. Incremental `contentChanges` and `saveDocument.text` are not scanned.
+- Use names that start with a letter or `_`, followed by letters, digits, `_` or `-`. `line`, `character`, `uri` and
+  `path` are reserved. A name, or the anonymous marker, may appear only once per text and once across all inline files.
+- Count positions in the text after every marker is removed: zero-based lines (split on `\n`, `\r\n` or `\r`) and UTF-16
+  code units, as LSP does by default. An emoji before the marker counts as two characters.
+- Can be rebound by a later `openDocument` or `changeDocument`; the latest position wins.
+
+| Placeholder                   | Value                                                                                          |
+| ----------------------------- | ---------------------------------------------------------------------------------------------- |
+| `{{cursor}}`                  | Anonymous marker as an LSP position `{ line, character }`                                      |
+| `{{cursor.name}}`             | Named marker as an LSP position                                                                |
+| `{{cursor[.name].line}}`      | Zero-based line                                                                                |
+| `{{cursor[.name].character}}` | Zero-based UTF-16 column                                                                       |
+| `{{cursor[.name].uri}}`       | URI of the document that contained the marker                                                  |
+| `{{cursor[.name].path}}`      | Workspace-relative path when the document was named by path or inline; otherwise its file path |
+
+A string that is exactly one placeholder takes the value's JSON type, so `position: "{{cursor.use}}"` is an object and
+`value: "{{cursor.decl.line}}"` is a number. A placeholder inside a longer string is replaced by its text. The
+high-level `completion` and `rename` steps accept `position:` in place of `line`/`character`.
+
+Inline files:
+
+- Map a workspace-relative path to the file's text. Absolute paths and `..` segments are rejected.
+- Are written as UTF-8 with LF line endings before `initialize`, replacing fixture files at the same path.
+
+Scenario parsing rejects duplicate YAML keys and unknown keys in `workspace`, `completion` and `rename`.
+
 ## Adding New Scenarios
 
 1. Create `your-test.yaml` in this directory

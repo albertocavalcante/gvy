@@ -14,12 +14,14 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.lsp4j.InitializeParams
 import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.MessageParams
@@ -150,6 +152,153 @@ class StepExecutorsTest {
                 },
             )
         }
+    }
+
+    @Test
+    fun `a string that is exactly one placeholder substitutes the typed value`() {
+        context.variables["pos"] = buildJsonObject {
+            put("line", 1)
+            put("character", 2)
+        }
+        context.variables["count"] = JsonPrimitive(3)
+        context.variables["items"] = JsonArray(listOf(JsonPrimitive("a")))
+
+        val node = context.interpolateNode(
+            buildJsonObject {
+                put("position", "{{pos}}")
+                put("count", "{{ count }}")
+                put("items", "{{items}}")
+                put("line", "{{pos.line}}")
+                put("label", "line {{pos.line}}")
+            },
+        )
+
+        assertThat(node).isEqualTo(
+            buildJsonObject {
+                put("position", context.variables["pos"]!!)
+                put("count", 3)
+                put("items", context.variables["items"]!!)
+                put("line", 1)
+                put("label", "line 1")
+            },
+        )
+    }
+
+    @Test
+    fun `OpenDocumentStepExecutor strips markers and registers cursors`() {
+        val step = ScenarioStep.OpenDocument(
+            uri = "file:///ws/src/Main.groovy",
+            text = "def {{name}} = |^|1\nprintln |^use|{{name}}\n",
+        )
+        context.variables["name"] = JsonPrimitive("greeting")
+
+        OpenDocumentStepExecutor().execute(step, context)
+
+        verify {
+            session.server.textDocumentService.didOpen(
+                match { it.textDocument.text == "def greeting = 1\nprintln greeting\n" },
+            )
+        }
+        assertThat(context.lastResult!!.let { (it as JsonObject)["text"]!!.jsonPrimitive.content })
+            .isEqualTo("def greeting = 1\nprintln greeting\n")
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor}}"))).isEqualTo(position(0, 15))
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.use}}"))).isEqualTo(position(1, 8))
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.use.line}}"))).isEqualTo(JsonPrimitive(1))
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.character}}"))).isEqualTo(JsonPrimitive(15))
+        assertThat(context.interpolateString("{{cursor.use.uri}}")).isEqualTo("file:///ws/src/Main.groovy")
+        assertThat(context.interpolateString("{{cursor.use.path}}")).isEqualTo("/ws/src/Main.groovy")
+    }
+
+    @Test
+    fun `OpenDocumentStepExecutor reports duplicate marker names`() {
+        val step = ScenarioStep.OpenDocument(uri = "file:///ws/A.groovy", text = "|^a|x |^a|y")
+
+        assertThatThrownBy { OpenDocumentStepExecutor().execute(step, context) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("file:///ws/A.groovy")
+            .hasMessageContaining("|^a|")
+    }
+
+    @Test
+    fun `full-text ChangeDocumentStepExecutor strips markers and rebinds cursors`() {
+        OpenDocumentStepExecutor().execute(
+            ScenarioStep.OpenDocument(uri = "file:///ws/A.groovy", text = "|^a|x"),
+            context,
+        )
+
+        ChangeDocumentStepExecutor().execute(
+            ScenarioStep.ChangeDocument(uri = "file:///ws/A.groovy", version = 2, text = "yy\nz|^a|x"),
+            context,
+        )
+
+        verify {
+            session.server.textDocumentService.didChange(match { it.contentChanges.single().text == "yy\nzx" })
+        }
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.a}}"))).isEqualTo(position(1, 1))
+    }
+
+    @Test
+    fun `unknown cursor names fail with the registered names`() {
+        context.registerCursors("file:///ws/A.groovy", null, listOf(CursorMarker("known", 0, 0)))
+
+        assertThatThrownBy { context.interpolateString("{{cursor.missing}}") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("missing")
+            .hasMessageContaining("known")
+        assertThatThrownBy { context.interpolateString("{{cursor}}") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("|^|")
+        assertThatThrownBy { context.interpolateString("{{cursor.known.column}}") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("column")
+    }
+
+    @Test
+    fun `CompletionStepExecutor sends a cursor position`() {
+        context.registerCursors("file:///ws/A.groovy", null, listOf(CursorMarker("dot", 4, 7)))
+        val params = slot<Any>()
+        every { session.endpoint.request("textDocument/completion", capture(params)) } returns
+            CompletableFuture.completedFuture(emptyList<Any>())
+
+        CompletionStepExecutor().execute(
+            ScenarioStep.Completion(uri = "file:///ws/A.groovy", position = JsonPrimitive("{{cursor.dot}}")),
+            context,
+        )
+
+        val sent = params.captured as Map<*, *>
+        assertThat(sent["position"]).isEqualTo(mapOf("line" to 4L, "character" to 7L))
+    }
+
+    @Test
+    fun `RenameStepExecutor sends a cursor position`() {
+        context.registerCursors("file:///ws/A.groovy", null, listOf(CursorMarker(null, 2, 3)))
+        val params = slot<Any>()
+        every { session.endpoint.request("textDocument/rename", capture(params)) } returns
+            CompletableFuture.completedFuture(emptyMap<String, Any>())
+
+        RenameStepExecutor().execute(
+            ScenarioStep.Rename(uri = "file:///ws/A.groovy", position = JsonPrimitive("{{cursor}}"), newName = "b"),
+            context,
+        )
+
+        val sent = params.captured as Map<*, *>
+        assertThat(sent["position"]).isEqualTo(mapOf("line" to 2L, "character" to 3L))
+    }
+
+    @Test
+    fun `position and line or character together are rejected`() {
+        assertThatThrownBy {
+            CompletionStepExecutor().execute(
+                ScenarioStep.Completion(uri = "file:///ws/A.groovy", line = 1, position = position(0, 0)),
+                context,
+            )
+        }.isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("either")
+    }
+
+    private fun position(line: Int, character: Int): JsonObject = buildJsonObject {
+        put("line", line)
+        put("character", character)
     }
 
     @Test

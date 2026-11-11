@@ -66,7 +66,10 @@ description: Brief description of what this tests
 server:
   mode: stdio          # or inProcess
 workspace:
-  fixture: my-fixture  # Directory under resources/fixtures/
+  fixture: my-fixture  # Directory under resources/workspaces/ or resources/fixtures/
+  files:               # Optional inline files written over the fixture before initialize
+    src/Helper.groovy: |
+      class |^helper|Helper {}
 steps:
   - initialize: {}
   - initialized: {}
@@ -87,43 +90,53 @@ steps:
       source: hoverResult
       checks:
         - jsonPath: $.contents.value
-          expect: { contains: "println" }
+          expect: { type: CONTAINS, value: "println" }
   - shutdown: {}
   - exit: {}
 ```
 
 ## Available Step Types
 
-| Step               | Description                                                      |
-| ------------------ | ---------------------------------------------------------------- |
-| `initialize`       | Sends `initialize` request with optional `initializationOptions` |
-| `initialized`      | Sends `initialized` notification                                 |
-| `shutdown`         | Sends `shutdown` request                                         |
-| `exit`             | Sends `exit` notification                                        |
-| `openDocument`     | Opens a document via `textDocument/didOpen`                      |
-| `changeDocument`   | Modifies a document via `textDocument/didChange`                 |
-| `saveDocument`     | Saves a document via `textDocument/didSave`                      |
-| `closeDocument`    | Closes a document via `textDocument/didClose`                    |
-| `request`          | Sends any LSP request and captures response                      |
-| `notification`     | Sends any LSP notification                                       |
-| `waitNotification` | Waits for a notification from the server                         |
-| `assert`           | Asserts conditions on saved results                              |
+| Step               | Description                                                         |
+| ------------------ | ------------------------------------------------------------------- |
+| `initialize`       | Sends `initialize` request with optional `initializationOptions`    |
+| `initialized`      | Sends `initialized` notification                                    |
+| `shutdown`         | Sends `shutdown` request                                            |
+| `exit`             | Sends `exit` notification                                           |
+| `openDocument`     | Opens a document via `textDocument/didOpen`                         |
+| `changeDocument`   | Modifies a document via `textDocument/didChange`                    |
+| `saveDocument`     | Saves a document via `textDocument/didSave`                         |
+| `closeDocument`    | Closes a document via `textDocument/didClose`                       |
+| `request`          | Sends any LSP request and captures response                         |
+| `notification`     | Sends any LSP notification                                          |
+| `waitNotification` | Waits for a notification from the server                            |
+| `assert`           | Asserts conditions on saved results                                 |
+| `completion`       | Sends `textDocument/completion` at `position` or `line`/`character` |
+| `rename`           | Sends `textDocument/rename` at `position` or `line`/`character`     |
+
+Cursor markers (`|^|`, `|^name|`) in `openDocument.text`, full-text `changeDocument.text` and `workspace.files` are
+stripped before the server sees the text. See
+[Cursor Markers and Inline Files](resources/scenarios/README.md#cursor-markers-and-inline-files).
 
 ## Assertion Syntax
 
 ```yaml
 checks:
   - jsonPath: $.some.path
-    expect: { equals: "expected value" }
+    expect: { type: EQUALS, value: "expected value" }
   - jsonPath: $.array
-    expect: { contains: "item" }
+    expect: { type: CONTAINS, value: "item" }
   - jsonPath: $.field
-    expect: { matchesRegex: "pattern.*" }
+    expect: { type: MATCHES_REGEX, value: "pattern.*" }
   - jsonPath: $.optional
-    expect: { exists: true }
+    expect: { type: EXISTS }
   - jsonPath: $.size
-    expect: { size: 5 }
+    expect: { type: SIZE, value: 5 }
+    message: Shown when the check fails # belongs to the check, not to `expect`
 ```
+
+`expect` takes `type` (one of the `ExpectationType` values in `Scenario.kt`), `value` and `values`. Other keys under
+`expect` are currently ignored, so `expect: { contains: "x" }` only checks that the path exists.
 
 ## Variable Interpolation
 
@@ -139,6 +152,9 @@ Built-in variables:
 
 - `{{workspace.uri}}` - Workspace root URI
 - `{{workspace.path}}` - Workspace root path
+- `{{cursor}}`, `{{cursor.name}}` - Cursor marker positions, with `.line`, `.character`, `.uri` and `.path`
+
+A string that is exactly one placeholder keeps the value's JSON type: `position: "{{cursor.name}}"` sends an object.
 
 ## Performance Considerations
 

@@ -3,19 +3,18 @@ description: 'Goto definition for class in JAR dependency navigates to extracted
 workspace:
   fixture: 'gradle-dependency'
   files:
-    - path: 'src/main/groovy/DependencyTest.groovy'
-      content: |
-        package com.example
+    'src/main/groovy/DependencyTest.groovy': |
+      package com.example
 
-        import com.example.testlib.Greeter
+      import com.example.testlib.Greeter
 
-        class DependencyTest {
-            def test() {
-                // Should resolve to the source JAR class
-                def greeter = new Greeter("World")
-                greeter.greet()
-            }
-        }
+      class DependencyTest {
+          def test() {
+              // Should resolve to the source JAR class
+              def greeter = new Greeter("World")
+              greeter.greet()
+          }
+      }
 
 steps:
   - initialize: {}
