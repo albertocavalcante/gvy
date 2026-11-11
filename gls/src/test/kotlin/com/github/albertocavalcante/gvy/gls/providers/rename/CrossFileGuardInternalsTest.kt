@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.providers.rename
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
+import com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -191,27 +193,69 @@ class CrossFileGuardInternalsTest {
     }
 
     @Test
-    fun `a walk reports unreadable directories that could hide sources and ignores skipped ones`() {
+    fun `a walk reports unreadable directories that could hide sources and ignores always skipped ones`() {
         val root = tempDir.toRealPath()
         Files.writeString(root.resolve("build.gradle"), "// module marker\n")
-        val skipped = listOf("build", "target", "node_modules", ".gradle").map {
-            Files.createDirectories(root.resolve(it))
-        }
+        val skipped = listOf("node_modules", ".gradle").map { Files.createDirectories(root.resolve(it)) }
+        // build/ and target/ at a module root are skipped only while readable: a readable one may be a source package.
+        val conditional = listOf("build", "target").map { Files.createDirectories(root.resolve(it)) }
         val volume = Files.createDirectories(root.resolve("data/postgres"))
-        // Path is an Iterable<Path>, so skipped + volume would add its name segments instead of the directory.
-        val locked = skipped + listOf(volume)
+        // Path is an Iterable<Path>, so a list + volume would add its name segments instead of the directory.
+        val locked = skipped + conditional + listOf(volume)
         locked.forEach { runCatching { Files.setPosixFilePermissions(it, emptySet()) } }
         try {
             Assumptions.assumeTrue(locked.none(Files::isReadable), "directories stay readable (Windows or root)")
 
             val walked = walkWorkspace(listOf(root), emptyList(), 100, 1_000) {}
 
-            assertEquals(listOf(volume), walked.unreadable, "only a directory the walk would have listed counts")
+            assertEquals(
+                (conditional + listOf(volume)).toSet(),
+                walked.unreadable.toSet(),
+                "only a directory the walk would have listed, or may list as a source package, counts",
+            )
         } finally {
             locked.forEach {
                 runCatching { Files.setPosixFilePermissions(it, PosixFilePermissions.fromString("rwx------")) }
             }
         }
+    }
+
+    @Test
+    fun `an indexed use in a known workspace source outside the roots is kept`(): Unit = runBlocking {
+        val documents = DocumentProvider()
+        val service = GroovyCompilationService(documentProvider = documents)
+        val workspace = Files.createDirectories(tempDir.resolve("ws"))
+        val own = "class A {\n    def greet() { 'hi' }\n}\n"
+        val ownUri = Files.writeString(workspace.resolve("A.groovy"), own).toUri()
+        // e.g. a Gradle srcDir '../shared': a workspace source that is not under any root.
+        val shared = Files.createDirectories(tempDir.resolve("shared")).resolve("C.groovy")
+        val caller = "class C {\n    def run(a) { new A().greet() }\n}\n"
+        Files.writeString(shared, caller)
+        val stranger = Files.createDirectories(tempDir.resolve("stranger")).resolve("D.groovy")
+        val strangerUri = Files.writeString(stranger, caller).toUri()
+        listOf(ownUri to own, shared.toUri() to caller, strangerUri to caller).forEach { (uri, text) ->
+            documents.put(uri, text)
+            service.compile(uri, text)
+        }
+        val index = checkNotNull(service.getWorkspaceSymbolIndex())
+        val module = checkNotNull(service.getValidParseResult(ownUri)?.ast)
+        val owner = module.classes.single { it.nameWithoutPackage == "A" }
+        val greet = owner.getMethods("greet").single()
+        val proven = index.findReferenceDocuments(SemanticDocumentBuilder.createMethodSymbolId(owner, greet)).keys
+        assertTrue(shared.toUri() in proven && strangerUri in proven, "the index proves both uses: $proven")
+        val guard = CrossFileUseGuard(
+            index,
+            { emptyMap() },
+            WorkspaceLayout(sources = { listOf(shared) }, roots = { listOf(workspace.toRealPath()) }),
+        )
+
+        val uses = guard.usesOutside(ownUri, greet, "greet")
+
+        assertEquals(
+            listOf(shared.toUri()),
+            uses.used,
+            "the unknown outside file is dropped, the workspace source kept",
+        )
     }
 
     @Test

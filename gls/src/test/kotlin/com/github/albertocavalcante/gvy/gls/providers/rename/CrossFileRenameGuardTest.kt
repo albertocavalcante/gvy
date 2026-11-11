@@ -486,13 +486,9 @@ class CrossFileRenameGuardTest {
         val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
         val locked = Files.createDirectories(tempDir.resolve("locked"))
         Files.writeString(locked.resolve("B.groovy"), "class B { def run(x) { x.greet() } }\n")
-        val permissions = runCatching { Files.setPosixFilePermissions(locked, emptySet()) }
-        try {
-            Assumptions.assumeTrue(permissions.isSuccess && !Files.isReadable(locked), "directory stays readable")
+        withUnreadable(locked) {
             val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
             assertTrue("cannot be read" in message && "locked" in message, message)
-        } finally {
-            runCatching { Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwxr-xr-x")) }
         }
     }
 
@@ -511,14 +507,39 @@ class CrossFileRenameGuardTest {
     }
 
     @Test
-    fun `unreadable build output and node_modules directories do not refuse`() {
+    fun `an unreadable node_modules directory is skipped and does not refuse`() {
         val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
         Files.writeString(tempDir.resolve("build.gradle"), "// module marker\n")
-        val build = Files.createDirectories(tempDir.resolve("build"))
         val modules = Files.createDirectories(tempDir.resolve("web/node_modules"))
         walks.invalidate()
 
-        withUnreadable(build, modules) { assertRenames(uri, a, "greet") }
+        withUnreadable(modules) { assertRenames(uri, a, "greet") }
+    }
+
+    @Test
+    fun `an unreadable build output directory at a module root refuses and is named`() {
+        // A readable build/ may be a source package (see the test above), so one that cannot be read may hide a caller.
+        val uri = workspace(mapOf("A.groovy" to a), open = "A.groovy")
+        Files.writeString(tempDir.resolve("build.gradle"), "// module marker\n")
+        val outputs = listOf("build", "out", "target").map { Files.createDirectories(tempDir.resolve(it)) }
+        walks.invalidate()
+
+        withUnreadable(*outputs.toTypedArray()) {
+            val message = refusal { provider.providePrepareRename(uri.toString(), positionOf(a, "greet")) }
+            assertTrue("cannot be read" in message, message)
+            outputs.forEach { assertTrue(it.fileName.toString() in message, "$it is named in: $message") }
+        }
+    }
+
+    @Test
+    fun `a different file with the same name as the renamed document still refuses`() {
+        val files = mapOf(
+            "A.groovy" to a,
+            "other/A.groovy" to "class Other {\n    def run(x) { x.greet() }\n}\n",
+        )
+        val uri = workspace(files, open = "A.groovy")
+
+        assertRefused(uri, a, "greet", "other")
     }
 
     @Test

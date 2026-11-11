@@ -51,8 +51,10 @@ private const val MAX_REPORTED = 3
  * "may be used"; the absence of one is not proof that no other file uses the symbol.
  *
  * Not covered: symlinked directories (the walk does not follow links, which could loop), files in `.git`,
- * `node_modules` and similar directories, and build output directly under a workspace or module root, whether or
- * not they can be read. Any other directory or source file that cannot be read refuses.
+ * `node_modules` and similar directories (also when they cannot be read), and readable build output directly under
+ * a workspace or module root. Any other directory or source file that cannot be read refuses, including an
+ * unreadable `build/`, `out/` or `target/`: it is skipped only if it holds no sources, which needs reading it.
+ * Refusals name the directory, so permissions can be fixed.
  *
  * Files are compared by real path, not URI spelling: the index keys files by `Path.toUri()` while editors send
  * their own spelling (`file:///c:/…` vs `file:///C:/…`, percent-encoded characters), and the document being
@@ -81,8 +83,12 @@ internal class CrossFileUseGuard(
             val keys = FileKeys(roots)
             diskText.rebind(roots)
             val self = SelfKey(keys, documentUri)
+            val known = sourcesKeyed(keys)
+            // In the workspace: under a root, or a known source (e.g. a Gradle srcDir outside the roots).
             val used = index.findReferenceDocuments(symbolId).keys
-                .filter { uri -> keys.inScopeKey(uri)?.let { !self.matches(it) } == true }
+                .filter { uri ->
+                    keys.of(uri)?.let { !self.matches(it) && (keys.inScope(it) || it in known) } == true
+                }
                 .sortedBy { it.toString() }
             if (used.size >= MAX_REPORTED) return@withContext CrossFileUses(used = used, truncated = true)
 
@@ -90,7 +96,7 @@ internal class CrossFileUseGuard(
             val buffers = openBuffers()
             val walked = walkedFiles(keys) { context.ensureActive() }
             val found = CandidateCollector(keys, limits.maxFiles)
-                .collect(sourcesKeyed(keys), snapshot.keys + buffers.keys, walked)
+                .collect(known, snapshot.keys + buffers.keys, walked)
             val usedKeys = used.mapNotNullTo(HashSet(), keys::of)
             val candidates = found.files.filterKeys { !self.matches(it) && it !in usedKeys }
             if (found.overflow) {

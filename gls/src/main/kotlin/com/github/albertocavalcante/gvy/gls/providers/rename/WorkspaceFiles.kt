@@ -60,9 +60,6 @@ internal class FileKeys(roots: List<Path>) {
 
     /** Whether a file at [key] is part of the workspace: under a root, or anywhere when there is no root. */
     fun inScope(key: Path): Boolean = rootKeys.isEmpty() || rootKeys.any(key::startsWith)
-
-    /** The key of the file [uri] names when that file is part of the workspace; null for `untitled:`, `jar:` etc. */
-    fun inScopeKey(uri: URI): Path? = of(uri)?.takeIf(::inScope)
 }
 
 /**
@@ -174,23 +171,26 @@ internal fun walkWorkspace(
 
         /**
          * Whether a path the walk could not read may be or hold a source file. A directory that cannot be opened
-         * never reaches [preVisitDirectory], so the skip rules apply here: an unreadable `node_modules/`, or a
-         * `build/` at a module root (whose contents cannot be checked for sources), would be skipped anyway.
-         * A path whose kind cannot be read counts.
+         * never reaches [preVisitDirectory]. Only one that is always skipped (`node_modules/`, `.git/`...) is
+         * ignored: `build/`, `out/` and `target/` are skipped only when they hold no sources, which cannot be
+         * checked here, so an unreadable one refuses rather than guesses. A path whose kind cannot be read counts.
          */
         private fun mayHideSources(path: Path): Boolean = when {
-            Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) -> !isSkipped(path)
+            Files.isDirectory(path, LinkOption.NOFOLLOW_LINKS) -> !isAlwaysSkipped(path)
             Files.isRegularFile(path, LinkOption.NOFOLLOW_LINKS) -> isSourceFile(path)
             else -> true
         }
 
         private fun isModuleOrWorkspaceRoot(dir: Path) = dir in roots || MODULE_FILES.any { hasFile(dir, it) }
 
+        private fun isAlwaysSkipped(dir: Path): Boolean = dir !in roots && sourceRoots.none(dir::startsWith) &&
+            dir.fileName?.toString() in ALWAYS_SKIPPED_DIRECTORIES
+
         private fun isSkipped(dir: Path): Boolean {
             val name = dir.fileName?.toString() ?: return false
             return when {
                 dir in roots || sourceRoots.any(dir::startsWith) -> false
-                name in ALWAYS_SKIPPED_DIRECTORIES -> true
+                isAlwaysSkipped(dir) -> true
                 name in BUILD_OUTPUTS -> isModuleOrWorkspaceRoot(dir.parent) && !holdsSources(dir)
                 else -> false
             }
