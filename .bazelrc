@@ -102,8 +102,8 @@ build --worker_max_multiplex_instances=KotlinCompile=4
 # TypeScript Configuration
 ###############################
 
-# Enable workers for rules_ts
-build --@aspect_rules_ts//ts:supports_workers=true
+# rules_ts 3.8.1 does not support workers with the selected TypeScript 5.9 compiler.
+build --@aspect_rules_ts//ts:supports_workers=false
 
 ###############################
 # Go/Gazelle Configuration

@@ -4,6 +4,8 @@ kt_library(
     name = "rewrite",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
+    # rewrite-groovy is imported with Groovy 3 excluded; it needs Groovy 4 at runtime.
+    runtime_deps = ["@maven//:org_apache_groovy_groovy"],
     deps = [
         "//parser/api",
         "@maven//:org_jetbrains_kotlin_kotlin_stdlib",
@@ -11,8 +13,6 @@ kt_library(
         "@maven//:org_openrewrite_rewrite_groovy",
         "@maven//:org_openrewrite_rewrite_java",
     ],
-    # rewrite-groovy is imported with Groovy 3 excluded; it needs Groovy 4 at runtime.
-    runtime_deps = ["@maven//:org_apache_groovy_groovy"],
 )
 
 kt_test(
@@ -20,5 +20,8 @@ kt_test(
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":rewrite"],
     test_packages = ["com.github.albertocavalcante.groovyparser"],
-    deps = ["//parser/api"],
+    deps = [
+        "//parser/api",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+    ],
 )

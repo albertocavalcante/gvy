@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.groovylsp.markdown.dsl
 
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 
 class MarkdownBuilderTest {

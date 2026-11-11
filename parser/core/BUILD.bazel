@@ -25,5 +25,6 @@ kt_test(
         "//parser/api",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_assertj_assertj_core",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )

@@ -18,5 +18,6 @@ kt_test(
     deps = [
         ":lsif",
         "//indexer/core",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )

@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    # Kotlin/Gradle paths are push-only: Bazel runs after merge to catch Gradle/Bazel dependency
-    # drift (e.g. a test importing a library its Bazel target lacks) without costing every PR a run.
     paths:
       - 'MODULE.bazel'
       - 'MODULE.bazel.lock'
@@ -16,9 +14,12 @@ on:
       - '.bazelversion'
       - 'third_party/patches/**'
       - '.github/workflows/ci-bazel.yml'
+      - 'tools/ci/bazel-diagnostics*'
       - '**/src/**'
       - '**/build.gradle.kts'
       - 'gradle/libs.versions.toml'
+      - 'tests/e2e/**'
+      - 'editors/code/**'
   schedule:
     - cron: '30 4 * * *' # Daily at 04:30 UTC: backstop for drift the push filter misses
   pull_request:
@@ -34,10 +35,20 @@ on:
       - '.bazelversion'
       - 'third_party/patches/**'
       - '.github/workflows/ci-bazel.yml'
+      - 'tools/ci/bazel-diagnostics*'
+      - '**/src/**'
+      - '**/build.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - 'tests/e2e/**'
+      - 'editors/code/**'
   workflow_dispatch:
 
 permissions:
   contents: read
+
+defaults:
+  run:
+    shell: bash
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
@@ -80,11 +91,34 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
+      - name: Self-test diagnostic gate
+        run: node --test tools/ci/bazel-diagnostics.test.mjs
+
       - name: Build all targets
-        run: bazel build //...
+        run: |
+          mkdir -p "$RUNNER_TEMP/bazel-diagnostics"
+          bazel build //... --color=no --curses=no 2>&1 | tee "$RUNNER_TEMP/bazel-diagnostics/build.log"
 
       - name: Run tests
-        run: bazel test //... --test_output=errors
+        run: bazel test //... --test_output=errors --color=no --curses=no 2>&1 | tee "$RUNNER_TEMP/bazel-diagnostics/test.log"
+
+      - name: Enforce diagnostic accountability
+        if: ${{ !cancelled() }}
+        run: |
+          node tools/ci/bazel-diagnostics.mjs \
+            --baseline tools/ci/bazel-diagnostics.json \
+            --report "$RUNNER_TEMP/bazel-diagnostics" \
+            "$RUNNER_TEMP/bazel-diagnostics/build.log" \
+            "$RUNNER_TEMP/bazel-diagnostics/test.log"
+
+      - name: Upload diagnostic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bazel-diagnostics-${{ matrix.name }}
+          path: ${{ runner.temp }}/bazel-diagnostics/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload test logs on failure
         if: failure()

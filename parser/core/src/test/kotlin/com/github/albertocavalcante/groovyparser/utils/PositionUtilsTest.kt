@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovyparser.GroovyParser
 import com.github.albertocavalcante.groovyparser.Position
 import com.github.albertocavalcante.groovyparser.Range
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull

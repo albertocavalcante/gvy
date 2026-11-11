@@ -2,7 +2,7 @@ package com.github.albertocavalcante.gvy.semantics.calculator.impl
 
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 

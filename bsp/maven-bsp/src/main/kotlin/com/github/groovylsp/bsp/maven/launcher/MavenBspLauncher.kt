@@ -7,7 +7,6 @@ import org.apache.maven.repository.internal.MavenRepositorySystemUtils
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.connector.basic.BasicRepositoryConnectorFactory
-import org.eclipse.aether.impl.DefaultServiceLocator
 import org.eclipse.aether.repository.LocalRepository
 import org.eclipse.aether.spi.connector.RepositoryConnectorFactory
 import org.eclipse.aether.spi.connector.transport.TransporterFactory
@@ -59,7 +58,8 @@ object MavenBspLauncher {
     /**
      * Creates the Aether RepositorySystem for dependency resolution.
      */
-    @Suppress("DEPRECATION")
+    // TODO(#1600): Migrate Resolver bootstrap after resolution/failure compatibility coverage.
+    @Suppress("DEPRECATION") // MavenRepositorySystemUtils still constructs the legacy Resolver service locator.
     fun createRepositorySystem(): RepositorySystem {
         val locator = MavenRepositorySystemUtils.newServiceLocator()
 
@@ -67,7 +67,7 @@ object MavenBspLauncher {
         locator.addService(TransporterFactory::class.java, FileTransporterFactory::class.java)
         locator.addService(TransporterFactory::class.java, HttpTransporterFactory::class.java)
 
-        locator.setErrorHandler(object : DefaultServiceLocator.ErrorHandler() {
+        locator.setErrorHandler(object : org.eclipse.aether.impl.DefaultServiceLocator.ErrorHandler() {
             override fun serviceCreationFailed(type: Class<*>?, impl: Class<*>?, exception: Throwable?) {
                 logger.error(exception) { "Service creation failed: $type -> $impl" }
             }

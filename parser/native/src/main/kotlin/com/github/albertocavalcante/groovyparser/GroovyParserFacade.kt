@@ -244,7 +244,7 @@ class GroovyParserFacade(private val parentClassLoader: ClassLoader = ClassLoade
                     val located = (key as? Path)?.takeIf { buffer == null && key in locatedPaths }
                     val disk = (workspaceByKey[key] ?: located)?.also { workspace.add(it) }
                     val source = buffer?.toString() ?: disk?.toString()
-                    if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause?.originalMessage ?: ""))
+                    if (source != null) reasons.putIfAbsent(source, ParseOutcome.truncate(cause.originalMessage ?: ""))
                 }
             }
         }

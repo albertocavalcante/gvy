@@ -3,8 +3,8 @@ package com.github.albertocavalcante.gvy.build.maven
 import com.github.albertocavalcante.gvy.build.TestEnvironment
 import com.github.albertocavalcante.gvy.build.TestResources
 import org.junit.jupiter.api.Assumptions.assumeFalse
+import org.junit.jupiter.api.Test
 import java.nio.file.Paths
-import kotlin.test.Test
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 

@@ -68,7 +68,7 @@ class NativeAstConverterTest {
 
         // Check for type info (Native parser provides this)
         if (methodNode is NativeAstNodeDto && methodNode.typeInfo != null) {
-            assertThat(methodNode.typeInfo?.resolvedType).contains("String")
+            assertThat(methodNode.typeInfo.resolvedType).contains("String")
         }
     }
 
@@ -163,7 +163,7 @@ class NativeAstConverterTest {
 
         // Check symbol info
         if (constantField is NativeAstNodeDto && constantField.symbolInfo != null) {
-            assertEquals("FIELD", constantField.symbolInfo?.kind)
+            assertEquals("FIELD", constantField.symbolInfo.kind)
         }
     }
 

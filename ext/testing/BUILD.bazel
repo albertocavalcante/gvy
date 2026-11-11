@@ -18,7 +18,9 @@ kt_test(
     associates = [":testing"],
     test_packages = ["com.github.albertocavalcante.gvy.testing"],
     deps = [
+        "//ext/spock",
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )

@@ -163,8 +163,8 @@ class GroovyParserStubTest {
         val result = parse("class S extends spock.lang.Specification {}")
 
         assertNotNull(result.ast)
-        assertTrue(result.ast!!.classes.none { it.name == "spock.lang.Specification" })
-        assertTrue(!isStubSourceName(result.ast!!.context?.name), "ast is ${result.ast!!.context?.name}")
+        assertTrue(result.ast.classes.none { it.name == "spock.lang.Specification" })
+        assertTrue(!isStubSourceName(result.ast.context?.name), "ast is ${result.ast.context?.name}")
         assertTrue(result.diagnostics.none { it.message.contains("gvy-stub") }, "${result.diagnostics}")
     }
 }

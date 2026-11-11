@@ -1,12 +1,12 @@
 package com.github.albertocavalcante.groovyparser
 
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Test
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createTempDirectory
 import kotlin.io.path.writeText
-import kotlin.test.AfterTest
-import kotlin.test.BeforeTest
-import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
@@ -16,7 +16,7 @@ class SourceRootTest {
 
     private lateinit var tempDir: Path
 
-    @BeforeTest
+    @BeforeEach
     fun setup() {
         tempDir = createTempDirectory("sourceroot-test")
 
@@ -72,7 +72,7 @@ class SourceRootTest {
         )
     }
 
-    @AfterTest
+    @AfterEach
     fun cleanup() {
         tempDir.toFile().deleteRecursively()
     }

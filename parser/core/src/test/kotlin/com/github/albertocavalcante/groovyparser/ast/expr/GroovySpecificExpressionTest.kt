@@ -5,7 +5,7 @@ import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
 import com.github.albertocavalcante.groovyparser.ast.stmt.BlockStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ExpressionStatement
 import com.github.albertocavalcante.groovyparser.ast.stmt.ReturnStatement
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 

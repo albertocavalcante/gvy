@@ -51,18 +51,34 @@ kt_library = macro(
 )
 
 def _kt_test_impl(
-        name, visibility, srcs, deps, associates, test_class, test_packages, plugins,
-        resources, data, jvm_flags, env, env_inherit, tags, size, timeout, **kwargs):
+        name,
+        visibility,
+        srcs,
+        deps,
+        runtime_deps,
+        associates,
+        test_packages,
+        plugins,
+        resources,
+        data,
+        jvm_flags,
+        env,
+        env_inherit,
+        tags,
+        size,
+        timeout):
     """Implementation for kt_test symbolic macro."""
     all_plugins = _DEFAULT_PLUGINS + plugins
 
     # JUnit 6 Platform runtime dependencies (not directly imported in source)
     # Note: JUnit jars downloaded via http_file due to GMM cycle bugs
-    runtime_deps = [
+    all_runtime_deps = runtime_deps + [
         # JUnit Platform runtime
         "//tools:junit_jupiter_engine",
         "//tools:junit_platform_launcher",
         "//tools:junit_platform_console",
+        # kotlin.test assertions use the JUnit 5 asserter at runtime.
+        "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
         # Logging runtime - required by kotlin-logging-jvm used in many modules
         "@maven//:org_slf4j_slf4j_api",
         "@maven//:ch_qos_logback_logback_classic",
@@ -83,19 +99,11 @@ def _kt_test_impl(
     test_kwargs = {
         "name": name,
         "srcs": srcs,
-        # Compile-time test deps (actually imported in source code)
-        # - kotlin_test: assertions like assertEquals, assertTrue
-        # - kotlin_test_junit5: provides kotlin.test.Test typealias to JUnit5
-        # - junit_jupiter_api: @Test annotation (used by kotlin.test.Test)
-        # Optional deps NOT included (add explicitly if needed):
-        # - assertj_core: only ~10 modules use AssertJ
-        # - junit_jupiter_params: only ~4 modules use @ParameterizedTest
+        # Jupiter annotations are shared; assertion libraries are explicit per target.
         "deps": deps + [
-            "@maven//:org_jetbrains_kotlin_kotlin_test",
-            "@maven//:org_jetbrains_kotlin_kotlin_test_junit5",
             "//tools:junit_jupiter_api",
         ],
-        "runtime_deps": runtime_deps,
+        "runtime_deps": all_runtime_deps,
         "associates": associates,
         "main_class": "org.junit.platform.console.ConsoleLauncher",
         "args": junit_args,
@@ -121,12 +129,13 @@ kt_test = macro(
     doc = """Kotlin test with JUnit 6 (Jupiter) and automatic test discovery.
 
     Provides:
-    - kotlin.test assertions (assertEquals, assertTrue, etc.)
     - JUnit Jupiter @Test annotation
     - JUnit Platform ConsoleLauncher for automatic test discovery
     - kotlinx-serialization plugin enabled by default
 
     Optional deps (add explicitly if needed):
+    - @maven//:org_jetbrains_kotlin_kotlin_test - kotlin.test assertions
+    - @maven//:org_jetbrains_kotlin_kotlin_test_junit5 - kotlin.test.Test typealias
     - @maven//:org_assertj_assertj_core - AssertJ assertions
     - @maven//:org_junit_jupiter_junit_jupiter_params - @ParameterizedTest
 
@@ -144,12 +153,13 @@ kt_test = macro(
             doc = "Dependencies (JUnit 6 Jupiter added automatically)",
             default = [],
         ),
+        "runtime_deps": attr.label_list(
+            doc = "Runtime-only dependencies (JUnit platform and logging added automatically)",
+            default = [],
+        ),
         "associates": attr.label_list(
             doc = "Associated kt_library targets whose internal members are accessible",
             default = [],
-        ),
-        "test_class": attr.string(
-            doc = "Ignored - test discovery uses test_packages instead",
         ),
         "test_packages": attr.string_list(
             doc = "Java packages to scan for tests (REQUIRED). Use base package to include subpackages.",

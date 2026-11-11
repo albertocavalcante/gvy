@@ -25,5 +25,7 @@ kt_test(
         "//parser/native",
         "//semantics/core",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+        "@maven//:org_ow2_asm_asm",
     ],
 )

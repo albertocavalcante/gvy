@@ -4,7 +4,7 @@ import com.github.albertocavalcante.groovyparser.ast.BlockComment
 import com.github.albertocavalcante.groovyparser.ast.JavadocComment
 import com.github.albertocavalcante.groovyparser.ast.LineComment
 import com.github.albertocavalcante.groovyparser.ast.body.ClassDeclaration
-import kotlin.test.Test
+import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull

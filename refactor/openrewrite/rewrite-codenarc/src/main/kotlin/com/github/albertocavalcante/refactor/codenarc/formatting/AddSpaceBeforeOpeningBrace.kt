@@ -4,9 +4,8 @@ import org.openrewrite.ExecutionContext
 import org.openrewrite.Recipe
 import org.openrewrite.TreeVisitor
 import org.openrewrite.groovy.GroovyIsoVisitor
+import org.openrewrite.java.marker.OmitParentheses
 import org.openrewrite.java.tree.J
-import org.openrewrite.groovy.marker.OmitParentheses as GroovyOmitParentheses
-import org.openrewrite.java.marker.OmitParentheses as JavaOmitParentheses
 
 /**
  * Recipe to add a space before opening braces in Groovy code.
@@ -199,15 +198,17 @@ class AddSpaceBeforeOpeningBrace : Recipe() {
              * **Non-trailing closures** (e.g., `def fn = {}`, `list.collect({})`) get
              * their spacing from the parent context (assignment operator, opening paren).
              *
-             * @see GroovyOmitParentheses marker used by OpenRewrite for trailing closures
+             * @see OmitParentheses marker used by OpenRewrite for trailing closures
              */
             override fun visitLambda(lambda: J.Lambda, ctx: ExecutionContext): J.Lambda {
                 var l = super.visitLambda(lambda, ctx)
 
                 // Check for OmitParentheses marker indicating a trailing closure
-                // OpenRewrite uses both Java and Groovy versions of this marker
+                // Accept existing trees carrying the legacy Groovy marker, as GroovyPrinter does.
+                // TODO(#1600): Retire legacy marker recognition after compatibility coverage.
+                @Suppress("DEPRECATION")
                 val isTrailingClosure = l.markers.markers.any {
-                    it is JavaOmitParentheses || it is GroovyOmitParentheses
+                    it is OmitParentheses || it is org.openrewrite.groovy.marker.OmitParentheses
                 }
 
                 if (isTrailingClosure) {

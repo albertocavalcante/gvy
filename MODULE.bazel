@@ -12,6 +12,7 @@ bazel_dep(name = "platforms", version = "1.0.0")
 
 # Dev dependencies (linting, formatting)
 bazel_dep(name = "buildifier_prebuilt", version = "8.2.1.1", dev_dependency = True)
+
 bazel_dep(name = "rules_java", version = "9.3.0")
 bazel_dep(name = "rules_kotlin", version = "2.2.2")
 
@@ -20,12 +21,13 @@ bazel_dep(name = "rules_kotlin", version = "2.2.2")
 # To update: ./tools/scripts/publish-rules-kotlin-fork.sh --build --version v2.3.0-fork.N
 archive_override(
     module_name = "rules_kotlin",
-    urls = ["https://github.com/albertocavalcante/fork-rules_kotlin/releases/download/v2.3.0-fork.1/rules_kotlin_release.tgz"],
     integrity = "sha256-9vOI0nezePk0rrm7HaQ9h+MVvgo3H6h71Cl37UMZp1A=",
+    urls = ["https://github.com/albertocavalcante/fork-rules_kotlin/releases/download/v2.3.0-fork.1/rules_kotlin_release.tgz"],
 )
 
 # Register custom Kotlin toolchain
 register_toolchains("//tools:kotlin_toolchain")
+
 bazel_dep(name = "rules_jvm_external", version = "6.9")
 
 # ==============================================================================
@@ -57,6 +59,7 @@ bazel_dep(name = "rules_jvm_external", version = "6.9")
 # ==============================================================================
 single_version_override(
     module_name = "rules_jvm_external",
+    patch_strip = 1,
     patches = [
         # Upgrade Coursier v2.1.24 -> v2.1.25-M23 for GMM support
         "//third_party/patches:rules_jvm_external_coursier_gmm.patch",
@@ -70,7 +73,6 @@ single_version_override(
         # Filter out metadata-only KMP modules (kotlin-stdlib-common etc) from deps
         "//third_party/patches:HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch",
     ],
-    patch_strip = 1,
 )
 
 # Note: Additional patches for Gradle resolver + rules_java 9.x are available in
@@ -85,6 +87,7 @@ bazel_dep(name = "aspect_rules_esbuild", version = "0.25.0")
 rules_ts_ext = use_extension("@aspect_rules_ts//ts:extensions.bzl", "ext")
 rules_ts_ext.deps(ts_version = "5.9.2")
 use_repo(rules_ts_ext, "npm_typescript")
+
 bazel_dep(name = "rules_nodejs", version = "6.6.2")
 bazel_dep(name = "aspect_rules_lint", version = "1.13.0")
 bazel_dep(name = "rules_go", version = "0.59.0")
@@ -99,23 +102,46 @@ use_repo(go_sdk, "go_toolchains")
 
 # Maven Dependencies
 maven = use_extension("@rules_jvm_external//:extensions.bzl", "maven")
-
 maven.install(
-    # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
-    # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
-    known_contributing_modules = ["gvy", "protobuf"],
-    # Global equivalent of Gradle's `exclude(group = "org.codehaus.groovy")` (gls/build.gradle.kts).
-    # Safety net: no Groovy 3 (org.codehaus.groovy) module may reach the classpath. A Groovy 3 build
-    # such as plain GMetrics 2.1.0 (unused; CodeNarc-groovy-4.0 brings GMetrics-Groovy4) caused:
-    # "Conflicting module versions. Module [groovy-xml is loaded in version 4.0.33 and you are
-    # trying to load version 3.0.9". The Groovy 4 modules are listed above.
-    excluded_artifacts = [
-        "org.codehaus.groovy:groovy",
-        "org.codehaus.groovy:groovy-ant",
-        "org.codehaus.groovy:groovy-groovydoc",
-        "org.codehaus.groovy:groovy-json",
-        "org.codehaus.groovy:groovy-templates",
-        "org.codehaus.groovy:groovy-xml",
+    # ==========================================================================
+    # GMM (Gradle Module Metadata) Options
+    # ==========================================================================
+    # Enables variant-aware dependency resolution for Kotlin Multiplatform.
+    # Doc: https://get-coursier.io/docs/other-features#gradle-module-metadata
+    # Source: coursier/docs/pages/features-gradle-modules.md
+    #
+    # IMPORTANT: Use SPACE-SEPARATED syntax for --variant flag!
+    #   ✓ "--variant", "key=value"  (two separate list elements)
+    #   ✗ "--variant=key=value"     (single element - parsing fails)
+    #
+    # Variant attributes for JVM Desktop platform:
+    #   - org.gradle.category=library       → Select library artifacts
+    #   - org.gradle.usage=runtime          → Runtime deps (matches *-runtime)
+    #   - org.gradle.jvm.environment=standard-jvm → Exclude Android (vs android)
+    #   - org.jetbrains.kotlin.platform.type=jvm  → JVM platform (vs js/native/wasm)
+    #   - ui=awt                            → skiko AWT variant (vs ui=android)
+    #
+    # See: coursier/modules/core/shared/src/main/scala/coursier/core/VariantSelector.scala
+    # ==========================================================================
+    additional_coursier_options = [
+        "--enable-modules",
+        "--variant",
+        "org.gradle.category=library",
+        "--variant",
+        "org.gradle.usage=runtime",
+        "--variant",
+        "org.gradle.jvm.environment=standard-jvm",
+        "--variant",
+        "org.jetbrains.kotlin.platform.type=jvm",
+        "--variant",
+        "org.gradle.libraryelements=jar",
+        # AnyOf syntax (value1|value2): prefer first, fall back to second
+        # - external: standard JARs (CodeNarc, caffeine)
+        # - shadowed: fat JARs (gradle-tooling-api only has this)
+        "--variant",
+        "org.gradle.dependency.bundling=external|shadowed",
+        "--variant",
+        "ui=awt",  # skiko: select AWT variant over Android
     ],
     artifacts = [
         # Kotlin - versions aligned with rules_kotlin master (Kotlin 2.3.0)
@@ -211,10 +237,6 @@ maven.install(
         "com.fasterxml.jackson.core:jackson-databind:2.20.1",
         "com.fasterxml.jackson.module:jackson-module-kotlin:2.20.1",
 
-        # Guava - explicit to pin version (protobuf transitively brings 32.0.1-jre)
-        # Our explicit version wins; duplicate warning is expected and harmless
-        "com.google.guava:guava:33.5.0-jre",
-
         # Classpath Scanning
         "io.github.classgraph:classgraph:4.8.200",
         "com.guardsquare:proguard-gradle:7.8.2",
@@ -257,45 +279,19 @@ maven.install(
         "org.jetbrains.compose.material:material-icons-extended-desktop:1.7.3",
         "org.jetbrains.kotlin:kotlin-compose-compiler-plugin-embeddable:2.3.0",
     ],
-    repositories = [
-        "https://repo1.maven.org/maven2",
-        "https://plugins.gradle.org/m2/",
-        "https://repo.gradle.org/gradle/libs-releases/",  # For gradle-tooling-api
-        "https://maven.pkg.jetbrains.space/public/p/compose/dev",  # JetBrains Compose
-        "https://maven.google.com",  # Google Maven for AndroidX
-    ],
-    # ==========================================================================
-    # GMM (Gradle Module Metadata) Options
-    # ==========================================================================
-    # Enables variant-aware dependency resolution for Kotlin Multiplatform.
-    # Doc: https://get-coursier.io/docs/other-features#gradle-module-metadata
-    # Source: coursier/docs/pages/features-gradle-modules.md
-    #
-    # IMPORTANT: Use SPACE-SEPARATED syntax for --variant flag!
-    #   ✓ "--variant", "key=value"  (two separate list elements)
-    #   ✗ "--variant=key=value"     (single element - parsing fails)
-    #
-    # Variant attributes for JVM Desktop platform:
-    #   - org.gradle.category=library       → Select library artifacts
-    #   - org.gradle.usage=runtime          → Runtime deps (matches *-runtime)
-    #   - org.gradle.jvm.environment=standard-jvm → Exclude Android (vs android)
-    #   - org.jetbrains.kotlin.platform.type=jvm  → JVM platform (vs js/native/wasm)
-    #   - ui=awt                            → skiko AWT variant (vs ui=android)
-    #
-    # See: coursier/modules/core/shared/src/main/scala/coursier/core/VariantSelector.scala
-    # ==========================================================================
-    additional_coursier_options = [
-        "--enable-modules",
-        "--variant", "org.gradle.category=library",
-        "--variant", "org.gradle.usage=runtime",
-        "--variant", "org.gradle.jvm.environment=standard-jvm",
-        "--variant", "org.jetbrains.kotlin.platform.type=jvm",
-        "--variant", "org.gradle.libraryelements=jar",
-        # AnyOf syntax (value1|value2): prefer first, fall back to second
-        # - external: standard JARs (CodeNarc, caffeine)
-        # - shadowed: fat JARs (gradle-tooling-api only has this)
-        "--variant", "org.gradle.dependency.bundling=external|shadowed",
-        "--variant", "ui=awt",  # skiko: select AWT variant over Android
+    duplicate_version_warning = "error",
+    # Global equivalent of Gradle's `exclude(group = "org.codehaus.groovy")` (gls/build.gradle.kts).
+    # Safety net: no Groovy 3 (org.codehaus.groovy) module may reach the classpath. A Groovy 3 build
+    # such as plain GMetrics 2.1.0 (unused; CodeNarc-groovy-4.0 brings GMetrics-Groovy4) caused:
+    # "Conflicting module versions. Module [groovy-xml is loaded in version 4.0.33 and you are
+    # trying to load version 3.0.9". The Groovy 4 modules are listed above.
+    excluded_artifacts = [
+        "org.codehaus.groovy:groovy",
+        "org.codehaus.groovy:groovy-ant",
+        "org.codehaus.groovy:groovy-groovydoc",
+        "org.codehaus.groovy:groovy-json",
+        "org.codehaus.groovy:groovy-templates",
+        "org.codehaus.groovy:groovy-xml",
     ],
     # DISABLED: fetch_sources causes GMM to incorrectly resolve classes jar to sources jar
     # See: https://github.com/albertocavalcante/gvy/issues/1031
@@ -304,6 +300,19 @@ maven.install(
     # Google Maven doesn't publish checksum files for some AndroidX artifacts
     # See: https://maven.google.com/web/index.html (no .sha1/.md5 files available)
     fail_on_missing_checksum = False,
+    # Acknowledge contributions from other bzlmod modules (protobuf adds its deps)
+    # See: https://github.com/bazel-contrib/rules_jvm_external/blob/master/docs/bzlmod.md#module-dependency-layering
+    known_contributing_modules = [
+        "gvy",
+        "protobuf",
+    ],
+    repositories = [
+        "https://repo1.maven.org/maven2",
+        "https://plugins.gradle.org/m2/",
+        "https://repo.gradle.org/gradle/libs-releases/",  # For gradle-tooling-api
+        "https://maven.pkg.jetbrains.space/public/p/compose/dev",  # JetBrains Compose
+        "https://maven.google.com",  # Google Maven for AndroidX
+    ],
     # KNOWN ISSUE: GMM (--enable-modules) causes Coursier to compute different checksums
     # locally vs CI due to variant selection differences. Lock file disabled until resolved.
     # Tracking: https://github.com/albertocavalcante/gvy/issues/1029
@@ -312,17 +321,25 @@ maven.install(
     # fail_if_repin_required = True,
 )
 
+# Override protobuf's older Guava contribution before repository resolution.
+maven.artifact(
+    artifact = "guava",
+    force_version = True,
+    group = "com.google.guava",
+    version = "33.5.0-jre",
+)
+
 # bsp4j with exclusions - lsp4j.generator pulls xtend which pulls guava with bundle packaging
 maven.artifact(
     artifact = "bsp4j",
-    group = "ch.epfl.scala",
-    version = "2.1.1",
     exclusions = [
         # Generator pulls xtend -> xtext -> guava:bundle which Gradle resolver can't handle
         "org.eclipse.lsp4j:org.eclipse.lsp4j.generator",
         "org.eclipse.xtend:org.eclipse.xtend.lib",
         "org.eclipse.xtext:org.eclipse.xtext.xbase.lib",
     ],
+    group = "ch.epfl.scala",
+    version = "2.1.1",
 )
 
 # bsp4j's generated toString() methods call org.eclipse.xtext.xbase.lib.util.ToStringBuilder at
@@ -330,9 +347,9 @@ maven.artifact(
 # is excluded so targets that need it (ToStringBuilder does) use the top-level com.google.guava:guava.
 maven.artifact(
     artifact = "org.eclipse.xtext.xbase.lib",
+    exclusions = ["com.google.guava:guava"],
     group = "org.eclipse.xtext",
     version = "2.28.0",
-    exclusions = ["com.google.guava:guava"],
 )
 
 # CodeNarc with Groovy exclusions so only our explicit Groovy 4 modules are on the classpath
@@ -340,8 +357,6 @@ maven.artifact(
 # and fails at runtime with MissingMethodException (visitClassEx).
 maven.artifact(
     artifact = "CodeNarc",
-    group = "org.codenarc",
-    version = "3.7.0-groovy-4.0",
     exclusions = [
         "org.apache.groovy:groovy",
         "org.apache.groovy:groovy-ant",
@@ -350,18 +365,20 @@ maven.artifact(
         "org.apache.groovy:groovy-templates",
         "org.apache.groovy:groovy-xml",
     ],
+    group = "org.codenarc",
+    version = "3.7.0-groovy-4.0",
 )
 
 # OpenRewrite Groovy with exclusions to avoid Groovy 3.x conflicts
 # rewrite-groovy 8.70.4 pulls in org.codehaus.groovy:groovy:3.0.25 which conflicts with our 4.0.33
 maven.artifact(
     artifact = "rewrite-groovy",
-    group = "org.openrewrite",
-    version = "8.70.4",
     exclusions = [
         # Exclude Groovy 3.x - we provide Groovy 4.0.33 explicitly
         "org.codehaus.groovy:groovy",
     ],
+    group = "org.openrewrite",
+    version = "8.70.4",
 )
 
 # Note: unpinned_maven is only available when lock_file is enabled
@@ -406,15 +423,15 @@ junit = use_extension("//tools/build_defs:junit.bzl", "junit")
 use_repo(
     junit,
     # Jupiter
-    "junit_jupiter_jar",
     "junit_jupiter_api_jar",
     "junit_jupiter_engine_jar",
+    "junit_jupiter_jar",
     "junit_jupiter_params_jar",
     # Platform
-    "junit_platform_launcher_jar",
-    "junit_platform_engine_jar",
     "junit_platform_commons_jar",
     "junit_platform_console_jar",
+    "junit_platform_engine_jar",
+    "junit_platform_launcher_jar",
 )
 
 # Override maven JUnit modules to use our directly-downloaded jars
@@ -422,37 +439,30 @@ maven.override(
     coordinates = "org.junit.jupiter:junit-jupiter",
     target = "//tools:junit_jupiter",
 )
-
 maven.override(
     coordinates = "org.junit.jupiter:junit-jupiter-api",
     target = "//tools:junit_jupiter_api",
 )
-
 maven.override(
     coordinates = "org.junit.jupiter:junit-jupiter-engine",
     target = "//tools:junit_jupiter_engine",
 )
-
 maven.override(
     coordinates = "org.junit.jupiter:junit-jupiter-params",
     target = "//tools:junit_jupiter_params",
 )
-
 maven.override(
     coordinates = "org.junit.platform:junit-platform-launcher",
     target = "//tools:junit_platform_launcher",
 )
-
 maven.override(
     coordinates = "org.junit.platform:junit-platform-engine",
     target = "//tools:junit_platform_engine",
 )
-
 maven.override(
     coordinates = "org.junit.platform:junit-platform-commons",
     target = "//tools:junit_platform_commons",
 )
-
 maven.override(
     coordinates = "org.junit.platform:junit-platform-console",
     target = "//tools:junit_platform_console",

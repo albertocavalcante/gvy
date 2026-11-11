@@ -8,9 +8,7 @@ kt_library(
     deps = [
         "//parser/api",
         "//parser/native",
-        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_junit_jupiter_junit_jupiter",
     ],
 )

@@ -20,6 +20,7 @@ kt_test(
     deps = [
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_junit_jupiter_junit_jupiter_params",
         "@maven//:org_spockframework_spock_core",
     ],

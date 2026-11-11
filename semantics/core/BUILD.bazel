@@ -18,7 +18,9 @@ kt_test(
     associates = [":core"],
     test_packages = ["com.github.albertocavalcante.gvy"],
     deps = [
+        "//common",
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:org_apache_groovy_groovy",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )

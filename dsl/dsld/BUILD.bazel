@@ -4,7 +4,6 @@ kt_library(
     name = "dsld",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
-    deps = ["@maven//:io_github_oshai_kotlin_logging_jvm"],
 )
 
 # NOTE: Test disabled - GroovyDocParserTest imports from parser/native which creates

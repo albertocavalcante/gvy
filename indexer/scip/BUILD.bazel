@@ -37,5 +37,6 @@ kt_test(
         ":scip",
         ":scip_proto",
         "//indexer/core",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )

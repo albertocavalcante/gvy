@@ -32,7 +32,10 @@ kt_test(
     ),
     associates = [":build-tool"],
     # Data: directories and their contents that need filesystem access
-    data = glob(["src/test/resources/test-*-project/**/*", "src/test/resources/non-*-project/**/*"]),
+    data = glob([
+        "src/test/resources/test-*-project/**/*",
+        "src/test/resources/non-*-project/**/*",
+    ]),
     # Resources: files loaded via classloader (txt, xml files)
     resources = glob([
         "src/test/resources/**/*.txt",
@@ -45,6 +48,7 @@ kt_test(
         "@maven//:org_apache_maven_maven_model",
         "@maven//:org_apache_maven_resolver_maven_resolver_api",
         "@maven//:org_gradle_gradle_tooling_api",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_junit_jupiter_junit_jupiter_api",

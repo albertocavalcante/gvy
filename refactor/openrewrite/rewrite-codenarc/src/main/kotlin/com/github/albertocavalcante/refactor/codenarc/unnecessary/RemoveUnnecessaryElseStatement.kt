@@ -88,7 +88,7 @@ class RemoveUnnecessaryElseStatement : Recipe() {
                     stmt.withPrefix<Statement>(ifPrefix)
                 }
 
-                else -> listOf((elseBody as Statement).withPrefix<Statement>(ifPrefix))
+                else -> listOf(elseBody.withPrefix<Statement>(ifPrefix))
             }
 
             // Remove the else part from the if

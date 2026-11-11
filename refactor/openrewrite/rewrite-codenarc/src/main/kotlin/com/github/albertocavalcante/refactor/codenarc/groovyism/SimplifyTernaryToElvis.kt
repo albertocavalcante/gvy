@@ -110,7 +110,7 @@ class SimplifyTernaryToElvis : Recipe() {
         private fun unwrap(e: Expression): Expression {
             var current = e
             while (current is J.Parentheses<*>) {
-                current = (current as J.Parentheses<*>).tree as Expression
+                current = current.tree as Expression
             }
             return current
         }

@@ -7,7 +7,6 @@ kt_library(
     deps = [
         "@maven//:io_arrow_kt_arrow_core_jvm",
         "@maven//:io_github_oshai_kotlin_logging_jvm",
-        "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
     ],
 )
 
@@ -19,6 +18,7 @@ kt_test(
     deps = [
         "//parser/core",
         "@maven//:io_arrow_kt_arrow_core_jvm",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
     ],
 )

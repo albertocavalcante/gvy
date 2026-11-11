@@ -14,4 +14,7 @@ kt_test(
     srcs = glob(["src/test/kotlin/**/*.kt"]),
     associates = [":markdown"],
     test_packages = ["com.github.albertocavalcante.groovylsp"],
+    deps = [
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+    ],
 )

@@ -46,6 +46,7 @@ kt_test(
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_apache_groovy_groovy",
         "@maven//:org_assertj_assertj_core",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_coroutines_test_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",

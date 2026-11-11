@@ -146,7 +146,7 @@ class JacksonScenarioParser : ScenarioParser {
  */
 internal fun requireWellFormedSnapshotExpectations(node: com.fasterxml.jackson.databind.JsonNode) {
     when {
-        node.isObject -> node.fields().forEach { (key, child) ->
+        node.isObject -> node.properties().forEach { (key, child) ->
             if (key == "expect" && child.isObject) {
                 val keys = child.fieldNames().asSequence().toList()
                 val snapLike = keys.filter { it.startsWith("snap", ignoreCase = true) }

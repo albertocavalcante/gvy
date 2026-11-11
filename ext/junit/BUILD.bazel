@@ -7,7 +7,6 @@ kt_library(
     deps = [
         "//ext/testing",
         "//parser/native",
-        "@maven//:io_github_oshai_kotlin_logging_jvm",
         "@maven//:org_apache_groovy_groovy",
         # JUnit dependencies are compileOnly - not included at runtime
     ],
@@ -22,6 +21,5 @@ kt_test(
         "//ext/testing",
         "//parser/native",
         "@maven//:org_apache_groovy_groovy",
-        "@maven//:org_junit_jupiter_junit_jupiter_params",
     ],
 )
