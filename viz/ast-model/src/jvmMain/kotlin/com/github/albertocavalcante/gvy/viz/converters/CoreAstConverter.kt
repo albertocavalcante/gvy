@@ -10,6 +10,10 @@ import com.github.albertocavalcante.groovyparser.ast.body.ConstructorDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.FieldDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.MethodDeclaration
 import com.github.albertocavalcante.groovyparser.ast.body.Parameter
+import com.github.albertocavalcante.groovyparser.ast.expr.BinaryExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.MethodCallExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
+import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
@@ -119,6 +123,13 @@ class CoreAstConverter {
                 put("name", node.name)
                 put("type", node.type)
             }
+            is BinaryExpr -> put("operator", node.operator)
+            is UnaryExpr -> {
+                put("operator", node.operator)
+                put("isPrefix", node.isPrefix.toString())
+            }
+            is MethodCallExpr -> put("methodName", node.methodName)
+            is PropertyExpr -> put("propertyName", node.propertyName)
             // For other node types, attempt to extract common properties via reflection
             else -> {
                 extractCommonProperties(node)

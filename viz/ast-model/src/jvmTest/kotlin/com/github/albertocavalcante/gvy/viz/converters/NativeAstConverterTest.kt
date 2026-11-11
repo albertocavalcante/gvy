@@ -207,6 +207,35 @@ class NativeAstConverterTest {
         // Empty scripts still have a generated script class
     }
 
+    @Test
+    fun `property visibility remains distinct from its backing field`() {
+        val dto = converter.convert(
+            parse(
+                """
+            class Example {
+                String name
+                static final String version = '1'
+                private String hidden
+                protected void work() {}
+            }
+                """.trimIndent(),
+            ),
+        )
+        val cls = dto.children.single { it.type == "ClassNode" && it.properties["name"] == "Example" }
+
+        fun visibility(type: String, name: String): String {
+            val node = cls.children.single { it.type == type && it.properties["name"] == name } as NativeAstNodeDto
+            return assertNotNull(node.symbolInfo).visibility
+        }
+
+        assertEquals("PUBLIC", assertNotNull((cls as NativeAstNodeDto).symbolInfo).visibility)
+        assertEquals("PUBLIC", visibility("PropertyNode", "name"))
+        assertEquals("PRIVATE", visibility("FieldNode", "name"))
+        assertEquals("PUBLIC", visibility("PropertyNode", "version"))
+        assertEquals("PRIVATE", visibility("FieldNode", "hidden"))
+        assertEquals("PROTECTED", visibility("MethodNode", "work"))
+    }
+
     private fun countNodes(node: NativeAstNodeDto): Int {
         var count = 1
         node.children.forEach { count += countNodes(it as NativeAstNodeDto) }
