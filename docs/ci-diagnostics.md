@@ -97,6 +97,15 @@ tokens, including fork PRs; optional check-publishing actions are unnecessary fo
 build explicitly executes both protobuf generators with their 512 MiB JVM bounds before compilation; cached task outputs
 cannot substitute for this generator acceptance check.
 
+Forked Gradle test JVMs explicitly disable CDS archive reuse because test instrumentation such as MockK appends
+bootstrap classes. Instrumentation, coverage and warning reporting remain enabled. This setting applies to test workers;
+separately launched server JVMs keep their own configuration.
+
+The default Gradle daemon divides its 5 GiB heap/metaspace cap into a 3 GiB build heap and 2 GiB for loaded classes.
+Cold compilation previously exhausted the 1 GiB metaspace allowance. Daemon expiration and GC-thrashing advice are
+diagnostics too; successful commands must not silently accept them. Test-worker heaps and parallelism are separate
+budgets, so shared hosts still require the build slot and bounded local overrides.
+
 Gradle's indented captured test output is outside the tool classifier. Runtime warnings need scenario/test identity and
 executed negative-test assertions; they cannot be safely accepted by baselining a whole console stream.
 
