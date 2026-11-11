@@ -270,14 +270,34 @@ class GroovyCompilationService internal constructor(
      * pending jobs' waiters are woken and the jobs cancelled once no lock is held (#1429); one that is still
      * running when this returns is only wasted work, because its ticket belongs to the retired epoch.
      */
-    fun clearCaches() {
+    fun clearCaches() = retireAll {
+        symbolIndexer.clear()
+        semanticIndexer.clear()
+    }
+
+    /**
+     * Retires every file's tickets and drops the compiled results and the class loader, as [clearCaches] does, but
+     * keeps each file's symbol and semantic facts: for a change to an input other than any file's own text (the
+     * source list, a re-stamped classpath entry). Callers re-index only the files that changed, so dropping the
+     * facts too would empty workspace symbols, class lookup and cross-file navigation for every closed file.
+     *
+     * A compile that read the old inputs still cannot publish: its cache and symbol writes hold a retired ticket,
+     * and its semantic publication was retired with them. A kept fact describes its file's text, which did not
+     * change; a deleted source's facts are dropped by the caller through [invalidateCache].
+     */
+    fun clearCompileCaches() = retireAll {
+        symbolIndexer.unparseable.clear() // stale anyway: each entry carries a ticket retired here
+        semanticIndexer.retireAllPublications()
+    }
+
+    /** Retires every ticket and the compiled results, running [alsoUnderFence] before another ticket is taken. */
+    private fun retireAll(alsoUnderFence: () -> Unit) {
         var retired: Map<URI, PendingCompilation> = emptyMap()
         semanticSnapshotGuard.invalidate {
             // Only reference swaps run under the fence, so it is held for O(1) whatever the workspace size (#1342)
             ownership.retireAll {
                 retired = cacheService.detach()
-                symbolIndexer.clear()
-                semanticIndexer.clear()
+                alsoUnderFence()
             }
             invalidateClassLoader()
         }
@@ -289,17 +309,18 @@ class GroovyCompilationService internal constructor(
     /**
      * Applies one file-watch notification's created and deleted paths, files or folders, to the workspace model
      * (#1422, #1424), returning the sources it added and removed so the caller can index and purge them.
-     * When the source list changed, the caches are cleared once: the fingerprint covers the classpath and
-     * roots, not the source list, so cached results would otherwise keep the old list's resolution.
+     * When the source list changed, the compile caches are cleared once: the fingerprint covers the classpath
+     * and roots, not the source list, so cached results would otherwise keep the old list's resolution. The
+     * symbol and semantic facts of unchanged files are kept ([clearCompileCaches]).
      *
-     * Order matters: the new model is published before [clearCaches] retires every ticket. A compile takes
+     * Order matters: the new model is published before [clearCompileCaches] retires every ticket. A compile takes
      * its ticket before it reads the model, so any compile that read the old list holds a ticket from
      * before the retirement and cannot publish; a compile after it reads the new list.
      */
     fun onWorkspaceSourcesChanged(created: Collection<Path>, deleted: Collection<Path>): SourceListChange {
         val change = workspaceManager.applySourceChanges(created, deleted)
         if (change.changed) {
-            clearCaches()
+            clearCompileCaches()
             shadows.refresh() // on the source queue: the next request finds the new listing's spellings ready
         }
         return change
@@ -391,12 +412,13 @@ class GroovyCompilationService internal constructor(
 
     /**
      * Publishes re-stamped target evidence (#1364) through [WorkspaceManager.restampTargets]. When it lands, every
-     * compile key of an affected target changes and the caches are cleared like for any other model change, class
-     * loader included, so a replaced jar is not read through a stale open handle. Returns whether it landed.
+     * compile key of an affected target changes and the compile caches are cleared, class loader included, so a
+     * replaced jar is not read through a stale open handle. Nothing re-indexes after a re-stamp, so the symbol and
+     * semantic facts are kept ([clearCompileCaches]). Returns whether it landed.
      */
     fun restampTargets(expected: TargetDependencyEvidence.Scoped, refreshed: TargetDependencyEvidence.Scoped): Boolean {
         val published = workspaceManager.restampTargets(expected, refreshed)
-        if (published) clearCaches()
+        if (published) clearCompileCaches()
         return published
     }
 
