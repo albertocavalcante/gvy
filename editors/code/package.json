@@ -619,7 +619,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Extra JVM options for the language server, for example [\"-Xmx4g\"]. They are appended after the built-in defaults (see groovy.server.vmargsDefaults), so for -X/-XX options yours win. Selecting another collector such as -XX:+UseParallelGC drops the defaults that only apply to G1. Non-string entries are ignored. Requires a server restart."
+          "description": "Extra JVM options for the language server, for example [\"-Xmx4g\"]. They are appended after the built-in defaults (see groovy.server.vmargsDefaults), so for -X/-XX options yours win. Setting any heap size option (-Xmx, -Xms, -XX:MaxRAMPercentage) replaces the default -Xms/-Xmx, setting either HeapFreeRatio replaces both, and selecting another collector such as -XX:+UseParallelGC drops the defaults that only apply to G1 (JAVA_TOOL_OPTIONS and JDK_JAVA_OPTIONS are considered too). Non-string entries are ignored. Requires a server restart."
         },
         "groovy.server.vmargsDefaults": {
           "scope": "machine",

@@ -3,12 +3,15 @@ import {
   buildJavaArgs,
   sanitizeVmArgs,
   resolveVmArgs,
+  envJavaOptions,
+  selectsOtherCollector,
   isG1OnlyFlag,
   DEFAULT_SERVER_VM_ARGS,
 } from "../../../src/server/launchArgs";
 
 const DEFAULTS = [...DEFAULT_SERVER_VM_ARGS];
 const NON_G1 = DEFAULTS.filter((arg) => !isG1OnlyFlag(arg));
+const NON_G1_KEEP_HEAP = NON_G1;
 
 describe("server/launchArgs", () => {
   it("defaults keep ExitOnOutOfMemoryError and bound the heap", () => {
@@ -38,23 +41,21 @@ describe("server/launchArgs", () => {
     ]);
   });
 
-  it("appends user args after the defaults so the user -Xmx wins", () => {
+  it("appends user args after the defaults; a user -Xmx replaces the heap defaults", () => {
     const args = buildJavaArgs({
       jarPath: "/s.jar",
       javaVersion: 21,
       vmArgs: ["-Xmx4g", "-Dfoo=bar"],
     });
     expect(args).to.deep.equal([
-      ...DEFAULTS,
+      ...DEFAULTS.filter((a) => !/^-Xm[sx]/.test(a)),
       "-Xmx4g",
       "-Dfoo=bar",
       "--enable-native-access=ALL-UNNAMED",
       "-jar",
       "/s.jar",
     ]);
-    expect(args.lastIndexOf("-Xmx4g")).to.be.greaterThan(
-      args.lastIndexOf("-Xmx2g"),
-    );
+    expect(args).to.not.include("-Xmx2g");
   });
 
   it("drops G1-only defaults when the user selects another collector", () => {
@@ -65,8 +66,8 @@ describe("server/launchArgs", () => {
       "-XX:+UseShenandoahGC",
       "-XX:-UseG1GC",
     ]) {
-      const args = resolveVmArgs([gc, "-Xmx1g"]);
-      expect(args, gc).to.deep.equal([...NON_G1, gc, "-Xmx1g"]);
+      const args = resolveVmArgs([gc, "-Dx=y"]);
+      expect(args, gc).to.deep.equal([...NON_G1_KEEP_HEAP, gc, "-Dx=y"]);
       expect(args.filter(isG1OnlyFlag).filter((a) => a !== gc)).to.deep.equal(
         [],
       );
@@ -133,5 +134,57 @@ describe("server/launchArgs", () => {
     expect(resolveVmArgs("-Xmx1g", true, () => undefined)).to.deep.equal(
       DEFAULTS,
     );
+  });
+
+  it("drops default -Xms/-Xmx when the user sizes the heap", () => {
+    const rest = DEFAULTS.filter((a) => !/^-Xm[sx]/.test(a));
+    for (const flag of [
+      "-Xms4g",
+      "-Xmx32m",
+      "-XX:MaxRAMPercentage=50",
+      "-XX:MaxHeapSize=1g",
+    ]) {
+      expect(resolveVmArgs([flag]), flag).to.deep.equal([...rest, flag]);
+    }
+  });
+
+  it("replaces both free ratios when the user sets either", () => {
+    const rest = DEFAULTS.filter((a) => !/HeapFreeRatio/.test(a));
+    expect(resolveVmArgs(["-XX:MaxHeapFreeRatio=10"])).to.deep.equal([
+      ...rest,
+      "-XX:MaxHeapFreeRatio=10",
+    ]);
+    expect(resolveVmArgs(["-XX:MinHeapFreeRatio=50"])).to.deep.equal([
+      ...rest,
+      "-XX:MinHeapFreeRatio=50",
+    ]);
+  });
+
+  it("does not treat GC tuning flags as collector selection", () => {
+    expect(
+      selectsOtherCollector([
+        "-XX:+UseMaximumCompactionOnSystemGC",
+        "-XX:+UseAdaptiveSizePolicyWithSystemGC",
+      ]),
+    ).to.equal(false);
+  });
+
+  it("honours JVM options set through the environment", () => {
+    const env = envJavaOptions({
+      JAVA_TOOL_OPTIONS: "-XX:+UseParallelGC  -Dx=y",
+      JDK_JAVA_OPTIONS: "-XX:MaxRAMPercentage=12.5",
+    });
+    expect(env).to.deep.equal([
+      "-XX:+UseParallelGC",
+      "-Dx=y",
+      "-XX:MaxRAMPercentage=12.5",
+    ]);
+    const args = resolveVmArgs([], true, undefined, env);
+    expect(args).to.deep.equal([
+      "-XX:+ExitOnOutOfMemoryError",
+      "-XX:MinHeapFreeRatio=20",
+      "-XX:MaxHeapFreeRatio=40",
+    ]);
+    expect(envJavaOptions({})).to.deep.equal([]);
   });
 });

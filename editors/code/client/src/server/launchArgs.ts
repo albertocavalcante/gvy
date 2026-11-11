@@ -45,7 +45,32 @@ export function isG1OnlyFlag(arg: string): boolean {
 /** True when the user picks (or disables) a collector other than our G1. */
 export function selectsOtherCollector(userArgs: readonly string[]): boolean {
   return userArgs.some(
-    (arg) => /^-XX:\+Use(?!G1GC$)\w*GC$/.test(arg) || arg === "-XX:-UseG1GC",
+    (arg) =>
+      /^-XX:\+Use(Serial|Parallel|Z|Shenandoah|Epsilon)GC$/.test(arg) ||
+      arg === "-XX:-UseG1GC",
+  );
+}
+
+/**
+ * Options that size the heap. "Last wins" only holds per flag, so when the
+ * user sets any of these our -Xms/-Xmx are dropped: e.g. a user -Xmx32m or
+ * -Xms4g would otherwise contradict our -Xms64m/-Xmx2g and abort the JVM.
+ */
+const HEAP_SIZE_FLAG =
+  /^(-Xm[sx]|-XX:(Initial|Min|Max)HeapSize=|-XX:(Initial|Min|Max)RAMPercentage=|-XX:MaxRAM=)/;
+const HEAP_SIZING_DEFAULT = /^-Xm[sx]/;
+/** Min must not exceed Max, so a user value for either replaces both. */
+const FREE_RATIO_FLAG = /^-XX:M(in|ax)HeapFreeRatio=/;
+
+/**
+ * Splits the JVM option variables the java launcher honours; they are
+ * applied alongside our flags and can clash with them in the same way.
+ */
+export function envJavaOptions(
+  env: Readonly<Record<string, string | undefined>>,
+): string[] {
+  return ["JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS"].flatMap(
+    (name) => (env[name] ?? "").split(/\s+/).filter((arg) => arg.length > 0),
   );
 }
 
@@ -85,14 +110,23 @@ export function resolveVmArgs(
   userValue: unknown,
   useDefaults: unknown = true,
   warn?: (message: string) => void,
+  envArgs: readonly string[] = [],
 ): string[] {
   const user = sanitizeVmArgs(userValue, warn);
   if (useDefaults === false) {
     return user;
   }
-  const defaults = selectsOtherCollector(user)
-    ? DEFAULT_SERVER_VM_ARGS.filter((arg) => !isG1OnlyFlag(arg))
-    : DEFAULT_SERVER_VM_ARGS;
+  // The environment counts as user intent for conflict detection.
+  const intent = [...user, ...envArgs];
+  const dropG1 = selectsOtherCollector(intent);
+  const dropHeap = intent.some((arg) => HEAP_SIZE_FLAG.test(arg));
+  const dropRatios = intent.some((arg) => FREE_RATIO_FLAG.test(arg));
+  const defaults = DEFAULT_SERVER_VM_ARGS.filter(
+    (arg) =>
+      !(dropG1 && isG1OnlyFlag(arg)) &&
+      !(dropHeap && HEAP_SIZING_DEFAULT.test(arg)) &&
+      !(dropRatios && FREE_RATIO_FLAG.test(arg)),
+  );
   return [...defaults, ...user];
 }
 
@@ -102,12 +136,19 @@ export interface JavaArgsInput {
   vmArgs?: unknown;
   /** `groovy.server.vmargsDefaults`; only `false` disables the defaults. */
   useDefaultVmArgs?: unknown;
+  /** Options from JAVA_TOOL_OPTIONS and friends; see {@link envJavaOptions}. */
+  envArgs?: readonly string[];
   warn?: (message: string) => void;
 }
 
 /** Builds the java command line arguments; JVM options precede `-jar`. */
 export function buildJavaArgs(input: JavaArgsInput): string[] {
-  const args = resolveVmArgs(input.vmArgs, input.useDefaultVmArgs, input.warn);
+  const args = resolveVmArgs(
+    input.vmArgs,
+    input.useDefaultVmArgs,
+    input.warn,
+    input.envArgs,
+  );
   // Java 16+ requires --enable-native-access=ALL-UNNAMED for JNA
   // to suppress "WARNING: A restricted method in java.lang.System has been called"
   if (input.javaVersion !== undefined && input.javaVersion >= 16) {

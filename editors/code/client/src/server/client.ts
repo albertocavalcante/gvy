@@ -17,7 +17,7 @@ import {
 } from "../java/validator";
 import { setClient, getStatusBarManager } from "../ui/statusBar";
 import { getConfiguration } from "../configuration/settings";
-import { buildJavaArgs } from "./launchArgs";
+import { buildJavaArgs, envJavaOptions } from "./launchArgs";
 import { toProtocolUri } from "./uri";
 import { ServerResolver } from "../services/ServerResolver";
 import { pipeServerStderr } from "./stderrRouter";
@@ -219,6 +219,7 @@ function currentJavaArgs(jarPath: string, javaVersion?: number): string[] {
     javaVersion,
     vmArgs: config.serverVmArgs,
     useDefaultVmArgs: config.serverVmArgsDefaults,
+    envArgs: envJavaOptions(process.env),
   });
 }
 
