@@ -107,6 +107,7 @@ test('wrapper rejects invalid invocation/startup config and records a failed pro
   assert.notEqual(f.run(['--startup-arg', '--host_jvm_args=-Xmx512m;echo danger', 'test']).status, 0);
   assert.notEqual(f.run(['--startup-arg', '--bazelrc=/untrusted', 'test']).status, 0);
   assert.notEqual(f.run(['test'], { GITHUB_RUN_ATTEMPT: '0' }).status, 0);
+  assert.notEqual(f.run(['test'], { GITHUB_ACTIONS: 'true' }).status, 0);
   assert.notEqual(f.run(['test'], { GITHUB_EVENT_PATH: join(f.dir, 'missing.json') }).status, 0);
   assert.ok(f.artifactDirs().length >= 2);
 });

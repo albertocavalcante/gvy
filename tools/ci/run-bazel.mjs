@@ -46,6 +46,11 @@ function git(args) {
 
 function createContext(command, invocationId) {
   const testedSha = git(['rev-parse', 'HEAD']);
+  if (process.env.GITHUB_ACTIONS === 'true') {
+    for (const field of ['GITHUB_SHA', 'GITHUB_EVENT_PATH', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT']) {
+      if (!process.env[field]) throw new Error(`Missing ${field} for GitHub invocation`);
+    }
+  }
   if (process.env.GITHUB_SHA && process.env.GITHUB_SHA !== testedSha) throw new Error('GitHub tested SHA does not match checkout HEAD');
   let headSha = testedSha;
   if (process.env.GITHUB_EVENT_PATH) {
