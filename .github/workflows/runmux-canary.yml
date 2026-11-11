@@ -1,0 +1,24 @@
+name: Runmux Canary
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/runmux-canary.yml'
+
+permissions: {}
+
+jobs:
+  canary:
+    runs-on: air-gvy
+    timeout-minutes: 5
+    steps:
+      - name: Verify isolated Linux ARM64 runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = aarch64
+          test "$(id -u)" -ne 0
+          case "$RUNNER_NAME" in rmx-air-*) ;; *) exit 1 ;; esac
+          printf 'Verified runmux Linux ARM64 runner %s\n' "$RUNNER_NAME"
