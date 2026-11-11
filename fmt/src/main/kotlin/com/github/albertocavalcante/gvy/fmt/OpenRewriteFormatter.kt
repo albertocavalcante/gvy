@@ -7,6 +7,8 @@ import org.openrewrite.SourceFile
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.format.AutoFormat
+import org.openrewrite.groovy.marker.MultiVariable
+import org.openrewrite.groovy.marker.RedundantDef
 import org.openrewrite.internal.InMemoryLargeSourceSet
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
@@ -140,12 +142,18 @@ class OpenRewriteFormatter internal constructor(
      * Removes the extra spaces `AutoFormat` puts into variable and parameter declarations (#1524).
      *
      * rewrite-groovy stores the space in front of a declared name in the name's own prefix, and gives an
-     * untyped declaration (`def x = 1`, the parameter in `f(x)`) an empty identifier as its type.
-     * `AutoFormat` then adds a space in the variable's prefix as well, so `String s` prints as
-     * `String  s`, `def x` as `def  x` and `f(x)` as `f( x)`. Each of those runs is split across
-     * adjacent LST nodes, so [PostFormatWhitespaceCollapser] cannot see it as one run. This visitor
-     * merges the adjacent prefixes: a name keeps one space after its type or modifier, and none when
-     * nothing precedes it within the declaration.
+     * untyped declaration (`def x = 1`, the parameter in `f(x)`) an empty identifier as its type, or no
+     * type at all (`for (x in xs)`). `AutoFormat` then adds a space in the variable's prefix as well, so
+     * `String s` prints as `String  s`, `def x` as `def  x` and `f(x)` as `f( x)`. Each of those runs is
+     * split across adjacent LST nodes, so [PostFormatWhitespaceCollapser] cannot see it as one run. It
+     * also puts a space before the `,` of a multi-variable declaration (`def a = 1 , b`).
+     *
+     * This visitor merges the adjacent prefixes. In an untyped declaration, the name keeps one space
+     * when an annotation, a modifier, `def` or the `,` of a multi-variable declaration precedes it, and none
+     * otherwise, because the declaration's own prefix already separates it from the previous token.
+     *
+     * TODO(#1598): drop this visitor once rewrite-groovy keeps the spacing of Groovy declarations.
+     *   See: https://github.com/albertocavalcante/gvy/issues/1598
      */
     private class DeclarationSpacing : GroovyIsoVisitor<Unit>() {
         override fun visitVariable(
@@ -166,26 +174,47 @@ class OpenRewriteFormatter internal constructor(
             multiVariable: J.VariableDeclarations,
             p: Unit,
         ): J.VariableDeclarations {
-            val declarations = super.visitVariableDeclarations(multiVariable, p)
-            val type = declarations.typeExpression as? J.Identifier
+            val declarations = super.visitVariableDeclarations(multiVariable, p).withoutSpaceBeforeComma()
             val firstVariable = declarations.variables.firstOrNull()
-            if (type == null || firstVariable == null || !isUntypedWithInlineSpacing(type, firstVariable)) {
+            if (firstVariable == null || !declarations.isUntypedWithInlineSpacing(firstVariable)) {
                 return declarations
             }
 
-            // The empty type prints nothing, so only a modifier or annotation needs a space after it.
-            val precededByText = declarations.leadingAnnotations.isNotEmpty() || declarations.modifiers.isNotEmpty()
+            val precededByText = declarations.leadingAnnotations.isNotEmpty() ||
+                declarations.modifiers.isNotEmpty() ||
+                declarations.markers.findFirst(MultiVariable::class.java).isPresent ||
+                declarations.markers.findFirst(RedundantDef::class.java).isPresent
             val variablePrefix = if (precededByText) Space.SINGLE_SPACE else Space.EMPTY
             return declarations
-                .withTypeExpression(type.withPrefix(Space.EMPTY))
+                .withTypeExpression(declarations.typeExpression?.withPrefix(Space.EMPTY))
                 .withVariables(listOf(firstVariable.withPrefix(variablePrefix)) + declarations.variables.drop(1))
         }
 
-        private fun isUntypedWithInlineSpacing(
-            type: J.Identifier,
+        /**
+         * The `,` that continues a multi-variable declaration directly follows the previous variable.
+         * rewrite-groovy prints the declaration's own prefix and the marker's prefix before that `,`.
+         */
+        private fun J.VariableDeclarations.withoutSpaceBeforeComma(): J.VariableDeclarations {
+            val comma = markers.findFirst(MultiVariable::class.java).orElse(null) ?: return this
+            val commaFirst = leadingAnnotations.isEmpty() && modifiers.isEmpty()
+            val inline = prefix.isInlineWhitespace() && comma.prefix.isInlineWhitespace()
+            return if (commaFirst && inline) {
+                withPrefix(Space.EMPTY).withMarkers(markers.setByType(comma.withPrefix(Space.EMPTY)))
+            } else {
+                this
+            }
+        }
+
+        /** True when the declaration prints no type, so only the name follows its modifiers. */
+        private fun J.VariableDeclarations.isUntypedWithInlineSpacing(
             firstVariable: J.VariableDeclarations.NamedVariable,
-        ): Boolean = type.simpleName.isEmpty() && type.annotations.isEmpty() &&
-            type.prefix.isInlineWhitespace() && firstVariable.prefix.isInlineWhitespace()
+        ): Boolean {
+            val type = typeExpression
+            val untyped = type == null ||
+                (type is J.Identifier && type.simpleName.isEmpty() && type.annotations.isEmpty())
+            return untyped && varargs == null && (type == null || type.prefix.isInlineWhitespace()) &&
+                firstVariable.prefix.isInlineWhitespace()
+        }
 
         private fun Space.isInlineWhitespace(): Boolean = comments.isEmpty() && '\n' !in whitespace
     }

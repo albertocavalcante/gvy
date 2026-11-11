@@ -444,9 +444,20 @@ class OpenRewriteFormatterTest {
                 "private static final int A = 1",
                 "for (String s : list) {\n    println s\n}",
                 "try {\n    f()\n} catch (Exception e) {\n    println e\n}",
+                "try {\n    f()\n} catch (e) {\n    println e\n}",
+                "for (x in list) {\n    println x\n}",
+                "def a = 1, b = 2",
+                "int a, b",
+                "String a = 'x', b",
             ],
         )
         fun `keeps single spaces in declarations (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        @Test
+        fun `keeps the spaces before a trailing comment (#1524)`() {
+            val input = "def x = 1    // aligned\ndef yy = 2  /* aligned */\nprintln x"
             assertRawFormatsTo(input, input)
         }
 
