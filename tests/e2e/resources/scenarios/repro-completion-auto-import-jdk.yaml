@@ -1,9 +1,9 @@
 name: repro-completion-auto-import-jdk
-description: Completing `Linked` offers LinkedHashMap with an import edit
+description: Completing `LinkedB` offers LinkedBlockingQueue with an import edit
 xfail:
   issue: 1529
   reason: completion offers no JDK class with an import edit for an unimported prefix
-  match: 'LinkedHashMap.*newText.*Actual: \[\]'
+  match: 'LinkedBlockingQueue.*newText.*Actual: \[\]'
 workspace:
   fixture: empty-workspace
   files:
@@ -12,7 +12,7 @@ workspace:
 
       class Svc {
           String summary() {
-              Linked|^c|
+              LinkedB|^c|
           }
       }
 steps:
@@ -39,7 +39,11 @@ steps:
   - assert:
       source: result
       checks:
-        - jsonPath: "$.items[?(@.label == 'LinkedHashMap')].additionalTextEdits[0].newText"
-          expect: { type: CONTAINS, value: "import java.util.LinkedHashMap" }
+        - jsonPath: "$.items[?(@.label == 'LinkedBlockingQueue')].additionalTextEdits[0].newText"
+          expect: { type: ANY_CONTAINS, value: "import java.util.concurrent.LinkedBlockingQueue\n" }
+        - jsonPath: "$.items[?(@.label == 'LinkedBlockingQueue')]"
+          expect: { type: SIZE, value: 1 }
+        - jsonPath: "$.items[?(@.label == 'LinkedBlockingQueue')].additionalTextEdits[*]"
+          expect: { type: SIZE, value: 1 }
   - shutdown: {}
   - exit: {}

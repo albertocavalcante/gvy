@@ -55,10 +55,10 @@ steps:
         - jsonPath: "$.items[?(@.label == 'StringUtils')]"
           expect: { type: SIZE, value: 1 }
         # and carries exactly one additional edit that adds the import
-        - jsonPath: "$.items[?(@.label == 'StringUtils')].additionalTextEdits.length()"
-          expect: { type: EQUALS, value: 1 }
+        - jsonPath: "$.items[?(@.label == 'StringUtils')].additionalTextEdits[*]"
+          expect: { type: SIZE, value: 1 }
         - jsonPath: "$.items[?(@.label == 'StringUtils')].additionalTextEdits[0].newText"
-          expect: { type: CONTAINS, value: "import com.utils.StringUtils" }
+          expect: { type: ANY_CONTAINS, value: "import com.utils.StringUtils\n" }
 
   - shutdown: {}
   - exit: {}

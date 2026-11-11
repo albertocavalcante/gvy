@@ -46,6 +46,12 @@ steps:
       source: result
       checks:
         - jsonPath: "$.items[*].uri"
-          expect: { type: CONTAINS, value: "{{cursor.goDecl.path}}" }
+          expect: { type: CONTAINS, value: "{{cursor.goDecl.uri}}" }
+        - jsonPath: "$.items"
+          expect: { type: SIZE, value: 1 }
+        - jsonPath: "$.items[0].range"
+          expect:
+            type: EQUALS
+            value: { start: { line: 3, character: 4 }, end: { line: 3, character: 23 } }
   - shutdown: {}
   - exit: {}

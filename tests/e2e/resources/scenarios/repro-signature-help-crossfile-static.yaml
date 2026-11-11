@@ -48,6 +48,6 @@ steps:
       source: result
       checks:
         - jsonPath: "$.signatures[*].label"
-          expect: { type: CONTAINS, value: "Money of(Number amount, String currency" }
+          expect: { type: ANY_CONTAINS, value: "Money of(Number amount, String currency" }
   - shutdown: {}
   - exit: {}

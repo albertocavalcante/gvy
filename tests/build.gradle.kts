@@ -54,6 +54,7 @@ testing {
                 implementation(project(":jenkins"))
 
                 implementation(libs.lsp4j)
+                implementation(libs.groovy.core)
                 implementation(platform(libs.jackson.bom))
                 implementation(libs.jackson.dataformat.yaml)
                 implementation(libs.jackson.databind)
