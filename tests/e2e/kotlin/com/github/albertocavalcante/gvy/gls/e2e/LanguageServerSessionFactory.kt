@@ -81,6 +81,7 @@ class LanguageServerSessionFactory(
                 .setInput(process.inputStream)
                 .setOutput(process.outputStream)
                 .setExecutorService(executor.service)
+                .configureGson { it.registerRawJsonRpcParams() }
                 .create()
             val listening = launcher.startListening()
             pending.own(AutoCloseable { listening.cancel(true) })
@@ -180,6 +181,7 @@ class LanguageServerSessionFactory(
                 .setInput(clientIn)
                 .setOutput(clientOut)
                 .setExecutorService(executor.service)
+                .configureGson { it.registerRawJsonRpcParams() }
                 .create()
             val clientListening = clientLauncher.startListening()
             pending.own(AutoCloseable { clientListening.cancel(true) })

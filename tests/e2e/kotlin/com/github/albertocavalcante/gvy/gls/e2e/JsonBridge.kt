@@ -87,6 +87,7 @@ object JsonBridge {
      */
     fun toJsonElement(obj: Any?): JsonElement {
         if (obj == null) return JsonNull
+        if (obj is GsonJsonElement) return obj.toKotlinxJsonElement()
         return gson.toJsonTree(obj).toKotlinxJsonElement()
     }
 }
