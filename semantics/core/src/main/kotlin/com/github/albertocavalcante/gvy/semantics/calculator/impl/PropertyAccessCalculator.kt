@@ -40,8 +40,9 @@ class PropertyAccessCalculator : TypeCalculator<Any> {
             SemanticType.Unknown("Implicit receiver")
         }
 
-        // TODO(#638): Support implicit receiver resolution (this/owner/delegate) via TypeContext.
-        //   See: https://github.com/albertocavalcante/gvy/issues/638
+        // TODO(#1585): Unqualified property accesses have no receiver node, so the receiver type stays Unknown and the
+        //   result is an error. Resolving the implicit receiver (this/owner/delegate) is not implemented yet.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1585
 
         val propertyName = getPropertyName(property)
             ?: return TypeInferenceError.UnsupportedNode(

@@ -699,4 +699,69 @@ class GroovySemanticDBTest {
             assertEquals(1, refs.size)
         }
     }
+
+    @Nested
+    @DisplayName("Member index and version")
+    inner class MemberIndexTests {
+        private fun method(name: String, owner: String) = SymbolInfo(
+            symbol = "$owner$name().",
+            kind = SymbolKind.METHOD,
+            range = Range(1, 0, 1, 5),
+            name = name,
+            owner = owner,
+        )
+
+        @Test
+        fun `findMembers follows the owner across updates and removal`() {
+            val owner = "demo/Lib#"
+            db.updateDocument(
+                testUri1,
+                SemanticDocument(testUri1, listOf(method("a", owner), method("b", owner)), emptyList()),
+            )
+
+            assertEquals(setOf("a", "b"), db.findMembers(owner).map { it.second.name }.toSet())
+
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
+            assertEquals(listOf("a"), db.findMembers(owner).map { it.second.name })
+
+            db.removeDocument(testUri1)
+            assertTrue(db.findMembers(owner).isEmpty())
+        }
+
+        @Test
+        fun `version changes when declarations are added, retyped, removed or cleared`() {
+            val owner = "demo/Lib#"
+            val seen = mutableListOf(db.version)
+            fun record() {
+                seen += db.version
+            }
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
+            record()
+            val retyped = method("a", owner).copy(type = com.github.albertocavalcante.gvy.semantics.TypeConstants.INT)
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(retyped), emptyList()))
+            record()
+            db.removeDocument(testUri1)
+            record()
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
+            db.clear()
+            record()
+
+            assertEquals(seen.size, seen.toSet().size, "versions $seen")
+        }
+
+        @Test
+        fun `version is unchanged by a body-only edit or an identical recompile`() {
+            val owner = "demo/Lib#"
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
+            val before = db.version
+
+            // Same declarations with moved ranges and an extra local: a body edit.
+            val moved = method("a", owner).copy(range = Range(7, 0, 9, 1))
+            val local = SymbolInfo("demo/Lib#a().(x)", SymbolKind.VARIABLE, Range(8, 4, 8, 5), "x", "demo/Lib#a().")
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(moved, local), emptyList()))
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(moved, local), emptyList()))
+
+            assertEquals(before, db.version)
+        }
+    }
 }

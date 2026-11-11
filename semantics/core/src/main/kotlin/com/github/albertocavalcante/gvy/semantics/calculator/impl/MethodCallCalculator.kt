@@ -8,6 +8,8 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
+import org.codehaus.groovy.ast.expr.SpreadExpression
+import org.codehaus.groovy.ast.expr.SpreadMapExpression
 import kotlin.reflect.KClass
 
 /**
@@ -31,6 +33,10 @@ class MethodCallCalculator : TypeCalculator<Any> {
             ).left()
 
         val arguments = getArguments(node)
+        // `f(*list)` passes any number of arguments, so no arity can be matched: the result stays unknown.
+        if (arguments.any { it is SpreadExpression || it is SpreadMapExpression }) {
+            return TypeInferenceError.UnsupportedNode(nodeType = "MethodCallExpression (spread argument)").left()
+        }
 
         val receiverType = if (receiver != null) {
             when (val result = context.calculateTypeResult(receiver)) {
@@ -40,8 +46,9 @@ class MethodCallCalculator : TypeCalculator<Any> {
         } else {
             SemanticType.Unknown("Implicit receiver")
         }
-        // TODO(#638): Support implicit receiver resolution (this/owner/delegate) via TypeContext.
-        //   See: https://github.com/albertocavalcante/gvy/issues/638
+        // TODO(#1585): Unqualified calls have no receiver node, so the receiver type stays Unknown and the
+        //   result is an error. Resolving the implicit receiver (this/owner/delegate) is not implemented yet.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1585
 
         // Traverse pattern: collect all results, short-circuit on first error
         val argTypes = mutableListOf<SemanticType>()
@@ -62,9 +69,14 @@ class MethodCallCalculator : TypeCalculator<Any> {
         val arguments = ReflectionAccess.invokeNoArg(node, "getArguments")
             ?: ReflectionAccess.getField(node, "arguments")
 
+        // A Groovy call's arguments are a TupleExpression (an Iterable of expressions, not a List).
         return when (arguments) {
-            is List<*> -> arguments.filterNotNull()
-            else -> emptyList()
+            is Iterable<*> -> arguments.filterNotNull()
+            else ->
+                arguments
+                    ?.let { ReflectionAccess.invokeNoArg(it, "getExpressions") as? List<*> }
+                    ?.filterNotNull()
+                    .orEmpty()
         }
     }
 }

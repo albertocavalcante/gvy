@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.semantics.TypeLub
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -33,9 +34,14 @@ import java.util.WeakHashMap
 class GroovySemantics(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
+    private val workspaceMemberLookup: MemberLookup? = null,
 ) {
     // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
     private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
+
+    // The workspace version each cached context was built at; guarded by the contextCache lock. Locals typed from
+    // other files are baked into a context, so it is rebuilt once the workspace has changed (never served stale).
+    private val contextVersions = WeakHashMap<ModuleNode, Long>()
 
     // Thread-local current module for single-parameter API compatibility (avoids sharing this state across threads)
     private val currentModule = ThreadLocal<ModuleNode?>()
@@ -45,22 +51,29 @@ class GroovySemantics(
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        // Manually perform atomic check-and-create under the synchronized map's lock
-        // Cannot use computeIfAbsent with Collections.synchronizedMap as it can cause deadlock
+        val workspaceVersion = workspaceMemberLookup?.version ?: 0L
         synchronized(contextCache) {
-            if (!contextCache.containsKey(module)) {
-                val scope = buildRootScope(module)
-                val context = NativeTypeContext(
-                    typeSolver = typeSolver,
-                    calculatorRegistry = calculatorRegistry,
-                    scope = scope,
-                    isStaticCompilation = hasCompileStatic(module),
-                )
+            if (contextCache.containsKey(module) && contextVersions[module] == workspaceVersion) return
+        }
+        // Built outside the lock: typing the locals can take long and must not block other modules' lookups.
+        // Two threads may build the same module; both results are valid for this version.
+        val scope = buildRootScope(module)
+        val context = NativeTypeContext(
+            typeSolver = typeSolver,
+            calculatorRegistry = calculatorRegistry,
+            scope = scope,
+            isStaticCompilation = hasCompileStatic(module),
+            workspaceMemberLookup = workspaceMemberLookup,
+        )
 
-                populateScriptVariables(module, scope, context)
-                populateClassMethodVariables(module, scope, context)
+        populateScriptVariables(module, scope, context)
+        populateClassMethodVariables(module, scope, context)
 
+        synchronized(contextCache) {
+            val cachedVersion = contextVersions[module]
+            if (!contextCache.containsKey(module) || cachedVersion == null || cachedVersion <= workspaceVersion) {
                 contextCache[module] = context
+                contextVersions[module] = workspaceVersion
             }
         }
     }

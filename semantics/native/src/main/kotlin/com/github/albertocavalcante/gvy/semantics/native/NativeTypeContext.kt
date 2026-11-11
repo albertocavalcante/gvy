@@ -9,8 +9,9 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegis
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
+import com.github.albertocavalcante.gvy.semantics.toIndexClassName
+import com.github.albertocavalcante.gvy.semantics.toSemanticType
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
-import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
@@ -62,15 +63,7 @@ class NativeTypeContext(
         receiverType = receiverType,
         nativeFinder = { fqn -> findMethodInModule(fqn, methodName, argumentTypes) },
         workspaceDirect = { workspace, fqn ->
-            workspace.findMethod(fqn, methodName, argumentTypes.size)?.type
-        },
-        workspaceInherited = { workspace, fqn ->
-            workspace.getAllMembers(fqn, includeInherited = true)
-                .find {
-                    it.name == methodName &&
-                        it.kind == com.github.albertocavalcante.gvy.semantics.db.SymbolKind.METHOD
-                }
-                ?.type
+            workspace.agreedMethodType(fqn, methodName, argumentTypes.size)
         },
         converter = { fromClassNode(it.returnType) },
         notFoundMessage = { "Method $methodName not found on $it" },
@@ -85,13 +78,17 @@ class NativeTypeContext(
         classFqn: String,
         methodName: String,
         argumentTypes: List<SemanticType>,
-    ): MethodNode? = scope.currentModule?.classes
-        ?.find { it.name == classFqn }
-        ?.methods
-        ?.find { method ->
-            method.name == methodName &&
-                method.parameters.size == argumentTypes.size
+    ): MethodNode? {
+        val candidates = scope.currentModule?.classes
+            ?.find { it.name == classFqn }
+            ?.methods
+            ?.filter { it.name == methodName && it.parameters.size == argumentTypes.size }
+            .orEmpty()
+        // Overloads of one arity may differ in return type; take one only when they all agree.
+        return candidates.firstOrNull()?.takeIf { first ->
+            candidates.all { fromClassNode(it.returnType) == fromClassNode(first.returnType) }
         }
+    }
 
     override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? = when (receiverType) {
         is SemanticType.Array -> {
@@ -104,14 +101,6 @@ class NativeTypeContext(
             nativeFinder = { fqn -> findFieldInModule(fqn, fieldName) },
             workspaceDirect = { workspace, fqn ->
                 workspace.findField(fqn, fieldName)?.type
-            },
-            workspaceInherited = { workspace, fqn ->
-                workspace.getAllMembers(fqn, includeInherited = true)
-                    .find {
-                        it.name == fieldName &&
-                            it.kind == com.github.albertocavalcante.gvy.semantics.db.SymbolKind.FIELD
-                    }
-                    ?.type
             },
             converter = { fromClassNode(it.type) },
             notFoundMessage = { "Field $fieldName not found on $it" },
@@ -129,16 +118,15 @@ class NativeTypeContext(
 
     /**
      * Generic member resolution helper for nullable return.
-     * Implements the three-tier resolution strategy:
+     * Implements the two-tier resolution strategy:
      * 1. Native AST (same module) - fast path
-     * 2. Workspace direct lookup (cross-file)
-     * 3. Workspace inherited lookup (cross-file with inheritance)
+     * 2. Workspace direct lookup (cross-file). Inherited members are not searched: the index holds no
+     *    hierarchy, and a by-name match on a superclass could answer for the wrong overload.
      *
      * @param T The native AST node type (MethodNode, FieldNode, etc.)
      * @param receiverType The type to resolve members from
      * @param nativeFinder Function to find member in native AST by FQN
      * @param workspaceDirect Function to find member directly in workspace by FQN
-     * @param workspaceInherited Function to find inherited member in workspace by FQN
      * @param converter Function to convert native AST node to SemanticType
      * @param notFoundMessage Function to generate error message when not found
      * @return SemanticType if found, null if receiver type doesn't support member lookup
@@ -148,7 +136,6 @@ class NativeTypeContext(
         receiverType: SemanticType,
         nativeFinder: (String) -> T?,
         workspaceDirect: (MemberLookup, String) -> SemanticType?,
-        workspaceInherited: (MemberLookup, String) -> SemanticType?,
         converter: (T) -> SemanticType,
         notFoundMessage: (String) -> String,
     ): SemanticType? {
@@ -162,15 +149,9 @@ class NativeTypeContext(
 
                 // Strategy 2: Workspace Index (cross-file)
                 workspaceMemberLookup?.let { workspace ->
-                    val directMember = workspaceDirect(workspace, receiverType.fqn)
+                    val directMember = workspaceDirect(workspace, receiverType.fqn.toIndexClassName())
                     if (directMember != null) {
                         return directMember
-                    }
-
-                    // Strategy 3: Check inherited members if direct lookup fails
-                    val inheritedMember = workspaceInherited(workspace, receiverType.fqn)
-                    if (inheritedMember != null) {
-                        return inheritedMember
                     }
                 }
 
@@ -184,16 +165,15 @@ class NativeTypeContext(
 
     /**
      * Generic member resolution helper for Either return (TypeResult).
-     * Implements the three-tier resolution strategy:
+     * Implements the two-tier resolution strategy:
      * 1. Native AST (same module) - fast path
-     * 2. Workspace direct lookup (cross-file)
-     * 3. Workspace inherited lookup (cross-file with inheritance)
+     * 2. Workspace direct lookup (cross-file). Inherited members are not searched: the index holds no
+     *    hierarchy, and a by-name match on a superclass could answer for the wrong overload.
      *
      * @param T The native AST node type (MethodNode, FieldNode, etc.)
      * @param receiverType The type to resolve members from
      * @param nativeFinder Function to find member in native AST by FQN
      * @param workspaceDirect Function to find member directly in workspace by FQN
-     * @param workspaceInherited Function to find inherited member in workspace by FQN
      * @param converter Function to convert native AST node to SemanticType
      * @param errorFactory Function to create TypeInferenceError when not found
      * @return Either TypeInferenceError or SemanticType
@@ -203,7 +183,6 @@ class NativeTypeContext(
         receiverType: SemanticType,
         nativeFinder: (String) -> T?,
         workspaceDirect: (MemberLookup, String) -> SemanticType?,
-        workspaceInherited: (MemberLookup, String) -> SemanticType?,
         converter: (T) -> SemanticType,
         errorFactory: (SemanticType) -> TypeInferenceError,
     ): TypeResult = when (receiverType) {
@@ -211,10 +190,9 @@ class NativeTypeContext(
             // Strategy 1: Native AST (same module) - fast path
             nativeFinder(receiverType.fqn)?.let { return converter(it).right() }
 
-            // Strategy 2 & 3: Workspace Index (cross-file)
+            // Strategy 2: Workspace Index (cross-file)
             workspaceMemberLookup?.let { workspace ->
-                workspaceDirect(workspace, receiverType.fqn)?.let { return it.right() }
-                workspaceInherited(workspace, receiverType.fqn)?.let { return it.right() }
+                workspaceDirect(workspace, receiverType.fqn.toIndexClassName())?.let { return it.right() }
             }
 
             // Not found, return error
@@ -249,15 +227,7 @@ class NativeTypeContext(
         receiverType = receiverType,
         nativeFinder = { fqn -> findMethodInModule(fqn, methodName, argumentTypes) },
         workspaceDirect = { workspace, fqn ->
-            workspace.findMethod(fqn, methodName, argumentTypes.size)?.type
-        },
-        workspaceInherited = { workspace, fqn ->
-            workspace.getAllMembers(fqn, includeInherited = true)
-                .find {
-                    it.name == methodName &&
-                        it.kind == com.github.albertocavalcante.gvy.semantics.db.SymbolKind.METHOD
-                }
-                ?.type
+            workspace.agreedMethodType(fqn, methodName, argumentTypes.size)
         },
         converter = { fromClassNode(it.returnType) },
         errorFactory = { TypeInferenceError.MethodNotFound(it, methodName, argumentTypes) },
@@ -279,59 +249,25 @@ class NativeTypeContext(
             workspaceDirect = { workspace, fqn ->
                 workspace.findField(fqn, fieldName)?.type
             },
-            workspaceInherited = { workspace, fqn ->
-                workspace.getAllMembers(fqn, includeInherited = true)
-                    .find {
-                        it.name == fieldName &&
-                            it.kind == com.github.albertocavalcante.gvy.semantics.db.SymbolKind.FIELD
-                    }
-                    ?.type
-            },
             converter = { fromClassNode(it.type) },
             errorFactory = { TypeInferenceError.FieldNotFound(it, fieldName) },
         )
+    }
+
+    /**
+     * The return type of [methodName] on [classFqn] when it is certain: every overload of that arity must declare
+     * the same known type. Overloads that disagree (or lack a type) give null, so the call stays Unknown instead
+     * of taking the first overload's type.
+     */
+    private fun MemberLookup.agreedMethodType(classFqn: String, methodName: String, arity: Int): SemanticType? {
+        val types = findMethods(classFqn, methodName, arity).map { it.type }
+        return if (types.isNotEmpty() && types.none { it == null }) types.distinct().singleOrNull() else null
     }
 
     companion object {
         /**
          * Convert a Groovy ClassNode to SemanticType.
          */
-        fun fromClassNode(classNode: ClassNode): SemanticType = when {
-            classNode.equals(ClassHelper.dynamicType()) -> SemanticType.Dynamic()
-            classNode.isArray -> {
-                SemanticType.Array(fromClassNode(classNode.componentType))
-            }
-
-            // Check if it's a primitive by name first
-            isPrimitiveName(classNode.name) -> {
-                resolvePrimitiveOrKnown(classNode.name)
-            }
-
-            classNode.isPrimaryClassNode || classNode.redirect() != classNode -> {
-                resolvePrimitiveOrKnown(classNode.name)
-            }
-
-            else -> SemanticType.Known(classNode.name)
-        }
-
-        /**
-         * Check if a class name represents a Java/Groovy primitive type.
-         */
-        private fun isPrimitiveName(name: String): Boolean = name in setOf(
-            "int", "long", "double", "float", "boolean", "byte", "char", "short", "void",
-        )
-
-        private fun resolvePrimitiveOrKnown(fqn: String): SemanticType = when (fqn) {
-            "int" -> TypeConstants.INT
-            "long" -> TypeConstants.LONG
-            "double" -> TypeConstants.DOUBLE
-            "float" -> TypeConstants.FLOAT
-            "boolean" -> TypeConstants.BOOLEAN
-            "byte" -> TypeConstants.BYTE
-            "char" -> TypeConstants.CHAR
-            "short" -> TypeConstants.SHORT
-            "void" -> TypeConstants.VOID
-            else -> SemanticType.Known(fqn)
-        }
+        fun fromClassNode(classNode: ClassNode): SemanticType = classNode.toSemanticType()
     }
 }

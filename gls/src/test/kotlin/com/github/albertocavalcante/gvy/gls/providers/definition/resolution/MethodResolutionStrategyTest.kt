@@ -50,6 +50,7 @@ class MethodResolutionStrategyTest {
 
         every { compilationService.classpathService } returns classpathService
         every { classpathService.getTypeSolver() } returns mockk()
+        every { compilationService.getWorkspaceSymbolIndex() } returns null
 
         strategy = MethodResolutionStrategy(compilationService, sourceNavigator)
     }

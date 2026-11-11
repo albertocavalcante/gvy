@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.providers.inlayhints
 
 import com.github.albertocavalcante.groovyparser.ast.isDynamic
-import com.github.albertocavalcante.gvy.common.text.formatTypeName
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
@@ -51,8 +50,9 @@ class TypeInlayHintStrategy : InlayHintStrategy {
             return emptyList()
         }
 
-        // Format type as simple name (e.g., "ArrayList<Integer>" instead of "java.util.ArrayList<Integer>")
-        val displayType = inferredType.formatTypeName()
+        // The formatter already gives simple names (e.g., "ArrayList<Integer>", nested types as "Outer.Inner");
+        // simplifying again would cut a nested type down to "Inner".
+        val displayType = inferredType
 
         // Position the hint after the variable name
         val position = Position(

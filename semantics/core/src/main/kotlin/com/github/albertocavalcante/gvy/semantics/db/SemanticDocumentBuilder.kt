@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
+import com.github.albertocavalcante.gvy.semantics.toSemanticType
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassHelper
@@ -232,6 +233,12 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
     }
 
     /**
+     * The declared type to record for a member, or null when it is not known from the declaration alone: a type
+     * variable (`T get()`) stands for whatever the receiver's type arguments say, which the index does not keep.
+     */
+    private fun ClassNode.toDeclaredType() = if (isGenericsPlaceHolder) null else toSemanticType()
+
+    /**
      * Extract field symbol
      */
     private fun extractField(fieldNode: FieldNode, owner: ClassNode) {
@@ -246,6 +253,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 range = range,
                 name = fieldNode.name,
                 owner = ownerSymbolId,
+                type = fieldNode.type.toDeclaredType(),
             ),
         )
 
@@ -273,6 +281,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 range = range,
                 name = propertyNode.name,
                 owner = ownerSymbolId,
+                type = propertyNode.type.toDeclaredType(),
             ),
         )
 
@@ -305,6 +314,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 range = range,
                 name = methodNode.name,
                 owner = ownerSymbolId,
+                type = methodNode.returnType.toDeclaredType().takeIf { kind == SymbolKind.METHOD },
             ),
         )
 

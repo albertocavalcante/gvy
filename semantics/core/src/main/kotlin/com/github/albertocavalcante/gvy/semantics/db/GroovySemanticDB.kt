@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.semantics.db
 
 import java.net.URI
 import java.util.Collections
+import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
 import kotlin.concurrent.write
@@ -32,6 +33,18 @@ class GroovySemanticDB {
 
     // symbolId -> occurrences, grouped by file
     private var occurrenceIndex = SymbolIndex<SymbolOccurrence>()
+
+    // owner symbolId -> the symbols it owns (its members), grouped by file
+    private var ownerIndex = SymbolIndex<SymbolInfo>()
+
+    private val versionCounter = AtomicLong()
+
+    /**
+     * Increases whenever a stored document's declarations change (a class, method, field or property added,
+     * removed, renamed or retyped), or the database is cleared, so a derived value can tell it was computed earlier.
+     * Edits inside bodies, moved ranges and an identical recompile leave it unchanged.
+     */
+    val version: Long get() = versionCounter.get()
 
     /**
      * Get semantic document for a URI
@@ -67,8 +80,12 @@ class GroovySemanticDB {
         )
         val facts = ImplementationFacts.freeze(implementations)
         lock.write {
-            documents.put(uri, StoredDocument(snapshot, sourceText, facts))?.let { removeFromIndexes(uri, it.document) }
-            addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex)
+            val previous = documents.put(uri, StoredDocument(snapshot, sourceText, facts))
+            previous?.let { removeFromIndexes(uri, it.document) }
+            addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex, ownerIndex)
+            if (previous == null || declarations(previous.document) != declarations(snapshot)) {
+                versionCounter.incrementAndGet()
+            }
         }
     }
 
@@ -76,7 +93,12 @@ class GroovySemanticDB {
      * Remove document when file is deleted
      */
     fun removeDocument(uri: URI) {
-        lock.write { documents.remove(uri)?.let { removeFromIndexes(uri, it.document) } }
+        lock.write {
+            documents.remove(uri)?.let {
+                removeFromIndexes(uri, it.document)
+                if (declarations(it.document).isNotEmpty()) versionCounter.incrementAndGet()
+            }
+        }
     }
 
     /**
@@ -112,6 +134,9 @@ class GroovySemanticDB {
      */
     fun findAllSymbolDefinitions(symbolId: String): List<Pair<URI, SymbolInfo>> =
         lock.read { symbolIndex.all(symbolId) }
+
+    /** The symbols owned by [ownerSymbolId] (a class's members), in the files that define them. */
+    fun findMembers(ownerSymbolId: String): List<Pair<URI, SymbolInfo>> = lock.read { ownerIndex.all(ownerSymbolId) }
 
     /**
      * Find all occurrences of a symbol across all files
@@ -168,6 +193,8 @@ class GroovySemanticDB {
             documents = HashMap()
             symbolIndex = SymbolIndex()
             occurrenceIndex = SymbolIndex()
+            ownerIndex = SymbolIndex()
+            versionCounter.incrementAndGet()
         }
     }
 
@@ -189,10 +216,23 @@ class GroovySemanticDB {
         )
     }
 
+    private data class Declaration(
+        val symbol: String,
+        val kind: SymbolKind,
+        val owner: String?,
+        val type: com.github.albertocavalcante.gvy.semantics.SemanticType?,
+    )
+
+    // What other files can see of a document: member declarations and their types, not locals or ranges.
+    private fun declarations(doc: SemanticDocument): Set<Declaration> = doc.symbols
+        .filter { it.kind != SymbolKind.VARIABLE && it.kind != SymbolKind.PARAMETER && it.kind != SymbolKind.IMPORT }
+        .mapTo(HashSet()) { Declaration(it.symbol, it.kind, it.owner, it.type) }
+
     // Callers hold the write lock.
     private fun removeFromIndexes(uri: URI, doc: SemanticDocument) {
         doc.symbols.forEach { symbolIndex.remove(it.symbol, uri) }
         doc.occurrences.forEach { occurrenceIndex.remove(it.symbol, uri) }
+        doc.symbols.forEach { symbol -> symbol.owner?.let { ownerIndex.remove(it, uri) } }
     }
 }
 
@@ -241,7 +281,11 @@ private fun addToIndexes(
     doc: SemanticDocument,
     symbolIndex: SymbolIndex<SymbolInfo>,
     occurrenceIndex: SymbolIndex<SymbolOccurrence>,
+    ownerIndex: SymbolIndex<SymbolInfo>,
 ) {
     doc.symbols.groupBy { it.symbol }.forEach { (id, symbols) -> symbolIndex.put(id, uri, symbols) }
     doc.occurrences.groupBy { it.symbol }.forEach { (id, occurrences) -> occurrenceIndex.put(id, uri, occurrences) }
+    doc.symbols.filter {
+        it.owner != null
+    }.groupBy { it.owner!! }.forEach { (id, owned) -> ownerIndex.put(id, uri, owned) }
 }

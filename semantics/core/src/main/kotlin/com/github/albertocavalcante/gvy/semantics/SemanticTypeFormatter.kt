@@ -82,7 +82,7 @@ object SemanticTypeFormatter {
         val baseName = if (options.includePackage) {
             type.fqn
         } else {
-            type.fqn.substringAfterLast('.')
+            type.fqn.substringAfterLast('.').replace('$', '.')
         }
 
         return if (options.includeGenerics && type.typeArgs.isNotEmpty()) {

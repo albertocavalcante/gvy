@@ -110,7 +110,10 @@ class NativeLanguageSession(
                     parseUnit,
                     NativeCompletionService(
                         compilationService,
-                        SemanticTypeResolver(compilationService.classpathService.getTypeSolver()),
+                        SemanticTypeResolver(
+                            compilationService.classpathService.getTypeSolver(),
+                            compilationService.getWorkspaceSymbolIndex(),
+                        ),
                     ),
                     content,
                 )
