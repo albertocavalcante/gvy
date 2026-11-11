@@ -51,16 +51,16 @@ class DiagnosticsOrchestratorFenceTest {
         val documents = DocumentProvider().apply { put(uri, content, INITIAL_VERSION) }
         val compilation = mockk<GroovyCompilationService>()
         val providers = mockk<DiagnosticsService>()
+        val parsed = mockk<CompilationResult>()
         val publications = mutableListOf<PublishDiagnosticsParams>()
         val client = mockk<LanguageClient>()
         val orchestrator: DiagnosticsOrchestrator
 
         init {
-            val parsed = mockk<CompilationResult>()
             every { parsed.diagnostics } returns emptyList()
             every { parsed.parseCompleted } returns true
             coEvery { compilation.compileAsync(any(), uri, any()) } returns CompletableDeferred(parsed)
-            coEvery { providers.collectDiagnostics(uri, any()) } returns healthyResult()
+            coEvery { providers.collectDiagnostics(uri, any(), any()) } returns healthyResult()
             every { client.publishDiagnostics(capture(publications)) } just Runs
             orchestrator = DiagnosticsOrchestrator(
                 scope,
@@ -79,10 +79,24 @@ class DiagnosticsOrchestratorFenceTest {
     }
 
     @Test
+    fun `retained run supplies its completed compilation to providers`(): Unit = runTest {
+        val fixture = Fixture(this)
+
+        fixture.trigger()
+        advanceUntilIdle()
+        fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
+
+        coVerify(exactly = 1) {
+            fixture.providers.collectDiagnostics(fixture.uri, fixture.content, fixture.parsed)
+        }
+        coVerify(exactly = 0) { fixture.providers.collectDiagnostics(fixture.uri, fixture.content) }
+    }
+
+    @Test
     fun `an empty parser publication cannot complete a fence while providers are running`(): Unit = runTest {
         val fixture = Fixture(this)
         val release = CompletableDeferred<DiagnosticsCollectionResult>()
-        coEvery { fixture.providers.collectDiagnostics(any(), any()) } coAnswers { release.await() }
+        coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } coAnswers { release.await() }
         fixture.trigger()
         runCurrent()
         assertTrue(fixture.publications.single().diagnostics.isEmpty())
@@ -111,7 +125,7 @@ class DiagnosticsOrchestratorFenceTest {
         assertEquals(first.runId, second.runId)
         assertEquals(fixture.uri.toString(), first.uri)
         coVerify(exactly = 1) { fixture.compilation.compileAsync(any(), fixture.uri, fixture.content) }
-        coVerify(exactly = 1) { fixture.providers.collectDiagnostics(fixture.uri, fixture.content) }
+        coVerify(exactly = 1) { fixture.providers.collectDiagnostics(fixture.uri, fixture.content, any()) }
     }
 
     @Test
@@ -119,7 +133,7 @@ class DiagnosticsOrchestratorFenceTest {
         val fixture = Fixture(this)
         val partial = Diagnostic().apply { message = "partial" }
         val failure = DiagnosticProviderFailure(PROVIDER_ID, IOException::class.java.name, "unavailable")
-        coEvery { fixture.providers.collectDiagnostics(any(), any()) } returns DiagnosticsCollectionResult(
+        coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } returns DiagnosticsCollectionResult(
             listOf(partial),
             listOf(PROVIDER_ID),
             listOf(failure),
@@ -136,7 +150,7 @@ class DiagnosticsOrchestratorFenceTest {
     @Test
     fun `an infrastructure exception remains observable after the job is removed`(): Unit = runTest {
         val fixture = Fixture(this)
-        coEvery { fixture.providers.collectDiagnostics(any(), any()) } throws IOException("collector failed")
+        coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } throws IOException("collector failed")
         fixture.trigger()
         advanceUntilIdle()
         assertNull(fixture.orchestrator.getDiagnosticJob(fixture.uri))
@@ -151,7 +165,7 @@ class DiagnosticsOrchestratorFenceTest {
     fun `cancelling one waiter preserves shared analysis and other waiters`(): Unit = runTest {
         val fixture = Fixture(this)
         val release = CompletableDeferred<DiagnosticsCollectionResult>()
-        coEvery { fixture.providers.collectDiagnostics(any(), any()) } coAnswers { release.await() }
+        coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } coAnswers { release.await() }
         fixture.trigger()
         val first = async { fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION) }
         val second = async { fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION) }
@@ -163,14 +177,14 @@ class DiagnosticsOrchestratorFenceTest {
         release.complete(healthyResult())
         advanceUntilIdle()
         assertTrue(second.await().failures.isEmpty())
-        coVerify(exactly = 1) { fixture.providers.collectDiagnostics(any(), any()) }
+        coVerify(exactly = 1) { fixture.providers.collectDiagnostics(any(), any(), any()) }
     }
 
     @Test
     fun `an accepted edit retires both waiting and completed results`(): Unit = runTest {
         val fixture = Fixture(this)
         val release = CompletableDeferred<DiagnosticsCollectionResult>()
-        coEvery { fixture.providers.collectDiagnostics(any(), fixture.content) } coAnswers { release.await() }
+        coEvery { fixture.providers.collectDiagnostics(any(), fixture.content, any()) } coAnswers { release.await() }
         fixture.trigger()
         val waiting = async {
             runCatching { fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION) }
@@ -213,14 +227,14 @@ class DiagnosticsOrchestratorFenceTest {
         advanceUntilIdle()
         val old = fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
         val replacement = mockk<DiagnosticsService>()
-        coEvery { replacement.collectDiagnostics(any(), any()) } returns healthyResult()
+        coEvery { replacement.collectDiagnostics(any(), any(), any()) } returns healthyResult()
         fixture.orchestrator.updateConfiguration(ServerConfiguration(maxNumberOfProblems = 1), replacement)
         advanceUntilIdle()
 
         val current = fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
         assertNotEquals(old.runId, current.runId)
         assertNotEquals(old.configurationGeneration, current.configurationGeneration)
-        coVerify(exactly = 1) { replacement.collectDiagnostics(any(), any()) }
+        coVerify(exactly = 1) { replacement.collectDiagnostics(any(), any(), any()) }
     }
 
     @Test
@@ -313,7 +327,7 @@ class DiagnosticsOrchestratorFenceTest {
             fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
         }
         assertTrue(checkNotNull(error.message).contains("Parsing did not complete"))
-        coVerify(exactly = 0) { fixture.providers.collectDiagnostics(any(), any()) }
+        coVerify(exactly = 0) { fixture.providers.collectDiagnostics(any(), any(), any()) }
     }
 
     @Test
@@ -324,7 +338,7 @@ class DiagnosticsOrchestratorFenceTest {
         try {
             val fixture = Fixture(owner)
             val fatal = AssertionError("provider aborted")
-            coEvery { fixture.providers.collectDiagnostics(any(), any()) } throws fatal
+            coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } throws fatal
             fixture.trigger()
             advanceUntilIdle()
 
@@ -342,7 +356,7 @@ class DiagnosticsOrchestratorFenceTest {
     fun `problem limits cannot hide a provider failure from the terminal result`(): Unit = runTest {
         val fixture = Fixture(this, ServerConfiguration(maxNumberOfProblems = 0))
         val failure = DiagnosticProviderFailure(PROVIDER_ID, IOException::class.java.name, "failed")
-        coEvery { fixture.providers.collectDiagnostics(any(), any()) } returns DiagnosticsCollectionResult(
+        coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } returns DiagnosticsCollectionResult(
             listOf(Diagnostic().apply { message = "partial" }),
             listOf(PROVIDER_ID),
             listOf(failure),
@@ -362,7 +376,7 @@ class DiagnosticsOrchestratorFenceTest {
         fun `configuration replacement releases a waiter before the retired provider returns`(): Unit = runTest {
             val fixture = Fixture(this)
             val release = CompletableDeferred<Unit>()
-            coEvery { fixture.providers.collectDiagnostics(any(), any()) } coAnswers {
+            coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } coAnswers {
                 withContext(NonCancellable) { release.await() }
                 healthyResult()
             }
@@ -374,7 +388,7 @@ class DiagnosticsOrchestratorFenceTest {
             val previous = checkNotNull(fixture.orchestrator.getDiagnosticJob(fixture.uri))
             try {
                 val replacement = mockk<DiagnosticsService>()
-                coEvery { replacement.collectDiagnostics(any(), any()) } returns healthyResult()
+                coEvery { replacement.collectDiagnostics(any(), any(), any()) } returns healthyResult()
                 fixture.orchestrator.updateConfiguration(ServerConfiguration(), replacement)
                 runCurrent()
 
@@ -383,7 +397,7 @@ class DiagnosticsOrchestratorFenceTest {
                 assertFalse(previous.isCompleted)
                 val current = fixture.orchestrator.awaitCurrentDiagnostics(fixture.uri, INITIAL_VERSION)
                 assertTrue(current.failures.isEmpty())
-                coVerify(exactly = 1) { replacement.collectDiagnostics(any(), any()) }
+                coVerify(exactly = 1) { replacement.collectDiagnostics(any(), any(), any()) }
             } finally {
                 release.complete(Unit)
             }
@@ -394,7 +408,7 @@ class DiagnosticsOrchestratorFenceTest {
         fun `identical version reopen releases a waiter before the retired provider returns`(): Unit = runTest {
             val fixture = Fixture(this)
             val release = CompletableDeferred<Unit>()
-            coEvery { fixture.providers.collectDiagnostics(any(), any()) } coAnswers {
+            coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } coAnswers {
                 withContext(NonCancellable) { release.await() }
                 healthyResult()
             }
@@ -407,7 +421,7 @@ class DiagnosticsOrchestratorFenceTest {
             try {
                 fixture.orchestrator.close(fixture.uri)
                 fixture.documents.put(fixture.uri, fixture.content, INITIAL_VERSION)
-                coEvery { fixture.providers.collectDiagnostics(any(), any()) } returns healthyResult()
+                coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } returns healthyResult()
                 fixture.trigger()
                 runCurrent()
 
@@ -428,7 +442,7 @@ class DiagnosticsOrchestratorFenceTest {
         fun `an empty provider result revalidates the snapshot without a second publication`(): Unit = runTest {
             val fixture = Fixture(this)
             val release = CompletableDeferred<Unit>()
-            coEvery { fixture.providers.collectDiagnostics(any(), any()) } coAnswers {
+            coEvery { fixture.providers.collectDiagnostics(any(), any(), any()) } coAnswers {
                 release.await()
                 fixture.documents.update(fixture.uri, "class Changed {}", INITIAL_VERSION + 1)
                 healthyResult()

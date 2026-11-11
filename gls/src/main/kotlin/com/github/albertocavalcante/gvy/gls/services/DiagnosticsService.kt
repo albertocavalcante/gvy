@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.config.DiagnosticConfig
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.StreamingDiagnosticProvider
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -57,53 +58,65 @@ class DiagnosticsService(
      * TODO(#455): Consider adding timeout per provider to prevent hanging.
      *   See: https://github.com/albertocavalcante/groovy-lsp/issues/455
      */
-    @OptIn(FlowPreview::class)
     suspend fun collectDiagnostics(uri: URI, content: String): DiagnosticsCollectionResult =
-        withContext(Dispatchers.IO) {
-            val enabledProviders = providers.filter { config.isProviderEnabled(it) }
-                .map { EnabledProvider(it.id, it) }
+        collectDiagnostics(uri, content, compilation = null)
 
-            if (enabledProviders.isEmpty()) {
-                logger.debug { "No enabled diagnostic providers for $uri" }
-                return@withContext DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
-            }
-
-            logger.debug {
-                "Running ${enabledProviders.size} enabled providers for $uri: ${enabledProviders.map { it.id }}"
-            }
-
-            try {
-                coroutineScope {
-                    val emissions = Channel<Diagnostic>(Channel.BUFFERED)
-                    val diagnostics = async { emissions.consumeAsFlow().toList() }
-                    // Preserve flatMapMerge's existing concurrency budget, including its configured override.
-                    val permits = Semaphore(DEFAULT_CONCURRENCY)
-                    val pending = enabledProviders.map { provider ->
-                        async {
-                            permits.withPermit {
-                                collectProvider(provider, uri, content, emissions)
-                            }
-                        }
-                    }
-                    val failures = try {
-                        pending.awaitAll().filterNotNull()
-                    } finally {
-                        pending.forEach { it.cancel() }
-                        emissions.close()
-                    }
-
-                    DiagnosticsCollectionResult(
-                        diagnostics = diagnostics.await(),
-                        providerIds = enabledProviders.map { it.id },
-                        failures = failures,
-                    )
-                }
-            } catch (e: CancellationException) {
-                // Job cancellation is expected during rapid document edits (debouncing)
-                logger.debug { "Diagnostic collection cancelled for $uri" }
-                throw e
+    @OptIn(FlowPreview::class)
+    internal suspend fun collectDiagnostics(
+        uri: URI,
+        content: String,
+        compilation: CompilationResult?,
+    ): DiagnosticsCollectionResult = withContext(Dispatchers.IO) {
+        compilation?.let {
+            check(it.parseCompleted) { "Incomplete compilation cannot establish diagnostic context for $uri" }
+            require(it.sourceText == content) {
+                "Compilation source does not match the diagnostic snapshot for $uri"
             }
         }
+        val enabledProviders = providers.filter { config.isProviderEnabled(it) }
+            .map { EnabledProvider(it.id, it) }
+
+        if (enabledProviders.isEmpty()) {
+            logger.debug { "No enabled diagnostic providers for $uri" }
+            return@withContext DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
+        }
+
+        logger.debug {
+            "Running ${enabledProviders.size} enabled providers for $uri: ${enabledProviders.map { it.id }}"
+        }
+
+        try {
+            coroutineScope {
+                val emissions = Channel<Diagnostic>(Channel.BUFFERED)
+                val diagnostics = async { emissions.consumeAsFlow().toList() }
+                // Preserve flatMapMerge's existing concurrency budget, including its configured override.
+                val permits = Semaphore(DEFAULT_CONCURRENCY)
+                val pending = enabledProviders.map { provider ->
+                    async {
+                        permits.withPermit {
+                            collectProvider(provider, uri, content, emissions, compilation)
+                        }
+                    }
+                }
+                val failures = try {
+                    pending.awaitAll().filterNotNull()
+                } finally {
+                    pending.forEach { it.cancel() }
+                    emissions.close()
+                }
+
+                DiagnosticsCollectionResult(
+                    diagnostics = diagnostics.await(),
+                    providerIds = enabledProviders.map { it.id },
+                    failures = failures,
+                )
+            }
+        } catch (e: CancellationException) {
+            // Job cancellation is expected during rapid document edits (debouncing)
+            logger.debug { "Diagnostic collection cancelled for $uri" }
+            throw e
+        }
+    }
 
     @Suppress("TooGenericExceptionCaught") // Provider exceptions become outcomes; cancellation and Errors propagate.
     private suspend fun collectProvider(
@@ -111,11 +124,17 @@ class DiagnosticsService(
         uri: URI,
         content: String,
         emissions: SendChannel<Diagnostic>,
+        compilation: CompilationResult?,
     ): DiagnosticProviderFailure? {
         logger.debug { "Executing provider: ${provider.id}" }
         val startTime = System.nanoTime()
         return try {
-            provider.provider.provideDiagnostics(uri, content).collect { emissions.send(it) }
+            val stream = if (compilation == null) {
+                provider.provider.provideDiagnostics(uri, content)
+            } else {
+                provider.provider.provideDiagnostics(uri, content, compilation)
+            }
+            stream.collect { emissions.send(it) }
             currentCoroutineContext().ensureActive()
             val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
             logger.debug { "Provider ${provider.id} completed in ${elapsedMs}ms" }

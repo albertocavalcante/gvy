@@ -43,7 +43,7 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
         init {
             val client = mockk<LanguageClient>()
             every { client.publishDiagnostics(capture(publications)) } just Runs
-            coEvery { diagnostics.collectDiagnostics(any(), any()) } returns
+            coEvery { diagnostics.collectDiagnostics(any(), any(), any()) } returns
                 DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
             orchestrator = DiagnosticsOrchestrator(
                 scope,
@@ -130,7 +130,7 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
     fun `provider cancellation does not restart compilation`(): Unit = runTest {
         val fixture = Fixture(this, uri, content)
         coEvery { fixture.compilation.compileAsync(any(), uri, content) } returns CompletableDeferred(result("parser"))
-        coEvery { fixture.diagnostics.collectDiagnostics(any(), any()) } throws
+        coEvery { fixture.diagnostics.collectDiagnostics(any(), any(), any()) } throws
             CancellationException("Provider cancelled")
 
         fixture.orchestrator.trigger(uri, content)

@@ -66,7 +66,7 @@ class DiagnosticsOrchestratorTest {
         every { result.diagnostics } returns parser
         every { result.parseCompleted } returns true
         coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnostics.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnostics.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(extra, emptyList(), emptyList())
         val publications = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publications)) } just Runs
@@ -99,11 +99,11 @@ class DiagnosticsOrchestratorTest {
         every { result.parseCompleted } returns true
         coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
         val release = CompletableDeferred<Unit>()
-        coEvery { oldService.collectDiagnostics(any(), any()) } coAnswers {
+        coEvery { oldService.collectDiagnostics(any(), any(), any()) } coAnswers {
             withContext(NonCancellable) { release.await() }
             DiagnosticsCollectionResult(listOf(Diagnostic().apply { message = "obsolete" }), emptyList(), emptyList())
         }
-        coEvery { newService.collectDiagnostics(any(), any()) } returns
+        coEvery { newService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(listOf(Diagnostic().apply { message = "current" }), emptyList(), emptyList())
         val publications = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publications)) } just Runs
@@ -138,7 +138,7 @@ class DiagnosticsOrchestratorTest {
         val secondCompilation = CompletableDeferred<CompilationResult>()
         coEvery { compilationService.compileAsync(any(), any(), "first content") } returns firstCompilation
         coEvery { compilationService.compileAsync(any(), any(), "second content") } returns secondCompilation
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
@@ -192,7 +192,7 @@ class DiagnosticsOrchestratorTest {
         coEvery {
             compilationService.compileAsync(any(), any(), any())
         } returns CompletableDeferred(createMockCompilationResult())
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
@@ -231,7 +231,7 @@ class DiagnosticsOrchestratorTest {
         val result = createMockCompilationResult(listOf(parserDiagnostic))
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } coAnswers {
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } coAnswers {
             // Simulate slow diagnostic provider
             delay(100)
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
@@ -280,7 +280,7 @@ class DiagnosticsOrchestratorTest {
 
         val result = createMockCompilationResult(listOf(parserDiagnostic))
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(listOf(extraDiagnostic), emptyList(), emptyList())
 
         val publishedParams = mutableListOf<PublishDiagnosticsParams>()
@@ -463,7 +463,7 @@ class DiagnosticsOrchestratorTest {
 
         val result = createMockCompilationResult()
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
@@ -502,7 +502,7 @@ class DiagnosticsOrchestratorTest {
         val result = createMockCompilationResult(listOf(parserDiagnostic))
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
 
         val publishedParams = mutableListOf<PublishDiagnosticsParams>()
@@ -551,7 +551,7 @@ class DiagnosticsOrchestratorTest {
         val deferred = CompletableDeferred<CompilationResult>()
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns deferred
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
@@ -607,7 +607,7 @@ class DiagnosticsOrchestratorTest {
         val result = createMockCompilationResult(listOf(parserDiagnostic))
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+        coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
 
         val publishedParams = mutableListOf<PublishDiagnosticsParams>()

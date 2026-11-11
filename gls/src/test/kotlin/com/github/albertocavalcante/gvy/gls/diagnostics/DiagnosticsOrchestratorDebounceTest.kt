@@ -42,7 +42,7 @@ class DiagnosticsOrchestratorDebounceTest {
             }
             coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
             val diagnosticsService = mockk<DiagnosticsService>()
-            coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            coEvery { diagnosticsService.collectDiagnostics(any(), any(), any()) } returns
                 DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
             every { client.publishDiagnostics(any()) } just Runs
             orchestrator = DiagnosticsOrchestrator(

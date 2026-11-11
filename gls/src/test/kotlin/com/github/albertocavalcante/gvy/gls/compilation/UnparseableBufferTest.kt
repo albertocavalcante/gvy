@@ -170,7 +170,7 @@ class UnparseableBufferTest {
             published.countDown()
         }
         val providers = mockk<DiagnosticsService>()
-        coEvery { providers.collectDiagnostics(any(), any()) } returns
+        coEvery { providers.collectDiagnostics(any(), any(), any()) } returns
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
@@ -179,6 +179,9 @@ class UnparseableBufferTest {
             open(malformed)
             diagnostics.trigger(broken, malformed)
             assertTrue(published.await(WAIT_SECONDS, TimeUnit.SECONDS), "diagnostics were never published")
+            val result = runBlocking { diagnostics.awaitCurrentDiagnostics(broken, 1) }
+            assertTrue(result.failures.isEmpty(), "Providers must finish successfully: ${result.failures}")
+            assertTrue(result.diagnostics.isNotEmpty(), "The terminal result retains the parse errors")
 
             navigate(1)
             val afterFirstNavigation = parsesOf(malformed)
