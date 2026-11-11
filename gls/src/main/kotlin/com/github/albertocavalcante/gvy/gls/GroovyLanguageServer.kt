@@ -231,6 +231,7 @@ class GroovyLanguageServer(
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
         logger.info { "Initializing Groovy Language Server..." }
+        logger.info { Version.info.startupLine() }
         logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
         logger.info { "Root URI: ${params.workspaceFolders?.firstOrNull()?.uri ?: "None"}" }
 

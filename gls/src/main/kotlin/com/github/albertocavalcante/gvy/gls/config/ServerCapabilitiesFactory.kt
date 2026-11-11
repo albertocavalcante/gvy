@@ -104,7 +104,7 @@ object ServerCapabilitiesFactory {
 
         val serverInfo = ServerInfo().apply {
             name = "Groovy Language Server"
-            version = Version.current
+            version = Version.display
         }
 
         return InitializeResult(capabilities, serverInfo)

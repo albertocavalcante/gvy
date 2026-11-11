@@ -6,6 +6,7 @@ import * as path from "node:path";
 
 import {
   deriveSelection,
+  ensureFreshLocalJar,
   hasExplicitVersionSelection,
   installVerifiedJar,
   requireChecksum,
@@ -132,5 +133,129 @@ describe("installVerifiedJar", () => {
     );
     assert.strictEqual(fs.readFileSync(dest, "utf8"), "previous good jar");
     assert.ok(!fs.existsSync(source));
+  });
+});
+
+describe("ensureFreshLocalJar", () => {
+  const head = "a".repeat(40);
+  const old = "b".repeat(40);
+  const prov = (gitSha: string, dirty: boolean | null = false) => ({
+    version: "v",
+    gitSha,
+    dirty,
+    dirtyHash: "",
+  });
+
+  function deps(over: Record<string, unknown> = {}) {
+    const warnings: string[] = [];
+    const calls = { rebuild: 0 };
+    const jars: Record<string, ReturnType<typeof prov>> = {
+      "/old.jar": prov(old),
+      "/new.jar": prov(head),
+    };
+    return {
+      warnings,
+      calls,
+      deps: {
+        readProvenance: (jar: string) => jars[jar] ?? null,
+        getHead: () => head as string | null,
+        strict: false,
+        rebuild: () => {
+          calls.rebuild += 1;
+        },
+        findJar: () => "/new.jar" as string | null,
+        warn: (m: string) => warnings.push(m),
+        ...over,
+      },
+    };
+  }
+
+  it("uses a fresh jar silently", () => {
+    const t = deps();
+    assert.strictEqual(ensureFreshLocalJar("/new.jar", t.deps), "/new.jar");
+    assert.deepStrictEqual(t.warnings, []);
+  });
+
+  it("warns loudly but proceeds with a stale jar by default", () => {
+    const t = deps();
+    assert.strictEqual(ensureFreshLocalJar("/old.jar", t.deps), "/old.jar");
+    assert.strictEqual(t.warnings.length, 1);
+    assert.match(t.warnings[0], /out of date/);
+    assert.strictEqual(t.calls.rebuild, 0);
+  });
+
+  it("rebuilds a stale jar under GLS_REQUIRE_FRESH", () => {
+    const t = deps({ strict: true });
+    assert.strictEqual(ensureFreshLocalJar("/old.jar", t.deps), "/new.jar");
+    assert.strictEqual(t.calls.rebuild, 1);
+  });
+
+  it("fails a stale jar under GLS_REQUIRE_FRESH when it cannot rebuild", () => {
+    const t = deps({ strict: true, rebuild: null });
+    assert.throws(
+      () => ensureFreshLocalJar("/old.jar", t.deps),
+      /GLS_REQUIRE_FRESH.*stale/,
+    );
+  });
+
+  it("fails when the rebuild is still stale", () => {
+    const t = deps({ strict: true, findJar: () => "/old.jar" });
+    assert.throws(() => ensureFreshLocalJar("/old.jar", t.deps), /still stale/);
+  });
+
+  it("only warns for a dirty build of HEAD, even when strict", () => {
+    const t = deps({
+      strict: true,
+      readProvenance: () => prov(head, true),
+    });
+    assert.strictEqual(ensureFreshLocalJar("/x.jar", t.deps), "/x.jar");
+    assert.strictEqual(t.warnings.length, 1);
+    assert.strictEqual(t.calls.rebuild, 0);
+  });
+
+  it("leaves an explicitly chosen jar alone, even when strict", () => {
+    const t = deps({
+      strict: true,
+      isExplicit: (jar: string) => jar === "/old.jar",
+    });
+    assert.strictEqual(ensureFreshLocalJar("/old.jar", t.deps), "/old.jar");
+    assert.deepStrictEqual(t.warnings, []);
+    assert.strictEqual(t.calls.rebuild, 0);
+  });
+
+  it("warns when a clean build of HEAD predates uncommitted changes", () => {
+    const t = deps({ getCheckoutDirty: () => true });
+    assert.strictEqual(ensureFreshLocalJar("/new.jar", t.deps), "/new.jar");
+    assert.match(t.warnings[0], /uncommitted changes/);
+  });
+
+  it("rebuilds for uncommitted changes under GLS_REQUIRE_FRESH, then accepts the dirty rebuild", () => {
+    const jars: Record<string, ReturnType<typeof prov>> = {
+      "/new.jar": prov(head),
+      "/rebuilt.jar": prov(head, true),
+    };
+    const t = deps({
+      strict: true,
+      getCheckoutDirty: () => true,
+      readProvenance: (jar: string) => jars[jar] ?? null,
+      findJar: () => "/rebuilt.jar",
+    });
+    assert.strictEqual(ensureFreshLocalJar("/new.jar", t.deps), "/rebuilt.jar");
+    assert.strictEqual(t.calls.rebuild, 1);
+  });
+
+  it("fails for uncommitted changes under GLS_REQUIRE_FRESH when it cannot rebuild", () => {
+    const t = deps({
+      strict: true,
+      rebuild: null,
+      getCheckoutDirty: () => true,
+    });
+    assert.throws(() => ensureFreshLocalJar("/new.jar", t.deps), /stale/);
+  });
+
+  it("does not judge when HEAD is unknown", () => {
+    const t = deps({ strict: true, getHead: () => null });
+    assert.strictEqual(ensureFreshLocalJar("/old.jar", t.deps), "/old.jar");
+    assert.deepStrictEqual(t.warnings, []);
   });
 });

@@ -96,7 +96,7 @@ class GroovyWorkspaceService(
     override fun executeCommand(params: ExecuteCommandParams): CompletableFuture<Any> {
         logger.info { "Executing command: ${params.command}" }
         return when (params.command) {
-            COMMAND_VERSION -> CompletableFuture.completedFuture(Version.current)
+            COMMAND_VERSION -> CompletableFuture.completedFuture(Version.display)
             else -> {
                 logger.warn { "Unknown command: ${params.command}" }
                 // Fail the request so clients can tell a missing command from a successful one.

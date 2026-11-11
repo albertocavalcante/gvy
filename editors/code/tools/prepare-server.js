@@ -16,6 +16,13 @@ const { execFileSync } = require("node:child_process");
 const { localJarMatches, replaceLocalJar } = require("./source-install.js");
 const { validateJarFile } = require("./validate-server.js");
 const { extractOrCopyJar, isZipFile } = require("./zip.js");
+const {
+  readJarProvenance,
+  buildVersionRecord,
+  assessLocalJar,
+  describeRecord,
+  requireFresh,
+} = require("./jar-provenance.js");
 const { HttpError, downloadToFile } = require("./http.js");
 const {
   getLatestReleaseInfo,
@@ -277,7 +284,7 @@ function copyLocalJar(localJarPath, { forceDownload }) {
   if (!forceDownload && fs.existsSync(JAR_PATH)) {
     if (localJarMatches(localJarPath, JAR_PATH)) {
       console.log(`✓ Using existing ${CANONICAL_JAR_NAME} (up to date)`);
-      writeInstalledVersion("local");
+      writeInstalledVersion("local", "local");
       shouldCopy = false;
     }
   }
@@ -286,7 +293,7 @@ function copyLocalJar(localJarPath, { forceDownload }) {
     console.log(`Copying from local build: ${sanitizeForLog(localJarPath)}`);
     replaceLocalJar(localJarPath, JAR_PATH, validateJarFile);
 
-    writeInstalledVersion("local");
+    writeInstalledVersion("local", "local");
     console.log(`✓ Copied to ${CANONICAL_JAR_NAME}`);
   }
 }
@@ -414,27 +421,29 @@ async function resolveTarget(selection, { authToken } = {}) {
 }
 
 /**
- * Reads version marker stored alongside the server JAR
+ * Records what is installed: the marker plus the provenance stamped inside the
+ * JAR (version, commit, dirty state) and how it got here. Logs the result so a
+ * stale or dirty jar is visible in the install log.
+ * @param {string} versionTag
+ * @param {"local"|"release"|"reused"} source
  */
-function readInstalledVersion() {
-  try {
-    const content = fs.readFileSync(VERSION_FILE, "utf8").trim();
-    return content || null;
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      console.warn(
-        `Warning: Could not read version file at ${VERSION_FILE}: ${error.message}`,
-      );
-    }
-    return null;
+function writeInstalledVersion(versionTag, source) {
+  const record = buildVersionRecord({
+    tag: versionTag,
+    source,
+    provenance: readJarProvenance(JAR_PATH),
+  });
+  fs.writeFileSync(
+    VERSION_FILE,
+    `${JSON.stringify(record, null, 2)}\n`,
+    "utf8",
+  );
+  console.log(`Server JAR: ${describeRecord(record)}`);
+  if (record.gitSha === "unknown") {
+    console.warn(
+      `⚠️  ${CANONICAL_JAR_NAME} carries no git provenance (release or pre-provenance build).`,
+    );
   }
-}
-
-/**
- * Writes version marker for the installed JAR
- */
-function writeInstalledVersion(versionTag) {
-  fs.writeFileSync(VERSION_FILE, `${versionTag}\n`, "utf8");
 }
 
 /**
@@ -561,7 +570,7 @@ async function downloadFromUrl(url, expectedChecksum) {
     if (markerId === "zip" && pathSegments.length >= 2) {
       markerId = pathSegments[pathSegments.length - 2];
     }
-    writeInstalledVersion(`url:${markerId}`);
+    writeInstalledVersion(`url:${markerId}`, "release");
 
     console.log(`✓ Downloaded and saved as ${CANONICAL_JAR_NAME}`);
   } finally {
@@ -592,7 +601,7 @@ async function downloadRelease(target) {
     throw error;
   }
   await installVerifiedJar(stagedJar, JAR_PATH, checksum);
-  writeInstalledVersion(target.tag);
+  writeInstalledVersion(target.tag, "release");
   console.log(`✓ Downloaded and saved as ${CANONICAL_JAR_NAME}`);
 }
 
@@ -654,6 +663,89 @@ function buildLocalJar() {
 }
 
 /**
+ * HEAD of the monorepo checkout, or null when it cannot be read.
+ */
+function readCheckoutHead() {
+  return runCheckoutGit(["rev-parse", "HEAD"]);
+}
+
+/**
+ * Whether the monorepo checkout has uncommitted changes (ignored files do not
+ * count), or null when it cannot be read.
+ */
+function readCheckoutDirty() {
+  const status = runCheckoutGit(["status", "--porcelain"]);
+  return status === null ? null : status.length > 0;
+}
+
+/**
+ * Runs git in the monorepo root only. Outside a monorepo there is no checkout
+ * to compare with, and the process's cwd repo would be the wrong one.
+ */
+function runCheckoutGit(args) {
+  const root = getMonorepoRoot();
+  if (!root) return null;
+  try {
+    return execFileSync("git", args, {
+      cwd: root,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Checks a local build against the checkout before it is bundled. A jar built
+ * from an old commit is the stale-jar hazard: warn loudly by default; under
+ * GLS_REQUIRE_FRESH rebuild when allowed, otherwise fail. All IO is injected.
+ * @returns the jar to use (possibly rebuilt)
+ */
+function ensureFreshLocalJar(jarPath, deps) {
+  const {
+    readProvenance,
+    getHead,
+    getCheckoutDirty = () => null,
+    isExplicit = () => false,
+    strict,
+    rebuild,
+    findJar,
+    warn,
+  } = deps;
+  // A jar the user named (--local, GLS_LOCAL_JAR) is theirs to judge.
+  if (isExplicit(jarPath)) {
+    return jarPath;
+  }
+  const assess = (jar) =>
+    assessLocalJar(readProvenance(jar), getHead(), getCheckoutDirty());
+  const first = assess(jarPath);
+  if (first.state === "fresh" || first.state === "unverifiable") {
+    return jarPath;
+  }
+  warn(
+    `⚠️  Local server JAR may be out of date: ${sanitizeForLog(first.reason)} (${sanitizeForLog(jarPath)}).`,
+  );
+  if (first.state === "dirty" || !strict) {
+    return jarPath;
+  }
+  if (!rebuild) {
+    throw new Error(
+      `GLS_REQUIRE_FRESH is set and the local JAR is stale: ${sanitizeForLog(first.reason)}. Rebuild with ./gradlew :gls:stageEditorServer (or BUILD_LOCAL=true).`,
+    );
+  }
+  rebuild();
+  const rebuilt = findJar();
+  const second = rebuilt ? assess(rebuilt) : null;
+  if (!rebuilt || second.state === "stale") {
+    throw new Error(
+      `GLS_REQUIRE_FRESH is set and the rebuilt local JAR is still stale: ${sanitizeForLog(second?.reason ?? "no JAR found")}`,
+    );
+  }
+  return rebuilt;
+}
+
+/**
  * Main function to prepare the server JAR
  */
 async function prepareServer(runtimeOptions = {}) {
@@ -700,7 +792,6 @@ async function prepareServer(runtimeOptions = {}) {
       cliOptions.checksum ??
       process.env.GLS_CHECKSUM ??
       null;
-    const installedVersion = readInstalledVersion();
 
     // Auto-detect monorepo and prefer local build
     // Only activate if no explicit version/channel selection is made
@@ -818,6 +909,20 @@ async function prepareServer(runtimeOptions = {}) {
       }
 
       if (localJarPath) {
+        localJarPath = ensureFreshLocalJar(localJarPath, {
+          readProvenance: readJarProvenance,
+          getHead: readCheckoutHead,
+          getCheckoutDirty: readCheckoutDirty,
+          isExplicit: (jar) =>
+            [explicitLocalJar, process.env.GLS_LOCAL_JAR].some(
+              (explicit) =>
+                explicit && path.resolve(explicit) === path.resolve(jar),
+            ),
+          strict: requireFresh(process.env),
+          rebuild: effectiveBuildLocal ? buildLocalJar : null,
+          findJar: findLocalGroovyLspJar,
+          warn: (message) => console.warn(message),
+        });
         copyLocalJar(localJarPath, { forceDownload });
         return;
       } else if (effectiveBuildLocal) {
@@ -865,19 +970,23 @@ async function prepareServer(runtimeOptions = {}) {
     // Reuse the existing JAR only when it matches the release digest; the
     // version marker alone does not prove the file is complete.
     if (!forceDownload && fs.existsSync(JAR_PATH)) {
+      let matchesRelease = false;
       try {
         await verifyChecksum(JAR_PATH, target.checksum);
-        if (installedVersion !== target.tag) {
-          writeInstalledVersion(target.tag);
-        }
-        console.log(`✓ Using existing ${CANONICAL_JAR_NAME} for ${target.tag}`);
-        return;
+        matchesRelease = true;
       } catch (checksumError) {
         console.warn(
           `Existing ${CANONICAL_JAR_NAME} does not match ${target.tag}: ${checksumError.message}`,
         );
         console.warn("Re-downloading Groovy LSP...");
         existingJarRejected = true;
+      }
+      if (matchesRelease) {
+        console.warn(
+          `⚠️  REUSING existing ${CANONICAL_JAR_NAME} for ${target.tag} (checksum matches; no download). (provably the requested release; set FORCE_DOWNLOAD=true to refresh anyway).`,
+        );
+        writeInstalledVersion(target.tag, "reused");
+        return;
       }
     }
 
@@ -1084,6 +1193,7 @@ Environment Variables:
     PREFER_LOCAL=true         Use local build from ../groovy-lsp/build/libs/
     BUILD_LOCAL=true          Build local JAR via './gradlew :gls:stageEditorServer' if not found (monorepo only)
     FORCE_DOWNLOAD=true       Re-download even if JAR exists
+    GLS_REQUIRE_FRESH=1       Rebuild (or fail) when the local build is from another commit than HEAD
     GLS_ALLOW_PINNED_FALLBACK=true  Fall back to pinned on network failure
     SKIP_PREPARE_SERVER=true  Skip server preparation entirely
 
@@ -1106,4 +1216,5 @@ module.exports = {
   hasExplicitVersionSelection,
   installVerifiedJar,
   requireChecksum,
+  ensureFreshLocalJar,
 };

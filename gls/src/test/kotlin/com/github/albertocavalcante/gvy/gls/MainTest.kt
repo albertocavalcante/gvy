@@ -36,6 +36,16 @@ class MainTest {
     }
 
     @Test
+    fun `test version command emits provenance as json`() {
+        val result = captureOutput {
+            runWithContext("version", "--json")
+        }
+        assertEquals(0, result.exitCode)
+        assertTrue(result.output.contains("\"gitSha\""), result.output)
+        assertTrue(result.output.contains("\"version\":\"${Version.display}\""), result.output)
+    }
+
+    @Test
     fun `test help is available on root command`() {
         val command = GlsCommand()
 

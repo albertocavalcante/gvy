@@ -31,11 +31,20 @@ object Version {
     }
 
     /**
+     * Full build provenance (commit, dirty state, times). Prefer this over reading raw properties.
+     */
+    val info: BuildInfo by lazy { BuildInfo.fromProperties(properties) }
+
+    /**
      * The base version without any snapshot suffix.
      */
-    val base: String by lazy {
-        properties.getProperty("baseVersion", "unknown")
-    }
+    val base: String by lazy { info.baseVersion }
+
+    /**
+     * Human-facing version, e.g. `0.5.4-dev+g6c6f023.dirty` for development builds and `0.5.4` for releases.
+     * This is what the server reports to clients as `serverInfo.version`.
+     */
+    val display: String by lazy { info.displayVersion }
 
     /**
      * Whether this is a snapshot/development build.
@@ -55,7 +64,8 @@ object Version {
         }
 
         try {
-            inputStream.use(properties::load)
+            // The build writes UTF-8; Properties.load(InputStream) would decode ISO-8859-1.
+            inputStream.reader(Charsets.UTF_8).use(properties::load)
             logger.debug { "Successfully loaded version properties" }
         } catch (e: IOException) {
             logger.error(e) { "Failed to read $resourceName" }
