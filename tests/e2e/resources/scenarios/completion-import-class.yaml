@@ -1,0 +1,64 @@
+# Known failure: completion does not offer a class from another package with an auto-import edit.
+# Tracked by https://github.com/albertocavalcante/gvy/issues/116 (import suggestions).
+name: completion-import-class
+description: Completion for class should include auto-import text edit.
+xfail:
+  issue: 116
+  reason: completion offers no cross-package class with an import text edit
+  match: StringUtils
+workspace:
+  fixture: empty-workspace
+  files:
+    # Written to disk before initialize, so the class is indexed but never opened.
+    src/main/groovy/com/utils/StringUtils.groovy: |
+      package com.utils
+
+      class StringUtils {
+          static String reverse(String s) {
+              return s.reverse()
+          }
+      }
+    # The cursor is right after the partial name that needs an import.
+    src/main/groovy/App.groovy: |
+      class App {
+          void run() {
+              StringU|^|
+          }
+      }
+steps:
+  - initialize: {}
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 30000
+
+  - openDocument:
+      path: "{{cursor.path}}"
+
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument:
+          uri: "{{cursor.uri}}"
+        position: "{{cursor}}"
+      saveAs: completionResult
+
+  - assert:
+      source: completionResult
+      checks:
+        # The class is offered once
+        - jsonPath: "$.items[?(@.label == 'StringUtils')]"
+          expect: { type: SIZE, value: 1 }
+        # and carries exactly one additional edit that adds the import
+        - jsonPath: "$.items[?(@.label == 'StringUtils')].additionalTextEdits.length()"
+          expect: { type: EQUALS, value: 1 }
+        - jsonPath: "$.items[?(@.label == 'StringUtils')].additionalTextEdits[0].newText"
+          expect: { type: CONTAINS, value: "import com.utils.StringUtils" }
+
+  - shutdown: {}
+  - exit: {}

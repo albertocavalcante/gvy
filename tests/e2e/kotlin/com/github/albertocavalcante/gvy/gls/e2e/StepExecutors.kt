@@ -177,7 +177,7 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
 
         val future = context.session.server.initialize(params)
 
-        val timeoutMs = 30_000L
+        val timeoutMs = context.effectiveTimeoutMs(30_000L)
         val start = System.currentTimeMillis()
         val process = context.session.process
 
@@ -336,7 +336,7 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
     override fun execute(step: ScenarioStep.SendRequest, context: ScenarioContext, nextStep: ScenarioStep?) {
         val paramsNode = context.interpolateNode(step.params)
         val paramsObject = paramsNode?.toJavaObject()
-        val timeout = step.timeoutMs ?: 30_000L
+        val timeout = context.effectiveTimeoutMs(step.timeoutMs ?: 30_000L)
 
         logger.info { "Sending request '${step.method}' with params: $paramsObject" }
 
@@ -436,7 +436,7 @@ class WaitNotificationStepExecutor : StepExecutor<ScenarioStep.WaitNotification>
             }
         }
 
-        val timeout = step.timeoutMs ?: 30_000L
+        val timeout = context.effectiveTimeoutMs(step.timeoutMs ?: 30_000L)
         val checkFailureReasons = mutableListOf<String>()
 
         val earlySkipPredicate: (() -> Boolean)? = if (step.optional && nextStep is ScenarioStep.WaitNotification) {

@@ -57,6 +57,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
                 workspace = workspace,
                 json = json,
                 jsonPathConfig = jsonPathConfig,
+                timeoutCapMs = scenario.xfail?.let { XfailOutcome.STEP_TIMEOUT_CAP_MS },
             )
             context.registerBuiltInVariables()
             inlineMarkers.forEach { (path, markers) ->

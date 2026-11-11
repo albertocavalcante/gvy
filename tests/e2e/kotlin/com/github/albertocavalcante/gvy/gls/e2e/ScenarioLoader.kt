@@ -17,7 +17,14 @@ import kotlin.io.path.readText
  *       Track: https://github.com/Kotlin/kotlinx.serialization/issues/1836
  */
 class ScenarioLoader(private val parser: ScenarioParser = JacksonScenarioParser()) {
-    fun loadAll(directory: Path): List<ScenarioDefinition> {
+    /** Loads the scenarios that run: files prefixed with `_` are disabled and skipped (see [disabledHeaderProblem]). */
+    fun loadAll(directory: Path): List<ScenarioDefinition> =
+        scenarioFiles(directory).filter { !isDisabled(it) }.map { load(it) }
+
+    /** Loads every scenario file, disabled ones included, so a disabled scenario cannot rot unparsed. */
+    fun loadEvery(directory: Path): List<ScenarioDefinition> = scenarioFiles(directory).map { load(it) }
+
+    fun scenarioFiles(directory: Path): List<Path> {
         require(Files.exists(directory)) {
             "Scenario directory does not exist: $directory"
         }
@@ -26,13 +33,12 @@ class ScenarioLoader(private val parser: ScenarioParser = JacksonScenarioParser(
             .use { stream ->
                 return stream
                     .filter { path -> path.isRegularFile() && path.extension in setOf("yml", "yaml") }
-                    // Convention: files prefixed with _ are disabled scenarios (e.g., _discover-tests.yaml)
-                    .filter { path -> !path.fileName.toString().startsWith("_") }
                     .sorted()
-                    .map { path -> load(path) }
                     .collect(Collectors.toList())
             }
     }
+
+    fun isDisabled(path: Path): Boolean = path.fileName.toString().startsWith("_")
 
     fun load(path: Path): ScenarioDefinition {
         val content = path.readText()
@@ -44,4 +50,14 @@ class ScenarioLoader(private val parser: ScenarioParser = JacksonScenarioParser(
             throw IllegalStateException("Failed to load scenario file: $path", ex)
         }
     }
+}
+
+/**
+ * A disabled (`_`-prefixed) scenario must say why in a leading `# disabled: <reason or issue>` comment, so that
+ * nobody has to guess whether it is safe to delete or ready to enable. Returns the problem, or `null` when fine.
+ */
+fun disabledHeaderProblem(text: String): String? {
+    val header = text.lineSequence().takeWhile { it.isBlank() || it.startsWith("#") }
+    val reason = header.firstNotNullOfOrNull { Regex("^#\\s*disabled:\\s*(\\S.*)$").find(it)?.groupValues?.get(1) }
+    return if (reason == null) "missing a leading '# disabled: <reason or issue>' comment" else null
 }

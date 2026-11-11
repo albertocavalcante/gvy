@@ -1,9 +1,13 @@
-# TODO(DEFERRED): #431 - Test disabled. Workspace symbols don't include dynamic docs.
-# See: https://github.com/albertocavalcante/groovy-devtools/issues/431
+# Known failure: workspace/symbol does not return symbols of documents that were only opened (not on disk).
+# Tracked by https://github.com/albertocavalcante/gvy/issues/431.
 name: workspace-symbols
 description: Search for symbols across the workspace.
+xfail:
+  issue: 431
+  reason: workspace/symbol misses symbols of documents opened via didOpen
+  match: UniqueController
 workspace:
-  fixture: gradle-dependency
+  fixture: empty-workspace
 steps:
   - initialize: {}
   - initialized: {}
