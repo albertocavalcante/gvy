@@ -152,8 +152,11 @@ testing {
                                 }
                         maxParallelForks = parallelForks
 
-                        // Fail tests that take too long (5 minutes default)
+                        // JUnit bounds factories and ordinary tests; ScenarioExecutor owns each dynamic test deadline.
                         systemProperty("junit.jupiter.execution.timeout.default", "300s")
+                        System.getProperty("groovy.lsp.e2e.scenarioTimeoutMs")?.let { timeout ->
+                            systemProperty("groovy.lsp.e2e.scenarioTimeoutMs", timeout)
+                        }
                         systemProperty("groovy.lsp.e2e.filter", System.getProperty("groovy.lsp.e2e.filter"))
                         systemProperty("groovy.lsp.e2e.shard", System.getProperty("groovy.lsp.e2e.shard"))
                         // Shards split only the scenario suite; the other e2e classes run once, in shard 0.
