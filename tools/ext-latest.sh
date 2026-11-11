@@ -3,15 +3,15 @@
 # origin/main commit whose CI is green (#1576).
 #
 #   tools/ext-latest.sh [latest]        build + install the newest green main
-#   tools/ext-latest.sh rollback [sha]  reinstall the previous kept VSIX
+#   tools/ext-latest.sh rollback [sha]  step back to the next older kept VSIX
 #
 # The build happens in a dedicated clone under the cache dir, never in a
 # developer worktree. Configuration is environment-only; see
 # editors/code/README.md ("Run the latest green main").
 #
-# Pure helpers (sha7, vsix_name, evaluate_ci, ...) are at the top and are
-# exercised by tools/ext-latest_test.sh; all IO lives in the *_io functions
-# and main below. Written for bash 3.2 (macOS system bash).
+# Pure helpers (sha7, commit_states, verdicts, rollback_pick, ...) are at the
+# top and are exercised by tools/ext-latest_test.sh; IO lives in the *_io
+# functions and main below. Written for bash 3.2 (macOS system bash).
 # The repo ShellCheck profile enables every optional check. SC2310/SC2312 ask
 # for helpers not to be used in conditions / command substitutions; the helpers
 # here are pure, side-effect-free predicates and printers, and every failing
@@ -29,6 +29,12 @@ same_sha() {
   local a=$1 b=$2
   [[ ${#a} -ge 7 && ${#b} -ge 7 ]] || return 1
   [[ ${a} == "${b}"* || ${b} == "${a}"* ]]
+}
+
+# sha_matches <wanted> <sha7 from a VSIX name>: full shas must agree on the
+# first 7 characters; shorter prefixes are matched literally.
+sha_matches() {
+  if [[ ${#1} -ge 7 ]]; then same_sha "$1" "$2"; else [[ -n $1 && $2 == "$1"* ]]; fi
 }
 
 # repo_slug <url>: owner/repo from an https or ssh GitHub remote URL.
@@ -52,31 +58,76 @@ vsix_sha7() {
   printf '%s' "${BASH_REMATCH[1]}"
 }
 
-# evaluate_ci <required csv> <optional csv> <runs json> -> "green" or
-# "<state>: <names>" with state failed|pending|missing. <runs json> is the
-# GitHub `actions/runs?head_sha=` response (or just its workflow_runs array).
-# <optional csv> workflows may be absent (path-filtered) but, if present, must
-# have passed. For each workflow only the newest run counts (reruns win).
-evaluate_ci() {
-  local required=$1 optional=$2 runs=$3
-  jq -r --arg req "${required}" --arg opt "${optional}" '
+# commit_states <required csv> <optional csv> <proof spec> <runs json> <jobs json>
+# One commit's workflow state as a JSON object {workflow: state}. <runs json> is
+# the `actions/runs?head_sha=` response (or its workflow_runs array); <jobs json>
+# maps run id -> [{name, conclusion}]. States:
+#   ok        completed, succeeded, and a proof job actually ran and passed
+#   unproven  the workflow did not run (optional) or succeeded without running
+#             its proof job (path filter skipped the build): inherits its parent
+#   pending | failed | missing   never acceptable
+# <proof spec> is "Workflow=Job name prefix;Other=Prefix" (a workflow without an
+# entry needs no proof). Only the newest run (highest id) of a workflow counts;
+# a rerun keeps its id and bumps run_attempt, and the API reports the latest.
+commit_states() {
+  jq -n -c --arg req "$1" --arg opt "$2" --arg proof "$3" \
+    --argjson runs "$4" --argjson jobs "$5" '
     def names(s): s | split(",") | map(select(length > 0));
-    (if type == "object" then .workflow_runs else . end) as $runs
-    | (names($req) + names($opt) | unique) as $all
+    def prefixes($wf): [ $proof | split(";")[] | select(length > 0)
+                         | split("=") | select(.[0] == $wf) | .[1] ];
+    ($runs | if type == "object" then .workflow_runs else . end) as $rs
     | names($opt) as $optional
-    | [ $all[] as $n
-        | ([ $runs[] | select(.name == $n) ] | sort_by(.id) | last) as $r
-        | { name: $n,
-            state: (if $r == null then (if ($optional | index($n)) then "ok" else "missing" end)
-                    elif $r.status != "completed" then "pending"
-                    elif $r.conclusion == "success" then "ok"
-                    else "failed" end) } ] as $s
-    | def pick(st): [ $s[] | select(.state == st) | .name ] | join(", ");
-      if   (pick("failed")  != "") then "failed: "  + pick("failed")
-      elif (pick("pending") != "") then "pending: " + pick("pending")
-      elif (pick("missing") != "") then "missing: " + pick("missing")
-      else "green" end
-  ' <<<"${runs}"
+    | (names($req) + $optional | unique) as $all
+    | reduce $all[] as $n ({}; . + { ($n): (
+        ([ $rs[] | select(.name == $n) ] | sort_by(.id) | last) as $r
+        | prefixes($n) as $p
+        | if $r == null then (if ($optional | index($n)) then "unproven" else "missing" end)
+          elif $r.status != "completed" then "pending"
+          elif $r.conclusion != "success" then "failed"
+          elif ($p | length) == 0 then "ok"
+          elif ([ ($jobs[($r.id | tostring)] // [])[]
+                  | select(.conclusion == "success")
+                  | .name as $j | select($p | any(. as $x | $j | startswith($x))) ] | length) > 0
+          then "ok"
+          else "unproven" end) })'
+}
+
+# verdicts <states json array, newest commit first>: one line per commit,
+# "green", "unknown" (waiting on ancestors outside the window) or "red: <wf> <state>".
+# An unproven workflow takes the state its parent commit has for it.
+verdicts() {
+  jq -r '
+    . as $S
+    | def eff($i; $k):
+        if $i >= ($S | length) then "unknown"
+        else ($S[$i][$k]) as $s | if $s == "unproven" then eff($i + 1; $k) else $s end end;
+      def verdict($i):
+        [ $S[$i] | keys[] as $k | { k: $k, s: eff($i; $k) } ] as $e
+        | ([ $e[] | select(.s == "failed") ] + [ $e[] | select(.s == "pending") ]
+           + [ $e[] | select(.s == "missing") ]) as $bad
+        | if ($bad | length) > 0 then "red: " + $bad[0].k + " " + $bad[0].s
+          elif any($e[]; .s == "unknown") then "unknown"
+          else "green" end;
+      range(0; $S | length) | verdict(.)
+  ' <<<"$1"
+}
+
+# choose <latest|force> <verdict lines>: "green <index>", "red <index> <why>",
+# "more" (needs older commits) or "none".
+choose() {
+  local mode=$1 i=0 line
+  while IFS= read -r line; do
+    case ${line} in
+      green) echo "green ${i}" && return 0 ;;
+      unknown) echo more && return 0 ;;
+      *) [[ ${mode} != force ]] || {
+        echo "red ${i} ${line}"
+        return 0
+      } ;;
+    esac
+    i=$((i + 1))
+  done <<<"$2"
+  echo none
 }
 
 # jq_field <json> <jq filter>: string value, empty when null/absent/invalid.
@@ -89,6 +140,14 @@ provenance_ok() {
   sha=$(jq_field "${json}" '.gitSha')
   dirty=$(jq -r '(if has("gitDirty") then .gitDirty else .dirty end) | tostring' <<<"${json}" 2>/dev/null || echo "?")
   same_sha "${sha}" "${target}" && [[ ${dirty} == "false" ]]
+}
+
+# vsix_provenance_ok <vsix> <sha>: the VSIX's own server record names <sha>
+# (full, or the 7 characters of a kept file name) and is a clean build.
+vsix_provenance_ok() {
+  local rec
+  rec=$(unzip -p "$1" extension/server/.gls-version 2>/dev/null || true)
+  [[ -n ${rec} ]] && provenance_ok "${rec}" "$2"
 }
 
 # editor_cli_candidates <editor>: CLI names to try, in order.
@@ -115,8 +174,59 @@ editor_ext_root() {
   esac
 }
 
-# prune_list <keep> <names newest-first on stdin>: names to delete.
-prune_list() { tail -n +"$(($1 + 1))"; }
+# prune_list <keep> <protected sha7 csv> <names newest-first on stdin>: names to
+# delete. The newest <keep> are kept, and so is any name whose sha7 is protected.
+prune_list() {
+  local keep=$1 protected=$2 n=0 name s
+  while IFS= read -r name; do
+    n=$((n + 1))
+    [[ ${n} -gt ${keep} ]] || continue
+    s=$(vsix_sha7 "${name}" || true)
+    if [[ -n ${s} ]]; then
+      case ",${protected}," in *",${s},"*) continue ;; *) ;; esac
+    fi
+    echo "${name}"
+  done
+}
+
+# rollback_pick <installed sha or ""> <wanted or ""> <names newest-first on stdin>:
+# the VSIX to install. With <wanted>, the first name matching that sha prefix.
+# Otherwise one step back in build order from the installed sha (the next older
+# name); when the installed sha is not among the kept files, the newest name.
+# Prints nothing and fails when there is nothing to roll back to.
+rollback_pick() {
+  local installed=$1 wanted=$2 name s found=0
+  while IFS= read -r name; do
+    s=$(vsix_sha7 "${name}" || true)
+    [[ -n ${s} ]] || continue
+    if [[ -n ${wanted} ]]; then
+      sha_matches "${wanted}" "${s}" && echo "${name}" && return 0
+    elif [[ -z ${installed} ]]; then
+      echo "${name}" && return 0
+    elif [[ ${found} == 1 ]]; then
+      echo "${name}" && return 0
+    elif same_sha "${s}" "${installed}"; then
+      found=1
+    fi
+  done
+  return 1
+}
+
+# in_kept <installed sha> <names on stdin>: the installed sha is among the kept files.
+in_kept() {
+  local installed=$1 name s
+  while IFS= read -r name; do
+    s=$(vsix_sha7 "${name}" || true)
+    [[ -n ${s} ]] && same_sha "${s}" "${installed}" && return 0
+  done
+  return 1
+}
+
+# build_env_clean: names of variables that would redirect prepare-server away
+# from the jar we built (same list as editors/code/tools/source-install.js).
+build_env_clean() {
+  echo GLS_TAG GLS_CHANNEL GLS_URL GLS_CHECKSUM GLS_USE_PINNED USE_LATEST_GLS USE_LATEST_GROOVY_LSP PREFER_LOCAL BUILD_LOCAL
+}
 
 # ------------------------------------------------------------------------- IO
 
@@ -126,6 +236,42 @@ die() {
   exit 1
 }
 need() { command -v "$1" >/dev/null 2>&1 || die "required tool not found: $1"; }
+
+TMP_JAR=""
+TMP_VSIX=""
+LOCK_DIR=""
+
+# cleanup: remove temp files and release the lock if this process owns them.
+cleanup() {
+  [[ -z ${TMP_JAR} ]] || rm -f "${TMP_JAR}"
+  [[ -z ${TMP_VSIX} ]] || rm -f "${TMP_VSIX}"
+  if [[ -n ${LOCK_DIR} && $(cat "${LOCK_DIR}/pid" 2>/dev/null || true) == "$$" ]]; then
+    rm -rf "${LOCK_DIR}"
+  fi
+}
+
+# acquire_lock_io <dir>: one ext-latest at a time (mkdir is atomic). A lock
+# whose pid is no longer running is stale and is taken over.
+acquire_lock_io() {
+  local dir=$1 pid="" tries=0
+  mkdir -p "$(dirname "${dir}")"
+  while ! mkdir "${dir}" 2>/dev/null; do
+    pid=$(cat "${dir}/pid" 2>/dev/null || true)
+    if [[ -z ${pid} ]]; then
+      sleep 1 # the holder may be between mkdir and writing its pid
+      pid=$(cat "${dir}/pid" 2>/dev/null || true)
+    fi
+    if [[ -n ${pid} ]] && kill -0 "${pid}" 2>/dev/null; then
+      die "another ext-latest run is in progress (pid ${pid}, lock ${dir}); wait for it to finish"
+    fi
+    tries=$((tries + 1))
+    [[ ${tries} -le 1 ]] || die "cannot take lock ${dir}"
+    log "removing stale lock (pid ${pid:-unknown} is not running)"
+    rm -rf "${dir}"
+  done
+  echo "$$" >"${dir}/pid"
+  LOCK_DIR=${dir}
+}
 
 # Configuration (all overridable from the environment).
 load_config() {
@@ -138,57 +284,94 @@ load_config() {
   BRANCH=${EXT_LATEST_BRANCH:-main}
   REQUIRED=${EXT_LATEST_REQUIRED:-CI}
   OPTIONAL=${EXT_LATEST_OPTIONAL:-Extension CI}
+  PROOF=${EXT_LATEST_PROOF:-CI=Build and Test;Extension CI=Build current server}
   EDITORS=${EXT_EDITORS:-code}
   DRY_RUN=${DRY_RUN:-0}
   FORCE=${FORCE:-0}
   [[ ${KEEP} =~ ^[1-9][0-9]*$ ]] || die "EXT_LATEST_KEEP must be a positive integer"
   [[ ${MAX_WALK} =~ ^[1-9][0-9]*$ ]] || die "EXT_LATEST_MAX_COMMITS must be a positive integer"
+  if [[ ${MAX_WALK} -gt 100 ]]; then
+    log "EXT_LATEST_MAX_COMMITS=${MAX_WALK} capped at 100 (GitHub page size)"
+    MAX_WALK=100
+  fi
   ORIGIN_URL=${EXT_LATEST_REPO_URL:-$(git -C "${REPO_ROOT}" remote get-url origin 2>/dev/null || true)}
   [[ -n ${ORIGIN_URL} ]] || die "cannot determine the origin URL; set EXT_LATEST_REPO_URL"
   SLUG=${EXT_LATEST_REPO:-$(repo_slug "${ORIGIN_URL}")} ||
     die "origin is not a GitHub URL; set EXT_LATEST_REPO=owner/repo"
 }
 
-# ci_status_io <sha>: evaluate_ci over the live workflow runs for the commit.
-ci_status_io() {
-  local runs
+# commit_states_io <sha>: live workflow states for one commit. Job lists are
+# fetched only for succeeded runs of the workflows we care about.
+commit_states_io() {
+  local runs jobs='{}' id j
   runs=$(gh api "repos/${SLUG}/actions/runs?head_sha=$1&per_page=100") ||
     die "gh api failed for runs of $1"
-  evaluate_ci "${REQUIRED}" "${OPTIONAL}" "${runs}"
+  for id in $(jq -r --arg names "${REQUIRED},${OPTIONAL}" '
+      (if type == "object" then .workflow_runs else . end)[]
+      | select(.conclusion == "success")
+      | select(.name as $n | $names | split(",") | index($n))
+      | .id' <<<"${runs}"); do
+    j=$(gh api "repos/${SLUG}/actions/runs/${id}/jobs?per_page=100" --jq '[.jobs[] | {name, conclusion}]') ||
+      die "gh api failed for jobs of run ${id}"
+    jobs=$(jq -c --arg id "${id}" --argjson j "${j}" '. + {($id): $j}' <<<"${jobs}")
+  done
+  commit_states "${REQUIRED}" "${OPTIONAL}" "${PROOF}" "${runs}" "${jobs}"
 }
 
-# pick_target_io: set TARGET_SHA and TARGET_CI.
+# pick_target_io: set TARGET_SHA and TARGET_CI. Walks the first-parent history
+# from the branch head (or from EXT_LATEST_SHA, whose own verdict then decides),
+# at most MAX_WALK commits, evaluating each commit's workflows and letting a
+# skipped build inherit its parent's state.
 pick_target_io() {
+  local ref=${BRANCH} mode=latest shas sha states='[]' st v choice=none i=0 skipped_note=""
   if [[ -n ${EXT_LATEST_SHA:-} ]]; then
-    TARGET_SHA=$(gh api "repos/${SLUG}/commits/${EXT_LATEST_SHA}" --jq .sha) ||
+    mode=force
+    ref=$(gh api "repos/${SLUG}/commits/${EXT_LATEST_SHA}" --jq .sha) ||
       die "unknown commit: ${EXT_LATEST_SHA}"
-    TARGET_CI=$(ci_status_io "${TARGET_SHA}")
-    if [[ ${TARGET_CI} != green && ${EXT_LATEST_ALLOW_UNGREEN:-0} != 1 ]]; then
-      die "$(sha7 "${TARGET_SHA}") is not green (${TARGET_CI}); set EXT_LATEST_ALLOW_UNGREEN=1 to override"
-    fi
-    return
   fi
-  local shas sha status skipped=0
-  shas=$(gh api "repos/${SLUG}/commits?sha=${BRANCH}&per_page=${MAX_WALK}" --jq '.[].sha') ||
-    die "cannot list commits of ${BRANCH}"
-  for sha in ${shas}; do
-    status=$(ci_status_io "${sha}")
-    if [[ ${status} == green ]]; then
-      TARGET_SHA=${sha}
-      TARGET_CI=green
-      log "target $(sha7 "${sha}") (skipped ${skipped} newer commit(s) not green)"
-      return
-    fi
-    log "skip $(sha7 "${sha}"): ${status}"
-    skipped=$((skipped + 1))
+  shas=$(gh api "repos/${SLUG}/commits?sha=${ref}&per_page=${MAX_WALK}" --jq '.[].sha') ||
+    die "cannot list commits of ${ref}"
+  SHAS=()
+  while IFS= read -r sha; do [[ -z ${sha} ]] || SHAS+=("${sha}"); done <<<"${shas}"
+  [[ ${#SHAS[@]} -gt 0 ]] || die "no commits found for ${ref}"
+  for sha in "${SHAS[@]}"; do
+    st=$(commit_states_io "${sha}")
+    log "$(sha7 "${sha}"): $(jq -r 'to_entries | map("\(.key)=\(.value)") | join(", ")' <<<"${st}")"
+    states=$(jq -c --argjson s "${st}" '. + [$s]' <<<"${states}")
+    v=$(verdicts "${states}")
+    choice=$(choose "${mode}" "${v}")
+    case ${choice} in
+      green*)
+        i=${choice#green }
+        TARGET_SHA=${SHAS[${i}]}
+        TARGET_CI=green
+        [[ ${i} -eq 0 ]] || skipped_note=" (skipped ${i} newer commit(s) not green)"
+        log "target $(sha7 "${TARGET_SHA}")${skipped_note}"
+        return
+        ;;
+      red*)
+        TARGET_SHA=${SHAS[0]}
+        TARGET_CI=${choice#red 0 }
+        break
+        ;;
+      *) ;;
+    esac
   done
+  # Nothing decided green.
+  local why
+  TARGET_SHA=${SHAS[0]}
+  case ${choice} in
+    red*) why=${choice#red 0 } ;;
+    more) why="undetermined: skipped builds inherit from parents outside the last ${MAX_WALK} commits; raise EXT_LATEST_MAX_COMMITS (max 100)" ;;
+    *) why="no green commit within the last ${MAX_WALK} commits of ${ref}" ;;
+  esac
+  TARGET_CI=${why}
   if [[ ${EXT_LATEST_ALLOW_UNGREEN:-0} == 1 ]]; then
-    TARGET_SHA=${shas%%$'\n'*}
-    TARGET_CI="ungreen (allowed)"
-    log "no green commit in the last ${MAX_WALK}; EXT_LATEST_ALLOW_UNGREEN=1, using $(sha7 "${TARGET_SHA}")"
+    TARGET_CI="ungreen (allowed): ${why}"
+    log "EXT_LATEST_ALLOW_UNGREEN=1: using $(sha7 "${TARGET_SHA}") -- ${TARGET_CI}"
     return
   fi
-  die "no commit on ${BRANCH} within the last ${MAX_WALK} has green CI (${REQUIRED}); raise EXT_LATEST_MAX_COMMITS or wait"
+  die "$(sha7 "${TARGET_SHA}") is not green (${why}). Set EXT_LATEST_ALLOW_UNGREEN=1 to override"
 }
 
 # editor_cli <editor>: first CLI that exists, else empty.
@@ -238,6 +421,18 @@ selected_editors_io() {
   echo "${out}"
 }
 
+# installed_sha7s_io <editors>: csv of the sha7 installed in each editor.
+installed_sha7s_io() {
+  local e prov s out=""
+  for e in $1; do
+    prov=$(installed_provenance "${e}")
+    [[ -n ${prov} ]] || continue
+    s=$(sha7 "$(jq_field "${prov}" '.gitSha')")
+    [[ -z ${s} ]] || out="${out},${s}"
+  done
+  echo "${out#,}"
+}
+
 # is_up_to_date_io <sha> <editors>: every editor already runs exactly <sha>.
 is_up_to_date_io() {
   local sha=$1 e prov
@@ -248,17 +443,26 @@ is_up_to_date_io() {
   done
 }
 
+# ensure_clone_io <sha>: the only place that fetches/checks out/cleans, and only
+# in a clone this script created (marked .git/ext-latest-owned).
 ensure_clone_io() {
-  if [[ ! -d ${SRC_DIR}/.git ]]; then
+  local marker=${SRC_DIR}/.git/ext-latest-owned
+  if [[ ! -e ${SRC_DIR} || (-d ${SRC_DIR} && -z $(ls -A "${SRC_DIR}" 2>/dev/null || true)) ]]; then
     log "cloning ${ORIGIN_URL} into ${SRC_DIR} (first run)"
     mkdir -p "$(dirname "${SRC_DIR}")"
-    git clone --filter=blob:none "${ORIGIN_URL}" "${SRC_DIR}"
+    git clone --filter=blob:none "${ORIGIN_URL}" "${SRC_DIR}" ||
+      {
+        rm -rf "${SRC_DIR}"
+        die "git clone failed"
+      }
+    : >"${marker}"
   fi
-  # Safety: everything below destroys local state, so it must only ever run in
-  # the dedicated clone, never in a developer checkout.
+  # Safety: fetch --force/checkout --force/clean -ffdx destroy local state, so
+  # they must only ever run in a clone this script made, never in a checkout.
+  [[ -f ${marker} && -d ${SRC_DIR}/.git ]] ||
+    die "${SRC_DIR} was not created by ext-latest (no .git/ext-latest-owned marker); refusing to touch it. Point EXT_LATEST_SRC_DIR at an empty or missing directory"
   [[ $(cd "${SRC_DIR}" && pwd -P) != "$(cd "${REPO_ROOT}" && pwd -P)" ]] ||
     die "SRC_DIR must not be the developer checkout"
-  [[ -d ${SRC_DIR}/.git ]] || die "${SRC_DIR} is not a standalone clone (a worktree has a .git file)"
   git -C "${SRC_DIR}" remote set-url origin "${ORIGIN_URL}"
   git -C "${SRC_DIR}" fetch --quiet --prune origin
   git -C "${SRC_DIR}" cat-file -e "$1^{commit}" 2>/dev/null ||
@@ -287,12 +491,16 @@ build_jar_io() {
 }
 
 package_vsix_io() {
-  local ext=${SRC_DIR}/editors/code
+  local ext=${SRC_DIR}/editors/code v
   need pnpm
   need unzip
   (
     cd "${ext}"
-    export GLS_LOCAL_JAR=${JAR} GLS_REQUIRE_FRESH=1
+    # Same environment source-install.js gives prepare-server: our jar, nothing
+    # that could redirect it to a download. (An explicit GLS_LOCAL_JAR is
+    # exempt from freshness checks; the provenance check above is the gate.)
+    for v in $(build_env_clean); do unset "${v}"; done
+    export GLS_LOCAL_JAR=${JAR} FORCE_DOWNLOAD=true SKIP_PREPARE_SERVER=false GLS_ALLOW_PINNED_FALLBACK=false
     pnpm install --frozen-lockfile
     pnpm run package
   )
@@ -305,16 +513,21 @@ package_vsix_io() {
     die "VSIX does not contain the verified jar"
 }
 
-# store_vsix_io <sha> <built vsix>: copy under a provenance name, prune old.
+# store_vsix_io <sha> <built vsix>: copy under a provenance name (temp file in
+# the same directory, then rename) and re-verify the stored copy against $JAR.
 store_vsix_io() {
   local version
   version=$(jq -r .version "${SRC_DIR}/editors/code/package.json")
   mkdir -p "${VSIX_DIR}"
   STORED_VSIX=${VSIX_DIR}/$(vsix_name "${version}" "$1")
-  cp "$2" "${STORED_VSIX}.tmp"
-  mv -f "${STORED_VSIX}.tmp" "${STORED_VSIX}"
-  touch "${STORED_VSIX}"
-  prune_io
+  TMP_VSIX=$(mktemp "${VSIX_DIR}/.gvy-tmp.XXXXXX")
+  cp "$2" "${TMP_VSIX}"
+  mv -f "${TMP_VSIX}" "${STORED_VSIX}"
+  TMP_VSIX=""
+  unzip -p "${STORED_VSIX}" extension/server/gls.jar | cmp -s - "${JAR}" || {
+    rm -f "${STORED_VSIX}"
+    die "stored VSIX jar differs from the verified jar"
+  }
 }
 
 list_vsix_io() {
@@ -322,33 +535,44 @@ list_vsix_io() {
   ls -t "${VSIX_DIR}"/gvy-*+g*.vsix 2>/dev/null || true
 }
 
+# prune_io <editors>: keep the newest KEEP files plus anything installed. Only
+# called after a verified install.
 prune_io() {
-  local f
+  local f protected
+  protected=$(installed_sha7s_io "$1")
   while IFS= read -r f; do
     [[ -n ${f} ]] || continue
     log "pruning old VSIX $(basename "${f}")"
     rm -f "${f}"
-  done < <(list_vsix_io | prune_list "${KEEP}")
+  done < <(list_vsix_io | prune_list "${KEEP}" "${protected}")
 }
 
-# install_vsix_io <vsix> <editors>: install and verify byte-for-byte.
+# install_vsix_io <vsix> <editors> [expected jar]: install and verify the
+# installed server/gls.jar byte-for-byte against the expected jar (the verified
+# build output, or the jar extracted from a provenance-checked kept VSIX).
 install_vsix_io() {
-  local vsix=$1 e cli dir want_sha jar
-  jar=$(mktemp "${TMPDIR:-/tmp}/ext-latest-jar.XXXXXX")
-  TMP_JAR=${jar}
-  unzip -p "${vsix}" extension/server/gls.jar >"${jar}"
+  local vsix=$1 e cli dir want_sha jar=${3:-}
   want_sha=$(vsix_sha7 "${vsix}") || die "not a provenance-named VSIX: ${vsix}"
+  if [[ -z ${jar} ]]; then
+    TMP_JAR=$(mktemp "${TMPDIR:-/tmp}/ext-latest-jar.XXXXXX")
+    jar=${TMP_JAR}
+    unzip -p "${vsix}" extension/server/gls.jar >"${jar}"
+  fi
   for e in $2; do
     cli=$(editor_cli "${e}")
     log "installing $(basename "${vsix}") into ${e} (${cli})"
     "${cli}" --install-extension "${vsix}" --force
     dir=$(installed_dir "${e}")
     [[ -n ${dir} ]] || die "${e}: extension directory not found after install"
-    cmp -s "${dir}/server/gls.jar" "${jar}" || die "${e}: installed server/gls.jar differs from the VSIX jar"
+    cmp -s "${dir}/server/gls.jar" "${jar}" || die "${e}: installed server/gls.jar differs from the expected jar"
     log "verified ${e}: server/gls.jar matches byte-for-byte"
   done
-  rm -f "${jar}"
   log "Reload the window (Developer: Reload Window) to use g${want_sha}"
+}
+
+# newest_kept_io <sha>: newest kept VSIX built from <sha>, else empty.
+newest_kept_io() {
+  list_vsix_io | grep -F "+g$(sha7 "$1").vsix" | head -n 1 || true
 }
 
 cmd_latest() {
@@ -356,38 +580,43 @@ cmd_latest() {
   need gh
   need jq
   need java
+  need unzip
   pick_target_io
-  local editors
+  local editors kept
   editors=$(selected_editors_io)
   [[ -n ${editors} ]] || die "none of the selected editors (${EDITORS}) has a CLI on PATH"
   log "target: ${TARGET_SHA} (CI: ${TARGET_CI})"
   if [[ ${FORCE} != 1 ]] && is_up_to_date_io "${TARGET_SHA}" "${editors}"; then
     log "already up to date ($(sha7 "${TARGET_SHA}")) in:${editors}"
-    exit 0
+    return 0
   fi
   if [[ ${DRY_RUN} == 1 ]]; then
     log "DRY_RUN: would build $(sha7 "${TARGET_SHA}") in ${SRC_DIR}, store the VSIX in ${VSIX_DIR} (keep ${KEEP}), install into:${editors}"
-    exit 0
+    return 0
   fi
-  local kept
-  kept=$(list_vsix_io | grep -F "+g$(sha7 "${TARGET_SHA}").vsix" | head -n 1 || true)
+  acquire_lock_io "${CACHE_ROOT}/lock"
+  kept=$(newest_kept_io "${TARGET_SHA}")
   if [[ -n ${kept} && ${FORCE} != 1 ]]; then
-    log "reusing kept VSIX $(basename "${kept}")"
-    touch "${kept}"
-    install_vsix_io "${kept}" "${editors}"
-    return
+    if vsix_provenance_ok "${kept}" "${TARGET_SHA}"; then
+      log "reusing kept VSIX $(basename "${kept}")"
+      install_vsix_io "${kept}" "${editors}"
+      prune_io "${editors}"
+      return 0
+    fi
+    log "kept VSIX $(basename "${kept}") does not carry ${TARGET_SHA}; rebuilding"
   fi
   ensure_clone_io "${TARGET_SHA}"
   build_jar_io "${TARGET_SHA}"
   package_vsix_io
   store_vsix_io "${TARGET_SHA}" "${BUILT_VSIX}"
-  install_vsix_io "${STORED_VSIX}" "${editors}"
+  install_vsix_io "${STORED_VSIX}" "${editors}" "${JAR}"
+  prune_io "${editors}"
 }
 
 cmd_rollback() {
   need jq
   need unzip
-  local editors current="" e prov want=${1:-} f
+  local editors current="" e prov target names
   editors=$(selected_editors_io)
   [[ -n ${editors} ]] || die "none of the selected editors (${EDITORS}) has a CLI on PATH"
   for e in ${editors}; do
@@ -396,28 +625,23 @@ cmd_rollback() {
     current=$(jq_field "${prov}" '.gitSha')
     [[ -n ${current} ]] && break
   done
-  local target=""
-  while IFS= read -r f; do
-    [[ -n ${f} ]] || continue
-    local s
-    s=$(vsix_sha7 "${f}") || continue
-    if [[ -n ${want} ]]; then
-      [[ ${s} == "${want}"* ]] && target=${f} && break
-    elif [[ -z ${current} ]] || ! same_sha "${s}" "${current}"; then
-      target=${f}
-      break
-    fi
-  done < <(list_vsix_io)
-  [[ -n ${target} ]] || die "no kept VSIX to roll back to in ${VSIX_DIR}"
+  names=$(list_vsix_io)
+  if [[ -z ${1:-} && -n ${current} ]] && ! in_kept "${current}" <<<"${names}"; then
+    log "installed $(sha7 "${current}") is not among the kept VSIX files; using the newest"
+    current=""
+  fi
+  target=$(rollback_pick "${current}" "${1:-}" <<<"${names}") ||
+    die "no older kept VSIX to roll back to in ${VSIX_DIR}"
   if [[ ${DRY_RUN} == 1 ]]; then
     log "DRY_RUN: would reinstall $(basename "${target}") into:${editors}"
-    exit 0
+    return 0
   fi
+  acquire_lock_io "${CACHE_ROOT}/lock"
+  # The file name is only a label: trust the record inside the VSIX.
+  vsix_provenance_ok "${target}" "$(vsix_sha7 "${target}")" ||
+    die "$(basename "${target}") does not contain a clean server build for that commit; refusing to install"
   install_vsix_io "${target}" "${editors}"
 }
-
-TMP_JAR=""
-cleanup() { [[ -z ${TMP_JAR} ]] || rm -f "${TMP_JAR}"; }
 
 main() {
   trap cleanup EXIT
@@ -426,7 +650,7 @@ main() {
     latest) cmd_latest ;;
     rollback) cmd_rollback "${2:-}" ;;
     -h | --help)
-      sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+      sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       ;;
     *) die "unknown command '$1' (latest | rollback [sha])" ;;
   esac
