@@ -1,0 +1,49 @@
+name: repro-completion-auto-import-generic-arg
+description: Completing `List<Rectang` offers Rectangle with an import edit
+xfail:
+  issue: 1529
+  reason: completion offers no workspace class with an import edit inside a generic type argument
+  match: 'Rectangle.*newText.*Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/shapes/Rectangle.groovy: |
+      package demo.shapes
+
+      class Rectangle {}
+    src/main/groovy/demo/service/Svc.groovy: |
+      package demo.service
+
+      class Svc {
+          void run() {
+              List<Rectang|^c|> zz = []
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+        position: "{{cursor.c}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[?(@.label == 'Rectangle')].additionalTextEdits[0].newText"
+          expect: { type: CONTAINS, value: "import demo.shapes.Rectangle" }
+  - shutdown: {}
+  - exit: {}

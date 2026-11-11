@@ -1,0 +1,57 @@
+name: repro-completion-builder-static
+description: Completing `Order.` from another file offers the @Builder generated builder()
+xfail:
+  issue: 1530
+  reason: Order. from another file does not offer the generated static builder()
+  match: '(?s)Actual:.*"getMetaClass"'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/order/Order.groovy: |
+      package demo.order
+
+      import groovy.transform.builder.Builder
+
+      @Builder
+      class Order {
+          String id
+          String customer
+      }
+    src/main/groovy/demo/service/OrderService.groovy: |
+      package demo.service
+
+      import demo.order.Order
+
+      class OrderService {
+          Object place() {
+              Order.|^c|
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+        position: "{{cursor.c}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].label"
+          expect: { type: CONTAINS, value: "builder" }
+  - shutdown: {}
+  - exit: {}
