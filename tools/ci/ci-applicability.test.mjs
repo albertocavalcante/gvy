@@ -7,10 +7,10 @@ import { join, resolve } from 'node:path';
 import { classifyPaths } from './ci-applicability.mjs';
 
 test('known narrative changes exclude runtime suites with explicit reasons', () => {
-  const report = classifyPaths(['README.md', 'AGENTS.md', 'docs/ci-diagnostics.md', 'kb/testing/plan.md']);
+  const report = classifyPaths(['README.md', 'AGENTS.md', 'docs/ci-diagnostics.md', 'kb/testing/plan.md', 'tests/e2e/README.md']);
   assert.equal(report.runMain, false);
   assert.equal(report.runBazel, false);
-  assert.equal(report.paths.length, 4);
+  assert.equal(report.paths.length, 5);
   assert.ok(report.paths.every((path) => path.reason === 'narrative documentation'));
 });
 

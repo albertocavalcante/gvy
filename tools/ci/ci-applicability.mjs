@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const narrative = /^(?:(?:README|AGENTS|CONTRIBUTING|REVIEW|CHANGELOG)\.md|LICENSE(?:\.md|\.txt)?|(?:kb|\.agent)\/.*\.md|docs\/(?!website\/).*\.md)$/;
 const bazelOnly = /^(?:\.bazel(?:rc|version|ignore)|bazel\/.*\.bazelrc|(?:.*\/)?BUILD(?:\.bazel)?|.*\.bzl|MODULE\.bazel(?:\.lock)?|third_party\/patches\/.*)$/;
 const executableTree = /(?:^|\/)(?:src|resources|fixtures|snapshots|workspaces|testdata)(?:\/|$)/;
+const knownNarrative = new Set(['tests/e2e/README.md']);
 
 /** Unknown inputs are conservatively tested. Fixtures are never excluded by suffix. */
 export function classifyPaths(paths) {
@@ -14,7 +15,7 @@ export function classifyPaths(paths) {
       throw new Error(`Invalid repository path: ${JSON.stringify(path)}`);
     }
     const reason = executableTree.test(path) ? 'build or executable input'
-      : narrative.test(path) ? 'narrative documentation' : bazelOnly.test(path) ? 'Bazel configuration' : 'build or executable input';
+      : narrative.test(path) || knownNarrative.has(path) ? 'narrative documentation' : bazelOnly.test(path) ? 'Bazel configuration' : 'build or executable input';
     return { path, reason };
   });
   return {
