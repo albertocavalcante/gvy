@@ -105,6 +105,10 @@ const partialSnapshots = [
   ['observer only', value => { value.jobs[0].name = 'Validation Check'; }],
   ['unrelated producer only', value => { value.jobs[0].name = 'Lint'; }],
   ['reused current-attempt clone with old execution', value => { value.jobs[0].startedAt = '2026-11-11T12:14:11Z'; }],
+  ['older sub-millisecond execution', value => {
+    value.attemptStartedAt = '2026-11-11T12:22:40.123456789Z';
+    value.jobs[0].startedAt = '2026-11-11T12:22:40.123456788Z';
+  }],
   ['missing execution start', value => { delete value.jobs[0].startedAt; }],
   ['invalid execution start', value => { value.jobs[0].startedAt = 'invalid'; }],
   ['unfinished anchor', value => { value.jobs[0].status = 'in_progress'; }],
@@ -135,5 +139,17 @@ test('a complete rerun passes with an anchor starting in the attempt first secon
     for (const bazel of [false, true]) {
       assert.equal(combineReadiness(evaluateReadiness(successful(main, bazel)), runner, context).ok, true);
     }
+  }
+});
+
+test('timestamp precision preserves equality and a genuinely later execution', () => {
+  for (const [attempt, execution] of [
+    ['.123456789', '.123456789'], ['.123456789', '.123456790'],
+    ['.123', '.123000001'], ['.123000000', '.123'],
+  ]) {
+    const runner = currentReceipt();
+    runner.attemptStartedAt = `2026-11-11T12:22:40${attempt}Z`;
+    runner.jobs[0].startedAt = `2026-11-11T12:22:40${execution}Z`;
+    assert.equal(combineReadiness(evaluateReadiness(successful()), runner, context).ok, true);
   }
 });

@@ -3,8 +3,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const record = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
-const timestampMillis = value => typeof value === 'string' &&
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value) ? Date.parse(value) : NaN;
+function timestampKey(value) {
+  if (typeof value !== 'string') return null;
+  const parts = value.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d{1,9}))?Z$/);
+  const parsed = new Date(value);
+  if (!parts || !Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 19) !== parts[1]) return null;
+  // Fixed-width UTC fractions compare without losing sub-millisecond precision.
+  return `${parts[1]}.${(parts[2] ?? '').padEnd(9, '0')}`;
+}
 
 /** Evaluate the current workflow's needs graph, never an earlier run's status. */
 export function evaluateReadiness(needs) {
@@ -49,11 +55,11 @@ export function combineReadiness(graph, runner, context) {
   // their annotations. A fresh execution of this ancestor reruns its dependents.
   const anchors = Array.isArray(runner?.jobs) ? runner.jobs.filter(job => record(job) && job.name === 'check-paths') : [];
   const anchor = anchors[0];
-  const attemptStart = timestampMillis(runner?.attemptStartedAt);
-  const executionStart = timestampMillis(anchor?.startedAt);
+  const attemptStart = timestampKey(runner?.attemptStartedAt);
+  const executionStart = timestampKey(anchor?.startedAt);
   if (anchors.length !== 1 || anchor?.status !== 'completed' || anchor.conclusion !== 'success' ||
       anchor.annotationsObserved !== true || anchor.headSha !== context.headSha ||
-      !Number.isFinite(attemptStart) || !Number.isFinite(executionStart) || executionStart < attemptStart) {
+      attemptStart === null || executionStart === null || executionStart < attemptStart) {
     report.errors.push('A fresh successful observed check-paths execution is required for this attempt; rerun all CI jobs.');
   }
   report.ok = report.errors.length === 0;
