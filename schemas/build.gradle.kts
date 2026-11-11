@@ -28,6 +28,7 @@ val generateProtos =
         outputs.dir(outputDir)
 
         classpath = wireCompiler
+        maxHeapSize = "512m"
         mainClass.set("com.squareup.wire.WireCompiler")
 
         args(

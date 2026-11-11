@@ -1,3 +1,4 @@
+import { isUtf8 } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -15,6 +16,7 @@ function plain(log) {
 export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
   const diagnostics = new Set();
   let context = 'gradle';
+  let capturedTestOutput = false;
   let pending;
   const flush = () => {
     if (pending) diagnostics.add(pending);
@@ -25,9 +27,18 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     const header = raw.match(/^> (Configure project|Task) (:\S*)/);
     if (header) {
       flush();
+      capturedTestOutput = false;
       context = `${header[1] === 'Task' ? 'task' : 'project'} ${header[2]}`;
       continue;
     }
+    const testHeader = raw.match(/^\S+(?: > .+)? (PASSED|FAILED|SKIPPED|STARTED|STANDARD_OUT|STANDARD_ERROR)$/);
+    if (testHeader) {
+      flush();
+      capturedTestOutput = testHeader[1] === 'STANDARD_OUT' || testHeader[1] === 'STANDARD_ERROR';
+      continue;
+    }
+    if (capturedTestOutput && /^\s/.test(raw)) continue;
+    if (raw.trim()) capturedTestOutput = false;
     const line = raw.trim();
     const source = line.match(/^at Build_gradle[^\n]*\(([^():]+\.gradle\.kts:\d+)\)$/);
     if (pending && source) {
@@ -43,7 +54,6 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
       continue;
     }
     if (!line) flush();
-    if (/^.+ > .+ (?:PASSED|FAILED|SKIPPED|STANDARD_OUT|STANDARD_ERROR)$/.test(line)) continue;
     const compiler = /^(?:w: |(?:file:\/\/\/)?\S+\.(?:kt|kts|java|groovy):\d+(?::\d+)?:?\s*(?:warning:|[Ww]arning\b))/.test(line);
     // Gradle indents captured test output; compiler diagnostics sometimes indent.
     if (/^\s/.test(raw) && !compiler) continue;
@@ -64,13 +74,13 @@ function validExit(value) {
   return Number.isInteger(value) && value >= 0 && value <= 255;
 }
 
-export function checkGradleDiagnostics({ log, commandExitCode, captureExitCode, exceptions, now = new Date(), rootDir }) {
+export function checkGradleDiagnostics({ log, commandExitCode, captureExitCode, exceptions, now = new Date(), rootDir, encodingValid = true }) {
   const errors = [];
   const text = typeof log === 'string' ? plain(log) : '';
   const diagnostics = collectDiagnostics(text, { rootDir });
   if (!text.trim()) errors.push('Missing or empty Gradle log');
   if (text && !text.endsWith('\n')) errors.push('Gradle log is truncated (missing final newline)');
-  if (/[\ufffd\x00\x1b\r]/.test(text)) errors.push('Gradle log contains invalid encoding or non-plain console output');
+  if (!encodingValid || /[\x00\x1b\r]/.test(text)) errors.push('Gradle log contains invalid encoding or non-plain console output');
   if (!validExit(commandExitCode)) errors.push('Missing or invalid original command exit code');
   if (!validExit(captureExitCode) || captureExitCode !== 0) errors.push('Missing or failed log capture exit code');
   const markers = [...text.matchAll(/^BUILD (SUCCESSFUL|FAILED) in .+$/gm)];
@@ -158,7 +168,7 @@ function main(args) {
   const exitCode = value => /^\d+$/.test(value) ? Number(value) : undefined;
   const result = checkGradleDiagnostics({
     log, commandExitCode: exitCode(options['exit-code']), captureExitCode: exitCode(options['capture-exit-code']),
-    exceptions, rootDir: options.root,
+    exceptions, rootDir: options.root, encodingValid: bytes ? isUtf8(bytes) : false,
   });
   result.producer = options.producer;
   result.log = bytes ? { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } : null;

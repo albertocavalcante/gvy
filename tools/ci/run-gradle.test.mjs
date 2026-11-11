@@ -20,6 +20,8 @@ console.log('> Task :gls:compileKotlin');
 if (mode === 'warning' || mode === 'failure') console.error('w: gls/src/Foo.kt:4:3 New compiler warning');
 console.log('stdout evidence');
 console.error('stderr evidence');
+if (mode === 'invalid-encoding') process.stdout.write(Buffer.from([0xff, 0x0a]));
+if (mode === 'replacement-character') console.log('    valid replacement character: \ufffd');
 if (mode === 'wait') setInterval(() => {}, 1000);
 else {
   if (mode !== 'truncated') console.log('BUILD ' + (mode === 'failure' ? 'FAILED' : 'SUCCESSFUL') + ' in 1s');
@@ -129,6 +131,21 @@ test('a failed capture sink is retained as a failed producer even when Gradle ex
   assert.equal(summary.captureExitCode, 1);
   assert.equal(summary.complete, false);
   assert.equal(summary.ok, false);
+});
+
+test('wrapper validates original UTF-8 bytes without rejecting a legitimate replacement character', t => {
+  for (const mode of ['invalid-encoding', 'replacement-character']) {
+    const f = fixture(t);
+    const result = f.run(['lint'], { FAKE_GRADLE_MODE: mode });
+    const summary = f.summaries()[0];
+    assert.equal(result.status, mode === 'invalid-encoding' ? 1 : 0);
+    assert.equal(summary.complete, mode !== 'invalid-encoding');
+    assert.equal(summary.ok, mode !== 'invalid-encoding');
+    if (mode === 'invalid-encoding') {
+      assert.ok(readFileSync(join(f.artifactDirs()[0], 'raw.log')).includes(0xff));
+      assert.match(summary.errors.join(' '), /encoding/);
+    }
+  }
 });
 
 test('termination reaches only the wrapper child and records the interrupted status', async t => {

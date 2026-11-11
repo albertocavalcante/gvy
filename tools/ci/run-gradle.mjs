@@ -1,3 +1,4 @@
+import { isUtf8 } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFileSync, createWriteStream, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
@@ -107,6 +108,7 @@ async function main(args) {
   const result = checkGradleDiagnostics({
     log: bytes?.toString('utf8'), exceptions,
     commandExitCode: status.commandExitCode, captureExitCode: status.captureExitCode,
+    encodingValid: bytes ? isUtf8(bytes) : false,
   });
   Object.assign(result, {
     producer: options.producer, context, worktreeDirty, commandSignal: status.commandSignal,

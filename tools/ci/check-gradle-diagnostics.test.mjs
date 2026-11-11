@@ -44,7 +44,7 @@ test('a failed command retains all warnings with complete failure evidence', () 
 test('missing, empty, truncated, conflicting and failed captures cannot pass', () => {
   for (const log of [undefined, '', '> Task :gls:compileKotlin\nw: warning\n',
     'BUILD SUCCESSFUL in 1s', 'BUILD SUCCESSFUL in 1s\nBUILD FAILED in 1s\n',
-    'BUILD SUCCESSFUL in 1s\n> Task :gls:compileKotlin\n', 'BUILD SUCCESSFUL in 1s\n\ufffd\n']) {
+    'BUILD SUCCESSFUL in 1s\n> Task :gls:compileKotlin\n']) {
     assert.equal(check(log).complete, false, JSON.stringify(log));
     assert.equal(check(log).ok, false, JSON.stringify(log));
   }
@@ -111,6 +111,32 @@ test('semantic LSP payloads, passing-test names and runtime logger output belong
   assert.deepEqual(collectDiagnostics(log), []);
 });
 
+test('captured compiler-shaped test payloads stay separate while genuine subsequent compiler warnings fail', () => {
+  const captured = '> Task :gls:test\n' +
+    'SomeTest > expected warning STANDARD_ERROR\n' +
+    '    w: expected negative-test compiler warning\n' +
+    '    gls/src/Fixture.kt:4:3: warning: expected negative-test compiler warning\n' +
+    'OtherTest STANDARD_OUT\n' +
+    '    w: expected class-level captured warning\n';
+  assert.equal(check(captured + 'BUILD SUCCESSFUL in 1s\n').ok, true);
+  const diagnostics = collectDiagnostics(captured +
+    'SomeTest > expected warning PASSED\n' +
+    '    w: warning outside captured output\n' +
+    '> Task :gls:compileKotlin\n' +
+    '    gls/src/Real.kt:4:3: warning: actual compiler warning\n' +
+    '> Task :gls:test\nOtherTest > expected warning STANDARD_OUT\n    w: expected again\n' +
+    '> Configure project :other\nw: actual plugin warning\n');
+  assert.deepEqual(diagnostics, [
+    '[project :other] w: actual plugin warning',
+    '[task :gls:compileKotlin] gls/src/Real.kt:4:3: warning: actual compiler warning',
+    '[task :gls:test] w: warning outside captured output',
+  ]);
+});
+
+test('a legitimate Unicode replacement character is valid log text', () => {
+  assert.equal(check('> Task :gls:test\nSomeTest > replacement STANDARD_OUT\n    replacement character: \ufffd\nBUILD SUCCESSFUL in 1s\n').ok, true);
+});
+
 test('validates exact owned exceptions including cached-out and expired debt', () => {
   assert.equal(check(`> Configure project :\n${warning}\nBUILD SUCCESSFUL in 1s\n`, {
     exceptions: [exception],
@@ -175,6 +201,15 @@ test('CLI always publishes structured evidence and a raw copy, including warning
   assert.match(readFileSync(join(report, 'summary.md'), 'utf8'), /ReportingExtension.file/);
   writeFileSync(log, 'BUILD SUCCESSFUL in 1s\n');
   assert.equal(run().status, 0);
+  writeFileSync(log, Buffer.concat([
+    Buffer.from('> Task :gls:compileKotlin\nw: gls/src/Foo.kt:4:3 warning before invalid bytes\n'),
+    Buffer.from([0xff, 0x0a]), Buffer.from('BUILD SUCCESSFUL in 1s\n'),
+  ]));
+  assert.notEqual(run().status, 0);
+  const invalidEncoding = JSON.parse(readFileSync(join(report, 'diagnostics.json')));
+  assert.equal(invalidEncoding.complete, false);
+  assert.deepEqual(invalidEncoding.unexpected, ['[task :gls:compileKotlin] w: gls/src/Foo.kt:4:3 warning before invalid bytes']);
+  assert.match(invalidEncoding.errors.join(' '), /encoding/);
   writeFileSync(baseline, '{malformed');
   writeFileSync(log, text);
   assert.notEqual(run('1').status, 0);
