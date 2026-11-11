@@ -4,7 +4,7 @@ kt_library(
     name = "rewrite",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
-    # rewrite-groovy is imported with Groovy 3 excluded; it needs Groovy 4 at runtime.
+    # Use the server's Groovy 4 runtime; legacy Groovy 3 artifacts are excluded from Maven resolution.
     runtime_deps = ["@maven//:org_apache_groovy_groovy"],
     deps = [
         "//parser/api",

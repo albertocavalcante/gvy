@@ -57,19 +57,19 @@ class SimplifyTernaryToElvis : Recipe() {
 
         /**
          * Checks if two expressions are structurally equivalent.
-         * Only literals and identifier reads qualify. Replacing two method invocations with one
-         * changes evaluation count even when their syntax is identical.
+         * Only literals qualify. Identifier reads can invoke getters, and user-defined Groovy
+         * truthiness can change even a local binding before the repeated read.
+         * TODO(#1651): prove binding and truthiness safety before enabling identifier simplification.
+         *   See: https://github.com/albertocavalcante/gvy/issues/1651
          */
         private fun areEquivalent(e1: Expression, e2: Expression): Boolean {
             // The condition remains in the output, so its parentheses and comments are preserved.
-            // The repeated branch is removed; accept only a plain read/literal with no prefix comment.
+            // The repeated branch is removed; accept only a literal with no prefix comment.
             val u1 = unwrap(e1)
             val u2 = e2
             if (u2.prefix.comments.isNotEmpty()) return false
 
             return when (u1) {
-                is J.Identifier -> u2 is J.Identifier && u1.simpleName == u2.simpleName
-
                 // Preserve the exact literal representation, including quoting and number format.
                 is J.Literal -> u2 is J.Literal && u1.valueSource == u2.valueSource
 

@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -297,7 +298,7 @@ class GroovyTextDocumentServiceFormattingTest {
     }
 
     @Test
-    fun `formatting never returns an edit that changes the program (#1523)`() {
+    fun `already formatted casts and string content need no edit (#1523)`() {
         client.telemetryEvents.clear()
         val source = listOf(
             "class A {",
@@ -320,12 +321,38 @@ class GroovyTextDocumentServiceFormattingTest {
 
         val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-        // Either the formatter handles the construct or it refuses; it must never send damaged code.
         val result = edits.singleOrNull()?.newText ?: source
         assertTrue(edits.size <= 1, "Formatting returns at most one whole-document edit")
         assertTrue("def y = x as BigDecimal" in result, "the as operator keeps its spaces:\n$result")
         assertTrue("\"a    b\"" in result, "string content is untouched:\n$result")
-        assertTrue(edits.isEmpty(), "the damaging result is refused, not sent")
+        assertTrue(edits.isEmpty(), "the already formatted source needs no edit")
+        val telemetry = client.telemetryEvents.single() as FormatterTelemetryEvent
+        assertEquals(FormatterStatus.NO_OP, telemetry.status)
+    }
+
+    @Test
+    fun `a refused formatting result sends no edit and reports refusal telemetry`() {
+        val source = "def x=1"
+        val documentProvider = DocumentProvider().apply { put(uri, source) }
+        val formatter = object : Formatter {
+            override fun format(text: String): String = error("The service must use the checked result")
+
+            override fun formatChecked(text: String): FormatOutcome =
+                FormatOutcome.Refused(text, "synthetic unsafe result")
+        }
+        val service = GroovyTextDocumentService(
+            coroutineScope = coroutineScope,
+            compilationService = compilationService,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = formatter,
+            ),
+        )
+
+        val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        assertTrue(edits.isEmpty())
         val telemetry = client.telemetryEvents.single() as FormatterTelemetryEvent
         assertEquals(FormatterStatus.REFUSED, telemetry.status)
     }

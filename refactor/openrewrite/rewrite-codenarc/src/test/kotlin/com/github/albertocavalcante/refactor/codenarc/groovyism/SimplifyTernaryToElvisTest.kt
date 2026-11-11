@@ -22,19 +22,19 @@ class SimplifyTernaryToElvisTest : RewriteTest {
     }
 
     @Test
-    fun `simplifies basic ternary`() = rewriteRun(
+    fun `preserves identifier reads without binding and truthiness proof`() = rewriteRun(
         groovy(
             """
             def x = true
             // Basic case: local variable used in both condition and true part
             def y = x ? x : false
             """,
-            """
-            def x = true
-            // Basic case: local variable used in both condition and true part
-            def y = x ?: false
-            """,
         ),
+    )
+
+    @Test
+    fun `simplifies a repeated literal`() = rewriteRun(
+        groovy("def result = true ? true : false", "def result = true ?: false"),
     )
 
     @Test
@@ -66,6 +66,45 @@ class SimplifyTernaryToElvisTest : RewriteTest {
             def result = next() ? next() : 0
             assert calls == 2
             assert result == 2
+            """,
+        ),
+    )
+
+    @Test
+    fun `preserves implicit property getter reads that mutate state`() = rewriteRun(
+        groovy(
+            """
+            class A {
+                int calls = 0
+                def getValue() { ++calls }
+                def check() {
+                    def result = value ? value : 0
+                    assert calls == 2
+                    assert result == 2
+                }
+            }
+            new A().check()
+            """,
+        ),
+    )
+
+    @Test
+    fun `preserves unbound dynamic property reads`() = rewriteRun(
+        groovy("def result = value ? value : 0"),
+    )
+
+    @Test
+    fun `preserves a local binding changed by Groovy truthiness`() = rewriteRun(
+        groovy(
+            """
+            class Box {
+                Closure change
+                boolean asBoolean() { change(); true }
+            }
+            def x = new Box()
+            x.change = { x = 'changed' }
+            def result = x ? x : null
+            assert result == 'changed'
             """,
         ),
     )

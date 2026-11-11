@@ -12,6 +12,7 @@ import org.openrewrite.internal.InMemoryLargeSourceSet
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
 import org.slf4j.LoggerFactory
+import java.util.UUID
 import java.util.stream.Collectors
 
 class OpenRewriteFormatter internal constructor(
@@ -84,6 +85,7 @@ class OpenRewriteFormatter internal constructor(
 
         val formattedText = runCatching {
             val sourceFiles = parser.parse(extraction.content).collect(Collectors.toList())
+            val literalSpelling = literalSpellingRestorer(sourceFiles)
             val formattedSource = recipe.run(InMemoryLargeSourceSet(sourceFiles), executionContext)
                 .changeset
                 .allResults
@@ -93,7 +95,8 @@ class OpenRewriteFormatter internal constructor(
 
             // Fix spacing on the LST only: a text-level pass over the printed source would also rewrite
             // the inside of string literals and comments (#1524).
-            val declarationsFixed = DeclarationSpacing().visit(formattedSource, Unit) as SourceFile
+            val literalsFixed = literalSpelling.visit(formattedSource, Unit) as SourceFile
+            val declarationsFixed = DeclarationSpacing().visit(literalsFixed, Unit) as SourceFile
             val normalizedSource = PostFormatWhitespaceCollapser().visit(declarationsFixed, Unit) as SourceFile
             normalizedSource.printAll().normalizeLineEndings()
         }.getOrElse { return text }
@@ -108,6 +111,33 @@ class OpenRewriteFormatter internal constructor(
      * Normalizes line endings to Unix style (LF) for consistency.
      */
     private fun String.normalizeLineEndings(): String = replace("\r\n", "\n")
+
+    /**
+     * AutoFormat's Java text-block indenter also visits Groovy triple-quoted literals, where the
+     * opening newline is optional and indentation belongs to the value (#1598). Formatting must
+     * preserve literal spelling. Restore it by the original LST identity, leaving surrounding layout
+     * to AutoFormat and retaining the token guard as the final check.
+     *
+     * TODO(#1598): remove after raw upstream formatting preserves Groovy literal spelling.
+     *   See: https://github.com/albertocavalcante/gvy/issues/1598
+     */
+    private fun literalSpellingRestorer(sources: List<SourceFile>): GroovyIsoVisitor<Unit> {
+        val originalLiterals = mutableMapOf<UUID, J.Literal>()
+        val recorder = object : GroovyIsoVisitor<Unit>() {
+            override fun visitLiteral(literal: J.Literal, p: Unit): J.Literal {
+                originalLiterals[literal.id] = literal
+                return super.visitLiteral(literal, p)
+            }
+        }
+        sources.forEach { recorder.visit(it, Unit) }
+        return object : GroovyIsoVisitor<Unit>() {
+            override fun visitLiteral(literal: J.Literal, p: Unit): J.Literal {
+                val visited = super.visitLiteral(literal, p)
+                val original = originalLiterals[visited.id] ?: return visited
+                return visited.withValue(original.value).withValueSource(original.valueSource)
+            }
+        }
+    }
 
     /**
      * Visitor that collapses multiple consecutive spaces within code.
@@ -155,6 +185,19 @@ class OpenRewriteFormatter internal constructor(
      *   See: https://github.com/albertocavalcante/gvy/issues/1598
      */
     private class DeclarationSpacing : GroovyIsoVisitor<Unit>() {
+        override fun visitMethodDeclaration(method: J.MethodDeclaration, p: Unit): J.MethodDeclaration {
+            val declaration = super.visitMethodDeclaration(method, p)
+            return declaration.withParameters(
+                declaration.parameters.mapIndexed { index, parameter ->
+                    if (index > 0 && parameter is J.VariableDeclarations && parameter.prefix.isInlineWhitespace()) {
+                        parameter.withPrefix(parameter.prefix.withWhitespace(" "))
+                    } else {
+                        parameter
+                    }
+                },
+            )
+        }
+
         override fun visitVariable(
             variable: J.VariableDeclarations.NamedVariable,
             p: Unit,
@@ -234,7 +277,8 @@ class OpenRewriteFormatter internal constructor(
             return untyped && varargs == null && oneLine
         }
 
-        private fun Space.isInlineWhitespace(): Boolean = comments.isEmpty() && '\n' !in whitespace
+        private fun Space.isInlineWhitespace(): Boolean =
+            comments.isEmpty() && '\n' !in whitespace && '\r' !in whitespace
     }
 
     companion object {
