@@ -36,6 +36,15 @@ function checkId(url, repository) {
 function validateRun(run, context) {
   if (!isObject(run) || String(run.id) !== context.runId || run.run_attempt !== context.runAttempt || run.head_sha !== context.headSha || run.repository?.full_name !== context.repository) throw new Error('Workflow run identity or current attempt does not match context');
   if (!['queued', 'in_progress', 'completed', 'waiting', 'pending', 'requested'].includes(run.status)) throw new Error('Invalid workflow run status');
+  return timestamp(run.run_started_at);
+}
+
+function timestamp(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z$/.test(value)) throw new Error('Invalid workflow/job timestamp');
+  const parsed = new Date(value);
+  // Date parsing alone normalizes impossible dates, such as February 30.
+  if (!Number.isFinite(parsed.getTime()) || parsed.toISOString().slice(0, 19) !== value.slice(0, 19)) throw new Error('Invalid workflow/job timestamp');
+  return value;
 }
 
 // This is a bounded completed-job snapshot, not a claim about unfinished jobs or
@@ -45,7 +54,7 @@ export async function observeRunnerDiagnostics(context, request, exceptions, now
   evaluate([], exceptions, now); // Reuse the exact, owned, expiring debt policy.
   const result = {
     schemaVersion: 1, ok: false, observationComplete: false, runWideComplete: false,
-    context, observedAt: now.toISOString(),
+    context, observedAt: now.toISOString(), attemptStartedAt: null,
     boundary: `Completed jobs in this exact run attempt, excluding ${OBSERVER_NAME}; unfinished jobs and observer annotations are unobserved.`,
     errors: [], jobs: [], skippedJobs: [], unfinishedJobs: [], excludedJobs: [], annotations: [], diagnostics: [],
     unexpected: [], accepted: [], exceptions,
@@ -63,7 +72,7 @@ export async function observeRunnerDiagnostics(context, request, exceptions, now
     return response;
   };
   try {
-    validateRun(await get(runPath), context);
+    result.attemptStartedAt = validateRun(await get(runPath), context);
     const allJobs = [];
     let expected;
     let jobsFinished = false;
@@ -86,7 +95,7 @@ export async function observeRunnerDiagnostics(context, request, exceptions, now
       if (!isObject(job) || !positiveId(job.id) || ids.has(job.id) || String(job.run_id) !== context.runId || job.run_attempt !== context.runAttempt || job.head_sha !== context.headSha || typeof job.name !== 'string' || !job.name || job.name.length > 500 || !['queued', 'in_progress', 'completed', 'waiting', 'pending', 'requested'].includes(job.status)) throw new Error('Invalid, duplicate or stale job identity');
       if (job.status === 'completed' && !['success', 'failure', 'cancelled', 'skipped', 'neutral', 'timed_out', 'action_required', 'stale', 'startup_failure'].includes(job.conclusion)) throw new Error('Invalid completed job conclusion');
       ids.add(job.id);
-      result.jobs.push({ jobId: job.id, name: job.name, checkId: checkId(job.check_run_url, context.repository), headSha: job.head_sha, status: job.status, conclusion: job.conclusion ?? null, annotationsObserved: false });
+      result.jobs.push({ jobId: job.id, name: job.name, checkId: checkId(job.check_run_url, context.repository), headSha: job.head_sha, status: job.status, conclusion: job.conclusion ?? null, startedAt: job.started_at == null ? null : timestamp(job.started_at), annotationsObserved: false });
     }
     result.excludedJobs = result.jobs.filter(job => job.name === OBSERVER_NAME);
     if (result.excludedJobs.length > 1) throw new Error('Ambiguous observer job name');
@@ -124,7 +133,9 @@ export async function observeRunnerDiagnostics(context, request, exceptions, now
       job.annotationsObserved = true;
       if (!['success', 'skipped', 'neutral'].includes(job.conclusion)) result.errors.push(`Completed job ${job.jobId} (${job.name}) concluded ${job.conclusion}`);
     }
-    validateRun(await get(runPath), context); // A rerun starting mid-snapshot invalidates it.
+    // Selective reruns can clone old job execution times into the new attempt.
+    // Retain that provenance and invalidate a rerun starting mid-snapshot.
+    if (validateRun(await get(runPath), context) !== result.attemptStartedAt) throw new Error('Workflow run attempt start changed during observation');
     result.observationComplete = true;
   } catch (error) { result.errors.push(error.message); }
   result.diagnostics = [...new Set(result.annotations.map(item => item.diagnostic))].sort();
@@ -165,7 +176,7 @@ async function main(args) {
     };
     result = await observeRunnerDiagnostics(context, request, exceptions);
   } catch (error) {
-    result = { schemaVersion: 1, ok: false, observationComplete: false, runWideComplete: false, errors: [error.message], annotations: [], unexpected: [], accepted: [], exceptions: [], jobs: [], skippedJobs: [], unfinishedJobs: [], excludedJobs: [] };
+    result = { schemaVersion: 1, ok: false, observationComplete: false, runWideComplete: false, attemptStartedAt: null, errors: [error.message], annotations: [], unexpected: [], accepted: [], exceptions: [], jobs: [], skippedJobs: [], unfinishedJobs: [], excludedJobs: [] };
   }
   const summary = [
     '## Actions and runner diagnostic snapshot', '',

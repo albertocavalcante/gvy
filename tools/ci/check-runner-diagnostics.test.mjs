@@ -12,9 +12,12 @@ const context = { repository: 'albertocavalcante/gvy', runId: '123', runAttempt:
 const base = '/repos/albertocavalcante/gvy';
 const runPath = `${base}/actions/runs/123`;
 const jobsPath = `${runPath}/attempts/2/jobs`;
-const run = { id: 123, run_attempt: 2, head_sha: sourceSha, status: 'in_progress', repository: { full_name: context.repository } };
+const attemptStartedAt = '2026-11-11T12:22:40Z';
+const jobStartedAt = '2026-11-11T12:22:41Z';
+const run = { id: 123, run_attempt: 2, head_sha: sourceSha, status: 'in_progress', run_started_at: attemptStartedAt, repository: { full_name: context.repository } };
 const job = (id, name = 'Build', status = 'completed', conclusion = 'success') => ({
   id, name, run_id: 123, run_attempt: 2, head_sha: sourceSha, status, conclusion,
+  started_at: status === 'queued' ? null : jobStartedAt,
   check_run_url: `https://api.github.com${base}/check-runs/${id + 1000}`,
 });
 const annotation = { annotation_level: 'warning', path: '.github/workflows/ci.yml', start_line: 1, end_line: 1, title: 'Runner', message: 'Deprecated action runtime' };
@@ -47,9 +50,85 @@ test('observes exact attempt completed jobs, records boundaries and never claims
   assert.deepEqual(result.unfinishedJobs.map(value => value.name), ['Optional']);
   assert.deepEqual(result.excludedJobs.map(value => value.name), ['Validation Check']);
   assert.equal(result.jobs[0].headSha, sourceSha);
+  assert.equal(result.attemptStartedAt, attemptStartedAt);
+  assert.equal(result.jobs[0].startedAt, jobStartedAt);
+  assert.equal(result.unfinishedJobs[0].startedAt, null);
   assert.equal(result.context.testedSha, testedSha);
   assert.ok(!f.calls.some(value => /check-runs\/(1002|1004)/.test(value)));
   assert.equal(f.calls.filter(value => value === runPath).length, 2);
+});
+
+test('retains actual cloned-job start provenance without claiming the job executed in the current attempt', async () => {
+  const previousAttemptStart = '2026-11-11T12:14:11Z';
+  const f = fixture([{ ...job(21, 'Check Paths'), started_at: previousAttemptStart }]);
+  const result = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(result.ok, true, result.errors.join('\n'));
+  assert.equal(result.observationComplete, true);
+  assert.equal(result.schemaVersion, 1);
+  assert.equal(result.attemptStartedAt, attemptStartedAt);
+  assert.equal(result.jobs[0].startedAt, previousAttemptStart);
+  assert.ok(Date.parse(result.jobs[0].startedAt) < Date.parse(result.attemptStartedAt));
+  assert.equal(result.jobs[0].annotationsObserved, true);
+  assert.equal(result.annotations.length, 0);
+});
+
+test('accepts valid UTC fractional timestamps and keeps absent job starts explicitly unknown', async () => {
+  const started = '2026-11-11T12:22:41.123456789Z';
+  const absentStart = job(2, 'Optional', 'queued', null);
+  delete absentStart.started_at;
+  const f = fixture([{ ...job(1), started_at: started }, absentStart, { ...job(3), started_at: null }]);
+  f.responses.set(runPath, { ...run, run_started_at: '2026-11-11T12:22:40.1Z' });
+  const result = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(result.ok, true, result.errors.join('\n'));
+  assert.equal(result.attemptStartedAt, '2026-11-11T12:22:40.1Z');
+  assert.deepEqual(result.jobs.map(value => value.startedAt), [started, null, null]);
+});
+
+test('rejects missing or malformed attempt starts and malformed nonnull job starts before trusting the snapshot', async t => {
+  const invalid = [undefined, null, '', 1794400000, 'not-a-timestamp', '2026-11-11',
+    '2026-11-11 12:22:40Z', '2026-11-11T12:22:40', '2026-11-11T12:22:40+00:00',
+    '2026-02-30T12:22:40Z', '2026-11-11T24:22:40Z', '2026-11-11T12:22:60Z',
+    '2026-11-11T12:22:40.1234567890Z', '99999-11-11T12:22:40Z'];
+  for (const [index, timestamp] of invalid.entries()) {
+    await t.test(`attempt timestamp case ${index}`, async () => {
+      const f = fixture();
+      f.responses.set(runPath, { ...run, run_started_at: timestamp });
+      const result = await observeRunnerDiagnostics(context, f.request, []);
+      assert.equal(result.ok, false);
+      assert.equal(result.observationComplete, false);
+      assert.equal(result.attemptStartedAt, null);
+      assert.match(result.errors.join('\n'), /timestamp/i);
+      assert.deepEqual(f.calls, [runPath]);
+    });
+    if (timestamp == null) continue;
+    await t.test(`job timestamp case ${index}`, async () => {
+      const f = fixture([{ ...job(1), started_at: timestamp }]);
+      const result = await observeRunnerDiagnostics(context, f.request, []);
+      assert.equal(result.ok, false);
+      assert.equal(result.observationComplete, false);
+      assert.equal(result.attemptStartedAt, attemptStartedAt);
+      assert.match(result.errors.join('\n'), /timestamp/i);
+      assert.ok(!f.calls.some(value => value.startsWith(`${base}/check-runs/`)));
+    });
+  }
+});
+
+test('rejects changed or malformed final attempt starts while retaining the initial trusted timestamp', async t => {
+  for (const [index, finalStart] of ['2026-11-11T12:22:41Z', null, undefined, 'invalid'].entries()) {
+    await t.test(`final timestamp case ${index}`, async () => {
+      const f = fixture([job(1)]);
+      let reads = 0;
+      const request = endpoint => endpoint === runPath && ++reads === 2
+        ? { ...run, run_started_at: finalStart } : f.request(endpoint);
+      const result = await observeRunnerDiagnostics(context, request, []);
+      assert.equal(reads, 2);
+      assert.equal(result.ok, false);
+      assert.equal(result.observationComplete, false);
+      assert.equal(result.attemptStartedAt, attemptStartedAt);
+      assert.match(result.errors.join('\n'), /timestamp|attempt start/i);
+      assert.equal(result.jobs[0].annotationsObserved, true);
+    });
+  }
 });
 
 test('warning/failure annotations have stable exact keys and full job/check/source provenance', async () => {
@@ -154,6 +233,8 @@ if (!(endpoint in data)) process.exit(2); console.log(JSON.stringify(data[endpoi
   assert.equal(execute({}).status, 0);
   const result = JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8'));
   assert.equal(result.ok, true);
+  assert.equal(result.attemptStartedAt, attemptStartedAt);
+  assert.equal(result.jobs[0].startedAt, jobStartedAt);
   assert.match(readFileSync(join(report, 'summary.md'), 'utf8'), /unfinished|observer/i);
   const calls = readFileSync(env.FAKE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
   for (const args of calls) {
