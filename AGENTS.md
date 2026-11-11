@@ -2,8 +2,8 @@
 
 **Groovy Language Server** — Kotlin/JVM LSP implementation.
 
-**North Star:** gvy gives correct, honest and fast answers about Groovy code, and never damages it. Principles,
-scorecard and lanes: `docs/north-star.md`; live status: issue #1551.
+**Quality Bar:** gvy gives correct, honest and fast answers about Groovy code, and never damages it. Principles,
+scorecard and tracks: `docs/quality-bar.md`; live status: issue #1551.
 
 ## Environment Setup
 
@@ -62,7 +62,7 @@ Step-by-step: `tests/e2e/resources/scenarios/README.md`; harness design: `kb/tes
 
 ## Where docs go
 
-`docs/` is for users and contributors (North Star, usage, feature matrix). `kb/` holds design records, RFCs, audits and
+`docs/` is for users and contributors (Quality Bar, usage, feature matrix). `kb/` holds design records, RFCs, audits and
 plans.
 
 ## Commits

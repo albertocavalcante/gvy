@@ -230,7 +230,7 @@ Priority (high to low):
 ```
 
 [→ Jenkins IntelliSense Architecture](JENKINS_INTELLISENSE_ARCHITECTURE.md)\
-[→ North Star](../docs/north-star.md)
+[→ Quality Bar](../docs/quality-bar.md)
 
 ---
 
