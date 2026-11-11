@@ -127,7 +127,8 @@ A valid stream has exactly one start and finish event, all announced child IDs, 
 `lastMessage`. `finished.exitCode.code` must match the actual command exit code. The checker fails on malformed or
 truncated JSON, absent artifacts/metadata, mismatched identity, failed actions/targets, aborted events, failed/flaky
 summaries and retried attempts. A successful `test` invocation must contain test summaries. Incompatible targets with
-BEP reason `SKIPPED` are counted explicitly; the checker does not assert full coverage of skipped targets.
+BEP reason `SKIPPED` are counted and fail the evidence gate even when Bazel exits zero. An intentional incompatible
+target needs a reviewed disposition before it can reduce required build/test coverage.
 
 `summary.json` preserves observations even on failure: command/capture/Bazel statuses, stream completeness, action and
 target counts, per-target test statuses and cached-run counts, local/remote test-cache attempt counts, and the BEP's

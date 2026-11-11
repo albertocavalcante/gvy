@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { evaluateEvidence } from './check-bazel-evidence.mjs';
+import { projectBep } from './public-bazel-evidence.mjs';
 
 const context = {
   schemaVersion: 1,
@@ -125,6 +126,26 @@ test('rejects aborted targets and successful test commands with no test summarie
   delete noTests[5].testSummary;
   assert.equal(evaluate(noTests).ok, false);
 });
+
+for (const command of ['build', 'test']) {
+  for (const projected of [false, true]) {
+    test(`${command} rejects skipped target coverage in ${projected ? 'projected' : 'raw'} complete evidence`, () => {
+      const settings = { ...context, command };
+      const values = events().filter(event => command === 'test' || (!event.testResult && !event.testSummary));
+      values[0].started.command = command;
+      values[0].children = values.slice(1).map(event => event.id);
+      const encode = () => projected ? projectBep(serialize(values), settings) : serialize(values);
+      assert.equal(evaluateEvidence(encode(), settings, 0).ok, true);
+      values[3] = { id: values[3].id, aborted: { reason: 'SKIPPED' } };
+      const result = evaluateEvidence(encode(), settings, 0);
+      assert.equal(result.ok, false);
+      assert.equal(result.complete, true);
+      assert.equal(result.targets.skipped, 1);
+      assert.equal(result.bazelExitCode, 0);
+      assert.ok(result.errors.includes('Skipped target requires reviewed disposition'));
+    });
+  }
+}
 
 test('CLI writes a failure summary for missing input and enforces option syntax', t => {
   const dir = mkdtempSync(join(tmpdir(), 'gvy-evidence-test-'));

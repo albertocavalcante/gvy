@@ -27,6 +27,9 @@ and test get unique invocation IDs, local BEP files, JSON profiles and receipts 
 checkout, run ID and attempt. Remote upload stays disabled. Configuration, resource bounds and artifact contracts are
 documented in [build observability](build-observability.md).
 
+A target reported as `SKIPPED` fails the evidence gate even if Bazel exits zero. The report retains its skip count and
+stream completeness; an intentional platform incompatibility requires a reviewed disposition.
+
 The diagnostic gate detects compiler/tool warnings, dependency add/remove advice, duplicate artifact versions and
 repository reproducibility advice, even after a command fails. Routine progress and generated-file listings are
 informational. It reads private console captures and publishes the warning/debt report to the job summary. Known

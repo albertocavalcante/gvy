@@ -114,7 +114,10 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
       else { result.targets.failed++; fail('Failed target'); }
     }
     if (event.aborted) {
-      if (event.aborted.reason === 'SKIPPED') result.targets.skipped++;
+      if (event.aborted.reason === 'SKIPPED') {
+        result.targets.skipped++;
+        fail('Skipped target requires reviewed disposition');
+      }
       else { result.targets.aborted++; fail('Aborted build event'); }
     }
     if (event.testResult) {

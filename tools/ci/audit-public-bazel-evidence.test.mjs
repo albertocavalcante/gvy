@@ -47,6 +47,24 @@ test('privacy audit accepts complete projected evidence independently of the ori
   }
 });
 
+test('privacy audit permits genuine failed evidence for skipped target coverage', t => {
+  const f = fixture(t);
+  const events = readFileSync(join(f.invocation, 'bep.json'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  const skipped = { id: { targetCompleted: { label: 'skipped-target' } }, aborted: { reason: 'SKIPPED' } };
+  events.splice(2, 0, skipped);
+  events[0].children.push(skipped.id);
+  // Reproject the entire synthetic stream so every raw string ID remains opaque.
+  const bep = projectBep(events.map(event => JSON.stringify(event)).join('\n'), context);
+  const summary = publicSummary(bep, context, { commandExitCode: 0, captureExitCode: 0, commandSignal: null }, 'bazel-build', false);
+  assert.equal(summary.ok, false);
+  assert.equal(summary.complete, true);
+  assert.equal(summary.targets.skipped, 1);
+  writeFileSync(join(f.invocation, 'bep.json'), bep);
+  writeFileSync(join(f.invocation, 'summary.json'), canonicalJson(summary));
+  f.reseal();
+  assert.equal(auditPublicRoot(f.root).ok, true);
+});
+
 test('audit rejects raw command payloads even after a forged matching checksum manifest', t => {
   const f = fixture(t);
   const bep = readFileSync(join(f.invocation, 'bep.json'), 'utf8').trim().split('\n').map(line => JSON.parse(line));
