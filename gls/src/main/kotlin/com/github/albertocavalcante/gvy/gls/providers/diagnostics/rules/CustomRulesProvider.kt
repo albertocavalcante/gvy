@@ -5,6 +5,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.DiagnosticRuleConfig
 import com.github.albertocavalcante.gvy.gls.config.GroovyMode
 import com.github.albertocavalcante.gvy.gls.config.ModeResolver
+import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.providers.diagnostics.StreamingDiagnosticProvider
 import com.github.albertocavalcante.gvy.jenkins.JenkinsFileDetector
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -23,12 +24,19 @@ import java.net.URI
  * and simplify error handling.
  *
  * NOTE: Rules are stateless and should be safe to reuse across invocations.
+ *
+ * @param configuration Captured mode and file patterns for this provider cohort. Omitted by legacy callers that
+ * intentionally resolve the live workspace configuration on each analysis.
  */
 class CustomRulesProvider(
     private val rules: List<DiagnosticRule>,
     private val compilationService: GroovyCompilationService,
     private val ruleConfig: DiagnosticRuleConfig = DiagnosticRuleConfig(),
+    configuration: ServerConfiguration? = null,
 ) : StreamingDiagnosticProvider {
+
+    private val configuredMode = configuration?.groovyMode
+    private val configuredJenkinsFiles = configuration?.let { JenkinsFileDetector(it.jenkinsConfig.filePatterns) }
 
     companion object {
         private val logger = KotlinLogging.logger {}
@@ -107,6 +115,14 @@ class CustomRulesProvider(
         }
 
         override fun isJenkinsFile(uri: URI): Boolean {
+            configuredMode?.let { mode ->
+                return when (mode) {
+                    GroovyMode.GROOVY -> false
+                    GroovyMode.JENKINS -> true
+                    GroovyMode.AUTO -> checkNotNull(configuredJenkinsFiles).isJenkinsFile(uri)
+                }
+            }
+            // Legacy callers without captured configuration retain their live workspace strategy.
             val configuration = compilationService.serverConfiguration
             val jenkinsCapabilities = compilationService.workspaceManager.getJenkinsCapabilities()
             // Without a Jenkins strategy (e.g. no workspace) AUTO mode still honours the configured patterns.
