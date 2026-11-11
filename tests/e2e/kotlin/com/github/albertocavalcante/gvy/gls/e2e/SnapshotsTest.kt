@@ -142,6 +142,18 @@ class SnapshotsTest {
     }
 
     @Test
+    fun `snapshot comparisons can read a committed runfile symlink`() {
+        val committed = tempDir.resolve("committed")
+        Files.writeString(committed, "same\n")
+        val directory = Files.createDirectory(tempDir.resolve("runfiles"))
+        Files.createSymbolicLink(directory.resolve("s.md"), committed)
+        Snapshots.verify(directory, "s.md", JsonPrimitive("same"), posix, update = false)
+        assertThatThrownBy { Snapshots.verify(directory, "s.md", JsonPrimitive("new"), posix, update = true) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(Files.readString(committed)).isEqualTo("same\n")
+    }
+
+    @Test
     fun `update mode is refused on GitHub Actions and under Bazel`() {
         assertThatThrownBy { Snapshots.requireUpdateAllowed(mapOf("GITHUB_ACTIONS" to "true")) { null } }
             .hasMessageContaining("GITHUB_ACTIONS")

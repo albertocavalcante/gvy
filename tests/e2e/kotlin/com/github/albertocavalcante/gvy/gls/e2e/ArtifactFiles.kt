@@ -4,16 +4,18 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 
-/** Resolves a relative artifact name without allowing it to escape its configured directory. */
-internal fun resolveArtifactPath(directory: Path, name: String, kind: String): Path {
+/** Rejects lexical escapes, and rejects existing symlink escapes before updating an artifact. */
+internal fun resolveArtifactPath(directory: Path, name: String, kind: String, forUpdate: Boolean = false): Path {
     require(name.isNotBlank()) { "$kind name must not be blank" }
     val base = directory.toAbsolutePath().normalize()
     val file = base.resolve(name).normalize()
     require(!Path.of(name).isAbsolute && file.startsWith(base) && file != base) {
         "$kind '$name' must be a relative path inside the $kind directory"
     }
-    require(file.resolveExistingAncestor().startsWith(base.resolveExistingAncestor())) {
-        "$kind '$name' resolves outside the $kind directory through a symbolic link"
+    if (forUpdate) {
+        require(file.resolveExistingAncestor().startsWith(base.resolveExistingAncestor())) {
+            "$kind '$name' resolves outside the $kind directory through a symbolic link"
+        }
     }
     return file
 }

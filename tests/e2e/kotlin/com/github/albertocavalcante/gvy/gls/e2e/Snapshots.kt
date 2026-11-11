@@ -161,7 +161,8 @@ internal object Snapshots {
     }
 
     /** Resolves [name] under [dir], rejecting absolute names and `..` escapes. */
-    fun resolve(dir: Path, name: String): Path = resolveArtifactPath(dir, name, "snapshot")
+    fun resolve(dir: Path, name: String, forUpdate: Boolean = false): Path =
+        resolveArtifactPath(dir, name, "snapshot", forUpdate)
 
     /** Line diff of [expected] against [actual]: `-` lines only in expected, `+` lines only in actual. */
     fun diff(expected: String, actual: String): String {
@@ -206,7 +207,7 @@ internal object Snapshots {
      * guard). Throws [AssertionFailedError] carrying expected and actual text when they differ.
      */
     fun verify(dir: Path, name: String, node: JsonElement?, forms: WorkspaceForms, update: Boolean) {
-        val file = resolve(dir, name)
+        val file = resolve(dir, name, forUpdate = update)
         val actual = render(node, forms)
         requireStable(name, actual)
         if (update) {

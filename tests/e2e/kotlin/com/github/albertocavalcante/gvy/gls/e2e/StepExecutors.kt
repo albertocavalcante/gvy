@@ -708,7 +708,8 @@ class GoldenAssertStepExecutor(private val environment: Map<String, String?> = S
         val goldenDir = resolveResourceDir("groovy.lsp.e2e.goldenDir")?.let { Path.of(it) }
             ?: Path.of("e2e/resources/golden").toAbsolutePath()
 
-        val expectedFile = resolveArtifactPath(goldenDir, expectedRelPath, "golden")
+        val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"
+        val expectedFile = resolveArtifactPath(goldenDir, expectedRelPath, "golden", forUpdate = updateSnapshot)
 
         // Ensure actual file exists
         if (!Files.exists(actualFile)) {
@@ -725,8 +726,6 @@ class GoldenAssertStepExecutor(private val environment: Map<String, String?> = S
             .replace(WORKSPACE_PLACEHOLDER, workspacePath)
 
         // Logic to update golden files
-        val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"
-
         if (updateSnapshot) {
             requireLocalArtifactUpdateAllowed(
                 environment = environment,

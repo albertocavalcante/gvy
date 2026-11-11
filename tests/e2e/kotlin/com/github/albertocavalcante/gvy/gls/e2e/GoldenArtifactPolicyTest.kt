@@ -150,6 +150,16 @@ class GoldenArtifactPolicyTest {
         assertThat(Files.readString(expected)).isEqualTo("observed\n")
     }
 
+    @Test
+    fun `Bazel comparisons can read a committed runfile symlink`() {
+        val committed = root.resolve("committed")
+        Files.writeString(committed, "observed\n")
+        Files.delete(expected)
+        Files.createSymbolicLink(expected, committed)
+        System.setProperty(UPDATE_GOLDEN, "false")
+        execute(environment = mapOf("TEST_TARGET" to "//tests:e2e_test"))
+    }
+
     private fun execute(name: String = "expected", environment: Map<String, String?> = emptyMap()) {
         GoldenAssertStepExecutor(environment).execute(
             ScenarioStep.GoldenAssert(actual.toString(), name, GoldenMode.TEXT),
