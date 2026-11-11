@@ -29,26 +29,40 @@ documented in [build observability](build-observability.md).
 
 The diagnostic gate detects compiler/tool warnings, dependency add/remove advice, duplicate artifact versions and
 repository reproducibility advice, even after a command fails. Routine progress and generated-file listings are
-informational. Raw logs, sorted deduplicated diagnostics and a Markdown report are retained alongside BEP/profiles for
-14 days. The job summary exposes new diagnostics, tracked debt and per-invocation timing/test-cache observations.
-Exceptions absent from a warm cache remain visible. New formats need a regression test; text classification is not proof
-that every future tool's diagnostic syntax is understood.
+informational. It reads private console captures and publishes the warning/debt report to the job summary. Known
+exceptions absent from a warm cache remain visible; new formats need regression coverage.
 
-Use the same wrapper locally, with the shared-machine build slot:
+This repository is public. CI uploads only audited, versioned BEP/profile projections and invocation summaries, retained
+for 14 days. Command/environment payloads, file/URL references, arbitrary text and raw captures are excluded. Graph IDs
+are opaque; true outcomes, identity, timing and numeric metrics remain. Public traces use generic names and counter
+keys; full labels and commands remain in private captures. Unknown, stale, symlinked, malformed or tampered publication
+files block the upload. A failed projection never falls back to publishing raw evidence.
+
+Ordinary Bazel console output is still streamed to GitHub job logs, subject to runner masking; the projection does not
+make arbitrary program output safe to print. Never put credentials in command arguments or dump environments. Raw
+private captures and diagnostic reports must stay outside the artifact directory and version control. This text
+classifier is not proof that every future diagnostic syntax is understood.
+
+Use a fresh publication directory for each local build/test pair, with the shared-machine build slot:
 
 ```bash
 node --test tools/ci/*.test.mjs
+GVY_EVIDENCE_ROOT="$HOME/.local/state/gvy/build-evidence/local-001"
 build-slot --slots 1 -- node tools/ci/run-bazel.mjs \
-  --report-root "$HOME/.local/state/gvy/build-evidence" --producer bazel-build build //...
+  --report-root "$GVY_EVIDENCE_ROOT/public" --private-report-root "$GVY_EVIDENCE_ROOT/private" \
+  --producer bazel-build build //...
 build-slot --slots 1 -- node tools/ci/run-bazel.mjs \
-  --report-root "$HOME/.local/state/gvy/build-evidence" --producer bazel-test test //...
+  --report-root "$GVY_EVIDENCE_ROOT/public" --private-report-root "$GVY_EVIDENCE_ROOT/private" \
+  --producer bazel-test test //...
+node tools/ci/audit-public-bazel-evidence.mjs --report-root "$GVY_EVIDENCE_ROOT/public"
 ```
 
-The warning classifier remains separately usable on the captured `console.log` files:
+The private invocation directories share the public directories' UUID basenames. Check their console files without
+placing the resulting reports in the public directory:
 
 ```bash
 node tools/ci/bazel-diagnostics.mjs --baseline tools/ci/bazel-diagnostics.json \
-  --report "$REPORT_ROOT/diagnostics" "$BUILD_INVOCATION/console.log" "$TEST_INVOCATION/console.log"
+  --report "$GVY_EVIDENCE_ROOT/diagnostics-private" "$GVY_EVIDENCE_ROOT/private/"*/console.log
 ```
 
 ## Gradle tool diagnostics
