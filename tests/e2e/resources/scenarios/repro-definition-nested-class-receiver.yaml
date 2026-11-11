@@ -1,0 +1,53 @@
+name: repro-definition-nested-class-receiver
+description: Go to definition on `nestedGo` in `n.nestedGo()` with `Nest.In n` reaches the nested class method
+xfail:
+  issue: 1534
+  reason: definition on a call whose receiver is typed as a nested class returns nothing
+  match: 'Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/Nest.groovy: |
+      package demo
+
+      class Nest {
+          static class In {
+              String |^nestedGoDecl|nestedGo() { 'n' }
+          }
+      }
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      class Use {
+          String b(Nest.In n) {
+              n.|^use|nestedGo()
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.use.path}}"
+  - request:
+      method: textDocument/definition
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].uri"
+          expect: { type: CONTAINS, value: "{{cursor.nestedGoDecl.path}}" }
+  - shutdown: {}
+  - exit: {}
