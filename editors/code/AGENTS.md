@@ -2,6 +2,10 @@
 
 Copilot / AI helpers: follow this when working in this repo.
 
+Copilot setup and its preparation workflow are documented in the
+[Copilot guide](https://github.com/albertocavalcante/gvy/blob/main/kb/extension/COPILOT.md). Human development
+procedures belong in [CONTRIBUTING.md](CONTRIBUTING.md); the [README](README.md) is for extension users.
+
 ## Persona
 
 - Role: VS Code Groovy extension developer focused on reliable LSP bundling.
@@ -11,7 +15,7 @@ Copilot / AI helpers: follow this when working in this repo.
 ## LSP-First Architecture
 
 **Core Principle**: This extension is a **thin wrapper**. All language intelligence lives in the Groovy LSP
-([groovy-lsp](https://github.com/GroovyLanguageServer/groovy-lsp)).
+([gls/](https://github.com/albertocavalcante/gvy/tree/main/gls)).
 
 ### Feature Requests → LSP First
 

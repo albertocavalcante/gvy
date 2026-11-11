@@ -1,121 +1,63 @@
-# Groovy Devtools
+# gvy — Groovy Devtools
 
-Groovy Devtools (gvy) is a monorepo of Apache Groovy tooling. The Groovy Language Server (LSP) is the primary component
-and is still a work in progress, but it already provides core editor features plus framework-aware support for Jenkins
-pipelines and Spock tests.
+Language tools for Apache Groovy, with a language server and a VS Code extension for Groovy code, Jenkins pipelines, and
+Spock tests.
 
-## Status
+[Get started](#get-started) · [Documentation](docs/README.md) ·
+[Releases](https://github.com/albertocavalcante/gvy/releases) · [Contributing](CONTRIBUTING.md)
 
-- Core LSP: completion, hover, navigation, formatting, diagnostics, code actions, rename, folding, semantic tokens
-- Jenkins: metadata-driven completion and diagnostics; deeper context awareness in progress
-- Spock: spec detection and block awareness; richer DSL support in progress
-- Editors: VS Code/Cursor/VSCodium extension in `editors/code/`
+## What you can do
 
-See [`docs/quality-bar.md`](docs/quality-bar.md) for the goal, properties and tracks of work.
+| Workflow           | Features                                                                                 |
+| ------------------ | ---------------------------------------------------------------------------------------- |
+| Write Groovy       | Completion, hover documentation, signature help, and compiler and CodeNarc diagnostics   |
+| Navigate a project | Go to definition, find references, and browse document and workspace symbols             |
+| Edit code          | Formatting, rename, and code actions                                                     |
+| Work with Jenkins  | Pipeline step completion and diagnostics, shared-library configuration, and GDSL support |
+| Work with Spock    | Spec detection, block awareness, and test run/debug code lenses                          |
+
+gvy is in early development. Feature coverage and correctness vary by project; Jenkins and Spock support is still
+evolving. The [feature matrix](docs/lsp/feature-support.md) describes current support, and the
+[Quality Bar](docs/quality-bar.md) explains the goals and priorities.
+
+## Get started
+
+### VS Code and compatible editors
+
+You need **Java 17 or newer**. The extension bundles the language server; you do not need to build gvy or install Groovy
+separately.
+
+1. Download the `gvy-<version>.vsix` asset from the
+   [latest release](https://github.com/albertocavalcante/gvy/releases/latest).
+2. In VS Code, run **Extensions: Install from VSIX…** from the Command Palette and select the downloaded file.
+3. Open a `.groovy` file, `.gradle` file, or `Jenkinsfile` to start the language server.
+
+The extension is distributed through GitHub Releases. It is not published to the VS Code Marketplace or Open VSX. For
+Java settings, download verification, Cursor/VSCodium setup, and troubleshooting, see the
+[editor guide](editors/code/README.md).
+
+### Other editors
+
+The server targets Language Server Protocol (LSP) 3.17 and runs over standard input/output or a local socket. Use the
+standalone JAR with your editor's LSP client; see [running the language server](docs/lsp/usage.md) for setup.
 
 ## Documentation
 
-- `docs/README.md`
-- `docs/overview.md`
-- `docs/lsp/usage.md`
-- `docs/lsp/feature-support.md`
+| If you want to…               | Start here                                                           |
+| ----------------------------- | -------------------------------------------------------------------- |
+| Configure the extension       | [Editor settings and commands](editors/code/README.md#configuration) |
+| Connect another editor        | [Standalone language server](docs/lsp/usage.md)                      |
+| Check feature coverage        | [LSP feature support](docs/lsp/feature-support.md)                   |
+| Understand project priorities | [Quality Bar and roadmap](docs/quality-bar.md)                       |
+| Build or contribute           | [Contributor guide](CONTRIBUTING.md)                                 |
 
-## LSP Target
+## Help and contributions
 
-We target LSP 3.17 and use `lsp4j` 0.24.0. The full support matrix lives in `docs/lsp/feature-support.md`.
+[Report a bug or request a feature](https://github.com/albertocavalcante/gvy/issues). For bugs, include a small Groovy
+example, steps to reproduce, the gvy version, your editor, and your Java version.
 
-## Requirements
-
-- Java 17 or higher
-- Groovy 4.0+
-
-## Building
-
-```bash
-./gradlew build
-```
-
-This creates a fat JAR under `build/libs/`.
-
-## Running
-
-### Stdio mode (default)
-
-```bash
-java -jar build/libs/groovy-lsp-<version>.jar
-```
-
-### Socket mode
-
-```bash
-java -jar build/libs/groovy-lsp-<version>.jar socket 8080
-```
-
-Socket mode listens on the IPv4 loopback address (`127.0.0.1`) only. To bind another address, such as `0.0.0.0` inside a
-container or `::1` for IPv6 loopback, use the `lsp` command, for example
-`java -jar build/libs/groovy-lsp-<version>.jar lsp socket -p 8080 --host 0.0.0.0` (the legacy `socket 8080` form always
-binds loopback). Non-loopback addresses expose the unauthenticated server to the network, so only use them on trusted
-networks.
-
-## Development
-
-This project uses:
-
-- Kotlin 2.0
-- LSP4J for protocol implementation
-- Gradle 9.1 for builds
-
-### Running tests
-
-```bash
-./gradlew test
-```
-
-### GitHub issue XML prompt generator
-
-Generate a fenced `xml` prompt for a GitHub issue using the Codex CLI:
-
-```bash
-./tools/github-issues/generate-xml-prompt.sh ISSUE_NUMBER [--comment] [--model MODEL]
-```
-
-Requirements: `gh` (authenticated for the repo), `codex` CLI, and `jq` for parsing issue metadata. The tool asks Codex
-to return a pretty-printed XML block inside triple-backtick xml code fences; use `--comment` to post the output back to
-the GitHub issue instead of printing it locally. The default model is `gpt-5-codex`.
-
-### Monorepo layout
-
-| Path                       | Description                         |
-| -------------------------- | ----------------------------------- |
-| `groovy-lsp/`              | Core language server                |
-| `parser/`                  | Parsing libraries (api/native/core) |
-| `groovy-common/`           | Shared utilities                    |
-| `groovy-diagnostics/`      | Diagnostics (compiler + CodeNarc)   |
-| `groovy-formatter/`        | OpenRewrite-based formatting        |
-| `groovy-jenkins/`          | Jenkins pipeline support            |
-| `groovy-spock/`            | Spock framework support             |
-| `groovy-gdsl/`             | GDSL execution and metadata         |
-| `groovy-testing/`          | Test discovery utilities            |
-| `groovy-junit/`            | JUnit integration                   |
-| `groovy-repl/`             | Groovy REPL                         |
-| `groovy-build-tool/`       | BSP/Gradle integration              |
-| `editors/code/`            | VS Code/Cursor/VSCodium extension   |
-| `jupyter/`                 | Jupyter kernels (Groovy/Jenkins)    |
-| `tools/jenkins-extractor/` | Jenkins metadata extractor          |
-| `tests/`                   | End-to-end LSP scenarios            |
-
-### VS Code Extension
-
-The VS Code extension is located in `editors/code/`. See [editors/code/README.md](editors/code/README.md) for
-extension-specific documentation.
-
-A standalone mirror is maintained at [vscode-groovy](https://github.com/albertocavalcante/vscode-groovy) (synced via
-Copybara).
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Contributions are welcome. The [contributor guide](CONTRIBUTING.md) covers setup, validation, and pull requests.
 
 ## License
 
-Apache License 2.0 - See [LICENSE](LICENSE) for details.
+[Apache License 2.0](LICENSE).

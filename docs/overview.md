@@ -1,28 +1,41 @@
-# Groovy Devtools Overview
+# Repository overview
 
-Groovy Devtools is a monorepo of developer tooling for Apache Groovy. The Groovy Language Server (LSP) is the main
-component and remains a work in progress, while the surrounding modules provide parsing, diagnostics, formatting,
-Jenkins metadata, test discovery, and editor integrations.
+Use this map to find the component responsible for a change. For installation and editor features, start with the
+[project README](../README.md); for development setup, see [Contributing](../CONTRIBUTING.md).
 
-## Major components
+## Language server and analysis
 
-- `../gls/`: Language Server (Kotlin/JVM)
-- `../semantics/`: Semantic analysis based on [SemanticDB](https://scalameta.org/docs/semanticdb/guide.html)
-  ([design](semantics/design.md))
-- `../parser/`: Parsing libraries (`api`, `native`, `core`)
-- `../diagnostics/`: Compiler + CodeNarc diagnostics
-- `../fmt/`: OpenRewrite-based formatting
-- `../jenkins/`: Jenkins pipeline metadata + completions
-- `../ext/spock/`: Spock framework awareness
-- `../ext/testing/`, `../ext/junit/`: Test discovery + adapters
-- `../jupyter/`: Groovy and Jenkins Jupyter kernels
-- `../editors/code/`: VS Code/Cursor/VSCodium extension
-- `../tools/jenkins-extractor/`: Jenkins metadata extractor
-- `../tests/`: End-to-end LSP scenarios
+| Path                                                | Responsibility                                                       |
+| --------------------------------------------------- | -------------------------------------------------------------------- |
+| [gls/](../gls/)                                     | Kotlin/JVM language server and command-line entry point              |
+| [parser/](../parser/)                               | Parser interfaces and native, core, and OpenRewrite implementations  |
+| [semantics/](../semantics/)                         | Semantic analysis and type inference ([design](semantics/design.md)) |
+| [diagnostics/](../diagnostics/)                     | Compiler and CodeNarc diagnostics, with SARIF output support         |
+| [fmt/](../fmt/)                                     | Groovy formatting using OpenRewrite                                  |
+| [indexer/](../indexer/)                             | Symbol indexing and SCIP/LSIF integrations                           |
+| [common/](../common/) and [markdown/](../markdown/) | Shared utilities and Markdown rendering                              |
 
-## Where to start
+## Frameworks and build integration
 
-- Running the language server: `lsp/usage.md`
-- LSP feature coverage: `lsp/feature-support.md`
-- Semantics and type inference: `semantics/design.md`
-- Goal, properties and tracks of work: `quality-bar.md`
+| Path                                                | Responsibility                                         |
+| --------------------------------------------------- | ------------------------------------------------------ |
+| [jenkins/](../jenkins/)                             | Jenkins pipeline metadata, completion, and diagnostics |
+| [dsl/](../dsl/)                                     | GDSL and DSLD support                                  |
+| [ext/](../ext/)                                     | Spock, test discovery, and JUnit integrations          |
+| [build-tool/](../build-tool/) and [bsp/](../bsp/)   | Build-tool and Build Server Protocol integration       |
+| [refactor/openrewrite/](../refactor/openrewrite/)   | OpenRewrite recipes for CodeNarc fixes                 |
+| [reports/](../reports/) and [schemas/](../schemas/) | Report parsing and shared protocol definitions         |
+
+## Clients, tools, and tests
+
+| Path                                                    | Responsibility                               |
+| ------------------------------------------------------- | -------------------------------------------- |
+| [editors/code/](../editors/code/)                       | VS Code and compatible-editor extension      |
+| [jupyter/](../jupyter/)                                 | Groovy and Jenkins Jupyter kernels           |
+| [repl/](../repl/)                                       | Groovy REPL support                          |
+| [viz/](../viz/)                                         | AST model and desktop visualizer             |
+| [tools/jenkins-extractor/](../tools/jenkins-extractor/) | Jenkins metadata extraction                  |
+| [tests/](../tests/) and [test-utils/](../test-utils/)   | End-to-end scenarios and shared test support |
+
+Module membership is defined in [settings.gradle.kts](../settings.gradle.kts). Architecture and design records live in
+the [knowledge base](../kb/README.md); priorities live in the [Quality Bar](quality-bar.md).

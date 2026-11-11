@@ -92,6 +92,22 @@ The legacy interactive wizard currently recognizes only `lsp/*` labels as areas;
 [#1636](https://github.com/albertocavalcante/gvy/issues/1636) tracks `viz` support. Use the direct CLI workflow above
 until that issue is resolved.
 
+## Generate an issue prompt
+
+To turn a GitHub issue into a fenced XML prompt for a coding agent, run from the repository root:
+
+```bash
+./tools/github-issues/generate-xml-prompt.sh ISSUE_NUMBER [--model MODEL]
+```
+
+Replace `ISSUE_NUMBER` with the issue number. The optional `--model` selects the Codex model; the script defaults to
+`gpt-5-codex`. It requires authenticated `gh`, the Codex CLI with access to the selected model, and `jq`. The default
+operation prints the generated prompt locally. Review the output before using it; a generated prompt does not override
+repository instructions or authorize external actions.
+
+The script also accepts `--comment`, which posts the result to the issue. Use that option only when posting the comment
+is explicitly authorized. Run the script with `--help` for its options.
+
 ## Dependency bug labels
 
 Follow [the dependency bug policy](../../docs/dependency-bugs.md), including release/fix searches and candidate-version
