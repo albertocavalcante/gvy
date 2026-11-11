@@ -1,8 +1,8 @@
 name: Dependency Maintenance
 
 on:
+  # Include stacked PR bases; runtime CI still runs after the final main retarget.
   pull_request:
-    branches: [main]
   push:
     branches: [main]
   schedule:
