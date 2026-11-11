@@ -352,7 +352,7 @@
   "moduleExtensions": {
     "//tools/build_defs:junit.bzl%junit": {
       "general": {
-        "bzlTransitiveDigest": "CivMHODtof4pzvrXa1v679iOuPj6Sk7j8wcyuIZeSFQ=",
+        "bzlTransitiveDigest": "JW0Y+/p2Zo/PPJwBcHz318TvwmulBCsV/uhThHgq81I=",
         "usagesDigest": "ajWiTWd2ISYShaZDenbsUyEUCYeIDlTkCVjXVmFn65s=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -443,7 +443,7 @@
     },
     "//tools/build_defs:kotlin_logging.bzl%kotlin_logging": {
       "general": {
-        "bzlTransitiveDigest": "Okre98E84gRKDIUOc28tjt/tz1/G6/B+yRIsB6nTyeI=",
+        "bzlTransitiveDigest": "cz+MObNp/yZlNOULyZa3imwkAcWU6kahrgBZvfHk830=",
         "usagesDigest": "8Fl57MsEtClycPF/HTbngtHnq4YR5B0ODc6meu4tKoI=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"
@@ -464,7 +464,7 @@
     },
     "//tools/build_defs:wire_compiler.bzl%wire_compiler": {
       "general": {
-        "bzlTransitiveDigest": "Rbv2U6Fe7jD9vy/o7jN2XQeFUH5KfohDzcrWRYfNngU=",
+        "bzlTransitiveDigest": "uXk6mhA2Onec/sO+Sta8ZmJ8w2mrywgchmpHvxkWJjs=",
         "usagesDigest": "97UaqHALi2GRhm3182cgOi1+oH4I2eDjEqtpC6dtXe4=",
         "recordedInputs": [
           "REPO_MAPPING:,bazel_tools bazel_tools"

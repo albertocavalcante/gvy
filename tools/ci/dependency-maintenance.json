@@ -14,32 +14,14 @@
       "id": "openrewrite-declarations",
       "path": "fmt/src/main/kotlin/com/github/albertocavalcante/gvy/fmt/OpenRewriteFormatter.kt",
       "anchor": "private class DeclarationSpacing"
+    },
+    {
+      "id": "openrewrite-literals",
+      "path": "fmt/src/main/kotlin/com/github/albertocavalcante/gvy/fmt/OpenRewriteFormatter.kt",
+      "anchor": "private fun literalSpellingRestorer"
     }
   ],
   "records": [
-    {
-      "id": "rules-kotlin-fork",
-      "issue": "https://github.com/albertocavalcante/gvy/issues/1618",
-      "responsibleScope": "gvy Bazel dependency maintainers",
-      "lastVerified": "2026-11-11",
-      "reviewDue": "2026-11-18",
-      "reason": "The fork supplied Kotlin 2.3.0 prebuilts while an official release was unavailable.",
-      "upstreamStatus": "Original release-availability blocker resolved; official 2.3.0 integration and fork removal pending.",
-      "upstreamTrigger": "Official 2.3.0 was released 2026-02-17; verify its BCR archive in gvy.",
-      "verification": "Official release/BCR and source ancestry were inspected in #1618; gvy migration validation is in progress.",
-      "evidence": [
-        "https://github.com/bazel-contrib/rules_kotlin/releases/tag/v2.3.0",
-        "https://github.com/albertocavalcante/gvy/issues/1618"
-      ],
-      "nextAction": "Complete the focused official-release migration, exact graph/build/runtime checks and independent review.",
-      "removalCriteria": "Adopt a verified official archive, remove the override and publisher, preserve settings/regressions and verify the landed target commit.",
-      "sources": [
-        {
-          "id": "MODULE.bazel:archive_override:rules_kotlin",
-          "sha256": "85fb9abe057a1f79b8aa937d411b6a02cf520210bfad1b425a746aabaf10ac33"
-        }
-      ]
-    },
     {
       "id": "coursier-gmm",
       "issue": "https://github.com/albertocavalcante/gvy/issues/1029",
@@ -49,23 +31,24 @@
       "reason": "Use Coursier 2.1.25-M23 to obtain GMM support absent from the bundled stable 2.1.24.",
       "upstreamStatus": "Stable Coursier 2.1.26 exists; upstream rules_jvm_external 7.2 still bundles 2.1.24. The old milestone-only availability claim is obsolete.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. The reviewed GMM source fingerprint covers the entire canonical maven.install argument body, including current selected artifact versions, exclusions, resolver and options; dependency-list changes invalidate this graph-specific review. This remains static drift detection, not universal resolver validation.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Compare stable Coursier GMM and current variant selection on the same dependency graph; validate metadata-only modules and generated targets.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
       "sources": [
         {
           "id": "MODULE.bazel:maven.install:maven:gmm",
-          "sha256": "1cfdbfc5cb1b01716b07d49ab1637b1bca6a8d3005acfb3c45d648b42747d874"
+          "sha256": "b15f2d2622c4820d8097c538fa472418a5fcccc8e4d376c74473b8c7281221fe"
         },
         {
           "id": "MODULE.bazel:single_version_override:rules_jvm_external",
-          "sha256": "ff83535aafb8f9ebd59f1308f9b19001e33ff1fa26a7216b284820775bdedd61"
+          "sha256": "7218d16d711cd181b8d928dac6114c37171a1944a10866ad139bd371a6909a7d"
         },
         {
           "id": "third_party/patches/rules_jvm_external_coursier_gmm.patch:patch",
@@ -82,19 +65,20 @@
       "reason": "Preserve repeated --variant flags when Maven extension options are merged.",
       "upstreamStatus": "Released upstream 7.2 contains concat_coursier_options preserving duplicate tokens; removal candidate after a validated upgrade.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. PR #1642 refreshed patch context for 6.10 and kept repeated --variant argument behavior; the newer 7.2 no-patch path remains pending.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Upgrade in a focused experiment; demonstrate ordered repeated variants without this patch, then remove it.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
       "sources": [
         {
           "id": "third_party/patches/rules_jvm_external_coursier_options_dedup.patch:patch",
-          "sha256": "3128806cb673c32c9879fe114e670a4d8f5cb35affc94f809ac4592bd2482560"
+          "sha256": "398f8ada4b31d41e44d7947f9254192b095b521e3fcc9ed20658cb995329c91d"
         }
       ]
     },
@@ -107,12 +91,13 @@
       "reason": "Avoid KeyError for fileless GMM artifacts in artifact_utilities.",
       "upstreamStatus": "Upstream 7.2 artifact_utilities still directly indexes artifact[\"file\"]; this is a source observation, not a reproduced current failure.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Create a missing-file-key fixture for artifact_utilities and compare the released candidate before carrying or removing the patch.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
@@ -132,12 +117,13 @@
       "reason": "Avoid KeyError for fileless GMM artifacts in two Coursier loops.",
       "upstreamStatus": "Upstream 7.2 guards one loop but still directly indexes file later. Release notes about fileless overrides do not prove both local cases fixed.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Reproduce both missing-file-key paths independently with the released candidate and preserve per-path regressions.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
@@ -157,12 +143,13 @@
       "reason": "Relativize pinned Coursier v1 cache paths when returned paths are absolute.",
       "upstreamStatus": "Upstream 7.2 forwards cache settings and changes cache handling; equivalence to this pinned-path patch has not been executed.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Enable pinned mode in a minimal probe, use explicit cache roots on Linux/macOS, and compare normalized paths with no patch.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
@@ -180,21 +167,22 @@
       "lastVerified": "2026-11-11",
       "reviewDue": "2026-11-18",
       "reason": "Skip metadata-only KMP targets and historical wrongly expanded BOM/cycle edges for serialization, coroutines, Groovy and Jackson.",
-      "upstreamStatus": "Known first-party patch defect: applying this patch to exact 6.9 and inspecting 6.10 yields an unconditional skip of all Jackson dependency edges. Stable upstream GMM attribution remains unestablished; #909 is open.",
+      "upstreamStatus": "The confirmed first-party all-Jackson-edge skip is corrected by landed PR #1642. Remaining metadata-only/KMP/BOM filters still require independent necessity checks against stable upstream; no general upstream diagnosis is established.",
       "upstreamTrigger": "Evaluate released rules_jvm_external 7.2 and Coursier 2.1.26 against this exact patch case.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail. Independent exact 6.9 patch-application source check confirms the unconditional Jackson continue; sibling 6.10 applied-source inspection agrees. Minimal runtime red/green correction is pending.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail. Independent exact 6.9 patch application identified the old skip; PR #1642 demonstrated the isolated runtime failure before and success after correction. The current selected Jackson metadata declares no real cross-extension edges; this is bounded to the inspected 2.21.2 graph, not future/unselected artifacts.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
-      "nextAction": "Correct the unconditional Jackson skip and retain required runtime edges with a minimal Jackson-module runtime regression first. Then reduce each remaining filtered edge to published metadata plus a resolver-only repro.",
+      "nextAction": "Retain corrected real Jackson/core/non-Jackson edges and isolated Kotlin/YAML roots. Reduce each remaining KMP/BOM filter to published metadata and a resolver-only repro, then remove unnecessary filters on a verified stable candidate.",
       "removalCriteria": "Remove this patch only when its isolated before/after regression and representative clean gvy resolution/build/tests pass without it on Linux and macOS.",
       "sources": [
         {
           "id": "third_party/patches/HACK_rules_jvm_external_kmp_bom_cycle_workarounds.patch:patch",
-          "sha256": "6daac092d808186f1ad08c4d0e8c69124ec4f84adeb7a34914c47ba1b417d6ff"
+          "sha256": "6af99043de0be4e87caf7b2563a901cedbb2823eacda2c5eb12011b8563610f8"
         }
       ]
     },
@@ -207,12 +195,13 @@
       "reason": "Maven lock enforcement was disabled after historical cross-environment GMM variant/checksum mismatches.",
       "upstreamStatus": "Suspected resolver integration problem; upstream #608 describes replaced private artifacts, not proof of the same GMM defect.",
       "upstreamTrigger": "Stable resolver candidate or an isolated deterministic-variant solution produces matching fresh lock output.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Resolve the same graph in fresh Linux/macOS caches, compare selected artifacts and SHA256s, then repin with lock enforcement.",
       "removalCriteria": "Enable lock_file and fail_if_repin_required; clean Linux/macOS resolution agrees and CI rejects drift.",
@@ -232,17 +221,19 @@
       "reason": "fail_on_missing_checksum=False was justified by historical Google Maven artifacts lacking sidecar checksums.",
       "upstreamStatus": "Exact failing coordinate has not been established; a fresh androidx.annotation:annotation:1.9.1 jar SHA1 sidecar returns HTTP 200, so a blanket repository claim is unsupported.",
       "upstreamTrigger": "Identify the exact current missing sidecar or restore strict checksum enforcement.",
-      "verification": "2026-11-11: Google Maven sample annotation-1.9.1.jar.sha1 returned HTTP 200. The complete current resolver graph with strict checksum enforcement has not run.",
+      "verification": "2026-11-11: Google Maven sample annotation-1.9.1.jar.sha1 returned HTTP 200. The complete current resolver graph with strict checksum enforcement has not run. Gate review independently verified rules_jvm_external 6.10 attr.bool(default=True): omission is safe, but present unknown/False policy expressions stay inventoried by exact tokens. Current declaration remains literal False.",
       "evidence": [
         "https://dl.google.com/dl/android/maven2/androidx/annotation/annotation/1.9.1/annotation-1.9.1.jar.sha1",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642",
+        "https://github.com/bazel-contrib/rules_jvm_external/blob/6.10/private/extensions/maven.bzl#L107"
       ],
       "nextAction": "Run current graph with fail_on_missing_checksum=True, capture exact missing coordinates/URLs if any, and prefer checked immutable lock hashes.",
       "removalCriteria": "Restore checksum enforcement and verify fresh repository resolution; any remaining artifact-specific limitation needs exact evidence and a narrow replacement.",
       "sources": [
         {
           "id": "MODULE.bazel:maven.install:maven:missing-checksums",
-          "sha256": "8747ace9ed0df97e4c308b1902468a42197ea3afa932eefd2ce31a64d0b6e0a7"
+          "sha256": "7e6e55368ace86a77858dc00de69db346d86e69c4412689e8d63238c73c9c669"
         }
       ]
     },
@@ -255,13 +246,14 @@
       "reason": "Historical GMM resolution selected kotlin-logging sources as classes; direct 7.0.14 jar and disabled source fetching preserve classes.",
       "upstreamStatus": "Matching upstream report/fix status was not established by this audit. Local tracker search and broad GMM tracker #909 do not establish whether the exact classifier defect has been reported; no gvy upstream submission was made.",
       "upstreamTrigger": "Evaluate released resolver/Coursier behavior before treating the old classifier bug as current.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
         "https://github.com/albertocavalcante/gvy/issues/1029",
-        "https://github.com/albertocavalcante/gvy/issues/1620"
+        "https://github.com/albertocavalcante/gvy/issues/1620",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Compare classes and sources classifiers for 7.0.14 with GMM attributes under historical/current stable resolvers.",
       "removalCriteria": "Resolve correct classes plus optional sources on Linux/macOS; remove custom extension/target override and redundant hash/version; restore source fetching with regression coverage.",
@@ -289,13 +281,14 @@
       "reason": "Historical GMM generated Jupiter/Platform dependency cycles; eight direct JUnit 6.0.2 jars and handwritten targets bypass those graphs.",
       "upstreamStatus": "Matching upstream report/fix status for these exact cycles was not established by this audit. Stable resolver integration is pending, not known to fail; no gvy upstream submission was made.",
       "upstreamTrigger": "Released resolver candidate resolves the JUnit graph without historical cycle edges.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
         "https://github.com/albertocavalcante/gvy/issues/1029",
-        "https://github.com/albertocavalcante/gvy/issues/1621"
+        "https://github.com/albertocavalcante/gvy/issues/1621",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Compare published 6.0.2 module/POM dependencies with resolver output; run discovery/engine execution without eight overrides.",
       "removalCriteria": "Acyclic correct Linux/macOS graph, required runtime jars and representative tests pass; remove eight overrides/custom extension/duplicate versions and retain graph regression.",
@@ -347,12 +340,13 @@
       "reason": "Historical GMM variant selection could not resolve Wire compiler 5.4.0 runnable shadow jar; custom http_file selects jar-with-dependencies.",
       "upstreamStatus": "Exact current artifact/classifier limitation not reproduced with stable Coursier.",
       "upstreamTrigger": "Stable resolver selects a runnable Wire 5.4.0 shadow artifact with checked integrity.",
-      "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
+      "verification": "Integrated source uses official rules_kotlin 2.3.0 and rules_jvm_external 6.10 with Coursier 2.1.25-M23. PR #1642/fab8d96b verified official archive integrity, native locked build/coverage/server and isolated Jackson runtimes, plus current-head CI. The 8.79.0 integration additionally passed selected native error-mode tests and both Jackson 2.21.2 runtime roots. Upstream 7.2/stable Coursier 2.1.26 release/source inspection is separate: their replacement-resolution cases have not been run, so retaining a workaround does not establish that those candidates fail.",
       "evidence": [
         "https://github.com/bazel-contrib/rules_jvm_external/releases/tag/7.2",
         "https://github.com/bazel-contrib/rules_jvm_external/blob/7.2/private/versions.bzl",
         "https://github.com/coursier/coursier/releases/tag/v2.1.26",
-        "https://github.com/albertocavalcante/gvy/issues/1029"
+        "https://github.com/albertocavalcante/gvy/issues/1029",
+        "https://github.com/albertocavalcante/gvy/pull/1642"
       ],
       "nextAction": "Resolve explicit shadow classifier in the candidate and generate telemetry protobuf sources without this extension.",
       "removalCriteria": "Correct runnable artifact, matching generated APIs and clean representative builds on Linux/macOS; remove extension and duplicate hash/version.",
@@ -369,25 +363,25 @@
       "responsibleScope": "gvy formatter maintainers",
       "lastVerified": "2026-11-11",
       "reviewDue": "2026-11-18",
-      "reason": "PostFormatWhitespaceCollapser and DeclarationSpacing compensate extra layout spaces in distinct AutoFormat whitespace/declaration contexts; retain until raw adopted upstream output passes each case.",
-      "upstreamStatus": "First-party printed-source regex corruption is fixed on main by PR1593/commit0be66bca4. Remaining DeclarationSpacing/collapser retirement is tracked by #1598. As-cast spacing is fixed upstream in 8.79.0; declaration cases require separate candidate verification.",
+      "reason": "PostFormatWhitespaceCollapser and DeclarationSpacing compensate extra AutoFormat layout spacing; DeclarationSpacing also needs a local method-parameter adaptation with the 8.79 LST/visitor interaction.",
+      "upstreamStatus": "First-party printed-source regex corruption was removed by PR #1593. Released 8.79.0 fixes as-casts but retains distinct declaration layout defects. The gvy candidate also removed spaces in def f(String s, x, y) through its local declaration visitor; raw-upstream attribution for that separator case is not established.",
       "upstreamTrigger": "Evaluate the adopted released OpenRewrite version per declaration, parameter, comma and comment context; 8.79.0 is known to retain some declaration defects in #1598.",
-      "verification": "2026-11-11 source review of landed0be66bca4: printed-source regex removed; DeclarationSpacing now normalizes adjacent LST prefixes/comments and commas; PostFormatWhitespaceCollapser and shebang extraction remain. This audit did not execute those regressions; #1593 records their independent review/tests.",
+      "verification": "2026-11-11 exact integrated formatter source reviewed: printed-source regex absent; LST declaration/comment/comma handling retained; subsequent inline method-parameter separators normalized by the adapter. Integration receipts record 142 formatter tests (5 pre-existing skips), 17 CLI/LSP tests, 158 recipe tests (4 pre-existing skips) green plus selected native replay; these are integration results, not per-case raw-upstream proof. See #1598 for the untouched-test red receipt and precise attribution.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1598",
         "https://github.com/albertocavalcante/gvy/pull/1593",
         "https://github.com/albertocavalcante/gvy/commit/0be66bca4"
       ],
-      "nextAction": "Compare raw adopted upstream and guarded gvy output for typed/untyped declarations, parameters, comma continuations and comment placements; remove only compensation proven obsolete and keep literal/comment preservation and idempotency regressions.",
+      "nextAction": "Compare raw adopted upstream and guarded gvy output for declarations, typed/untyped parameters, comma continuations, comments and multiline forms. Retire only compensation proven obsolete; retain literal/comment bytes, idempotency and guard coverage.",
       "removalCriteria": "Preserve literal/comment bytes, formatting availability and idempotency; remove only compensation whose raw-output tests pass without it. Keep the token guard and regressions.",
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "c829877f8b941e2e3be4f813a96a9b40fc21a2cf6ba18b096ef809f19e65c2a0"
+          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
         },
         {
           "id": "manual:openrewrite-declarations",
-          "sha256": "c829877f8b941e2e3be4f813a96a9b40fc21a2cf6ba18b096ef809f19e65c2a0"
+          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
         }
       ]
     },
@@ -410,7 +404,32 @@
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "c829877f8b941e2e3be4f813a96a9b40fc21a2cf6ba18b096ef809f19e65c2a0"
+          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
+        }
+      ]
+    },
+    {
+      "id": "openrewrite-literal-values",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1598",
+      "responsibleScope": "gvy formatter maintainers",
+      "lastVerified": "2026-11-11",
+      "reviewDue": "2026-11-18",
+      "reason": "AutoFormat Java text-block indentation corrupts Groovy triple-double literal value and source spelling; preserve the original J.Literal value/valueSource by UUID while formatting surrounding code.",
+      "upstreamStatus": "Reproduced upstream regression in 8.79.0 with Groovy 4.0.33 and declared 4.0.31; 8.70.4 preserves the same literal. Source introduction identified at 8.72.4 / PR #6429, mechanism still present in inspected 8.90.4 source. Matching upstream report/fixed-release status is not established; no gvy upstream submission made.",
+      "upstreamTrigger": "A released candidate passes the exact dependency-only literal probe without semantic or spelling mutation, then all gvy formatter/LSP/CLI regressions pass without this helper.",
+      "verification": "Independent Java 21 -Xmx512m dependency-only probes used no gvy classes: parser print preserved all inputs; 8.79 AutoFormat removed the opening backslash, changed indentation from 4 spaces to 8, and mutated value/valueSource while retaining UUID under both Groovy runtimes. Local helper restores both fields; gvy untouched raw tests first failed, and expanded formatter/CLI integration passed after mitigation. Current source reviewed on local integration base; final exact-head review/CI remain required.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/issues/1598",
+        "https://github.com/openrewrite/rewrite/pull/6429",
+        "https://github.com/openrewrite/rewrite/blob/v8.79.0/rewrite-java/src/main/java/org/openrewrite/java/format/TabsAndIndentsVisitor.java#L521",
+        "https://github.com/openrewrite/rewrite/blob/v8.90.4/rewrite-java/src/main/java/org/openrewrite/java/format/TabsAndIndentsVisitor.java#L530"
+      ],
+      "nextAction": "Prepare the exact standalone repro and source attribution locally; expand duplicate/fixed-release search and contribution/AI-policy assessment for human review. Test released candidates before retaining or expanding the helper.",
+      "removalCriteria": "Raw upstream preserves literal value and spelling, escaped opening newline, indentation, triple-string/GString cases and repeated formatting; remove the UUID restorer and keep positive surrounding-format and guard/LSP/CLI regressions.",
+      "sources": [
+        {
+          "id": "manual:openrewrite-literals",
+          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
         }
       ]
     }

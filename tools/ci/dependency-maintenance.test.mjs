@@ -76,10 +76,10 @@ test('override fingerprints ignore comments/formatting but catch URLs, targets a
   assert.notEqual(scan('archive_override(module_name="a", urls=["https://example.test/b"])').sha256, original.sha256);
 });
 
-test('Maven reproducibility escapes are independent of unrelated dependency versions', () => {
+test('non-GMM Maven reproducibility settings are independent of unrelated dependency versions', () => {
   const scan = artifacts => inventory(new Map([['MODULE.bazel', `maven.install(artifacts=["${artifacts}"], fail_on_missing_checksum=False, additional_coursier_options=["--enable-modules"])`]]));
   const items = scan('group:a:1');
-  assert.deepEqual(scan('group:a:2'), items);
+  assert.deepEqual(scan('group:a:2').filter(source => !source.id.endsWith(':gmm')), items.filter(source => !source.id.endsWith(':gmm')));
   assert.deepEqual(items.map(item => item.id), [
     'MODULE.bazel:maven.install:maven:gmm', 'MODULE.bazel:maven.install:maven:missing-checksums',
     'MODULE.bazel:maven.install:maven:sources-disabled', 'MODULE.bazel:maven.install:maven:unlocked',
@@ -150,4 +150,34 @@ test('Maven lock escape requires a nonempty literal path and literal strict repi
   }
   assert.deepEqual(scan('lock_file="//:maven_install.json", fail_if_repin_required=True,'), []);
   assert.notEqual(scan('lock_file=None,')[0].sha256, scan('lock_file="",')[0].sha256);
+});
+
+test('present unknown checksum policy remains debt; only literal True clears it', () => {
+  const scan = value => inventory(new Map([['MODULE.bazel',
+    `maven.install(artifacts=["a:b:1"], lock_file="//:lock.json", fail_if_repin_required=True, fetch_sources=True, ${value === undefined ? '' : `fail_on_missing_checksum=${value},`})`]]));
+  assert.deepEqual(scan(undefined), []);
+  assert.deepEqual(scan('True'), []);
+  const hashes = new Set();
+  for (const value of ['False', 'None', 'allow_missing', 'checksum_policy()', 'False if flag else True']) {
+    const items = scan(value);
+    assert.equal(items.length, 1, value);
+    assert.equal(items[0].id, 'MODULE.bazel:maven.install:maven:missing-checksums', value);
+    hashes.add(items[0].sha256);
+  }
+  assert.equal(hashes.size, 5, 'actual unknown policy tokens require distinct reviewed fingerprints');
+});
+
+test('GMM graph evidence expires when install artifacts or versions change with the same options', () => {
+  const scan = artifacts => inventory(new Map([['MODULE.bazel',
+    `maven.install(artifacts=[${artifacts}], additional_coursier_options=["--enable-modules", "--variant", "org.gradle.usage=runtime"])`]]))
+    .find(source => source.id.endsWith(':gmm'));
+  const before = scan('"com.fasterxml.jackson.core:jackson-databind:2.20.1"');
+  for (const artifacts of [
+    '"com.fasterxml.jackson.core:jackson-databind:2.21.2"',
+    '"com.fasterxml.jackson.core:jackson-databind:2.20.1", "com.fasterxml.jackson.datatype:jackson-datatype-jdk8:2.20.1"',
+  ]) {
+    const after = scan(artifacts);
+    assert.notEqual(before.sha256, after.sha256, artifacts);
+    assert.match(evaluate([after], [{ ...record(), sources: [before] }], today).errors.join('\n'), /Changed source needs verification/);
+  }
 });

@@ -99,10 +99,14 @@ export function inventory(files, manualSources = []) {
         if (!literalPath || strict?.join('') !== 'True') {
           add(`${prefix}:unlocked`, JSON.stringify([lock ?? [], strict ?? []]));
         }
-        if (call.attributes.get('fail_on_missing_checksum')?.join('') === 'False') add(`${prefix}:missing-checksums`, 'fail_on_missing_checksum=False');
+        const checksum = call.attributes.get('fail_on_missing_checksum');
+        // rules_jvm_external 6.10 defaults to True; unknown explicit expressions may disable it.
+        if (checksum && !(checksum.length === 1 && checksum[0] === 'True')) {
+          add(`${prefix}:missing-checksums`, JSON.stringify(checksum));
+        }
         if (call.attributes.get('fetch_sources')?.join('') !== 'True') add(`${prefix}:sources-disabled`, 'fetch_sources disabled');
         const options = call.attributes.get('additional_coursier_options');
-        if (options?.some(value => /^['"]--enable-modules['"]$/.test(value))) add(`${prefix}:gmm`, JSON.stringify(options));
+        if (options?.some(value => /^['"]--enable-modules['"]$/.test(value))) add(`${prefix}:gmm`, JSON.stringify(call.body));
       }
     }
   }
