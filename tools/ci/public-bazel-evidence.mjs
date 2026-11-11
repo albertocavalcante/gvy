@@ -32,7 +32,9 @@ function opaque(value, publicInput = false) {
     if (!opaquePattern.test(value)) throw new Error('Noncanonical public identifier');
     return value;
   }
-  return `opaque:${digest(value)}`;
+  // JSON string encoding preserves UTF-16 code units, including escaped lone
+  // surrogates that UTF-8 encoding would otherwise replace with the same byte.
+  return `opaque:${digest(JSON.stringify(value))}`;
 }
 function numeric(value) {
   if ((typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= Number.MAX_SAFE_INTEGER) || (typeof value === 'string' && /^\d{1,20}$/.test(value))) return value;
@@ -57,6 +59,10 @@ function fields(value, schema) {
   if (!object(value)) throw new Error('Invalid evidence object');
   return Object.fromEntries(Object.entries(schema).filter(([key]) => Object.hasOwn(value, key)).map(([key, convert]) => [key, convert(value[key])]));
 }
+function identifierFields(value, schema) {
+  if (!object(value) || Object.keys(value).some(key => !Object.hasOwn(schema, key))) throw new Error('Unknown BEP identifier field');
+  return fields(value, schema);
+}
 function array(convert) {
   return value => {
     if (!Array.isArray(value) || value.length > 10000) throw new Error('Evidence array exceeds contract');
@@ -64,7 +70,7 @@ function array(convert) {
   };
 }
 function identifierSchemas(identifier) {
-  const configurationId = value => fields(value, { id: identifier });
+  const configurationId = value => identifierFields(value, { id: identifier });
   return {
     unknown: { details: identifier }, progress: { opaqueCount: numeric }, started: {}, unstructuredCommandLine: {},
     structuredCommandLine: { commandLineLabel: identifier }, workspaceStatus: {}, optionsParsed: {},
@@ -85,8 +91,7 @@ function projectId(id, schemas) {
   const kind = Object.keys(id)[0];
   if (!Object.hasOwn(schemas, kind) || !object(id[kind])) throw new Error('Unsupported BEP identifier');
   const schema = schemas[kind];
-  if (Object.keys(id[kind]).some(key => !Object.hasOwn(schema, key))) throw new Error('Unknown BEP identifier field');
-  return { [kind]: fields(id[kind], schema) };
+  return { [kind]: identifierFields(id[kind], schema) };
 }
 const counts = names => Object.fromEntries(names.split(' ').filter(Boolean).map(name => [name, numeric]));
 function metrics(value, identifier) {
@@ -196,6 +201,7 @@ export function projectProfile(input, { publicInput = false } = {}) {
     }
     if (event.id !== undefined) {
       if (!['number', 'string'].includes(typeof event.id)) throw new Error('Invalid trace flow ID');
+      if (typeof event.id === 'number' && !Number.isSafeInteger(event.id)) throw new Error('Invalid trace flow ID');
       clean.id = publicInput ? opaque(event.id, true) : opaque(JSON.stringify(event.id));
     }
     if (event.s !== undefined) clean.s = enumeration(['t', 'p', 'g'])(event.s);

@@ -131,7 +131,7 @@ test('deep unknown ID values fail with one constant diagnostic at different magn
 test('opaque-looking raw IDs cannot collapse a missing graph child into a different delivered event', async () => {
   const { createHash } = await import('node:crypto');
   const rawId = 'raw-X';
-  const opaqueLookingRawId = 'opaque:' + createHash('sha256').update(rawId).digest('hex');
+  const opaqueLookingRawId = 'opaque:' + createHash('sha256').update(JSON.stringify(rawId)).digest('hex');
   const events = rawEvents();
   events[0].children.push({ namedSet: { id: opaqueLookingRawId } });
   events.splice(2, 0, { id: { namedSet: { id: rawId } }, namedSetOfFiles: {} });
@@ -144,7 +144,7 @@ test('opaque-looking raw IDs cannot collapse a missing graph child into a differ
 test('opaque-looking strings remain distinct in nested IDs, metric names and trace flow identities', async () => {
   const { createHash } = await import('node:crypto');
   const raw = 'raw-name';
-  const disguised = 'opaque:' + createHash('sha256').update(raw).digest('hex');
+  const disguised = 'opaque:' + createHash('sha256').update(JSON.stringify(raw)).digest('hex');
   const events = rawEvents();
   events[9].buildMetrics.actionSummary.actionData = [{ mnemonic: raw, actionsExecuted: '1' }, { mnemonic: disguised, actionsExecuted: '1' }];
   events[9].buildMetrics.actionSummary.runnerCount = [{ name: raw, count: 1 }, { name: disguised, count: 1 }];
@@ -162,4 +162,34 @@ test('opaque-looking strings remain distinct in nested IDs, metric names and tra
   const flows = JSON.parse(gunzipSync(bytes)).traceEvents;
   assert.notEqual(flows[0].id, flows[1].id);
   assert.deepEqual(projectProfile(bytes, { publicInput: true }), bytes);
+});
+
+test('unknown nested identifier fields cannot collapse a missing child into another configuration', () => {
+  const events = rawEvents();
+  const announced = { targetCompleted: { label: '//target:t', configuration: { id: 'C', unexpected: 'A' } } };
+  const delivered = { targetCompleted: { label: '//target:t', configuration: { id: 'C', unexpected: 'B' } } };
+  events[0].children.push(announced);
+  events.splice(2, 0, { id: delivered, completed: { success: true } });
+  assert.equal(evaluateEvidence(lines(events), context, 0).complete, false);
+  assert.throws(() => projectBep(lines(events), context), /identifier/);
+});
+
+test('distinct lone-surrogate strings retain distinct opaque graph identities', () => {
+  const events = rawEvents();
+  events[0].children.push({ namedSet: { id: '\ud800' } });
+  events.splice(2, 0, { id: { namedSet: { id: '\ud801' } }, namedSetOfFiles: {} });
+  assert.equal(evaluateEvidence(lines(events), context, 0).complete, false);
+  const projected = evaluateEvidence(projectBep(lines(events), context), context, 0);
+  assert.equal(projected.complete, false);
+  assert.equal(projected.ok, false);
+});
+
+test('overflowing and fractional numeric trace flow IDs are rejected while safe integers remain distinct', () => {
+  for (const id of ['1e400', '-1e400', '1.5', '9007199254740992']) {
+    const trace = '{"traceEvents":[{"ph":"s","name":"flow","id":' + id + ',"ts":0}]}';
+    assert.throws(() => projectProfile(gzipSync(trace)), /flow ID/);
+  }
+  const profile = { traceEvents: [-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER].map((id, index) => ({ ph: index ? 'f' : 's', name: 'flow', id, ts: index })) };
+  const events = JSON.parse(gunzipSync(projectProfile(gzipSync(JSON.stringify(profile))))).traceEvents;
+  assert.notEqual(events[0].id, events[1].id);
 });
