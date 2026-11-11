@@ -1,0 +1,43 @@
+name: repro-symbols-hierarchy
+description: Document symbols nest the members of a class under it as children
+xfail:
+  issue: 1538
+  reason: documentSymbol returns a flat list, so a class has no children
+  match: 'children.*Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/shapes/Circle.groovy: |
+      package demo.shapes
+
+      class |^c|Circle {
+          double radius
+          double area() { Math.PI * radius * radius }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/documentSymbol
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$[?(@.right.name == 'Circle')].right.children[*].name"
+          expect: { type: CONTAINS, value: "area" }
+  - shutdown: {}
+  - exit: {}
