@@ -1,3 +1,4 @@
+import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.tasks.testing.TestDescriptor
 import org.gradle.api.tasks.testing.TestResult
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
@@ -5,9 +6,13 @@ import org.gradle.process.ExecOperations
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.net.URLClassLoader
 import java.security.MessageDigest
 import java.time.Duration
 import java.time.Instant
+import java.util.jar.Attributes
+import java.util.jar.JarFile
+import java.util.jar.Manifest
 import java.util.zip.ZipFile
 import javax.inject.Inject
 
@@ -294,6 +299,194 @@ application {
     mainClass = "com.github.albertocavalcante.gvy.gls.MainKt"
 }
 
+abstract class LogbackArtifactMetadataTask : DefaultTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val classicJar: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val coreJar: RegularFileProperty
+
+    @get:Input
+    abstract val artifactVersions: MapProperty<String, String>
+
+    protected fun checkedVersions(): Map<String, String> {
+        val versions = artifactVersions.get()
+        val modules = setOf("logback-classic", "logback-core")
+        if (versions.keys != modules || versions.values.any { it.isBlank() || it == "?" }) {
+            throw GradleException("Expected resolved module versions for logback-classic and logback-core: $versions")
+        }
+        if (versions.getValue("logback-classic") != versions.getValue("logback-core")) {
+            throw GradleException("Resolved Logback classic/core versions differ: $versions")
+        }
+        return versions
+    }
+
+    protected fun packageVersions(): Map<String, String> {
+        val versions = checkedVersions()
+        val packages = sortedMapOf<String, String>()
+        for ((module, jar) in listOf("logback-classic" to classicJar, "logback-core" to coreJar)) {
+            val prefix = "ch/qos/logback/" + module.removePrefix("logback-") + "/"
+            val artifactPackages =
+                JarFile(jar.get().asFile).use { source ->
+                    source
+                        .entries()
+                        .asSequence()
+                        .filter { !it.isDirectory && it.name.endsWith(".class") }
+                        .map { it.name.replaceFirst(Regex("^META-INF/versions/[0-9]+/"), "") }
+                        .filter { it.startsWith(prefix) }
+                        .map { it.substringBeforeLast('/') + "/" }
+                        .toSortedSet()
+                }
+            if (artifactPackages.isEmpty()) {
+                throw GradleException("Resolved $module artifact contains no classes under $prefix")
+            }
+            for (name in artifactPackages) packages[name] = versions.getValue(module)
+        }
+        return packages
+    }
+}
+
+@CacheableTask
+abstract class GenerateLogbackPackageManifestTask : LogbackArtifactMetadataTask() {
+    @get:OutputFile
+    abstract val manifestFile: RegularFileProperty
+
+    @TaskAction
+    fun generate() {
+        val manifest = Manifest()
+        manifest.mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
+        for ((name, version) in packageVersions()) {
+            manifest.entries[name] =
+                Attributes().apply {
+                    put(Attributes.Name.IMPLEMENTATION_VERSION, version)
+                }
+        }
+        val output = manifestFile.get().asFile
+        output.parentFile.mkdirs()
+        output.outputStream().use(manifest::write)
+    }
+}
+
+@CacheableTask
+abstract class VerifyLogbackPackageMetadataTask : LogbackArtifactMetadataTask() {
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val jarFile: RegularFileProperty
+
+    @get:OutputFile
+    abstract val reportFile: RegularFileProperty
+
+    @TaskAction
+    fun verify() {
+        val versions = checkedVersions()
+        val packages = packageVersions()
+        val jar = jarFile.get().asFile
+        JarFile(jar).use { shaded ->
+            val manifest = shaded.manifest ?: throw GradleException("Shaded JAR has no manifest")
+            for ((name, expected) in packages) {
+                val actual = manifest.entries[name]?.getValue(Attributes.Name.IMPLEMENTATION_VERSION)
+                if (actual != expected) {
+                    throw GradleException(
+                        "Shaded Logback package $name requires resolved version $expected; manifest contains $actual",
+                    )
+                }
+            }
+        }
+
+        // Isolate the shaded archive from Gradle's own logging libraries.
+        URLClassLoader(arrayOf(jar.toURI().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
+            val versionUtil = loader.loadClass("ch.qos.logback.core.util.VersionUtil")
+            val lookup = versionUtil.getMethod("getVersionOfArtifact", Class::class.java)
+            for ((module, anchor) in listOf(
+                "logback-classic" to "ch.qos.logback.classic.util.ContextInitializer",
+                "logback-core" to "ch.qos.logback.core.util.VersionUtil",
+            )) {
+                val type = loader.loadClass(anchor)
+                val expected = versions.getValue(module)
+                if (type.getPackage().implementationVersion != expected || lookup.invoke(null, type) != expected) {
+                    throw GradleException("Shaded $module runtime version lookup does not match resolved $expected")
+                }
+            }
+        }
+        reportFile.get().asFile.apply {
+            parentFile.mkdirs()
+            writeText(
+                versions.toSortedMap().entries.joinToString("\n", postfix = "\n") { (module, version) ->
+                    "$module=$version"
+                } + "packageSections=" + packages.size + "\nruntimeVersionLookup=PASS\n",
+            )
+        }
+    }
+}
+
+val resolvedLogbackArtifacts =
+    configurations.named("runtimeClasspath").flatMap { runtime ->
+        runtime.incoming
+            .artifactView {
+                componentFilter { component ->
+                    component is ModuleComponentIdentifier &&
+                        component.group == "ch.qos.logback" &&
+                        component.module in setOf("logback-classic", "logback-core")
+                }
+            }.artifacts.resolvedArtifacts
+    }
+val resolvedLogbackVersions =
+    resolvedLogbackArtifacts.map { artifacts ->
+        artifacts.associate { artifact ->
+            val component = artifact.id.componentIdentifier as ModuleComponentIdentifier
+            component.module to component.version
+        }
+    }
+val resolvedLogbackClassicJar =
+    layout.file(
+        resolvedLogbackArtifacts.map { artifacts ->
+            artifacts
+                .single { (it.id.componentIdentifier as ModuleComponentIdentifier).module == "logback-classic" }
+                .file
+        },
+    )
+val resolvedLogbackCoreJar =
+    layout.file(
+        resolvedLogbackArtifacts.map { artifacts ->
+            artifacts.single { (it.id.componentIdentifier as ModuleComponentIdentifier).module == "logback-core" }.file
+        },
+    )
+
+val generateLogbackPackageManifest =
+    tasks.register<GenerateLogbackPackageManifestTask>("generateLogbackPackageManifest") {
+        description = "Preserve actual resolved Logback versions as named package manifest sections."
+        classicJar.set(resolvedLogbackClassicJar)
+        coreJar.set(resolvedLogbackCoreJar)
+        artifactVersions.set(resolvedLogbackVersions)
+        manifestFile.set(layout.buildDirectory.file("generated/logback/package-manifest.mf"))
+    }
+
+val verifyLogbackPackageMetadata =
+    tasks.register<VerifyLogbackPackageMetadataTask>("verifyLogbackPackageMetadata") {
+        group = "verification"
+        description = "Verify shaded Logback package versions against the actual resolved artifacts."
+        dependsOn(tasks.shadowJar)
+        classicJar.set(resolvedLogbackClassicJar)
+        coreJar.set(resolvedLogbackCoreJar)
+        artifactVersions.set(resolvedLogbackVersions)
+        jarFile.set(tasks.shadowJar.flatMap { it.archiveFile })
+        reportFile.set(layout.buildDirectory.file("reports/jar/logback-package-metadata.txt"))
+    }
+
+// Shadow 9.3.1 delegates its manifest to the plain JAR, so both are consumers of this generated file.
+val logbackPackageManifest = generateLogbackPackageManifest.flatMap { it.manifestFile }
+listOf(tasks.jar, tasks.shadowJar).forEach { archive ->
+    archive.configure {
+        dependsOn(generateLogbackPackageManifest)
+        inputs
+            .file(logbackPackageManifest)
+            .withPropertyName("logbackPackageManifest")
+            .withPathSensitivity(PathSensitivity.NONE)
+    }
+}
+
 tasks.shadowJar {
     archiveBaseName = "gls"
     archiveClassifier = "all"
@@ -303,7 +496,9 @@ tasks.shadowJar {
 
     manifest {
         attributes["Main-Class"] = "com.github.albertocavalcante.gvy.gls.MainKt"
+        from(logbackPackageManifest)
     }
+    finalizedBy(verifyLogbackPackageMetadata)
 
     // Merge service files for proper SLF4J and other service provider bindings
     mergeServiceFiles()
@@ -847,7 +1042,7 @@ abstract class SmokeShadowJarTask
                 val result =
                     execOperations.exec {
                         isIgnoreExitValue = true
-                        commandLine(listOf("java", "-jar", jar.absolutePath) + args)
+                        commandLine(listOf("java", "-Xmx256m", "-jar", jar.absolutePath) + args)
                         standardOutput = stdout
                         errorOutput = stderr
                         // Disable colored output for reliable assertion checking
@@ -858,6 +1053,12 @@ abstract class SmokeShadowJarTask
                     throw GradleException("Smoke command ${args.first()} exited ${result.exitValue}:\n$stdout\n$stderr")
                 }
                 val stderrStr = stderr.toString(Charsets.UTF_8)
+                val combinedOutput = stdout.toString(Charsets.UTF_8) + stderrStr
+                if (combinedOutput.contains("Versions of logback-core and logback-classic are different!")) {
+                    throw GradleException(
+                        "Smoke found missing or inconsistent Logback version metadata:\n$combinedOutput",
+                    )
+                }
                 val fatalMarkers =
                     listOf(
                         "NoClassDefFoundError",
