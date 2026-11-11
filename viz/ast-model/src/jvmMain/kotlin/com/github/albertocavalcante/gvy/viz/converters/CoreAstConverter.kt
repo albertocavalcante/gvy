@@ -16,6 +16,7 @@ import com.github.albertocavalcante.groovyparser.ast.expr.PropertyExpr
 import com.github.albertocavalcante.groovyparser.ast.expr.UnaryExpr
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
+import com.github.albertocavalcante.gvy.viz.model.GroovyRangeGuard
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -27,24 +28,23 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class CoreAstConverter {
 
-    private val idGenerator = AtomicInteger(0)
-
     /**
-     * Converts a CompilationUnit to an AstNodeDto.
+     * Converts a CompilationUnit to an AstNodeDto with unavailable source ranges.
      *
      * @param compilationUnit The root of the Core AST.
      * @return The DTO representation.
      */
-    fun convert(compilationUnit: CompilationUnit): AstNodeDto {
-        idGenerator.set(0)
-        return convertNode(compilationUnit)
-    }
+    fun convert(compilationUnit: CompilationUnit): AstNodeDto = convert(compilationUnit, null)
 
-    private fun convertNode(node: Node): CoreAstNodeDto {
-        val id = "node-${idGenerator.incrementAndGet()}"
+    /** Converts using the exact parsed source; a null source makes all ranges unavailable. */
+    fun convert(compilationUnit: CompilationUnit, source: String?): AstNodeDto =
+        convertNode(compilationUnit, AtomicInteger(0), source?.let(::GroovyRangeGuard))
+
+    private fun convertNode(node: Node, ids: AtomicInteger, guard: GroovyRangeGuard?): CoreAstNodeDto {
+        val id = "node-${ids.incrementAndGet()}"
         val type = node.javaClass.simpleName
-        val range = node.range?.let { convertRange(it) }
-        val children = node.getChildNodes().map { convertNode(it) }
+        val range = node.range?.let { guard?.validRange(convertRange(it)) }
+        val children = node.getChildNodes().map { convertNode(it, ids, guard) }
         val properties = extractProperties(node)
 
         return CoreAstNodeDto(

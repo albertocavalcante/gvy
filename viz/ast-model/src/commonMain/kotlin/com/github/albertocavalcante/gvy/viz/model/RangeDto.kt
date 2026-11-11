@@ -4,6 +4,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * Represents a range in source code (from start position to end position).
+ * Groovy-derived ranges are provided only when their endpoints are known UTF-16 coordinates.
  *
  * @property startLine The starting line (1-based).
  * @property startColumn The starting column (1-based).

@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.gvy.viz.converters
 
 import com.github.albertocavalcante.groovyparser.GroovyParser
+import com.github.albertocavalcante.groovyparser.ast.CompilationUnit
 import com.github.albertocavalcante.groovyparser.ast.Node
+import com.github.albertocavalcante.groovyparser.ast.body.TypeDeclaration
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
 import kotlinx.serialization.decodeFromString
@@ -9,6 +11,9 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -29,7 +34,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful, "Parse should succeed")
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         assertNotNull(dto)
         assertEquals("CompilationUnit", dto.type)
@@ -54,7 +59,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful)
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         val classNode = dto.children.first()
         assertThat(classNode.children).isNotEmpty
@@ -77,7 +82,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful)
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         // Check that ranges are converted properly
         val classNode = dto.children.first()
@@ -95,7 +100,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful)
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         assertNotNull(dto)
         assertEquals("CompilationUnit", dto.type)
@@ -117,7 +122,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful)
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         // Collect all IDs
         val ids = mutableSetOf<String>()
@@ -145,7 +150,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful)
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         // Check for package in properties or children
         val hasPackageInfo = dto.properties.containsKey("package") ||
@@ -167,7 +172,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful)
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         // Should have import declarations
         val imports = dto.children.filter { it.type == "ImportDeclaration" }
@@ -187,7 +192,7 @@ class CoreAstConverterTest {
         assertTrue(parseResult.isSuccessful)
 
         val compilationUnit = parseResult.result.get()
-        val dto = converter.convert(compilationUnit)
+        val dto = converter.convert(compilationUnit, code)
 
         val classNode = dto.children.first()
         val methodNode = classNode.children.find { it.type == "MethodDeclaration" }
@@ -218,7 +223,7 @@ class CoreAstConverterTest {
         val result = parser.parse(code)
         assertTrue(result.isSuccessful)
         val source = result.result.get()
-        val dto = converter.convert(source)
+        val dto = converter.convert(source, code)
         var nextId = 0
         fun assertStructure(raw: Node, converted: AstNodeDto) {
             assertEquals("node-${++nextId}", converted.id)
@@ -251,6 +256,71 @@ class CoreAstConverterTest {
         assertTrue(json.contains("\"propertyName\":\"left\""))
         assertEquals(nodes.size, nodes.map { it.id }.toSet().size)
         assertEquals(dto, Json.decodeFromString<AstNodeDto>(json))
+    }
+
+    @Test
+    fun `supplementary characters invalidate ambiguous ranges but preserve safe source slices`() {
+        val source = "class Example { String before; String emoji = '😀'; String after }\r\n" +
+            "class Later {\r\n    String safe\r\n}"
+        val parsed = parser.parse(source)
+        assertTrue(parsed.isSuccessful)
+        val dto = converter.convert(parsed.result.get(), source)
+        val example = dto.children.single { it.type == "ClassDeclaration" && it.properties["name"] == "Example" }
+        val later = dto.children.single { it.type == "ClassDeclaration" && it.properties["name"] == "Later" }
+        fun field(node: com.github.albertocavalcante.gvy.viz.model.AstNodeDto, name: String) =
+            node.children.single { it.type == "FieldDeclaration" && it.properties["name"] == name }
+        fun slice(node: com.github.albertocavalcante.gvy.viz.model.AstNodeDto): String {
+            val range = assertNotNull(node.range)
+            val line = source.split("\r\n")[range.startLine - 1]
+            assertEquals(range.startLine, range.endLine)
+            return line.substring(range.startColumn - 1, range.endColumn - 1)
+        }
+        assertEquals("String before", slice(field(example, "before")))
+        assertEquals(null, field(example, "emoji").range)
+        assertEquals(null, field(example, "after").range)
+        assertEquals(null, example.range)
+        assertEquals("String safe", slice(field(later, "safe")))
+    }
+
+    @Test
+    fun `conversion without source makes ranges unavailable`() {
+        val parsed = parser.parse("class Example {}")
+        assertTrue(parsed.isSuccessful)
+        val ast = parsed.result.get()
+        val dto = converter.convert(ast)
+        val javaMethod = CoreAstConverter::class.java.getMethod("convert", CompilationUnit::class.java)
+        assertEquals(dto, javaMethod.invoke(converter, ast))
+        assertEquals(null, dto.children.single { it.properties["name"] == "Example" }.range)
+    }
+
+    @Test
+    fun `concurrent conversions keep node IDs unique within each tree`() {
+        val entered = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val leaf = object : Node() {
+            override fun getChildNodes(): List<Node> = emptyList()
+        }
+        val blockedType = object : TypeDeclaration("Blocked") {
+            override fun getChildNodes(): List<Node> {
+                entered.countDown()
+                check(resume.await(10, TimeUnit.SECONDS))
+                return listOf(leaf)
+            }
+        }
+        val first = CompilationUnit().apply { addType(blockedType) }
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val future = executor.submit<AstNodeDto> { converter.convert(first) }
+            assertTrue(entered.await(10, TimeUnit.SECONDS))
+            converter.convert(CompilationUnit())
+            resume.countDown()
+            val dto = future.get(10, TimeUnit.SECONDS)
+            val ids = listOf(dto.id, dto.children.single().id, dto.children.single().children.single().id)
+            assertEquals(ids.size, ids.toSet().size)
+        } finally {
+            resume.countDown()
+            executor.shutdownNow()
+        }
     }
 
     private fun countNodes(node: CoreAstNodeDto): Int {
