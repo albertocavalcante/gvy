@@ -184,6 +184,93 @@ test('the inspected pinned-plugin trace matches only its exact reviewed debt led
   assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
 });
 
+const wireRoot = '/workspace/gvy';
+const wireLog = readFileSync(new URL('./fixtures/gradle-wire-warnings.txt', import.meta.url), 'utf8');
+const wireSuccess = wireLog.replace('BUILD FAILED', 'BUILD SUCCESSFUL');
+const wireDiagnostics = [
+  "[task :indexer:scip:compileKotlin] w: indexer/scip/build/generated/source/wire/scip/Descriptor.kt:226:9 Duplicate branch condition in 'when'.",
+  "[task :indexer:scip:compileKotlin] w: indexer/scip/build/generated/source/wire/scip/Occurrence.kt:349:20 Unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.",
+  "[task :indexer:scip:compileKotlin] w: indexer/scip/build/generated/source/wire/scip/Occurrence.kt:368:30 Unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.",
+  "[task :indexer:scip:compileKotlin] w: indexer/scip/build/generated/source/wire/scip/SyntaxKind.kt:194:7 Duplicate branch condition in 'when'.",
+  "[task :indexer:scip:compileKotlin] w: indexer/scip/build/generated/source/wire/scip/SyntaxKind.kt:205:7 Duplicate branch condition in 'when'.",
+];
+const gradleExceptions = () => JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
+
+test('captured Gradle Wire warnings require five exact exceptions alongside the unchanged plugin debt', () => {
+  const exceptions = gradleExceptions();
+  const plugins = exceptions.filter(entry => entry.issue.endsWith('/1603'));
+  const untracked = check(wireSuccess, { rootDir: wireRoot, exceptions: plugins });
+  assert.equal(untracked.complete, true);
+  assert.equal(untracked.ok, false);
+  assert.deepEqual(untracked.unexpected, wireDiagnostics);
+  assert.equal(untracked.accepted.length, 0);
+  const tracked = check(wireSuccess, { rootDir: wireRoot, exceptions });
+  assert.equal(tracked.ok, true, tracked.errors.join('\n'));
+  assert.deepEqual(tracked.diagnostics, wireDiagnostics);
+  assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
+  assert.deepEqual(tracked.unexpected, []);
+  assert.equal(plugins.length, 33);
+  assert.equal(exceptions.length, 38);
+});
+
+test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {
+  const exceptions = gradleExceptions();
+  for (const rootDir of ['/Users/runner/wt/gvy/ci/wire', '/home/runner/work/gvy/gvy']) {
+    const log = wireSuccess.replaceAll(wireRoot, rootDir);
+    const tracked = check(log, { rootDir, exceptions });
+    assert.equal(tracked.ok, true, tracked.errors.join('\n'));
+    assert.deepEqual(tracked.diagnostics, wireDiagnostics);
+    assert.equal(tracked.accepted.length, 5);
+    const foreignRoot = check(log, { rootDir: `${rootDir}-other`, exceptions });
+    assert.equal(foreignRoot.ok, false);
+    assert.equal(foreignRoot.unexpected.length, 5);
+  }
+});
+
+test('a different Wire task, file, line, column, message or first-party source remains unexpected', async t => {
+  const exceptions = gradleExceptions();
+  const changes = [
+    ['task', ':indexer:scip:compileKotlin', ':indexer:scip:compileTestKotlin', 5],
+    ['file', '/Descriptor.kt', '/Another.kt', 1],
+    ['line', 'Descriptor.kt:226:9', 'Descriptor.kt:227:9', 1],
+    ['column', 'Descriptor.kt:226:9', 'Descriptor.kt:226:10', 1],
+    ['message', "Duplicate branch condition in 'when'.", "Duplicate branch condition in another 'when'.", 1],
+    ['first-party source', 'build/generated/source/wire/scip/Descriptor.kt', 'src/main/kotlin/scip/Descriptor.kt', 1],
+  ];
+  for (const [name, before, after, count] of changes) {
+    await t.test(name, () => {
+      assert.ok(wireSuccess.includes(before));
+      const result = check(wireSuccess.replace(before, after), { rootDir: wireRoot, exceptions });
+      assert.equal(result.complete, true);
+      assert.equal(result.ok, false);
+      assert.equal(result.unexpected.length, count);
+      assert.equal(result.accepted.length, 5 - count);
+    });
+  }
+});
+
+test('accepted Wire diagnostics cannot hide the captured command failure, capture failure or expired debt', () => {
+  const exceptions = gradleExceptions();
+  const failed = check(wireLog, { rootDir: wireRoot, exceptions, commandExitCode: 1 });
+  assert.equal(failed.complete, true);
+  assert.equal(failed.ok, false);
+  assert.equal(failed.commandExitCode, 1);
+  assert.equal(failed.captureExitCode, 0);
+  assert.deepEqual(failed.accepted.map(entry => entry.diagnostic), wireDiagnostics);
+  assert.deepEqual(failed.unexpected, []);
+  assert.match(failed.errors.join('\n'), /command failed with exit 1/);
+  const capture = check(wireSuccess, { rootDir: wireRoot, exceptions, captureExitCode: 1 });
+  assert.equal(capture.complete, false);
+  assert.equal(capture.ok, false);
+  assert.equal(capture.captureExitCode, 1);
+  assert.equal(capture.accepted.length, 5);
+  assert.match(capture.errors.join('\n'), /log capture exit code/);
+  const expired = check(wireSuccess, { rootDir: wireRoot, exceptions: exceptions.map(entry =>
+    entry.issue.endsWith('/1599') ? { ...entry, expires: '2026-11-10' } : entry) });
+  assert.equal(expired.ok, false);
+  assert.match(expired.errors.join('\n'), /Expired exception/);
+});
+
 test('CLI always publishes structured evidence and a raw copy, including warnings on failure', t => {
   const dir = mkdtempSync(join(tmpdir(), 'gvy-gradle-diagnostics-test-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
