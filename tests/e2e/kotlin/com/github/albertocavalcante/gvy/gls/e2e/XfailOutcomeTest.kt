@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import org.opentest4j.AssertionFailedError
 import org.opentest4j.TestAbortedException
+import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeoutException
 
@@ -91,6 +92,45 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `run aborts for matching response errors and timeouts`() {
+        val response = ResponseErrorException(ResponseError(ResponseErrorCode.InternalError, "product failed", null))
+        val failures = listOf(ExecutionException(response), TimeoutException("product failed"))
+
+        failures.forEach { failure ->
+            assertThatThrownBy { XfailOutcome.run(xfail.copy(match = "product failed"), file) { throw failure } }
+                .isInstanceOf(TestAbortedException::class.java)
+                .hasMessageContaining("xfail gvy#42: known bug")
+        }
+    }
+
+    @Test
+    fun `run preserves harness cancellation interruption and fatal failures`() {
+        val failures = listOf(
+            IllegalStateException("harness failed"),
+            IllegalArgumentException("bad scenario"),
+            ExecutionException(IllegalStateException("harness failed")),
+            CancellationException("cancelled"),
+            InterruptedException("interrupted"),
+            LinkageError("broken runtime"),
+        )
+
+        failures.forEach { failure ->
+            assertThatThrownBy { XfailOutcome.run(xfail, file) { throw failure } }
+                .isSameAs(failure)
+        }
+    }
+
+    @Test
+    fun `run preserves timeouts without a matching declaration`() {
+        val failure = TimeoutException("unrelated timeout")
+
+        listOf(xfail, xfail.copy(match = "product failed")).forEach { declaration ->
+            assertThatThrownBy { XfailOutcome.run(declaration, file) { throw failure } }
+                .isSameAs(failure)
+        }
+    }
+
+    @Test
     fun `display name carries the issue`() {
         val scenario = Scenario(name = "demo", xfail = xfail, steps = emptyList())
         assertThat(XfailOutcome.displayName(scenario)).isEqualTo("[xfail gvy#42] demo")
@@ -100,9 +140,11 @@ class XfailOutcomeTest {
     @Test
     fun `timeout cap lowers only longer timeouts`() {
         val cap = XfailOutcome.STEP_TIMEOUT_CAP_MS
-        assertThat(XfailOutcome.capTimeout(60_000, cap)).isEqualTo(cap)
-        assertThat(XfailOutcome.capTimeout(1_000, cap)).isEqualTo(1_000)
-        assertThat(XfailOutcome.capTimeout(60_000, null)).isEqualTo(60_000)
+        val shorter = cap / 2
+        val longer = cap * 2
+        assertThat(XfailOutcome.capTimeout(longer, cap)).isEqualTo(cap)
+        assertThat(XfailOutcome.capTimeout(shorter, cap)).isEqualTo(shorter)
+        assertThat(XfailOutcome.capTimeout(longer, null)).isEqualTo(longer)
     }
 
     @Test
@@ -111,7 +153,7 @@ class XfailOutcomeTest {
         val ok = parser.parseScenarioDefinition(
             "name: a\nxfail: { issue: 7, reason: r, match: 'foo.*' }\nsteps: []\n",
         )
-        assertThat(ok.scenario.xfail).isEqualTo(Xfail(7, "r", "foo.*"))
+        assertThat(ok.scenario.xfail).isEqualTo(Xfail(issue = 7, reason = "r", match = "foo.*"))
         assertThatThrownBy {
             parser.parseScenarioDefinition("name: a\nxfail: { issue: 7, reason: r, why: x }\nsteps: []\n")
         }
