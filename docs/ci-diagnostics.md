@@ -85,6 +85,13 @@ exact source-attributed exceptions in `tools/ci/gradle-diagnostics.json`; inspec
 candidates and removal criteria remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). These
 exceptions are debt, not proof that newer plugin releases have the same limitation.
 
+Five exact generated SCIP compiler warnings also remain tracked in
+[#1599](https://github.com/albertocavalcante/gvy/issues/1599). Gradle uses Wire 5.5.1, while Bazel's generator uses
+5.4.0; matching warnings do not establish version alignment. The Gradle exceptions bind to the compilation task,
+generated file, line, column and message. Other generated warnings and first-party warnings still fail. Retiring these
+exceptions requires fresh generation and warning-free compilation plus protocol compatibility checks in both build
+systems.
+
 Unit/E2E jobs also require JUnit report files and preserve their HTML/XML reports as artifacts. Test jobs have read-only
 tokens, including fork PRs; optional check-publishing actions are unnecessary for the required producer verdict. The
 build explicitly executes both protobuf generators with their 512 MiB JVM bounds before compilation; cached task outputs
