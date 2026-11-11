@@ -111,7 +111,7 @@ class ScenarioExecutorResourcesTest {
     }
 
     private fun definition(steps: List<ScenarioStep> = emptyList()): ScenarioDefinition = ScenarioDefinition(
-        Scenario(name = "resource-scope", steps = steps),
+        Scenario(name = "resource-scope", steps = listOf(ScenarioStep.Initialized) + steps),
         source = tempDir.resolve("scenario.yaml").toString(),
     )
 }

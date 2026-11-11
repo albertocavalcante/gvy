@@ -5,7 +5,6 @@ import com.github.albertocavalcante.gvy.gls.e2e.JsonBridge.wrapJavaObject
 import com.jayway.jsonpath.Configuration
 import com.jayway.jsonpath.JsonPath
 import com.jayway.jsonpath.PathNotFoundException
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -18,9 +17,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.eclipse.lsp4j.InitializeResult
 
-data class ScenarioContext(
+class ScenarioContext internal constructor(
     val definition: ScenarioDefinition,
-    val session: LanguageServerSession,
+    private val sessionAccess: ScenarioSessionAccess,
     val workspace: ScenarioWorkspace,
     val json: Json = Json {
         prettyPrint = true
@@ -30,6 +29,22 @@ data class ScenarioContext(
     /** Upper bound for step timeouts; set for `xfail` scenarios so a hang costs little. */
     val timeoutCapMs: Long? = null,
 ) {
+    constructor(
+        definition: ScenarioDefinition,
+        session: LanguageServerSession,
+        workspace: ScenarioWorkspace,
+        json: Json = Json {
+            prettyPrint = true
+            ignoreUnknownKeys = true
+        },
+        jsonPathConfig: Configuration,
+        timeoutCapMs: Long? = null,
+    ) : this(definition, ScenarioSessionAccess({ session }), workspace, json, jsonPathConfig, timeoutCapMs)
+
+    val session: LanguageServerSession get() = sessionAccess.session()
+
+    internal val checkActive: () -> Unit get() = sessionAccess.checkActive
+
     fun effectiveTimeoutMs(requestedMs: Long): Long = XfailOutcome.capTimeout(requestedMs, timeoutCapMs)
 
     val state: ScenarioState = ScenarioState()

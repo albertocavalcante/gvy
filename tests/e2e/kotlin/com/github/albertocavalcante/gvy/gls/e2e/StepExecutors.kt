@@ -36,7 +36,6 @@ import org.eclipse.lsp4j.TextDocumentIdentifier
 import org.eclipse.lsp4j.TextDocumentItem
 import org.eclipse.lsp4j.VersionedTextDocumentIdentifier
 import org.eclipse.lsp4j.WorkspaceFolder
-import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -48,6 +47,10 @@ import java.util.concurrent.TimeoutException
 import kotlin.io.path.name
 
 private val logger = KotlinLogging.logger("StepExecutors")
+
+private const val DEFAULT_REQUEST_TIMEOUT_MS = 30_000L
+private const val DEFAULT_SHUTDOWN_TIMEOUT_MS = 60_000L
+private const val INITIALIZE_POLL_INTERVAL_MS = 50L
 
 internal fun resolveJavaBinary(): String {
     // Use JAVA_HOME if set to ensure we use the same JDK that compiled the code.
@@ -174,36 +177,46 @@ class InitializeStepExecutor : StepExecutor<ScenarioStep.Initialize> {
             }
         }
 
-        val future = context.session.server.initialize(params)
+        val session = context.session
+        val process = session.process
+        val future = session.server.initialize(params)
 
-        val timeoutMs = 30_000L
-        val start = System.currentTimeMillis()
-        val process = context.session.process
+        try {
+            context.checkActive()
+            val result = awaitInitialize(future, process)
 
+            context.state.initializedResult = result
+            // Serialize LSP4J result back to JsonElement using Gson bridge
+            context.lastResult = JsonBridge.toJsonElement(result)
+
+            interpolatedOptions?.let {
+                context.variables["client.initializationOptions"] = it
+            }
+        } finally {
+            if (!future.isDone) future.cancel(true)
+        }
+    }
+
+    private fun awaitInitialize(future: CompletableFuture<InitializeResult>, process: Process?): InitializeResult {
+        val start = System.nanoTime()
+        val timeoutNanos = TimeUnit.MILLISECONDS.toNanos(DEFAULT_REQUEST_TIMEOUT_MS)
+        val pollNanos = TimeUnit.MILLISECONDS.toNanos(INITIALIZE_POLL_INTERVAL_MS)
         while (!future.isDone) {
-            if (process != null && !process.isAlive) {
-                // If the process has exited, we can't possibly succeed.
-                // Read stderr to capture the error reason if possible (though stderr pump is async)
-                throw IllegalStateException(
-                    "Language server process exited prematurely with code ${process.exitValue()} while waiting for initialization",
-                )
+            check(process == null || process.isAlive) {
+                "Language server process exited prematurely with code ${process?.exitValue()} " +
+                    "while waiting for initialization"
             }
-            if (System.currentTimeMillis() - start > timeoutMs) {
-                throw TimeoutException("Timed out waiting for initialize response ($timeoutMs ms)")
+            val remaining = timeoutNanos - (System.nanoTime() - start)
+            if (remaining <= 0) {
+                throw TimeoutException("Timed out waiting for initialize response ($DEFAULT_REQUEST_TIMEOUT_MS ms)")
             }
-            // Sleep briefly to avoid busy wait
-            Thread.sleep(50)
+            try {
+                return future.get(minOf(remaining, pollNanos), TimeUnit.NANOSECONDS)
+            } catch (_: TimeoutException) {
+                // Check process liveness periodically; a completed reply wakes this wait immediately.
+            }
         }
-
-        val result: InitializeResult = future.get()
-
-        context.state.initializedResult = result
-        // Serialize LSP4J result back to JsonElement using Gson bridge
-        context.lastResult = JsonBridge.toJsonElement(result)
-
-        interpolatedOptions?.let {
-            context.variables["client.initializationOptions"] = it
-        }
+        return future.get()
     }
 }
 
@@ -216,10 +229,10 @@ class InitializedStepExecutor : StepExecutor<ScenarioStep.Initialized> {
 class ShutdownStepExecutor : StepExecutor<ScenarioStep.Shutdown> {
     override fun execute(step: ScenarioStep.Shutdown, context: ScenarioContext, nextStep: ScenarioStep?) {
         val timeout = System.getProperty("groovy.lsp.e2e.shutdownTimeoutMs")
-            ?.toLongOrNull() ?: 60_000L
+            ?.toLongOrNull() ?: DEFAULT_SHUTDOWN_TIMEOUT_MS
 
         val start = System.nanoTime()
-        context.session.server.shutdown().get(timeout, TimeUnit.MILLISECONDS)
+        context.session.server.shutdown().awaitResponse(timeout, context.checkActive)
         val elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis()
         logger.info { "Shutdown completed in $elapsedMs ms" }
     }
@@ -338,7 +351,7 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
     override fun execute(step: ScenarioStep.SendRequest, context: ScenarioContext, nextStep: ScenarioStep?) {
         val paramsNode = context.interpolateNode(step.params)
         val paramsObject = paramsNode?.toJavaObject()
-        val timeout = context.effectiveTimeoutMs(step.timeoutMs ?: 30_000L)
+        val timeout = context.effectiveTimeoutMs(step.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS)
 
         logger.info { "Sending request '${step.method}' with params: $paramsObject" }
 
@@ -352,25 +365,19 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
         // @see https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol
         val customRequest = CustomRequest.fromMethod(step.method)
 
-        val response = try {
-            if (customRequest != null) {
-                logger.info { "Using typed proxy for custom method '${step.method}'" }
-                val future = customRequest.invoke(context.session.groovyServer, paramsObject)
-                logger.info { "Custom request future created for '${step.method}', waiting for response..." }
-                val result = future.get(timeout, TimeUnit.MILLISECONDS)
-                logger.info { "Custom request '${step.method}' completed successfully" }
-                result
-            } else {
-                // Standard LSP method - use generic endpoint
-                val future = context.session.endpoint.request(step.method, paramsObject)
-                logger.info { "Request future created for '${step.method}', waiting for response..." }
-                val result = future.get(timeout, TimeUnit.MILLISECONDS)
-                logger.info { "Request '${step.method}' completed successfully" }
-                result
-            }
-        } catch (e: Exception) {
-            logger.error { "Request '${step.method}' failed with exception: ${e::class.simpleName} - ${e.message}" }
-            throw e
+        val response = if (customRequest != null) {
+            logger.info { "Using typed proxy for custom method '${step.method}'" }
+            val future = customRequest.invoke(context.session.groovyServer, paramsObject)
+            logger.info { "Custom request future created for '${step.method}', waiting for response..." }
+            val result = future.awaitResponse(timeout, context.checkActive)
+            logger.info { "Custom request '${step.method}' completed successfully" }
+            result
+        } else {
+            val future = context.session.endpoint.request(step.method, paramsObject)
+            logger.info { "Request future created for '${step.method}', waiting for response..." }
+            val result = future.awaitResponse(timeout, context.checkActive)
+            logger.info { "Request '${step.method}' completed successfully" }
+            result
         }
 
         logger.info { "Raw response for ${step.method}: $response (type=${response?.javaClass?.simpleName})" }
@@ -596,100 +603,6 @@ class DownloadPluginStepExecutor : StepExecutor<ScenarioStep.DownloadPlugin> {
             }
         } catch (e: Exception) {
             throw AssertionError("Failed to download plugin $pluginId:$version", e)
-        }
-    }
-}
-
-class CliCommandStepExecutor : StepExecutor<ScenarioStep.CliCommand> {
-    override fun execute(step: ScenarioStep.CliCommand, context: ScenarioContext, nextStep: ScenarioStep?) {
-        val interpolatedCommand = context.interpolateString(step.command)
-        val interpolatedArgs = step.args.map { context.interpolateString(it) }
-
-        val fullCommand =
-            if (interpolatedCommand.startsWith("gls") || interpolatedCommand.startsWith("jenkins")) {
-                // Build command to invoke the GLS CLI.
-                // Priority: execJar (Bazel) > binary (Gradle script) > fallback
-                val execJarPath = System.getProperty("groovy.lsp.e2e.execJar")
-                    ?.let { BazelRunfiles.resolveForSubprocess(it) }
-                val binaryPath = System.getProperty("groovy.lsp.binary")
-                    ?: "./groovy-lsp/build/install/groovy-lsp/bin/groovy-lsp"
-
-                val cmd = if (!execJarPath.isNullOrBlank()) {
-                    // Use java -jar for Bazel deploy jar (absolute path for working dir changes)
-                    val javaBinary = resolveJavaBinary()
-                    mutableListOf(javaBinary, "-jar", execJarPath)
-                } else {
-                    mutableListOf(binaryPath)
-                }
-
-                if (interpolatedCommand.contains(" ")) {
-                    val parts = interpolatedCommand.split(" ")
-                    if (parts.first() == "gls") {
-                        cmd.addAll(parts.drop(1))
-                    } else {
-                        cmd.addAll(parts)
-                    }
-                } else if (interpolatedCommand != "gls") {
-                    cmd.add(interpolatedCommand)
-                }
-                cmd.addAll(interpolatedArgs)
-                cmd
-            } else {
-                interpolatedCommand.split(" ") + interpolatedArgs
-            }
-
-        logger.info { "Executing CLI command: ${fullCommand.joinToString(" ")}" }
-
-        val builder = ProcessBuilder(fullCommand)
-        builder.directory(context.workspace.rootDir.toFile())
-
-        // Forward JAVA_HOME to subprocess
-        val javaHome = System.getProperty("java.home") ?: System.getenv("JAVA_HOME")
-        if (javaHome != null) {
-            builder.environment()["JAVA_HOME"] = javaHome
-        }
-
-        // Capture output
-        val outputFile = File.createTempFile("cli-stdout", ".log")
-        val errorFile = File.createTempFile("cli-stderr", ".log")
-        builder.redirectOutput(outputFile)
-        builder.redirectError(errorFile)
-
-        val process = builder.start()
-
-        val completed = process.waitFor(step.timeoutSeconds, TimeUnit.SECONDS)
-        if (!completed) {
-            process.destroyForcibly()
-            throw TimeoutException("CLI command timed out after ${step.timeoutSeconds}s: $fullCommand")
-        }
-
-        val exitCode = process.exitValue()
-        val stdout = outputFile.readText()
-        val stderr = errorFile.readText()
-
-        logger.info { "CLI exit code: $exitCode" }
-        if (stderr.isNotEmpty()) {
-            logger.warn { "CLI stderr: $stderr" }
-        }
-
-        if (exitCode != step.expectExitCode) {
-            throw AssertionError(
-                "CLI command failed with exit code $exitCode (expected ${step.expectExitCode})\nStdout: $stdout\nStderr: $stderr",
-            )
-        }
-
-        context.lastResult = buildJsonObject {
-            put("exitCode", exitCode)
-            put("stdout", stdout)
-            put("stderr", stderr)
-        }
-
-        step.saveAs?.let { name ->
-            context.saveResult(name, context.lastResult!!)
-        }
-
-        step.checks.forEach { check ->
-            context.evaluateCheck(context.lastResult!!, check)
         }
     }
 }

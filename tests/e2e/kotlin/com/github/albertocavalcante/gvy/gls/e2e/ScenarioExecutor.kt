@@ -5,11 +5,17 @@ import com.jayway.jsonpath.spi.json.JsonSmartJsonProvider
 import com.jayway.jsonpath.spi.mapper.JsonSmartMappingProvider
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.serialization.json.Json
+import java.time.Duration
 import kotlin.reflect.KClass
 
 private val logger = KotlinLogging.logger {}
 
-class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory) {
+class ScenarioExecutor internal constructor(
+    private val sessionFactory: LanguageServerSessionFactory,
+    private val createExecution: (Duration) -> ScenarioExecution,
+) {
+    constructor(sessionFactory: LanguageServerSessionFactory) : this(sessionFactory, { ScenarioExecution(it) })
+
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
@@ -45,14 +51,23 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
     )
 
     fun execute(definition: ScenarioDefinition) {
+        val timeoutMs = System.getProperty("groovy.lsp.e2e.scenarioTimeoutMs")?.let {
+            requireNotNull(it.toLongOrNull()) { "groovy.lsp.e2e.scenarioTimeoutMs must be a positive integer" }
+        } ?: DEFAULT_SCENARIO_TIMEOUT_MS
+        val execution = createExecution(Duration.ofMillis(timeoutMs))
+        execution.run(definition.scenario.name) { execute(definition, execution) }
+    }
+
+    private fun execute(definition: ScenarioDefinition, execution: ScenarioExecution) {
+        execution.checkActive()
         val (workspace, inlineMarkers) = prepareWorkspace(definition)
         val scenario = definition.scenario
 
         AutoCloseable { workspace.cleanup() }.use {
-            sessionFactory.start(scenario.server, scenario.name).use { session ->
+            ScenarioSession(execution) { sessionFactory.start(scenario.server, scenario.name) }.use { session ->
                 val context = ScenarioContext(
                     definition = definition,
-                    session = session,
+                    sessionAccess = ScenarioSessionAccess(session::get, execution::checkActive),
                     workspace = workspace,
                     json = json,
                     jsonPathConfig = jsonPathConfig,
@@ -64,6 +79,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
                 }
 
                 scenario.steps.forEachIndexed { index, step ->
+                    execution.checkActive()
                     logger.info {
                         "Running step ${index + 1} (${step::class.simpleName}) for scenario '${scenario.name}'"
                     }
@@ -73,6 +89,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
 
                     executeStep(step, context, nextStep)
                 }
+                execution.checkActive()
             }
         }
     }
@@ -102,6 +119,8 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
         return ScenarioWorkspace(root) to markers
     }
 }
+
+private const val DEFAULT_SCENARIO_TIMEOUT_MS = 300_000L
 
 /**
  * Writes [files] into the materialized workspace at [root]. On any failure the workspace is deleted, since the
