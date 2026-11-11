@@ -375,6 +375,60 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
+    fun `axis inside exclude also offers notValues, axis inside axes does not`(): Unit = runTest {
+        assertEquals(
+            setOf("name", "values", "notValues"),
+            labelsInStage("matrix {", "excludes {", "exclude {", "axis {"),
+        )
+        assertEquals("notValues ", insertTextsInStage("matrix {", "excludes {", "exclude {", "axis {")["notValues"])
+        assertTrue("notValues" !in labelsInStage("matrix {", "axes {", "axis {"))
+    }
+
+    @Test
+    fun `when conditions insert statements without a brace, composites with one`(): Unit = runTest {
+        val inserts = insertTextsInStage("when {")
+
+        assertEquals("branch ", inserts["branch"])
+        assertEquals("beforeAgent ", inserts["beforeAgent"])
+        assertEquals("allOf {", inserts["allOf"])
+    }
+
+    @Test
+    fun `agent block inserts label without a brace`(): Unit = runTest {
+        val code = "pipeline {\n    agent {\n        \n    }\n}"
+        val inserts = completeAt(code, line = 2, character = 8).associate { it.label to it.insertText }
+
+        assertEquals("label", inserts["label"], "label takes a value, not a block")
+    }
+
+    @Test
+    fun `kubernetes agent with a braced multi-line yaml does not hide a later sub-block's entries`(): Unit = runTest {
+        val code = listOf(
+            "pipeline {",
+            "    agent {",
+            "        kubernetes {",
+            "            yaml '''",
+            "apiVersion: v1",
+            "kind: Pod",
+            "spec: { containers: [ { name: maven } ] }",
+            "            '''",
+            "        }",
+            "    }",
+            "    stages {",
+            "        stage('S') {",
+            "            input {",
+            "                ",
+            "            }",
+            "        }",
+            "    }",
+            "}",
+        ).joinToString("\n")
+        val items = completeAt(code, line = 13, character = 16)
+
+        assertEquals(setOf("message", "id", "ok", "submitter", "submitterParameter", "parameters"), items.labels())
+    }
+
+    @Test
     fun `agent sub-blocks offer exactly their options`(): Unit = runTest {
         assertEquals(
             setOf(

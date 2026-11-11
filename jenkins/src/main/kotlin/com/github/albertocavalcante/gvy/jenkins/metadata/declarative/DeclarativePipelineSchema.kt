@@ -47,6 +47,16 @@ object DeclarativePipelineSchema {
     fun getStatementInstructions(blockName: String?): Set<String> =
         blockIndex[blockName]?.statementInstructions?.toSet().orEmpty()
 
+    /**
+     * Statement instructions that [blockName] accepts only when nested in [enclosingBlocks] (outermost first):
+     * `notValues` is valid in an `axis` of `excludes { exclude { } }` but not of `axes { }`. They are statements
+     * in both [getInnerInstructions] and [getStatementInstructions] terms.
+     */
+    fun getContextualStatementInstructions(blockName: String?, enclosingBlocks: List<String>): Set<String> {
+        val within = blockIndex[blockName]?.statementInstructionsWithin ?: return emptySet()
+        return within.filterKeys { it in enclosingBlocks }.values.flatten().toSet()
+    }
+
     private fun loadSchema(): Schema {
         val resource = requireNotNull(
             DeclarativePipelineSchema::class.java.classLoader.getResource(
@@ -98,5 +108,7 @@ object DeclarativePipelineSchema {
         val completionCategories: List<CompletionCategory> = emptyList(),
         /** Inner instructions written as statements (`name value`), not blocks. */
         val statementInstructions: List<String> = emptyList(),
+        /** Extra statement instructions by enclosing block name (see [getContextualStatementInstructions]). */
+        val statementInstructionsWithin: Map<String, List<String>> = emptyMap(),
     )
 }

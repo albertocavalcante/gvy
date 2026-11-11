@@ -239,7 +239,12 @@
       "statementInstructions": [
         "name",
         "values"
-      ]
+      ],
+      "statementInstructionsWithin": {
+        "exclude": [
+          "notValues"
+        ]
+      }
     },
     {
       "name": "libraries",
@@ -399,6 +404,20 @@
         "allOf",
         "anyOf",
         "not",
+        "beforeAgent",
+        "beforeInput",
+        "beforeOptions",
+        "equals",
+        "triggeredBy",
+        "isRestartedRun"
+      ],
+      "statementInstructions": [
+        "branch",
+        "buildingTag",
+        "changeset",
+        "changelog",
+        "tag",
+        "changeRequest",
         "beforeAgent",
         "beforeInput",
         "beforeOptions",

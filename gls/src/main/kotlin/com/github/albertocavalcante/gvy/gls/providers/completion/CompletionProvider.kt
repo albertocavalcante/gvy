@@ -337,9 +337,14 @@ object CompletionProvider {
         val detected = JenkinsContextDetector.detectFromDocument(ctx.content.lines(), ctx.line, ctx.character)
         val currentBlock = detected.currentBlock
         val blockCategories = currentBlock?.let(DeclarativePipelineSchema::getCompletionCategories) ?: emptySet()
-        val innerInstructions = currentBlock?.let(DeclarativePipelineSchema::getInnerInstructions) ?: emptySet()
+        val contextual = DeclarativePipelineSchema.getContextualStatementInstructions(
+            currentBlock,
+            detected.enclosingBlocks,
+        )
+        val innerInstructions =
+            (currentBlock?.let(DeclarativePipelineSchema::getInnerInstructions) ?: emptySet()) + contextual
         val statementInstructions =
-            currentBlock?.let(DeclarativePipelineSchema::getStatementInstructions) ?: emptySet()
+            (currentBlock?.let(DeclarativePipelineSchema::getStatementInstructions) ?: emptySet()) + contextual
         val isStrictDeclarative = detected.isDeclarativePipeline && currentBlock != null && currentBlock != "script"
 
         return JenkinsBlockContext(
