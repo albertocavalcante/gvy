@@ -699,4 +699,46 @@ class GroovySemanticDBTest {
             assertEquals(1, refs.size)
         }
     }
+
+    @Nested
+    @DisplayName("Member index and version")
+    inner class MemberIndexTests {
+        private fun method(name: String, owner: String) = SymbolInfo(
+            symbol = "$owner$name().",
+            kind = SymbolKind.METHOD,
+            range = Range(1, 0, 1, 5),
+            name = name,
+            owner = owner,
+        )
+
+        @Test
+        fun `findMembers follows the owner across updates and removal`() {
+            val owner = "demo/Lib#"
+            db.updateDocument(
+                testUri1,
+                SemanticDocument(testUri1, listOf(method("a", owner), method("b", owner)), emptyList()),
+            )
+
+            assertEquals(setOf("a", "b"), db.findMembers(owner).map { it.second.name }.toSet())
+
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
+            assertEquals(listOf("a"), db.findMembers(owner).map { it.second.name })
+
+            db.removeDocument(testUri1)
+            assertTrue(db.findMembers(owner).isEmpty())
+        }
+
+        @Test
+        fun `version changes on every update, removal and clear`() {
+            val seen = mutableListOf(db.version)
+            db.updateDocument(testUri1, SemanticDocument(testUri1, emptyList(), emptyList()))
+            seen += db.version
+            db.removeDocument(testUri1)
+            seen += db.version
+            db.clear()
+            seen += db.version
+
+            assertEquals(seen.size, seen.toSet().size, "versions $seen")
+        }
+    }
 }

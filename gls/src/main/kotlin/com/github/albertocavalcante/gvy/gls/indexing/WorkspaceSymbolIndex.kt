@@ -213,42 +213,33 @@ class WorkspaceSymbolIndex(
      * @param arity The number of parameters, or null to match any arity
      * @return The method member info, or null if not found
      */
-    override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? {
-        // Look up the class to get all its members
+    override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? =
+        findMethods(classFqn, methodName, arity).firstOrNull()
+
+    /** Every overload of [methodName] with [arity] parameters (any arity when null), direct members only. */
+    override fun findMethods(classFqn: String, methodName: String, arity: Int?): List<MemberInfo> =
+        directMembers(classFqn)
+            .filter { it.kind == SymbolKind.METHOD && it.name == methodName }
+            .filter { arity == null || extractParameterCount(it.symbol) == arity }
+            .map { it.toMemberInfo() }
+
+    override val version: Long get() = semanticDb.version
+
+    /** The symbols owned by the class, from the owner index; empty for a class the workspace does not define. */
+    private fun directMembers(classFqn: String): List<SymbolInfo> {
         val classSymbolId = "$classFqn#"
-        findSymbol(classSymbolId) ?: return null // an unknown class has no members
-
-        // Find all symbols in the workspace that belong to this class
-        val allDocuments = visibleDocuments()
-        val methods = allDocuments.flatMap { doc ->
-            doc.symbols.filter { symbol ->
-                symbol.owner == classSymbolId &&
-                    symbol.kind == SymbolKind.METHOD &&
-                    symbol.name == methodName
-            }
-        }
-
-        // If arity is specified, filter by parameter count
-        val matchingMethod = if (arity != null) {
-            methods.firstOrNull { method ->
-                val paramCount = extractParameterCount(method.symbol)
-                paramCount == arity
-            }
-        } else {
-            // Return any method with matching name
-            methods.firstOrNull()
-        }
-
-        return matchingMethod?.let { method ->
-            MemberInfo(
-                name = method.name,
-                kind = method.kind,
-                type = method.type,
-                signature = method.symbol,
-                symbolId = method.symbol,
-            )
-        }
+        findSymbol(classSymbolId) ?: return emptyList() // an unknown class has no members
+        val hidden = shadowed()
+        return semanticDb.findMembers(classSymbolId).filter { it.first !in hidden }.map { it.second }
     }
+
+    private fun SymbolInfo.toMemberInfo() = MemberInfo(
+        name = name,
+        kind = kind,
+        type = type,
+        signature = if (kind == SymbolKind.METHOD) symbol else null,
+        symbolId = symbol,
+    )
 
     /**
      * Get all members of a class (fields, methods, properties).
@@ -258,33 +249,11 @@ class WorkspaceSymbolIndex(
      * @return List of all member info
      */
     override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> {
-        val classSymbolId = "$classFqn#"
-        findSymbol(classSymbolId) ?: return emptyList() // an unknown class has no members
-
-        // Find all symbols owned by this class
-        val allDocuments = visibleDocuments()
-        val directMembers = allDocuments.flatMap { doc ->
-            doc.symbols.filter { symbol ->
-                symbol.owner == classSymbolId &&
-                    (
-                        symbol.kind == SymbolKind.FIELD ||
-                            symbol.kind == SymbolKind.METHOD ||
-                            symbol.kind == SymbolKind.PROPERTY
-                        )
-            }
-        }
-
         // TODO: Add inherited members when hierarchy is available
         // For now, just return direct members
-        return directMembers.map { symbol ->
-            MemberInfo(
-                name = symbol.name,
-                kind = symbol.kind,
-                type = symbol.type,
-                signature = if (symbol.kind == SymbolKind.METHOD) symbol.symbol else null,
-                symbolId = symbol.symbol,
-            )
-        }
+        return directMembers(classFqn)
+            .filter { it.kind == SymbolKind.FIELD || it.kind == SymbolKind.METHOD || it.kind == SymbolKind.PROPERTY }
+            .map { it.toMemberInfo() }
     }
 
     /**

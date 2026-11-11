@@ -39,6 +39,10 @@ class GroovySemantics(
     // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
     private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
 
+    // The workspace version each cached context was built at; guarded by the contextCache lock. Locals typed from
+    // other files are baked into a context, so it is rebuilt once the workspace has changed (never served stale).
+    private val contextVersions = WeakHashMap<ModuleNode, Long>()
+
     // Thread-local current module for single-parameter API compatibility (avoids sharing this state across threads)
     private val currentModule = ThreadLocal<ModuleNode?>()
 
@@ -50,7 +54,8 @@ class GroovySemantics(
         // Manually perform atomic check-and-create under the synchronized map's lock
         // Cannot use computeIfAbsent with Collections.synchronizedMap as it can cause deadlock
         synchronized(contextCache) {
-            if (!contextCache.containsKey(module)) {
+            val workspaceVersion = workspaceMemberLookup?.version ?: 0L
+            if (!contextCache.containsKey(module) || contextVersions[module] != workspaceVersion) {
                 val scope = buildRootScope(module)
                 val context = NativeTypeContext(
                     typeSolver = typeSolver,
@@ -64,6 +69,7 @@ class GroovySemantics(
                 populateClassMethodVariables(module, scope, context)
 
                 contextCache[module] = context
+                contextVersions[module] = workspaceVersion
             }
         }
     }

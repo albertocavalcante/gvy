@@ -40,8 +40,9 @@ class MethodCallCalculator : TypeCalculator<Any> {
         } else {
             SemanticType.Unknown("Implicit receiver")
         }
-        // Unqualified calls have no receiver node, so the receiver type stays Unknown and the result is an
-        // error. Resolving the implicit receiver (this/owner/delegate) is not implemented yet.
+        // TODO(#1585): Unqualified calls have no receiver node, so the receiver type stays Unknown and the
+        //   result is an error. Resolving the implicit receiver (this/owner/delegate) is not implemented yet.
+        //   See: https://github.com/albertocavalcante/gvy/issues/1585
 
         // Traverse pattern: collect all results, short-circuit on first error
         val argTypes = mutableListOf<SemanticType>()
@@ -62,9 +63,14 @@ class MethodCallCalculator : TypeCalculator<Any> {
         val arguments = ReflectionAccess.invokeNoArg(node, "getArguments")
             ?: ReflectionAccess.getField(node, "arguments")
 
+        // A Groovy call's arguments are a TupleExpression (an Iterable of expressions, not a List).
         return when (arguments) {
-            is List<*> -> arguments.filterNotNull()
-            else -> emptyList()
+            is Iterable<*> -> arguments.filterNotNull()
+            else ->
+                arguments
+                    ?.let { ReflectionAccess.invokeNoArg(it, "getExpressions") as? List<*> }
+                    ?.filterNotNull()
+                    .orEmpty()
         }
     }
 }

@@ -38,6 +38,23 @@ interface MemberLookup {
      * @return List of all member information
      */
     fun getAllMembers(classFqn: String, includeInherited: Boolean = true): List<MemberInfo>
+
+    /**
+     * Find every method of a class with the given name and arity (all overloads, direct members only).
+     * Callers that need one answer must not pick among overloads arbitrarily.
+     *
+     * @param classFqn The class name in index form (e.g., "com/example/MyClass")
+     * @param methodName The simple method name
+     * @param arity The number of parameters, or null to match any arity
+     */
+    fun findMethods(classFqn: String, methodName: String, arity: Int? = null): List<MemberInfo> =
+        listOfNotNull(findMethod(classFqn, methodName, arity))
+
+    /**
+     * Changes whenever the underlying members may have changed. Anything derived from lookups (cached types)
+     * is stale once this differs from the value seen when it was computed. Fixed lookups can leave it at 0.
+     */
+    val version: Long get() = 0L
 }
 
 /**
