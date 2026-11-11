@@ -5,12 +5,20 @@ import com.github.albertocavalcante.gvy.gls.providers.diagnostics.StreamingDiagn
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.asFlow
-import kotlinx.coroutines.flow.emitAll
-import kotlinx.coroutines.flow.flatMapMerge
-import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.SendChannel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.DEFAULT_CONCURRENCY
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.consumeAsFlow
 import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.eclipse.lsp4j.Diagnostic
 import java.net.URI
@@ -18,8 +26,8 @@ import java.net.URI
 /**
  * Service for collecting diagnostics from multiple streaming providers.
  *
- * Providers are executed concurrently using Flow-based composition, with configuration-based
- * filtering (disabled/enabled providers) and graceful error handling.
+ * Providers execute concurrently with bounded parallelism and configuration-based filtering.
+ * Ordinary exceptions are recorded alongside partial diagnostics; cancellation and fatal errors propagate.
  *
  * @param providers List of diagnostic providers to use
  * @param config Configuration for filtering providers
@@ -35,65 +43,93 @@ class DiagnosticsService(
     }
 
     /**
-     * Get diagnostics from all enabled providers using Flow-based concurrent execution.
-     *
-     * NOTE: Uses flatMapMerge for concurrent provider execution. This is a performance
-     * optimization that allows multiple slow providers (like CodeNarc) to run in parallel.
+     * Best-effort list view for existing callers. Use [collectDiagnostics] for provider failure details.
+     */
+    suspend fun getDiagnostics(uri: URI, content: String): List<Diagnostic> =
+        collectDiagnostics(uri, content).diagnostics
+
+    /**
+     * Collects all enabled providers, preserving diagnostic arrival order and registration-ordered outcomes.
+     * Awaiting each provider explicitly also observes a provider that cancels its own child coroutine.
      *
      * TODO(#454): Add performance metrics to track per-provider execution time.
      *   See: https://github.com/albertocavalcante/groovy-lsp/issues/454
      * TODO(#455): Consider adding timeout per provider to prevent hanging.
      *   See: https://github.com/albertocavalcante/groovy-lsp/issues/455
      */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun getDiagnostics(uri: URI, content: String): List<Diagnostic> = withContext(Dispatchers.IO) {
-        val enabledProviders = providers.filter { config.isProviderEnabled(it) }
+    @OptIn(FlowPreview::class)
+    suspend fun collectDiagnostics(uri: URI, content: String): DiagnosticsCollectionResult =
+        withContext(Dispatchers.IO) {
+            val enabledProviders = providers.filter { config.isProviderEnabled(it) }
+                .map { EnabledProvider(it.id, it) }
 
-        if (enabledProviders.isEmpty()) {
-            logger.debug { "No enabled diagnostic providers for $uri" }
-            return@withContext emptyList()
-        }
+            if (enabledProviders.isEmpty()) {
+                logger.debug { "No enabled diagnostic providers for $uri" }
+                return@withContext DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
+            }
 
-        logger.debug {
-            "Running ${enabledProviders.size} enabled providers for $uri: ${enabledProviders.map { it.id }}"
-        }
+            logger.debug {
+                "Running ${enabledProviders.size} enabled providers for $uri: ${enabledProviders.map { it.id }}"
+            }
 
-        try {
-            // Execute all providers concurrently and collect results
-            // NOTE: flatMapMerge concurrency parameter controls parallelism
-            // Setting to DEFAULT (16) allows many providers to run concurrently
-            enabledProviders.asFlow()
-                .flatMapMerge { provider ->
-                    // Wrap each provider in error handling
-                    flow {
-                        try {
-                            logger.debug { "Executing provider: ${provider.id}" }
-                            val startTime = System.nanoTime()
-
-                            emitAll(provider.provideDiagnostics(uri, content))
-
-                            val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
-                            logger.debug { "Provider ${provider.id} completed in ${elapsedMs}ms" }
-                        } catch (e: CancellationException) {
-                            throw e
-                        } catch (e: Exception) {
-                            // NOTE: Error isolation - one provider failure doesn't stop others
-                            // TODO(#456): Consider publishing provider-specific error diagnostics.
-                            //   See: https://github.com/albertocavalcante/groovy-lsp/issues/456
-                            logger.error(e) { "Provider ${provider.id} failed for $uri: ${e.message}" }
-                            // Don't re-throw - continue with other providers
+            try {
+                coroutineScope {
+                    val emissions = Channel<Diagnostic>(Channel.BUFFERED)
+                    val diagnostics = async { emissions.consumeAsFlow().toList() }
+                    // Preserve flatMapMerge's existing concurrency budget, including its configured override.
+                    val permits = Semaphore(DEFAULT_CONCURRENCY)
+                    val pending = enabledProviders.map { provider ->
+                        async {
+                            permits.withPermit {
+                                collectProvider(provider, uri, content, emissions)
+                            }
                         }
                     }
+                    val failures = try {
+                        pending.awaitAll().filterNotNull()
+                    } finally {
+                        pending.forEach { it.cancel() }
+                        emissions.close()
+                    }
+
+                    DiagnosticsCollectionResult(
+                        diagnostics = diagnostics.await(),
+                        providerIds = enabledProviders.map { it.id },
+                        failures = failures,
+                    )
                 }
-                .toList()
-        } catch (e: CancellationException) {
-            // Job cancellation is expected during rapid document edits (debouncing)
-            logger.debug { "Diagnostic collection cancelled for $uri" }
-            throw e // Re-throw to preserve cancellation
-        } catch (e: Exception) {
-            // NOTE: This should rarely happen due to per-provider error handling above
-            logger.error(e) { "Unexpected error during diagnostic collection for $uri" }
-            emptyList()
+            } catch (e: CancellationException) {
+                // Job cancellation is expected during rapid document edits (debouncing)
+                logger.debug { "Diagnostic collection cancelled for $uri" }
+                throw e
+            }
+        }
+
+    @Suppress("TooGenericExceptionCaught") // Provider exceptions become outcomes; cancellation and Errors propagate.
+    private suspend fun collectProvider(
+        provider: EnabledProvider,
+        uri: URI,
+        content: String,
+        emissions: SendChannel<Diagnostic>,
+    ): DiagnosticProviderFailure? {
+        logger.debug { "Executing provider: ${provider.id}" }
+        val startTime = System.nanoTime()
+        return try {
+            provider.provider.provideDiagnostics(uri, content).collect { emissions.send(it) }
+            currentCoroutineContext().ensureActive()
+            val elapsedMs = (System.nanoTime() - startTime) / NANOS_TO_MILLIS
+            logger.debug { "Provider ${provider.id} completed in ${elapsedMs}ms" }
+            null
+        } catch (failure: CancellationException) {
+            throw failure
+        } catch (failure: Exception) {
+            currentCoroutineContext().ensureActive()
+            logger.error(failure) { "Provider ${provider.id} failed for $uri: ${failure.message}" }
+            // TODO(#456): Surface provider failures to standard diagnostics consumers.
+            //   See: https://github.com/albertocavalcante/groovy-lsp/issues/456
+            DiagnosticProviderFailure(provider.id, failure.javaClass.name, failure.message)
         }
     }
+
+    private data class EnabledProvider(val id: String, val provider: StreamingDiagnosticProvider)
 }

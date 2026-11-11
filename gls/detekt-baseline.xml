@@ -94,7 +94,6 @@
     <ID>TooGenericExceptionCaught:CoroutineUtils.kt$e: Throwable</ID>
     <ID>TooGenericExceptionCaught:DependencyManager.kt$DependencyManager$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DependencyRequestHandler.kt$DependencyRequestHandler$e: Exception</ID>
-    <ID>TooGenericExceptionCaught:DiagnosticsService.kt$DiagnosticsService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DocumentationProvider.kt$DocumentationProvider$e: Exception</ID>
     <ID>TooGenericExceptionCaught:DocumentationService.kt$DocumentationService$e: Exception</ID>
     <ID>TooGenericExceptionCaught:GroovyCompilationService.kt$GroovyCompilationService$e: Exception</ID>
