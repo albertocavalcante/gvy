@@ -16,6 +16,9 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
@@ -219,18 +222,45 @@ class RetirementWakeTest {
     fun `every waiter on a retired job wakes once with no result`(): Unit = runBlocking {
         val cache = CompilationCacheService()
         // A compile that ignores cancellation: the job completes only once its blocking body returns
+        val entered = CountDownLatch(1)
         val job = scope.async {
+            entered.countDown()
             release.await(HOLD_SECONDS, TimeUnit.SECONDS)
             CompilationResult.failure(emptyList())
         }
+        assertTrue(entered.await(WAIT_SECONDS, TimeUnit.SECONDS), "the blocking compile never started")
         val pending = cache.register(job)
-        val waiters = List(WAITERS) { async(Dispatchers.IO) { pending.awaitUnlessRetired() } }
+        val waiters = List(WAITERS) {
+            async(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) { pending.awaitUnlessRetired() }
+        }
+        assertTrue(waiters.none { it.isCompleted }, "each waiter must register before retirement")
 
         cache.invalidate(uri)
 
         val answers = withTimeout(WAIT_SECONDS * 1_000) { waiters.awaitAll() }
         assertEquals(List(WAITERS) { null }, answers)
         assertFalse(job.isCompleted, "the waiters woke at the signal, not at the job's completion")
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test
+    fun `retiring a queued job completes it without entering its blocking body`(): Unit = runTest {
+        val cache = CompilationCacheService()
+        var entered = false
+        val job = async(StandardTestDispatcher(testScheduler)) {
+            entered = true
+            CompilationResult.failure(emptyList())
+        }
+        val pending = cache.register(job)
+        val waiter = async(start = CoroutineStart.UNDISPATCHED) { pending.awaitUnlessRetired() }
+
+        cache.invalidate(uri)
+        runCurrent()
+
+        assertFalse(entered, "retirement before dispatch must not enter the body")
+        assertTrue(job.isCancelled)
+        assertTrue(job.isCompleted, "a compile is noncooperative only after its blocking body starts")
+        assertNull(waiter.await())
     }
 
     @Test
