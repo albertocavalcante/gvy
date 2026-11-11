@@ -6,6 +6,7 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.runBlocking
 import org.codehaus.groovy.ast.ASTNode
@@ -76,7 +77,7 @@ class CustomRulesProviderTest {
     }
 
     @Test
-    fun `should handle rule exceptions gracefully`(): Unit = runBlocking {
+    fun `ordinary rule failure preserves emitted diagnostics and fails the cohort`(): Unit = runBlocking {
         val goodRule = createMockRule("good", listOf(createDiagnostic("Good rule")))
         val badRule = object : AbstractDiagnosticRule() {
             override val id = "bad"
@@ -92,11 +93,15 @@ class CustomRulesProviderTest {
 
         val provider = CustomRulesProvider(listOf(goodRule, badRule), compilationService)
         val uri = URI.create("file:///test.groovy")
-        val diagnostics = provider.provideDiagnostics(uri, "test code").toList()
+        val diagnostics = mutableListOf<Diagnostic>()
+        val failure = assertFailsWith<Exception> {
+            provider.provideDiagnostics(uri, "test code").onEach(diagnostics::add).toList()
+        }
 
         // Should still get diagnostics from good rule
         assertEquals(1, diagnostics.size)
         assertEquals("Good rule", diagnostics.first().message)
+        assertTrue(checkNotNull(failure.message).contains("bad"))
     }
 
     @Test

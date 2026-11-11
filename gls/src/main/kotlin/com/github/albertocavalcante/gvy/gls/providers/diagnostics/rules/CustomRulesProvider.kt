@@ -43,7 +43,8 @@ class CustomRulesProvider(
         // Create context for rules
         val context = createContext(uri)
 
-        // Execute each enabled rule
+        val failures = mutableListOf<CustomRuleFailure>()
+        // Execute each enabled rule; ordinary failures do not discard healthy later emissions.
         for (rule in rules) {
             if (!ruleConfig.isRuleEnabled(rule)) {
                 logger.debug { "Skipping disabled rule: ${rule.id}" }
@@ -53,15 +54,18 @@ class CustomRulesProvider(
             logger.debug { "Executing rule: ${rule.id}" }
             val diagnostics =
                 runCatching { rule.analyze(uri, content, context) }
-                    .onFailure { throwable ->
+                    .getOrElse { throwable ->
                         when (throwable) {
                             is CancellationException -> throw throwable
                             is Error -> throw throwable
-                            else -> logger.error(throwable) { "Rule ${rule.id} failed for $uri" }
+                            is Exception -> {
+                                failures.add(CustomRuleFailure(rule.id, throwable))
+                                logger.error(throwable) { "Rule ${rule.id} failed for $uri" }
+                                emptyList()
+                            }
+                            else -> throw throwable
                         }
                     }
-                    // Continue with other rules
-                    .getOrDefault(emptyList())
 
             logger.debug { "Rule ${rule.id} found ${diagnostics.size} violations" }
 
@@ -70,38 +74,18 @@ class CustomRulesProvider(
                 emit(diagnostic)
             }
         }
+        if (failures.isNotEmpty()) throw CustomRuleFailuresException(failures)
     }
 
     private fun createContext(uri: URI): RuleContext = object : RuleContext {
         // Lazy AST retrieval - only fetch if rules need it
-        private val astLazy: Any? by lazy {
-            runCatching { compilationService.getAst(uri) }
-                .onFailure { throwable ->
-                    when (throwable) {
-                        is CancellationException -> throw throwable
-                        is Error -> throw throwable
-                        else -> logger.debug(throwable) { "Failed to get AST for rule context" }
-                    }
-                }
-                .getOrNull()
-        }
+        private val astLazy: Any? by lazy { compilationService.getAst(uri) }
 
         override fun getAst(): Any? = astLazy
 
-        override fun hasErrors(): Boolean = runCatching {
-            compilationService.getDiagnostics(uri).any {
-                it.severity == DiagnosticSeverity.Error
-            }
+        override fun hasErrors(): Boolean = compilationService.getDiagnostics(uri).any {
+            it.severity == DiagnosticSeverity.Error
         }
-            .onFailure { throwable ->
-                when (throwable) {
-                    is CancellationException -> throw throwable
-                    is Error -> throw throwable
-                    else -> logger.debug(throwable) { "Failed to check for errors" }
-                }
-            }
-            // Assume errors if we can't check
-            .getOrDefault(true)
 
         override fun isJenkinsFile(uri: URI): Boolean {
             val configuration = compilationService.serverConfiguration
@@ -112,5 +96,23 @@ class CustomRulesProvider(
             }
             return ModeResolver.fromConfig(configuration, jenkinsCapabilities).isJenkinsModeEnabled(uri)
         }
+    }
+}
+
+/** An ordinary failed rule, retained in execution order with its original exception. */
+internal data class CustomRuleFailure(val ruleId: String, val cause: Exception)
+
+/** The healthy rule emissions precede this failure; the collector retains them with failed-provider metadata. */
+internal class CustomRuleFailuresException(failures: List<CustomRuleFailure>) :
+    Exception(
+        "Custom diagnostic rules failed: " + failures.joinToString("; ") {
+            "${it.ruleId}: ${it.cause.javaClass.name}: ${it.cause.message}"
+        },
+        failures.first().cause,
+    ) {
+    val failures: List<CustomRuleFailure> = failures.toList()
+
+    init {
+        failures.drop(1).forEach { addSuppressed(it.cause) }
     }
 }
