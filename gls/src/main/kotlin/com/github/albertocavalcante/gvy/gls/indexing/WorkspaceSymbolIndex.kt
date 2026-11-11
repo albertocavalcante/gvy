@@ -43,12 +43,6 @@ class WorkspaceSymbolIndex(
         }
     }
 
-    /** Every stored document that is not [shadowed]. */
-    private fun visibleDocuments(): Collection<SemanticDocument> {
-        val hidden = shadowed()
-        return semanticDb.getAllDocuments().filterKeys { it !in hidden }.values
-    }
-
     /**
      * Get the semantic document for a URI.
      *

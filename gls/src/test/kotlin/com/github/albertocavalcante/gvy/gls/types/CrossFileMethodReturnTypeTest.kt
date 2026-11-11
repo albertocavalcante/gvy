@@ -136,6 +136,36 @@ class CrossFileMethodReturnTypeTest {
     }
 
     @Test
+    fun `overloads in the same file that disagree on the return type give no type`() = runBlocking<Unit> {
+        val app = compile(
+            "demo/app/Loc.groovy",
+            """
+            package demo.app
+            class Loc {
+                String fmt(int n) { '' }
+                Integer fmt(String s) { 1 }
+                String same(int n) { '' }
+                String same(String s) { '' }
+                String one(String s) { '' }
+                void run(Loc loc, List<String> xs) {
+                    loc.fmt('x')
+                    loc.same('x')
+                    loc.one(*xs)
+                }
+            }
+            """.trimIndent(),
+        )
+
+        val calls = collectCalls(app)
+
+        assertThat(resolver.resolveType(calls.getValue("fmt"), app)).isInstanceOf(SemanticType.Unknown::class.java)
+        assertThat(resolver.resolveType(calls.getValue("same"), app))
+            .isEqualTo(SemanticType.Known("java.lang.String"))
+        // A spread argument has no fixed arity, so the call is not matched by arity.
+        assertThat(resolver.resolveType(calls.getValue("one"), app)).isInstanceOf(SemanticType.Unknown::class.java)
+    }
+
+    @Test
     fun `a method on a type variable is not typed from its bound`() = runBlocking<Unit> {
         compile("demo/lib/NBox.groovy", "package demo.lib\nclass NBox<T extends Number> { T get() { null } }")
         val app = compile(

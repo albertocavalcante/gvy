@@ -39,7 +39,11 @@ class GroovySemanticDB {
 
     private val versionCounter = AtomicLong()
 
-    /** Increases on every change to the stored documents, so a derived value can tell it was computed earlier. */
+    /**
+     * Increases whenever a stored document's declarations change (a class, method, field or property added,
+     * removed, renamed or retyped), or the database is cleared, so a derived value can tell it was computed earlier.
+     * Edits inside bodies, moved ranges and an identical recompile leave it unchanged.
+     */
     val version: Long get() = versionCounter.get()
 
     /**
@@ -76,9 +80,12 @@ class GroovySemanticDB {
         )
         val facts = ImplementationFacts.freeze(implementations)
         lock.write {
-            documents.put(uri, StoredDocument(snapshot, sourceText, facts))?.let { removeFromIndexes(uri, it.document) }
+            val previous = documents.put(uri, StoredDocument(snapshot, sourceText, facts))
+            previous?.let { removeFromIndexes(uri, it.document) }
             addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex, ownerIndex)
-            versionCounter.incrementAndGet()
+            if (previous == null || declarations(previous.document) != declarations(snapshot)) {
+                versionCounter.incrementAndGet()
+            }
         }
     }
 
@@ -87,8 +94,10 @@ class GroovySemanticDB {
      */
     fun removeDocument(uri: URI) {
         lock.write {
-            documents.remove(uri)?.let { removeFromIndexes(uri, it.document) }
-            versionCounter.incrementAndGet()
+            documents.remove(uri)?.let {
+                removeFromIndexes(uri, it.document)
+                if (declarations(it.document).isNotEmpty()) versionCounter.incrementAndGet()
+            }
         }
     }
 
@@ -206,6 +215,18 @@ class GroovySemanticDB {
             },
         )
     }
+
+    private data class Declaration(
+        val symbol: String,
+        val kind: SymbolKind,
+        val owner: String?,
+        val type: com.github.albertocavalcante.gvy.semantics.SemanticType?,
+    )
+
+    // What other files can see of a document: member declarations and their types, not locals or ranges.
+    private fun declarations(doc: SemanticDocument): Set<Declaration> = doc.symbols
+        .filter { it.kind != SymbolKind.VARIABLE && it.kind != SymbolKind.PARAMETER && it.kind != SymbolKind.IMPORT }
+        .mapTo(HashSet()) { Declaration(it.symbol, it.kind, it.owner, it.type) }
 
     // Callers hold the write lock.
     private fun removeFromIndexes(uri: URI, doc: SemanticDocument) {

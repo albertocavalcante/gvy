@@ -8,6 +8,8 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
+import org.codehaus.groovy.ast.expr.SpreadExpression
+import org.codehaus.groovy.ast.expr.SpreadMapExpression
 import kotlin.reflect.KClass
 
 /**
@@ -31,6 +33,10 @@ class MethodCallCalculator : TypeCalculator<Any> {
             ).left()
 
         val arguments = getArguments(node)
+        // `f(*list)` passes any number of arguments, so no arity can be matched: the result stays unknown.
+        if (arguments.any { it is SpreadExpression || it is SpreadMapExpression }) {
+            return TypeInferenceError.UnsupportedNode(nodeType = "MethodCallExpression (spread argument)").left()
+        }
 
         val receiverType = if (receiver != null) {
             when (val result = context.calculateTypeResult(receiver)) {

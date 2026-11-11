@@ -78,13 +78,17 @@ class NativeTypeContext(
         classFqn: String,
         methodName: String,
         argumentTypes: List<SemanticType>,
-    ): MethodNode? = scope.currentModule?.classes
-        ?.find { it.name == classFqn }
-        ?.methods
-        ?.find { method ->
-            method.name == methodName &&
-                method.parameters.size == argumentTypes.size
+    ): MethodNode? {
+        val candidates = scope.currentModule?.classes
+            ?.find { it.name == classFqn }
+            ?.methods
+            ?.filter { it.name == methodName && it.parameters.size == argumentTypes.size }
+            .orEmpty()
+        // Overloads of one arity may differ in return type; take one only when they all agree.
+        return candidates.firstOrNull()?.takeIf { first ->
+            candidates.all { fromClassNode(it.returnType) == fromClassNode(first.returnType) }
         }
+    }
 
     override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? = when (receiverType) {
         is SemanticType.Array -> {

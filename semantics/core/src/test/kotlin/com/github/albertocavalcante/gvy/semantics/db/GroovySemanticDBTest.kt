@@ -729,16 +729,39 @@ class GroovySemanticDBTest {
         }
 
         @Test
-        fun `version changes on every update, removal and clear`() {
+        fun `version changes when declarations are added, retyped, removed or cleared`() {
+            val owner = "demo/Lib#"
             val seen = mutableListOf(db.version)
-            db.updateDocument(testUri1, SemanticDocument(testUri1, emptyList(), emptyList()))
-            seen += db.version
+            fun record() {
+                seen += db.version
+            }
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
+            record()
+            val retyped = method("a", owner).copy(type = com.github.albertocavalcante.gvy.semantics.TypeConstants.INT)
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(retyped), emptyList()))
+            record()
             db.removeDocument(testUri1)
-            seen += db.version
+            record()
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
             db.clear()
-            seen += db.version
+            record()
 
             assertEquals(seen.size, seen.toSet().size, "versions $seen")
+        }
+
+        @Test
+        fun `version is unchanged by a body-only edit or an identical recompile`() {
+            val owner = "demo/Lib#"
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(method("a", owner)), emptyList()))
+            val before = db.version
+
+            // Same declarations with moved ranges and an extra local: a body edit.
+            val moved = method("a", owner).copy(range = Range(7, 0, 9, 1))
+            val local = SymbolInfo("demo/Lib#a().(x)", SymbolKind.VARIABLE, Range(8, 4, 8, 5), "x", "demo/Lib#a().")
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(moved, local), emptyList()))
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(moved, local), emptyList()))
+
+            assertEquals(before, db.version)
         }
     }
 }

@@ -51,23 +51,27 @@ class GroovySemantics(
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        // Manually perform atomic check-and-create under the synchronized map's lock
-        // Cannot use computeIfAbsent with Collections.synchronizedMap as it can cause deadlock
+        val workspaceVersion = workspaceMemberLookup?.version ?: 0L
         synchronized(contextCache) {
-            val workspaceVersion = workspaceMemberLookup?.version ?: 0L
-            if (!contextCache.containsKey(module) || contextVersions[module] != workspaceVersion) {
-                val scope = buildRootScope(module)
-                val context = NativeTypeContext(
-                    typeSolver = typeSolver,
-                    calculatorRegistry = calculatorRegistry,
-                    scope = scope,
-                    isStaticCompilation = hasCompileStatic(module),
-                    workspaceMemberLookup = workspaceMemberLookup,
-                )
+            if (contextCache.containsKey(module) && contextVersions[module] == workspaceVersion) return
+        }
+        // Built outside the lock: typing the locals can take long and must not block other modules' lookups.
+        // Two threads may build the same module; both results are valid for this version.
+        val scope = buildRootScope(module)
+        val context = NativeTypeContext(
+            typeSolver = typeSolver,
+            calculatorRegistry = calculatorRegistry,
+            scope = scope,
+            isStaticCompilation = hasCompileStatic(module),
+            workspaceMemberLookup = workspaceMemberLookup,
+        )
 
-                populateScriptVariables(module, scope, context)
-                populateClassMethodVariables(module, scope, context)
+        populateScriptVariables(module, scope, context)
+        populateClassMethodVariables(module, scope, context)
 
+        synchronized(contextCache) {
+            val cachedVersion = contextVersions[module]
+            if (!contextCache.containsKey(module) || cachedVersion == null || cachedVersion <= workspaceVersion) {
                 contextCache[module] = context
                 contextVersions[module] = workspaceVersion
             }
