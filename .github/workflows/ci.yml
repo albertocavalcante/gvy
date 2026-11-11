@@ -94,7 +94,7 @@ concurrency:
 
 jobs:
   check-paths:
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -131,7 +131,7 @@ jobs:
 
   check-runner:
     name: Check Runner Availability
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -241,7 +241,7 @@ jobs:
     if: |
       !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
       needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -746,7 +746,7 @@ jobs:
 
   validate:
     name: Validation Check
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -787,7 +787,7 @@ jobs:
           retention-days: 14
   dependency-check:
     name: Check Dependencies
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
     timeout-minutes: 15
     permissions:
       contents: read
