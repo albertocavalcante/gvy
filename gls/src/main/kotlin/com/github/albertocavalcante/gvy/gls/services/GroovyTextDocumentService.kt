@@ -247,6 +247,7 @@ class GroovyTextDocumentService(
                 rules = BuiltinRules.getAllRules(),
                 compilationService = compilationService,
                 ruleConfig = serverConfiguration.diagnosticRuleConfig,
+                configuration = serverConfiguration,
             )
             add(customRulesProvider)
 
