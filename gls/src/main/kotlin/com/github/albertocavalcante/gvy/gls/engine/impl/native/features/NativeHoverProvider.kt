@@ -36,6 +36,7 @@ class NativeHoverProvider(
     // Initialize semantic bridge and generator
     private val semanticResolver = SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),
+        compilationService.getWorkspaceSymbolIndex(),
     )
     private val methodCallMetadataResolver =
         MethodCallMetadataResolver(

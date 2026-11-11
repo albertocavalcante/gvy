@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticTypeFormatter
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
 import com.github.albertocavalcante.gvy.semantics.native.GroovySemantics
 import com.github.albertocavalcante.gvy.semantics.native.NativeCalculators
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -19,8 +20,8 @@ import org.codehaus.groovy.ast.ModuleNode
  * Provides type resolution using the new semantic layer while maintaining
  * backward compatibility with existing code that expects ClassNode.
  */
-class SemanticTypeResolver(private val typeSolver: TypeSolver) {
-    val semantics = GroovySemantics(typeSolver, NativeCalculators.createRegistry())
+class SemanticTypeResolver(private val typeSolver: TypeSolver, workspaceMemberLookup: MemberLookup? = null) {
+    val semantics = GroovySemantics(typeSolver, NativeCalculators.createRegistry(), workspaceMemberLookup)
 
     companion object {
         private val logger = KotlinLogging.logger {}

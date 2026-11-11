@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
+import com.github.albertocavalcante.gvy.semantics.toSemanticType
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassCodeVisitorSupport
 import org.codehaus.groovy.ast.ClassHelper
@@ -246,6 +247,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 range = range,
                 name = fieldNode.name,
                 owner = ownerSymbolId,
+                type = fieldNode.type.toSemanticType(),
             ),
         )
 
@@ -273,6 +275,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 range = range,
                 name = propertyNode.name,
                 owner = ownerSymbolId,
+                type = propertyNode.type.toSemanticType(),
             ),
         )
 
@@ -305,6 +308,7 @@ class SemanticDocumentBuilder(private val moduleNode: ModuleNode, private val ur
                 range = range,
                 name = methodNode.name,
                 owner = ownerSymbolId,
+                type = methodNode.returnType.toSemanticType().takeIf { kind == SymbolKind.METHOD },
             ),
         )
 

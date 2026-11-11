@@ -40,8 +40,8 @@ class MethodCallCalculator : TypeCalculator<Any> {
         } else {
             SemanticType.Unknown("Implicit receiver")
         }
-        // TODO(#638): Support implicit receiver resolution (this/owner/delegate) via TypeContext.
-        //   See: https://github.com/albertocavalcante/gvy/issues/638
+        // Unqualified calls have no receiver node, so the receiver type stays Unknown and the result is an
+        // error. Resolving the implicit receiver (this/owner/delegate) is not implemented yet.
 
         // Traverse pattern: collect all results, short-circuit on first error
         val argTypes = mutableListOf<SemanticType>()

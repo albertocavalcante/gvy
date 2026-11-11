@@ -9,8 +9,9 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegis
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
+import com.github.albertocavalcante.gvy.semantics.toIndexClassName
+import com.github.albertocavalcante.gvy.semantics.toSemanticType
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
-import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
 import org.codehaus.groovy.ast.MethodNode
@@ -162,13 +163,13 @@ class NativeTypeContext(
 
                 // Strategy 2: Workspace Index (cross-file)
                 workspaceMemberLookup?.let { workspace ->
-                    val directMember = workspaceDirect(workspace, receiverType.fqn)
+                    val directMember = workspaceDirect(workspace, receiverType.fqn.toIndexClassName())
                     if (directMember != null) {
                         return directMember
                     }
 
                     // Strategy 3: Check inherited members if direct lookup fails
-                    val inheritedMember = workspaceInherited(workspace, receiverType.fqn)
+                    val inheritedMember = workspaceInherited(workspace, receiverType.fqn.toIndexClassName())
                     if (inheritedMember != null) {
                         return inheritedMember
                     }
@@ -213,8 +214,8 @@ class NativeTypeContext(
 
             // Strategy 2 & 3: Workspace Index (cross-file)
             workspaceMemberLookup?.let { workspace ->
-                workspaceDirect(workspace, receiverType.fqn)?.let { return it.right() }
-                workspaceInherited(workspace, receiverType.fqn)?.let { return it.right() }
+                workspaceDirect(workspace, receiverType.fqn.toIndexClassName())?.let { return it.right() }
+                workspaceInherited(workspace, receiverType.fqn.toIndexClassName())?.let { return it.right() }
             }
 
             // Not found, return error
@@ -296,42 +297,6 @@ class NativeTypeContext(
         /**
          * Convert a Groovy ClassNode to SemanticType.
          */
-        fun fromClassNode(classNode: ClassNode): SemanticType = when {
-            classNode.equals(ClassHelper.dynamicType()) -> SemanticType.Dynamic()
-            classNode.isArray -> {
-                SemanticType.Array(fromClassNode(classNode.componentType))
-            }
-
-            // Check if it's a primitive by name first
-            isPrimitiveName(classNode.name) -> {
-                resolvePrimitiveOrKnown(classNode.name)
-            }
-
-            classNode.isPrimaryClassNode || classNode.redirect() != classNode -> {
-                resolvePrimitiveOrKnown(classNode.name)
-            }
-
-            else -> SemanticType.Known(classNode.name)
-        }
-
-        /**
-         * Check if a class name represents a Java/Groovy primitive type.
-         */
-        private fun isPrimitiveName(name: String): Boolean = name in setOf(
-            "int", "long", "double", "float", "boolean", "byte", "char", "short", "void",
-        )
-
-        private fun resolvePrimitiveOrKnown(fqn: String): SemanticType = when (fqn) {
-            "int" -> TypeConstants.INT
-            "long" -> TypeConstants.LONG
-            "double" -> TypeConstants.DOUBLE
-            "float" -> TypeConstants.FLOAT
-            "boolean" -> TypeConstants.BOOLEAN
-            "byte" -> TypeConstants.BYTE
-            "char" -> TypeConstants.CHAR
-            "short" -> TypeConstants.SHORT
-            "void" -> TypeConstants.VOID
-            else -> SemanticType.Known(fqn)
-        }
+        fun fromClassNode(classNode: ClassNode): SemanticType = classNode.toSemanticType()
     }
 }

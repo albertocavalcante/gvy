@@ -472,7 +472,8 @@ class ColdLocalCompletionTest {
 
         val get = complete("$held\nclass A extends B {}\nnew A().ge").filter { it.label == "get" }
 
-        assertEquals(listOf("def get()"), get.map { it.detail }, "found ${labels(get)}")
+        // Deep.get is met first, and the index now carries its declared return type (it was `def` before #1525).
+        assertEquals(listOf("String get()"), get.map { it.detail }, "found ${labels(get)}")
     }
 
     private suspend fun indexParents(source: String) {

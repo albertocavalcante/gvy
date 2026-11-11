@@ -32,6 +32,7 @@ class MethodResolutionStrategy(
     private val logger = LoggerFactory.getLogger(MethodResolutionStrategy::class.java)
     private val semanticResolver = com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver(
         compilationService.classpathService.getTypeSolver(),
+        compilationService.getWorkspaceSymbolIndex(),
     )
 
     @Suppress("TooGenericExceptionCaught", "ReturnCount")

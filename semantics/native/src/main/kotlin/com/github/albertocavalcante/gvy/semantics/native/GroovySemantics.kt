@@ -7,6 +7,7 @@ import com.github.albertocavalcante.gvy.semantics.TypeLub
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeInferenceError
 import com.github.albertocavalcante.gvy.semantics.calculator.TypeResult
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
@@ -33,6 +34,7 @@ import java.util.WeakHashMap
 class GroovySemantics(
     private val typeSolver: TypeSolver,
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
+    private val workspaceMemberLookup: MemberLookup? = null,
 ) {
     // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
     private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
@@ -55,6 +57,7 @@ class GroovySemantics(
                     calculatorRegistry = calculatorRegistry,
                     scope = scope,
                     isStaticCompilation = hasCompileStatic(module),
+                    workspaceMemberLookup = workspaceMemberLookup,
                 )
 
                 populateScriptVariables(module, scope, context)

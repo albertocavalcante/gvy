@@ -308,7 +308,10 @@ class GroovyTextDocumentService(
     }
 
     private val semanticTypeResolver by lazy {
-        SemanticTypeResolver(compilationService.classpathService.getTypeSolver())
+        SemanticTypeResolver(
+            compilationService.classpathService.getTypeSolver(),
+            compilationService.getWorkspaceSymbolIndex(),
+        )
     }
 
     private val inlayHintsProvider by lazy {
