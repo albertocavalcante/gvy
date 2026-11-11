@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.diagnostics
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import io.mockk.Runs
@@ -42,7 +43,8 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
         init {
             val client = mockk<LanguageClient>()
             every { client.publishDiagnostics(capture(publications)) } just Runs
-            coEvery { diagnostics.getDiagnostics(any(), any()) } returns emptyList()
+            coEvery { diagnostics.collectDiagnostics(any(), any()) } returns
+                DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
             orchestrator = DiagnosticsOrchestrator(
                 scope,
                 compilation,
@@ -128,7 +130,8 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
     fun `provider cancellation does not restart compilation`(): Unit = runTest {
         val fixture = Fixture(this, uri, content)
         coEvery { fixture.compilation.compileAsync(any(), uri, content) } returns CompletableDeferred(result("parser"))
-        coEvery { fixture.diagnostics.getDiagnostics(any(), any()) } throws CancellationException("Provider cancelled")
+        coEvery { fixture.diagnostics.collectDiagnostics(any(), any()) } throws
+            CancellationException("Provider cancelled")
 
         fixture.orchestrator.trigger(uri, content)
         advanceUntilIdle()
@@ -139,5 +142,6 @@ class DiagnosticsOrchestratorCompilationCancellationTest {
 
     private fun result(message: String): CompilationResult = mockk {
         every { diagnostics } returns listOf(Diagnostic().apply { this.message = message })
+        every { parseCompleted } returns true
     }
 }

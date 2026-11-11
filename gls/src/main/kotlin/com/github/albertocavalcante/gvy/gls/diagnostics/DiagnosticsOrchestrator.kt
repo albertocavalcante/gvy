@@ -9,9 +9,11 @@ import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.DocumentSnapshot
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
@@ -22,6 +24,7 @@ import org.eclipse.lsp4j.services.LanguageClient
 import java.io.IOException
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.coroutineContext
 
 /** Quiet period after the last edit before a debounced diagnostics run starts compiling. */
@@ -49,7 +52,23 @@ class DiagnosticsOrchestrator(
     private val debounceMillis: Long = DEFAULT_DIAGNOSTICS_DEBOUNCE_MS,
 ) {
     private val logger = KotlinLogging.logger {}
-    private data class Runtime(val configuration: ServerConfiguration, val service: DiagnosticsService)
+    private data class Runtime(
+        val configuration: ServerConfiguration,
+        val service: DiagnosticsService,
+        val generation: Long = 0,
+    )
+
+    private class Run(val uri: URI, val snapshot: DocumentSnapshot, val settings: Runtime, val id: Long) {
+        // No parent: cancelling an individual waiter must not cancel shared analysis or other waiters.
+        val result = CompletableDeferred<DiagnosticsRunResult>()
+
+        fun invalidate() {
+            result.completeExceptionally(DiagnosticsRunUnavailableException("Diagnostics run $id is obsolete for $uri"))
+        }
+    }
+
+    private val runs = ConcurrentHashMap<URI, Run>()
+    private val runIds = AtomicLong()
 
     private val publicationLock = Any()
 
@@ -58,11 +77,12 @@ class DiagnosticsOrchestrator(
 
     /** Replace provider configuration and cancel work computed under the previous settings. */
     fun updateConfiguration(configuration: ServerConfiguration, service: DiagnosticsService) {
-        val retiredJobs = synchronized(publicationLock) {
-            runtime = Runtime(configuration, service)
-            diagnosticJobs.values.toList()
+        val (retiredJobs, retiredRuns) = synchronized(publicationLock) {
+            runtime = Runtime(configuration, service, Math.incrementExact(runtime.generation))
+            (diagnosticJobs.values.toList() to runs.values.toList()).also { runs.clear() }
         }
-        // Cancellation handlers may reenter document lifecycle operations. Never invoke them under a monitor.
+        // Completion/cancellation handlers may reenter lifecycle operations. Invoke them outside monitors.
+        retiredRuns.forEach { it.invalidate() }
         retiredJobs.forEach { it.cancel() }
         refreshAll()
     }
@@ -86,75 +106,147 @@ class DiagnosticsOrchestrator(
      * @param debounce When true (used for didChange), wait [debounceMillis] before compiling so a burst
      *   of edits results in a single compile of the latest content. Open/save/refresh run immediately.
      */
+    // The owned job records infrastructure failure; cancellation and Errors propagate.
     @Suppress("TooGenericExceptionCaught")
     fun trigger(uri: URI, content: String, debounce: Boolean = false) {
         val captured = documentProvider.getSnapshot(uri)?.takeIf { it.content == content } ?: return
-        // Create the job lazily so it is registered (and any previous job cancelled) before it starts.
-        // Otherwise a fast job could finish and run its cleanup before registration, leaving a
-        // completed job in the map, and the new job could run while the old one is still active.
+        val run = Run(uri, captured, runtime, runIds.incrementAndGet())
+        // Register before starting; a fast completion must not leave a completed job in the active map.
         val job = coroutineScope.launch(start = CoroutineStart.LAZY) {
             val currentJob = coroutineContext.job
             try {
-                runCatching {
-                    // A newer trigger cancels this job during the delay, before any expensive work starts.
-                    if (debounce && debounceMillis > 0) delay(debounceMillis)
-                    if (documentProvider.getSnapshot(uri) !== captured) return@runCatching
-
-                    val settings = runtime
-                    // Use compileAsync for proper coordination
-                    val result = compileCurrent(this, uri, captured, currentJob, settings)
-
-                    ensureActive() // Ensure job wasn't cancelled before publishing
-
-                    val parserEnabled = settings.configuration.diagnosticConfig.isProviderEnabled(
-                        "parser",
-                        enabledByDefault = true,
-                    )
-                    val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
-
-                    // Publish compilation diagnostics first to keep UX responsive.
-                    // NOTE: Tradeoff (See #564):
-                    // This can result in two diagnostics publications (compile first, then provider merge),
-                    // but avoids blocking syntax feedback on slow lint initialization.
-                    if (!publishDiagnostics(uri, captured, currentJob, parserDiagnostics, settings)) return@runCatching
-
-                    val extraDiagnostics = settings.service.getDiagnostics(uri, content)
-                    val allDiagnostics = parserDiagnostics + extraDiagnostics
-
-                    ensureActive()
-                    if (extraDiagnostics.isNotEmpty()) {
-                        publishDiagnostics(uri, captured, currentJob, allDiagnostics, settings)
-                    }
-
-                    logger.debug { "Published ${allDiagnostics.size} diagnostics for $uri" }
-                }.onFailure { e ->
-                    when (e) {
-                        is CompilationFailedException -> logger.error(e) { "Compilation failed for: $uri" }
-                        is IllegalArgumentException -> logger.error(e) { "Invalid arguments for: $uri" }
-                        is IOException -> logger.error(e) { "I/O error for: $uri" }
-                        is CancellationException -> {
-                            logger.debug { "Diagnostics job cancelled for: $uri" }
-                            throw e
-                        }
-                        else -> logger.error(e) { "Unexpected error during diagnostics for: $uri" }
-                    }
-                }
+                if (debounce && debounceMillis > 0) delay(debounceMillis)
+                if (!isCurrentRun(run, currentJob)) return@launch
+                computeDiagnostics(this, run, currentJob)
+            } catch (cancelled: CancellationException) {
+                run.invalidate()
+                throw cancelled
+            } catch (obsolete: DiagnosticsRunUnavailableException) {
+                run.result.completeExceptionally(obsolete)
+            } catch (failure: Exception) {
+                run.result.completeExceptionally(failure)
+                logFailure(uri, failure)
+            } catch (fatal: Error) {
+                run.result.completeExceptionally(fatal)
+                throw fatal
             } finally {
-                // Remove job from map if it's the current one
                 diagnosticJobs.remove(uri, currentJob)
             }
         }
 
-        var previous: Job? = null
-        val registered = documentProvider.withCurrentSnapshot(uri, captured) {
-            previous = diagnosticJobs.put(uri, job)
+        var previousJob: Job? = null
+        var previousRun: Run? = null
+        var registered = false
+        documentProvider.withCurrentSnapshot(uri, captured) {
+            synchronized(publicationLock) {
+                if (runtime === run.settings) {
+                    previousJob = diagnosticJobs.put(uri, job)
+                    previousRun = runs.put(uri, run)
+                    registered = true
+                }
+            }
         }
         if (!registered) {
+            run.invalidate()
             job.cancel()
             return
         }
-        previous?.cancel()
+        // A lazy job may be cancelled before its body (including finally) ever executes.
+        job.invokeOnCompletion { failure ->
+            if (failure == null || failure is CancellationException) {
+                run.invalidate()
+            } else {
+                run.result.completeExceptionally(failure)
+            }
+            diagnosticJobs.remove(uri, job)
+        }
+
+        previousRun?.invalidate()
+        previousJob?.cancel()
         job.start()
+    }
+
+    private suspend fun computeDiagnostics(scope: CoroutineScope, run: Run, owner: Job) {
+        val result = compileCurrent(scope, run.uri, run.snapshot, owner, run.settings)
+        scope.ensureActive()
+        val parserEnabled = run.settings.configuration.diagnosticConfig.isProviderEnabled(
+            "parser",
+            enabledByDefault = true,
+        )
+        val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
+        checkCurrentRun(publishDiagnostics(run.uri, run.snapshot, owner, parserDiagnostics, run.settings)) {
+            "Parser publication is no longer current for ${run.uri}"
+        }
+
+        // A worker/IO exception is not completed parsing, even when parser diagnostics are disabled.
+        // Keep its ordinary parser publication, but never certify it as a settled analysis result.
+        check(result.parseCompleted) { "Parsing did not complete for ${run.uri}" }
+        val collected = run.settings.service.collectDiagnostics(run.uri, run.snapshot.content)
+        val allDiagnostics = parserDiagnostics + collected.diagnostics
+        scope.ensureActive()
+        if (collected.diagnostics.isNotEmpty()) {
+            checkCurrentRun(publishDiagnostics(run.uri, run.snapshot, owner, allDiagnostics, run.settings)) {
+                "Final publication is no longer current for ${run.uri}"
+            }
+        }
+        checkCurrentRun(isCurrentRun(run, owner)) {
+            "Completed diagnostics are obsolete for ${run.uri}"
+        }
+        val cohort = (if (parserEnabled) listOf("parser") else emptyList()) + collected.providerIds
+        run.result.complete(
+            DiagnosticsRunResult(
+                run.uri.toString(),
+                run.snapshot.version,
+                run.id,
+                run.settings.generation,
+                allDiagnostics.take(run.settings.configuration.maxNumberOfProblems.coerceAtLeast(0)),
+                cohort,
+                collected.failures,
+            ),
+        )
+        logger.debug { "Completed diagnostics run ${run.id} for ${run.uri}" }
+    }
+
+    private fun logFailure(uri: URI, failure: Exception) {
+        when (failure) {
+            is CompilationFailedException -> logger.error(failure) { "Compilation failed for: $uri" }
+            is IllegalArgumentException -> logger.error(failure) { "Invalid arguments for: $uri" }
+            is IOException -> logger.error(failure) { "I/O error for: $uri" }
+            else -> logger.error(failure) { "Unexpected error during diagnostics for: $uri" }
+        }
+    }
+
+    private fun isCurrentRun(run: Run, owner: Job? = null): Boolean {
+        var current = false
+        documentProvider.withCurrentSnapshot(run.uri, run.snapshot) {
+            synchronized(publicationLock) {
+                current = runtime === run.settings && runs[run.uri] === run &&
+                    (owner == null || owner.isActive && diagnosticJobs[run.uri] === owner)
+            }
+        }
+        return current
+    }
+
+    /**
+     * Waits for a terminal result retained for this exact current buffer state. Completed runs remain observable.
+     * A caller's cancellation affects only its wait. Revalidate after suspension against edit/reopen/configuration.
+     */
+    suspend fun awaitCurrentDiagnostics(uri: URI, version: Int? = null): DiagnosticsRunResult {
+        val run = runs[uri]
+            ?: throw DiagnosticsRunUnavailableException("No current diagnostics run for $uri")
+        checkCurrentRun((version == null || run.snapshot.version == version) && isCurrentRun(run)) {
+            "Requested diagnostics are not current for $uri at version $version"
+        }
+        val result = run.result.await()
+        currentCoroutineContext().ensureActive()
+        checkCurrentRun(isCurrentRun(run)) {
+            "Diagnostics changed while awaiting $uri"
+        }
+        return result
+    }
+
+    private inline fun checkCurrentRun(current: Boolean, message: () -> String) {
+        if (!current) throw DiagnosticsRunUnavailableException(message())
     }
 
     /** A shared compile may belong to another request; only a still-current waiter may retry it once. */
@@ -187,8 +279,11 @@ class DiagnosticsOrchestrator(
      * @param uri The document URI
      */
     fun cancelAndRemove(uri: URI) {
-        val retired = synchronized(publicationLock) { diagnosticJobs.remove(uri) }
-        retired?.cancel()
+        val (retiredJob, retiredRun) = synchronized(publicationLock) {
+            diagnosticJobs.remove(uri) to runs.remove(uri)
+        }
+        retiredRun?.invalidate()
+        retiredJob?.cancel()
     }
 
     /** Close and clear the captured incarnation, with the same linearization boundary as publication. */
@@ -205,15 +300,18 @@ class DiagnosticsOrchestrator(
 
     private fun closeDocument(uri: URI, captured: DocumentIncarnation, recipient: LanguageClient?) {
         var retired: Job? = null
+        var retiredRun: Run? = null
         try {
             documentProvider.removeIfCurrent(uri, captured) {
                 // Lock order is document lifecycle -> publication; client lookup/cancellation are outside both.
                 synchronized(publicationLock) {
                     retired = diagnosticJobs.remove(uri)
+                    retiredRun = runs.remove(uri)
                     recipient?.publishDiagnostics(PublishDiagnosticsParams(uri.toString(), emptyList()))
                 }
             }
         } finally {
+            retiredRun?.invalidate()
             retired?.cancel()
         }
     }

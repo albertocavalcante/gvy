@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.diagnostics
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import io.mockk.Runs
@@ -35,10 +36,14 @@ class DiagnosticsOrchestratorDebounceTest {
         private val documents = DocumentProvider()
 
         init {
-            val result = mockk<CompilationResult> { every { diagnostics } returns emptyList() }
+            val result = mockk<CompilationResult> {
+                every { diagnostics } returns emptyList()
+                every { parseCompleted } returns true
+            }
             coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
             val diagnosticsService = mockk<DiagnosticsService>()
-            coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+            coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+                DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
             every { client.publishDiagnostics(any()) } just Runs
             orchestrator = DiagnosticsOrchestrator(
                 coroutineScope = scope,

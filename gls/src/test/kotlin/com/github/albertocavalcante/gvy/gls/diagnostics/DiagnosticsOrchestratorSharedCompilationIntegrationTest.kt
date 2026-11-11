@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.diagnostics
 
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import io.mockk.Runs
@@ -42,7 +43,8 @@ class DiagnosticsOrchestratorSharedCompilationIntegrationTest {
             val documents = DocumentProvider().apply { put(uri, content, 17) }
             val compilation = GroovyCompilationService(ioDispatcher = io, documentProvider = documents)
             val providers = mockk<DiagnosticsService>()
-            coEvery { providers.getDiagnostics(any(), any()) } returns emptyList()
+            coEvery { providers.collectDiagnostics(any(), any()) } returns
+                DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
             val publications = mutableListOf<PublishDiagnosticsParams>()
             val client = mockk<LanguageClient>()
             every { client.publishDiagnostics(capture(publications)) } just Runs

@@ -4,6 +4,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.services.GroovyTextDocumentService
@@ -62,8 +63,10 @@ class DiagnosticsOrchestratorSnapshotTest {
         init {
             val result = mockk<CompilationResult>()
             every { result.diagnostics } returns listOf(diagnostic("parser"))
+            every { result.parseCompleted } returns true
             coEvery { compilation.compileAsync(any(), uri, any()) } returns CompletableDeferred(result)
-            coEvery { diagnostics.getDiagnostics(uri, any()) } returns listOf(diagnostic("provider"))
+            coEvery { diagnostics.collectDiagnostics(uri, any()) } returns
+                DiagnosticsCollectionResult(listOf(diagnostic("provider")), emptyList(), emptyList())
             every { client.publishDiagnostics(capture(publications)) } just Runs
             orchestrator = DiagnosticsOrchestrator(
                 scope,
@@ -100,6 +103,7 @@ class DiagnosticsOrchestratorSnapshotTest {
             coEvery { compilation.compileAsync(any(), uri, any()) } answers {
                 val result = mockk<CompilationResult>()
                 every { result.diagnostics } returns listOf(Fixture.diagnostic("parse ${++generation}"))
+                every { result.parseCompleted } returns true
                 CompletableDeferred(result)
             }
             every { client.publishDiagnostics(capture(publications)) } just Runs
