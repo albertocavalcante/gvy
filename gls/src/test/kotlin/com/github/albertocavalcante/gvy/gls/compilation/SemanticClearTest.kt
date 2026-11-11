@@ -107,6 +107,40 @@ class SemanticClearTest {
         assertNotNull(index.getDocument(uri(1)))
     }
 
+    @Test
+    fun `the same text at the same phase replaces a document kept from before every publication was retired`() {
+        index(0)
+        val kept = assertNotNull(index.getDocument(uri(0)))
+
+        indexer.retireAllPublications()
+        index(0)
+
+        assertTrue(index.getDocument(uri(0)) !== kept, "a document built from the old inputs was kept")
+    }
+
+    @Test
+    fun `the same text at the same phase does not replace a document of the current generation`() {
+        index(0)
+        val kept = assertNotNull(index.getDocument(uri(0)))
+
+        index(0)
+
+        assertTrue(index.getDocument(uri(0)) === kept, "an equal publication replaced the stored document")
+    }
+
+    @Test
+    fun `a lower phase never replaces a kept document, even from a newer generation`() {
+        index(0)
+        val kept = assertNotNull(index.getDocument(uri(0)))
+
+        indexer.retireAllPublications()
+        val content = "class Cleared0 {}"
+        indexer.update(uri(0), content, parse(uri(0), content), phase = Phases.CONVERSION)
+
+        assertTrue(index.getDocument(uri(0)) === kept, "a degraded parse displaced a resolved document")
+        assertEquals(Phases.CANONICALIZATION, indexer.phaseOf(uri(0)))
+    }
+
     private companion object {
         const val DOCUMENTS = 50
     }

@@ -28,6 +28,9 @@ internal fun contentHash(content: String): String =
  * - a document built from different content replaces the stored one (stale is worse than degraded);
  * - for the same content, only a document from a later phase replaces it: a degraded parse never
  *   displaces a resolved one, and which of two compiles of the same text lands first does not matter;
+ * - for the same content and phase, a document begun after [retireAllPublications] replaces one stored
+ *   before it: the inputs besides the text (the source list, the classpath) changed, so the kept document
+ *   may resolve names the newer one resolves differently;
  * - a document from disk never replaces the one built from an open editor buffer ([isOpen]);
  * - for different content, a publication begun earlier never lands after one begun later, even if that
  *   one failed or was upgraded meanwhile, so builds that finish out of order cannot bring back older text.
@@ -39,7 +42,8 @@ class SemanticIndexer(
         SemanticDocumentBuilder(ast, uri).build()
     },
 ) {
-    private class Entry(val contentHash: String, val phase: Int)
+    /** [generation]: the [retireAllPublications] generation of the publication that stored it. */
+    private class Entry(val contentHash: String, val phase: Int, val generation: Long)
 
     private class State {
         @Volatile var entry: Entry? = null
@@ -136,7 +140,7 @@ class SemanticIndexer(
         swap.read {
             entries.computeIfPresent(uri) { _, state ->
                 if (replaces(state, publication, hash, phase, fromBuffer)) {
-                    state.entry = Entry(hash, phase).takeIf { store(uri, built, content) }
+                    state.entry = Entry(hash, phase, publication.generation).takeIf { store(uri, built, content) }
                     state.highestTicket = maxOf(state.highestTicket, publication.ticket)
                 }
                 state
@@ -154,7 +158,7 @@ class SemanticIndexer(
     ): Boolean {
         val existing = state?.entry
         val supersedes = if (existing != null && existing.contentHash == hash) {
-            phase > existing.phase
+            phase > existing.phase || (phase == existing.phase && publication.generation > existing.generation)
         } else {
             publication.ticket > (state?.highestTicket ?: 0L)
         }
@@ -226,7 +230,9 @@ class SemanticIndexer(
     /**
      * Makes every outstanding publication stale while keeping every stored document, in O(1) (#1342): the inputs a
      * compile reads besides its own text (the source list, a re-stamped classpath entry) changed, so a compile that
-     * read the old ones must not publish, but no file's document is dropped. Waits for in-flight writes, as [clear].
+     * read the old ones must not publish, but no file's document is dropped. A later compile of a file's unchanged
+     * text replaces its kept document at the same phase too, so the kept one lasts only until that file compiles
+     * again. Waits for in-flight writes, as [clear].
      */
     internal fun retireAllPublications() {
         swap.write { generation++ }

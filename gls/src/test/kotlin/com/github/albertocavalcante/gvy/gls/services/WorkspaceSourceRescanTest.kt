@@ -106,6 +106,7 @@ class WorkspaceSourceRescanTest {
         notify(*files.map { it to FileChangeType.Created }.toTypedArray())
 
         verify(exactly = 1) { compilation.clearCompileCaches() }
+        verify(exactly = 0) { compilation.clearCaches() }
         assertTrue(compilation.workspaceManager.getWorkspaceSources().containsAll(files))
     }
 
@@ -210,6 +211,7 @@ class WorkspaceSourceRescanTest {
         assertTrue(sources().containsAll(nested), "${sources()}")
         assertEquals(2, sources().size, "${sources()}")
         verify(exactly = 1) { compilation.clearCompileCaches() }
+        verify(exactly = 0) { compilation.clearCaches() }
     }
 
     @Test
@@ -256,6 +258,7 @@ class WorkspaceSourceRescanTest {
 
         assertEquals(before, sources(), "nothing lives under a file, so nothing leaves")
         verify(exactly = 0) { compilation.clearCompileCaches() }
+        verify(exactly = 0) { compilation.clearCaches() }
     }
 
     @Test
@@ -270,6 +273,7 @@ class WorkspaceSourceRescanTest {
 
         assertEquals(listOf(moved.resolve("A.groovy")), sources())
         verify(exactly = 1) { compilation.clearCompileCaches() }
+        verify(exactly = 0) { compilation.clearCaches() }
     }
 
     @Test
@@ -348,6 +352,32 @@ class WorkspaceSourceRescanTest {
         assertTrue(sources().contains(fresh), "precondition: the source list changed")
         assertEquals(listOf("Outer2"), workspaceSymbols("Outer2"), "the closed file left workspace symbols")
         assertEquals(listOf("Outer2"), classesNamed("Outer2"), "the closed file left the class lookup")
+    }
+
+    @Test
+    fun `an open buffer recompiled after a class it calls is created replaces its kept document`(): Unit = runBlocking {
+        // The callee is missing at first: stub classes still take the compile to the same phase, so only the
+        // newer source list tells the two documents of the unchanged buffer apart.
+        val src = src()
+        val caller = src.resolve("Caller.groovy")
+        val text = "class Caller { def run(Callee callee) { callee.greet() } }\n"
+        write(caller, text)
+        documents.put(caller.toUri(), text)
+        compilation.compile(caller.toUri(), text)
+        val semantic = assertNotNull(compilation.getWorkspaceSymbolIndex())
+        val before = assertNotNull(semantic.getDocument(caller.toUri()), "precondition")
+        assertTrue(semantic.findReferences(GREET).isEmpty(), "precondition: ${semantic.findReferences(GREET)}")
+
+        val callee = write(src.resolve("Callee.groovy"), "class Callee { String greet() { 'hi' } }\n")
+        notify(callee to FileChangeType.Created)
+        compilation.compile(caller.toUri(), text)
+
+        assertTrue(sources().contains(callee), "precondition: the source list changed")
+        assertTrue(semantic.getDocument(caller.toUri()) !== before, "the stale document of the buffer was kept")
+        assertTrue(
+            semantic.findReferences(GREET).any { it.uri == caller.toUri().toString() },
+            "the call to the created class is missing: ${semantic.findReferences(GREET)}",
+        )
     }
 
     @Test
@@ -467,5 +497,10 @@ class WorkspaceSourceRescanTest {
         notify(pkg to FileChangeType.Created)
 
         assertEquals(listOf(found), sources(), "only the path below the source root is checked")
+    }
+
+    private companion object {
+        /** The symbol of `Callee.greet()`, in the default package. */
+        const val GREET = "Callee#greet()."
     }
 }
