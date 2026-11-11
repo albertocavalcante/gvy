@@ -1,24 +1,23 @@
 --- a/private/extensions/maven.bzl
 +++ b/private/extensions/maven.bzl
-@@ -605,10 +605,19 @@ def maven_impl(mctx):
-             merged_repo["artifacts"] = non_root_artifacts
-             merged_repo["boms"] = non_root_boms
+@@ -642,12 +642,18 @@
+             merged_repo["artifacts"] = _deduplicate_non_root_artifacts(bazel_dep_to_non_root_artifacts, True)
+             merged_repo["boms"] = _deduplicate_non_root_artifacts(bazel_dep_to_non_root_boms, True)
 
 -        # For list attributes, concatenate but avoid duplicates (root items first)
 -        for list_attr in ["repositories", "excluded_artifacts", "additional_netrc_lines", "additional_coursier_options"]:
 +        # For list attributes, concatenate but avoid duplicates (root items first).
-+        # Note: additional_coursier_options is handled separately below to preserve
-+        # duplicate flags like --variant which must appear multiple times.
++        # Keep additional_coursier_options separate: repeated CLI flags are meaningful.
 +        for list_attr in ["repositories", "excluded_artifacts", "additional_netrc_lines"]:
              root_list = root_repo.get(list_attr, [])
              non_root_list = non_root_repo.get(list_attr, [])
              merged_repo[list_attr] = _merge_repo_lists(root_list, non_root_list)
 
-+        # additional_coursier_options: Concatenate WITHOUT deduplication.
-+        # CLI flags like --variant must appear multiple times with different values.
-+        # Deduplication breaks: ["--variant", "a=b", "--variant", "c=d"] -> ["--variant", "a=b", "c=d"]
++        # Preserve repeated flags, such as --variant, and their ordered values.
 +        root_opts = root_repo.get("additional_coursier_options", [])
 +        non_root_opts = non_root_repo.get("additional_coursier_options", [])
 +        merged_repo["additional_coursier_options"] = root_opts + non_root_opts
 +
          repos[repo_name] = merged_repo
+
+     # Breaking out the logic for picking lock files, because it's not terribly simple

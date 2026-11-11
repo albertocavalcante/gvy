@@ -1,6 +1,6 @@
 --- a/private/dependency_tree_parser.bzl
 +++ b/private/dependency_tree_parser.bzl
-@@ -186,6 +186,82 @@ def _generate_target(artifact, default_visibilities, repository_ctx, seen_impor
+@@ -186,6 +186,86 @@ def _generate_target(artifact, default_visibilities, repository_ctx, seen_impor
      target_import_labels = []
      for dep in artifact["deps"]:
          if get_packaging(dep) == "json":
@@ -75,11 +75,16 @@
 +        # creating cycles across jackson.module, jackson.datatype, jackson.dataformat, etc.
 +        #
 +        if "fasterxml.jackson" in coords:
++            # Core and annotations are runtime leaves in the selected GMM metadata.
++            # A platform BOM must not create core -> databind -> core cycles.
++            if (":jackson-core:" in coords or ":jackson-annotations:" in coords):
++                if "fasterxml.jackson" in dep:
++                    continue
 +            # Skip cross-dependencies between jackson extension modules
 +            # Keep only jackson-core, jackson-annotations, jackson-databind
 +            if ("jackson-module-" in dep or "jackson-datatype-" in dep or
 +                "jackson-dataformat-" in dep or "jackson-jaxrs-" in dep):
 +                continue
-             continue
+-            continue
          stripped_dep = strip_packaging_and_classifier_and_version(dep)
          dep_target_label = escape(stripped_dep)
