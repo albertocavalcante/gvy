@@ -151,27 +151,18 @@ internal object Snapshots {
      * Update mode is for local use only: CI must compare, never rewrite, and Bazel runs from a read-only runfiles tree.
      */
     fun requireUpdateAllowed(env: Map<String, String?>, props: (String) -> String?) {
-        check(env["GITHUB_ACTIONS"].isNullOrEmpty()) {
-            "Refusing to update snapshots when GITHUB_ACTIONS is set; update locally and commit the files."
-        }
-        check(env["CI"].isNullOrEmpty()) {
-            "Refusing to update snapshots when CI is set; update locally and commit the files."
-        }
-        check(env["TEST_TARGET"].isNullOrEmpty() && props("$DIR_PROPERTY.marker") == null) {
-            "Refusing to update snapshots under Bazel; run the Gradle e2eTest task with -D$UPDATE_PROPERTY=true."
-        }
+        requireLocalArtifactUpdateAllowed(
+            environment = env,
+            kind = "snapshots",
+            markerProperty = "$DIR_PROPERTY.marker",
+            updateProperty = UPDATE_PROPERTY,
+            properties = props,
+        )
     }
 
     /** Resolves [name] under [dir], rejecting absolute names and `..` escapes. */
-    fun resolve(dir: Path, name: String): Path {
-        require(name.isNotBlank()) { "snapshot name must not be blank" }
-        val base = dir.toAbsolutePath().normalize()
-        val file = base.resolve(name).normalize()
-        require(!Path.of(name).isAbsolute && file.startsWith(base) && file != base) {
-            "snapshot '$name' must be a relative path inside the snapshot directory"
-        }
-        return file
-    }
+    fun resolve(dir: Path, name: String, forUpdate: Boolean = false): Path =
+        resolveArtifactPath(dir, name, "snapshot", forUpdate)
 
     /** Line diff of [expected] against [actual]: `-` lines only in expected, `+` lines only in actual. */
     fun diff(expected: String, actual: String): String {
@@ -216,7 +207,7 @@ internal object Snapshots {
      * guard). Throws [AssertionFailedError] carrying expected and actual text when they differ.
      */
     fun verify(dir: Path, name: String, node: JsonElement?, forms: WorkspaceForms, update: Boolean) {
-        val file = resolve(dir, name)
+        val file = resolve(dir, name, forUpdate = update)
         val actual = render(node, forms)
         requireStable(name, actual)
         if (update) {

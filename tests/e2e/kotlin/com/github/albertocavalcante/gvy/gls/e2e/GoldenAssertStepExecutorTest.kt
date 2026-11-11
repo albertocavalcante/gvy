@@ -27,6 +27,7 @@ class GoldenAssertStepExecutorTest {
         previousProperties.putAll(PROPERTIES.associateWith(System::getProperty))
         System.setProperty(GOLDEN_DIRECTORY, root.resolve("golden").toString())
         System.setProperty(UPDATE_GOLDEN, "false")
+        System.clearProperty(GOLDEN_MARKER)
         context = ScenarioContext(
             definition = ScenarioDefinition(Scenario(name = "golden-boundary", steps = emptyList())),
             session = mockk(relaxed = true),
@@ -77,7 +78,7 @@ class GoldenAssertStepExecutorTest {
         val actualFile = root.resolve("actual")
         Files.writeString(actualFile, text)
         val step = ScenarioStep.GoldenAssert(actualFile.toString(), "expected", GoldenMode.TEXT)
-        val executor = GoldenAssertStepExecutor()
+        val executor = GoldenAssertStepExecutor(environment = emptyMap())
 
         System.setProperty(UPDATE_GOLDEN, "true")
         executor.execute(step, context)
@@ -121,7 +122,8 @@ class GoldenAssertStepExecutorTest {
 
     private companion object {
         const val GOLDEN_DIRECTORY = "groovy.lsp.e2e.goldenDir"
+        const val GOLDEN_MARKER = "$GOLDEN_DIRECTORY.marker"
         const val UPDATE_GOLDEN = "groovy.lsp.e2e.updateGolden"
-        val PROPERTIES = listOf(GOLDEN_DIRECTORY, UPDATE_GOLDEN)
+        val PROPERTIES = listOf(GOLDEN_DIRECTORY, GOLDEN_MARKER, UPDATE_GOLDEN)
     }
 }
