@@ -167,11 +167,11 @@ class ScenarioBuilder(private val source: String? = null) {
      * Open a document in the workspace.
      *
      * @param path Relative path from workspace root (e.g., "src/Main.groovy")
-     * @param text Initial content of the document
+     * @param text Buffer override; omitted text reads the file, while an empty string opens an empty buffer.
      * @param languageId Language identifier (default: "groovy")
      * @param version Document version (default: 1)
      */
-    fun openDocument(path: String, text: String = "", languageId: String = "groovy", version: Int = 1) {
+    fun openDocument(path: String, text: String? = null, languageId: String = "groovy", version: Int = 1) {
         steps.add(
             ScenarioStep.OpenDocument(
                 path = path,
@@ -453,7 +453,7 @@ class ScenarioBuilder(private val source: String? = null) {
                 } else {
                     WorkspaceConfig(fixture = fixtureName, files = workspaceFiles.toMap())
                 },
-                steps = steps,
+                steps = steps.toList(),
             ),
             source = effectiveSource,
         )
@@ -541,7 +541,7 @@ class RequestBuilder(private val method: String) {
         method = method,
         params = buildParams(),
         saveAs = saveAs,
-        extract = extractions,
+        extract = extractions.toList(),
         timeoutMs = timeoutMs,
     )
 }
@@ -561,7 +561,7 @@ class AssertionBuilder {
         checks.add(JsonCheck(jsonPath = path, expect = builder.build(), message = message))
     }
 
-    fun buildChecks(): List<JsonCheck> = checks
+    fun buildChecks(): List<JsonCheck> = checks.toList()
 }
 
 /**

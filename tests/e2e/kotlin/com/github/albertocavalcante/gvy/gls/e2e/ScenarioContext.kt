@@ -224,14 +224,19 @@ data class ScenarioContext(
         val javaObject = node.toJavaObject()
         // Scenarios write variables such as {{workspace.uri}} inside filters, e.g. `$[?(@.uri == '…')]`.
         val jsonPath = interpolateString(check.jsonPath)
-        val (pathExists, readValue) = javaObject?.let {
-            val document = JsonPath.using(jsonPathConfig).parse(it)
-            try {
-                true to document.read<Any?>(jsonPath)
-            } catch (ex: PathNotFoundException) {
-                false to null
+        val (pathExists, readValue) = when {
+            // A JSON null response has a root even though its Java representation is null.
+            jsonPath == "$" -> true to javaObject
+            javaObject != null -> {
+                val document = JsonPath.using(jsonPathConfig).parse(javaObject)
+                try {
+                    true to document.read<Any?>(jsonPath)
+                } catch (ex: PathNotFoundException) {
+                    false to null
+                }
             }
-        } ?: (false to null)
+            else -> false to null
+        }
 
         if (check.expect.snapshot != null) {
             return evaluateSnapshot(check, pathExists, readValue, quiet)
@@ -388,7 +393,9 @@ object JsonExpectationEvaluator {
     private fun contains(actual: JsonElement?, expected: JsonElement?): Boolean {
         if (actual == null || expected == null) return false
         return when (actual) {
-            is JsonPrimitive -> actual.isString && actual.content.contains(expected.jsonPrimitive.content)
+            is JsonPrimitive ->
+                actual.isString && expected is JsonPrimitive && expected !is JsonNull &&
+                    actual.content.contains(expected.content)
             is JsonArray -> actual.any { element -> structurallyContains(element, expected) }
             else -> false
         }
@@ -400,7 +407,8 @@ object JsonExpectationEvaluator {
      * Extra fields in [actual] are allowed (not compared).
      */
     private fun structurallyContains(actual: JsonElement?, expected: JsonElement?): Boolean {
-        if (expected == null || expected is JsonNull) return true
+        if (expected is JsonNull) return actual is JsonNull
+        if (expected == null) return false
         if (actual == null || actual is JsonNull) return false
 
         return when (expected) {

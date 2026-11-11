@@ -352,6 +352,38 @@ class StepExecutorsTest {
     }
 
     @Test
+    fun `Kotlin and YAML openDocument without text send the same fixture contents`() {
+        java.nio.file.Files.writeString(workspaceRoot.resolve("A.groovy"), "class A {}")
+        val kotlinStep = scenario(source = "scenarios/_dsl.yaml") { openDocument("A.groovy") }
+            .scenario.steps.single() as ScenarioStep.OpenDocument
+        val yamlStep = JacksonScenarioParser().parseScenarioDefinition(
+            """
+            name: fixture-open
+            steps:
+              - openDocument: { path: A.groovy }
+            """.trimIndent(),
+        ).scenario.steps.single() as ScenarioStep.OpenDocument
+
+        OpenDocumentStepExecutor().execute(kotlinStep, context)
+        OpenDocumentStepExecutor().execute(yamlStep, context)
+
+        verify(exactly = 2) {
+            session.server.textDocumentService.didOpen(match { it.textDocument.text == "class A {}" })
+        }
+    }
+
+    @Test
+    fun `Kotlin openDocument with explicit empty text opens an empty buffer over the fixture`() {
+        java.nio.file.Files.writeString(workspaceRoot.resolve("A.groovy"), "class A {}")
+        val step = scenario(source = "scenarios/_dsl.yaml") { openDocument("A.groovy", text = "") }
+            .scenario.steps.single() as ScenarioStep.OpenDocument
+
+        OpenDocumentStepExecutor().execute(step, context)
+
+        verify { session.server.textDocumentService.didOpen(match { it.textDocument.text.isEmpty() }) }
+    }
+
+    @Test
     fun `cursor path is workspace-relative and decoded however the document was named`() {
         OpenDocumentStepExecutor().execute(
             ScenarioStep.OpenDocument(path = "./src/My Café.groovy", text = "|^byPath|x"),
