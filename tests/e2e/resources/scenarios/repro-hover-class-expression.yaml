@@ -1,0 +1,56 @@
+name: repro-hover-class-expression
+description: Hover on a class used as an expression (`Money` in `Money.of(2.5)`) shows a class card, not the raw AST node
+xfail:
+  issue: 1526
+  reason: hover on a ClassExpression prints the Kotlin toString of the AST node with an identity hash
+  match: 'ClassExpression@'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/money/Money.groovy: |
+      package demo.money
+
+      /** An immutable amount of money. */
+      class Money {
+          static Money of(Number amount) { new Money() }
+      }
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      import demo.money.Money
+
+      class Use {
+          Object run() {
+              |^use|Money.of(2.5)
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.use.path}}"
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{cursor.use.uri}}" }
+        position: "{{cursor.use}}"
+      saveAs: hover
+  - assert:
+      source: hover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: NOT_CONTAINS, value: "ClassExpression@" }
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "demo.money.Money" }
+  - shutdown: {}
+  - exit: {}

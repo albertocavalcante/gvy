@@ -1,0 +1,54 @@
+name: repro-hover-closure-it
+description: Hover on the implicit closure parameter `it` shows the element type of the receiver
+xfail:
+  issue: 1531
+  reason: hover on implicit `it` in a closure over a List<Shape> reports Object
+  match: 'Actual: ".*Object it'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/Shape.groovy: |
+      package demo
+
+      class Shape {
+          String name
+          double area() { 0d }
+      }
+    src/main/groovy/demo/Svc.groovy: |
+      package demo
+
+      class Svc {
+          List<Shape> shapes = []
+
+          void run() {
+              shapes.each { |^it|it.area() }
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.it.path}}"
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{cursor.it.uri}}" }
+        position: "{{cursor.it}}"
+      saveAs: hover
+  - assert:
+      source: hover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "Shape" }
+  - shutdown: {}
+  - exit: {}

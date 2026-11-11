@@ -1,0 +1,59 @@
+name: repro-hover-method-call-target
+description: Hover on a call through a workspace interface type resolves the interface method, not a GDK extension
+xfail:
+  issue: 1527
+  reason: hover resolves orders.findAll() to the GDK extension DefaultGroovyMethods instead of Repository.findAll()
+  match: 'Actual: ".*DefaultGroovyMethods'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/Repository.groovy: |
+      package demo
+
+      interface Repository<T, ID> {
+          Collection<T> findAll()
+      }
+    src/main/groovy/demo/Order.groovy: |
+      package demo
+
+      class Order {}
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      class Use {
+          Repository<Order, String> orders
+
+          Object run() {
+              orders.|^call|findAll()
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.call.path}}"
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{cursor.call.uri}}" }
+        position: "{{cursor.call}}"
+      saveAs: hover
+  - assert:
+      source: hover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: NOT_CONTAINS, value: "DefaultGroovyMethods" }
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "Repository" }
+  - shutdown: {}
+  - exit: {}
