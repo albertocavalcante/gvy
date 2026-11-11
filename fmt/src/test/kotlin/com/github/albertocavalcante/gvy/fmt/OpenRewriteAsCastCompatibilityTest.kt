@@ -7,6 +7,7 @@ import org.junit.jupiter.params.provider.ValueSource
 import org.openrewrite.InMemoryExecutionContext
 import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.format.AutoFormat
+import org.openrewrite.groovy.tree.G
 import org.openrewrite.internal.InMemoryLargeSourceSet
 
 /** Dependency-level regressions for the upstream as-cast fix tracked by #1598. */
@@ -26,6 +27,7 @@ class OpenRewriteAsCastCompatibilityTest {
         val context = InMemoryExecutionContext { throw AssertionError("OpenRewrite recipe failed", it) }
         val parsed = GroovyParser.builder().build().parse(context, source).toList()
         assertThat(parsed).hasSize(1)
+        assertThat(parsed.single()).isInstanceOf(G.CompilationUnit::class.java)
         assertThat(parsed.single().printAll()).isEqualTo(source)
 
         val changes = AutoFormat().run(InMemoryLargeSourceSet(parsed), context).changeset.allResults

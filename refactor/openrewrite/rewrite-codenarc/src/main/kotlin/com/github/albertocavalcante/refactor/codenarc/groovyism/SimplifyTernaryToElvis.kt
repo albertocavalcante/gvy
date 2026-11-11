@@ -14,6 +14,7 @@ import org.openrewrite.java.tree.Space
  * This aligns with CodeNarc rule: SimplifyTernaryToElvis
  *
  * e.g. x ? x : y -> x ?: y
+ * Only repeated literals are currently eligible; identifier safety needs binding and truthiness proof (#1651).
  *
  * @see <a href="https://codenarc.github.io/CodeNarc/codenarc-rules-groovyism.html#simplifyternarytoelvis">
  *     CodeNarc Rule</a>
@@ -22,7 +23,7 @@ class SimplifyTernaryToElvis : Recipe() {
 
     override fun getDisplayName(): String = "Simplify ternary to elvis"
 
-    override fun getDescription(): String = "Replaces `x ? x : y` with `x ?: y`."
+    override fun getDescription(): String = "Replaces ternaries with repeated literal operands with the Elvis operator."
 
     override fun getVisitor(): TreeVisitor<*, ExecutionContext> = object : GroovyIsoVisitor<ExecutionContext>() {
         override fun visitTernary(ternary: J.Ternary, ctx: ExecutionContext): J.Ternary {
