@@ -1,10 +1,13 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
 import com.github.albertocavalcante.gvy.build.DependencyResolver
+import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import com.github.albertocavalcante.gvy.build.ResolutionCodes
 import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.build.WorkspaceResolution
 import io.github.oshai.kotlinlogging.KotlinLogging
+import org.gradle.tooling.GradleConnector
+import org.gradle.tooling.ModelBuilder
 import org.gradle.tooling.ProjectConnection
 import org.gradle.tooling.model.build.BuildEnvironment
 import org.gradle.tooling.model.idea.IdeaModule
@@ -14,6 +17,7 @@ import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.CancellationException
 import kotlin.io.path.exists
 
 /**
@@ -68,20 +72,27 @@ class GradleDependencyResolver(
      * - Isolated Gradle user home fallback for init script errors
      *
      * @param projectFile Path to the project directory (build.gradle location)
+     * @param cancellation Cancels the in-flight Tooling API operation and any retry backoff
      * @return WorkspaceResolution containing both dependencies and source directories
+     * @throws CancellationException once [cancellation] stops the resolution
      */
-    fun resolveWithSourceDirectories(projectFile: Path): WorkspaceResolution {
+    fun resolveWithSourceDirectories(
+        projectFile: Path,
+        cancellation: ResolutionCancellation = ResolutionCancellation(),
+    ): WorkspaceResolution {
         val projectDir = if (Files.isDirectory(projectFile)) projectFile else projectFile.parent
 
         logger.info { "Resolving dependencies using Gradle Tooling API for: $projectDir" }
 
         // First, try with exponential backoff for transient failures
-        val transientRetryResult = runWithTransientRetry(projectDir)
+        val transientRetryResult = runWithTransientRetry(projectDir, cancellation)
         if (transientRetryResult.isSuccess) {
             return transientRetryResult.getOrThrow()
         }
 
         val lastException = transientRetryResult.exceptionOrNull()
+        // A cancelled attempt fails with the Tooling API's cancellation error; report cancellation, not failure.
+        if (cancellation.isCancelled) throw cancelledBy(lastException)
 
         // Log the original failure before attempting fallback
         if (lastException != null) {
@@ -90,7 +101,7 @@ class GradleDependencyResolver(
 
         // Fall back to isolated Gradle user home for init script errors
         if (lastException != null && failureAnalyzer.isInitScriptError(lastException)) {
-            val isolatedResult = tryWithIsolatedUserHome(projectDir)
+            val isolatedResult = tryWithIsolatedUserHome(projectDir, cancellation)
             if (isolatedResult != null) {
                 return isolatedResult
             }
@@ -115,14 +126,19 @@ class GradleDependencyResolver(
      * Returns the result of the last attempt (success or failure).
      */
     @Suppress("LoopWithTooManyJumpStatements") // Retry loop with early exit is clearer than alternatives
-    private fun runWithTransientRetry(projectDir: Path): Result<WorkspaceResolution> {
+    private fun runWithTransientRetry(
+        projectDir: Path,
+        cancellation: ResolutionCancellation,
+    ): Result<WorkspaceResolution> {
         var lastResult: Result<WorkspaceResolution> = Result.failure(IllegalStateException("No attempts made"))
         var currentDelay = retryConfig.initialDelayMs
 
         for (attempt in 1..retryConfig.maxAttempts) {
+            cancellation.throwIfCancelled()
             lastResult = runCatching {
-                resolveWithGradleUserHome(projectDir, gradleUserHomeDir = null)
+                resolveWithGradleUserHome(projectDir, gradleUserHomeDir = null, cancellation)
             }
+            if (cancellation.isCancelled) break
 
             if (lastResult.isSuccess) {
                 if (attempt > 1) {
@@ -137,12 +153,6 @@ class GradleDependencyResolver(
             if (!failureAnalyzer.isTransient(exception) || attempt >= retryConfig.maxAttempts) {
                 break
             }
-            // An interrupted thread means the caller gave up; keep the flag and stop retrying.
-            if (Thread.currentThread().isInterrupted) {
-                logger.info { "Gradle dependency resolution interrupted; not retrying transient failure" }
-                break
-            }
-
             val rootCause = failureAnalyzer.causeChain(exception).last()
             logger.warn {
                 "Gradle dependency resolution failed with a transient error " +
@@ -150,13 +160,7 @@ class GradleDependencyResolver(
                     "[cause: ${rootCause.javaClass.simpleName}: ${rootCause.message}]. " +
                     "Retrying in ${currentDelay}ms..."
             }
-            try {
-                Thread.sleep(currentDelay)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                logger.info { "Gradle dependency resolution interrupted during retry backoff" }
-                break
-            }
+            if (!waitBeforeRetry(currentDelay, cancellation)) break
             currentDelay = (currentDelay * retryConfig.backoffMultiplier).toLong()
         }
 
@@ -164,9 +168,30 @@ class GradleDependencyResolver(
     }
 
     /**
+     * Waits [delayMs] before the next attempt. Returns false, without waiting out the delay, when the caller gave
+     * up: cancellation was requested, or the thread is interrupted (the flag is kept for the caller).
+     */
+    private fun waitBeforeRetry(delayMs: Long, cancellation: ResolutionCancellation): Boolean {
+        if (Thread.currentThread().isInterrupted) {
+            logger.info { "Gradle dependency resolution interrupted; not retrying transient failure" }
+            return false
+        }
+        return try {
+            // Wakes as soon as cancellation is requested, so a cancelled resolution never sits out a backoff.
+            val cancelled = cancellation.awaitCancellation(delayMs)
+            if (cancelled) logger.info { "Gradle dependency resolution cancelled during retry backoff" }
+            !cancelled
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            logger.info { "Gradle dependency resolution interrupted during retry backoff" }
+            false
+        }
+    }
+
+    /**
      * Tries resolution with an isolated Gradle user home to avoid init script issues.
      */
-    private fun tryWithIsolatedUserHome(projectDir: Path): WorkspaceResolution? {
+    private fun tryWithIsolatedUserHome(projectDir: Path, cancellation: ResolutionCancellation): WorkspaceResolution? {
         logger.warn {
             "Gradle dependency resolution failed; retrying with isolated Gradle user home " +
                 "to avoid incompatible user init scripts"
@@ -174,8 +199,9 @@ class GradleDependencyResolver(
 
         val isolatedUserHome = isolatedGradleUserHomeDir()
         return runCatching {
-            resolveWithGradleUserHome(projectDir, isolatedUserHome.toFile())
+            resolveWithGradleUserHome(projectDir, isolatedUserHome.toFile(), cancellation)
         }.onFailure { e ->
+            if (cancellation.isCancelled) throw cancelledBy(e)
             logger.error(e) { "Isolated Gradle user home retry also failed: ${e.message}" }
         }.getOrNull()
     }
@@ -196,11 +222,16 @@ class GradleDependencyResolver(
         return Paths.get(userHome, ".gradle")
     }
 
-    private fun resolveWithGradleUserHome(projectDir: Path, gradleUserHomeDir: File?): WorkspaceResolution {
+    private fun resolveWithGradleUserHome(
+        projectDir: Path,
+        gradleUserHomeDir: File?,
+        cancellation: ResolutionCancellation,
+    ): WorkspaceResolution {
         val connection = connectionFactory.getConnection(projectDir, gradleUserHomeDir)
 
         // Pre-flight check: validate JDK/Gradle compatibility before attempting model fetch
-        checkJdkGradleCompatibility(connection)
+        checkJdkGradleCompatibility(connection, cancellation)
+        cancellation.throwIfCancelled()
 
         val modelBuilder = connection.model(IdeaProject::class.java)
             .withArguments(
@@ -217,7 +248,7 @@ class GradleDependencyResolver(
             modelBuilder.setJavaHome(javaHome.toFile())
         }
 
-        val ideaProject = modelBuilder.get()
+        val ideaProject = modelBuilder.getCancellable(cancellation)
 
         val dependencies = mutableSetOf<Path>()
         val sourceDirectories = mutableSetOf<Path>()
@@ -241,9 +272,10 @@ class GradleDependencyResolver(
      * If incompatible, throws a descriptive exception instead of proceeding to
      * fail later with a confusing "Unsupported class file major version" error.
      */
-    private fun checkJdkGradleCompatibility(connection: ProjectConnection) {
+    private fun checkJdkGradleCompatibility(connection: ProjectConnection, cancellation: ResolutionCancellation) {
+        // Fetching BuildEnvironment installs the distribution on first use, so it must be cancellable too.
         val gradleVersion = runCatching {
-            connection.getModel(BuildEnvironment::class.java).gradle.gradleVersion
+            connection.model(BuildEnvironment::class.java).getCancellable(cancellation).gradle.gradleVersion
         }.getOrNull() ?: return // If we can't get version, proceed and let it fail naturally
 
         // If javaHome is configured, we should check compatibility for THAT JDK.
@@ -291,6 +323,22 @@ class GradleDependencyResolver(
             version.substringBefore(".").toIntOrNull()
         }
     }
+
+    /**
+     * Runs this Tooling API operation with a cancellation token tied to [cancellation]. Cancelling the token stops
+     * the operation cooperatively, including a distribution download, which releases the distribution install lock.
+     * The resolution returns at once; a download read already blocked on a stalled connection still ends only when
+     * that read times out (the distribution's network timeout, 10 s by default). That thread is the Tooling API's
+     * own and holds neither our IO thread nor the install lock meanwhile.
+     */
+    private fun <T> ModelBuilder<T>.getCancellable(cancellation: ResolutionCancellation): T {
+        val source = GradleConnector.newCancellationTokenSource()
+        withCancellationToken(source.token())
+        return cancellation.onCancel { source.cancel() }.use { get() }
+    }
+
+    private fun cancelledBy(cause: Throwable?): CancellationException =
+        CancellationException("Gradle dependency resolution cancelled").apply { cause?.let(::initCause) }
 
     private fun isolatedGradleUserHomeDir(): Path {
         val userHome = System.getProperty("user.home")

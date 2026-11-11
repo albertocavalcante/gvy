@@ -24,6 +24,19 @@ interface BuildTool {
     fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)? = null): WorkspaceResolution
 
     /**
+     * Resolves dependencies like [resolve], stopping early when [cancellation] is requested.
+     *
+     * A tool that supports cancellation throws [java.util.concurrent.CancellationException] once it stops (see
+     * [ResolutionCancellation] for when to cancel). The default ignores [cancellation], so a tool without support
+     * runs to completion.
+     */
+    fun resolve(
+        workspaceRoot: Path,
+        onProgress: ((String) -> Unit)?,
+        cancellation: ResolutionCancellation,
+    ): WorkspaceResolution = resolve(workspaceRoot, onProgress)
+
+    /**
      * Creates a file watcher for this build tool.
      * @param coroutineScope The scope to launch the watcher in.
      * @param onChange Callback triggered when a build file changes.

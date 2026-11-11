@@ -1,8 +1,11 @@
 package com.github.albertocavalcante.gvy.build.gradle
 
+import com.github.albertocavalcante.gvy.build.ResolutionCancellation
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.gradle.tooling.BuildCancelledException
+import org.gradle.tooling.CancellationToken
 import org.gradle.tooling.GradleConnectionException
 import org.gradle.tooling.ModelBuilder
 import org.gradle.tooling.ProjectConnection
@@ -11,16 +14,25 @@ import org.gradle.tooling.model.build.BuildEnvironment
 import org.gradle.tooling.model.idea.IdeaModule
 import org.gradle.tooling.model.idea.IdeaProject
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.io.IOException
 import java.net.SocketTimeoutException
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.fail
 
 class GradleDependencyResolverRetryTest {
 
@@ -38,6 +50,8 @@ class GradleDependencyResolverRetryTest {
         val secondConnection = mockk<ProjectConnection>()
 
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
+
+        every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
         every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
@@ -47,6 +61,7 @@ class GradleDependencyResolverRetryTest {
         // Fail both attempts; this test only asserts we try an isolated user home fallback.
         every { modelBuilder.get() } throws error
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+        every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { firstConnection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { secondConnection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
@@ -98,6 +113,7 @@ class GradleDependencyResolverRetryTest {
         val connectionFactory = mockk<GradleConnectionFactory>()
         val connection = mockk<ProjectConnection>()
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
+        every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
         every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
         every { modelBuilder.get() } throws RuntimeException("some other failure")
@@ -126,6 +142,7 @@ class GradleDependencyResolverRetryTest {
         val connectionFactory = mockk<GradleConnectionFactory>()
         val connection = mockk<ProjectConnection>()
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
+        every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
         val ideaProject = mockk<IdeaProject>()
         val emptyModules = mockk<DomainObjectSet<IdeaModule>>(relaxed = true)
 
@@ -134,6 +151,8 @@ class GradleDependencyResolverRetryTest {
         every { ideaProject.modules } returns emptyModules
 
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+
+        every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
@@ -182,11 +201,14 @@ class GradleDependencyResolverRetryTest {
         val connectionFactory = mockk<GradleConnectionFactory>()
         val connection = mockk<ProjectConnection>()
         val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
+        every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
 
         every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
         every { modelBuilder.setJvmArguments(any(), any()) } returns modelBuilder
 
         val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+
+        every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
         val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
         every { buildEnvBuilder.get() } returns buildEnvironment
@@ -272,10 +294,81 @@ class GradleDependencyResolverRetryTest {
         }
     }
 
+    @Test
+    fun `cancelling during retry backoff ends the resolution within one step`(@TempDir projectDir: Path) {
+        val firstFailure = CountDownLatch(1)
+        // A backoff far longer than the bound: only cancellation can end it in time.
+        val slowRetries = GradleDependencyResolver.RetryConfig(maxAttempts = 4, initialDelayMs = 60_000L)
+        val fixture = ModelFetchFixture(projectDir, slowRetries) {
+            firstFailure.countDown()
+            error("Timeout waiting to lock build logic queue.")
+        }
+        val cancellation = ResolutionCancellation()
+
+        val resolution = CompletableFuture.supplyAsync { fixture.resolve(cancellation) }
+        assertTrue(firstFailure.await(BOUND_SECONDS, TimeUnit.SECONDS), "First attempt never ran")
+        cancellation.cancel()
+
+        assertCancelledWithinBound(resolution)
+        assertEquals(1, fixture.modelCalls, "A cancelled resolution must not start another attempt")
+    }
+
+    @Test
+    fun `cancelling a blocked model fetch cancels its tooling api token and does not retry`(@TempDir projectDir: Path) {
+        val fetching = CountDownLatch(1)
+        val fixture = ModelFetchFixture(projectDir) {
+            fetching.countDown()
+            val token = tokens.lastOrNull() ?: fail("IdeaProject fetch ran without a cancellation token")
+            // Stands in for the Tooling API, which polls its token while an operation or download runs.
+            val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(BOUND_SECONDS)
+            while (!token.isCancellationRequested && System.nanoTime() < deadline) Thread.onSpinWait()
+            throw BuildCancelledException("Build cancelled.")
+        }
+        val cancellation = ResolutionCancellation()
+
+        val resolution = CompletableFuture.supplyAsync { fixture.resolve(cancellation) }
+        assertTrue(fetching.await(BOUND_SECONDS, TimeUnit.SECONDS), "Model fetch never started")
+        cancellation.cancel()
+
+        assertCancelledWithinBound(resolution)
+        assertTrue(fixture.tokens.single().isCancellationRequested, "The Tooling API token must be cancelled")
+        assertEquals(1, fixture.modelCalls, "A cancelled fetch must not be retried")
+        assertEquals(1, fixture.connectionsOpened, "A cancelled fetch must not fall back to an isolated user home")
+    }
+
+    @Test
+    fun `an already cancelled resolution never connects`(@TempDir projectDir: Path) {
+        val fixture = ModelFetchFixture(projectDir) {}
+        val cancellation = ResolutionCancellation().apply { cancel() }
+
+        assertThrows<CancellationException> { fixture.resolve(cancellation) }
+        assertEquals(0, fixture.connectionsOpened)
+    }
+
+    private fun assertCancelledWithinBound(resolution: CompletableFuture<*>) {
+        val failure = assertThrows<ExecutionException>("Resolution was not cancelled within ${BOUND_SECONDS}s") {
+            resolution.get(BOUND_SECONDS, TimeUnit.SECONDS)
+        }
+        assertIs<CancellationException>(failure.cause, "Expected cancellation, got ${failure.cause}")
+    }
+
     /** Mocks one connection whose IdeaProject fetch runs [onModelFetch] with the 1-based call number. */
-    private class ModelFetchFixture(private val projectDir: Path, onModelFetch: (Int) -> Unit) {
+    private class ModelFetchFixture(
+        private val projectDir: Path,
+        private val retryConfig: GradleDependencyResolver.RetryConfig = ZERO_DELAY_RETRIES,
+        onModelFetch: ModelFetchFixture.(Int) -> Unit,
+    ) {
+        @Volatile
         var modelCalls = 0
             private set
+
+        /** Connections requested, including the isolated-user-home fallback. */
+        @Volatile
+        var connectionsOpened = 0
+            private set
+
+        /** Tooling API tokens attached to IdeaProject fetches, in call order. */
+        val tokens = CopyOnWriteArrayList<CancellationToken>()
 
         private val connectionFactory = mockk<GradleConnectionFactory>()
 
@@ -283,6 +376,10 @@ class GradleDependencyResolverRetryTest {
             projectDir.resolve("build.gradle").toFile().writeText("plugins { id 'java' }")
             val connection = mockk<ProjectConnection>()
             val modelBuilder = mockk<ModelBuilder<IdeaProject>>()
+            every { modelBuilder.withCancellationToken(any()) } answers {
+                tokens.add(firstArg())
+                modelBuilder
+            }
             val ideaProject = mockk<IdeaProject>()
             every { ideaProject.modules } returns mockk<DomainObjectSet<IdeaModule>>(relaxed = true)
             every { modelBuilder.withArguments(any(), any(), any(), any()) } returns modelBuilder
@@ -293,25 +390,32 @@ class GradleDependencyResolverRetryTest {
                 ideaProject
             }
             val buildEnvBuilder = mockk<ModelBuilder<BuildEnvironment>>(relaxed = true)
+            every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
             val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
             every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
             every { buildEnvBuilder.get() } returns buildEnvironment
             every { buildEnvironment.gradle.gradleVersion } returns "8.5"
             every { connection.model(IdeaProject::class.java) } returns modelBuilder
-            every { connectionFactory.getConnection(any(), any()) } returns connection
+            every { connectionFactory.getConnection(any(), any()) } answers {
+                connectionsOpened++
+                connection
+            }
         }
 
-        fun resolve() = GradleBuildTool(
+        fun resolve(cancellation: ResolutionCancellation = ResolutionCancellation()) = GradleBuildTool(
             connectionFactory = connectionFactory,
-            retryConfig = GradleDependencyResolver.RetryConfig(
-                maxAttempts = 4,
-                initialDelayMs = 0L,
-                backoffMultiplier = 1.0,
-            ),
-        ).resolve(workspaceRoot = projectDir, onProgress = null)
+            retryConfig = retryConfig,
+        ).resolve(workspaceRoot = projectDir, onProgress = null, cancellation = cancellation)
     }
 
     private companion object {
+        val ZERO_DELAY_RETRIES = GradleDependencyResolver.RetryConfig(
+            maxAttempts = 4,
+            initialDelayMs = 0L,
+            backoffMultiplier = 1.0,
+        )
+        const val BOUND_SECONDS = 5L
+
         const val DISTRIBUTION_URL = "https://services.gradle.org/distributions/gradle-9.2.1-bin.zip"
     }
 }

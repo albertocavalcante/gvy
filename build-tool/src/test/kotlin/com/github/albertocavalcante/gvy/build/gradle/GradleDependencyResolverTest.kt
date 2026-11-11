@@ -22,6 +22,12 @@ class GradleDependencyResolverTest {
     private val buildEnvironment = mockk<BuildEnvironment>(relaxed = true)
     private val ideaProject = mockk<IdeaProject>(relaxed = true)
 
+    init {
+        // Builders are fluent: the resolver attaches a cancellation token and keeps using the same builder.
+        every { modelBuilder.withCancellationToken(any()) } returns modelBuilder
+        every { buildEnvBuilder.withCancellationToken(any()) } returns buildEnvBuilder
+    }
+
     @Test
     fun `should set java home on model builder when configured`() {
         // Given
@@ -84,9 +90,8 @@ class GradleDependencyResolverTest {
         // Setup mocks
         every { connectionFactory.getConnection(any(), any()) } returns connection
 
-        // Stub both model() builder and getModel() direct call
         every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
-        every { connection.getModel(BuildEnvironment::class.java) } returns buildEnvironment
+        every { buildEnvBuilder.get() } returns buildEnvironment
 
         every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "7.3"
@@ -126,7 +131,8 @@ class GradleDependencyResolverTest {
 
         // Setup mocks
         every { connectionFactory.getConnection(any(), any()) } returns connection
-        every { connection.getModel(BuildEnvironment::class.java) } returns buildEnvironment
+        every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "6.8" // Compatible with 8
         every { compatibilityService.isCompatible("6.8", 8) } returns true
 
@@ -154,7 +160,8 @@ class GradleDependencyResolverTest {
 
         // Setup mocks
         every { connectionFactory.getConnection(any(), any()) } returns connection
-        every { connection.getModel(BuildEnvironment::class.java) } returns buildEnvironment
+        every { connection.model(BuildEnvironment::class.java) } returns buildEnvBuilder
+        every { buildEnvBuilder.get() } returns buildEnvironment
         every { buildEnvironment.gradle.gradleVersion } returns "8.0"
 
         val runtimeVersion = Runtime.version().feature()
