@@ -7,9 +7,9 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
 import { evaluateEvidence } from './check-bazel-evidence.mjs';
-import { PUBLIC_CONTRACT, MAX_BEP_BYTES, MAX_COMPRESSED_PROFILE_BYTES, projectBep, projectProfile } from './public-bazel-evidence.mjs';
+import { PUBLIC_CONTRACT, MAX_BEP_BYTES, MAX_PROFILE_BYTES, projectBep, validatePublicProfile } from './public-bazel-evidence.mjs';
 
-const files = ['context.json', 'bep.json', 'profile.json.gz', 'summary.json'];
+const files = ['context.json', 'bep.json', 'profile.json', 'summary.json'];
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const canonicalJson = value => `${JSON.stringify(value, null, 2)}\n`;
 
@@ -24,7 +24,7 @@ export function publicSummary(bep, context, status, producer, dirty) {
 export function writePublicManifest(dir, context) {
   const descriptions = {};
   for (const name of files) {
-    const bytes = readEvidenceBytes(join(dir, name), name === 'bep.json' ? MAX_BEP_BYTES : name === 'profile.json.gz' ? MAX_COMPRESSED_PROFILE_BYTES : 4 * 1024 * 1024);
+    const bytes = readEvidenceBytes(join(dir, name), name === 'bep.json' ? MAX_BEP_BYTES : name === 'profile.json' ? MAX_PROFILE_BYTES : 4 * 1024 * 1024);
     descriptions[name] = { bytes: bytes.length, sha256: sha256(bytes) };
   }
   writeFileSync(join(dir, 'public-evidence.json'), canonicalJson({ schemaVersion: 1, contract: PUBLIC_CONTRACT, context, files: descriptions }), { flag: 'wx', mode: 0o600 });
@@ -75,15 +75,15 @@ export function auditPublicRoot(root, expected = {}, readBytes = readEvidenceByt
       if (names.length !== 5 || names.some(item => !item.isFile() || item.isSymbolicLink() || ![...files, 'public-evidence.json'].includes(item.name))) throw new Error('Unknown or unsafe public invocation file');
       // Parse, validate and hash each exact bounded buffer. Reopening paths for
       // hashes could bind a later, unprojected replacement to an earlier check.
-      const contents = Object.fromEntries(files.map(name => [name, readBytes(join(dir, name), name === 'bep.json' ? MAX_BEP_BYTES : name === 'profile.json.gz' ? MAX_COMPRESSED_PROFILE_BYTES : 4 * 1024 * 1024)]));
+      const contents = Object.fromEntries(files.map(name => [name, readBytes(join(dir, name), name === 'bep.json' ? MAX_BEP_BYTES : name === 'profile.json' ? MAX_PROFILE_BYTES : 4 * 1024 * 1024)]));
       const context = parseJson(contents['context.json']);
       validateContext(context, expected);
       const summary = parseJson(contents['summary.json']);
       if (!/^[a-z0-9][a-z0-9-]{0,79}$/.test(summary.producer ?? '') || entry.name !== `${summary.producer}-${context.command}-${context.invocationId}`) throw new Error('Invalid public invocation directory');
       const bep = text(contents['bep.json']);
       if (projectBep(bep, context, { publicInput: true }) !== bep) throw new Error('Unprojected public BEP fields');
-      const profile = contents['profile.json.gz'];
-      if (!projectProfile(profile, { publicInput: true }).equals(profile)) throw new Error('Unprojected public profile fields');
+      const profile = contents['profile.json'];
+      validatePublicProfile(profile);
       if (![null, true, false].includes(summary.worktreeDirty) || ![null, 'SIGINT', 'SIGTERM', 'SIGKILL', 'SIGHUP', 'SIGQUIT', 'SIGABRT'].includes(summary.commandSignal)) throw new Error('Invalid public invocation status');
       if (![summary.commandExitCode, summary.captureExitCode].every(code => Number.isInteger(code) && code >= 0 && code <= 255)) throw new Error('Invalid public exit status');
       const recomputed = publicSummary(bep, context, summary, summary.producer, summary.worktreeDirty);

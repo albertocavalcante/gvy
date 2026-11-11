@@ -153,7 +153,7 @@ async function main(args) {
     const bep = projectBep(readEvidenceText(join(privateDir, 'bep.json'), MAX_BEP_BYTES), context);
     const profile = projectProfile(readEvidenceBytes(join(privateDir, 'profile.json.gz'), MAX_COMPRESSED_PROFILE_BYTES));
     writeFileSync(join(dir, 'bep.json'), bep, { flag: 'wx', mode: 0o600 });
-    writeFileSync(join(dir, 'profile.json.gz'), profile, { flag: 'wx', mode: 0o600 });
+    writeFileSync(join(dir, 'profile.json'), profile, { flag: 'wx', mode: 0o600 });
     result = publicSummary(bep, context, status, options['--producer'], dirty);
     stage = 'Public evidence manifest';
     writeFileSync(join(dir, 'summary.json'), JSON.stringify(result, null, 2) + '\n', { flag: 'wx', mode: 0o600 });

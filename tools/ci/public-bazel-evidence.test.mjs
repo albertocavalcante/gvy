@@ -20,7 +20,7 @@ test('Bazel child inherits only explicit tool/platform variables and no parent c
   assert.equal(Object.hasOwn(env, 'SECRET_NOT_NAMED_TOKEN'), false);
 });
 
-import { gzipSync, gunzipSync } from 'node:zlib';
+import { gzipSync } from 'node:zlib';
 import { evaluateEvidence } from './check-bazel-evidence.mjs';
 import { projectBep, projectProfile } from './public-bazel-evidence.mjs';
 
@@ -81,7 +81,7 @@ test('profile projection keeps numeric timeline/counters and drops metadata, nam
     { ph: 'C', name: canary, pid: 1, tid: 1, ts: 2, args: { [canary]: 3, ignored: canary } },
   ] };
   const publicBytes = projectProfile(gzipSync(JSON.stringify(raw)));
-  const decoded = gunzipSync(publicBytes).toString('utf8');
+  const decoded = publicBytes.toString('utf8');
   assert.equal(decoded.includes(canary), false);
   const profile = JSON.parse(decoded);
   assert.equal(profile.traceEvents.length, 2);
@@ -106,7 +106,7 @@ test('legitimate wide event streams remain complete and retry fields survive opa
 test('trace clock offsets may be negative while finite timeline information stays intact', () => {
   const profile = { traceEvents: [{ ph: 'X', name: 'phase', pid: 1, tid: 1, ts: -10, dur: 1 }] };
   const projected = projectProfile(gzipSync(JSON.stringify(profile)));
-  assert.equal(JSON.parse(gunzipSync(projected)).traceEvents[0].ts, -10);
+  assert.equal(JSON.parse(projected).traceEvents[0].ts, -10);
 });
 
 test('invalid UTF-8 profiles and decompression bombs fail closed without a raw fallback', () => {
@@ -159,7 +159,7 @@ test('opaque-looking strings remain distinct in nested IDs, metric names and tra
   assert.notEqual(metrics.runnerCount[0].name, metrics.runnerCount[1].name);
   const profile = { traceEvents: [raw, disguised].map((id, index) => ({ ph: index ? 'f' : 's', name: 'flow', id, pid: 1, tid: 1, ts: index })) };
   const bytes = projectProfile(gzipSync(JSON.stringify(profile)));
-  const flows = JSON.parse(gunzipSync(bytes)).traceEvents;
+  const flows = JSON.parse(bytes).traceEvents;
   assert.notEqual(flows[0].id, flows[1].id);
   assert.deepEqual(projectProfile(bytes, { publicInput: true }), bytes);
 });
@@ -190,6 +190,6 @@ test('overflowing and fractional numeric trace flow IDs are rejected while safe 
     assert.throws(() => projectProfile(gzipSync(trace)), /flow ID/);
   }
   const profile = { traceEvents: [-Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER].map((id, index) => ({ ph: index ? 'f' : 's', name: 'flow', id, ts: index })) };
-  const events = JSON.parse(gunzipSync(projectProfile(gzipSync(JSON.stringify(profile))))).traceEvents;
+  const events = JSON.parse(projectProfile(gzipSync(JSON.stringify(profile)))).traceEvents;
   assert.notEqual(events[0].id, events[1].id);
 });

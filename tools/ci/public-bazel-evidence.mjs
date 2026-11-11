@@ -14,9 +14,9 @@ export function bazelChildEnvironment(parent) {
 
 import { createHash } from 'node:crypto';
 import { isUtf8 } from 'node:buffer';
-import { gunzipSync, gzipSync } from 'node:zlib';
+import { gunzipSync } from 'node:zlib';
 
-export const PUBLIC_CONTRACT = 'gvy-public-bazel-v1';
+export const PUBLIC_CONTRACT = 'gvy-public-bazel-v2';
 export const MAX_BEP_BYTES = 256 * 1024 * 1024;
 export const MAX_PROFILE_BYTES = 128 * 1024 * 1024;
 export const MAX_COMPRESSED_PROFILE_BYTES = 32 * 1024 * 1024;
@@ -174,16 +174,12 @@ export function projectBep(text, context, { publicInput = false } = {}) {
   return `${output.join('\n')}\n`;
 }
 
-/** Publish generic timing/counter tracks; arbitrary names, args and metadata drop. */
-export function projectProfile(input, { publicInput = false } = {}) {
-  if (!Buffer.isBuffer(input) || !input.length || input.length > MAX_COMPRESSED_PROFILE_BYTES) throw new Error('Missing or oversized compressed profile');
+function projectProfileJson(bytes, { publicInput = false } = {}) {
   let profile;
   try {
-    const bytes = gunzipSync(input, { maxOutputLength: MAX_PROFILE_BYTES });
     if (!isUtf8(bytes)) throw new Error('Invalid UTF-8');
     profile = JSON.parse(bytes.toString('utf8'));
-  }
-  catch { throw new Error('Malformed or oversized trace profile'); }
+  } catch { throw new Error('Malformed trace profile'); }
   if (!object(profile) || !Array.isArray(profile.traceEvents) || profile.traceEvents.length > 1000000) throw new Error('Invalid trace profile schema');
   const names = new Map();
   const counters = new Map();
@@ -218,5 +214,25 @@ export function projectProfile(input, { publicInput = false } = {}) {
     }
     traceEvents.push(clean);
   }
-  return gzipSync(JSON.stringify({ traceEvents }), { mtime: 0 });
+  const output = Buffer.from(JSON.stringify({ traceEvents }));
+  if (output.length > MAX_PROFILE_BYTES) throw new Error('Oversized public profile');
+  return output;
+}
+
+/** Publish generic timing/counter tracks; arbitrary names, args and metadata drop. */
+export function projectProfile(input, { publicInput = false } = {}) {
+  if (!Buffer.isBuffer(input) || !input.length || input.length > (publicInput ? MAX_PROFILE_BYTES : MAX_COMPRESSED_PROFILE_BYTES)) throw new Error('Missing or oversized trace profile');
+  let bytes = input;
+  if (!publicInput) {
+    try { bytes = gunzipSync(input, { maxOutputLength: MAX_PROFILE_BYTES }); }
+    catch { throw new Error('Malformed or oversized trace profile'); }
+  }
+  return projectProfileJson(bytes, { publicInput });
+}
+
+/** Every published byte must belong to the exact canonical public JSON. */
+export function validatePublicProfile(input) {
+  if (!Buffer.isBuffer(input) || !input.length || input.length > MAX_PROFILE_BYTES) throw new Error('Invalid public profile size');
+  if (!projectProfile(input, { publicInput: true }).equals(input)) throw new Error('Unprojected public profile fields');
+  return input;
 }

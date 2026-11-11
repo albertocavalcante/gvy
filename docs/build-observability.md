@@ -49,7 +49,7 @@ build-slot --slots 1 -- node tools/ci/run-bazel.mjs \
 ```
 
 Each invocation directory is named `<producer>-<command>-<uuid>`. The report root is **public-only**. It contains
-projected `bep.json`, projected `profile.json.gz`, approved `context.json`, `summary.json` and a versioned
+projected `bep.json`, canonical uncompressed `profile.json`, approved `context.json`, `summary.json` and a versioned
 `public-evidence.json` checksum manifest. The separate private root contains raw BEP/profile and `stdout.log`,
 `stderr.log`, `console.log`. CI must pass the private root explicitly; locally it defaults to a sibling named
 `<report-root>-private`. The roots must be disjoint, including through existing symlinks.
@@ -73,7 +73,7 @@ raw test logs or diagnostic reports copied from raw logs. Raw console output rem
 handling; diagnostic classification reads the private console files, and those diagnostic reports stay outside the
 public upload root.
 
-The versioned `gvy-public-bazel-v1` projection publishes approved identity/timing, four build-metadata fields, true
+The versioned `gvy-public-bazel-v2` projection publishes approved identity/timing, four build-metadata fields, true
 build/action/test outcomes, cache counts and typed numeric metrics. It removes command-line/options/client-environment
 payload contents, started option descriptions, action command lines, arbitrary metadata, output text and artifact URIs.
 Every string within graph IDs is mapped consistently to an opaque digest while event kinds, child edges, nested ID
@@ -83,6 +83,19 @@ unavailable in public artifacts; use normal CI diagnostics for actionable target
 Published trace profiles retain finite numeric timestamps, durations, thread IDs and counters. Source names, metadata
 and args are discarded; names are generic ordinal labels, and counter args are regenerated from numeric values only
 under fixed synthetic keys. These profiles show timing and resource tracks, with reduced semantic attribution.
+
+Public profile validation compares every original JSON byte against the canonical public projection. The manifest hashes
+that same original buffer. Public gzip is rejected: gzip headers, extra members and ignored DEFLATE padding can retain
+data that disappears on decoding, and recompression varies between Node/zlib versions and platforms. Artifact archive
+compression handles transfer size without adding a compressed profile to the public evidence directory.
+
+Bazel still writes its private raw `profile.json.gz`. Projection accepts at most 32 MiB of private compressed input and
+uses [bounded native decompression](https://nodejs.org/download/release/v20.19.0/docs/api/zlib.html#class-options) with
+a 128 MiB decoded limit. The public canonical JSON output and auditor each enforce that same 128 MiB limit. No raw gzip
+bytes are copied into public evidence, including optional headers and ignored padding in otherwise valid input.
+
+Version 1 roots, legacy `profile.json.gz`, mixed layouts and gzip bytes renamed `profile.json` fail audit. Regenerate
+evidence with the version 2 wrapper; the auditor has no compatibility fallback that republishes old files.
 
 Before upload, run:
 

@@ -29,7 +29,7 @@ function fixture(t, code = 0) {
   const summary = publicSummary(bep, context, { commandExitCode: code, captureExitCode: 0, commandSignal: null }, 'bazel-build', false);
   writeFileSync(join(invocation, 'context.json'), canonicalJson(context));
   writeFileSync(join(invocation, 'bep.json'), bep);
-  writeFileSync(join(invocation, 'profile.json.gz'), profile);
+  writeFileSync(join(invocation, 'profile.json'), profile);
   writeFileSync(join(invocation, 'summary.json'), canonicalJson(summary));
   writePublicManifest(invocation, context);
   const reseal = () => { unlinkSync(join(invocation, 'public-evidence.json')); writePublicManifest(invocation, context); };
@@ -78,7 +78,7 @@ test('audit rejects raw command payloads even after a forged matching checksum m
 
 test('audit rejects raw trace args, arbitrary summary fields, unknown files and symlinks', t => {
   const profile = fixture(t);
-  writeFileSync(join(profile.invocation, 'profile.json.gz'), gzipSync(JSON.stringify({ traceEvents: [{ ph: 'X', name: 'Bazel event 1', ts: 0, dur: 1, args: { token: canary } }] })));
+  writeFileSync(join(profile.invocation, 'profile.json'), JSON.stringify({ traceEvents: [{ ph: 'X', name: 'Bazel event 1', ts: 0, dur: 1, args: { token: canary } }] }));
   profile.reseal();
   assert.equal(auditPublicRoot(profile.root).ok, false);
   const summary = fixture(t);
@@ -90,10 +90,10 @@ test('audit rejects raw trace args, arbitrary summary fields, unknown files and 
   writeFileSync(join(raw.invocation, 'console.log'), canary);
   assert.equal(auditPublicRoot(raw.root).ok, false);
   const link = fixture(t);
-  unlinkSync(join(link.invocation, 'profile.json.gz'));
+  unlinkSync(join(link.invocation, 'profile.json'));
   const privateFile = join(link.dir, 'private');
   writeFileSync(privateFile, canary);
-  symlinkSync(privateFile, join(link.invocation, 'profile.json.gz'));
+  symlinkSync(privateFile, join(link.invocation, 'profile.json'));
   assert.equal(auditPublicRoot(link.root).ok, false);
 });
 
@@ -116,7 +116,7 @@ test('audit CLI binds current workflow context and publishes only a controlled s
 
 test('audit does not allow an existing unsafe safety marker or untyped status fields', t => {
   const marker = fixture(t);
-  writeFileSync(join(marker.root, 'public-audit.json'), canonicalJson({ schemaVersion: 1, contract: 'gvy-public-bazel-v1', ok: true, errors: [], invocations: 1, raw: canary }));
+  writeFileSync(join(marker.root, 'public-audit.json'), canonicalJson({ schemaVersion: 1, contract: 'gvy-public-bazel-v2', ok: true, errors: [], invocations: 1, raw: canary }));
   assert.equal(auditPublicRoot(marker.root).ok, false);
   const status = fixture(t);
   const data = JSON.parse(readFileSync(join(status.invocation, 'summary.json')));
@@ -146,7 +146,7 @@ for (const file of ['context.json', 'summary.json', 'public-evidence.json', 'pub
     test(`audit rejects shadowed credential bytes in ${file}${escapedKey ? ' through an escaped duplicate key' : ''}`, t => {
       const f = fixture(t);
       const path = file === 'public-audit.json' ? join(f.root, file) : join(f.invocation, file);
-      if (file === 'public-audit.json') writeFileSync(path, canonicalJson({ schemaVersion: 1, contract: 'gvy-public-bazel-v1', ok: true, errors: [], invocations: 1 }));
+      if (file === 'public-audit.json') writeFileSync(path, canonicalJson({ schemaVersion: 1, contract: 'gvy-public-bazel-v2', ok: true, errors: [], invocations: 1 }));
       assert.equal(auditPublicRoot(f.root).ok, true);
       const key = file === 'context.json' ? 'headSha' : file === 'summary.json' ? 'producer' : 'contract';
       const marker = '  "' + key + '": ';
@@ -163,3 +163,38 @@ for (const file of ['context.json', 'summary.json', 'public-evidence.json', 'pub
     });
   }
 }
+
+test('public profile JSON hashes bind original canonical bytes without recompression', t => {
+  const f = fixture(t);
+  const profilePath = join(f.invocation, 'profile.json');
+  const original = readFileSync(profilePath);
+  assert.equal(auditPublicRoot(f.root).ok, true);
+  assert.deepEqual(readFileSync(profilePath), original);
+  const manifest = JSON.parse(readFileSync(join(f.invocation, 'public-evidence.json')));
+  assert.equal(manifest.files['profile.json'].bytes, original.length);
+});
+
+test('public profile audit rejects gzip bytes, legacy gzip files and mixed contract versions', t => {
+  const compressed = fixture(t);
+  const profilePath = join(compressed.invocation, 'profile.json');
+  writeFileSync(profilePath, gzipSync(readFileSync(profilePath)));
+  compressed.reseal();
+  assert.equal(auditPublicRoot(compressed.root).ok, false);
+  const legacy = fixture(t);
+  writeFileSync(join(legacy.invocation, 'profile.json.gz'), gzipSync(readFileSync(join(legacy.invocation, 'profile.json'))));
+  assert.equal(auditPublicRoot(legacy.root).ok, false);
+  unlinkSync(join(legacy.invocation, 'profile.json'));
+  assert.equal(auditPublicRoot(legacy.root).ok, false);
+  for (const file of ['summary.json', 'public-evidence.json', 'public-audit.json']) {
+    const mixed = fixture(t);
+    const path = file === 'public-audit.json' ? join(mixed.root, file) : join(mixed.invocation, file);
+    if (file === 'public-audit.json') writeFileSync(path, canonicalJson({ schemaVersion: 1, contract: 'gvy-public-bazel-v1', ok: true, errors: [], invocations: 1 }));
+    else {
+      const value = JSON.parse(readFileSync(path));
+      value[file === 'summary.json' ? 'publicEvidenceContract' : 'contract'] = 'gvy-public-bazel-v1';
+      writeFileSync(path, canonicalJson(value));
+      if (file === 'summary.json') mixed.reseal();
+    }
+    assert.equal(auditPublicRoot(mixed.root).ok, false);
+  }
+});

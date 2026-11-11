@@ -100,7 +100,7 @@ test('wrapper separates private capture, clears credentials and only publishes a
   const privateDir = join(f.privateRoot, invocationName);
   assert.equal(readFileSync(join(privateDir, 'console.log'), 'utf8').includes(canary), true);
   assert.equal(readFileSync(join(privateDir, 'bep.json'), 'utf8').includes(canary), true);
-  assert.deepEqual(readdirSync(f.artifactDirs()[0]).sort(), ['bep.json', 'context.json', 'profile.json.gz', 'public-evidence.json', 'summary.json']);
+  assert.deepEqual(readdirSync(f.artifactDirs()[0]).sort(), ['bep.json', 'context.json', 'profile.json', 'public-evidence.json', 'summary.json']);
   assertPublicNoCanary(f.reportRoot);
   assert.equal(auditPublicRoot(f.reportRoot, { testedSha: sha }).ok, true);
   assert.equal(f.run(['build', '//common:common']).status, 0);
