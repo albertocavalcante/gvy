@@ -397,15 +397,17 @@ class JenkinsCompletionExactSetTest {
     }
 
     @Test
-    fun `when conditions are described as conditions, other statements as options, and only when takes calls`(): Unit =
-        runTest {
-            val whenItems = completeInStage("when {").associate { it.label to it.detail }
-            val axisItems = completeInStage("matrix {", "axes {", "axis {").associate { it.label to it.detail }
+    fun `when conditions are described as conditions, when options and other statements as options`(): Unit = runTest {
+        val whenItems = completeInStage("when {").associate { it.label to it.detail }
+        val axisItems = completeInStage("matrix {", "axes {", "axis {").associate { it.label to it.detail }
 
-            assertEquals("Declarative condition", whenItems["branch"])
-            assertEquals("Declarative condition", whenItems["allOf"])
-            assertEquals("Declarative option", axisItems["values"])
+        assertEquals("Declarative condition", whenItems["branch"])
+        assertEquals("Declarative condition", whenItems["allOf"])
+        listOf("beforeAgent", "beforeInput", "beforeOptions").forEach { name ->
+            assertEquals("Declarative option", whenItems[name], "$name is an option of when")
         }
+        assertEquals("Declarative option", axisItems["values"])
+    }
 
     @Test
     fun `agent block inserts label without a brace`(): Unit = runTest {

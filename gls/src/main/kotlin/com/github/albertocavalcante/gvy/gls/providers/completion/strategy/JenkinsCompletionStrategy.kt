@@ -158,6 +158,7 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
             else -> "$instruction {"
         }
         val detail = when {
+            inWhen && instruction in WHEN_OPTIONS -> "Declarative option"
             inWhen -> "Declarative condition"
             isStatement -> "Declarative option"
             else -> "Declarative directive"
@@ -242,3 +243,6 @@ private fun JenkinsBlockContext.isInsideGroovyBody(): Boolean = "script" in encl
 
 /** `when` conditions written as a call without arguments (`buildingTag()`), not as a statement or a block. */
 private val NO_ARGUMENT_CONDITIONS = setOf("buildingTag", "changeRequest", "isRestartedRun")
+
+/** `when` options that change how the conditions are evaluated; the other `when` entries are conditions. */
+private val WHEN_OPTIONS = setOf("beforeAgent", "beforeInput", "beforeOptions")
