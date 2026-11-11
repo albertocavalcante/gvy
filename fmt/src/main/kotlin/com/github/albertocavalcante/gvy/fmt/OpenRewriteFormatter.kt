@@ -8,6 +8,7 @@ import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.format.AutoFormat
 import org.openrewrite.internal.InMemoryLargeSourceSet
+import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
 import org.slf4j.LoggerFactory
 import java.util.stream.Collectors
@@ -60,7 +61,12 @@ class OpenRewriteFormatter internal constructor(
         }
     }
 
-    private fun formatUnchecked(text: String): String {
+    /**
+     * The formatter's own output, before [TokenStreamGuard] checks it.
+     *
+     * Tests use this to assert what the formatter produces, independent of whether the guard would refuse it.
+     */
+    internal fun formatUnchecked(text: String): String {
         if (text.isBlank()) return text
 
         // NOTE: Shebang extraction is a heuristic workaround. OpenRewrite's GroovyParser doesn't
@@ -84,12 +90,11 @@ class OpenRewriteFormatter internal constructor(
                 .firstOrNull()
                 ?: return@runCatching extraction.content
 
-            val normalizedSource = PostFormatWhitespaceCollapser().visit(formattedSource, Unit) as SourceFile
-            // TODO(#formatter-followup): move this token-level collapse into a dedicated OpenRewrite recipe
-            // once we upstream Groovy spacing fixes.
-            normalizedSource.printAll()
-                .let { MULTI_SPACE_WITHIN_TOKEN_REGEX.replace(it) { " " } }
-                .normalizeLineEndings()
+            // Fix spacing on the LST only: a text-level pass over the printed source would also rewrite
+            // the inside of string literals and comments (#1524).
+            val declarationsFixed = DeclarationSpacing().visit(formattedSource, Unit) as SourceFile
+            val normalizedSource = PostFormatWhitespaceCollapser().visit(declarationsFixed, Unit) as SourceFile
+            normalizedSource.printAll().normalizeLineEndings()
         }.getOrElse { return text }
 
         // Restore shebang with normalized spacing (always one blank line)
@@ -131,8 +136,61 @@ class OpenRewriteFormatter internal constructor(
         }
     }
 
+    /**
+     * Removes the extra spaces `AutoFormat` puts into variable and parameter declarations (#1524).
+     *
+     * rewrite-groovy stores the space in front of a declared name in the name's own prefix, and gives an
+     * untyped declaration (`def x = 1`, the parameter in `f(x)`) an empty identifier as its type.
+     * `AutoFormat` then adds a space in the variable's prefix as well, so `String s` prints as
+     * `String  s`, `def x` as `def  x` and `f(x)` as `f( x)`. Each of those runs is split across
+     * adjacent LST nodes, so [PostFormatWhitespaceCollapser] cannot see it as one run. This visitor
+     * merges the adjacent prefixes: a name keeps one space after its type or modifier, and none when
+     * nothing precedes it within the declaration.
+     */
+    private class DeclarationSpacing : GroovyIsoVisitor<Unit>() {
+        override fun visitVariable(
+            variable: J.VariableDeclarations.NamedVariable,
+            p: Unit,
+        ): J.VariableDeclarations.NamedVariable {
+            val named = super.visitVariable(variable, p)
+            val namePrefix = named.name.prefix
+            val splitRun = named.prefix.isInlineWhitespace() && namePrefix.isInlineWhitespace() &&
+                namePrefix.whitespace.isNotEmpty()
+            if (!splitRun) return named
+            // The variable's prefix and its name's prefix print back to back; keep one of them.
+            val merged = if (named.prefix.whitespace.isEmpty()) namePrefix else named.prefix
+            return named.withPrefix(merged).withName(named.name.withPrefix(Space.EMPTY))
+        }
+
+        override fun visitVariableDeclarations(
+            multiVariable: J.VariableDeclarations,
+            p: Unit,
+        ): J.VariableDeclarations {
+            val declarations = super.visitVariableDeclarations(multiVariable, p)
+            val type = declarations.typeExpression as? J.Identifier
+            val firstVariable = declarations.variables.firstOrNull()
+            if (type == null || firstVariable == null || !isUntypedWithInlineSpacing(type, firstVariable)) {
+                return declarations
+            }
+
+            // The empty type prints nothing, so only a modifier or annotation needs a space after it.
+            val precededByText = declarations.leadingAnnotations.isNotEmpty() || declarations.modifiers.isNotEmpty()
+            val variablePrefix = if (precededByText) Space.SINGLE_SPACE else Space.EMPTY
+            return declarations
+                .withTypeExpression(type.withPrefix(Space.EMPTY))
+                .withVariables(listOf(firstVariable.withPrefix(variablePrefix)) + declarations.variables.drop(1))
+        }
+
+        private fun isUntypedWithInlineSpacing(
+            type: J.Identifier,
+            firstVariable: J.VariableDeclarations.NamedVariable,
+        ): Boolean = type.simpleName.isEmpty() && type.annotations.isEmpty() &&
+            type.prefix.isInlineWhitespace() && firstVariable.prefix.isInlineWhitespace()
+
+        private fun Space.isInlineWhitespace(): Boolean = comments.isEmpty() && '\n' !in whitespace
+    }
+
     companion object {
         private val logger = LoggerFactory.getLogger(OpenRewriteFormatter::class.java)
-        private val MULTI_SPACE_WITHIN_TOKEN_REGEX = Regex("(?<=\\S) {2,}(?=\\S)")
     }
 }

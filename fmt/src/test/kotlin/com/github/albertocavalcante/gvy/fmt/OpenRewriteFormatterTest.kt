@@ -394,6 +394,72 @@ class OpenRewriteFormatterTest {
     }
 
     /**
+     * Asserts on the formatter's own output, before [TokenStreamGuard] can refuse it, so a
+     * damaging transformation shows up as a wrong result instead of an unchanged document.
+     */
+    @Nested
+    inner class `Raw output keeps string and comment text` {
+
+        private fun assertRawFormatsTo(input: String, expected: String) {
+            val actual = formatter.formatUnchecked(input)
+            assertThat(actual)
+                .withFailMessage { "Raw formatter output differs.\nExpected:\n$expected\n\nActual:\n$actual" }
+                .isEqualTo(expected)
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def a = \"x    y\"",
+                "def b = 'p     q'",
+                "def c = /r    s/",
+                "def d = $/t    u/$",
+                "def e = \"\${a}    \${b}  !\"",
+                "def f = '''g    h'''",
+                "def g = \"\"\"\\\n    |a:    1\n    |bb:   2\n    \"\"\".stripMargin()",
+            ],
+        )
+        fun `keeps runs of spaces inside string literals (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "// See:   #1524\ndef x = 1",
+                "/* a:    1\n * bb:   2 */\ndef x = 1",
+                "/**\n * @param a   the a\n */\ndef f(a) {\n    a\n}",
+            ],
+        )
+        fun `keeps runs of spaces inside comments (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        /** Collapsing on the LST must still produce single spaces where `AutoFormat` splits a run (#1524). */
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def f(String s, x, y) {\n    def z = 1\n}",
+                "def f(Map params = [:], Closure body) {\n    body()\n}",
+                "private static final int A = 1",
+                "for (String s : list) {\n    println s\n}",
+                "try {\n    f()\n} catch (Exception e) {\n    println e\n}",
+            ],
+        )
+        fun `keeps single spaces in declarations (#1524)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        @Test
+        fun `still collapses redundant spaces between tokens next to a spaced-out string (#1524)`() {
+            assertRawFormatsTo(
+                input = "def a  =  \"x    y\"\nprintln  a",
+                expected = "def a = \"x    y\"\nprintln a",
+            )
+        }
+    }
+
+    /**
      * The formatter must never change program meaning (Quality Bar: Safe). Each case reproduces a
      * damaging edit from an issue; the result must keep the code intact, whether the formatter
      * handles the construct or refuses to format the document.
@@ -437,6 +503,26 @@ class OpenRewriteFormatterTest {
                 .contains("/r    s/")
                 .contains("|a:    1")
                 .contains("|bb:   2")
+        }
+
+        @Test
+        fun `formats a document with spaced-out strings and comments instead of refusing it (#1524)`() {
+            assertFormatsTo(
+                input = listOf(
+                    "def a  =  \"x    y\"",
+                    "if(a){",
+                    "println  'p     q' /* a:   1 */",
+                    "}",
+                    "// See:   #1524",
+                ).joinToString("\n"),
+                expected = listOf(
+                    "def a = \"x    y\"",
+                    "if (a) {",
+                    "    println 'p     q' /* a:   1 */",
+                    "}",
+                    "// See:   #1524",
+                ).joinToString("\n"),
+            )
         }
 
         @Test
