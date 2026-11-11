@@ -25,8 +25,8 @@ make lint    # Check quality
 make format  # Fix lint
 ```
 
-Run one Gradle build at a time. Prefer module-scoped tasks (`./gradlew :gls:test --tests '<Class>'`) over a full
-`make build`.
+Run one Gradle build at a time per machine, even with one worktree per agent. Prefer module-scoped tasks
+(`./gradlew :gls:test --tests '<Class>'`) over a full `make build`.
 
 > [!IMPORTANT] **VS Code Extension**: Use `pnpm` (not npm) for `editors/code/`. See `editors/code/AGENTS.md`.
 
@@ -47,14 +47,17 @@ Run one Gradle build at a time. Prefer module-scoped tasks (`./gradlew :gls:test
 
 ## Architecture
 
-- `gls/`: the LSP server. `parser/native/`: compiler-driven parsing on Groovy's own AST.
-- `semantics/`: type inference and the semantic model. `fmt/`: the formatter.
+- `gls/`: the LSP server. `semantics/`: type inference and the semantic model. `fmt/`: the formatter.
+- Two parser engines. Native (`parser/native/`, compiler-driven, on Groovy's own AST) serves every feature except hover.
+  Hover goes through the engine layer, whose default is Core (`parser/core/`; `parserEngine` in
+  `gls/.../config/ServerConfiguration.kt`). Check which engine a change reaches; consolidation is #1276.
 - Module map: `docs/overview.md`; design: `kb/ARCHITECTURE.md`.
 
 ## Testing
 
-E2E scenarios are YAML files in `tests/e2e/resources/scenarios` (fixtures in `tests/e2e/resources/workspaces`); see
-`kb/testing/e2e-harness.md`. Run one with `make e2e-single SCENARIO=<name>`.
+E2E scenarios are YAML files in `tests/e2e/resources/scenarios` (fixtures in `tests/e2e/resources/workspaces`).
+Step-by-step: `tests/e2e/resources/scenarios/README.md`; harness design: `kb/testing/e2e-harness.md`. Run one with
+`make e2e-single SCENARIO=<name>`.
 
 ## Where docs go
 
@@ -93,7 +96,7 @@ The git workflow rules apply to any branch, commit, or PR work.
 
 ```kotlin
 // TODO(#123): Brief description.
-//   See: https://github.com/albertocavalcante/groovy-lsp/issues/123
+//   See: https://github.com/albertocavalcante/gvy/issues/123
 ```
 
 ## Helper Files
