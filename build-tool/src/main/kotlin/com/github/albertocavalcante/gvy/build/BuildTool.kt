@@ -26,8 +26,9 @@ interface BuildTool {
     /**
      * Resolves dependencies like [resolve], stopping early when [cancellation] is requested.
      *
-     * A tool that supports cancellation throws [java.util.concurrent.CancellationException] once it stops. The
-     * default ignores [cancellation], so a tool without support runs to completion.
+     * A tool that supports cancellation throws [java.util.concurrent.CancellationException] once it stops (see
+     * [ResolutionCancellation] for when to cancel). The default ignores [cancellation], so a tool without support
+     * runs to completion.
      */
     fun resolve(
         workspaceRoot: Path,

@@ -327,6 +327,9 @@ class GradleDependencyResolver(
     /**
      * Runs this Tooling API operation with a cancellation token tied to [cancellation]. Cancelling the token stops
      * the operation cooperatively, including a distribution download, which releases the distribution install lock.
+     * The resolution returns at once; a download read already blocked on a stalled connection still ends only when
+     * that read times out (the distribution's network timeout, 10 s by default). That thread is the Tooling API's
+     * own and holds neither our IO thread nor the install lock meanwhile.
      */
     private fun <T> ModelBuilder<T>.getCancellable(cancellation: ResolutionCancellation): T {
         val source = GradleConnector.newCancellationTokenSource()
