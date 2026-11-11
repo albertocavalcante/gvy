@@ -53,12 +53,12 @@ formatting do not change those fingerprints. Patch contents are hashed individua
 full so changes to URL templates, versions, hashes or loop data outside a repository call require review. Maven
 reproducibility settings are fingerprinted separately from the unrelated artifact list.
 
-`manualSources` registers explicit first-party workaround paths and anchors, currently OpenRewrite whitespace and
-shebang compensation. Their full source files are hashed; a missing anchor or changed file fails. Add new dependency API
-workarounds there during review. The scanner does not infer the reason for arbitrary application code, evaluate
-Starlark, discover dynamically constructed/indirect calls, or inspect arbitrary network access in shell/Gradle programs.
-New source forms require scanner tests before claiming coverage. Exact source pairings provide no wildcard/category
-exemptions; independent review must inspect changes to scanner policy and the ledger.
+`manualSources` registers explicit first-party workaround paths and anchors, currently OpenRewrite whitespace,
+declaration and shebang compensation. Their full source files are hashed; a missing anchor or changed file fails. Add
+new dependency API workarounds there during review. The scanner does not infer the reason for arbitrary application
+code, evaluate Starlark, discover dynamically constructed/indirect calls, or inspect arbitrary network access in
+shell/Gradle programs. New source forms require scanner tests before claiming coverage. Exact source pairings provide no
+wildcard/category exemptions; independent review must inspect changes to scanner policy and the ledger.
 
 ## Current evidence and limits
 
@@ -66,7 +66,7 @@ The issue board remains the follow-up system:
 [resolver/GMM and Wire](https://github.com/albertocavalcante/gvy/issues/1029),
 [Kotlin logging](https://github.com/albertocavalcante/gvy/issues/1620),
 [JUnit](https://github.com/albertocavalcante/gvy/issues/1621),
-[formatter literal/comment safety](https://github.com/albertocavalcante/gvy/issues/1524),
+[landed formatter literal/comment safety fix](https://github.com/albertocavalcante/gvy/pull/1593),
 [released spacing fixes](https://github.com/albertocavalcante/gvy/issues/1598), and
 [shebang compensation](https://github.com/albertocavalcante/gvy/issues/1623). The former logging/JUnit links to
 #1031/#1032 were unrelated and are corrected. Four unused duplicate/speculative Gradle resolver patches were removed;

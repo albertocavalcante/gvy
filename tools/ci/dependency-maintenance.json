@@ -9,6 +9,11 @@
       "id": "openrewrite-shebang",
       "path": "fmt/src/main/kotlin/com/github/albertocavalcante/gvy/fmt/OpenRewriteFormatter.kt",
       "anchor": "val extraction = ShebangUtils.extractShebang(text)"
+    },
+    {
+      "id": "openrewrite-declarations",
+      "path": "fmt/src/main/kotlin/com/github/albertocavalcante/gvy/fmt/OpenRewriteFormatter.kt",
+      "anchor": "private class DeclarationSpacing"
     }
   ],
   "records": [
@@ -360,25 +365,29 @@
     },
     {
       "id": "openrewrite-whitespace",
-      "issue": "https://github.com/albertocavalcante/gvy/issues/1524",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1598",
       "responsibleScope": "gvy formatter maintainers",
       "lastVerified": "2026-11-11",
       "reviewDue": "2026-11-18",
-      "reason": "PostFormatWhitespaceCollapser and the printed-source regex historically normalize extra spacing after AutoFormat; the regex also damages literal/comment contents.",
-      "upstreamStatus": "First-party regex corruption tracked in #1524/PR1593. As-cast spacing is fixed upstream in 8.79.0; #1598 separately tracks remaining declaration contexts. These are distinct cases.",
-      "upstreamTrigger": "Inspect adopted OpenRewrite raw output and land the literal/comment-safe fix; test each exact declaration case before removing compensation.",
-      "verification": "Source inspection only: current main still has PostFormatWhitespaceCollapser and MULTI_SPACE_WITHIN_TOKEN_REGEX. No claim that a released spacing fix removes the first-party corruption.",
+      "reason": "PostFormatWhitespaceCollapser and DeclarationSpacing compensate extra layout spaces in distinct AutoFormat whitespace/declaration contexts; retain until raw adopted upstream output passes each case.",
+      "upstreamStatus": "First-party printed-source regex corruption is fixed on main by PR1593/commit0be66bca4. Remaining DeclarationSpacing/collapser retirement is tracked by #1598. As-cast spacing is fixed upstream in 8.79.0; declaration cases require separate candidate verification.",
+      "upstreamTrigger": "Evaluate the adopted released OpenRewrite version per declaration, parameter, comma and comment context; 8.79.0 is known to retain some declaration defects in #1598.",
+      "verification": "2026-11-11 source review of landed0be66bca4: printed-source regex removed; DeclarationSpacing now normalizes adjacent LST prefixes/comments and commas; PostFormatWhitespaceCollapser and shebang extraction remain. This audit did not execute those regressions; #1593 records their independent review/tests.",
       "evidence": [
-        "https://github.com/albertocavalcante/gvy/issues/1524",
         "https://github.com/albertocavalcante/gvy/issues/1598",
-        "https://github.com/albertocavalcante/gvy/pull/1593"
+        "https://github.com/albertocavalcante/gvy/pull/1593",
+        "https://github.com/albertocavalcante/gvy/commit/0be66bca4"
       ],
-      "nextAction": "Land the independently reviewed literal/comment safety correction; compare raw adopted upstream and guarded gvy output for all affected contexts, then refresh this exact file fingerprint.",
+      "nextAction": "Compare raw adopted upstream and guarded gvy output for typed/untyped declarations, parameters, comma continuations and comment placements; remove only compensation proven obsolete and keep literal/comment preservation and idempotency regressions.",
       "removalCriteria": "Preserve literal/comment bytes, formatting availability and idempotency; remove only compensation whose raw-output tests pass without it. Keep the token guard and regressions.",
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "d35603c9670d6e30239f5ecb8f84cecabff7ad3b5628680fe5281849f0837083"
+          "sha256": "c829877f8b941e2e3be4f813a96a9b40fc21a2cf6ba18b096ef809f19e65c2a0"
+        },
+        {
+          "id": "manual:openrewrite-declarations",
+          "sha256": "c829877f8b941e2e3be4f813a96a9b40fc21a2cf6ba18b096ef809f19e65c2a0"
         }
       ]
     },
@@ -401,7 +410,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "d35603c9670d6e30239f5ecb8f84cecabff7ad3b5628680fe5281849f0837083"
+          "sha256": "c829877f8b941e2e3be4f813a96a9b40fc21a2cf6ba18b096ef809f19e65c2a0"
         }
       ]
     }
