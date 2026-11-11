@@ -44,6 +44,12 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
    the squash-aware proof and deletion steps in `.agent/rules/git-workflow.md`; verify remote head deletion, remove only
    the owned clean/unlocked worktree and branch, prune tracking refs, and report anything retained. Open PRs, unique
    commits, and other agents' active work are preserved.
+7. **Dependencies can have bugs**: OpenRewrite, `rules_kotlin`, Groovy itself, and every other dependency are fallible.
+   Follow `docs/dependency-bugs.md`: investigate attribution, track suspected and confirmed upstream bugs in gvy issues,
+   and keep mitigations tested. Prepare upstream reports and patches locally for human review; never submit upstream
+   issues, PRs, or comments autonomously. Upstream submission needs explicit approval of the specific material and
+   target, plus a check of that project's contribution and AI policies. gvy's routine PR authority does not cover
+   upstream repos.
 
 ## Architecture
 
@@ -87,6 +93,7 @@ The git workflow rules apply to any branch, commit, or PR work.
 | Addressing PR review comments   | `.agent/workflows/review.md`              |
 | Implementing a GitHub issue     | `.agent/workflows/solve.md`               |
 | Creating issue for future work  | `.agent/workflows/defer.md`               |
+| Suspected dependency bug        | `docs/dependency-bugs.md`                 |
 | Reviewing stale/old PRs         | `.agent/workflows/stale-pr.md`            |
 | GitHub API, GraphQL, `gh` CLI   | `.agent/workflows/github-cli.md`          |
 | GitHub Actions, CI failures     | `.agent/workflows/github-actions.md`      |
