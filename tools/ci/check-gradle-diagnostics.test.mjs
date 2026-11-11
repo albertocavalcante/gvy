@@ -30,6 +30,82 @@ test('a warning from an otherwise successful command fails', () => {
   assert.deepEqual(result.unexpected, [diagnostic]);
 });
 
+// Gradle 9.8.2 HealthExpirationStrategy advice captured from the unit producer.
+const daemonMemoryAdvice = [
+  'The Daemon will expire after the build after running out of JVM Metaspace.',
+  'The project memory settings are likely not configured or are configured to an insufficient value.',
+  'The daemon will restart for the next build, which may increase subsequent build times.',
+  "These settings can be adjusted by setting 'org.gradle.jvmargs' in 'gradle.properties'.",
+  "The currently configured max heap space is '4 GiB' and the configured max metaspace is '1 GiB'.",
+  'For more information on how to set these values, please refer to https://docs.gradle.org/9.8.2/userguide/build_environment.html#sec:configuring_jvm_memory in the Gradle documentation.',
+  "To disable this warning, set 'org.gradle.daemon.performance.disable-logging=true'.",
+  'Daemon will be stopped at the end of the build after running out of JVM Metaspace',
+];
+const daemonDiagnostic = line => `[gradle daemon] ${line}`;
+
+test('actual plain daemon memory advice fails a successful command without borrowing the nearest task identity', () => {
+  for (const header of ['> Task :gls:processTestResources', '> Task :fmt:koverFindJar', '> Configure project :schemas']) {
+    const result = check(`${header}\n${daemonMemoryAdvice.join('\n')}\nBUILD SUCCESSFUL in 1s\n`);
+    assert.equal(result.commandExitCode, 0);
+    assert.equal(result.complete, true);
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.diagnostics, daemonMemoryAdvice.map(daemonDiagnostic).sort());
+    assert.deepEqual(result.unexpected, result.diagnostics);
+    assert.ok(result.diagnostics.includes(daemonDiagnostic(daemonMemoryAdvice[4])));
+  }
+});
+
+test('each known daemon memory or GC expiry and stop variant is independently accountable', async t => {
+  const reasons = [
+    'after running out of JVM heap space',
+    'after running out of JVM Metaspace',
+    'after running out of JVM heap space and after running out of JVM Metaspace',
+    'since the JVM garbage collector is thrashing',
+    'since the JVM garbage collector is thrashing and after running out of JVM Metaspace',
+  ];
+  for (const reason of reasons) {
+    const immediate = reason.startsWith('since');
+    const variants = [
+      `The Daemon will expire ${immediate ? 'immediately' : 'after the build'} ${reason}.`,
+      `${immediate ? 'Daemon is stopping immediately' : 'Daemon will be stopped at the end of the build'} ${reason}`,
+    ];
+    for (const line of variants) await t.test(line, () => {
+      const result = check(`> Task :parser:core:test\n${line}\nBUILD SUCCESSFUL in 1s\n`);
+      assert.equal(result.complete, true);
+      assert.equal(result.ok, false);
+      assert.deepEqual(result.unexpected, [daemonDiagnostic(line)]);
+    });
+  }
+});
+
+test('daemon advice continuation lines retain exact settings even when task headers interleave', () => {
+  const lines = [...daemonMemoryAdvice.slice(1, 7), 'The memory settings for this project must be adjusted to avoid this failure.'];
+  for (const line of lines) {
+    const result = check(`> Task :gls:test\nSomeTest STANDARD_OUT\n    expected test text\n> Task :common:compileKotlin\n${line}\nBUILD SUCCESSFUL in 1s\n`);
+    assert.equal(result.ok, false, line);
+    assert.deepEqual(result.diagnostics, [daemonDiagnostic(line)]);
+  }
+  const settings = "The currently configured max heap space is '512 MiB' and the configured max metaspace is 'unknown'.";
+  assert.deepEqual(collectDiagnostics(settings + '\n'), [daemonDiagnostic(settings)]);
+});
+
+test('captured daemon-looking test output and normal daemon lifecycle text are not tool memory advice', () => {
+  const captured = '> Task :gls:test\nSomeTest > memory fixture STANDARD_ERROR\n' +
+    daemonMemoryAdvice.map(line => `    ${line}`).join('\n') + '\n' +
+    'OtherTest STANDARD_OUT\n    The memory settings for this project must be adjusted to avoid this failure.\n' +
+    'OtherTest > The Daemon will expire after running out of JVM Metaspace() PASSED\n';
+  const ordinary = 'Daemon will be stopped at the end of the build\n' +
+    'The Daemon will expire after the build after being idle.\n' +
+    'Daemon is stopping immediately stop command received\n' +
+    'The currently configured max heap space is adequate.\n';
+  assert.deepEqual(collectDiagnostics(captured + ordinary), []);
+  assert.equal(check(captured + ordinary + 'BUILD SUCCESSFUL in 1s\n').ok, true);
+  const actual = daemonMemoryAdvice[0];
+  assert.deepEqual(collectDiagnostics(captured + actual + '\n'), [daemonDiagnostic(actual)]);
+  const compiler = `> Task :gls:compileKotlin\nw: ${actual}\n`;
+  assert.deepEqual(collectDiagnostics(compiler), [`[task :gls:compileKotlin] w: ${actual}`]);
+});
+
 test('a failed command retains all warnings with complete failure evidence', () => {
   const result = check(`> Configure project :\n${warning}\nBUILD FAILED in 1s\n`, {
     commandExitCode: 1, exceptions: [exception],
@@ -311,6 +387,15 @@ test('CLI always publishes structured evidence and a raw copy, including warning
   assert.match(readFileSync(join(report, 'summary.md'), 'utf8'), /ReportingExtension.file/);
   writeFileSync(log, 'BUILD SUCCESSFUL in 1s\n');
   assert.equal(run().status, 0);
+  const memoryLog = `> Task :gls:compileKotlin\n${daemonMemoryAdvice.join('\n')}\nBUILD SUCCESSFUL in 1s\n`;
+  writeFileSync(log, memoryLog);
+  assert.notEqual(run().status, 0);
+  const memoryResult = JSON.parse(readFileSync(join(report, 'diagnostics.json')));
+  assert.equal(memoryResult.complete, true);
+  assert.equal(memoryResult.commandExitCode, 0);
+  assert.equal(memoryResult.ok, false);
+  assert.deepEqual(memoryResult.unexpected, daemonMemoryAdvice.map(daemonDiagnostic).sort());
+  assert.equal(readFileSync(join(report, 'raw.log'), 'utf8'), memoryLog);
   writeFileSync(log, Buffer.concat([
     Buffer.from('> Task :gls:compileKotlin\nw: gls/src/Foo.kt:4:3 warning before invalid bytes\n'),
     Buffer.from([0xff, 0x0a]), Buffer.from('BUILD SUCCESSFUL in 1s\n'),

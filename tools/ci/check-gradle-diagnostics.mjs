@@ -11,6 +11,25 @@ function plain(log) {
   return log.replace(/\x1b\[[0-9;]*m/g, '').replaceAll('\r\n', '\n');
 }
 
+// Gradle 9.8.2 HealthExpirationStrategy and DaemonStateCoordinator emit these
+// operational warnings without a warning prefix or a reliable parallel task.
+// https://github.com/gradle/gradle/blob/v9.8.2/platforms/core-runtime/launcher/src/main/java/org/gradle/launcher/daemon/server/health/HealthExpirationStrategy.java#L102
+const memoryReason = '(?:(?:after running out of JVM heap space|since the JVM garbage collector is thrashing)(?: and after running out of JVM Metaspace)?|after running out of JVM Metaspace)';
+const daemonMemoryExpiry = new RegExp(`^(?:The Daemon will expire (?:after the build|immediately) ${memoryReason}\\.|Daemon (?:will be stopped at the end of the build|is stopping immediately) ${memoryReason})$`);
+const memorySize = "(?:unknown(?: size)?|-?[0-9]+(?:\\.[0-9]+)? (?:B|[KMGTPE]iB))";
+const daemonMemorySettings = new RegExp(`^The currently configured max heap space is '${memorySize}' and the configured max metaspace is '${memorySize}'\\.$`);
+const daemonMemoryAdvice = new Set([
+  'The project memory settings are likely not configured or are configured to an insufficient value.',
+  'The daemon will restart for the next build, which may increase subsequent build times.',
+  'The memory settings for this project must be adjusted to avoid this failure.',
+  "These settings can be adjusted by setting 'org.gradle.jvmargs' in 'gradle.properties'.",
+  "To disable this warning, set 'org.gradle.daemon.performance.disable-logging=true'.",
+]);
+function isDaemonMemoryAdvice(line) {
+  return daemonMemoryExpiry.test(line) || daemonMemorySettings.test(line) || daemonMemoryAdvice.has(line) ||
+    /^For more information on how to set these values, please refer to https:\/\/docs\.gradle\.org\/[^\s/]+\/userguide\/build_environment\.html#sec:configuring_jvm_memory in the Gradle documentation\.$/.test(line);
+}
+
 // Tool output is separate from test STANDARD_OUT/ERR. Runtime/server diagnostics
 // require a harness producer with test/scenario identity and explicit assertions.
 export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
@@ -59,6 +78,11 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     const compiler = /^(?:w: |(?:file:\/\/\/)?\S+\.(?:kt|kts|java|groovy):\d+(?::\d+)?:?\s*(?:warning:|[Ww]arning\b))/.test(line);
     // Gradle indents captured test output; compiler diagnostics sometimes indent.
     if (/^\s/.test(raw) && !compiler) continue;
+    if (isDaemonMemoryAdvice(line)) {
+      flush();
+      diagnostics.add(`[gradle daemon] ${line}`);
+      continue;
+    }
     const warning = /\b(?:has been|have been|is|are) deprecated\b|^Deprecated Gradle features were used|\b(?:warning:|WARNING:|WARN:)|^WARN(?:ING)?(?:\s|:)|^\[WARN(?:ING)?\]|^⚠/.test(line);
     if (!compiler && !warning) continue;
     const normalized = line.replaceAll('\\', '/')
