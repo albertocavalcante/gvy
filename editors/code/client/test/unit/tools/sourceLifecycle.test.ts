@@ -92,7 +92,6 @@ describe("source install lifecycle", () => {
     const tool = proxyquire("../../../../tools/source-install.js", {
       "node:child_process": { spawnSync: spawn },
       "node:fs": {
-        ...fs,
         statfsSync: () => ({ bavail: 10000, bsize: 1024 ** 2 }),
       },
       "./editor-command.js": {
