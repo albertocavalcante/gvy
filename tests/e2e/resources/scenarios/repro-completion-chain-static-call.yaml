@@ -1,0 +1,56 @@
+name: repro-completion-chain-static-call
+description: Member completion after `Money.of(1).` offers the members of Money
+xfail:
+  issue: 1525
+  reason: completion after a static call on a workspace class (other file) offers only Object and GDK members
+  match: '(?s)Actual:.*"getMetaClass"'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/money/Money.groovy: |
+      package demo.money
+
+      class Money {
+          BigDecimal amount
+          static Money of(Number n) { new Money(amount: n as BigDecimal) }
+          Money plus(Money o) { new Money(amount: amount + o.amount) }
+          String format() { "${amount}" }
+      }
+    src/main/groovy/demo/service/Svc.groovy: |
+      package demo.service
+
+      import demo.money.Money
+
+      class Svc {
+          void run() {
+              Money.of(1).|^c|
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+        position: "{{cursor.c}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].label"
+          expect: { type: CONTAINS, value: "format" }
+  - shutdown: {}
+  - exit: {}

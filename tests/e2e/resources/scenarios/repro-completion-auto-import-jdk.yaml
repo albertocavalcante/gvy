@@ -1,0 +1,45 @@
+name: repro-completion-auto-import-jdk
+description: Completing `Linked` offers LinkedHashMap with an import edit
+xfail:
+  issue: 1529
+  reason: completion offers no JDK class with an import edit for an unimported prefix
+  match: 'LinkedHashMap.*newText.*Actual: \[\]'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/Svc.groovy: |
+      package demo
+
+      class Svc {
+          String summary() {
+              Linked|^c|
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+        position: "{{cursor.c}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[?(@.label == 'LinkedHashMap')].additionalTextEdits[0].newText"
+          expect: { type: CONTAINS, value: "import java.util.LinkedHashMap" }
+  - shutdown: {}
+  - exit: {}

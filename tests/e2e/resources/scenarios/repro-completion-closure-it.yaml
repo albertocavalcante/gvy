@@ -1,0 +1,54 @@
+name: repro-completion-closure-it
+description: Completing `it.` in shapes.each { } offers Shape members
+xfail:
+  issue: 1531
+  reason: completion on implicit it in a closure over List<Shape> offers only Object and GDK members
+  match: '(?s)Actual:.*"getMetaClass"'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/Shape.groovy: |
+      package demo
+
+      class Shape {
+          String name
+          double area() { 0d }
+      }
+    src/main/groovy/demo/Svc.groovy: |
+      package demo
+
+      class Svc {
+          List<Shape> shapes = []
+
+          void run() {
+              shapes.each { it.|^c| }
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.c.path}}"
+  - request:
+      method: textDocument/completion
+      params:
+        textDocument: { uri: "{{cursor.c.uri}}" }
+        position: "{{cursor.c}}"
+      saveAs: result
+  - assert:
+      source: result
+      checks:
+        - jsonPath: "$.items[*].label"
+          expect: { type: CONTAINS, value: "area" }
+  - shutdown: {}
+  - exit: {}
