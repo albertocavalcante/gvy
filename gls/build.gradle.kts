@@ -475,6 +475,18 @@ val verifyLogbackPackageMetadata =
         reportFile.set(layout.buildDirectory.file("reports/jar/logback-package-metadata.txt"))
     }
 
+// Shadow 9.3.1 delegates its manifest to the plain JAR, so both are consumers of this generated file.
+val logbackPackageManifest = generateLogbackPackageManifest.flatMap { it.manifestFile }
+listOf(tasks.jar, tasks.shadowJar).forEach { archive ->
+    archive.configure {
+        dependsOn(generateLogbackPackageManifest)
+        inputs
+            .file(logbackPackageManifest)
+            .withPropertyName("logbackPackageManifest")
+            .withPathSensitivity(PathSensitivity.NONE)
+    }
+}
+
 tasks.shadowJar {
     archiveBaseName = "gls"
     archiveClassifier = "all"
@@ -482,14 +494,9 @@ tasks.shadowJar {
     // Standard shadow JAR configuration - includes all runtimeClasspath by default
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
-    dependsOn(generateLogbackPackageManifest)
-    inputs
-        .file(generateLogbackPackageManifest.flatMap { it.manifestFile })
-        .withPropertyName("logbackPackageManifest")
-        .withPathSensitivity(PathSensitivity.NONE)
     manifest {
         attributes["Main-Class"] = "com.github.albertocavalcante.gvy.gls.MainKt"
-        from(generateLogbackPackageManifest.flatMap { it.manifestFile })
+        from(logbackPackageManifest)
     }
     finalizedBy(verifyLogbackPackageMetadata)
 
