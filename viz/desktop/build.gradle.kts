@@ -41,16 +41,6 @@ compose.desktop {
             packageVersion = "1.0.0" // Native package version (must start with > 0)
             description = "Visualize Groovy Abstract Syntax Trees"
             vendor = "Alberto Cavalcante"
-
-            macOS {
-                iconFile.set(project.file("src/main/resources/icon.icns"))
-            }
-            windows {
-                iconFile.set(project.file("src/main/resources/icon.ico"))
-            }
-            linux {
-                iconFile.set(project.file("src/main/resources/icon.png"))
-            }
         }
     }
 }
