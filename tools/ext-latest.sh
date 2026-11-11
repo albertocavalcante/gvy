@@ -70,8 +70,10 @@ vsix_sha7() {
 # entry needs no proof). Only the newest run (highest id) of a workflow counts;
 # a rerun keeps its id and bumps run_attempt, and the API reports the latest.
 commit_states() {
-  jq -n -c --arg req "$1" --arg opt "$2" --arg proof "$3" \
-    --argjson runs "$4" --argjson jobs "$5" '
+  # The two JSON documents go through stdin: a real runs response is ~13 KB per
+  # run, and a single argv entry is capped at 128 KB on Linux (E2BIG).
+  { printf '%s\n' "$4" && printf '%s\n' "$5"; } | jq -n -c --arg req "$1" --arg opt "$2" --arg proof "$3" '
+    input as $runs | input as $jobs |
     def names(s): s | split(",") | map(select(length > 0));
     def prefixes($wf): [ $proof | split(";")[] | select(length > 0)
                          | split("=") | select(.[0] == $wf) | .[1] ];
@@ -250,8 +252,25 @@ cleanup() {
   fi
 }
 
+# reap_stale_lock <dir> <dead pid or ""> : remove the lock only if it still
+# names the dead holder we saw. Serialized by a guard directory so two
+# contenders cannot both remove, and so the re-check cannot be raced by another
+# contender that already took over and wrote its own pid.
+reap_stale_lock() {
+  local dir=$1 seen=$2 guard="$1.takeover" now
+  mkdir "${guard}" 2>/dev/null || return 1
+  now=$(cat "${dir}/pid" 2>/dev/null || true)
+  if [[ ${now} == "${seen}" && -d ${dir} ]]; then
+    rm -rf "${dir}"
+    rmdir "${guard}"
+    return 0
+  fi
+  rmdir "${guard}"
+  return 1
+}
+
 # acquire_lock_io <dir>: one ext-latest at a time (mkdir is atomic). A lock
-# whose pid is no longer running is stale and is taken over.
+# whose pid is no longer running is stale and is taken over via reap_stale_lock.
 acquire_lock_io() {
   local dir=$1 pid="" tries=0
   mkdir -p "$(dirname "${dir}")"
@@ -265,9 +284,12 @@ acquire_lock_io() {
       die "another ext-latest run is in progress (pid ${pid}, lock ${dir}); wait for it to finish"
     fi
     tries=$((tries + 1))
-    [[ ${tries} -le 1 ]] || die "cannot take lock ${dir}"
-    log "removing stale lock (pid ${pid:-unknown} is not running)"
-    rm -rf "${dir}"
+    [[ ${tries} -le 10 ]] || die "cannot take lock ${dir}; if no ext-latest is running, remove ${dir} and ${dir}.takeover"
+    if reap_stale_lock "${dir}" "${pid}"; then
+      log "removed stale lock (pid ${pid:-unknown} is not running)"
+    else
+      sleep 1
+    fi
   done
   echo "$$" >"${dir}/pid"
   LOCK_DIR=${dir}
@@ -304,7 +326,8 @@ load_config() {
 # fetched only for succeeded runs of the workflows we care about.
 commit_states_io() {
   local runs jobs='{}' id j
-  runs=$(gh api "repos/${SLUG}/actions/runs?head_sha=$1&per_page=100") ||
+  runs=$(gh api "repos/${SLUG}/actions/runs?head_sha=$1&per_page=100" \
+    --jq '[.workflow_runs[] | {id, name, status, conclusion, run_attempt, head_sha}]') ||
     die "gh api failed for runs of $1"
   for id in $(jq -r --arg names "${REQUIRED},${OPTIONAL}" '
       (if type == "object" then .workflow_runs else . end)[]

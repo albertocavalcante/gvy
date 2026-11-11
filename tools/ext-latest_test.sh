@@ -230,6 +230,25 @@ wait "${holder}" 2>/dev/null || true
 expect "stale lock (holder gone) is taken over" yes "${r}"
 rm -rf "${lockdir}"
 
+# Takeover race: contender B saw dead pid 999999, but contender A has since
+# taken over and written its own (live) pid. B must not remove A's fresh lock.
+mkdir -p "${lockdir}"
+echo "$$" >"${lockdir}/pid"
+expect "reap refuses when the lock now names another holder" no "$(yes_no reap_stale_lock "${lockdir}" 999999)"
+expect "...and the fresh lock survives" yes "$(yes_no test -f "${lockdir}/pid")"
+expect "...and the guard is released" no "$(yes_no test -d "${lockdir}.takeover")"
+echo 999999 >"${lockdir}/pid"
+expect "reap removes a lock still naming the dead holder" yes "$(yes_no reap_stale_lock "${lockdir}" 999999)"
+expect "...lock is gone" no "$(yes_no test -d "${lockdir}")"
+mkdir -p "${lockdir}" "${lockdir}.takeover"
+expect "reap yields while another contender holds the guard" no "$(yes_no reap_stale_lock "${lockdir}" '')"
+rm -rf "${lockdir}" "${lockdir}.takeover"
+
+# Large runs payload (real responses are ~13 KB per run): must not hit E2BIG.
+big=$(jq -n -c '{workflow_runs: ([range(0; 20) | {id: (. + 100), name: "pad", status: "completed", conclusion: "success", blob: ("x" * 15000)}] + [{id: 1, name: "CI", status: "completed", conclusion: "success", blob: ("y" * 15000)}])}')
+expect "runs payload is over 200 KB" yes "$(yes_no test "${#big}" -gt 200000)"
+expect "large runs payload is handled" '{"CI":"ok","Extension CI":"unproven"}' "$(st "${big}" "${bt_pass}")"
+
 # ----------------------------------------------- walk with a stubbed gh (fixtures)
 
 stub="${work}/stub"
