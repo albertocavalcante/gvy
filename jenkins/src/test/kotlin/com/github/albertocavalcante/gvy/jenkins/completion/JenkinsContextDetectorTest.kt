@@ -386,7 +386,7 @@ class JenkinsContextDetectorTest {
     }
 
     @Test
-    fun `a stage that opens and closes inside an untracked parallel block is popped`() {
+    fun `after a stage closes inside parallel, the cursor is back in parallel`() {
         val lines = listOf(
             "pipeline {",
             "    stages {",
@@ -399,7 +399,7 @@ class JenkinsContextDetectorTest {
         )
         val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 7, column = 16)
 
-        assertEquals(listOf("pipeline", "stages", "stage"), context.enclosingBlocks)
+        assertEquals(listOf("pipeline", "stages", "stage", "parallel"), context.enclosingBlocks)
     }
 
     @Test
@@ -551,5 +551,58 @@ class JenkinsContextDetectorTest {
         val context = JenkinsContextDetector.detectFromDocument(lines, lineNumber = 10, column = 8)
 
         assertEquals(listOf("pipeline", "post"), context.enclosingBlocks)
+    }
+
+    /** Enclosing blocks at the end of [lines] (the cursor sits at the end of the last line). */
+    private fun enclosingAtEnd(vararg lines: String): List<String> {
+        val context = JenkinsContextDetector.detectFromDocument(lines.toList(), lines.lastIndex, lines.last().length)
+        return context.enclosingBlocks
+    }
+
+    @Test
+    fun `matrix, axes, axis, excludes and exclude are tracked`() {
+        val head = arrayOf("pipeline {", "  stages {", "    stage('M') {", "      matrix {")
+        assertEquals(listOf("pipeline", "stages", "stage", "matrix"), enclosingAtEnd(*head, "        "))
+        assertEquals(
+            listOf("pipeline", "stages", "stage", "matrix", "axes", "axis"),
+            enclosingAtEnd(*head, "        axes {", "          axis {", "            "),
+        )
+        assertEquals(
+            listOf("pipeline", "stages", "stage", "matrix", "excludes", "exclude"),
+            enclosingAtEnd(*head, "        excludes {", "          exclude {", "            "),
+        )
+    }
+
+    @Test
+    fun `agent sub-blocks are tracked`() {
+        val head = arrayOf("pipeline {", "  agent {")
+        assertEquals(listOf("pipeline", "agent", "docker"), enclosingAtEnd(*head, "    docker {", "      "))
+        assertEquals(listOf("pipeline", "agent", "dockerfile"), enclosingAtEnd(*head, "    dockerfile {", "      "))
+        assertEquals(listOf("pipeline", "agent", "kubernetes"), enclosingAtEnd(*head, "    kubernetes {", "      "))
+    }
+
+    @Test
+    fun `a stage input block is tracked`() {
+        assertEquals(
+            listOf("pipeline", "stages", "stage", "input"),
+            enclosingAtEnd("pipeline {", "  stages {", "    stage('D') {", "      input {", "        "),
+        )
+    }
+
+    @Test
+    fun `an untracked timeout block that closes inside steps leaves the cursor in steps`() {
+        assertEquals(
+            listOf("pipeline", "stages", "stage", "steps"),
+            enclosingAtEnd(
+                "pipeline {",
+                "  stages {",
+                "    stage('B') {",
+                "      steps {",
+                "        timeout(time: 1) {",
+                "          sh 'make'",
+                "        }",
+                "        ",
+            ),
+        )
     }
 }

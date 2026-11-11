@@ -46,6 +46,94 @@
       ]
     },
     {
+      "name": "docker",
+      "allowedIn": [
+        "agent"
+      ],
+      "innerInstructions": [
+        "image",
+        "args",
+        "label",
+        "alwaysPull",
+        "customWorkspace",
+        "registryUrl",
+        "registryCredentialsId",
+        "reuseNode"
+      ],
+      "statementInstructions": [
+        "image",
+        "args",
+        "label",
+        "alwaysPull",
+        "customWorkspace",
+        "registryUrl",
+        "registryCredentialsId",
+        "reuseNode"
+      ]
+    },
+    {
+      "name": "dockerfile",
+      "allowedIn": [
+        "agent"
+      ],
+      "innerInstructions": [
+        "filename",
+        "dir",
+        "label",
+        "additionalBuildArgs",
+        "args",
+        "customWorkspace",
+        "registryUrl",
+        "registryCredentialsId",
+        "reuseNode"
+      ],
+      "statementInstructions": [
+        "filename",
+        "dir",
+        "label",
+        "additionalBuildArgs",
+        "args",
+        "customWorkspace",
+        "registryUrl",
+        "registryCredentialsId",
+        "reuseNode"
+      ]
+    },
+    {
+      "name": "kubernetes",
+      "allowedIn": [
+        "agent"
+      ],
+      "innerInstructions": [
+        "yaml",
+        "yamlFile",
+        "label",
+        "cloud",
+        "defaultContainer",
+        "inheritFrom",
+        "namespace",
+        "serviceAccount",
+        "nodeSelector",
+        "workingDir",
+        "customWorkspace",
+        "retries"
+      ],
+      "statementInstructions": [
+        "yaml",
+        "yamlFile",
+        "label",
+        "cloud",
+        "defaultContainer",
+        "inheritFrom",
+        "namespace",
+        "serviceAccount",
+        "nodeSelector",
+        "workingDir",
+        "customWorkspace",
+        "retries"
+      ]
+    },
+    {
       "name": "stages",
       "allowedIn": [
         "pipeline",
@@ -131,13 +219,32 @@
       ]
     },
     {
+      "name": "exclude",
+      "allowedIn": [
+        "excludes"
+      ],
+      "innerInstructions": [
+        "axis"
+      ]
+    },
+    {
       "name": "axis",
       "allowedIn": [
         "axes"
       ],
-      "completionCategories": [
-        "step"
-      ]
+      "innerInstructions": [
+        "name",
+        "values"
+      ],
+      "statementInstructions": [
+        "name",
+        "values"
+      ],
+      "statementInstructionsWithin": {
+        "exclude": [
+          "notValues"
+        ]
+      }
     },
     {
       "name": "libraries",
@@ -303,6 +410,20 @@
         "equals",
         "triggeredBy",
         "isRestartedRun"
+      ],
+      "statementInstructions": [
+        "branch",
+        "buildingTag",
+        "changeset",
+        "changelog",
+        "tag",
+        "changeRequest",
+        "beforeAgent",
+        "beforeInput",
+        "beforeOptions",
+        "equals",
+        "triggeredBy",
+        "isRestartedRun"
       ]
     }
   ],
@@ -359,6 +480,13 @@
         "submitter",
         "submitterParameter",
         "parameters"
+      ],
+      "statementInstructions": [
+        "message",
+        "id",
+        "ok",
+        "submitter",
+        "submitterParameter"
       ]
     }
   ]

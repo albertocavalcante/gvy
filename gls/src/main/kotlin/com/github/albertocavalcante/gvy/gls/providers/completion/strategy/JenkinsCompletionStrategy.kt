@@ -145,14 +145,30 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
                 sortText("0-entry-${entry.name}")
             }
         }
-        blockContext.innerInstructions.forEach { instruction ->
-            completion {
-                label(instruction)
-                kind(CompletionItemKind.Keyword)
-                detail("Declarative directive")
-                insertText("$instruction {")
-                sortText("0-directive-$instruction")
-            }
+        blockContext.innerInstructions.forEach { instruction -> addInstruction(blockContext, instruction) }
+    }
+
+    private fun CompletionsBuilder.addInstruction(blockContext: JenkinsBlockContext, instruction: String) {
+        // A statement (`image 'maven'`, `reuseNode true`) takes a value, not a block.
+        val isStatement = instruction in blockContext.statementInstructions
+        val inWhen = blockContext.currentBlock == "when"
+        val insert = when {
+            inWhen && instruction in NO_ARGUMENT_CONDITIONS -> "$instruction()"
+            isStatement -> "$instruction "
+            else -> "$instruction {"
+        }
+        val detail = when {
+            inWhen && instruction in WHEN_OPTIONS -> "Declarative option"
+            inWhen -> "Declarative condition"
+            isStatement -> "Declarative option"
+            else -> "Declarative directive"
+        }
+        completion {
+            label(instruction)
+            kind(CompletionItemKind.Keyword)
+            detail(detail)
+            insertText(insert)
+            sortText("0-directive-$instruction")
         }
     }
 }
@@ -162,12 +178,13 @@ internal class JenkinsCompletionStrategy : CompletionStrategy {
  * expressions. Global variables are not offered at their block level.
  *
  * Deliberately not listed: `steps`, post-condition bodies and `script` (steps), `environment`
- * (values reference `env`/`params`), `expression {}` (arbitrary Groovy), `libraries`, whose
- * contents are not modeled yet, and `matrix`, `parallel`, `axes`, which the block detector does
- * not track yet (#1290).
+ * (values reference `env`/`params`), `expression {}` (arbitrary Groovy) and `libraries`, whose
+ * contents are not modeled yet.
  */
 private val STRUCTURAL_DECLARATIVE_BLOCKS = setOf(
     "pipeline", "agent", "stages", "stage", "post", "options", "when", "triggers", "parameters", "tools",
+    // Tracked since #1290: their bodies hold their own sections, directives or options.
+    "parallel", "matrix", "axes", "axis", "excludes", "exclude", "input", "docker", "dockerfile", "kubernetes",
 )
 
 /**
@@ -223,3 +240,9 @@ private fun JenkinsBlockContext.acceptsDeclarativeDirectives(): Boolean =
 private fun JenkinsBlockContext.isInsideGroovyBody(): Boolean = "script" in enclosingBlocks ||
     "expression" in enclosingBlocks ||
     ("node" in enclosingBlocks && "agent" !in enclosingBlocks)
+
+/** `when` conditions written as a call without arguments (`buildingTag()`), not as a statement or a block. */
+private val NO_ARGUMENT_CONDITIONS = setOf("buildingTag", "changeRequest", "isRestartedRun")
+
+/** `when` options that change how the conditions are evaluated; the other `when` entries are conditions. */
+private val WHEN_OPTIONS = setOf("beforeAgent", "beforeInput", "beforeOptions")

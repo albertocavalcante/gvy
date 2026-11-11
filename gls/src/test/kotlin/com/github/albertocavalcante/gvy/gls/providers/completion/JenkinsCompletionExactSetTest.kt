@@ -305,6 +305,185 @@ class JenkinsCompletionExactSetTest {
         )
     }
 
+    /** Labels at an empty line inside the innermost of [openers], each opened on its own line in a stage. */
+    private suspend fun labelsInStage(vararg openers: String): Set<String> {
+        val items = completeInStage(*openers)
+        assertNoDuplicateLabels(items)
+        return items.labels()
+    }
+
+    /** Labels at an empty line inside `agent { [opener] }` at pipeline level. */
+    private suspend fun labelsInAgent(opener: String): Set<String> {
+        val code = "pipeline {\n    agent {\n        $opener\n            \n        }\n    }\n}"
+        val items = completeAt(code, line = 3, character = 12)
+        assertNoDuplicateLabels(items)
+        return items.labels()
+    }
+
+    /** Insert text by label at an empty line inside `agent { [opener] }`. */
+    private suspend fun insertTextsInAgent(opener: String): Map<String, String?> {
+        val code = "pipeline {\n    agent {\n        $opener\n            \n        }\n    }\n}"
+        return completeAt(code, line = 3, character = 12).associate { it.label to it.insertText }
+    }
+
+    /** Insert text by label at an empty line inside the innermost of [openers] in a stage. */
+    private suspend fun insertTextsInStage(vararg openers: String): Map<String, String?> =
+        completeInStage(*openers).associate { it.label to it.insertText }
+
+    /** Completion at an empty line inside the innermost of [openers], each opened on its own line in a stage. */
+    private suspend fun completeInStage(vararg openers: String): List<CompletionItem> {
+        val opened = openers.mapIndexed { depth, opener -> "    ".repeat(depth + 3) + opener }
+        val closed = openers.indices.reversed().map { depth -> "    ".repeat(depth + 3) + "}" }
+        val lines = listOf("pipeline {", "    agent any", "    stages {", "        stage('S') {") + opened +
+            "    ".repeat(openers.size + 3) + closed + listOf("        }", "    }", "}")
+        return completeAt(lines.joinToString("\n"), line = 4 + openers.size, character = 4 * (openers.size + 3))
+    }
+
+    @Test
+    fun `statement entries insert their name and a space, block entries an opening brace`(): Unit = runTest {
+        val docker = insertTextsInAgent("docker {")
+        val input = insertTextsInStage("input {")
+        val axis = insertTextsInStage("matrix {", "axes {", "axis {")
+
+        assertEquals("image ", docker["image"])
+        assertEquals("reuseNode ", docker["reuseNode"])
+        assertEquals("message ", input["message"])
+        assertEquals("parameters {", input["parameters"], "parameters opens a block")
+        assertEquals("values ", axis["values"])
+        assertEquals("axis {", insertTextsInStage("matrix {", "axes {")["axis"], "axis opens a block")
+    }
+
+    @Test
+    fun `parallel block offers exactly stage`(): Unit = runTest {
+        assertEquals(setOf("stage"), labelsInStage("parallel {"))
+    }
+
+    @Test
+    fun `matrix block offers exactly its sections and directives`(): Unit = runTest {
+        assertEquals(
+            setOf("axes", "excludes", "stages", "agent", "environment", "input", "options", "post", "tools", "when"),
+            labelsInStage("matrix {"),
+        )
+    }
+
+    @Test
+    fun `axes, axis, excludes and exclude blocks offer exactly their contents`(): Unit = runTest {
+        assertEquals(setOf("axis"), labelsInStage("matrix {", "axes {"))
+        assertEquals(setOf("name", "values"), labelsInStage("matrix {", "axes {", "axis {"))
+        assertEquals(setOf("exclude"), labelsInStage("matrix {", "excludes {"))
+        assertEquals(setOf("axis"), labelsInStage("matrix {", "excludes {", "exclude {"))
+    }
+
+    @Test
+    fun `axis inside exclude also offers notValues, axis inside axes does not`(): Unit = runTest {
+        assertEquals(
+            setOf("name", "values", "notValues"),
+            labelsInStage("matrix {", "excludes {", "exclude {", "axis {"),
+        )
+        assertEquals("notValues ", insertTextsInStage("matrix {", "excludes {", "exclude {", "axis {")["notValues"])
+        assertTrue("notValues" !in labelsInStage("matrix {", "axes {", "axis {"))
+    }
+
+    @Test
+    fun `when conditions insert statements without a brace, composites with one`(): Unit = runTest {
+        val inserts = insertTextsInStage("when {")
+
+        assertEquals("branch ", inserts["branch"])
+        assertEquals("beforeAgent ", inserts["beforeAgent"])
+        assertEquals("allOf {", inserts["allOf"])
+        listOf("buildingTag", "changeRequest", "isRestartedRun").forEach { name ->
+            assertEquals("$name()", inserts[name], "$name is a no-argument call")
+        }
+    }
+
+    @Test
+    fun `when conditions are described as conditions, when options and other statements as options`(): Unit = runTest {
+        val whenItems = completeInStage("when {").associate { it.label to it.detail }
+        val axisItems = completeInStage("matrix {", "axes {", "axis {").associate { it.label to it.detail }
+
+        assertEquals("Declarative condition", whenItems["branch"])
+        assertEquals("Declarative condition", whenItems["allOf"])
+        listOf("beforeAgent", "beforeInput", "beforeOptions").forEach { name ->
+            assertEquals("Declarative option", whenItems[name], "$name is an option of when")
+        }
+        assertEquals("Declarative option", axisItems["values"])
+    }
+
+    @Test
+    fun `agent block inserts label without a brace`(): Unit = runTest {
+        val code = "pipeline {\n    agent {\n        \n    }\n}"
+        val inserts = completeAt(code, line = 2, character = 8).associate { it.label to it.insertText }
+
+        assertEquals("label", inserts["label"], "label takes a value, not a block")
+    }
+
+    @Test
+    fun `kubernetes agent with a braced multi-line yaml does not hide a later sub-block's entries`(): Unit = runTest {
+        val code = listOf(
+            "pipeline {",
+            "    agent {",
+            "        kubernetes {",
+            "            yaml '''",
+            "apiVersion: v1",
+            "kind: Pod",
+            // The extra `}` would close `pipeline` early under line-by-line brace counting.
+            "spec: { containers: [ { name: maven } ] } }",
+            "            '''",
+            "        }",
+            "    }",
+            "    stages {",
+            "        stage('S') {",
+            "            input {",
+            "                ",
+            "            }",
+            "        }",
+            "    }",
+            "}",
+        ).joinToString("\n")
+        val items = completeAt(code, line = 13, character = 16)
+
+        assertEquals(setOf("message", "id", "ok", "submitter", "submitterParameter", "parameters"), items.labels())
+    }
+
+    @Test
+    fun `agent sub-blocks offer exactly their options`(): Unit = runTest {
+        assertEquals(
+            setOf(
+                "image",
+                "args",
+                "label",
+                "alwaysPull",
+                "customWorkspace",
+                "registryUrl",
+                "registryCredentialsId",
+                "reuseNode",
+            ),
+            labelsInAgent("docker {"),
+        )
+        assertEquals(
+            setOf(
+                "filename", "dir", "label", "additionalBuildArgs", "args", "customWorkspace", "registryUrl",
+                "registryCredentialsId", "reuseNode",
+            ),
+            labelsInAgent("dockerfile {"),
+        )
+        assertEquals(
+            setOf(
+                "yaml", "yamlFile", "label", "cloud", "defaultContainer", "inheritFrom", "namespace",
+                "serviceAccount", "nodeSelector", "workingDir", "customWorkspace", "retries",
+            ),
+            labelsInAgent("kubernetes {"),
+        )
+    }
+
+    @Test
+    fun `a stage input block offers exactly its parameters`(): Unit = runTest {
+        assertEquals(
+            setOf("message", "id", "ok", "submitter", "submitterParameter", "parameters"),
+            labelsInStage("input {"),
+        )
+    }
+
     @Test
     fun `tools block offers exactly the tool types`(): Unit = runTest {
         val items = completeAt("pipeline {\n    agent any\n    tools {\n        \n    }\n}", line = 3, character = 8)
