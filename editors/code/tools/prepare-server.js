@@ -666,9 +666,28 @@ function buildLocalJar() {
  * HEAD of the monorepo checkout, or null when it cannot be read.
  */
 function readCheckoutHead() {
+  return runCheckoutGit(["rev-parse", "HEAD"]);
+}
+
+/**
+ * Whether the monorepo checkout has uncommitted changes (ignored files do not
+ * count), or null when it cannot be read.
+ */
+function readCheckoutDirty() {
+  const status = runCheckoutGit(["status", "--porcelain"]);
+  return status === null ? null : status.length > 0;
+}
+
+/**
+ * Runs git in the monorepo root only. Outside a monorepo there is no checkout
+ * to compare with, and the process's cwd repo would be the wrong one.
+ */
+function runCheckoutGit(args) {
+  const root = getMonorepoRoot();
+  if (!root) return null;
   try {
-    return execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: getMonorepoRoot() ?? undefined,
+    return execFileSync("git", args, {
+      cwd: root,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
@@ -684,8 +703,22 @@ function readCheckoutHead() {
  * @returns the jar to use (possibly rebuilt)
  */
 function ensureFreshLocalJar(jarPath, deps) {
-  const { readProvenance, getHead, strict, rebuild, findJar, warn } = deps;
-  const assess = (jar) => assessLocalJar(readProvenance(jar), getHead());
+  const {
+    readProvenance,
+    getHead,
+    getCheckoutDirty = () => null,
+    isExplicit = () => false,
+    strict,
+    rebuild,
+    findJar,
+    warn,
+  } = deps;
+  // A jar the user named (--local, GLS_LOCAL_JAR) is theirs to judge.
+  if (isExplicit(jarPath)) {
+    return jarPath;
+  }
+  const assess = (jar) =>
+    assessLocalJar(readProvenance(jar), getHead(), getCheckoutDirty());
   const first = assess(jarPath);
   if (first.state === "fresh" || first.state === "unverifiable") {
     return jarPath;
@@ -879,6 +912,12 @@ async function prepareServer(runtimeOptions = {}) {
         localJarPath = ensureFreshLocalJar(localJarPath, {
           readProvenance: readJarProvenance,
           getHead: readCheckoutHead,
+          getCheckoutDirty: readCheckoutDirty,
+          isExplicit: (jar) =>
+            [explicitLocalJar, process.env.GLS_LOCAL_JAR].some(
+              (explicit) =>
+                explicit && path.resolve(explicit) === path.resolve(jar),
+            ),
           strict: requireFresh(process.env),
           rebuild: effectiveBuildLocal ? buildLocalJar : null,
           findJar: findLocalGroovyLspJar,

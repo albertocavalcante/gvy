@@ -36,6 +36,8 @@ export declare function ensureFreshLocalJar(
       dirtyHash: string;
     } | null;
     getHead: () => string | null;
+    getCheckoutDirty?: () => boolean | null;
+    isExplicit?: (jar: string) => boolean;
     strict: boolean;
     rebuild: (() => void) | null;
     findJar: () => string | null;

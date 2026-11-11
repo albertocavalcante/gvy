@@ -482,10 +482,12 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
         val digest = MessageDigest.getInstance("SHA-256")
         digest.update(diff)
         val root = parameters.rootDir.get().asFile
-        // Hash untracked files by content through git (streamed, any size); names with newlines can't go through
-        // --stdin-paths, so they contribute their name only.
-        val hashable = untracked.sorted().filter { '\n' !in it && File(root, it).isFile }
-        val blobIds =
+        // Hash untracked files by content through git (streamed, any size). The batch form is all-or-nothing and
+        // cannot carry names with newlines or a leading quote (git unquotes them), so those names are excluded
+        // from it; if the batch call still fails (e.g. an unreadable file), fall back to one call per file.
+        val sorted = untracked.sorted()
+        val hashable = sorted.filter { '\n' !in it && !it.startsWith("\"") && File(root, it).isFile }
+        val batch =
             if (hashable.isEmpty()) {
                 emptyList()
             } else {
@@ -497,9 +499,23 @@ abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvena
                 )?.toString(Charsets.UTF_8)
                     ?.lines()
                     ?.filter { it.isNotEmpty() }
-                    .orEmpty()
             }
-        val ids = hashable.zip(blobIds).toMap()
+        val ids =
+            if (batch != null && batch.size == hashable.size && hashable.size == sorted.size) {
+                hashable.zip(batch).toMap()
+            } else {
+                // Includes names the batch form can't carry; unreadable files simply contribute their name.
+                sorted
+                    .filter { File(root, it).isFile }
+                    .mapNotNull { name ->
+                        git(
+                            "hash-object",
+                            "--no-filters",
+                            "--",
+                            name,
+                        )?.trim()?.takeIf { it.isNotEmpty() }?.let { name to it }
+                    }.toMap()
+            }
         untracked.sorted().forEach { name ->
             digest.update(name.toByteArray())
             digest.update(0)
@@ -595,6 +611,14 @@ tasks.register("generateVersionProperties") {
         outFile.parentFile.mkdirs()
         outFile.writeText(props.entries.joinToString("\n", postfix = "\n") { (k, v) -> "$k=${escape(v)}" })
         logger.lifecycle("Generated version.properties: {}", props.entries.joinToString(", ") { (k, v) -> "$k=$v" })
+    }
+}
+
+// version.properties changes on every commit and edit, but tests assert against the file they load (and its
+// `release` flag), so a cached result can't be wrong; ignoring it keeps unrelated edits from rerunning all tests.
+normalization {
+    runtimeClasspath {
+        ignore("version.properties")
     }
 }
 

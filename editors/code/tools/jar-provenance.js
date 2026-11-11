@@ -106,9 +106,10 @@ function describeRecord(record) {
  *  - unverifiable: HEAD is unknown, so nothing can be compared
  * @param {ReturnType<typeof provenanceFromProperties>|null} provenance
  * @param {string|null} head
+ * @param {boolean|null} [checkoutDirty] whether the checkout has uncommitted changes (null: unknown)
  * @returns {{state: "fresh"|"dirty"|"stale"|"unverifiable", reason: string}}
  */
-function assessLocalJar(provenance, head) {
+function assessLocalJar(provenance, head, checkoutDirty = null) {
   if (!head) {
     return { state: "unverifiable", reason: "checkout HEAD is unknown" };
   }
@@ -125,6 +126,12 @@ function assessLocalJar(provenance, head) {
     return {
       state: "dirty",
       reason: `the jar was built from ${head} with uncommitted changes${provenance.dirtyHash ? ` (${provenance.dirtyHash})` : ""}`,
+    };
+  }
+  if (checkoutDirty === true) {
+    return {
+      state: "stale",
+      reason: `the jar was built clean from ${head}, but the checkout now has uncommitted changes`,
     };
   }
   return { state: "fresh", reason: "the jar matches HEAD" };

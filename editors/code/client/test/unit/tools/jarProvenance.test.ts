@@ -185,6 +185,11 @@ describe("assessLocalJar", () => {
       "dirty",
     );
   });
+  it("is stale when the checkout has uncommitted changes the clean jar lacks", () => {
+    assert.strictEqual(assessLocalJar(jar(), sha, true).state, "stale");
+    assert.strictEqual(assessLocalJar(jar(), sha, false).state, "fresh");
+    assert.strictEqual(assessLocalJar(jar(), sha, null).state, "fresh");
+  });
   it("cannot judge without a HEAD", () => {
     assert.strictEqual(assessLocalJar(jar(), null).state, "unverifiable");
   });

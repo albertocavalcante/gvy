@@ -213,6 +213,46 @@ describe("ensureFreshLocalJar", () => {
     assert.strictEqual(t.calls.rebuild, 0);
   });
 
+  it("leaves an explicitly chosen jar alone, even when strict", () => {
+    const t = deps({
+      strict: true,
+      isExplicit: (jar: string) => jar === "/old.jar",
+    });
+    assert.strictEqual(ensureFreshLocalJar("/old.jar", t.deps), "/old.jar");
+    assert.deepStrictEqual(t.warnings, []);
+    assert.strictEqual(t.calls.rebuild, 0);
+  });
+
+  it("warns when a clean build of HEAD predates uncommitted changes", () => {
+    const t = deps({ getCheckoutDirty: () => true });
+    assert.strictEqual(ensureFreshLocalJar("/new.jar", t.deps), "/new.jar");
+    assert.match(t.warnings[0], /uncommitted changes/);
+  });
+
+  it("rebuilds for uncommitted changes under GLS_REQUIRE_FRESH, then accepts the dirty rebuild", () => {
+    const jars: Record<string, ReturnType<typeof prov>> = {
+      "/new.jar": prov(head),
+      "/rebuilt.jar": prov(head, true),
+    };
+    const t = deps({
+      strict: true,
+      getCheckoutDirty: () => true,
+      readProvenance: (jar: string) => jars[jar] ?? null,
+      findJar: () => "/rebuilt.jar",
+    });
+    assert.strictEqual(ensureFreshLocalJar("/new.jar", t.deps), "/rebuilt.jar");
+    assert.strictEqual(t.calls.rebuild, 1);
+  });
+
+  it("fails for uncommitted changes under GLS_REQUIRE_FRESH when it cannot rebuild", () => {
+    const t = deps({
+      strict: true,
+      rebuild: null,
+      getCheckoutDirty: () => true,
+    });
+    assert.throws(() => ensureFreshLocalJar("/new.jar", t.deps), /stale/);
+  });
+
   it("does not judge when HEAD is unknown", () => {
     const t = deps({ strict: true, getHead: () => null });
     assert.strictEqual(ensureFreshLocalJar("/old.jar", t.deps), "/old.jar");

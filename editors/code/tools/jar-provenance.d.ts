@@ -29,6 +29,7 @@ export declare function requireFresh(env: NodeJS.ProcessEnv): boolean;
 export declare function assessLocalJar(
   provenance: JarProvenance | null,
   head: string | null,
+  checkoutDirty?: boolean | null,
 ): {
   state: "fresh" | "dirty" | "stale" | "unverifiable";
   reason: string;
