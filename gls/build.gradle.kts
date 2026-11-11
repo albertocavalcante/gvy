@@ -3,7 +3,10 @@ import org.gradle.api.tasks.testing.TestResult
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.process.ExecOperations
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.security.MessageDigest
 import java.time.Duration
+import java.time.Instant
 import java.util.zip.ZipFile
 import javax.inject.Inject
 
@@ -354,36 +357,181 @@ tasks.named("startShadowScripts") {
     dependsOn(tasks.shadowJar, tasks.jar)
 }
 
+// Build provenance: which commit (and working-tree state) produced this jar.
+// Read through a ValueSource so it is configuration-cache safe: Gradle re-runs obtain() every build and
+// invalidates the cache entry only when the result (HEAD, dirty state) changes.
+abstract class GitProvenanceSource : ValueSource<Map<String, String>, GitProvenanceSource.Params> {
+    interface Params : ValueSourceParameters {
+        val rootDir: DirectoryProperty
+        val baseVersion: Property<String>
+        val release: Property<Boolean>
+        val fallbackBranch: Property<String>
+    }
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    override fun obtain(): Map<String, String> {
+        val base = parameters.baseVersion.get()
+        // Kept in the legacy shape: jar file names and `Version.isSnapshot` consumers depend on it.
+        val legacyVersion = if (parameters.release.get()) base else "$base-SNAPSHOT"
+        val sha = git("rev-parse", "HEAD")?.trim().orEmpty()
+        if (sha.isEmpty()) {
+            return linkedMapOf(
+                "version" to legacyVersion,
+                "baseVersion" to base,
+                "displayVersion" to if (parameters.release.get()) base else "$base-dev+unknown",
+                "gitSha" to UNKNOWN,
+                "gitShaShort" to UNKNOWN,
+                "gitDirty" to UNKNOWN,
+                "gitDirtyHash" to "",
+                "gitBranch" to UNKNOWN,
+                "commitTime" to UNKNOWN,
+                "buildTime" to "",
+            )
+        }
+        val short = git("rev-parse", "--short=7", "HEAD")?.trim().orEmpty().ifEmpty { sha.take(SHORT_SHA_LENGTH) }
+        val untracked =
+            git("ls-files", "--others", "--exclude-standard", "-z")
+                ?.split('\u0000')
+                ?.filter {
+                    it.isNotEmpty()
+                }.orEmpty()
+        val diff = gitBytes("diff", "HEAD", "--no-color", "--no-ext-diff", "--no-textconv") ?: ByteArray(0)
+        val dirty = diff.isNotEmpty() || untracked.isNotEmpty() || !git("status", "--porcelain")?.trim().isNullOrEmpty()
+        val commitTime = git("log", "-1", "--format=%cI", "HEAD")?.trim().orEmpty().ifEmpty { UNKNOWN }
+        val branch =
+            git("rev-parse", "--abbrev-ref", "HEAD")?.trim().orEmpty().let {
+                if (it.isEmpty() || it == "HEAD") parameters.fallbackBranch.getOrElse("detached") else it
+            }
+        val display =
+            when {
+                parameters.release.get() -> base
+                dirty -> "$base-dev+g$short.dirty"
+                else -> "$base-dev+g$short"
+            }
+        return linkedMapOf(
+            "version" to legacyVersion,
+            "baseVersion" to base,
+            "displayVersion" to display,
+            "gitSha" to sha,
+            "gitShaShort" to short,
+            "gitDirty" to dirty.toString(),
+            "gitDirtyHash" to if (dirty) dirtyHash(diff, untracked) else "",
+            "gitBranch" to branch,
+            "commitTime" to commitTime,
+            // Clean builds stay reproducible (buildTime == commitTime); the task stamps wall-clock when dirty.
+            "buildTime" to if (dirty) "" else commitTime,
+        )
+    }
+
+    private fun dirtyHash(
+        diff: ByteArray,
+        untracked: List<String>,
+    ): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        digest.update(diff)
+        val root = parameters.rootDir.get().asFile
+        untracked.sorted().forEach { name ->
+            digest.update(name.toByteArray())
+            digest.update(0)
+            val file = File(root, name)
+            if (file.isFile && file.length() <= MAX_HASHED_FILE_BYTES) digest.update(file.readBytes())
+            digest.update(0)
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }.take(DIRTY_HASH_LENGTH)
+    }
+
+    private fun git(vararg args: String): String? = gitBytes(*args)?.toString(Charsets.UTF_8)
+
+    private fun gitBytes(vararg args: String): ByteArray? =
+        try {
+            val out = ByteArrayOutputStream()
+            val result =
+                execOperations.exec {
+                    commandLine("git", *args)
+                    workingDir = parameters.rootDir.get().asFile
+                    standardOutput = out
+                    errorOutput = ByteArrayOutputStream()
+                    isIgnoreExitValue = true
+                }
+            if (result.exitValue == 0) out.toByteArray() else null
+        } catch (_: Exception) {
+            null // git missing (source tarball, minimal container): degrade to "unknown"
+        }
+
+    private companion object {
+        const val UNKNOWN = "unknown"
+        const val SHORT_SHA_LENGTH = 7
+        const val DIRTY_HASH_LENGTH = 12
+        const val MAX_HASHED_FILE_BYTES = 16L * 1024 * 1024
+    }
+}
+
 // Generate version properties file for runtime access
 tasks.register("generateVersionProperties") {
-    description = "Generate version.properties file from build version"
+    description = "Generate version.properties (version + git provenance) for runtime access"
     group = "build"
 
     val outputDir = layout.buildDirectory.dir("generated/resources")
     val propertiesFile = outputDir.map { it.file("version.properties") }
 
-    val versionProvider = providers.provider { project.version.toString() }
-    val baseVersionProvider = providers.provider { baseVersion }
+    val isRelease =
+        providers
+            .environmentVariable("GITHUB_REF_TYPE")
+            .map { it == "tag" }
+            .orElse(false)
+            .zip(
+                providers.environmentVariable("GITHUB_HEAD_REF").map { it.contains("release-please") }.orElse(false),
+            ) { a, b ->
+                a ||
+                    b
+            }
+    val provenance =
+        providers.of(GitProvenanceSource::class) {
+            parameters.rootDir.set(rootProject.layout.projectDirectory)
+            parameters.baseVersion.set(baseVersion)
+            parameters.release.set(isRelease)
+            parameters.fallbackBranch.set(
+                providers
+                    .environmentVariable("GITHUB_HEAD_REF")
+                    .orElse(providers.environmentVariable("GITHUB_REF_NAME"))
+                    .orElse("detached"),
+            )
+        }
+    val ciRunUrl =
+        providers
+            .environmentVariable("GITHUB_SERVER_URL")
+            .zip(
+                providers.environmentVariable("GITHUB_REPOSITORY"),
+            ) { server, repo -> "$server/$repo" }
+            .zip(providers.environmentVariable("GITHUB_RUN_ID")) { repo, run ->
+                "$repo/actions/runs/$run"
+            }
 
-    inputs.property("version", versionProvider)
-    inputs.property("baseVersion", baseVersionProvider)
+    inputs.property("provenance", provenance)
+    inputs.property("ciRunUrl", ciRunUrl.orElse(""))
     outputs.file(propertiesFile)
+    // Dirty builds embed wall-clock time, so only clean (reproducible) results may be cached.
+    outputs.cacheIf { provenance.get()["gitDirty"] != "true" }
 
     doLast {
-        val outDirFile = outputDir.get().asFile
-        val propsFile = propertiesFile.get().asFile
-        outDirFile.mkdirs()
-        propsFile.writeText(
-            """
-            version=${versionProvider.get()}
-            baseVersion=${baseVersionProvider.get()}
-            """.trimIndent(),
-        )
-        logger.lifecycle(
-            "Generated version.properties: version={}, baseVersion={}",
-            versionProvider.get(),
-            baseVersionProvider.get(),
-        )
+        val props = LinkedHashMap(provenance.get())
+        if (props["buildTime"].isNullOrEmpty()) props["buildTime"] = Instant.now().toString()
+        ciRunUrl.orNull?.let { props["ciRunUrl"] = it }
+
+        fun escape(value: String) = value.replace("\\", "\\\\").replace("\n", "\\n").replace("\r", "\\r")
+        val outFile = propertiesFile.get().asFile
+        outFile.parentFile.mkdirs()
+        outFile.writeText(props.entries.joinToString("\n", postfix = "\n") { (k, v) -> "$k=${escape(v)}" })
+        logger.lifecycle("Generated version.properties: {}", props.entries.joinToString(", ") { (k, v) -> "$k=$v" })
+    }
+}
+
+// Provenance changes on every commit and edit; it must not invalidate test results, which only depend on code.
+normalization {
+    runtimeClasspath {
+        ignore("version.properties")
     }
 }
 

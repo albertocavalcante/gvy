@@ -1,5 +1,8 @@
 import { strict as assert } from "assert";
-import { resolveServerVersion } from "../../../../src/features/update/serverVersion";
+import {
+  parseInstalledTag,
+  resolveServerVersion,
+} from "../../../../src/features/update/serverVersion";
 
 describe("resolveServerVersion", () => {
   const readTag = () => "v0.4.8";
@@ -48,5 +51,25 @@ describe("resolveServerVersion", () => {
       }),
       "unknown",
     );
+  });
+});
+
+describe("parseInstalledTag", () => {
+  it("reads the tag from the JSON provenance record", () => {
+    const record = JSON.stringify({
+      version: "0.5.4-dev+g6c6f023",
+      gitSha: "6c6f023",
+      source: "local",
+      tag: "local",
+    });
+    assert.strictEqual(parseInstalledTag(`${record}\n`), "local");
+  });
+
+  it("still reads a legacy plain-text tag", () => {
+    assert.strictEqual(parseInstalledTag("v0.4.8\n"), "v0.4.8");
+  });
+
+  it("returns an empty tag for a corrupt record", () => {
+    assert.strictEqual(parseInstalledTag("{not json"), "");
   });
 });

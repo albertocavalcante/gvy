@@ -47,7 +47,11 @@ class GroovyLanguageServerTest {
             assertNotNull(result)
             assertNotNull(result.capabilities)
             assertEquals("Groovy Language Server", result.serverInfo?.name)
-            assertEquals(Version.current, result.serverInfo?.version)
+            assertEquals(Version.display, result.serverInfo?.version)
+            if (Version.info.isStamped) {
+                // The jar must be traceable to its commit from the client's side of the protocol.
+                assertTrue(result.serverInfo?.version?.contains(Version.info.gitShaShort) == true)
+            }
 
             // Check capabilities
             val capabilities = result.capabilities

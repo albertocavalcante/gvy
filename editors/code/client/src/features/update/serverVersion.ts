@@ -3,7 +3,7 @@ export interface ServerVersionSources {
   reported: string | undefined;
   /** `groovy.server.path`; a custom JAR's version is only known once it runs. */
   serverPath: string | undefined;
-  /** Reads the release tag recorded next to the bundled JAR (server/.gls-version). */
+  /** Reads the record next to the bundled JAR (server/.gls-version). */
   readInstalledTag: () => string;
 }
 
@@ -20,8 +20,26 @@ export function resolveServerVersion(sources: ServerVersionSources): string {
     return "unknown";
   }
   try {
-    return sources.readInstalledTag().trim() || "unknown";
+    return parseInstalledTag(sources.readInstalledTag()) || "unknown";
   } catch {
     return "unknown";
+  }
+}
+
+/**
+ * server/.gls-version is a JSON record ({ tag, version, gitSha, ... }); jars
+ * installed before provenance was recorded left the bare tag instead.
+ */
+export function parseInstalledTag(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed.startsWith("{")) {
+    return trimmed;
+  }
+  try {
+    const record = JSON.parse(trimmed) as { tag?: unknown; version?: unknown };
+    const tag = record.tag ?? record.version;
+    return typeof tag === "string" ? tag.trim() : "";
+  } catch {
+    return "";
   }
 }
