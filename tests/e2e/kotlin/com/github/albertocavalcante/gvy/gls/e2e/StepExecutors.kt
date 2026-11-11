@@ -42,7 +42,6 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import java.time.Duration
-import java.util.Arrays
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
@@ -720,6 +719,10 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
         val workspacePath = realRootDir.toString()
         val workspaceUri = realRootDir.toUri().toString().trimEnd('/')
 
+        fun interpolateExpected(content: String): String = content
+            .replace("file://$WORKSPACE_PLACEHOLDER", workspaceUri)
+            .replace(WORKSPACE_PLACEHOLDER, workspacePath)
+
         // Logic to update golden files
         val updateSnapshot = System.getProperty("groovy.lsp.e2e.updateGolden") == "true"
 
@@ -747,16 +750,15 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
             )
         }
 
-        val actualContent = Files.readString(actualFile)
-        val expectedContent = Files.readString(expectedFile)
+        // Binary goldens may contain arbitrary bytes; decode only the modes that compare text.
+        val actualContent by lazy { Files.readString(actualFile) }
+        val expectedContent by lazy { Files.readString(expectedFile) }
 
         when (step.mode) {
             GoldenMode.JSON -> {
                 // Compare as JSON trees to ignore formatting differences
                 // Interpolate {{workspace}} placeholder in expected content for portability
-                val interpolatedExpected = expectedContent
-                    .replace("file://$WORKSPACE_PLACEHOLDER", workspaceUri)
-                    .replace(WORKSPACE_PLACEHOLDER, workspacePath)
+                val interpolatedExpected = interpolateExpected(expectedContent)
 
                 val mapper = ObjectMapper()
                 val actualJson = mapper.readTree(actualContent)
@@ -811,9 +813,7 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
                 for (i in actualLines.indices) {
                     val actualLine = actualLines[i]
                     // Interpolate {{workspace}} placeholder in expected content
-                    val expectedLine = expectedLines[i]
-                        .replace("file://$WORKSPACE_PLACEHOLDER", workspaceUri)
-                        .replace(WORKSPACE_PLACEHOLDER, workspacePath)
+                    val expectedLine = interpolateExpected(expectedLines[i])
 
                     val actualJson = mapper.readTree(actualLine)
                     val expectedJson = mapper.readTree(expectedLine)
@@ -829,19 +829,16 @@ class GoldenAssertStepExecutor : StepExecutor<ScenarioStep.GoldenAssert> {
             }
 
             GoldenMode.TEXT -> {
-                // Compare normalized text (trim lines)
-                if (actualContent.trim() != expectedContent.trim()) {
+                val interpolatedExpected = interpolateExpected(expectedContent)
+                if (actualContent != interpolatedExpected) {
                     throw AssertionError(
-                        "Text content mismatch for $expectedRelPath!\nExpected:\n$expectedContent\nActual:\n$actualContent",
+                        "Text content mismatch for $expectedRelPath!\nExpected:\n$interpolatedExpected\nActual:\n$actualContent",
                     )
                 }
             }
 
             GoldenMode.BINARY -> {
-                // Direct byte comparison
-                val actualBytes = Files.readAllBytes(actualFile)
-                val expectedBytes = Files.readAllBytes(expectedFile)
-                if (!Arrays.equals(actualBytes, expectedBytes)) {
+                if (Files.mismatch(actualFile, expectedFile) != -1L) {
                     throw AssertionError("Binary content mismatch for $expectedRelPath!")
                 }
             }
