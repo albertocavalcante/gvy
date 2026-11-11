@@ -50,7 +50,7 @@ steps:
         - jsonPath: $.items
           expect:
             type: NOT_EMPTY
-            message: Completions should return results for 'ech' prefix
+          message: Completions should return results for 'ech' prefix
 
   # Negative assertion: Jenkins 'echo' step should NOT be in completions
   - assert:
@@ -88,7 +88,7 @@ steps:
         - jsonPath: $.items
           expect:
             type: NOT_EMPTY
-            message: Completions should return results for 'sh' prefix
+          message: Completions should return results for 'sh' prefix
 
   # Negative assertion: Jenkins 'sh' step should NOT be in completions
   - assert:

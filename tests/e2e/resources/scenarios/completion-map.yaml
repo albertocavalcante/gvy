@@ -48,7 +48,7 @@ steps:
         - jsonPath: $.items
           expect:
             type: NOT_EMPTY
-            message: Map variable should have completion items
+          message: Map variable should have completion items
 
   # Strict: Map methods must be present (from LinkedHashMap)
   - assert:
@@ -58,17 +58,17 @@ steps:
           expect:
             type: CONTAINS
             value: get
-            message: Should suggest 'get' method for Map
+          message: Should suggest 'get' method for Map
         - jsonPath: $.items[*].label
           expect:
             type: CONTAINS
             value: put
-            message: Should suggest 'put' method for Map
+          message: Should suggest 'put' method for Map
         - jsonPath: $.items[*].label
           expect:
             type: CONTAINS
             value: containsKey
-            message: Should suggest 'containsKey' method for Map
+          message: Should suggest 'containsKey' method for Map
 
   # Strict: GDK methods for maps should be present
   - assert:
@@ -78,12 +78,12 @@ steps:
           expect:
             type: CONTAINS
             value: each
-            message: Should suggest GDK 'each' method
+          message: Should suggest GDK 'each' method
         - jsonPath: $.items[*].label
           expect:
             type: CONTAINS
             value: collect
-            message: Should suggest GDK 'collect' method
+          message: Should suggest GDK 'collect' method
 
   # Strict: Should NOT contain keywords (proves type is resolved)
   - assert:
@@ -93,12 +93,12 @@ steps:
           expect:
             type: SIZE
             value: 0
-            message: Should NOT suggest 'abstract' keyword for map variable
+          message: Should NOT suggest 'abstract' keyword for map variable
         - jsonPath: "$.items[?(@.label == 'synchronized')]"
           expect:
             type: SIZE
             value: 0
-            message: Should NOT suggest 'synchronized' keyword for map variable
+          message: Should NOT suggest 'synchronized' keyword for map variable
 
   # Test explicit LinkedHashMap type declaration
   - openDocument:
@@ -127,12 +127,12 @@ steps:
           expect:
             type: CONTAINS
             value: keySet
-            message: Should suggest 'keySet' for typed LinkedHashMap
+          message: Should suggest 'keySet' for typed LinkedHashMap
         - jsonPath: $.items[*].label
           expect:
             type: CONTAINS
             value: entrySet
-            message: Should suggest 'entrySet' for typed LinkedHashMap
+          message: Should suggest 'entrySet' for typed LinkedHashMap
 
   - shutdown: {}
   - exit: {}

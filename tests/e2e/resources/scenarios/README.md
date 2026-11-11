@@ -109,7 +109,11 @@ Inline files:
   rejected. Paths are normalized (`./a//B.groovy` is `a/B.groovy`), and two keys naming the same file are rejected.
 - Are written as UTF-8 with LF line endings before `initialize`, replacing fixture files at the same path.
 
-Scenario parsing rejects duplicate YAML keys and unknown keys in `workspace`, `completion` and `rename`.
+Scenario parsing rejects duplicate YAML keys and unknown fields throughout the scenario schema. Raw protocol JSON
+(`params`, `initializationOptions` and expectation values) and map entries such as `env` and inline file paths keep
+their own keys. For example, a numeric check is `expect: { type: GTE, value: 1 }`; a check's `message` belongs beside
+`jsonPath` and `expect`, rather than inside `expect`. Equality checks require a `value`; `value: null` explicitly
+represents JSON null. An empty `expect: {}` checks existence. Snapshot expectations take only a nonblank string path.
 
 ## Adding New Scenarios
 

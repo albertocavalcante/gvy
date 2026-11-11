@@ -1,8 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
@@ -28,7 +27,7 @@ class ScenarioParserTest {
             """.trimIndent(),
         )
 
-        val workspace = definition.scenario.workspace!!
+        val workspace = requireNotNull(definition.scenario.workspace)
         assertThat(workspace.fixture).isEqualTo("empty-workspace")
         assertThat(workspace.files.keys).containsExactly("src/b/Greeter.groovy", "src/a/Main.groovy")
         assertThat(workspace.files["src/a/Main.groovy"]).isEqualTo("new Greeter()\n")
@@ -45,7 +44,7 @@ class ScenarioParserTest {
             """.trimIndent(),
         )
 
-        assertThat(definition.scenario.workspace!!.files).isEmpty()
+        assertThat(requireNotNull(definition.scenario.workspace).files).isEmpty()
     }
 
     @Test
@@ -134,10 +133,7 @@ class ScenarioParserTest {
         val (completion, rename) = definition.scenario.steps
         assertThat((completion as ScenarioStep.Completion).position).isEqualTo(JsonPrimitive("{{cursor.dot}}"))
         assertThat((rename as ScenarioStep.Rename).position).isEqualTo(
-            buildJsonObject {
-                put("line", 3)
-                put("character", 4)
-            },
+            Json.parseToJsonElement("""{"line":3,"character":4}"""),
         )
     }
 
@@ -178,7 +174,7 @@ class ScenarioParserTest {
     fun `misspelled snapshot key on its own is rejected instead of defaulting to EXISTS`() {
         assertThatThrownBy { parsedExpectation("snapshto: a.md") }
             .isInstanceOf(ScenarioParseException::class.java)
-            .hasRootCauseMessage("A snapshot expectation takes the single key 'snapshot'; found keys [snapshto]")
+            .hasStackTraceContaining("\"snapshto\"")
     }
 
     @Test
@@ -188,8 +184,10 @@ class ScenarioParserTest {
     }
 
     @Test
-    fun `other expectations still tolerate unknown keys`() {
-        assertThat(parsedExpectation("type: EXISTS\nmessage: hi").snapshot).isNull()
+    fun `unknown expectation keys are rejected instead of discarded`() {
+        assertThatThrownBy { parsedExpectation("type: EXISTS\nmessage: hi") }
+            .isInstanceOf(ScenarioParseException::class.java)
+            .hasStackTraceContaining("\"message\"")
     }
 
     @Test

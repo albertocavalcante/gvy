@@ -6,14 +6,13 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo
 import com.fasterxml.jackson.annotation.JsonTypeInfo.As
 import com.fasterxml.jackson.annotation.JsonTypeInfo.Id
 import com.fasterxml.jackson.core.JsonParser
+import com.fasterxml.jackson.core.JsonProcessingException
 import com.fasterxml.jackson.core.TreeNode
 import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.DeserializationFeature
-import com.fasterxml.jackson.databind.JsonDeserializer
+import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
-import com.fasterxml.jackson.databind.deser.DeserializationProblemHandler
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
-import com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
@@ -33,11 +32,11 @@ import kotlinx.serialization.json.JsonPrimitive
  * TODO: Remove this bridge when kotlinx.serialization adds official YAML support.
  *       Track: https://github.com/Kotlin/kotlinx.serialization/issues/1836
  */
-object JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class.java) {
-    private fun readResolve(): Any = JsonElementDeserializer
-
+class JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class.java) {
     override fun deserialize(p: JsonParser, ctxt: DeserializationContext): JsonElement =
         treeNodeToJsonElement(p.codec.readTree(p))
+
+    override fun getNullValue(ctxt: DeserializationContext): JsonElement = JsonNull
 
     private fun treeNodeToJsonElement(node: TreeNode): JsonElement = when (node) {
         is ObjectNode -> JsonObject(
@@ -62,28 +61,6 @@ object JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class
 }
 
 /**
- * Fails on unknown keys for [strictTypes] while the rest of the scenario model stays lenient.
- *
- * Unknown keys are otherwise dropped silently, so a typo such as `postion:` turns into a default value
- * and the scenario still passes.
- */
-internal class StrictUnknownKeys(private val strictTypes: Set<Class<*>>) : DeserializationProblemHandler() {
-    override fun handleUnknownProperty(
-        ctxt: DeserializationContext,
-        p: JsonParser,
-        deserializer: JsonDeserializer<*>,
-        beanOrClass: Any?,
-        propertyName: String,
-    ): Boolean {
-        val type = beanOrClass as? Class<*> ?: beanOrClass?.javaClass
-        if (type in strictTypes) {
-            throw UnrecognizedPropertyException.from(p, beanOrClass, propertyName, deserializer.knownPropertyNames)
-        }
-        return false
-    }
-}
-
-/**
  * Jackson-based implementation of [ScenarioParser].
  *
  * Uses Jackson with YAML support for parsing scenario files.
@@ -95,7 +72,7 @@ internal class StrictUnknownKeys(private val strictTypes: Set<Class<*>>) : Deser
 class JacksonScenarioParser : ScenarioParser {
 
     private val jsonElementModule = SimpleModule().apply {
-        addDeserializer(JsonElement::class.java, JsonElementDeserializer)
+        addDeserializer(JsonElement::class.java, JsonElementDeserializer())
     }
 
     @Suppress("DEPRECATION")
@@ -104,28 +81,16 @@ class JacksonScenarioParser : ScenarioParser {
     ).apply {
         registerKotlinModule()
         registerModule(jsonElementModule)
-        // TODO(#1546): Make every type strict once existing scenarios stop using unknown keys
-        //   (`message:` nested under `expect:`, `expect: { gte: 1 }`).
-        //   See: https://github.com/albertocavalcante/gvy/issues/1546
-        configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
-        addHandler(StrictUnknownKeys(STRICT_TYPES))
+        configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true)
         configure(DeserializationFeature.READ_ENUMS_USING_TO_STRING, true)
         enable(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
     }
 
-    private companion object {
-        /** Types that reject unknown keys; checked-in scenarios use none in them. The rest stay lenient for now. */
-        val STRICT_TYPES: Set<Class<*>> = setOf(
-            WorkspaceConfig::class.java,
-            Xfail::class.java,
-            ScenarioStep.Completion::class.java,
-            ScenarioStep.Rename::class.java,
-        )
-    }
-
     override fun parseScenarioDefinition(yaml: String): ScenarioDefinition = try {
         // YAML file structure matches Scenario, so we parse Scenario and wrap it
-        requireWellFormedSnapshotExpectations(objectMapper.readTree(yaml))
+        val root = requireNotNull(objectMapper.readTree(yaml)) { "Scenario YAML must be an object" }
+        require(root.isObject) { "Scenario YAML must be an object" }
+        requireWellFormedSnapshotExpectations(root)
         val scenario = objectMapper.readValue(yaml, Scenario::class.java)
         scenario.xfail?.let { xfail ->
             require(xfail.issue > 0) { "xfail.issue must be a gvy issue number" }
@@ -133,32 +98,32 @@ class JacksonScenarioParser : ScenarioParser {
             xfail.match?.let { Regex(it) } // an invalid regex is a parse error, not a runtime surprise
         }
         ScenarioDefinition(scenario = scenario)
-    } catch (e: Exception) {
+    } catch (e: JsonProcessingException) {
+        throw ScenarioParseException("Failed to parse scenario YAML", e)
+    } catch (e: IllegalArgumentException) {
         throw ScenarioParseException("Failed to parse scenario YAML", e)
     }
 }
 
 /**
- * Rejects an `expect:` object that uses `snapshot`, or a key that looks like a misspelling of it (`snapshto`).
- *
- * Other expectation types still ignore unknown keys (see TODO(#1546)), so without this check a typo would silently
- * turn the expectation into the default `EXISTS` and always pass. A snapshot expectation holds `snapshot` alone.
+ * Validates snapshot syntax only in step checks. Protocol payloads and expected JSON values are opaque data,
+ * even when they contain keys named `expect` or `snapshot`. Jackson rejects misspelled typed fields separately.
  */
-internal fun requireWellFormedSnapshotExpectations(node: com.fasterxml.jackson.databind.JsonNode) {
-    when {
-        node.isObject -> node.properties().forEach { (key, child) ->
-            if (key == "expect" && child.isObject) {
-                val keys = child.fieldNames().asSequence().toList()
-                val snapLike = keys.filter { it.startsWith("snap", ignoreCase = true) }
-                require(snapLike.isEmpty() || keys == listOf("snapshot")) {
-                    "A snapshot expectation takes the single key 'snapshot'; found keys $keys"
-                }
+internal fun requireWellFormedSnapshotExpectations(node: JsonNode) {
+    node.path("steps")
+        .flatMap { step -> step.flatMap { body -> body.path("checks").toList() } }
+        .map { check -> check.path("expect") }
+        .filter { expectation -> expectation.has("snapshot") }
+        .forEach { expectation ->
+            val keys = expectation.properties().map { it.key }
+            require(keys == listOf("snapshot")) {
+                "A snapshot expectation takes the single key 'snapshot'; found keys $keys"
             }
-            requireWellFormedSnapshotExpectations(child)
+            val path = expectation.path("snapshot")
+            require(path.isTextual && path.textValue().isNotBlank()) {
+                "A snapshot expectation needs a nonblank string 'snapshot' path"
+            }
         }
-
-        node.isArray -> node.forEach { requireWellFormedSnapshotExpectations(it) }
-    }
 }
 
 // =============================================================================
@@ -409,6 +374,9 @@ data class JsonExpectation(
     val snapshot: String? = null,
 ) {
     init {
+        if (type == ExpectationType.EQUALS || type == ExpectationType.NOT_EQUALS) {
+            requireNotNull(value) { "A $type expectation requires 'value'; use 'value: null' for JSON null" }
+        }
         require(snapshot == null || (value == null && values.isEmpty())) {
             "A snapshot expectation cannot also set value or values"
         }

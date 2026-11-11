@@ -57,7 +57,7 @@ steps:
           expect:
             type: SIZE
             value: 3
-            message: "Declaration + 2 'new Calculator()' uses, each reported once as the class name"
+          message: "Declaration + 2 'new Calculator()' uses, each reported once as the class name"
         - jsonPath: $[*].range.start
           expect:
             type: CONTAINS_ALL
@@ -87,7 +87,7 @@ steps:
           expect:
             type: SIZE
             value: 3
-            message: "Should find 3 references to add method (def + 2 usages)"
+          message: "Should find 3 references to add method (def + 2 usages)"
 
   - shutdown: {}
   - exit: {}

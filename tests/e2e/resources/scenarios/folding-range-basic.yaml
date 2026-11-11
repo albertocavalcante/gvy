@@ -51,7 +51,7 @@ steps:
           expect:
             type: SIZE
             value: 2
-            message: "Should return 2 folding ranges (Class + Method)"
+          message: "Should return 2 folding ranges (Class + Method)"
         
         # Verify Class range
         # Note: endLine 3 excludes the closing brace (line 4)
@@ -59,7 +59,7 @@ steps:
           expect:
             type: SIZE
             value: 1
-            message: "Should find class folding range 0-3"
+          message: "Should find class folding range 0-3"
 
         # Verify Method range
         # Note: endLine 2 excludes the closing brace (line 3)
@@ -67,7 +67,7 @@ steps:
           expect:
             type: SIZE
             value: 1
-            message: "Should find method folding range 1-2"
+          message: "Should find method folding range 1-2"
 
   - shutdown: {}
   - exit: {}

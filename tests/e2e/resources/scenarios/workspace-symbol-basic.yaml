@@ -52,7 +52,7 @@ steps:
         - jsonPath: $.items[?(@.name == 'Calculator' && @.kind == 'Class')]
           expect:
             type: NOT_EMPTY
-            message: "Should find Calculator class symbol"
+          message: "Should find Calculator class symbol"
 
   # Test 2: Search for method "add"
   - request:
@@ -68,7 +68,7 @@ steps:
         - jsonPath: $.items[?(@.name == 'add' && @.kind == 'Method' && @.containerName == 'Calculator')]
           expect:
             type: NOT_EMPTY
-            message: "Should find add method symbol"
+          message: "Should find add method symbol"
 
   - shutdown: {}
   - exit: {}

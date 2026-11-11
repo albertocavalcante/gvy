@@ -58,7 +58,7 @@ steps:
           expect:
             type: EQUALS
             value: 4
-            message: "Expected 4 println() overloads (Script + GDK)"
+          message: "Expected 4 println() overloads (Script + GDK)"
 
         # Check that activeSignature is set
         - jsonPath: $.activeSignature

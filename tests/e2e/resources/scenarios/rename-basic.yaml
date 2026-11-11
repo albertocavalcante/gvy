@@ -49,12 +49,12 @@ steps:
           expect:
             type: EQUALS
             value: 1
-            message: "Rename must preserve the open document version used for its ranges"
+          message: "Rename must preserve the open document version used for its ranges"
         - jsonPath: $.documentChanges[0].edits
           expect:
             type: SIZE
             value: 3
-            message: "Should return 3 text edits for renamed variable (decl + 2 usages)"
+          message: "Should return 3 text edits for renamed variable (decl + 2 usages)"
         - jsonPath: $.documentChanges
           expect:
             type: SIZE
