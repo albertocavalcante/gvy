@@ -388,6 +388,8 @@ npm.npm_translate_lock(
 use_repo(npm, "npm")
 
 # pnpm toolchain - align with project's pnpm version (pnpm-lock.yaml lockfileVersion: "9.0")
+# TODO(#1644): Make this declaration resolvable by eager module inspection.
+# See: https://github.com/albertocavalcante/gvy/issues/1644
 pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm")
 pnpm.pnpm(pnpm_version = "10.27.0")
 use_repo(pnpm, "pnpm")

@@ -637,20 +637,36 @@ build-tool compatibility. The official prebuilt release supplies those changes t
 
 ### Validation and remaining investigations
 
-Use `bazel mod show_repo @rules_kotlin` to inspect the selected official archive, then build and test with
-`--lockfile_mode=error`. The CI diagnostic gate reviews all advisories rather than hiding them in a successful build.
+Build and test the required targets with `--lockfile_mode=error`. For this migration, the fetched
+`external/rules_kotlin+` repository identifies module/compiler 2.3.0, and the downloaded prebuilt archive's SHA256
+matches the BCR descriptor above. Inspect the fetched repository under the task's Bazel output base and compare the
+cached archive bytes with that published digest. The CI diagnostic gate reviews all advisories rather than hiding them
+in a successful build.
+
+`bazel mod show_repo @rules_kotlin` currently prints the expected archive but exits nonzero: eager module inspection
+also evaluates the pnpm extension, whose 10.27.0 pin is absent from aspect_rules_js 2.8.3's version table. Treat that
+partial output as a failed inspection. Build tooling maintainers track the declaration fix in
+[#1644](https://github.com/albertocavalcante/gvy/issues/1644); completion requires successful module inspection plus the
+affected JavaScript/Bazel checks. The focused locked build/test and archive checksum provide the current fallback.
 
 - [#1601](https://github.com/albertocavalcante/gvy/issues/1601) tracks metadata-only unused dependencies in KMP common
   tests. Retain its exact expiring exception until the compiler accounting case is demonstrably fixed.
 - [#1416](https://github.com/albertocavalcante/gvy/issues/1416) tracks intermittent worker/ABI compilation failures. A
   passing migration build does not meet its separate requirement for ten consecutive clean CI builds.
+- [#1563](https://github.com/albertocavalcante/gvy/issues/1563) tracks missing Bazel server provenance. The deploy JAR
+  starts, but lacks `version.properties` and reports an unknown version/commit. Build tooling maintainers must add
+  workspace-status stamping and verify the built JAR reports its SHA; unstamped builds must identify that state.
 
 ### Rollback
 
-If compatibility regresses, revert the retirement change and regenerate `MODULE.bazel.lock`. The previous declaration
-used rules_kotlin 2.2.2 plus this exact archive override:
+If the official Kotlin tooling regresses, roll back only the `rules_kotlin` module selection to the previous declaration
+and exact archive override below. Preserve `rules_jvm_external` 6.10, the corrected repeated-option/Jackson patches and
+the isolated Jackson runtime regressions; keep the obsolete publisher removed. That Maven setup and its patches are
+validated by this migration independently of the compiler selection.
 
 ```starlark
+bazel_dep(name = "rules_kotlin", version = "2.2.2")
+
 archive_override(
     module_name = "rules_kotlin",
     integrity = "sha256-9vOI0nezePk0rrm7HaQ9h+MVvgo3H6h71Cl37UMZp1A=",
@@ -658,7 +674,13 @@ archive_override(
 )
 ```
 
-Do not republish that tag or replace its asset. Existing commits depend on its pinned bytes.
+Regenerate `MODULE.bazel.lock`, then validate the restored compiler path, original failing scenario, server package,
+isolated Jackson runtimes, applicable tests and diagnostic gate before landing the rollback. Keep language/API 2.3 and
+JVM target 17. A separate rollback to rules_jvm_external 6.9 would also require rebasing the corrected patches onto that
+source and validating the resulting closed runtime graph; the migration's 6.10 patch context cannot be assumed
+compatible with 6.9.
+
+Do not republish the historical tag or replace its asset. Existing commits depend on its pinned bytes.
 
 ## Historical migration limitations (2026-01-11)
 
