@@ -91,7 +91,12 @@ export function inventory(files, manualSources = []) {
       } else if (/\.install$/.test(call.name) && call.attributes.has('artifacts')) {
         const name = call.attributes.has('name') ? literal(call.attributes.get('name'), 'Maven repository name') : 'maven';
         const prefix = `${path}:maven.install:${name}`;
-        if (!call.attributes.has('lock_file')) add(`${prefix}:unlocked`, 'lock_file absent');
+        const lock = call.attributes.get('lock_file');
+        const strict = call.attributes.get('fail_if_repin_required');
+        const literalPath = lock?.length === 1 && /^['"]/.test(lock[0]) && lock[0].slice(1, -1).trim();
+        if (!literalPath || strict?.join('') !== 'True') {
+          add(`${prefix}:unlocked`, JSON.stringify([lock ?? [], strict ?? []]));
+        }
         if (call.attributes.get('fail_on_missing_checksum')?.join('') === 'False') add(`${prefix}:missing-checksums`, 'fail_on_missing_checksum=False');
         if (call.attributes.get('fetch_sources')?.join('') !== 'True') add(`${prefix}:sources-disabled`, 'fetch_sources disabled');
         const options = call.attributes.get('additional_coursier_options');

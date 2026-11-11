@@ -214,7 +214,7 @@
       "sources": [
         {
           "id": "MODULE.bazel:maven.install:maven:unlocked",
-          "sha256": "df17a93d59ee493947e4ca280a0ba72015abbc11d830dbd59eaed593692a9ba1"
+          "sha256": "643d5437104296e21d906ecb15b2c96ad278f20cfc4af53b12bb6069bd853726"
         }
       ]
     },
@@ -248,7 +248,7 @@
       "lastVerified": "2026-11-11",
       "reviewDue": "2026-11-18",
       "reason": "Historical GMM resolution selected kotlin-logging sources as classes; direct 7.0.14 jar and disabled source fetching preserve classes.",
-      "upstreamStatus": "Exact defect unreported; released resolver candidates exist and have not been tested here.",
+      "upstreamStatus": "Matching upstream report/fix status was not established by this audit. Local tracker search and broad GMM tracker #909 do not establish whether the exact classifier defect has been reported; no gvy upstream submission was made.",
       "upstreamTrigger": "Evaluate released resolver/Coursier behavior before treating the old classifier bug as current.",
       "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
       "evidence": [
@@ -282,7 +282,7 @@
       "lastVerified": "2026-11-11",
       "reviewDue": "2026-11-18",
       "reason": "Historical GMM generated Jupiter/Platform dependency cycles; eight direct JUnit 6.0.2 jars and handwritten targets bypass those graphs.",
-      "upstreamStatus": "Exact cycle defect unreported; stable resolver integration is pending, not known to fail.",
+      "upstreamStatus": "Matching upstream report/fix status for these exact cycles was not established by this audit. Stable resolver integration is pending, not known to fail; no gvy upstream submission was made.",
       "upstreamTrigger": "Released resolver candidate resolves the JUnit graph without historical cycle edges.",
       "verification": "Metadata/source inspection only: current gvy rules_jvm_external 6.9 with Coursier 2.1.25-M23. Upstream 7.2 and stable Coursier 2.1.26 are released; no candidate integration/resolution run in this audit. Retained pending a reproduced replacement graph, not because the released candidate has been shown to fail.",
       "evidence": [

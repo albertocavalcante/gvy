@@ -43,8 +43,10 @@ The gate lexically scans checked-in and nonignored new Bazel/Starlark files, inc
 `*.bazel` and `*.bzl`. It finds module overrides, Maven target overrides, custom `http_file`/`http_archive`/Git
 repository calls (including imported aliases), and custom Starlark `download`/`download_and_extract` calls. Every
 checked-in `*.patch` is inventoried, including dormant patches. Maven GMM options, missing lock enforcement, disabled
-source fetching and missing-checksum tolerance are also explicit sources. Official toolchain extension calls such as
-`go_sdk.download` in `MODULE.bazel` are ordinary toolchain declarations, outside the custom-download inventory.
+source fetching and missing-checksum tolerance are also explicit sources. Lock enforcement is considered enabled only
+with a nonempty literal lock path and literal `fail_if_repin_required = True`; absent, disabled or unknown values remain
+inventoried. Official toolchain extension calls such as `go_sdk.download` in `MODULE.bazel` are ordinary toolchain
+declarations, outside the custom-download inventory.
 
 Override fingerprints cover their canonical argument tokens and the affected module's declared version. Comments and
 formatting do not change those fingerprints. Patch contents are hashed individually. Custom download files are hashed in

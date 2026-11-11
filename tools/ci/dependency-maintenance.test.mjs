@@ -126,3 +126,22 @@ test('changing the declared patched module version requires renewed verification
   const scan = version => inventory(new Map([['MODULE.bazel', 'bazel_dep(name="resolver",version="' + version + '")\nsingle_version_override(module_name="resolver",patches=["//:fix.patch"])']]))[0];
   assert.notEqual(scan('6.9').sha256, scan('6.10').sha256);
 });
+
+test('Maven lock escape requires a nonempty literal path and literal strict repin enforcement', () => {
+  const unsafe = [
+    '', 'lock_file=None,', 'lock_file="",', 'lock_file="   ",',
+    'lock_file=LOCK_PATH, fail_if_repin_required=True,',
+    'lock_file="//:maven_install.json",',
+    'lock_file="//:maven_install.json", fail_if_repin_required=False,',
+    'lock_file="//:maven_install.json", fail_if_repin_required=STRICT,',
+  ];
+  const scan = attributes => inventory(new Map([['MODULE.bazel',
+    `maven.install(artifacts=["a:b:1"], fetch_sources=True, fail_on_missing_checksum=True, ${attributes})`]]));
+  for (const attributes of unsafe) {
+    const items = scan(attributes);
+    assert.equal(items.length, 1, attributes);
+    assert.equal(items[0].id, 'MODULE.bazel:maven.install:maven:unlocked', attributes);
+  }
+  assert.deepEqual(scan('lock_file="//:maven_install.json", fail_if_repin_required=True,'), []);
+  assert.notEqual(scan('lock_file=None,')[0].sha256, scan('lock_file="",')[0].sha256);
+});
