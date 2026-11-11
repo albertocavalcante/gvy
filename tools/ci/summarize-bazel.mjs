@@ -1,5 +1,5 @@
-import { appendFileSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** Bind both invocation receipts to the current workflow context. */
@@ -26,7 +26,11 @@ export function summarizeInvocations(receipts, expected) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const root = process.argv[2];
-  if (!root) throw new Error('Usage: node summarize-bazel.mjs REPORT_ROOT');
+  const output = process.argv[3];
+  if (!root || !output) throw new Error('Usage: node summarize-bazel.mjs PUBLIC_REPORT_ROOT PRIVATE_REPORT.json');
+  if (resolve(output) === resolve(root) || resolve(output).startsWith(`${resolve(root)}${sep}`)) {
+    throw new Error('Aggregate report must be outside the public artifact root');
+  }
   const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
   const expected = {
     headSha: event.pull_request?.head?.sha ?? process.env.GITHUB_SHA,
@@ -44,7 +48,8 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const report = summarizeInvocations(receipts, expected);
   report.errors.push(...errors);
   report.ok &&= errors.length === 0;
-  writeFileSync(join(root, 'invocations.json'), `${JSON.stringify(report, null, 2)}\n`);
+  mkdirSync(dirname(output), { recursive: true });
+  writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
   const rows = receipts.map((receipt) => {
     const timing = receipt?.timing?.elapsedMillis;
     const seconds = typeof timing === 'number' ? (timing / 1000).toFixed(1) : 'unreported';
@@ -57,7 +62,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     '| Command | Result | Seconds | Reported actions | Skipped targets | Test targets | Cached test attempts (local / remote) |',
     '| --- | --- | ---: | ---: | ---: | ---: | ---: |', ...rows, '',
     ...report.errors.map((error) => `- ${error}`), '',
-    'Raw BEP, JSON trace profiles, console logs, and metrics are in the Bazel evidence artifact (14 days). Missing metrics are not inferred.', '',
+    'Audited BEP/profile projections and numeric metrics are in the Bazel evidence artifact (14 days). Raw captures remain private; missing metrics are not inferred.', '',
   ].join('\n');
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
   console.log(summary);

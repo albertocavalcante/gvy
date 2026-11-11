@@ -57,43 +57,47 @@ jobs:
       - name: Self-test diagnostic and evidence gates
         run: node --test tools/ci/*.test.mjs
 
+      - name: Bootstrap pinned Bazel without recording credentials
+        run: |
+          bazel --nohome_rc --version
+          echo 'BAZELISK_GITHUB_TOKEN=' >> "$GITHUB_ENV"
+
       - name: Build all targets and capture evidence
-        run: node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence" --producer bazel-build build //...
+        run: >-
+          node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence"
+          --private-report-root "$RUNNER_TEMP/bazel-private" --producer bazel-build build //...
 
       - name: Run tests and capture evidence
-        run: node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence" --producer bazel-test test //...
+        run: >-
+          node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence"
+          --private-report-root "$RUNNER_TEMP/bazel-private" --producer bazel-test test //...
 
       - name: Enforce diagnostic accountability
         if: ${{ !cancelled() }}
         run: |
           shopt -s nullglob
-          logs=("$RUNNER_TEMP"/bazel-evidence/*/console.log)
+          logs=("$RUNNER_TEMP"/bazel-private/*/console.log)
           node tools/ci/bazel-diagnostics.mjs \
             --baseline tools/ci/bazel-diagnostics.json \
-            --report "$RUNNER_TEMP/bazel-evidence/diagnostics" "${logs[@]}"
+            --report "$RUNNER_TEMP/bazel-diagnostics-private" "${logs[@]}"
 
       - name: Summarize invocation evidence
         if: ${{ !cancelled() }}
-        run: node tools/ci/summarize-bazel.mjs "$RUNNER_TEMP/bazel-evidence"
+        run: node tools/ci/summarize-bazel.mjs "$RUNNER_TEMP/bazel-evidence" "$RUNNER_TEMP/bazel-summary/invocations.json"
+
+      - name: Audit public artifact contents
+        id: public-evidence
+        if: ${{ !cancelled() }}
+        run: node tools/ci/audit-public-bazel-evidence.mjs --report-root "$RUNNER_TEMP/bazel-evidence"
 
       - name: Upload BEP, profiles and diagnostic evidence
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.public-evidence.outcome == 'success' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bazel-evidence-${{ matrix.name }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/bazel-evidence/
           if-no-files-found: error
           retention-days: 14
-
-      - name: Upload test logs on failure
-        if: failure()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: bazel-testlogs-${{ matrix.name }}
-          path: |
-            bazel-testlogs/**/test.log
-            bazel-testlogs/**/test.xml
-          retention-days: 7
 
   buildifier:
     runs-on: ubuntu-24.04
