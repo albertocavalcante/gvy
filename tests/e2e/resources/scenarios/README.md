@@ -115,6 +115,18 @@ their own keys. For example, a numeric check is `expect: { type: GTE, value: 1 }
 `jsonPath` and `expect`, rather than inside `expect`. Equality checks require a `value`; `value: null` explicitly
 represents JSON null. An empty `expect: {}` checks existence. Snapshot expectations take only a nonblank string path.
 
+## Raw Protocol Parameters
+
+Generic `request` and `notification` steps send the authored `params` JSON value, preserving unknown keys, explicit
+nested nulls, and object, array or scalar shapes. Missing object fields remain distinct from fields set to null.
+Omitting `params` keeps the SDK's existing `params: null` envelope. Arrays and scalars can exercise invalid-parameter
+responses; the server still decides whether a method accepts that shape.
+
+High-level request helpers such as `completion`, `codeAction` and `rename` use generic dispatch and share this raw JSON
+transport. Typed initialization and document lifecycle steps, plus the typed `groovy/discoverTests` and `groovy/runTest`
+request routes, keep their SDK models and serialization rules. Received raw JSON trees retain explicit nulls for
+assertions.
+
 ## Document Versions
 
 `openDocument` defaults to version 1. When `changeDocument.version` is omitted, YAML and Kotlin steps send the next

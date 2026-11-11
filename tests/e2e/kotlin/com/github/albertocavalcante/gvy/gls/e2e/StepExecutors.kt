@@ -338,11 +338,12 @@ class CloseDocumentStepExecutor : StepExecutor<ScenarioStep.CloseDocument> {
     }
 }
 
+// TODO(#1694): Observe transport I/O failures and retire failed pending requests.
+//   See: https://github.com/albertocavalcante/gvy/issues/1694
 class SendNotificationStepExecutor : StepExecutor<ScenarioStep.SendNotification> {
     override fun execute(step: ScenarioStep.SendNotification, context: ScenarioContext, nextStep: ScenarioStep?) {
         val paramsNode = context.interpolateNode(step.params)
-        val paramsObject = paramsNode?.toJavaObject()
-        context.session.endpoint.notify(step.method, paramsObject)
+        context.session.endpoint.notify(step.method, paramsNode?.let(::RawJsonRpcParams))
         context.lastResult = paramsNode ?: JsonNull
     }
 }
@@ -350,10 +351,9 @@ class SendNotificationStepExecutor : StepExecutor<ScenarioStep.SendNotification>
 class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
     override fun execute(step: ScenarioStep.SendRequest, context: ScenarioContext, nextStep: ScenarioStep?) {
         val paramsNode = context.interpolateNode(step.params)
-        val paramsObject = paramsNode?.toJavaObject()
         val timeout = context.effectiveTimeoutMs(step.timeoutMs ?: DEFAULT_REQUEST_TIMEOUT_MS)
 
-        logger.info { "Sending request '${step.method}' with params: $paramsObject" }
+        logger.info { "Sending request '${step.method}' with params: $paramsNode" }
 
         // Route custom @JsonRequest methods through typed proxy for proper response deserialization.
         // Standard LSP methods use the generic endpoint.request() fallback.
@@ -367,13 +367,13 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
 
         val response = if (customRequest != null) {
             logger.info { "Using typed proxy for custom method '${step.method}'" }
-            val future = customRequest.invoke(context.session.groovyServer, paramsObject)
+            val future = customRequest.invoke(context.session.groovyServer, paramsNode?.toJavaObject())
             logger.info { "Custom request future created for '${step.method}', waiting for response..." }
             val result = future.awaitResponse(timeout, context.checkActive)
             logger.info { "Custom request '${step.method}' completed successfully" }
             result
         } else {
-            val future = context.session.endpoint.request(step.method, paramsObject)
+            val future = context.session.endpoint.request(step.method, paramsNode?.let(::RawJsonRpcParams))
             logger.info { "Request future created for '${step.method}', waiting for response..." }
             val result = future.awaitResponse(timeout, context.checkActive)
             logger.info { "Request '${step.method}' completed successfully" }

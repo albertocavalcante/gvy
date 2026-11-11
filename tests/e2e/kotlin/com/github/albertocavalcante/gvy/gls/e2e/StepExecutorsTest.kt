@@ -18,6 +18,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.assertj.core.api.Assertions.assertThat
@@ -262,7 +263,7 @@ class StepExecutorsTest {
     @Test
     fun `CompletionStepExecutor sends a cursor position`() {
         context.registerCursors("file:///ws/A.groovy", listOf(CursorMarker("dot", 4, 7)))
-        val params = slot<Any>()
+        val params = slot<RawJsonRpcParams>()
         every { session.endpoint.request("textDocument/completion", capture(params)) } returns
             CompletableFuture.completedFuture(emptyList<Any>())
 
@@ -271,14 +272,14 @@ class StepExecutorsTest {
             context,
         )
 
-        val sent = params.captured as Map<*, *>
-        assertThat(sent["position"]).isEqualTo(mapOf("line" to 4L, "character" to 7L))
+        val sent = params.captured.json.jsonObject
+        assertThat(sent["position"]).isEqualTo(position(4, 7))
     }
 
     @Test
     fun `RenameStepExecutor sends a cursor position`() {
         context.registerCursors("file:///ws/A.groovy", listOf(CursorMarker(null, 2, 3)))
-        val params = slot<Any>()
+        val params = slot<RawJsonRpcParams>()
         every { session.endpoint.request("textDocument/rename", capture(params)) } returns
             CompletableFuture.completedFuture(emptyMap<String, Any>())
 
@@ -287,8 +288,8 @@ class StepExecutorsTest {
             context,
         )
 
-        val sent = params.captured as Map<*, *>
-        assertThat(sent["position"]).isEqualTo(mapOf("line" to 2L, "character" to 3L))
+        val sent = params.captured.json.jsonObject
+        assertThat(sent["position"]).isEqualTo(position(2, 3))
     }
 
     @Test
