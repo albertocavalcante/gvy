@@ -109,6 +109,8 @@ jobs:
           persist-credentials: false
       - name: Self-test CI policy
         run: node --test tools/ci/*.test.mjs
+      - name: Enforce temporary dependency accountability
+        run: node tools/ci/dependency-maintenance.mjs
       - name: Classify exact revisions
         id: filter
         run: node tools/ci/ci-applicability.mjs "$RUNNER_TEMP/ci-applicability.json"

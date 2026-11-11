@@ -13,6 +13,10 @@ applicability output, a failed path check, an unexpected skip, a cancellation, a
 provisioning fails readiness. Provisioning does not validate the original revision: rerun that revision when the runner
 is available.
 
+The applicability job also enforces temporary dependency ownership and expiry on every invocation, including
+documentation-only changes. A dependency-maintenance failure therefore fails required readiness and is included in the
+completed-job Actions observation; the separate maintenance workflow remains a daily and stacked-PR backstop.
+
 Applicability comes from the exact event base/head revisions and the verified checkout, with a JSON artifact recording
 both source and tested SHAs. Only known narrative documentation is excluded from runtime suites. Unknown paths are
 conservatively tested; fixtures and executable inputs remain applicable regardless of their extension. Release branch
