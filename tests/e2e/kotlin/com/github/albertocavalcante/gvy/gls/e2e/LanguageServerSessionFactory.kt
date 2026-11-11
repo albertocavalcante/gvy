@@ -17,8 +17,6 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
-import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /** Test-JVM system properties forwarded to a language-server subprocess. */
@@ -222,20 +220,6 @@ class LanguageServerSessionFactory(
     }
 }
 
-/** Owns the shared launcher executor, so cancelling listeners also retires their idle threads. */
-private class ListenerExecutor(scenarioName: String) : AutoCloseable {
-    val service: ExecutorService = Executors.newCachedThreadPool { runnable ->
-        Thread(runnable, "groovy-lsp-e2e-$scenarioName").apply { isDaemon = true }
-    }
-
-    override fun close() {
-        service.shutdownNow()
-        check(service.awaitTermination(CLOSE_TIMEOUT.seconds, TimeUnit.SECONDS)) {
-            "LSP listener executor did not stop"
-        }
-    }
-}
-
 /** Terminates an owned subprocess before closing streams that may have blocked readers. */
 private class ServerProcess(val process: Process, private val interruption: CleanupInterruption) : AutoCloseable {
     var stderrPump: Thread? = null
@@ -261,7 +245,8 @@ private class ServerProcess(val process: Process, private val interruption: Clea
     }
 }
 
-private val CLOSE_TIMEOUT: Duration = Duration.ofSeconds(5)
+private const val CLOSE_TIMEOUT_SECONDS = 5L
+private val CLOSE_TIMEOUT: Duration = Duration.ofSeconds(CLOSE_TIMEOUT_SECONDS)
 
 internal fun defaultIsolatedGradleHome(
     environment: Map<String, String>,
