@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.diagnostics.DiagnosticsOrchestrator
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.worker.WorkerSession
@@ -169,7 +170,8 @@ class UnparseableBufferTest {
             published.countDown()
         }
         val providers = mockk<DiagnosticsService>()
-        coEvery { providers.getDiagnostics(any(), any()) } returns emptyList()
+        coEvery { providers.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         try {
             val diagnostics =

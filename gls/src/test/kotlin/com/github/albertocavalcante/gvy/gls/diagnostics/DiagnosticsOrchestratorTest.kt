@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.diagnostics
 import com.github.albertocavalcante.gvy.gls.compilation.CompilationResult
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsService
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import io.mockk.Runs
@@ -22,6 +23,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -62,8 +64,10 @@ class DiagnosticsOrchestratorTest {
         val extra = listOf(Diagnostic().apply { message = "lint one" })
         val result = mockk<CompilationResult>()
         every { result.diagnostics } returns parser
+        every { result.parseCompleted } returns true
         coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnostics.getDiagnostics(any(), any()) } returns extra
+        coEvery { diagnostics.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(extra, emptyList(), emptyList())
         val publications = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publications)) } just Runs
         val orchestrator = DiagnosticsOrchestrator(
@@ -92,13 +96,15 @@ class DiagnosticsOrchestratorTest {
         val client = mockk<LanguageClient>(relaxed = true)
         val result = mockk<CompilationResult>()
         every { result.diagnostics } returns emptyList()
+        every { result.parseCompleted } returns true
         coEvery { compilation.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
         val release = CompletableDeferred<Unit>()
-        coEvery { oldService.getDiagnostics(any(), any()) } coAnswers {
+        coEvery { oldService.collectDiagnostics(any(), any()) } coAnswers {
             withContext(NonCancellable) { release.await() }
-            listOf(Diagnostic().apply { message = "obsolete" })
+            DiagnosticsCollectionResult(listOf(Diagnostic().apply { message = "obsolete" }), emptyList(), emptyList())
         }
-        coEvery { newService.getDiagnostics(any(), any()) } returns listOf(Diagnostic().apply { message = "current" })
+        coEvery { newService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(listOf(Diagnostic().apply { message = "current" }), emptyList(), emptyList())
         val publications = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publications)) } just Runs
         val documents = DocumentProvider().apply { put(testUri, testContent, 1) }
@@ -132,7 +138,8 @@ class DiagnosticsOrchestratorTest {
         val secondCompilation = CompletableDeferred<CompilationResult>()
         coEvery { compilationService.compileAsync(any(), any(), "first content") } returns firstCompilation
         coEvery { compilationService.compileAsync(any(), any(), "second content") } returns secondCompilation
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
         val orchestrator = DiagnosticsOrchestrator(
@@ -185,7 +192,8 @@ class DiagnosticsOrchestratorTest {
         coEvery {
             compilationService.compileAsync(any(), any(), any())
         } returns CompletableDeferred(createMockCompilationResult())
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
         val orchestrator = DiagnosticsOrchestrator(
@@ -223,10 +231,10 @@ class DiagnosticsOrchestratorTest {
         val result = createMockCompilationResult(listOf(parserDiagnostic))
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } coAnswers {
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } coAnswers {
             // Simulate slow diagnostic provider
             delay(100)
-            emptyList()
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         }
 
         val publishedParams = mutableListOf<PublishDiagnosticsParams>()
@@ -272,7 +280,8 @@ class DiagnosticsOrchestratorTest {
 
         val result = createMockCompilationResult(listOf(parserDiagnostic))
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns listOf(extraDiagnostic)
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(listOf(extraDiagnostic), emptyList(), emptyList())
 
         val publishedParams = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publishedParams)) } just Runs
@@ -392,19 +401,16 @@ class DiagnosticsOrchestratorTest {
 
     // ==================== Test: cancelAndRemove stops running job ====================
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test
     fun `cancelAndRemove stops running job`(): Unit = runTest {
-        // Given
-        val scope = CoroutineScope(SupervisorJob())
+        val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
         val compilationService = mockk<GroovyCompilationService>()
         val diagnosticsService = mockk<DiagnosticsService>()
         val documentProvider = openDocuments()
         val client = mockk<LanguageClient>()
-
-        // Create a deferred that will never complete
         val deferred = CompletableDeferred<CompilationResult>()
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns deferred
-
         val orchestrator = DiagnosticsOrchestrator(
             coroutineScope = scope,
             compilationService = compilationService,
@@ -414,24 +420,22 @@ class DiagnosticsOrchestratorTest {
             client = { client },
         )
 
-        // When: Start a job and then cancel it
-        orchestrator.trigger(testUri, testContent)
-        val jobBeforeCancel = orchestrator.getDiagnosticJob(testUri)
-        assertNotNull(jobBeforeCancel, "Job should exist before cancel")
+        try {
+            orchestrator.trigger(testUri, testContent)
+            runCurrent()
+            val job = assertNotNull(orchestrator.getDiagnosticJob(testUri))
+            coVerify(exactly = 1) { compilationService.compileAsync(any(), testUri, testContent) }
+            assertFalse(job.isCompleted, "Compilation must be suspended before cancellation")
 
-        orchestrator.cancelAndRemove(testUri)
+            orchestrator.cancelAndRemove(testUri)
+            runCurrent()
 
-        // Give it time to process cancellation
-        delay(50)
-
-        // Then: Job should be cancelled and removed
-        val jobAfterCancel = orchestrator.getDiagnosticJob(testUri)
-        assertNull(jobAfterCancel, "Job should be removed after cancel")
-        assertTrue(jobBeforeCancel.isCancelled, "Job should be cancelled")
-
-        // Cleanup
-        deferred.cancel()
-        scope.cancel()
+            assertNull(orchestrator.getDiagnosticJob(testUri), "Job should be removed after cancel")
+            assertTrue(job.isCancelled, "Running job should be cancelled")
+        } finally {
+            deferred.cancel()
+            scope.cancel()
+        }
     }
 
     // ==================== Test: refreshAll triggers for all open documents ====================
@@ -459,7 +463,8 @@ class DiagnosticsOrchestratorTest {
 
         val result = createMockCompilationResult()
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
         val orchestrator = DiagnosticsOrchestrator(
@@ -497,7 +502,8 @@ class DiagnosticsOrchestratorTest {
         val result = createMockCompilationResult(listOf(parserDiagnostic))
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
 
         val publishedParams = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publishedParams)) } just Runs
@@ -545,7 +551,8 @@ class DiagnosticsOrchestratorTest {
         val deferred = CompletableDeferred<CompilationResult>()
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns deferred
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         every { client.publishDiagnostics(any()) } just Runs
 
         val orchestrator = DiagnosticsOrchestrator(
@@ -600,7 +607,8 @@ class DiagnosticsOrchestratorTest {
         val result = createMockCompilationResult(listOf(parserDiagnostic))
 
         coEvery { compilationService.compileAsync(any(), any(), any()) } returns CompletableDeferred(result)
-        coEvery { diagnosticsService.getDiagnostics(any(), any()) } returns emptyList()
+        coEvery { diagnosticsService.collectDiagnostics(any(), any()) } returns
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
 
         val publishedParams = mutableListOf<PublishDiagnosticsParams>()
         every { client.publishDiagnostics(capture(publishedParams)) } just Runs
@@ -639,5 +647,6 @@ class DiagnosticsOrchestratorTest {
     private fun createMockCompilationResult(diagnostics: List<Diagnostic> = emptyList()): CompilationResult =
         mockk<CompilationResult> {
             every { this@mockk.diagnostics } returns diagnostics
+            every { parseCompleted } returns true
         }
 }
