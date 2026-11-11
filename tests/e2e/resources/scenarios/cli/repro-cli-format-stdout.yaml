@@ -1,0 +1,23 @@
+name: repro-cli-format-stdout
+description: '`gls format` writes only the formatted text to stdout'
+xfail:
+  issue: 1543
+  reason: stdout of format also receives Logback status lines
+  match: '\|-WARN in ch\.qos\.logback'
+workspace:
+  fixture: empty-workspace
+  files:
+    A.groovy: |
+      class A {}
+steps:
+  - cli:
+      command: gls format
+      args:
+        - "A.groovy"
+      saveAs: formatResult
+      timeoutSeconds: 60
+  - assert:
+      source: formatResult
+      checks:
+        - jsonPath: $.stdout
+          expect: { type: EQUALS, value: "class A {}\n" }
