@@ -1,7 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import io.github.oshai.kotlinlogging.KotlinLogging
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -12,57 +11,49 @@ import kotlin.io.path.isDirectory
 object WorkspaceFixture {
     private val logger = KotlinLogging.logger {}
 
-    fun materialize(scenarioSource: Path, fixtureName: String?): Path {
-        val tempDir = Files.createTempDirectory("groovy-lsp-e2e-")
+    fun materialize(scenarioSource: Path, fixtureName: String?): Path =
+        materialize(scenarioSource, fixtureName, { Files.createTempDirectory("groovy-lsp-e2e-") })
 
-        if (fixtureName != null) {
-            var root = scenarioSource.parent
-            var fixturesDir: Path? = null
-
-            // Search up the tree for 'workspaces' or 'fixtures'
-            while (root != null) {
-                val workspaces = root.resolve("workspaces")
-                if (workspaces.exists() && workspaces.resolve(fixtureName).exists()) {
-                    fixturesDir = workspaces
-                    break
-                }
-
-                val fixtures = root.resolve("fixtures")
-                if (fixtures.exists() && fixtures.resolve(fixtureName).exists()) {
-                    fixturesDir = fixtures
-                    break
-                }
-                root = root.parent
+    internal fun materialize(
+        scenarioSource: Path,
+        fixtureName: String?,
+        createDirectory: () -> Path,
+        copyFixture: (Path, Path) -> Unit = ::copyDirectory,
+    ): Path {
+        val fixture = fixtureName?.let { findFixture(scenarioSource, it) }
+        val tempDir = createDirectory()
+        var retained = false
+        AutoCloseable { if (!retained) cleanup(tempDir) }.use {
+            if (fixture != null) {
+                copyFixture(fixture, tempDir)
+                logger.info { "Materialized fixture '$fixtureName' into $tempDir" }
             }
-
-            requireNotNull(fixturesDir) {
-                "Could not find 'workspaces' or 'fixtures' directory in hierarchy of $scenarioSource"
-            }
-
-            val fixturePath = fixturesDir.resolve(fixtureName)
-            require(fixturePath.exists() && fixturePath.isDirectory()) {
-                "Fixture '$fixtureName' referenced by $scenarioSource not found at $fixturePath"
-            }
-            copyDirectory(fixturePath, tempDir)
-            logger.info { "Materialized fixture '$fixtureName' into $tempDir" }
-            Files.list(tempDir).use { stream ->
-                stream.forEach { entry ->
-                    logger.info { "Fixture root entry: ${entry.fileName}" }
-                }
-            }
+            retained = true
+            return tempDir
         }
-
-        return tempDir
     }
 
     fun cleanup(path: Path) {
-        try {
-            Files.walk(path)
-                .sorted(Comparator.reverseOrder())
-                .forEach { Files.deleteIfExists(it) }
-        } catch (ex: IOException) {
-            logger.warn(ex) { "Failed to delete temporary workspace at $path" }
+        Files.walk(path).use { paths ->
+            paths.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) }
         }
+    }
+
+    private fun findFixture(scenarioSource: Path, fixtureName: String): Path {
+        var root = scenarioSource.parent
+        while (root != null) {
+            for (directory in listOf("workspaces", "fixtures")) {
+                val candidate = root.resolve(directory).resolve(fixtureName)
+                if (candidate.exists()) {
+                    require(candidate.isDirectory()) {
+                        "Fixture '$fixtureName' referenced by $scenarioSource is not a directory: $candidate"
+                    }
+                    return candidate
+                }
+            }
+            root = root.parent
+        }
+        throw IllegalArgumentException("Could not find fixture '$fixtureName' in hierarchy of $scenarioSource")
     }
 
     private fun copyDirectory(source: Path, target: Path) {

@@ -227,7 +227,7 @@ class ShutdownStepExecutor : StepExecutor<ScenarioStep.Shutdown> {
 
 class ExitStepExecutor : StepExecutor<ScenarioStep.Exit> {
     override fun execute(step: ScenarioStep.Exit, context: ScenarioContext, nextStep: ScenarioStep?) {
-        context.session.server.exit()
+        context.session.exit()
     }
 }
 
