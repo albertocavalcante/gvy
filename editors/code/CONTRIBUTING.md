@@ -17,9 +17,12 @@ Thank you for your interest in contributing to the Groovy Language Support exten
 
 1. **Clone the repository**
 
+   Development happens in the [gvy monorepo](https://github.com/albertocavalcante/gvy/tree/main). The
+   [standalone extension repository](https://github.com/albertocavalcante/vscode-groovy) is a read-only mirror.
+
    ```bash
-   git clone https://github.com/albertocavalcante/gvy.git
-   cd gvy/editors/code
+   git clone https://github.com/albertocavalcante/gvy
+   cd ./gvy/editors/code
    ```
 
 2. **Install dependencies**
@@ -312,7 +315,8 @@ Verify functionality on:
 
 - **Issues**: [GitHub Issues](https://github.com/albertocavalcante/gvy/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/albertocavalcante/gvy/discussions)
-- **Documentation**: Check the [README](README.md) and [extension CI workflow](../../.github/workflows/extension.yml)
+- **Documentation**: Check the [README](README.md) and
+  [extension CI workflow](https://github.com/albertocavalcante/gvy/blob/main/.github/workflows/extension.yml)
 
 ## Release Process
 

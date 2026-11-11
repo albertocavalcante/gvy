@@ -2,8 +2,9 @@
 
 Copilot / AI helpers: follow this when working in this repo.
 
-Copilot setup and its preparation workflow are documented in the [Copilot guide](../../kb/extension/COPILOT.md). Human
-development procedures belong in [CONTRIBUTING.md](CONTRIBUTING.md); the [README](README.md) is for extension users.
+Copilot setup and its preparation workflow are documented in the
+[Copilot guide](https://github.com/albertocavalcante/gvy/blob/main/kb/extension/COPILOT.md). Human development
+procedures belong in [CONTRIBUTING.md](CONTRIBUTING.md); the [README](README.md) is for extension users.
 
 ## Persona
 
@@ -14,7 +15,7 @@ development procedures belong in [CONTRIBUTING.md](CONTRIBUTING.md); the [README
 ## LSP-First Architecture
 
 **Core Principle**: This extension is a **thin wrapper**. All language intelligence lives in the Groovy LSP
-([gls/](../../gls/)).
+([gls/](https://github.com/albertocavalcante/gvy/tree/main/gls)).
 
 ### Feature Requests → LSP First
 
