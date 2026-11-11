@@ -14,7 +14,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Input
@@ -52,9 +53,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
-import com.github.albertocavalcante.gvy.viz.model.CoreAstNodeDto
-import com.github.albertocavalcante.gvy.viz.model.NativeAstNodeDto
-import com.github.albertocavalcante.gvy.viz.model.RewriteAstNodeDto
 
 /**
  * Tree view component displaying the AST hierarchy.
@@ -68,20 +66,37 @@ fun AstTreeView(
     modifier: Modifier = Modifier,
 ) {
     var filterText by remember { mutableStateOf("") }
-    val expandedNodes = remember { mutableStateMapOf<String, Boolean>() }
-    val listState = rememberLazyListState()
+    val snapshot = AstTreeSnapshot(astTree)
+    val projection = remember(snapshot) { astTree?.let(::AstTreeProjection) }
+    // Expansion and scroll belong to this parse snapshot; IDs are reused by converters.
+    val expandedNodes = remember(snapshot) { mutableStateMapOf<String, Boolean>() }
+    val listState = remember(snapshot) { LazyListState() }
+    val included = remember(projection, filterText) { projection?.matchingIds(filterText) }
+    val rows = projection?.visibleRows(expandedNodes, included).orEmpty()
+    val selectionPath = selectedNode?.let { projection?.pathTo(it) }.orEmpty()
+    var pendingReveal by remember(snapshot) { mutableStateOf<AstNodeDto?>(null) }
 
-    // Auto-expand parents of selected node
-    LaunchedEffect(selectedNode) {
-        selectedNode?.let { node ->
-            if (node.children.isNotEmpty()) {
-                expandedNodes[node.id] = true
+    LaunchedEffect(projection, selectedNode) {
+        pendingReveal = selectedNode.takeIf { selectionPath.isNotEmpty() }
+        if (selectionPath.isNotEmpty()) {
+            val hiddenByFilter = included != null && selectedNode?.id !in included
+            if (included == null || hiddenByFilter) {
+                selectionPath.dropLast(1).forEach { expandedNodes[it] = true }
             }
+            // Visible filtered selections preserve the manual folds restored when filtering ends.
+            if (hiddenByFilter) filterText = ""
+        }
+    }
+    LaunchedEffect(projection, rows, pendingReveal) {
+        val target = pendingReveal ?: return@LaunchedEffect
+        val index = rows.indexOfFirst { it.node === target }
+        if (index >= 0) {
+            if (!listState.isFullyVisible(target.id)) listState.scrollToItem(index)
+            pendingReveal = null
         }
     }
 
     Column(modifier = modifier) {
-        // Borderless Filter bar
         TextField(
             value = filterText,
             onValueChange = { filterText = it },
@@ -97,47 +112,31 @@ fun AstTreeView(
                 unfocusedIndicatorColor = Color.Transparent,
             ),
         )
-
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-
         Box(modifier = Modifier.weight(1f).padding(top = 4.dp).fillMaxSize()) {
-            if (astTree == null) {
+            if (rows.isEmpty()) {
                 Text(
-                    text = "No AST to display.",
-                    style = MaterialTheme.typography.bodyMedium,
+                    text = if (astTree == null) "No AST to display." else "No match.",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.align(Alignment.Center),
                 )
             } else {
-                val filteredTree = remember(astTree, filterText) {
-                    if (filterText.isBlank()) astTree else filterAst(astTree, filterText)
-                }
-
-                if (filteredTree == null) {
-                    Text(
-                        text = "No match.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.align(Alignment.Center),
-                    )
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        state = listState,
-                    ) {
-                        item {
-                            TreeNodeItem(
-                                node = filteredTree,
-                                depth = 0,
-                                isExpanded = expandedNodes[filteredTree.id] ?: true,
-                                selectedNodeId = selectedNode?.id,
-                                onToggleExpand = {
-                                    expandedNodes[filteredTree.id] = !(expandedNodes[filteredTree.id] ?: true)
-                                },
-                                onNodeClick = { onNodeSelected(it) },
-                                expandedNodes = expandedNodes,
-                            )
-                        }
+                LazyColumn(modifier = Modifier.fillMaxSize(), state = listState) {
+                    items(rows, key = { it.node.id }) { row ->
+                        NodeRow(
+                            node = row.node,
+                            isSelected = row.node === selectedNode,
+                            isExpanded = row.isExpanded,
+                            hasChildren = row.hasChildren,
+                            canToggleExpand = included == null,
+                            indentSize = (row.depth * 12).dp,
+                            onNodeClick = onNodeSelected,
+                            onToggleExpand = {
+                                // Filtering temporarily opens all matching paths without changing manual expansion.
+                                if (included == null) expandedNodes[row.node.id] = !row.isExpanded
+                            },
+                        )
                     }
                 }
             }
@@ -145,65 +144,11 @@ fun AstTreeView(
     }
 }
 
-private fun filterAst(node: AstNodeDto, query: String): AstNodeDto? {
-    val matches = node.type.contains(query, ignoreCase = true) ||
-        (node.properties["name"]?.contains(query, ignoreCase = true) ?: false)
-
-    val filteredChildren = node.children.mapNotNull { filterAst(it, query) }
-
-    if (!matches && filteredChildren.isEmpty()) return null
-
-    // Return a copy of the node with only filtered children
-    return when (node) {
-        is CoreAstNodeDto -> node.copy(children = filteredChildren)
-        is NativeAstNodeDto -> node.copy(children = filteredChildren)
-        is RewriteAstNodeDto -> node.copy(children = filteredChildren)
-    }
-}
-
-@Composable
-@Suppress("LongParameterList")
-private fun TreeNodeItem(
-    node: AstNodeDto,
-    depth: Int,
-    isExpanded: Boolean,
-    selectedNodeId: String?,
-    onToggleExpand: () -> Unit,
-    onNodeClick: (AstNodeDto) -> Unit,
-    expandedNodes: MutableMap<String, Boolean>,
-) {
-    val isSelected = selectedNodeId == node.id
-    val hasChildren = node.children.isNotEmpty()
-    val indentSize = (depth * 12).dp
-
-    Column {
-        NodeRow(
-            node = node,
-            isSelected = isSelected,
-            isExpanded = isExpanded,
-            hasChildren = hasChildren,
-            indentSize = indentSize,
-            onNodeClick = onNodeClick,
-            onToggleExpand = onToggleExpand,
-        )
-
-        // Children (if expanded)
-        if (isExpanded && hasChildren) {
-            node.children.forEach { child ->
-                val childExpanded = expandedNodes[child.id] ?: (depth < 1)
-                TreeNodeItem(
-                    node = child,
-                    depth = depth + 1,
-                    isExpanded = childExpanded,
-                    selectedNodeId = selectedNodeId,
-                    onToggleExpand = {
-                        expandedNodes[child.id] = !childExpanded
-                    },
-                    onNodeClick = onNodeClick,
-                    expandedNodes = expandedNodes,
-                )
-            }
-        }
+private fun LazyListState.isFullyVisible(nodeId: String): Boolean {
+    val layout = layoutInfo
+    return layout.visibleItemsInfo.any {
+        it.key == nodeId && it.offset >= layout.viewportStartOffset &&
+            it.offset + it.size <= layout.viewportEndOffset
     }
 }
 
@@ -214,6 +159,7 @@ private fun NodeRow(
     isSelected: Boolean,
     isExpanded: Boolean,
     hasChildren: Boolean,
+    canToggleExpand: Boolean,
     indentSize: Dp,
     onNodeClick: (AstNodeDto) -> Unit,
     onToggleExpand: () -> Unit,
@@ -238,8 +184,12 @@ private fun NodeRow(
         if (hasChildren) {
             Icon(
                 imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (isExpanded) "Collapse" else "Expand",
-                modifier = Modifier.size(16.dp).clickable { onToggleExpand() },
+                contentDescription = when {
+                    !canToggleExpand -> "Expanded to show matches"
+                    isExpanded -> "Collapse"
+                    else -> "Expand"
+                },
+                modifier = Modifier.size(16.dp).clickable(enabled = canToggleExpand) { onToggleExpand() },
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         } else {

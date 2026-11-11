@@ -26,6 +26,7 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.junit.jupiter)
+    testImplementation("org.jetbrains.compose.ui:ui-test-junit4:${libs.versions.compose.get()}")
 }
 
 compose.desktop {
@@ -54,10 +55,11 @@ compose.desktop {
 
 tasks.test {
     useJUnitPlatform()
+    systemProperty("java.awt.headless", "true")
 }
 
-// Disable coverage verification for the desktop app module.
-// This module currently has no unit tests, so enforcing the global 54% minimum would fail with 0%.
+// TODO(#604): Restore the desktop coverage gate after covering the remaining app/file/export flows.
+// Preserve the existing exemption while regression coverage is expanded.
 tasks.matching { it.name == "koverVerify" }.configureEach {
     enabled = false
 }
