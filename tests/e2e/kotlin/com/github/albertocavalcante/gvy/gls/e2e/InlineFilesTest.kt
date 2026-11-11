@@ -72,6 +72,36 @@ class InlineFilesTest {
     }
 
     @Test
+    fun `paths are normalized to slash-separated relative form`() {
+        val markers = InlineFiles.write(root, mapOf("./a//b\\C.groovy" to "|^c|x"))
+
+        assertThat(markers).isEqualTo(mapOf("a/b/C.groovy" to listOf(CursorMarker("c", 0, 0))))
+        assertThat(Files.readString(root.resolve("a/b/C.groovy"))).isEqualTo("x")
+    }
+
+    @Test
+    fun `paths that are equal after normalization are rejected`() {
+        assertThatThrownBy { InlineFiles.write(root, mapOf("./a/B.groovy" to "x", "a/B.groovy" to "y")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("./a/B.groovy")
+            .hasMessageContaining("a/B.groovy")
+            .hasMessageContaining("same file")
+        assertThat(Files.exists(root.resolve("a/B.groovy"))).isFalse()
+    }
+
+    @Test
+    fun `paths that name a directory are rejected`() {
+        Files.createDirectories(root.resolve("src/fixtureDir"))
+
+        listOf("src/", "src\\", ".", "src/fixtureDir").forEach { path ->
+            assertThatThrownBy { InlineFiles.write(root, mapOf(path to "x")) }
+                .isInstanceOf(IllegalArgumentException::class.java)
+                .hasMessageContaining(path)
+                .hasMessageContaining("file")
+        }
+    }
+
+    @Test
     fun `blank paths are rejected`() {
         assertThatThrownBy { InlineFiles.write(root, mapOf(" " to "x")) }
             .isInstanceOf(IllegalArgumentException::class.java)

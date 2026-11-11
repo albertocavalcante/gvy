@@ -60,7 +60,7 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
             )
             context.registerBuiltInVariables()
             inlineMarkers.forEach { (path, markers) ->
-                context.registerCursors(workspace.resolveUri(path), path, markers)
+                context.registerCursors(workspace.resolveUri(path), markers)
             }
 
             scenario.steps.forEachIndexed { index, step ->
@@ -98,12 +98,24 @@ class ScenarioExecutor(private val sessionFactory: LanguageServerSessionFactory)
             scenarioSource = java.nio.file.Path.of(definition.source),
             fixtureName = config?.fixture,
         )
-        val markers = try {
-            InlineFiles.write(root, config?.files.orEmpty())
-        } catch (ex: IllegalArgumentException) {
-            WorkspaceFixture.cleanup(root)
-            throw IllegalArgumentException("Scenario '${definition.scenario.name}': ${ex.message}", ex)
-        }
+        val markers = writeInlineFilesOrCleanUp(root, definition.scenario.name, config?.files.orEmpty())
         return ScenarioWorkspace(root) to markers
+    }
+}
+
+/**
+ * Writes [files] into the materialized workspace at [root]. On any failure the workspace is deleted, since the
+ * scenario never starts and nothing else would clean it up; invalid entries are reported with [scenarioName].
+ */
+internal fun writeInlineFilesOrCleanUp(
+    root: java.nio.file.Path,
+    scenarioName: String,
+    files: Map<String, String>,
+): Map<String, List<CursorMarker>> = runCatching { InlineFiles.write(root, files) }.getOrElse { failure ->
+    WorkspaceFixture.cleanup(root)
+    throw if (failure is IllegalArgumentException) {
+        IllegalArgumentException("Scenario '$scenarioName': ${failure.message}", failure)
+    } else {
+        failure
     }
 }

@@ -115,8 +115,8 @@ steps:
 | `rename`           | Sends `textDocument/rename` at `position` or `line`/`character`     |
 
 Cursor markers (`|^|`, `|^name|`) in `openDocument.text`, full-text `changeDocument.text` and `workspace.files` are
-stripped before the server sees the text. See
-[Cursor Markers and Inline Files](resources/scenarios/README.md#cursor-markers-and-inline-files).
+stripped before the server sees the text. There is no escape syntax, so text such as `~/(a|^b|c)/` is read as a marker.
+See [Cursor Markers and Inline Files](resources/scenarios/README.md#cursor-markers-and-inline-files).
 
 ## Assertion Syntax
 

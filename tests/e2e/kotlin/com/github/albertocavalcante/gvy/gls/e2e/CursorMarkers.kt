@@ -22,6 +22,16 @@ object CursorMarkers {
 
     private val MARKER = Regex("""\|\^([A-Za-z_][\w-]*)?\|""")
 
+    /** Fails when [text] contains a marker; [where] names a field in which markers are not processed. */
+    fun requireNone(text: String, where: String) {
+        MARKER.find(text)?.let { match ->
+            throw IllegalArgumentException(
+                "Cursor marker '${match.value}' in $where is not processed there; markers work in " +
+                    "openDocument.text, full-text changeDocument.text and workspace.files",
+            )
+        }
+    }
+
     fun strip(text: String): MarkedText {
         val matches = MARKER.findAll(text).toList()
         if (matches.isEmpty()) return MarkedText(text, emptyList())

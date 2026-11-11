@@ -55,36 +55,52 @@ data class ScenarioContext(
         else -> error("Document reference must specify either uri or path")
     }
 
-    /**
-     * Records where [markers] point in the document at [uri], replacing earlier cursors with the same name.
-     * [path] is the workspace-relative path when the document was named by path; otherwise the file path of [uri].
-     */
-    fun registerCursors(uri: String, path: String?, markers: List<CursorMarker>) {
-        val effectivePath =
-            path ?: runCatching { java.nio.file.Path.of(java.net.URI.create(uri)).toString() }.getOrNull()
+    /** Records where [markers] point in the document at [uri], replacing earlier cursors with the same name. */
+    fun registerCursors(uri: String, markers: List<CursorMarker>) {
+        val path = workspaceRelativePath(uri)
         markers.forEach { marker ->
-            cursors[marker.name.orEmpty()] = CursorLocation(uri, effectivePath, marker.line, marker.character)
+            cursors[marker.name.orEmpty()] = CursorLocation(uri, path, marker.line, marker.character)
         }
     }
 
-    /** Strips cursor markers from [text], registers them against [uri], and returns the text to send. */
-    fun stripCursorMarkers(uri: String, path: String?, text: String): String {
+    /**
+     * Strips cursor markers from [text], the new full text of the document at [uri], and returns the text to send.
+     * Cursors from the document's previous text are dropped first, so a name the new text no longer marks
+     * cannot resolve to a stale position.
+     */
+    fun stripCursorMarkers(uri: String, text: String): String {
         val marked = try {
             CursorMarkers.strip(text)
         } catch (ex: IllegalArgumentException) {
             throw IllegalArgumentException("Document '$uri': ${ex.message}", ex)
         }
-        registerCursors(uri, path, marked.markers)
+        cursors.values.removeAll { it.uri == uri }
+        registerCursors(uri, marked.markers)
         return marked.text
     }
 
+    /** The decoded, `/`-separated path of [uri] relative to the workspace root, or null when it lies outside. */
+    private fun workspaceRelativePath(uri: String): String? = runCatching {
+        val file = java.nio.file.Path.of(java.net.URI.create(uri)).normalize()
+        val root = workspace.rootDir.toAbsolutePath().normalize()
+        if (file.startsWith(root)) root.relativize(file).joinToString("/") else null
+    }.getOrNull()
+
     fun saveResult(name: String, node: JsonElement) {
+        requireAssignable(name)
         savedResults[name] = node
         variables[name] = node
     }
 
     fun setVariable(name: String, node: JsonElement) {
+        requireAssignable(name)
         variables[name] = node
+    }
+
+    private fun requireAssignable(name: String) {
+        require(name != CURSOR_ROOT && !name.startsWith("$CURSOR_ROOT.")) {
+            "Variable name '$name' is reserved for cursor markers ({{cursor}}, {{cursor.name}})"
+        }
     }
 
     fun interpolateString(value: String): String {
@@ -187,7 +203,9 @@ data class ScenarioContext(
         "line" -> JsonPrimitive(line)
         "character" -> JsonPrimitive(character)
         "uri" -> JsonPrimitive(uri)
-        else -> JsonPrimitive(requireNotNull(path) { "Cursor '{{$expr}}' points at '$uri', which has no file path" })
+        else -> JsonPrimitive(
+            requireNotNull(path) { "Cursor '{{$expr}}' points at '$uri', which is outside the workspace" },
+        )
     }
 
     fun evaluateCheck(node: JsonElement, check: JsonCheck, quiet: Boolean = false): Boolean {

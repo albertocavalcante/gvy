@@ -235,9 +235,9 @@ class ExitStepExecutor : StepExecutor<ScenarioStep.Exit> {
 class OpenDocumentStepExecutor : StepExecutor<ScenarioStep.OpenDocument> {
     override fun execute(step: ScenarioStep.OpenDocument, context: ScenarioContext, nextStep: ScenarioStep?) {
         val uri = context.resolveUri(step.uri, step.path)
-        val path = step.path?.let(context::interpolateString)
+        // Interpolate first so marker positions refer to the text the server receives.
         val text = step.text
-            ?.let { context.stripCursorMarkers(uri, path, context.interpolateString(it)) }
+            ?.let { context.stripCursorMarkers(uri, context.interpolateString(it)) }
             ?: fileContents(uri)
         val languageId = context.interpolateString(step.languageId)
 
@@ -272,13 +272,13 @@ class ChangeDocumentStepExecutor : StepExecutor<ScenarioStep.ChangeDocument> {
         // If text field is provided and contentChanges is empty, treat as full-document replacement
         val changes: List<TextDocumentContentChangeEvent> =
             if (step.text != null && step.contentChanges.isEmpty()) {
-                val path = step.path?.let(context::interpolateString)
-                val interpolatedText = context.stripCursorMarkers(uri, path, context.interpolateString(step.text))
+                val interpolatedText = context.stripCursorMarkers(uri, context.interpolateString(step.text))
                 // Full document replacement - use simpler constructor (no range = replace all)
                 listOf(TextDocumentContentChangeEvent(interpolatedText))
             } else {
                 step.contentChanges.map { change ->
                     val text = context.interpolateString(change.text)
+                    CursorMarkers.requireNone(text, "changeDocument.contentChanges")
                     val lsp4jRange = change.range?.let {
                         Range(
                             Position(it.start.line, it.start.character),
@@ -305,7 +305,9 @@ class SaveDocumentStepExecutor : StepExecutor<ScenarioStep.SaveDocument> {
         val uri = context.resolveUri(step.uri, step.path)
         val identifier = TextDocumentIdentifier(uri)
         val params = DidSaveTextDocumentParams(identifier).apply {
-            text = step.text?.let { context.interpolateString(it) }
+            text = step.text?.let { context.interpolateString(it) }?.also {
+                CursorMarkers.requireNone(it, "saveDocument.text")
+            }
         }
         context.session.server.textDocumentService.didSave(params)
         context.lastResult = JsonBridge.toJsonElement(params)

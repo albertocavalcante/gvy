@@ -28,6 +28,8 @@ import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.MessageType
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
 
@@ -38,12 +40,16 @@ class StepExecutorsTest {
         prettyPrint = true
     }
     private val session: LanguageServerSession = mockk(relaxed = true)
-    private val workspace: ScenarioWorkspace = mockk(relaxed = true)
+
+    @TempDir
+    lateinit var workspaceRoot: Path
+    private lateinit var workspace: ScenarioWorkspace
     private val definition: ScenarioDefinition = mockk(relaxed = true)
     private lateinit var context: ScenarioContext
 
     @BeforeEach
     fun setup() {
+        workspace = ScenarioWorkspace(workspaceRoot)
         val jsonPathConfig = Configuration.builder()
             .jsonProvider(JsonSmartJsonProvider())
             .mappingProvider(JsonSmartMappingProvider())
@@ -187,7 +193,7 @@ class StepExecutorsTest {
     @Test
     fun `OpenDocumentStepExecutor strips markers and registers cursors`() {
         val step = ScenarioStep.OpenDocument(
-            uri = "file:///ws/src/Main.groovy",
+            path = "src/Main.groovy",
             text = "def {{name}} = |^|1\nprintln |^use|{{name}}\n",
         )
         context.variables["name"] = JsonPrimitive("greeting")
@@ -205,8 +211,8 @@ class StepExecutorsTest {
         assertThat(context.interpolateNode(JsonPrimitive("{{cursor.use}}"))).isEqualTo(position(1, 8))
         assertThat(context.interpolateNode(JsonPrimitive("{{cursor.use.line}}"))).isEqualTo(JsonPrimitive(1))
         assertThat(context.interpolateNode(JsonPrimitive("{{cursor.character}}"))).isEqualTo(JsonPrimitive(15))
-        assertThat(context.interpolateString("{{cursor.use.uri}}")).isEqualTo("file:///ws/src/Main.groovy")
-        assertThat(context.interpolateString("{{cursor.use.path}}")).isEqualTo("/ws/src/Main.groovy")
+        assertThat(context.interpolateString("{{cursor.use.uri}}")).isEqualTo(workspace.resolveUri("src/Main.groovy"))
+        assertThat(context.interpolateString("{{cursor.use.path}}")).isEqualTo("src/Main.groovy")
     }
 
     @Test
@@ -239,7 +245,7 @@ class StepExecutorsTest {
 
     @Test
     fun `unknown cursor names fail with the registered names`() {
-        context.registerCursors("file:///ws/A.groovy", null, listOf(CursorMarker("known", 0, 0)))
+        context.registerCursors("file:///ws/A.groovy", listOf(CursorMarker("known", 0, 0)))
 
         assertThatThrownBy { context.interpolateString("{{cursor.missing}}") }
             .isInstanceOf(IllegalArgumentException::class.java)
@@ -255,7 +261,7 @@ class StepExecutorsTest {
 
     @Test
     fun `CompletionStepExecutor sends a cursor position`() {
-        context.registerCursors("file:///ws/A.groovy", null, listOf(CursorMarker("dot", 4, 7)))
+        context.registerCursors("file:///ws/A.groovy", listOf(CursorMarker("dot", 4, 7)))
         val params = slot<Any>()
         every { session.endpoint.request("textDocument/completion", capture(params)) } returns
             CompletableFuture.completedFuture(emptyList<Any>())
@@ -271,7 +277,7 @@ class StepExecutorsTest {
 
     @Test
     fun `RenameStepExecutor sends a cursor position`() {
-        context.registerCursors("file:///ws/A.groovy", null, listOf(CursorMarker(null, 2, 3)))
+        context.registerCursors("file:///ws/A.groovy", listOf(CursorMarker(null, 2, 3)))
         val params = slot<Any>()
         every { session.endpoint.request("textDocument/rename", capture(params)) } returns
             CompletableFuture.completedFuture(emptyMap<String, Any>())
@@ -294,6 +300,108 @@ class StepExecutorsTest {
             )
         }.isInstanceOf(IllegalArgumentException::class.java)
             .hasMessageContaining("either")
+    }
+
+    @Test
+    fun `new text for a document drops that document's old cursors`() {
+        val a = workspace.resolveUri("A.groovy")
+        val b = workspace.resolveUri("B.groovy")
+        OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(uri = a, text = "|^a|x |^gone|y"), context)
+        OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(uri = b, text = "|^b|z"), context)
+
+        ChangeDocumentStepExecutor().execute(ScenarioStep.ChangeDocument(uri = a, version = 2, text = "x|^a|"), context)
+
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.a}}"))).isEqualTo(position(0, 1))
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.b}}"))).isEqualTo(position(0, 0))
+        assertThatThrownBy { context.interpolateString("{{cursor.gone}}") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("gone")
+
+        OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(uri = a, text = "no markers"), context)
+
+        assertThatThrownBy { context.interpolateString("{{cursor.a}}") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.b}}"))).isEqualTo(position(0, 0))
+    }
+
+    @Test
+    fun `cursor path is workspace-relative and decoded however the document was named`() {
+        OpenDocumentStepExecutor().execute(
+            ScenarioStep.OpenDocument(path = "./src/My Café.groovy", text = "|^byPath|x"),
+            context,
+        )
+        OpenDocumentStepExecutor().execute(
+            ScenarioStep.OpenDocument(uri = workspace.resolveUri("src/Ünï code.groovy"), text = "|^byUri|x"),
+            context,
+        )
+
+        assertThat(context.interpolateString("{{cursor.byPath.path}}")).isEqualTo("src/My Café.groovy")
+        assertThat(context.interpolateString("{{cursor.byUri.path}}")).isEqualTo("src/Ünï code.groovy")
+        assertThat(context.interpolateString("{{cursor.byUri.uri}}")).contains("%20")
+    }
+
+    @Test
+    fun `cursor path outside the workspace fails clearly`() {
+        OpenDocumentStepExecutor().execute(
+            ScenarioStep.OpenDocument(uri = "file:///elsewhere/A.groovy", text = "|^out|x"),
+            context,
+        )
+
+        assertThat(context.interpolateString("{{cursor.out.uri}}")).isEqualTo("file:///elsewhere/A.groovy")
+        assertThatThrownBy { context.interpolateString("{{cursor.out.path}}") }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("outside the workspace")
+    }
+
+    @Test
+    fun `markers in incremental changes are rejected before anything is sent`() {
+        val step = ScenarioStep.ChangeDocument(
+            uri = "file:///ws/A.groovy",
+            version = 2,
+            contentChanges = listOf(TestTextDocumentContentChangeEvent(text = "x|^a|")),
+        )
+
+        assertThatThrownBy { ChangeDocumentStepExecutor().execute(step, context) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("|^a|")
+            .hasMessageContaining("contentChanges")
+        verify(exactly = 0) { session.server.textDocumentService.didChange(any()) }
+    }
+
+    @Test
+    fun `markers in saveDocument text are rejected before anything is sent`() {
+        val step = ScenarioStep.SaveDocument(uri = "file:///ws/A.groovy", text = "x|^|")
+
+        assertThatThrownBy { SaveDocumentStepExecutor().execute(step, context) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("|^|")
+            .hasMessageContaining("saveDocument")
+        verify(exactly = 0) { session.server.textDocumentService.didSave(any()) }
+    }
+
+    @Test
+    fun `cursor is a reserved variable name`() {
+        assertThatThrownBy { context.saveResult("cursor", JsonPrimitive(1)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("reserved")
+        assertThatThrownBy { context.setVariable("cursor.a", JsonPrimitive(1)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+            .hasMessageContaining("reserved")
+        // Names that merely start with the word stay usable.
+        context.setVariable("cursorCount", JsonPrimitive(1))
+    }
+
+    @Test
+    fun `a placeholder whose value contains a marker becomes a marker`() {
+        context.variables["m"] = JsonPrimitive("|^fromVar|")
+
+        OpenDocumentStepExecutor().execute(
+            ScenarioStep.OpenDocument(uri = workspace.resolveUri("A.groovy"), text = "def x = {{m}}1"),
+            context,
+        )
+
+        verify { session.server.textDocumentService.didOpen(match { it.textDocument.text == "def x = 1" }) }
+        assertThat(context.interpolateNode(JsonPrimitive("{{cursor.fromVar}}"))).isEqualTo(position(0, 8))
     }
 
     private fun position(line: Int, character: Int): JsonObject = buildJsonObject {
