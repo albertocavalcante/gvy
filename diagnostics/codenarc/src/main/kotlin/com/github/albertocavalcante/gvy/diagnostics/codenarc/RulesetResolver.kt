@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.diagnostics.codenarc
 import com.github.albertocavalcante.gvy.diagnostics.api.WorkspaceContext
 import com.github.albertocavalcante.gvy.diagnostics.codenarc.WorkspaceRulesetInterpreter.Result
 import io.github.oshai.kotlinlogging.KotlinLogging
+import java.io.InputStream
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -11,7 +12,6 @@ import java.security.MessageDigest
 import java.util.HexFormat
 import kotlin.io.path.exists
 import kotlin.io.path.isRegularFile
-import kotlin.io.path.readText
 
 /**
  * Configuration for a resolved ruleset.
@@ -80,6 +80,7 @@ class HierarchicalRulesetResolver(
     private val resourceLoader: ResourceLoader = ClasspathResourceLoader(),
     /** True for Jenkins pipeline files (the server passes its configured `jenkins.filePatterns`). */
     private val isJenkinsPipelineFile: (URI) -> Boolean = ::hasDefaultJenkinsFileName,
+    private val openWorkspaceRuleset: (Path) -> InputStream = { Files.newInputStream(it) },
 ) : RulesetResolver {
 
     /**
@@ -289,19 +290,25 @@ class HierarchicalRulesetResolver(
     }
 
     /**
-     * Interprets [file], reading it only if it is small enough (the size is checked before any bytes are read) and
+     * Interprets [file], checking size before opening and bounding the read if the file grows, and
      * remembering the outcome by content hash so an unchanged ruleset is not parsed again on every analysis.
      */
-    private fun interpretCached(file: Path): Result = runCatching {
+    private fun interpretCached(file: Path): Result {
         if (Files.size(file) > WorkspaceRulesetInterpreter.MAX_FILE_BYTES) {
-            return@runCatching Result.Rejected("larger than ${WorkspaceRulesetInterpreter.MAX_FILE_BYTES} bytes")
+            return Result.Rejected("larger than ${WorkspaceRulesetInterpreter.MAX_FILE_BYTES} bytes")
         }
-        val text = file.readText()
+        val bytes = openWorkspaceRuleset(file).use {
+            it.readNBytes(WorkspaceRulesetInterpreter.MAX_FILE_BYTES.toInt() + 1)
+        }
+        if (bytes.size > WorkspaceRulesetInterpreter.MAX_FILE_BYTES) {
+            return Result.Rejected("larger than ${WorkspaceRulesetInterpreter.MAX_FILE_BYTES} bytes")
+        }
+        val text = bytes.toString(Charsets.UTF_8)
         val key = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(text.toByteArray()))
-        synchronized(interpretations) {
+        return synchronized(interpretations) {
             interpretations.getOrPut(key) { WorkspaceRulesetInterpreter.interpret(text) }
         }
-    }.getOrElse { Result.Rejected("unreadable: ${it.message}") }
+    }
 
     /**
      * Loads the appropriate default ruleset based on project type.
@@ -427,13 +434,8 @@ class HierarchicalRulesetResolver(
     /**
      * Loads ruleset content from a classpath resource using the injected ResourceLoader.
      */
-    private fun loadRulesetFromResource(resourcePath: String): String? = try {
-        resourceLoader.load(resourcePath)?.also {
-            logger.debug { "Successfully loaded ruleset from $resourcePath (${it.length} characters)" }
-        }
-    } catch (e: Exception) {
-        logger.debug(e) { "Failed to load ruleset from resource: $resourcePath" }
-        null
+    private fun loadRulesetFromResource(resourcePath: String): String? = resourceLoader.load(resourcePath)?.also {
+        logger.debug { "Successfully loaded ruleset from $resourcePath (${it.length} characters)" }
     }
 
     /**

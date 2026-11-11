@@ -22,7 +22,7 @@ import java.nio.file.Paths
  * CRITICAL FIX: This implementation fixes the diagnostic triplication bug by ensuring
  * violations are only processed from leaf nodes in the CodeNarc Results hierarchy.
  */
-@Suppress("TooGenericExceptionCaught") // Legacy filename/conversion recovery; analysis failures propagate.
+@Suppress("TooGenericExceptionCaught") // URI filename fallback; provider failures propagate.
 class CodeNarcDiagnosticProvider(
     private val workspaceContext: WorkspaceContext,
     private val compilationAccessor: CompilationAccessor? = null,
@@ -181,10 +181,8 @@ class CodeNarcDiagnosticProvider(
         logger.debug { "Processing leaf node with ${violations.size} violations" }
         violations.forEach { violation ->
             val diagnostic = convertViolationToDiagnostic(violation, sourceLines, rangeCalculator)
-            if (diagnostic != null) {
-                diagnostics.add(diagnostic)
-                logger.debug { "Added diagnostic for violation: ${violation.rule.name}" }
-            }
+            diagnostics.add(diagnostic)
+            logger.debug { "Added diagnostic for violation: ${violation.rule.name}" }
         }
     }
 
@@ -196,39 +194,22 @@ class CodeNarcDiagnosticProvider(
         violation: Violation,
         sourceLines: List<String>,
         rangeCalculator: HybridRangeCalculator,
-    ): Diagnostic? {
-        return try {
-            // Use CodeNarc's line number (1-based) and convert to LSP (0-based)
-            val groovyLineNumber = violation.lineNumber ?: 1
-            val groovyColumnNumber = 1 // CodeNarc doesn't provide column, default to start of line
+    ): Diagnostic {
+        // A missing line denotes a file-level violation. An invalid supplied line is a provider failure.
+        val groovyLineNumber = violation.lineNumber ?: 1
+        check(groovyLineNumber in 1..sourceLines.size) {
+            "Invalid CodeNarc violation line $groovyLineNumber for ${sourceLines.size} source lines"
+        }
+        val lspPosition = CoordinateSystem.groovyToLsp(groovyLineNumber, 1)
+        val line = sourceLines[lspPosition.line]
+        val (startCol, endCol) = rangeCalculator.calculateRange(violation, line)
 
-            // Convert Groovy coordinates to LSP using our centralized system
-            val lspPosition = CoordinateSystem.groovyToLsp(groovyLineNumber, groovyColumnNumber)
-
-            // Validate line number bounds
-            if (lspPosition.line < 0 || lspPosition.line >= sourceLines.size) {
-                logger.warn { "Invalid line number $groovyLineNumber for violation: ${violation.message}" }
-                return null
-            }
-
-            val line = sourceLines[lspPosition.line]
-
-            // Precise range calculation using AST-aware hybrid approach
-            val (startCol, endCol) = rangeCalculator.calculateRange(violation, line)
-
-            Diagnostic().apply {
-                range = Range(
-                    Position(lspPosition.line, maxOf(0, startCol)),
-                    Position(lspPosition.line, endCol),
-                )
-                severity = mapPriorityToSeverity(violation.rule.priority)
-                source = "CodeNarc"
-                message = violation.message ?: "CodeNarc violation: ${violation.rule.name}"
-                code = Either.forLeft(violation.rule.name)
-            }
-        } catch (e: Exception) {
-            logger.warn(e) { "Failed to convert violation to diagnostic: ${violation.message}" }
-            null
+        return Diagnostic().apply {
+            range = Range(Position(lspPosition.line, maxOf(0, startCol)), Position(lspPosition.line, endCol))
+            severity = mapPriorityToSeverity(violation.rule.priority)
+            source = "CodeNarc"
+            message = violation.message ?: "CodeNarc violation: ${violation.rule.name}"
+            code = Either.forLeft(violation.rule.name)
         }
     }
 
