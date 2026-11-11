@@ -2,6 +2,9 @@
 
 **Groovy Language Server** — Kotlin/JVM LSP implementation.
 
+**North Star:** gvy gives correct, honest and fast answers about Groovy code, and never damages it. Principles,
+scorecard and lanes: `docs/north-star.md`; live status: issue #1551.
+
 ## Environment Setup
 
 Before running any build commands in a worktree, initialize the environment:
@@ -22,6 +25,9 @@ make lint    # Check quality
 make format  # Fix lint
 ```
 
+Run one Gradle build at a time per machine, even with one worktree per agent. Prefer module-scoped tasks
+(`./gradlew :gls:test --tests '<Class>'`) over a full `make build`.
+
 > [!IMPORTANT] **VS Code Extension**: Use `pnpm` (not npm) for `editors/code/`. See `editors/code/AGENTS.md`.
 
 ## Rules (ALWAYS APPLY)
@@ -38,6 +44,26 @@ make format  # Fix lint
    the squash-aware proof and deletion steps in `.agent/rules/git-workflow.md`; verify remote head deletion, remove only
    the owned clean/unlocked worktree and branch, prune tracking refs, and report anything retained. Open PRs, unique
    commits, and other agents' active work are preserved.
+
+## Architecture
+
+- `gls/`: the LSP server. `semantics/`: type inference and the semantic model. `fmt/`: the formatter.
+- Two parser engines. Native (`parser/native/`, compiler-driven, on Groovy's own AST) serves every feature except hover.
+  Hover goes through the engine layer, whose default is Core (`parser/core/`; `parserEngine` in
+  `gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/ServerConfiguration.kt`). Check which engine a change
+  reaches; consolidation is #1276.
+- Module map: `docs/overview.md`; design: `kb/ARCHITECTURE.md`.
+
+## Testing
+
+E2E scenarios are YAML files in `tests/e2e/resources/scenarios` (fixtures in `tests/e2e/resources/workspaces`).
+Step-by-step: `tests/e2e/resources/scenarios/README.md`; harness design: `kb/testing/e2e-harness.md`. Run one with
+`make e2e-single SCENARIO=<name>`.
+
+## Where docs go
+
+`docs/` is for users and contributors (North Star, usage, feature matrix). `kb/` holds design records, RFCs, audits and
+plans.
 
 ## Commits
 
@@ -71,7 +97,7 @@ The git workflow rules apply to any branch, commit, or PR work.
 
 ```kotlin
 // TODO(#123): Brief description.
-//   See: https://github.com/albertocavalcante/groovy-lsp/issues/123
+//   See: https://github.com/albertocavalcante/gvy/issues/123
 ```
 
 ## Helper Files
