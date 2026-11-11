@@ -100,6 +100,258 @@ describe("stderrRouter", () => {
     ]);
   });
 
+  it("keeps a DEBUG header's level for its exception and stack frames", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:11.123 [main] DEBUG x.Y -- Failed to resolve receiver type");
+    route("java.io.IOException: Stream closed");
+    route("\tat x.Y.read(Y.kt:3)");
+    route("\tat x.Y.run(Y.kt:10)");
+    route("14:03:11.124 [main] INFO x.Y -- next");
+    expect(entries.map(([level]) => level)).to.deep.equal([
+      "debug",
+      "debug",
+      "debug",
+      "debug",
+      "info",
+    ]);
+  });
+
+  it("keeps an INFO header's level for a nested exception chain", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:11.123 [main] INFO x.Y -- optional lookup failed");
+    route("x.Y$LookupException: no such entry");
+    route("\tat x.Y.lookup(Y.kt:3)");
+    route("Caused by: java.lang.IllegalStateException: closed");
+    route("\tat x.Z.get(Z.kt:7)");
+    route("\t... 2 more");
+    expect(entries.every(([level]) => level === "info")).to.equal(true);
+  });
+
+  it("still surfaces a crash or plain line right after any server header", () => {
+    for (const header of [
+      "14:03:11.123 [main] TRACE x.Y -- finer",
+      "14:03:11.123 [main] DEBUG x.Y -- detail",
+      "14:03:11.123 [main] INFO x.Y -- healthy",
+      "14:03:11.123 [main] WARN x.Y -- slow",
+    ]) {
+      for (const line of [
+        'Exception in thread "main" java.lang.OutOfMemoryError: Java heap space',
+        "# A fatal error has been detected by the Java Runtime Environment:",
+        "Error: Could not find or load main class gls",
+        "something unrelated",
+      ]) {
+        const { sink, entries } = recordingSink();
+        const route = createStderrRouter(sink);
+        route(header);
+        route(line);
+        expect(entries[1], `${header} / ${line}`).to.deep.equal([
+          "error",
+          line,
+        ]);
+      }
+    }
+  });
+
+  it("pairs java.util.logging two-line records with their level", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    const infoHeader =
+      "Nov 10, 2026 3:00:00 PM org.eclipse.lsp4j.jsonrpc.RemoteEndpoint handleNotification";
+    const severeHeader =
+      "Nov 10, 2026 3:00:01 PM org.eclipse.lsp4j.jsonrpc.RemoteEndpoint handleRequest";
+    route(infoHeader);
+    route("INFO: Unsupported notification method: $/setTrace");
+    route(severeHeader);
+    route("SEVERE: Internal error: boom");
+    route("java.lang.IllegalStateException: boom");
+    route(
+      "\tat org.eclipse.lsp4j.jsonrpc.RemoteEndpoint.handleRequest(X.java:1)",
+    );
+    expect(entries).to.deep.equal([
+      ["info", infoHeader],
+      ["info", "INFO: Unsupported notification method: $/setTrace"],
+      ["error", severeHeader],
+      ["error", "SEVERE: Internal error: boom"],
+      ["error", "java.lang.IllegalStateException: boom"],
+      [
+        "error",
+        "\tat org.eclipse.lsp4j.jsonrpc.RemoteEndpoint.handleRequest(X.java:1)",
+      ],
+    ]);
+  });
+
+  it("maps every java.util.logging level", () => {
+    const header = "Jan 02, 2026 11:59:59 AM a.B c";
+    const cases: Entry[] = [
+      ["SEVERE: s", "error"],
+      ["WARNING: w", "warn"],
+      ["INFO: i", "info"],
+      ["CONFIG: c", "info"],
+      ["FINE: f", "debug"],
+      ["FINER: f", "trace"],
+      ["FINEST: f", "trace"],
+    ];
+    for (const [line, level] of cases) {
+      const { sink, entries } = recordingSink();
+      const route = createStderrRouter(sink);
+      route(header);
+      route(line);
+      expect(entries, line).to.deep.equal([
+        [level, header],
+        [level, line],
+      ]);
+    }
+  });
+
+  it("does not let a java.util.logging INFO record hide a following crash", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("Nov 10, 2026 3:00:00 PM a.B c");
+    route("INFO: fine");
+    route('Exception in thread "main" java.lang.Error: x');
+    expect(entries[2][0]).to.equal("error");
+  });
+
+  it("surfaces an unpaired java.util.logging header as an error", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("Nov 10, 2026 3:00:00 PM a.B c");
+    route("14:03:11.124 [main] INFO x.Y -- next");
+    expect(entries).to.deep.equal([
+      ["error", "Nov 10, 2026 3:00:00 PM a.B c"],
+      ["info", "14:03:11.124 [main] INFO x.Y -- next"],
+    ]);
+  });
+
+  it("does not treat a bare INFO: line as a java.util.logging record", () => {
+    const { sink, entries } = recordingSink();
+    createStderrRouter(sink)("INFO: not from java.util.logging");
+    expect(entries[0][0]).to.equal("error");
+  });
+
+  it("flushes a java.util.logging header left pending at stream end", async () => {
+    const { sink, entries } = recordingSink();
+    const input = new PassThrough();
+    pipeServerStderr(input, sink);
+
+    input.end("Nov 10, 2026 3:00:00 PM a.B c\n");
+    await new Promise((resolve) => input.on("close", resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(entries).to.deep.equal([["error", "Nov 10, 2026 3:00:00 PM a.B c"]]);
+  });
+
+  it("keeps a java.util.logging record's level for its exception", () => {
+    for (const [levelLine, level] of [
+      ["INFO: lookup failed", "info"],
+      ["FINE: lookup failed", "debug"],
+    ]) {
+      const { sink, entries } = recordingSink();
+      const route = createStderrRouter(sink);
+      route("Nov 10, 2026 3:00:00 PM a.B c");
+      route(levelLine);
+      route("java.io.IOException: x");
+      route("\tat a.B.c(B.java:1)");
+      expect(
+        entries.map(([entryLevel]) => entryLevel),
+        levelLine,
+      ).to.deep.equal([level, level, level, level]);
+    }
+  });
+
+  it("surfaces a java.util.logging header followed by another header", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("Nov 10, 2026 3:00:00 PM a.B first");
+    route("Nov 10, 2026 3:00:01 PM a.B second");
+    route("INFO: second record");
+    expect(entries).to.deep.equal([
+      ["error", "Nov 10, 2026 3:00:00 PM a.B first"],
+      ["info", "Nov 10, 2026 3:00:01 PM a.B second"],
+      ["info", "INFO: second record"],
+    ]);
+  });
+
+  it("gives an exception the level of the latest of two log headers", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:11.123 [main] ERROR x.Y -- failed");
+    route("14:03:11.124 [main] DEBUG x.Y -- retry detail");
+    route("java.io.IOException: x");
+    expect(entries.map(([level]) => level)).to.deep.equal([
+      "error",
+      "debug",
+      "debug",
+    ]);
+  });
+
+  it("pairs a java.util.logging header across a blank line", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("Nov 10, 2026 3:00:00 PM a.B c");
+    route("");
+    route("INFO: hello");
+    expect(entries).to.deep.equal([
+      ["info", "Nov 10, 2026 3:00:00 PM a.B c"],
+      ["info", "INFO: hello"],
+    ]);
+  });
+
+  it("keeps a Logback status header's level for its exception", () => {
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:10,002 |-WARN in ch.qos.logback.core - cannot open file");
+    route("java.io.FileNotFoundException: gls.log (Permission denied)");
+    route("\tat java.base/java.io.FileOutputStream.open0(Native Method)");
+    expect(entries.map(([level]) => level)).to.deep.equal([
+      "warn",
+      "warn",
+      "warn",
+    ]);
+  });
+
+  it("cannot tell a raw printStackTrace right after a header from a logged exception", () => {
+    // Documented tradeoff: the server must log throwables through its logger.
+    const { sink, entries } = recordingSink();
+    const route = createStderrRouter(sink);
+    route("14:03:11.123 [main] INFO x.Y -- formatting");
+    route("java.lang.IllegalStateException: printed by printStackTrace()");
+    expect(entries[1][0]).to.equal("info");
+  });
+
+  it("flushes a pending java.util.logging header when the stream is destroyed", async () => {
+    const { sink, entries } = recordingSink();
+    const input = new PassThrough();
+    pipeServerStderr(input, sink);
+
+    input.write("Nov 10, 2026 3:00:00 PM a.B c\n");
+    await new Promise((resolve) => setImmediate(resolve));
+    input.destroy();
+    await new Promise((resolve) => input.on("close", resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(entries).to.deep.equal([["error", "Nov 10, 2026 3:00:00 PM a.B c"]]);
+  });
+
+  it("logs a stderr stream failure instead of throwing", async () => {
+    const { sink, entries } = recordingSink();
+    const input = new PassThrough();
+    pipeServerStderr(input, sink);
+
+    input.write("Nov 10, 2026 3:00:00 PM a.B c\n");
+    await new Promise((resolve) => setImmediate(resolve));
+    input.destroy(new Error("EPIPE"));
+    await new Promise((resolve) => input.on("close", resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(entries).to.deep.equal([
+      ["error", "Nov 10, 2026 3:00:00 PM a.B c"],
+      ["error", "Reading server stderr failed: EPIPE"],
+    ]);
+  });
+
   it("accepts thread names containing brackets", () => {
     const { sink, entries } = recordingSink();
     createStderrRouter(sink)("14:03:11.123 [pool-1[worker]] INFO x.Y -- hi");

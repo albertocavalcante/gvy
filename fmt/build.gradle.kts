@@ -16,11 +16,13 @@ dependencies {
     }
 
     implementation(project(":common"))
+    implementation(libs.slf4j.api)
 
     detektPlugins(libs.detekt.formatting)
 
     testImplementation(libs.junit.jupiter)
     testImplementation(libs.assertj.core)
+    testImplementation(libs.logback.classic)
     testRuntimeOnly(libs.junit.jupiter.engine)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
