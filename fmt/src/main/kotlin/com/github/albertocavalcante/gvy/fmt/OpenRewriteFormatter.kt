@@ -22,7 +22,31 @@ class OpenRewriteFormatter {
     }
     private val recipe = AutoFormat()
 
+    /**
+     * Formats [text], or returns it unchanged when formatting would change more than layout.
+     *
+     * Every result is checked with [TokenStreamGuard] before it leaves the formatter, so the LSP
+     * formatting request, the "Format document" code action and `gls format` all share the check.
+     * A refused result is logged at WARN with the first token difference.
+     */
     fun format(text: String): String {
+        val formatted = formatUnchecked(text)
+        return if (formatted == text || isSafeEdit(text, formatted)) formatted else text
+    }
+
+    private fun isSafeEdit(original: String, formatted: String): Boolean {
+        val verdict = runCatching { TokenStreamGuard.check(original, formatted) }.getOrElse { failure ->
+            // A guard that cannot run cannot vouch for the edit.
+            logger.warn("Refusing formatting result: the token stream check failed", failure)
+            return false
+        }
+        if (!verdict.isSafe) {
+            logger.warn("Refusing formatting result that would change the program: {}", verdict.describe())
+        }
+        return verdict.isSafe
+    }
+
+    private fun formatUnchecked(text: String): String {
         if (text.isBlank()) return text
 
         // NOTE: Shebang extraction is a heuristic workaround. OpenRewrite's GroovyParser doesn't

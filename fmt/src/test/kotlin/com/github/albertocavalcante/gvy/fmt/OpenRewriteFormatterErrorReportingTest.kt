@@ -45,4 +45,18 @@ class OpenRewriteFormatterErrorReportingTest {
         assertThat(event.level).isEqualTo(Level.ERROR)
         assertThat((event.throwableProxy as ThrowableProxy).throwable).isSameAs(failure)
     }
+
+    @Test
+    fun `a refused formatting result is logged at warn with the first token difference`() {
+        val input = "def y = x as BigDecimal\n"
+
+        val result = OpenRewriteFormatter().format(input)
+
+        assertThat(result).isEqualTo(input)
+        val event = logs.list.single { it.level == Level.WARN }
+        assertThat(event.formattedMessage)
+            .contains("Refusing formatting result")
+            .contains("'x' at 1:9")
+            .contains("'xasBigDecimal' at 1:9")
+    }
 }

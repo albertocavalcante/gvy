@@ -274,6 +274,37 @@ class GroovyTextDocumentServiceFormattingTest {
         localScope.cancel()
     }
 
+    @Test
+    fun `formatting never returns an edit that changes the program (#1523)`() {
+        client.telemetryEvents.clear()
+        val source = listOf(
+            "class A {",
+            "    def f(x) {",
+            "        def y = x as BigDecimal",
+            "        def s = \"a    b\"",
+            "    }",
+            "}",
+        ).joinToString("\n")
+        val documentProvider = DocumentProvider().apply { put(uri, source) }
+        val service = GroovyTextDocumentService(
+            coroutineScope = coroutineScope,
+            compilationService = compilationService,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = OpenRewriteFormatterAdapter(),
+            ),
+        )
+
+        val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        // Either the formatter handles the construct or it refuses; it must never send damaged code.
+        val result = edits.singleOrNull()?.newText ?: source
+        assertTrue(edits.size <= 1, "Formatting returns at most one whole-document edit")
+        assertTrue("def y = x as BigDecimal" in result, "the as operator keeps its spaces:\n$result")
+        assertTrue("\"a    b\"" in result, "string content is untouched:\n$result")
+    }
+
     private fun formattingParams(targetUri: URI = uri): DocumentFormattingParams = DocumentFormattingParams().apply {
         textDocument = TextDocumentIdentifier(targetUri.toString())
         options = FormattingOptions(4, true)

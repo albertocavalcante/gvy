@@ -388,15 +388,63 @@ class OpenRewriteFormatterTest {
                 /
             """.trimIndent()
 
-            val expected = """
-                def regex = /(?x)
-                    \d{3} # area code
-                    - # separator
-                    \d{4} # number
-                /
+            // Whitespace inside a slashy string is part of its value (#1524).
+            assertFormatsTo(input, input)
+        }
+    }
+
+    /**
+     * The formatter must never change program meaning (Quality Bar: Safe). Each case reproduces a
+     * damaging edit from an issue; the result must keep the code intact, whether the formatter
+     * handles the construct or refuses to format the document.
+     */
+    @Nested
+    inner class `Program meaning is preserved` {
+
+        @Test
+        fun `keeps the spaces around the as operator (#1523)`() {
+            val input = """
+                class A {
+                    def f(x) {
+                        def y = x as BigDecimal
+                        new Date(x as long)
+                    }
+                }
             """.trimIndent()
 
-            assertFormatsTo(input, expected)
+            assertThat(formatter.format(input))
+                .contains("def y = x as BigDecimal")
+                .contains("new Date(x as long)")
+        }
+
+        @Test
+        fun `keeps runs of spaces inside string literals (#1524)`() {
+            val tripleQuote = "\"\"\""
+            val input = listOf(
+                "def a = \"x    y\"",
+                "def b = 'p     q'",
+                "def c = /r    s/",
+                "def s = $tripleQuote\\",
+                "    |a:    1",
+                "    |bb:   2",
+                "    $tripleQuote.stripMargin()",
+                "println a",
+            ).joinToString("\n")
+
+            assertThat(formatter.format(input))
+                .contains("\"x    y\"")
+                .contains("'p     q'")
+                .contains("/r    s/")
+                .contains("|a:    1")
+                .contains("|bb:   2")
+        }
+
+        @Test
+        fun `still formats layout when the token stream is unchanged`() {
+            assertFormatsTo(
+                input = "def x = foo(  1,2 )\nif(x){\nprintln x\n}",
+                expected = "def x = foo(1, 2)\nif (x) {\n    println x\n}",
+            )
         }
     }
 }
