@@ -15,6 +15,7 @@ import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.text.TextRange
 import com.github.albertocavalcante.gvy.viz.desktop.state.AstViewModel
+import com.github.albertocavalcante.gvy.viz.desktop.state.InMemoryPreferences
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 
@@ -22,7 +23,7 @@ import kotlin.test.assertNotNull
 class CodePanelInteractionTest {
     @Test
     fun `caret and selection navigation preserve edits while tree clicks select source`() = runComposeUiTest {
-        val model = AstViewModel()
+        val model = AstViewModel(InMemoryPreferences())
         model.updateSourceCode("def x = 1")
         model.parseCode()
         setContent {
@@ -39,6 +40,7 @@ class CodePanelInteractionTest {
                 )
             }
         }
+        waitUntil(timeoutMillis = 10_000) { !model.isParsing }
         val editor = onNode(hasSetTextAction())
         editor.performClick()
         editor.performTextInputSelection(TextRange(4))
@@ -46,11 +48,13 @@ class CodePanelInteractionTest {
         editor.performKeyInput { pressKey(Key.DirectionRight) }
         editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(5)))
         editor.performTextInput("Q")
+        waitUntil(timeoutMillis = 10_000) { !model.isParsing }
         editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(6)))
         runOnIdle { kotlin.test.assertEquals("def xQ = 1", model.sourceCode) }
         editor.performTextInputSelection(TextRange(4, 6))
         editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(4, 6)))
         editor.performTextInput("z")
+        waitUntil(timeoutMillis = 10_000) { !model.isParsing }
         runOnIdle { kotlin.test.assertEquals("def z = 1", model.sourceCode) }
         lateinit var treeNode: com.github.albertocavalcante.gvy.viz.model.AstNodeDto
         runOnIdle {
@@ -62,5 +66,6 @@ class CodePanelInteractionTest {
         editor.performTextInputSelection(TextRange(0))
         runOnIdle { model.selectNode(treeNode) }
         editor.assert(SemanticsMatcher.expectValue(SemanticsProperties.TextSelectionRange, TextRange(4, 5)))
+        runOnIdle { model.close() }
     }
 }

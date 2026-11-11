@@ -40,6 +40,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -51,6 +52,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.github.albertocavalcante.gvy.viz.desktop.state.AstViewModel
 import com.github.albertocavalcante.gvy.viz.desktop.state.CodeError
+import com.github.albertocavalcante.gvy.viz.desktop.state.ExportFormat
 import com.github.albertocavalcante.gvy.viz.desktop.state.ParserType
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.AstTreeView
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.CodePanel
@@ -66,8 +68,8 @@ import javax.swing.JFileChooser
  */
 @Composable
 @Suppress("LongMethod", "MagicNumber")
-fun AstVisualizerApp() {
-    val viewModel = remember { AstViewModel() }
+fun AstVisualizerApp(viewModel: AstViewModel) {
+    DisposableEffect(viewModel) { onDispose { viewModel.close() } }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
@@ -97,7 +99,6 @@ fun AstVisualizerApp() {
                         errors = viewModel.parseErrors,
                         onCodeChange = { code ->
                             viewModel.updateSourceCode(code)
-                            viewModel.parseCode()
                         },
                         onCursorChange = { line, col ->
                             viewModel.selectNodeAt(line, col)
@@ -143,6 +144,10 @@ fun AstVisualizerApp() {
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
+            }
+
+            viewModel.operationMessage?.let { message ->
+                Text(message, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.padding(8.dp))
             }
 
             // Bottom Problems Panel (if errors exist)
@@ -269,6 +274,7 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
             // Export
             OutlinedButton(
                 onClick = { showExportMenu = true },
+                enabled = !viewModel.isExporting,
                 shape = MaterialTheme.shapes.small,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
                 modifier = Modifier.height(32.dp),
@@ -284,14 +290,18 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
                     text = { Text("JSON") },
                     onClick = {
                         showExportMenu = false
-                        viewModel.saveToFile(viewModel.exportAsJson(), "ast.json")
+                        viewModel.exportSnapshot(ExportFormat.JSON)?.let { snapshot ->
+                            chooseExportFile("ast.json")?.let { viewModel.saveExport(snapshot, it) }
+                        }
                     },
                 )
                 DropdownMenuItem(
                     text = { Text("DOT (Core)") },
                     onClick = {
                         showExportMenu = false
-                        viewModel.saveToFile(viewModel.exportAsDot(), "ast.dot")
+                        viewModel.exportSnapshot(ExportFormat.DOT)?.let { snapshot ->
+                            chooseExportFile("ast.dot")?.let { viewModel.saveExport(snapshot, it) }
+                        }
                     },
                 )
             }
@@ -338,6 +348,12 @@ private fun ParserOption(text: String, selected: Boolean, onClick: () -> Unit) {
     ) {
         Text(text, style = MaterialTheme.typography.labelSmall)
     }
+}
+
+private fun chooseExportFile(suggestedFileName: String): File? {
+    val chooser = JFileChooser()
+    chooser.selectedFile = File(suggestedFileName)
+    return if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
 }
 
 private fun loadFile(initialDirectory: String): File? {
