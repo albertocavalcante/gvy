@@ -1,0 +1,56 @@
+name: repro-hover-method-call-doc
+description: Hover on a call to a workspace static method shows its signature and Groovydoc
+xfail:
+  issue: 1527
+  reason: hover on a workspace method call shows the call summary, with no target signature or Groovydoc
+  match: 'Actual: ".*Method Call'
+workspace:
+  fixture: empty-workspace
+  files:
+    src/main/groovy/demo/money/Money.groovy: |
+      package demo.money
+
+      class Money {
+          /** Factory with a default parameter. */
+          static Money of(Number amount, String currency = 'USD') { new Money() }
+      }
+    src/main/groovy/demo/Use.groovy: |
+      package demo
+
+      import demo.money.Money
+
+      class Use {
+          Object run() {
+              Money.|^call|of(2.5)
+          }
+      }
+steps:
+  - initialize:
+      initializationOptions:
+        groovy.languageServer.engine: native
+  - initialized: {}
+  - waitNotification:
+      method: groovy/status
+      checks:
+        - jsonPath: $.health
+          expect: { type: EQUALS, value: ok }
+        - jsonPath: $.quiescent
+          expect: { type: EQUALS, value: true }
+      timeoutMs: 60000
+  - openDocument:
+      path: "{{cursor.call.path}}"
+  - request:
+      method: textDocument/hover
+      params:
+        textDocument: { uri: "{{cursor.call.uri}}" }
+        position: "{{cursor.call}}"
+      saveAs: hover
+  - assert:
+      source: hover
+      checks:
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "Factory with a default parameter." }
+        - jsonPath: $.contents.value
+          expect: { type: CONTAINS, value: "static Money of(Number amount, String currency = 'USD')" }
+  - shutdown: {}
+  - exit: {}
