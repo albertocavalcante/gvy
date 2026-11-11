@@ -57,9 +57,6 @@ let clientResources: vscode.Disposable[] = [];
  * client that is still starting, so overlapping calls used to orphan a JVM.
  */
 let lifecycle: Promise<unknown> = Promise.resolve();
-/** Args array shared with the current client's ServerOptions; see refreshLaunchArgs. */
-let launchArgs:
-  { args: string[]; jarPath: string; javaVersion?: number } | undefined;
 
 const startedListeners = new Set<() => void>();
 
@@ -78,6 +75,10 @@ export function onClientStarted(listener: () => void): vscode.Disposable {
  * a few times) until the client is abandoned, after which the closed
  * connection must not respawn the server we just killed.
  */
+function isThenable<T>(value: T | PromiseLike<T>): value is PromiseLike<T> {
+  return typeof (value as PromiseLike<T> | null)?.then === "function";
+}
+
 function abandonableErrorHandler(
   fallback: () => ErrorHandler,
   isAbandoned: () => boolean,
@@ -96,7 +97,9 @@ function abandonableErrorHandler(
         return result;
       };
       const result = fallback().closed();
-      return result instanceof Promise ? result.then(refresh) : refresh(result);
+      return isThenable(result)
+        ? Promise.resolve(result).then(refresh)
+        : refresh(result);
     },
   };
 }
@@ -223,23 +226,33 @@ function currentJavaArgs(jarPath: string, javaVersion?: number): string[] {
   });
 }
 
+/** The args array owned by one client's ServerOptions, and its inputs. */
+interface LaunchArgs {
+  args: string[];
+  jarPath: string;
+  javaVersion?: number;
+}
+
 /**
  * The languageclient re-reads the (shared) args array each time it respawns
  * a crashed server, so rebuilding it in place makes automatic restarts use
  * the current `groovy.server.vmargs` instead of the activation-time value.
  */
-function refreshLaunchArgs(): void {
-  if (!launchArgs) {
-    return;
-  }
-  const { args, jarPath, javaVersion } = launchArgs;
-  args.splice(0, args.length, ...currentJavaArgs(jarPath, javaVersion));
+function refreshLaunchArgs(launch: LaunchArgs): void {
+  launch.args.splice(
+    0,
+    launch.args.length,
+    ...currentJavaArgs(launch.jarPath, launch.javaVersion),
+  );
 }
 
 /**
  * Creates server options for launching the Groovy Language Server
  */
-async function createServerOptions(): Promise<ServerOptions> {
+async function createServerOptions(): Promise<{
+  serverOptions: ServerOptions;
+  launch: LaunchArgs;
+}> {
   const jarPath = await getServerJarPath();
   const javaValidation = await validateJava();
 
@@ -257,7 +270,7 @@ async function createServerOptions(): Promise<ServerOptions> {
   // JVM options (defaults + user-configurable) go before -jar
   const javaVersion = javaValidation.resolution?.version;
   const args = currentJavaArgs(jarPath, javaVersion);
-  launchArgs = { args, jarPath, javaVersion };
+  const launch: LaunchArgs = { args, jarPath, javaVersion };
 
   // Server launch options
   const serverOptions: ServerOptions = {
@@ -279,7 +292,7 @@ async function createServerOptions(): Promise<ServerOptions> {
     },
   };
 
-  return serverOptions;
+  return { serverOptions, launch };
 }
 
 /**
@@ -500,14 +513,14 @@ async function doStart(): Promise<void> {
   clientResources.push(fileWatcher);
 
   try {
-    const serverOptions = await createServerOptions();
+    const { serverOptions, launch } = await createServerOptions();
     const clientOptions = createClientOptions(fileWatcher, serverOutputChannel);
     let abandoned = false;
     let defaultErrorHandler: ErrorHandler | undefined;
     clientOptions.errorHandler = abandonableErrorHandler(
       () => (defaultErrorHandler ??= created.createDefaultErrorHandler()),
       () => abandoned,
-      refreshLaunchArgs,
+      () => refreshLaunchArgs(launch),
     );
 
     // The id is the configuration section the client reads

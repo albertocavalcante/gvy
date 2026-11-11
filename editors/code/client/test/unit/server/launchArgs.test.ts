@@ -1,5 +1,6 @@
 import { expect } from "chai";
 import {
+  parseJvmSize,
   buildJavaArgs,
   sanitizeVmArgs,
   resolveVmArgs,
@@ -40,30 +41,12 @@ describe("server/launchArgs", () => {
     ]);
   });
 
-  it("appends user args after the defaults; a user -Xmx replaces the heap defaults", () => {
-    const args = buildJavaArgs({
-      jarPath: "/s.jar",
-      javaVersion: 21,
-      vmArgs: ["-Xmx4g", "-Dfoo=bar"],
-    });
-    expect(args).to.deep.equal([
-      ...DEFAULTS.filter((a) => !/^-Xm[sx]/.test(a)),
-      "-Xmx4g",
-      "-Dfoo=bar",
-      "--enable-native-access=ALL-UNNAMED",
-      "-jar",
-      "/s.jar",
-    ]);
-    expect(args).to.not.include("-Xmx2g");
-  });
-
   it("drops G1-only defaults when the user selects another collector", () => {
     for (const gc of [
       "-XX:+UseParallelGC",
       "-XX:+UseSerialGC",
       "-XX:+UseZGC",
       "-XX:+UseShenandoahGC",
-      "-XX:-UseG1GC",
     ]) {
       const args = resolveVmArgs([gc, "-Dx=y"]);
       expect(args, gc).to.deep.equal([...NON_G1, gc, "-Dx=y"]);
@@ -135,31 +118,6 @@ describe("server/launchArgs", () => {
     );
   });
 
-  it("drops default -Xms/-Xmx when the user sizes the heap", () => {
-    const rest = DEFAULTS.filter((a) => !/^-Xm[sx]/.test(a));
-    for (const flag of [
-      "-Xms4g",
-      "-Xmx32m",
-      "-XX:MaxRAMPercentage=50",
-      "-XX:MaxHeapSize=1g",
-      "-XX:MaxRAMFraction=8",
-    ]) {
-      expect(resolveVmArgs([flag]), flag).to.deep.equal([...rest, flag]);
-    }
-  });
-
-  it("replaces both free ratios when the user sets either", () => {
-    const rest = DEFAULTS.filter((a) => !/HeapFreeRatio/.test(a));
-    expect(resolveVmArgs(["-XX:MaxHeapFreeRatio=10"])).to.deep.equal([
-      ...rest,
-      "-XX:MaxHeapFreeRatio=10",
-    ]);
-    expect(resolveVmArgs(["-XX:MinHeapFreeRatio=50"])).to.deep.equal([
-      ...rest,
-      "-XX:MinHeapFreeRatio=50",
-    ]);
-  });
-
   it("does not treat GC tuning flags as collector selection", () => {
     expect(
       selectsOtherCollector([
@@ -169,21 +127,130 @@ describe("server/launchArgs", () => {
     ).to.equal(false);
   });
 
-  it("treats AggressiveHeap as a collector selection", () => {
+  it("strips quotes and reads _JAVA_OPTIONS from the environment", () => {
+    expect(
+      envJavaOptions({ _JAVA_OPTIONS: "\"-XX:+UseParallelGC\" '-Xmx1g'" }),
+    ).to.deep.equal(["-XX:+UseParallelGC", "-Xmx1g"]);
+    expect(envJavaOptions({ JAVA_TOOL_OPTIONS: "   " })).to.deep.equal([]);
+  });
+
+  const without = (...drop: string[]) =>
+    DEFAULTS.filter((arg) => !drop.includes(arg));
+
+  it("appends user args after the defaults; user -Xmx replaces only -Xmx2g", () => {
+    const args = buildJavaArgs({
+      jarPath: "/s.jar",
+      javaVersion: 21,
+      vmArgs: ["-Xmx4g", "-Dfoo=bar"],
+    });
+    expect(args).to.deep.equal([
+      ...without("-Xmx2g"),
+      "-Xmx4g",
+      "-Dfoo=bar",
+      "--enable-native-access=ALL-UNNAMED",
+      "-jar",
+      "/s.jar",
+    ]);
+    expect(args).to.include("-Xms64m");
+  });
+
+  it("keeps -Xmx2g and the rest when only the initial heap is small", () => {
+    expect(resolveVmArgs(["-Xms128m"])).to.deep.equal([
+      ...DEFAULTS,
+      "-Xms128m",
+    ]);
+  });
+
+  it("drops -Xmx2g for an initial heap above it, or an unparseable one", () => {
+    for (const flag of [
+      "-Xms4g",
+      "-XX:InitialHeapSize=3g",
+      "-XX:InitialRAMPercentage=50",
+    ]) {
+      expect(resolveVmArgs([flag]), flag).to.deep.equal([
+        ...without("-Xmx2g"),
+        flag,
+      ]);
+    }
+  });
+
+  it("drops -Xms64m only when the user maximum is below it", () => {
+    expect(resolveVmArgs(["-Xmx32m"])).to.deep.equal([
+      ...without("-Xms64m", "-Xmx2g"),
+      "-Xmx32m",
+    ]);
+    expect(resolveVmArgs(["-Xmx64m"])).to.deep.equal([
+      ...without("-Xmx2g"),
+      "-Xmx64m",
+    ]);
+    expect(resolveVmArgs(["-XX:MaxHeapSize=1g"])).to.deep.equal([
+      ...without("-Xmx2g"),
+      "-XX:MaxHeapSize=1g",
+    ]);
+  });
+
+  it("MaxRAMPercentage-style options replace only -Xmx2g", () => {
+    for (const flag of [
+      "-XX:MaxRAMPercentage=50",
+      "-XX:MaxRAMFraction=8",
+      "-XX:MaxRAM=4g",
+      "-XX:SoftMaxHeapSize=3g",
+    ]) {
+      expect(resolveVmArgs([flag]), flag).to.deep.equal([
+        ...without("-Xmx2g"),
+        flag,
+      ]);
+    }
+  });
+
+  it("AggressiveHeap replaces -Xmx2g and the G1 defaults", () => {
     expect(selectsOtherCollector(["-XX:+AggressiveHeap"])).to.equal(true);
     expect(resolveVmArgs(["-XX:+AggressiveHeap"])).to.deep.equal([
       "-XX:+ExitOnOutOfMemoryError",
+      "-Xms64m",
       "-XX:MinHeapFreeRatio=20",
       "-XX:MaxHeapFreeRatio=40",
       "-XX:+AggressiveHeap",
     ]);
   });
 
-  it("strips quotes and reads _JAVA_OPTIONS from the environment", () => {
-    expect(
-      envJavaOptions({ _JAVA_OPTIONS: "\"-XX:+UseParallelGC\" '-Xmx1g'" }),
-    ).to.deep.equal(["-XX:+UseParallelGC", "-Xmx1g"]);
-    expect(envJavaOptions({ JAVA_TOOL_OPTIONS: "   " })).to.deep.equal([]);
+  it("drops a free ratio default only when it would contradict the user's", () => {
+    // Max above our Min keeps both our ratios (the user's Max still wins).
+    expect(resolveVmArgs(["-XX:MaxHeapFreeRatio=30"])).to.deep.equal([
+      ...DEFAULTS,
+      "-XX:MaxHeapFreeRatio=30",
+    ]);
+    expect(resolveVmArgs(["-XX:MaxHeapFreeRatio=10"])).to.deep.equal([
+      ...without("-XX:MinHeapFreeRatio=20"),
+      "-XX:MaxHeapFreeRatio=10",
+    ]);
+    expect(resolveVmArgs(["-XX:MinHeapFreeRatio=30"])).to.deep.equal([
+      ...DEFAULTS,
+      "-XX:MinHeapFreeRatio=30",
+    ]);
+    expect(resolveVmArgs(["-XX:MinHeapFreeRatio=50"])).to.deep.equal([
+      ...without("-XX:MaxHeapFreeRatio=40"),
+      "-XX:MinHeapFreeRatio=50",
+    ]);
+  });
+
+  it("recognises the -Xminf/-Xmaxf aliases", () => {
+    expect(resolveVmArgs(["-Xminf0.5"])).to.deep.equal([
+      ...without("-XX:MaxHeapFreeRatio=40"),
+      "-Xminf0.5",
+    ]);
+    expect(resolveVmArgs(["-Xmaxf0.1"])).to.deep.equal([
+      ...without("-XX:MinHeapFreeRatio=20"),
+      "-Xmaxf0.1",
+    ]);
+  });
+
+  it("parses JVM sizes", () => {
+    expect(parseJvmSize("64m")).to.equal(64 * 1024 * 1024);
+    expect(parseJvmSize("2G")).to.equal(2 * 1024 ** 3);
+    expect(parseJvmSize("512")).to.equal(512);
+    expect(parseJvmSize("1.5g")).to.equal(undefined);
+    expect(parseJvmSize("")).to.equal(undefined);
   });
 
   it("honours JVM options set through the environment", () => {
@@ -196,9 +263,10 @@ describe("server/launchArgs", () => {
       "-Dx=y",
       "-XX:MaxRAMPercentage=12.5",
     ]);
-    const args = resolveVmArgs([], true, undefined, env);
-    expect(args).to.deep.equal([
+    // MaxRAMPercentage conflicts with -Xmx2g only; -Xms64m stays.
+    expect(resolveVmArgs([], true, undefined, env)).to.deep.equal([
       "-XX:+ExitOnOutOfMemoryError",
+      "-Xms64m",
       "-XX:MinHeapFreeRatio=20",
       "-XX:MaxHeapFreeRatio=40",
     ]);

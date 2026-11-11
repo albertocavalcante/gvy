@@ -53,17 +53,113 @@ export function selectsOtherCollector(userArgs: readonly string[]): boolean {
   );
 }
 
+const MIB = 1024 * 1024;
+/** Values of our own -Xms/-Xmx and ratio defaults, used for conflict checks. */
+const DEFAULT_XMS_BYTES = 64 * MIB;
+const DEFAULT_XMX_BYTES = 2048 * MIB;
+const DEFAULT_MIN_FREE_RATIO = 20;
+const DEFAULT_MAX_FREE_RATIO = 40;
+
+/** Parses a JVM size such as 512m or 2g; undefined when not a plain size. */
+export function parseJvmSize(text: string): number | undefined {
+  const match = /^(\d+)([kKmMgGtT]?)$/.exec(text);
+  if (!match) {
+    return undefined;
+  }
+  const unit = { "": 1, k: 1024, m: MIB, g: 1024 * MIB, t: 1024 * 1024 * MIB };
+  return Number(match[1]) * unit[match[2].toLowerCase() as keyof typeof unit];
+}
+
 /**
- * Options that size the heap. "Last wins" only holds per flag, so when the
- * user sets any of these our -Xms/-Xmx are dropped: e.g. a user -Xmx32m or
- * -Xms4g would otherwise contradict our -Xms64m/-Xmx2g and abort the JVM.
- * Consequence: setting any of them means the user owns heap sizing.
+ * Last size given by any of `flags` (each a prefix such as `-Xmx` or
+ * `-XX:MaxHeapSize=`). NaN means present but not a parseable size.
  */
-const HEAP_SIZE_FLAG =
-  /^(-Xm[sx]|-XX:(Initial|Min|Max)HeapSize=|-XX:(Initial|Min|Max)RAM(Percentage|Fraction)=|-XX:MaxRAM=|-XX:\+AggressiveHeap$)/;
-const HEAP_SIZING_DEFAULT = /^-Xm[sx]/;
-/** Min must not exceed Max, so a user value for either replaces both. */
-const FREE_RATIO_FLAG = /^-XX:M(in|ax)HeapFreeRatio=/;
+function lastSize(args: readonly string[], flags: readonly string[]): number {
+  let result = Number.NaN;
+  for (const arg of args) {
+    const flag = flags.find((f) => arg.startsWith(f));
+    if (flag) {
+      result = parseJvmSize(arg.slice(flag.length)) ?? Number.NaN;
+    }
+  }
+  return result;
+}
+
+const MAX_HEAP_FLAGS = ["-Xmx", "-XX:MaxHeapSize="];
+const MIN_HEAP_FLAGS = ["-Xms", "-XX:InitialHeapSize=", "-XX:MinHeapSize="];
+/** Max-heap intent without a size we can compare (percentages, MaxRAM, ...). */
+const OTHER_MAX_INTENT =
+  /^(-XX:(Max|Min)RAM(Percentage|Fraction)=|-XX:MaxRAM=|-XX:SoftMaxHeapSize=|-XX:\+AggressiveHeap$)/;
+const OTHER_MIN_INTENT = /^-XX:Initial(RAMPercentage|RAMFraction)=/;
+
+function present(args: readonly string[], flags: readonly string[]): boolean {
+  return args.some((arg) => flags.some((f) => arg.startsWith(f)));
+}
+
+/** Percent value of the last MinHeapFreeRatio / -Xminf style option. */
+function lastRatio(
+  args: readonly string[],
+  which: "Min" | "Max",
+): number | undefined {
+  const xx = `-XX:${which}HeapFreeRatio=`;
+  const x = which === "Min" ? "-Xminf" : "-Xmaxf";
+  let result: number | undefined;
+  for (const arg of args) {
+    if (arg.startsWith(xx)) {
+      result = Number(arg.slice(xx.length));
+    } else if (arg.startsWith(x)) {
+      result = Number(arg.slice(x.length)) * 100;
+    }
+  }
+  return result;
+}
+
+/**
+ * "Last wins" only holds per flag, and HotSpot rejects contradictory sizes, so
+ * a default is dropped only when the user's options (or the Java environment
+ * variables) would conflict with it:
+ * - -Xmx2g when the user sets a maximum, or an initial heap above 2g;
+ * - -Xms64m when the user's maximum is below 64m;
+ * - MinHeapFreeRatio=20 when the user's Max is below it, and
+ *   MaxHeapFreeRatio=40 when the user's Min is above it.
+ * An unparseable value drops the default it might conflict with.
+ */
+function conflictingDefaults(intent: readonly string[]): Set<string> {
+  const drop = new Set<string>();
+  const userMaxSet =
+    present(intent, MAX_HEAP_FLAGS) ||
+    intent.some((a) => OTHER_MAX_INTENT.test(a));
+  if (userMaxSet) {
+    drop.add("-Xmx2g");
+    const max = lastSize(intent, MAX_HEAP_FLAGS);
+    const otherMax = intent.some((a) => OTHER_MAX_INTENT.test(a));
+    // A percentage or MaxRAM cannot be compared; -Xms64m stays safe for those.
+    if (
+      present(intent, MAX_HEAP_FLAGS) &&
+      !otherMax &&
+      !(max >= DEFAULT_XMS_BYTES)
+    ) {
+      drop.add("-Xms64m");
+    }
+  } else if (
+    present(intent, MIN_HEAP_FLAGS) ||
+    intent.some((a) => OTHER_MIN_INTENT.test(a))
+  ) {
+    const min = lastSize(intent, MIN_HEAP_FLAGS);
+    if (!(min <= DEFAULT_XMX_BYTES)) {
+      drop.add("-Xmx2g");
+    }
+  }
+  const userMin = lastRatio(intent, "Min");
+  const userMax = lastRatio(intent, "Max");
+  if (userMax !== undefined && !(userMax >= DEFAULT_MIN_FREE_RATIO)) {
+    drop.add("-XX:MinHeapFreeRatio=20");
+  }
+  if (userMin !== undefined && !(userMin <= DEFAULT_MAX_FREE_RATIO)) {
+    drop.add("-XX:MaxHeapFreeRatio=40");
+  }
+  return drop;
+}
 
 /**
  * Splits the JVM option variables the java launcher honours; they are
@@ -127,13 +223,9 @@ export function resolveVmArgs(
   // The environment counts as user intent for conflict detection.
   const intent = [...user, ...envArgs];
   const dropG1 = selectsOtherCollector(intent);
-  const dropHeap = intent.some((arg) => HEAP_SIZE_FLAG.test(arg));
-  const dropRatios = intent.some((arg) => FREE_RATIO_FLAG.test(arg));
+  const dropped = conflictingDefaults(intent);
   const defaults = DEFAULT_SERVER_VM_ARGS.filter(
-    (arg) =>
-      !(dropG1 && isG1OnlyFlag(arg)) &&
-      !(dropHeap && HEAP_SIZING_DEFAULT.test(arg)) &&
-      !(dropRatios && FREE_RATIO_FLAG.test(arg)),
+    (arg) => !(dropG1 && isG1OnlyFlag(arg)) && !dropped.has(arg),
   );
   return [...defaults, ...user];
 }

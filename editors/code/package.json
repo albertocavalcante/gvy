@@ -619,7 +619,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "Extra JVM options for the language server, for example [\"-Xmx4g\"]. They are appended after the built-in defaults (see groovy.server.vmargsDefaults), so for -X/-XX options yours win. Setting any heap size option (-Xmx, -Xms, -XX:MaxRAMPercentage) replaces the default -Xms/-Xmx, setting either HeapFreeRatio replaces both, and selecting another collector such as -XX:+UseParallelGC drops the defaults that only apply to G1 (JAVA_TOOL_OPTIONS, JDK_JAVA_OPTIONS and _JAVA_OPTIONS are considered too). Non-string entries are ignored. Requires a server restart."
+          "description": "Extra JVM options for the language server, for example [\"-Xmx4g\"]. They are appended after the built-in defaults (see groovy.server.vmargsDefaults), so for -X/-XX options yours win. A default is dropped only when it would conflict with yours: -Xmx2g when you set a maximum heap (-Xmx, -XX:MaxRAMPercentage, ...) or an initial heap above 2g, -Xms64m when your maximum is below 64m, a HeapFreeRatio default when your other bound would contradict it. Selecting another collector such as -XX:+UseParallelGC drops the defaults that only apply to G1. JAVA_TOOL_OPTIONS, JDK_JAVA_OPTIONS and _JAVA_OPTIONS are considered too; @argfiles, -XX:VMOptionsFile and -XX:Flags are not inspected. Upgrade note: a custom list here no longer replaces the defaults; set groovy.server.vmargsDefaults to false to restore that. Non-string entries are ignored. Requires a server restart."
         },
         "groovy.server.vmargsDefaults": {
           "scope": "machine",

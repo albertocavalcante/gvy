@@ -2,7 +2,11 @@ import * as assert from "assert";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";
 
-type Deferred = { promise: Promise<void>; resolve: () => void; reject: (e: Error) => void };
+type Deferred = {
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: (e: Error) => void;
+};
 function deferred(): Deferred {
   let resolve!: () => void;
   let reject!: (e: Error) => void;
@@ -17,7 +21,7 @@ const State = { Stopped: 1, Starting: 3, Running: 2 };
 const CloseAction = { DoNotRestart: 1, Restart: 2 };
 
 interface FakeErrorHandler {
-  closed: () => { action: number; handled?: boolean };
+  closed: () => unknown;
 }
 
 interface FakeClientOptions {
@@ -34,13 +38,16 @@ class FakeClient {
   serverProcess: { kill: sinon.SinonStub } | undefined = FakeClient.spawnLate
     ? undefined
     : { kill: sinon.stub() };
+  static closedResult: () => unknown = () => ({ action: CloseAction.Restart });
   createDefaultErrorHandler = () => ({
     error: () => ({ action: 1 }),
-    closed: () => ({ action: CloseAction.Restart }),
+    closed: () => FakeClient.closedResult(),
   });
   stop = sinon.stub().callsFake(async () => {
     if (this.state !== State.Running) {
-      throw new Error(`Client is not running and can't be stopped. It's current state is: ${this.state}`);
+      throw new Error(
+        `Client is not running and can't be stopped. It's current state is: ${this.state}`,
+      );
     }
     this.state = State.Stopped;
   });
@@ -84,12 +91,15 @@ describe("server/client lifecycle", () => {
   let setServerVersion: sinon.SinonStub;
   let createOutputChannel: sinon.SinonStub;
   let startTimeoutSeconds: number;
+  let serverVmArgs: unknown;
 
   beforeEach(() => {
     FakeClient.instances = [];
     FakeClient.nextStart = undefined;
     FakeClient.spawnLate = false;
     startTimeoutSeconds = 120;
+    serverVmArgs = undefined;
+    FakeClient.closedResult = () => ({ action: CloseAction.Restart });
     watchers = [];
     validateJava = sinon.stub().resolves({
       isValid: true,
@@ -97,7 +107,9 @@ describe("server/client lifecycle", () => {
     });
     showJavaError = sinon.stub().resolves();
     setServerVersion = sinon.stub();
-    createOutputChannel = sinon.stub().callsFake(() => ({ dispose: sinon.stub() }));
+    createOutputChannel = sinon
+      .stub()
+      .callsFake(() => ({ dispose: sinon.stub() }));
 
     const vscodeMock = {
       workspace: {
@@ -120,7 +132,11 @@ describe("server/client lifecycle", () => {
 
     mod = proxyquire.noCallThru()("../../../src/server/client", {
       vscode: vscodeMock,
-      "vscode-languageclient/node": { LanguageClient: FakeClient, State, CloseAction },
+      "vscode-languageclient/node": {
+        LanguageClient: FakeClient,
+        State,
+        CloseAction,
+      },
       "../java/validator": {
         validateJava,
         showJavaError,
@@ -128,10 +144,17 @@ describe("server/client lifecycle", () => {
       },
       "../ui/statusBar": {
         setClient: sinon.stub(),
-        getStatusBarManager: () => ({ setOutputChannel: sinon.stub(), setServerVersion }),
+        getStatusBarManager: () => ({
+          setOutputChannel: sinon.stub(),
+          setServerVersion,
+        }),
       },
       "../configuration/settings": {
-        getConfiguration: () => ({ serverPath: undefined, startTimeoutSeconds }),
+        getConfiguration: () => ({
+          serverPath: undefined,
+          startTimeoutSeconds,
+          serverVmArgs,
+        }),
       },
       "../services/ServerResolver": {
         ServerResolver: class {
@@ -141,7 +164,10 @@ describe("server/client lifecycle", () => {
         },
       },
     });
-    mod.initializeClient({ subscriptions: [], asAbsolutePath: (p: string) => p });
+    mod.initializeClient({
+      subscriptions: [],
+      asAbsolutePath: (p: string) => p,
+    });
   });
 
   it("serializes restart behind an in-flight start (no second server)", async () => {
@@ -151,7 +177,11 @@ describe("server/client lifecycle", () => {
     const restarting = mod.restartClient();
 
     await new Promise((r) => setTimeout(r, 0));
-    assert.strictEqual(FakeClient.instances.length, 1, "restart must wait for the start");
+    assert.strictEqual(
+      FakeClient.instances.length,
+      1,
+      "restart must wait for the start",
+    );
 
     firstStart.resolve();
     await starting;
@@ -169,7 +199,10 @@ describe("server/client lifecycle", () => {
     await mod.startClient(channel);
     await mod.restartClient();
     assert.strictEqual(FakeClient.instances.length, 2);
-    assert.strictEqual(FakeClient.instances[1].clientOptions.outputChannel, channel);
+    assert.strictEqual(
+      FakeClient.instances[1].clientOptions.outputChannel,
+      channel,
+    );
   });
 
   it("disposes the per-start file watcher when the server stops", async () => {
@@ -187,7 +220,10 @@ describe("server/client lifecycle", () => {
   });
 
   it("does not wait for the user to dismiss the Java error", async () => {
-    validateJava.resolves({ isValid: false, error: "No Java installation found" });
+    validateJava.resolves({
+      isValid: false,
+      error: "No Java installation found",
+    });
     showJavaError.returns(new Promise(() => {})); // notification left open
     await assert.rejects(mod.startClient(), /Java validation failed/);
     assert.ok(showJavaError.calledOnce);
@@ -231,9 +267,12 @@ describe("server/client lifecycle", () => {
     FakeClient.nextStart = () => new Promise(() => {}); // initialize never answered
     await assert.rejects(mod.startClient(), /did not start within/);
     const [hung] = FakeClient.instances;
-    assert.ok(hung.serverProcess?.kill.calledOnce, "the hung JVM must be killed");
+    assert.ok(
+      hung.serverProcess?.kill.calledOnce,
+      "the hung JVM must be killed",
+    );
     assert.strictEqual(
-      hung.clientOptions.errorHandler?.closed().action,
+      (hung.clientOptions.errorHandler?.closed() as { action: number }).action,
       CloseAction.DoNotRestart,
       "the client must not respawn the server it was told to abandon",
     );
@@ -255,7 +294,105 @@ describe("server/client lifecycle", () => {
   it("lets the default error handler decide restarts for a healthy client", async () => {
     await mod.startClient();
     const [client] = FakeClient.instances;
-    assert.strictEqual(client.clientOptions.errorHandler?.closed().action, CloseAction.Restart);
+    assert.strictEqual(
+      (client.clientOptions.errorHandler?.closed() as { action: number })
+        .action,
+      CloseAction.Restart,
+    );
+  });
+
+  describe("crash-restart argument refresh", () => {
+    const runArgs = (c: FakeClient) =>
+      (
+        c.serverOptions as {
+          run: { args: string[] };
+          debug: { args: string[] };
+        }
+      ).run.args;
+
+    it("rebuilds the shared args from current settings when a restart is chosen", async () => {
+      await mod.startClient();
+      const [client] = FakeClient.instances;
+      const so = client.serverOptions as {
+        run: { args: string[] };
+        debug: { args: string[] };
+      };
+      assert.strictEqual(
+        so.run.args,
+        so.debug.args,
+        "run and debug share one array",
+      );
+      const before = so.run.args;
+      assert.ok(!before.includes("-Dnew=1"));
+
+      serverVmArgs = ["-Dnew=1"];
+      client.clientOptions.errorHandler?.closed();
+
+      assert.strictEqual(
+        so.run.args,
+        before,
+        "refreshed in place, not replaced",
+      );
+      assert.ok(so.debug.args.includes("-Dnew=1"));
+      assert.deepStrictEqual(so.run.args.slice(-2), [
+        "-jar",
+        "/ext/server/gls.jar",
+      ]);
+    });
+
+    it("does not rebuild when the handler decides not to restart", async () => {
+      await mod.startClient();
+      const [client] = FakeClient.instances;
+      FakeClient.closedResult = () => ({ action: CloseAction.DoNotRestart });
+      serverVmArgs = ["-Dnew=1"];
+      client.clientOptions.errorHandler?.closed();
+      assert.ok(!runArgs(client).includes("-Dnew=1"));
+    });
+
+    it("refreshes after an asynchronous handler result", async () => {
+      await mod.startClient();
+      const [client] = FakeClient.instances;
+      FakeClient.closedResult = () =>
+        Promise.resolve({ action: CloseAction.Restart });
+      serverVmArgs = ["-Dasync=1"];
+      const result = client.clientOptions.errorHandler?.closed();
+      assert.ok(typeof (result as Promise<unknown>).then === "function");
+      assert.deepStrictEqual(await result, { action: CloseAction.Restart });
+      assert.ok(runArgs(client).includes("-Dasync=1"));
+    });
+
+    it("refreshes a thenable that is not a Promise", async () => {
+      await mod.startClient();
+      const [client] = FakeClient.instances;
+      FakeClient.closedResult = () => ({
+        then: (resolve: (v: unknown) => void) =>
+          resolve({ action: CloseAction.Restart }),
+      });
+      serverVmArgs = ["-Dthenable=1"];
+      await client.clientOptions.errorHandler?.closed();
+      assert.ok(runArgs(client).includes("-Dthenable=1"));
+    });
+
+    it("never rebuilds an abandoned client's args", async () => {
+      startTimeoutSeconds = 0.02;
+      FakeClient.nextStart = () => new Promise(() => {});
+      await assert.rejects(mod.startClient(), /did not start within/);
+      const [hung] = FakeClient.instances;
+      serverVmArgs = ["-Dnew=1"];
+      hung.clientOptions.errorHandler?.closed();
+      assert.ok(!runArgs(hung).includes("-Dnew=1"));
+    });
+
+    it("refreshes only the array of the client whose handler fired", async () => {
+      await mod.startClient();
+      const [first] = FakeClient.instances;
+      await mod.restartClient();
+      const second = FakeClient.instances[1];
+      serverVmArgs = ["-Dold=1"];
+      first.clientOptions.errorHandler?.closed();
+      assert.ok(runArgs(first).includes("-Dold=1"));
+      assert.ok(!runArgs(second).includes("-Dold=1"));
+    });
   });
 
   it("waits indefinitely when the start timeout is 0", async () => {
