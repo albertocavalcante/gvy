@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
+import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -297,16 +298,38 @@ class GroovyTextDocumentServiceFormattingTest {
     }
 
     @Test
-    fun `formatting never returns an edit that changes the program (#1523)`() {
+    fun `a refused formatting result sends no edit and reports REFUSED`() {
         client.telemetryEvents.clear()
-        val source = listOf(
-            "class A {",
-            "    def f(x) {",
-            "        def y = x as BigDecimal",
-            "        def s = \"a    b\"",
-            "    }",
-            "}",
-        ).joinToString("\n")
+        val source = "def y = x as BigDecimal"
+        val documentProvider = DocumentProvider().apply { put(uri, source) }
+        // The formatter no longer damages `as` casts (#1523), so stand in for one whose guard refuses.
+        val refusingFormatter = object : Formatter {
+            override fun format(text: String): String = text
+            override fun formatChecked(text: String): FormatOutcome =
+                FormatOutcome.Refused(text, "first difference at token #3: expected Identifier 'x'")
+        }
+        val service = GroovyTextDocumentService(
+            coroutineScope = coroutineScope,
+            compilationService = compilationService,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = refusingFormatter,
+            ),
+        )
+
+        val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        assertTrue(edits.isEmpty(), "the damaging result is refused, not sent")
+        val telemetry = client.telemetryEvents.single() as FormatterTelemetryEvent
+        assertEquals(FormatterStatus.REFUSED, telemetry.status)
+    }
+
+    @Test
+    fun `the real formatter's damaging result is refused end to end`() {
+        client.telemetryEvents.clear()
+        // The formatter still drops the `~` here (#1609: it prints `def b = a`), so the guard refuses the result.
+        val source = "def b = ~a"
         val documentProvider = DocumentProvider().apply { put(uri, source) }
         val service = GroovyTextDocumentService(
             coroutineScope = coroutineScope,
@@ -320,14 +343,31 @@ class GroovyTextDocumentServiceFormattingTest {
 
         val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
 
-        // Either the formatter handles the construct or it refuses; it must never send damaged code.
-        val result = edits.singleOrNull()?.newText ?: source
-        assertTrue(edits.size <= 1, "Formatting returns at most one whole-document edit")
-        assertTrue("def y = x as BigDecimal" in result, "the as operator keeps its spaces:\n$result")
-        assertTrue("\"a    b\"" in result, "string content is untouched:\n$result")
         assertTrue(edits.isEmpty(), "the damaging result is refused, not sent")
         val telemetry = client.telemetryEvents.single() as FormatterTelemetryEvent
         assertEquals(FormatterStatus.REFUSED, telemetry.status)
+    }
+
+    @Test
+    fun `a document with as casts gets formatted instead of refused (#1523)`() {
+        val source = "class A {\ndef f(Object x) {\ndef y = x as BigDecimal\nnew Date(x as long)\n}\n}"
+        val documentProvider = DocumentProvider().apply { put(uri, source) }
+        val service = GroovyTextDocumentService(
+            coroutineScope = coroutineScope,
+            compilationService = compilationService,
+            options = GroovyTextDocumentServiceOptions(
+                client = { client },
+                documentProvider = documentProvider,
+                formatter = OpenRewriteFormatterAdapter(),
+            ),
+        )
+
+        val edits = service.formatting(formattingParams()).get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+
+        assertEquals(
+            "class A {\n    def f(Object x) {\n        def y = x as BigDecimal\n        new Date(x as long)\n    }\n}",
+            edits.single().newText,
+        )
     }
 
     private fun formattingParams(targetUri: URI = uri): DocumentFormattingParams = DocumentFormattingParams().apply {

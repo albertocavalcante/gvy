@@ -21,6 +21,14 @@ class OpenRewriteFormatterTest {
             .isEqualTo(expected)
     }
 
+    /** Asserts on the formatter's own output, before [TokenStreamGuard] can refuse it. */
+    private fun assertRawFormatsTo(input: String, expected: String) {
+        val actual = formatter.formatUnchecked(input)
+        assertThat(actual)
+            .withFailMessage { "Raw formatter output differs.\nExpected:\n$expected\n\nActual:\n$actual" }
+            .isEqualTo(expected)
+    }
+
     @Nested
     inner class `General formatting` {
 
@@ -400,13 +408,6 @@ class OpenRewriteFormatterTest {
     @Nested
     inner class `Raw output keeps string and comment text` {
 
-        private fun assertRawFormatsTo(input: String, expected: String) {
-            val actual = formatter.formatUnchecked(input)
-            assertThat(actual)
-                .withFailMessage { "Raw formatter output differs.\nExpected:\n$expected\n\nActual:\n$actual" }
-                .isEqualTo(expected)
-        }
-
         @ParameterizedTest
         @ValueSource(
             strings = [
@@ -530,6 +531,16 @@ class OpenRewriteFormatterTest {
         }
 
         @Test
+        fun `formats a document with as casts instead of refusing it (#1523)`() {
+            assertFormatsTo(
+                input = "class A {\ndef f(Object x) {\ndef y = x as BigDecimal\nnew Date(x as long)\n}\n}",
+                expected =
+                "class A {\n    def f(Object x) {\n        def y = x as BigDecimal\n        new Date(x as long)\n" +
+                    "    }\n}",
+            )
+        }
+
+        @Test
         fun `keeps runs of spaces inside string literals (#1524)`() {
             val tripleQuote = "\"\"\""
             val input = listOf(
@@ -598,6 +609,55 @@ class OpenRewriteFormatterTest {
                 input = "def x = foo(  1,2 )\nif(x){\nprintln x\n}",
                 expected = "def x = foo(1, 2)\nif (x) {\n    println x\n}",
             )
+        }
+    }
+
+    /**
+     * Asserts on the formatter's own output, before [TokenStreamGuard] can refuse it, so a
+     * damaging transformation shows up as a wrong result instead of an unchanged document.
+     */
+    @Nested
+    inner class `Raw output keeps as casts` {
+
+        @ParameterizedTest
+        @ValueSource(
+            strings = [
+                "def y = x as BigDecimal",
+                "new Date(x as long)",
+                "g(x as String, 1)",
+                "def m = new Money(amount * (factor as BigDecimal), currency)",
+                "def s = [1, 2] as Set<Integer>",
+                "def a = list as String[]",
+                "def t = (x as List) as Set",
+                "def p = ~/a+/ as Object",
+                "return x as int",
+                "println x as String",
+                "assert x as boolean",
+                "foo x as int, y",
+                "def a = x /* c */ as String",
+            ],
+        )
+        fun `keeps the spaces around the as operator (#1523)`(input: String) {
+            assertRawFormatsTo(input, input)
+        }
+
+        @Test
+        fun `formats the code around an as cast (#1523)`() {
+            assertRawFormatsTo(
+                input = "if(x){\ndef y = foo(  x  as  BigDecimal,1 )\n}",
+                expected = "if (x) {\n    def y = foo(x as BigDecimal, 1)\n}",
+            )
+        }
+
+        @Test
+        fun `is idempotent on as casts (#1523)`() {
+            val once = formatter.formatUnchecked("def f(x) {\nnew Date(x as long)\n}")
+            assertThat(formatter.formatUnchecked(once)).isEqualTo(once)
+        }
+
+        @Test
+        fun `leaves C-style casts alone (#1523)`() {
+            assertRawFormatsTo(input = "def y = (BigDecimal) x", expected = "def y = (BigDecimal) x")
         }
     }
 }

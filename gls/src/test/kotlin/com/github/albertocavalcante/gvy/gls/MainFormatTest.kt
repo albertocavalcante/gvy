@@ -36,7 +36,8 @@ class MainFormatTest {
     @Test
     fun `format warns on stderr and prints the input when the result would change the program`() {
         val tempFile = File.createTempFile("Refused", ".groovy")
-        val input = "def y = x as BigDecimal\n"
+        // The formatter still drops the `~` here (#1609: it prints `def b = a`), so the guard refuses the result.
+        val input = "def b = ~a\n"
         tempFile.writeText(input)
         tempFile.deleteOnExit()
 
@@ -49,7 +50,7 @@ class MainFormatTest {
             System.setErr(originalErr)
         }
 
-        assertTrue(output.contains("def y = x as BigDecimal"), "Expected the unchanged input, got: $output")
+        assertTrue(output.contains("def b = ~a"), "Expected the unchanged input, got: $output")
         val warning = err.toString(Charsets.UTF_8)
         assertTrue(
             warning.contains("left unformatted") && warning.contains(tempFile.path),

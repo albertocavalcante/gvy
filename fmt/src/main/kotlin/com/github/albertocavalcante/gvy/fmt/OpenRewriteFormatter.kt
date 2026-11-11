@@ -7,8 +7,10 @@ import org.openrewrite.SourceFile
 import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.format.AutoFormat
+import org.openrewrite.groovy.marker.AsStyleTypeCast
 import org.openrewrite.groovy.marker.MultiVariable
 import org.openrewrite.internal.InMemoryLargeSourceSet
+import org.openrewrite.java.tree.Comment
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
 import org.slf4j.LoggerFactory
@@ -93,7 +95,8 @@ class OpenRewriteFormatter internal constructor(
 
             // Fix spacing on the LST only: a text-level pass over the printed source would also rewrite
             // the inside of string literals and comments (#1524).
-            val declarationsFixed = DeclarationSpacing().visit(formattedSource, Unit) as SourceFile
+            val castsRestored = AsCastSpacingRestorer().visit(formattedSource, Unit) as SourceFile
+            val declarationsFixed = DeclarationSpacing().visit(castsRestored, Unit) as SourceFile
             val normalizedSource = PostFormatWhitespaceCollapser().visit(declarationsFixed, Unit) as SourceFile
             normalizedSource.printAll().normalizeLineEndings()
         }.getOrElse { return text }
@@ -233,11 +236,60 @@ class OpenRewriteFormatter internal constructor(
                 (typePrefix.comments.isEmpty() || variablePrefix.isInlineWhitespace())
             return untyped && varargs == null && oneLine
         }
+    }
 
-        private fun Space.isInlineWhitespace(): Boolean = comments.isEmpty() && '\n' !in whitespace
+    /**
+     * Restores the spaces around the `as` operator after `AutoFormat` (#1523).
+     *
+     * rewrite-groovy models `x as T` as a [J.TypeCast] with the [AsStyleTypeCast] marker, reusing the
+     * Java cast's slots: the space before `as` is the space before the `)` of `(T)`, the space after
+     * `as` is the space after the `(`, and the expression's prefix is the space after the cast.
+     * `AutoFormat` applies the Java cast spacing rules to those slots, so it removes both spaces
+     * around `as` (`x as T` becomes `xasT`) and adds one before the expression (`f(x as T)` becomes
+     * `f( xasT)`). On `as` casts only, this visitor makes sure each side of `as` has at least one space
+     * (after a comment too) and clears an inline expression prefix. C-style casts are left alone.
+     *
+     * TODO(#1598): drop this visitor once rewrite-groovy keeps the `as` spacing itself.
+     *   See: https://github.com/albertocavalcante/gvy/issues/1598
+     */
+    private class AsCastSpacingRestorer : GroovyIsoVisitor<Unit>() {
+        override fun visitTypeCast(typeCast: J.TypeCast, p: Unit): J.TypeCast {
+            val cast = super.visitTypeCast(typeCast, p)
+            if (!cast.markers.findFirst(AsStyleTypeCast::class.java).isPresent) return cast
+
+            val clazz = cast.clazz
+            val typePadding = clazz.padding.tree
+            val restoredClazz = clazz.padding.withTree(
+                typePadding
+                    .withAfter(typePadding.after.atLeastOneSpace())
+                    .withElement(typePadding.element.withPrefix(typePadding.element.prefix.atLeastOneSpace())),
+            )
+            val expression = cast.expression
+            val restoredExpression = if (expression.prefix.isInlineWhitespace()) {
+                // The cast's own prefix already holds the space in front of `x as T`.
+                expression.withPrefix(Space.EMPTY)
+            } else {
+                expression
+            }
+            return cast.withClazz(restoredClazz).withExpression(restoredExpression)
+        }
+
+        /** Separates `as` from its neighbours, including a comment that sits right next to it. */
+        private fun Space.atLeastOneSpace(): Space {
+            val spaced = if (whitespace.isEmpty()) withWhitespace(" ") else this
+            val last = spaced.comments.lastOrNull()
+            return if (last != null && last.suffix.isEmpty()) {
+                spaced.withComments(spaced.comments.dropLast(1) + last.withSuffix<Comment>(" "))
+            } else {
+                spaced
+            }
+        }
     }
 
     companion object {
         private val logger = LoggerFactory.getLogger(OpenRewriteFormatter::class.java)
     }
 }
+
+/** True when [this] holds only spaces or tabs: no comment and no line break. */
+private fun Space.isInlineWhitespace(): Boolean = comments.isEmpty() && '\n' !in whitespace
