@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.fmt
 
 import groovyjarjarantlr4.v4.runtime.ANTLRErrorListener
 import groovyjarjarantlr4.v4.runtime.CharStreams
+import groovyjarjarantlr4.v4.runtime.Lexer
 import groovyjarjarantlr4.v4.runtime.RecognitionException
 import groovyjarjarantlr4.v4.runtime.Recognizer
 import groovyjarjarantlr4.v4.runtime.Token
@@ -82,6 +83,15 @@ sealed interface TokenStreamVerdict {
  * Pure and side-effect free, so any edit producer (formatting today; rename and code actions are
  * candidates) can apply its edits in memory and ask whether the result still means the same program.
  *
+ * **Precondition: the original must lex and parse.** The guard proves that two token streams are
+ * equivalent for the parser; it does not parse. Some rules below (a line break added after `;`)
+ * are sound only for code that parses, and the lexer silently re-reads some broken input as other
+ * tokens (an unterminated `/regex` as a division). The guard reports what it can detect cheaply as
+ * [TokenStreamVerdict.OriginalUnverifiable]: lexer errors, a string left open at end of file, and
+ * the division or `/` `*` tokens an unterminated slashy string or block comment turns into. Callers
+ * must not ask it to vouch for edits to code that does not parse. The formatter meets this: it
+ * returns its input unchanged when the code does not parse.
+ *
  * Two sources are equivalent when their significant token sequences are equal by kind and text.
  * What counts as layout, and is therefore ignored:
  * - spaces, tabs and line continuations between tokens (the lexer skips them);
@@ -95,8 +105,7 @@ sealed interface TokenStreamVerdict {
  *   `foo {} (x)`, and a `case` label must keep its `->` on the same line;
  * - a line break the edit adds after `;`. Removing one is a change: `if (c) ;` (an empty
  *   statement) cannot take the next statement on its line. Adding one is safe only because the
- *   original parses, so `;` followed by more code on its line was a separator; callers must not
- *   use the guard to vouch for edits to code that does not parse;
+ *   original parses (see the precondition), so `;` followed by more code on its line was a separator;
  * - other tokens the lexer puts on the hidden channel, which the parser never sees;
  * - indentation and trailing spaces on each line of a comment. Runtime groovydoc (a doc comment
  *   opened with an `@`) is kept at runtime, so re-indenting it is visible through reflection;
@@ -180,20 +189,32 @@ object TokenStreamGuard {
         }
         val collector = SignificantTokenCollector(lexer.vocabulary, shebangToken(source))
 
-        try {
+        val failure = try {
             generateSequence { lexer.nextToken() }
                 .takeWhile { it.type != Token.EOF }
                 .forEach(collector::accept)
+            errors.first ?: collector.unterminated ?: openAtEndOfFile(lexer, collector.lastDefaultType)
         } catch (error: GroovySyntaxError) {
-            return Lexed.Failed(LexFailure(error.line, error.column, error.message ?: "syntax error"))
+            LexFailure(error.line, error.column, error.message ?: "syntax error")
         } catch (error: RecognitionException) {
-            return Lexed.Failed(
-                LexFailure(lexer.line, lexer.charPositionInLine + 1, error.message ?: "no viable token"),
-            )
+            LexFailure(lexer.line, lexer.charPositionInLine + 1, error.message ?: "no viable token")
         }
 
-        return errors.first?.let { Lexed.Failed(it) }
-            ?: Lexed.Tokens(markSeparatorsAfterSemicolons(dropOptionalSeparators(collector.tokens)))
+        return failure?.let { Lexed.Failed(it) } ?: Lexed.Tokens(normaliseSeparators(collector.tokens))
+    }
+
+    /**
+     * A GString still open at end of file leaves the lexer outside its default mode. So does a
+     * closed `"$name"` right at end of file (the lexer looks one character past it), which is
+     * why a final GStringEnd is accepted.
+     */
+    private fun openAtEndOfFile(lexer: GroovyLangLexer, lastDefaultType: Int): LexFailure? {
+        val outsideDefaultMode = lexer._mode != Lexer.DEFAULT_MODE || lexer._modeStack.size() > 0
+        return if (outsideDefaultMode && lastDefaultType != GroovyLangLexer.GStringEnd) {
+            LexFailure(lexer.line, lexer.charPositionInLine + 1, "GString still open at end of file")
+        } else {
+            null
+        }
     }
 
     // Token kinds whose neighbouring line breaks the grammar treats as optional (`nls` or `sep?`).
@@ -208,6 +229,26 @@ object TokenStreamGuard {
         GroovyLangLexer.FINALLY,
     )
 
+    private val DIVISION_TYPES = setOf(GroovyLangLexer.DIV, GroovyLangLexer.DIV_ASSIGN)
+
+    // Mirrors REGEX_CHECK_ARRAY in GroovyLexer.g4: after these tokens `/` is division, elsewhere it starts a regex.
+    private val REGEX_FORBIDDEN_AFTER = setOf(
+        GroovyLangLexer.DEC,
+        GroovyLangLexer.INC,
+        GroovyLangLexer.THIS,
+        GroovyLangLexer.RBRACE,
+        GroovyLangLexer.RBRACK,
+        GroovyLangLexer.RPAREN,
+        GroovyLangLexer.GStringEnd,
+        GroovyLangLexer.NullLiteral,
+        GroovyLangLexer.StringLiteral,
+        GroovyLangLexer.BooleanLiteral,
+        GroovyLangLexer.IntegerLiteral,
+        GroovyLangLexer.FloatingPointLiteral,
+        GroovyLangLexer.Identifier,
+        GroovyLangLexer.CapitalizedIdentifier,
+    )
+
     private val STRING_TOKEN_TYPES = setOf(
         GroovyLangLexer.StringLiteral,
         GroovyLangLexer.GStringBegin,
@@ -218,23 +259,35 @@ object TokenStreamGuard {
     private fun symbolicNames(vararg types: Int): Set<String> =
         types.toList().mapNotNull { GroovyLangLexer.VOCABULARY.getSymbolicName(it) }.toSet()
 
-    private fun dropOptionalSeparators(tokens: List<SignificantToken>): List<SignificantToken> =
-        tokens.filterIndexed { index, token ->
-            token.kind != SignificantToken.SEPARATOR || !isOptionalSeparator(tokens, index)
+    /**
+     * Drops the separators the grammar treats as optional and marks those right after `;`.
+     * Linear: the previous and next code token of every position come from one pass each way,
+     * skipping comments and separators.
+     */
+    private fun normaliseSeparators(tokens: List<SignificantToken>): List<SignificantToken> {
+        val previousCode = arrayOfNulls<String>(tokens.size)
+        var last: String? = null
+        for (index in tokens.indices) {
+            previousCode[index] = last
+            if (tokens[index].isCode()) last = tokens[index].kind
         }
-
-    private fun isOptionalSeparator(tokens: List<SignificantToken>, index: Int): Boolean {
-        val before = tokens.subList(0, index).lastOrNull { it.isCode() }
-        val after = tokens.subList(index + 1, tokens.size).firstOrNull { it.isCode() }
-        return before?.kind in ABSORBS_FOLLOWING_LINE_BREAK || after?.kind in ABSORBS_PRECEDING_LINE_BREAK
+        val nextCode = arrayOfNulls<String>(tokens.size)
+        var next: String? = null
+        for (index in tokens.indices.reversed()) {
+            nextCode[index] = next
+            if (tokens[index].isCode()) next = tokens[index].kind
+        }
+        return tokens.indices.mapNotNull { index ->
+            val token = tokens[index]
+            when {
+                token.kind != SignificantToken.SEPARATOR -> token
+                previousCode[index] in ABSORBS_FOLLOWING_LINE_BREAK -> null
+                nextCode[index] in ABSORBS_PRECEDING_LINE_BREAK -> null
+                previousCode[index] in SEMICOLON -> token.copy(kind = SignificantToken.SEPARATOR_AFTER_SEMICOLON)
+                else -> token
+            }
+        }
     }
-
-    private fun markSeparatorsAfterSemicolons(tokens: List<SignificantToken>): List<SignificantToken> =
-        tokens.mapIndexed { index, token ->
-            val afterSemicolon = token.kind == SignificantToken.SEPARATOR &&
-                tokens.subList(0, index).lastOrNull { it.isCode() }?.kind in SEMICOLON
-            if (afterSemicolon) token.copy(kind = SignificantToken.SEPARATOR_AFTER_SEMICOLON) else token
-        }
 
     private val SEMICOLON = symbolicNames(GroovyLangLexer.SEMI)
 
@@ -245,13 +298,30 @@ object TokenStreamGuard {
     /**
      * Turns raw lexer tokens into significant tokens: drops layout and folds each run of
      * statement-level line breaks into one [SignificantToken.SEPARATOR] between two tokens.
-     * [dropOptionalSeparators] then removes the separators the grammar treats as optional.
+     * [normaliseSeparators] then removes the separators the grammar treats as optional.
+     *
+     * It also notices input the lexer silently re-reads as other tokens: an unterminated slashy
+     * string becomes a division where a regex may start, and an unterminated block comment becomes
+     * `/` directly followed by `*`.
      */
     private class SignificantTokenCollector(private val vocabulary: Vocabulary, shebang: SignificantToken?) {
         val tokens: MutableList<SignificantToken> = listOfNotNull(shebang).toMutableList()
         private var pendingSeparator: Token? = null
+        private var previous: Token? = null
+
+        // The last default-channel token type, tracked as GroovyLexer does to decide whether `/` may start a regex.
+        var lastDefaultType = 0
+            private set
+
+        /** Set when the lexer had to fall back on unterminated input; see the class comment. */
+        var unterminated: LexFailure? = null
+            private set
 
         fun accept(token: Token) {
+            detectUnterminated(token)
+            previous = token
+            if (token.channel == Token.DEFAULT_CHANNEL) lastDefaultType = token.type
+
             val significant = classify(token)
             if (significant != null) {
                 pendingSeparator?.takeIf { tokens.isNotEmpty() }?.let { tokens += separatorAt(it) }
@@ -260,6 +330,24 @@ object TokenStreamGuard {
             } else if (isStatementLineBreak(token) && pendingSeparator == null) {
                 pendingSeparator = token
             }
+        }
+
+        private fun detectUnterminated(token: Token) {
+            if (unterminated != null) return
+            val adjacent = previous?.let { it.stopIndex + 1 == token.startIndex } == true
+            val message = when {
+                token.type in DIVISION_TYPES && lastDefaultType !in REGEX_FORBIDDEN_AFTER ->
+                    "unterminated slashy string or block comment"
+
+                token.type == GroovyLangLexer.MUL && adjacent && previous?.type == GroovyLangLexer.DIV ->
+                    "unterminated block comment"
+
+                token.type in DIVISION_TYPES && adjacent && previous?.text == "$" ->
+                    "unterminated dollar-slashy string"
+
+                else -> return
+            }
+            unterminated = LexFailure(token.line, token.charPositionInLine + 1, message)
         }
 
         private fun classify(token: Token): SignificantToken? {

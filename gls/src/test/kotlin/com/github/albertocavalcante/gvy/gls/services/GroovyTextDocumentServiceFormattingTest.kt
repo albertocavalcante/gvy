@@ -303,6 +303,9 @@ class GroovyTextDocumentServiceFormattingTest {
         assertTrue(edits.size <= 1, "Formatting returns at most one whole-document edit")
         assertTrue("def y = x as BigDecimal" in result, "the as operator keeps its spaces:\n$result")
         assertTrue("\"a    b\"" in result, "string content is untouched:\n$result")
+        assertTrue(edits.isEmpty(), "the damaging result is refused, not sent")
+        val telemetry = client.telemetryEvents.single() as FormatterTelemetryEvent
+        assertEquals(FormatterStatus.REFUSED, telemetry.status)
     }
 
     private fun formattingParams(targetUri: URI = uri): DocumentFormattingParams = DocumentFormattingParams().apply {

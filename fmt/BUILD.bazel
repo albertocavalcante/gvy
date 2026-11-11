@@ -10,10 +10,11 @@ kt_library(
         "@maven//:org_openrewrite_rewrite_core",
         "@maven//:org_openrewrite_rewrite_groovy",
         "@maven//:org_openrewrite_rewrite_java",
+        # TokenStreamGuard compiles against the Groovy lexer. rewrite-groovy is imported with
+        # Groovy 3 excluded, so this Groovy 4 dependency also serves it at runtime.
+        "@maven//:org_apache_groovy_groovy",
         "@maven//:org_slf4j_slf4j_api",
     ],
-    # rewrite-groovy is imported with Groovy 3 excluded; it needs Groovy 4 at runtime.
-    runtime_deps = ["@maven//:org_apache_groovy_groovy"],
 )
 
 kt_test(

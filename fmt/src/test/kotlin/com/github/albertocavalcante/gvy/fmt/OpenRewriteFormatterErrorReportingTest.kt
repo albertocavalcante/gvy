@@ -59,4 +59,30 @@ class OpenRewriteFormatterErrorReportingTest {
             .contains("'x' at 1:9")
             .contains("'xasBigDecimal' at 1:9")
     }
+
+    @Test
+    fun `a token stream check that throws refuses the result`() {
+        val failure = IllegalStateException("lexer exploded")
+        val formatter = OpenRewriteFormatter { _, _ -> throw failure }
+        val input = "def x=1\n"
+
+        val outcome = formatter.formatChecked(input)
+
+        assertThat(outcome).isInstanceOf(FormatOutcome.Refused::class.java)
+        assertThat(outcome.text).isEqualTo(input)
+        assertThat((outcome as FormatOutcome.Refused).cause).isSameAs(failure)
+
+        assertThat(formatter.format(input)).isEqualTo(input)
+        val event = logs.list.single { it.level == Level.WARN }
+        assertThat((event.throwableProxy as ThrowableProxy).throwable).isSameAs(failure)
+    }
+
+    @Test
+    fun `formatChecked reports refusals without logging them`() {
+        val outcome = OpenRewriteFormatter().formatChecked("def y = x as BigDecimal\n")
+
+        assertThat(outcome).isInstanceOf(FormatOutcome.Refused::class.java)
+        assertThat((outcome as FormatOutcome.Refused).reason).contains("'xasBigDecimal' at 1:9")
+        assertThat(logs.list).noneMatch { it.level == Level.WARN }
+    }
 }

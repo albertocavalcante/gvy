@@ -1,10 +1,12 @@
 package com.github.albertocavalcante.gvy.fmt
 
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.CsvSource
+import java.time.Duration
 
 class TokenStreamGuardTest {
 
@@ -115,6 +117,20 @@ class TokenStreamGuardTest {
             assertSafe(
                 "def s = '''a\r\nb'''\r\ndef r = /x\r\ny/\r\ndef g = $tq\${a}\r\nb$tq\r\n",
                 "def s = '''a\nb'''\ndef r = /x\ny/\ndef g = $tq\${a}\nb$tq\n",
+            )
+        }
+
+        @Test
+        fun `line continuation joined or added`() {
+            assertSafe("def x = a \\\n    + b\n", "def x = a + b\n")
+            assertSafe("def x = a + b\n", "def x = a \\\n    + b\n")
+        }
+
+        @Test
+        fun `spacing around divisions is not mistaken for an unterminated regex`() {
+            assertSafe(
+                "def a = x/y\ndef b = (x)/2\ndef c = i++/2\ndef d = \"\$s\"/2\ndef e = list[0]/2\n",
+                "def a = x / y\ndef b = (x) / 2\ndef c = i++ / 2\ndef d = \"\$s\" / 2\ndef e = list[0] / 2\n",
             )
         }
 
@@ -235,6 +251,14 @@ class TokenStreamGuardTest {
         }
 
         @Test
+        fun `line continuation removed`() {
+            // Without the backslash, `+ b` on its own line is a separate statement.
+            val divergence = diverged("def x = a \\\n    + b\n", "def x = a\n    + b\n")
+            assertThat(divergence.expected?.text).isEqualTo("+")
+            assertThat(divergence.actual?.kind).isEqualTo(SignificantToken.SEPARATOR)
+        }
+
+        @Test
         fun `comment text`() {
             val divergence = diverged("// keep   this\ndef x = 1\n", "// keep this\ndef x = 1\n")
             assertThat(divergence.expected?.kind).isEqualTo(SignificantToken.COMMENT)
@@ -272,11 +296,55 @@ class TokenStreamGuardTest {
             assertThat(verdict.isSafe).isFalse()
         }
 
+        @ParameterizedTest(name = "{0}")
+        @CsvSource(
+            delimiter = '|',
+            quoteCharacter = '`',
+            value = [
+                "slashy string       | def r = /a    b",
+                "block comment       | x = 1\\n/* open    a",
+                "block comment first | /* open    a",
+                "dollar-slashy       | def d = \$/a    b",
+                "GString             | def g = \"a\${x    + 1",
+            ],
+        )
+        fun `original with a token left open at end of file is never vouched for`(kind: String, original: String) {
+            // The lexer silently re-reads these as other tokens, so spacing changes would look like layout.
+            val source = original.trim().replace("\\n", "\n")
+            val verdict = TokenStreamGuard.check(source, source.replace("    ", " "))
+            assertThat(verdict).describedAs(kind).isInstanceOf(TokenStreamVerdict.OriginalUnverifiable::class.java)
+        }
+
+        @Test
+        fun `edit that leaves a slashy string open`() {
+            val verdict = TokenStreamGuard.check("def r = /a/\n", "def r = /a\n")
+            assertThat(verdict).isInstanceOf(TokenStreamVerdict.IntroducedLexError::class.java)
+        }
+
         @Test
         fun `original that cannot be lexed is never vouched for`() {
             val verdict = TokenStreamGuard.check("def s = 'a\n", "def s =  'a\n")
             assertThat(verdict).isInstanceOf(TokenStreamVerdict.OriginalUnverifiable::class.java)
             assertThat(verdict.isSafe).isFalse()
+        }
+    }
+
+    @Nested
+    inner class Performance {
+
+        @Test
+        fun `long runs of comments are checked in linear time`() {
+            // 20k comment lines used to take tens of seconds when every line break scanned its neighbours.
+            val comments = (1..20_000).joinToString("\n") { "// line $it" }
+            val original = "$comments\ndef x  =  1\n"
+            val edited = "$comments\ndef x = 1\n"
+
+            val verdict =
+                assertTimeoutPreemptively<TokenStreamVerdict>(Duration.ofSeconds(10)) {
+                    TokenStreamGuard.check(original, edited)
+                }
+
+            assertThat(verdict.isSafe).isTrue()
         }
     }
 }
