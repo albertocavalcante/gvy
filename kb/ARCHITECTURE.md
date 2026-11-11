@@ -230,7 +230,7 @@ Priority (high to low):
 ```
 
 [→ Jenkins IntelliSense Architecture](JENKINS_INTELLISENSE_ARCHITECTURE.md)\
-[→ Roadmap](roadmap/README.md)
+[→ North Star](../docs/north-star.md)
 
 ---
 
@@ -263,7 +263,7 @@ GDSL script execution for dynamic DSL support.
 | `GdslContributor` | Captures DSL contributions    |
 | `GdslLoader`      | Loads bundled GDSL files      |
 
-[→ GDSL Execution Engine Spec](roadmap/specs/GDSL_EXECUTION_ENGINE.md)
+[→ GDSL Execution Engine Spec](specs/GDSL_EXECUTION_ENGINE.md)
 
 ---
 
