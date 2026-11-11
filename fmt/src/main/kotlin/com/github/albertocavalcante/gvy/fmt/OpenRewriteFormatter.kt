@@ -8,7 +8,6 @@ import org.openrewrite.groovy.GroovyIsoVisitor
 import org.openrewrite.groovy.GroovyParser
 import org.openrewrite.groovy.format.AutoFormat
 import org.openrewrite.groovy.marker.MultiVariable
-import org.openrewrite.groovy.marker.RedundantDef
 import org.openrewrite.internal.InMemoryLargeSourceSet
 import org.openrewrite.java.tree.J
 import org.openrewrite.java.tree.Space
@@ -149,7 +148,7 @@ class OpenRewriteFormatter internal constructor(
      * also puts a space before the `,` of a multi-variable declaration (`def a = 1 , b`).
      *
      * This visitor merges the adjacent prefixes. In an untyped declaration, the name keeps one space
-     * when an annotation, a modifier, `def` or the `,` of a multi-variable declaration precedes it, and none
+     * when an annotation, a modifier or the `,` of a multi-variable declaration precedes it, and none
      * otherwise, because the declaration's own prefix already separates it from the previous token.
      *
      * TODO(#1598): drop this visitor once rewrite-groovy keeps the spacing of Groovy declarations.
@@ -184,8 +183,7 @@ class OpenRewriteFormatter internal constructor(
 
             val precededByText = declarations.leadingAnnotations.isNotEmpty() ||
                 declarations.modifiers.isNotEmpty() ||
-                declarations.markers.findFirst(MultiVariable::class.java).isPresent ||
-                declarations.markers.findFirst(RedundantDef::class.java).isPresent
+                declarations.markers.findFirst(MultiVariable::class.java).isPresent
             val separator = if (precededByText) " " else ""
             val typePrefix = declarations.typeExpression?.prefix ?: Space.EMPTY
             return if (typePrefix.comments.isEmpty()) {
@@ -212,8 +210,7 @@ class OpenRewriteFormatter internal constructor(
          */
         private fun J.VariableDeclarations.withoutSpaceBeforeComma(): J.VariableDeclarations {
             val comma = markers.findFirst(MultiVariable::class.java).orElse(null) ?: return this
-            val commaFirst = leadingAnnotations.isEmpty() && modifiers.isEmpty() &&
-                markers.findFirst(RedundantDef::class.java).isEmpty
+            val commaFirst = leadingAnnotations.isEmpty() && modifiers.isEmpty()
             if (!commaFirst || '\n' in prefix.whitespace || !comma.prefix.isInlineWhitespace()) return this
             val beforeComma = if (prefix.comments.isEmpty()) Space.EMPTY else prefix.withWhitespace(" ")
             return withPrefix(beforeComma).withMarkers(markers.setByType(comma.withPrefix(Space.EMPTY)))
