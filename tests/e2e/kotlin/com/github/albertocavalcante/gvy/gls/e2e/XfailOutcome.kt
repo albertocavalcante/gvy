@@ -21,9 +21,9 @@ sealed interface XfailDecision {
  * Turns the result of a scenario that declares `xfail` into a test outcome.
  *
  * Only failures that look like the product misbehaving count as expected: an assertion that did not hold, a timeout,
- * or an LSP error response (a timeout only when [Xfail.match] is set). A harness error (bad YAML, missing fixture, crashed process) is never hidden. When
- * [Xfail.match] is set the failure message must also match it, so a different failure in the same scenario is
- * not swallowed.
+ * or an LSP error response (a timeout only when [Xfail.match] is set). A harness error (bad YAML, missing fixture,
+ * crashed process) is never hidden. When [Xfail.match] is set the failure message must also match it, so a different
+ * failure in the same scenario is not swallowed.
  */
 object XfailOutcome {
     /** Short step timeout applied to `xfail` scenarios, so a hung request does not eat shard time. */
@@ -41,7 +41,9 @@ object XfailOutcome {
     fun displayName(scenario: Scenario): String =
         scenario.xfail?.let { "[xfail gvy#${it.issue}] ${scenario.name}" } ?: scenario.name
 
-    /** Pure: [failure] is `null` when the scenario passed. [source] is the scenario file named in the "fixed" message. */
+    /**
+     * Pure: [failure] is `null` when the scenario passed. [source] is the scenario file named in the "fixed" message.
+     */
     fun classify(xfail: Xfail, source: String, failure: Throwable?): XfailDecision {
         if (failure == null) {
             return XfailDecision.Fixed("gvy#${xfail.issue} appears fixed: remove xfail from $source")
@@ -63,8 +65,12 @@ object XfailOutcome {
         val failure = try {
             body()
             null
-        } catch (t: Throwable) {
-            t
+        } catch (failure: AssertionError) {
+            failure
+        } catch (failure: TimeoutException) {
+            failure
+        } catch (failure: ExecutionException) {
+            failure
         }
         when (val decision = classify(xfail, source, failure)) {
             is XfailDecision.Expected -> Assumptions.abort<Unit>(decision.message)
