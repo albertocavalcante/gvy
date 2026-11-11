@@ -50,7 +50,8 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
 - `gls/`: the LSP server. `semantics/`: type inference and the semantic model. `fmt/`: the formatter.
 - Two parser engines. Native (`parser/native/`, compiler-driven, on Groovy's own AST) serves every feature except hover.
   Hover goes through the engine layer, whose default is Core (`parser/core/`; `parserEngine` in
-  `gls/.../config/ServerConfiguration.kt`). Check which engine a change reaches; consolidation is #1276.
+  `gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/ServerConfiguration.kt`). Check which engine a change
+  reaches; consolidation is #1276.
 - Module map: `docs/overview.md`; design: `kb/ARCHITECTURE.md`.
 
 ## Testing
