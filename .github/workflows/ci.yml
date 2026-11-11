@@ -42,12 +42,6 @@ on:
           - 'info'
           - 'debug'
         default: 'default'
-  # Event-driven trigger: when runner-provision.yml completes, this workflow
-  # auto-resumes without wasting compute cycles on polling during approval wait
-  workflow_run:
-    workflows: ['Infra: Provision Magalu Runner']
-    types: [completed]
-    branches: [main]
 env:
   # Preferred OS for single-run checks (Verify JAR, Sonar, artifacts).
   # Override via repo variable CI_PRIMARY_OS (e.g., macos-15).
@@ -59,12 +53,10 @@ env:
 concurrency:
   # PRs: group by head_ref (cancel outdated runs for same branch)
   # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
-  # workflow_run: group by triggering run ID (allows resume after provisioning)
   # workflow_dispatch: group by run ID (never wait for other CI runs)
   group: >-
     ${{ github.workflow }}-${{
       github.event_name == 'pull_request' && github.head_ref ||
-      github.event_name == 'workflow_run' && github.event.workflow_run.id ||
       github.event_name == 'workflow_dispatch' && github.run_id ||
       github.sha
     }}
@@ -108,95 +100,34 @@ jobs:
       contents: read
       pull-requests: read
     outputs:
-      # The release PR is main's code (CI already ran on main) plus version bumps and the changelog.
-      run_main_ci: ${{ startsWith(github.head_ref, 'release-please--') && 'false' || steps.filter.outputs.run_main_ci }}
-      run_zed_ci: ${{ steps.filter.outputs.run_zed_ci }}
+      run_main_ci: ${{ steps.filter.outputs.run_main_ci }}
+      run_bazel_ci: ${{ steps.filter.outputs.run_bazel_ci }}
     steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3.0.4
+      - name: Self-test CI policy
+        run: node --test tools/ci/*.test.mjs
+      - name: Classify exact revisions
         id: filter
+        run: node tools/ci/ci-applicability.mjs "$RUNNER_TEMP/ci-applicability.json"
+      - name: Upload applicability evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          # For workflow_run events, use the triggering workflow's head commit as base
-          # This fixes the 'before field is missing' warning
-          base: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || '' }}
-          # NOTE: Only positive patterns work reliably with paths-filter
-          # Exclusions like !**/*.md don't work as expected with default 'some' predicate
-          # Files in excluded dirs (docs/, .agent/) simply won't match positive patterns
-          filters: |
-            run_zed_ci:
-              - 'editors/zed/**'
-              - 'Makefile'
-              - '.github/workflows/ci.yml'
-            run_main_ci:
-              # Code that requires CI to run
-              - 'src/**'
-              # Gradle modules (every include() in settings.gradle.kts)
-              # fmt
-              - 'fmt/**'
-              # markdown
-              - 'markdown/**'
-              # common
-              - 'common/**'
-              # source (neutral UTF-16 text coordinates)
-              - 'source/**'
-              # gls (main LSP server)
-              - 'gls/**'
-              # native CLI launcher
-              - 'launcher/**'
-              # Shared real-server protocol smoke used by native launcher validation
-              - 'editors/code/tools/smoke-server.js'
-              # parser (api, native, core, rewrite)
-              - 'parser/**'
-              # indexer (core, scip, lsif)
-              - 'indexer/**'
-              # diagnostics (api, codenarc, sarif)
-              - 'diagnostics/**'
-              # jenkins
-              - 'jenkins/**'
-              # dsl (gdsl, dsld)
-              - 'dsl/**'
-              # build-tool
-              - 'build-tool/**'
-              # ext (spock, testing, junit)
-              - 'ext/**'
-              # test-utils
-              - 'test-utils/**'
-              # jupyter (kernel-core, kernels/*)
-              - 'jupyter/**'
-              # repl
-              - 'repl/**'
-              # tools (jenkins-extractor)
-              - 'tools/**'
-              # viz (ast-model, desktop)
-              - 'viz/**'
-              # semantics (core, dsl, native, openrewrite)
-              - 'semantics/**'
-              # refactor/openrewrite recipes
-              - 'refactor/openrewrite/**'
-              # bsp (bsp-core, maven-bsp)
-              - 'bsp/**'
-              # schemas
-              - 'schemas/**'
-              # reports (api, coverage, results)
-              - 'reports/**'
-              # tests
-              - 'tests/**'
-              # Readers shared by tagged-release and nightly artifact verification
-              - 'editors/code/tools/zip.js'
-              - 'editors/code/tools/jar-provenance.js'
-              # Root build inputs
-              - 'Makefile'
-              - 'gradle/**'
-              - '*.gradle'
-              - '*.gradle.kts'
-              - 'gradle.properties'
-              - 'settings.gradle.kts'
-              - 'gradlew*'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/ci-launcher.yml'
+          name: ci-applicability
+          path: ${{ runner.temp }}/ci-applicability.json
+          if-no-files-found: error
+          retention-days: 14
+
+  bazel:
+    name: Bazel validation
+    needs: check-paths
+    if: needs.check-paths.outputs.run_bazel_ci == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-bazel.yml
 
   check-runner:
     name: Check Runner Availability
@@ -205,15 +136,12 @@ jobs:
     permissions:
       contents: read
     needs: check-paths
-    # Skip for workflow_run - runner is already available from completed provisioning
-    if: |
-      github.event_name != 'workflow_run' &&
-      (needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch')
+    if: needs.check-paths.outputs.run_main_ci == 'true'
     outputs:
       provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
     steps:
       - name: Checkout (for local action)
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           sparse-checkout: .github/actions
           persist-credentials: false
@@ -248,8 +176,7 @@ jobs:
           echo "⏳ Provisioning triggered. Manual approval may be required."
           echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
           echo ""
-          echo "ℹ️ This CI run will exit now to avoid wasting compute cycles."
-          echo "::notice::CI exiting early. Will auto-resume via workflow_run after runner-provision.yml completes."
+          echo "::notice::Provisioning requested. Required validation remains blocked; rerun this revision after the runner is available."
           # Set output to signal downstream jobs to skip
           echo "provisioning_triggered=true" >> "$GITHUB_OUTPUT"
 
@@ -312,23 +239,21 @@ jobs:
     needs: [check-paths, check-runner]
     # Run if paths require CI and no provisioning triggered
     if: |
-      !cancelled() && (
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-        (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
-      )
+      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
+      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Set up JDK 17
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 17
@@ -340,24 +265,29 @@ jobs:
           cache-read-only: ${{ github.ref != 'refs/heads/main' }}
 
       - name: Run Lint
-        run: ./gradlew lint --parallel --build-cache --stacktrace
+        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer lint lint --parallel --build-cache --stacktrace
+
+      - name: Upload Gradle diagnostic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gradle-evidence-lint-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
 
   build:
     name: Build and Test
     needs: [check-paths, check-runner]
-    # Run if:
-    # 1. workflow_run from successful provisioning (check-runner was skipped), OR
-    # 2. Normal trigger (push/PR/dispatch) with relevant paths AND no provisioning triggered
+    # Applicable code must run on an available runner for this revision.
     if: |
-      !cancelled() && (
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-        (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
-      )
+      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
+      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
     timeout-minutes: 45
     # For self-hosted runners, we need label arrays; for cloud runners, use the matrix value directly
     runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os == 'local-macos' && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || matrix.os }}
     permissions:
-      checks: write
       contents: read
     strategy:
       fail-fast: false
@@ -381,7 +311,7 @@ jobs:
       HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Shallow clone for PRs (faster), deep clone for main (SonarCloud needs history)
           fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
@@ -442,7 +372,7 @@ jobs:
             echo "| **Hostname** | $HOSTNAME |"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
@@ -497,18 +427,18 @@ jobs:
           if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
             args+=("${GRADLE_SCAN_FLAG}")
           fi
-          ./gradlew "${args[@]}"
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer unit "${args[@]}"
 
       # Coverage reports (see COVERAGE above) come from this job's own test outputs: a separate job reran
       # the whole build (282 tasks) to get them. Their own invocation avoids the Kover hang with --parallel
       # (Kotlin/kotlinx-kover#509). SonarCloud only uploads when opted in (see SONAR above).
       - name: Generate Coverage Reports
         if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
-        run: ./gradlew koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace
+        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer coverage koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace
 
       - name: Upload Coverage Reports
         if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-reports
           path: '**/build/reports/kover/'
@@ -550,13 +480,32 @@ jobs:
       # Build shadowJar for verification (E2E tests run in parallel job)
       - name: Build Shadow JAR
         if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        run: ./gradlew :gls:shadowJar --parallel --build-cache --stacktrace
+        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer shadow-jar :gls:shadowJar --parallel --build-cache --stacktrace
 
-      # Upload test results BEFORE test reporter to ensure artifacts are preserved
-      # even if tests fail (test reporter may fail when tests fail with fail-on-error)
+      - name: Upload Gradle diagnostic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gradle-evidence-${{ matrix.os }}-java${{ matrix.java }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+      # Keep HTML/JUnit reports without granting test jobs check-publishing tokens.
+      - name: Require unit test reports
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          reports=(**/build/test-results/test/*.xml)
+          if (( ${#reports[@]} == 0 )); then
+            echo "::error::Unit test execution produced no JUnit reports."
+            exit 1
+          fi
+
       - name: Upload Test Results
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-results-${{ matrix.os }}-java${{ matrix.java }}
           path: |-
@@ -573,7 +522,7 @@ jobs:
       # Use fastThread.io or JDK Mission Control to analyze these files
       - name: Upload Test Diagnostic Logs
         if: always()  # Upload even if tests fail or timeout
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-diagnostics-${{ matrix.os }}-java${{ matrix.java }}
           path: |-
@@ -581,17 +530,6 @@ jobs:
             **/build/test-recording.jfr
           retention-days: 7
           if-no-files-found: ignore  # Don't fail if files don't exist (e.g., tests passed quickly)
-
-      - name: Generate Test Report
-        uses: dorny/test-reporter@b082adf0eced0765477756c2a610396589b8c637 # v2.5.0
-        if: success() || failure()
-        with:
-          name: Test Results (${{ matrix.os }} - Java ${{ matrix.java }})
-          path: '**/build/test-results/test/*.xml'
-          reporter: java-junit
-          # Don't fail the job if there are test failures - let the test step handle that
-          # This ensures test results are always uploaded and visible
-          fail-on-error: false
 
       # Verify JAR (built in previous step)
       - name: Resolve shadow JAR
@@ -612,11 +550,11 @@ jobs:
         if: matrix.os == env.PRIMARY_OS && matrix.java == 17
         run: |-
           echo "Testing JAR with --help flag..."
-          java -jar "${{ steps.resolve-jar.outputs.jar_path }}" --help
+          java -Xmx256m -jar "${{ steps.resolve-jar.outputs.jar_path }}" --help
 
       - name: Upload JAR artifact
         if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
           path: ${{ steps.resolve-jar.outputs.jar_path }}
@@ -629,10 +567,8 @@ jobs:
     # cache), and waiting on the build only added its duration to the critical path.
     needs: [check-paths, check-runner]
     if: |
-      !cancelled() && (
-        (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
-        (needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true')
-      )
+      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
+      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -646,13 +582,13 @@ jobs:
       contents: read
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
 
       - name: Set up JDK 17
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 17
@@ -696,11 +632,20 @@ jobs:
           if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
             args+=("${GRADLE_SCAN_FLAG}")
           fi
-          ./gradlew "${args[@]}"
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer e2e "${args[@]}"
+
+      - name: Upload Gradle diagnostic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gradle-evidence-e2e-${{ matrix.shard }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gradle-evidence/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload E2E Test Results
         if: always()
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-test-results-shard-${{ matrix.shard }}
           path: |-
@@ -708,21 +653,23 @@ jobs:
             **/build/reports/tests/e2eTest/
           retention-days: 7
 
-      - name: Generate E2E Test Report
-        uses: dorny/test-reporter@b082adf0eced0765477756c2a610396589b8c637 # v2.5.0
-        if: success() || failure()
-        with:
-          name: E2E Test Results (shard ${{ matrix.shard }})
-          path: '**/build/test-results/e2eTest/*.xml'
-          reporter: java-junit
-          fail-on-error: false
+      - name: Require E2E test reports
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: |
+          shopt -s globstar nullglob
+          reports=(**/build/test-results/e2eTest/*.xml)
+          if (( ${#reports[@]} == 0 )); then
+            echo "::error::E2E execution produced no JUnit reports."
+            exit 1
+          fi
 
   # Cross-platform smoke tests - verify JAR works on key platforms
-  # Lighter weight than release matrix, runs on every main merge for faster feedback
+  # Lighter than the release matrix; validate the packaged JAR before merging too.
   smoke-test:
     name: Smoke Test (${{ matrix.os }})
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: ${{ !cancelled() && needs.build.result == 'success' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     permissions:
@@ -741,13 +688,13 @@ jobs:
           path: dist
 
       - name: Set up JDK 17
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 17
 
       - name: Verify Java version
-        run: java -version
+        run: java -Xmx64m -version
 
       - name: Run smoke test
         shell: bash
@@ -758,7 +705,7 @@ jobs:
             exit 1
           fi
           echo "Testing JAR: $JAR_FILE"
-          java -jar "$JAR_FILE" --help
+          java -Xmx256m -jar "$JAR_FILE" --help
           echo "✅ Smoke test passed on ${{ matrix.os }}!"
 
   launcher:
@@ -798,111 +745,40 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-    # Coverage is advisory (reports + SonarCloud, which already tolerates failure): it starts only
-    # after the build and took 2-5 min on top of it, so the required check no longer waits for it.
-    needs: [lint, build, e2e-test, launcher, zed, check-runner, check-paths]
+      actions: read
+      checks: read
+    needs: [lint, build, e2e-test, smoke-test, bazel, check-runner, check-paths]
     if: always()
     steps:
-      - name: Check build status
-        run: |
-          LINT_RESULT="${{ needs.lint.result }}"
-          BUILD_RESULT="${{ needs.build.result }}"
-          E2E_RESULT="${{ needs.e2e-test.result }}"
-          LAUNCHER_RESULT="${{ needs.launcher.result }}"
-          ZED_RESULT="${{ needs.zed.result }}"
-          PROVISIONING="${{ needs.check-runner.outputs.provisioning_triggered }}"
-          RUN_MAIN_CI="${{ needs.check-paths.outputs.run_main_ci }}"
-          RUN_ZED_CI="${{ needs.check-paths.outputs.run_zed_ci }}"
-
-          echo "Lint result: $LINT_RESULT"
-          echo "Build result: $BUILD_RESULT"
-          echo "E2E result: $E2E_RESULT"
-          echo "Native launcher result: $LAUNCHER_RESULT"
-          echo "Zed adapter result: $ZED_RESULT"
-          echo "Provisioning triggered: $PROVISIONING"
-          echo "Run main CI: $RUN_MAIN_CI"
-
-          # Failed path detection must never turn a required check into an allowed skip.
-          if [[ "${{ needs.check-paths.result }}" != "success" ]]; then
-            echo "::error::Change detection did not succeed"
-            exit 1
-          fi
-          if [[ "$RUN_ZED_CI" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "$ZED_RESULT" != "success" ]]; then
-              echo "::error::Zed adapter validation did not succeed: $ZED_RESULT"
-              exit 1
-            fi
-          fi
-
-          # Relevant changes and manual runs must execute native compilation and real-JAR smoke tests.
-          if [[ "$RUN_MAIN_CI" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ "$LAUNCHER_RESULT" != "success" ]]; then
-              echo "::error::Native launcher validation did not succeed: $LAUNCHER_RESULT"
-              exit 1
-            fi
-          fi
-
-          # If paths filter determined no CI needed, skipped build is OK
-          if [[ "$RUN_MAIN_CI" != "true" && "$BUILD_RESULT" == "skipped" ]]; then
-            echo "ℹ️ Build skipped - no relevant code changes detected"
-            echo "   Only documentation or config files were modified"
-            exit 0
-          fi
-
-          # If provisioning was triggered, build is expected to be skipped
-          if [[ "$PROVISIONING" == "true" && "$BUILD_RESULT" == "skipped" ]]; then
-            echo "ℹ️ Build skipped - runner provisioning in progress"
-            echo "   CI will resume automatically after provisioning completes"
-            exit 0
-          fi
-
-          # For workflow_run events, check-runner is skipped so we can't check provisioning_triggered
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            if [[ "$BUILD_RESULT" != "success" ]] || [[ "$LINT_RESULT" != "success" ]] || \
-               [[ "$E2E_RESULT" != "success" ]]; then
-              echo "❌ One or more jobs failed after provisioning"
-              exit 1
-            fi
-            echo "✅ All checks passed!"
-            exit 0
-          fi
-
-          # Normal case: all jobs must succeed (or be skipped appropriately)
-          FAILED=false
-          CANCELLED=false
-
-          check_job_result() {
-            local job_name="$1"
-            local result="$2"
-            if [[ "$result" == "cancelled" ]]; then
-              CANCELLED=true
-              return
-            fi
-            if [[ "$result" != "success" ]] && [[ "$result" != "skipped" ]]; then
-              echo "❌ $job_name failed"
-              FAILED=true
-            fi
-          }
-
-          check_job_result "Lint" "$LINT_RESULT"
-          check_job_result "Build" "$BUILD_RESULT"
-          check_job_result "E2E" "$E2E_RESULT"
-
-          if [[ "$CANCELLED" == "true" ]]; then
-            echo "⚠️ One or more jobs were cancelled"
-            echo "   This is expected when a newer commit is pushed to the same PR"
-            if [[ "$FAILED" == "true" ]]; then
-              echo "   However, other jobs still failed"
-              exit 1
-            fi
-            exit 0
-          fi
-
-          if [[ "$FAILED" == "true" ]]; then
-            exit 1
-          fi
-
-          echo "✅ All checks passed!"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require complete current-run validation
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node tools/ci/check-readiness.mjs "$RUNNER_TEMP/ci-readiness.json"
+      - name: Require accounted Actions diagnostics
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/ci/check-runner-diagnostics.mjs --report "$RUNNER_TEMP/runner-diagnostics"
+      - name: Upload required verdict
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-readiness
+          path: ${{ runner.temp }}/ci-readiness.json
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload Actions diagnostic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-diagnostics-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/runner-diagnostics/
+          if-no-files-found: error
+          retention-days: 14
   dependency-check:
     name: Check Dependencies
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
@@ -912,11 +788,11 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - name: Checkout code
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Set up JDK 17
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 17

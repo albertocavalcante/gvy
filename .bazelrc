@@ -57,7 +57,6 @@ common:ci --lockfile_mode=error
 build:ci --announce_rc
 build:ci --color=no
 build:ci --curses=no
-build:ci --show_timestamps
 build:ci --show_progress_rate_limit=30
 build:ci --keep_going
 test:ci --test_summary=detailed

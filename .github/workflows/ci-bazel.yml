@@ -1,56 +1,9 @@
 name: CI (Bazel)
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'MODULE.bazel'
-      - 'MODULE.bazel.lock'
-      - 'BUILD.bazel'
-      - '**/BUILD.bazel'
-      - '**/*.bzl'
-      - '.bazelrc'
-      - '.bazelversion'
-      - 'third_party/patches/**'
-      - '.github/workflows/ci-bazel.yml'
-      - 'tools/ci/bazel-diagnostics*'
-      - '**/src/**'
-      - '!editors/zed/**'
-      - '**/build.gradle.kts'
-      - 'gradle/libs.versions.toml'
-      - 'tests/e2e/**'
-      - 'editors/code/client/src/**'
-      - 'editors/code/**/tsconfig*.json'
-      - 'editors/code/**/package.json'
-      - 'editors/code/pnpm-lock.yaml'
-      - 'editors/code/pnpm-workspace.yaml'
+  workflow_call:
   schedule:
-    - cron: '30 4 * * *' # Daily at 04:30 UTC: backstop for drift the push filter misses
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'MODULE.bazel'
-      - 'MODULE.bazel.lock'
-      - 'BUILD.bazel'
-      - '**/BUILD.bazel'
-      - '**/*.bzl'
-      - '.bazelrc'
-      - '.bazelversion'
-      - 'third_party/patches/**'
-      - '.github/workflows/ci-bazel.yml'
-      - 'tools/ci/bazel-diagnostics*'
-      - '**/src/**'
-      - '!editors/zed/**'
-      - '**/build.gradle.kts'
-      - 'gradle/libs.versions.toml'
-      - 'tests/e2e/**'
-      - 'editors/code/client/src/**'
-      - 'editors/code/**/tsconfig*.json'
-      - 'editors/code/**/package.json'
-      - 'editors/code/pnpm-lock.yaml'
-      - 'editors/code/pnpm-workspace.yaml'
+    - cron: '30 4 * * *' # Daily at 04:30 UTC: full drift backstop
   workflow_dispatch:
 
 permissions:
@@ -61,7 +14,7 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  group: bazel-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -101,32 +54,34 @@ jobs:
           disk-cache: ${{ github.workflow }}
           repository-cache: true
 
-      - name: Self-test diagnostic gate
-        run: node --test tools/ci/bazel-diagnostics.test.mjs
+      - name: Self-test diagnostic and evidence gates
+        run: node --test tools/ci/*.test.mjs
 
-      - name: Build all targets
-        run: |
-          mkdir -p "$RUNNER_TEMP/bazel-diagnostics"
-          bazel build //... --lockfile_mode=error --keep_going --color=no --curses=no 2>&1 | tee "$RUNNER_TEMP/bazel-diagnostics/build.log"
+      - name: Build all targets and capture evidence
+        run: node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence" --producer bazel-build build //...
 
-      - name: Run tests
-        run: bazel test //... --lockfile_mode=error --test_output=errors --test_verbose_timeout_warnings --color=no --curses=no 2>&1 | tee "$RUNNER_TEMP/bazel-diagnostics/test.log"
+      - name: Run tests and capture evidence
+        run: node tools/ci/run-bazel.mjs --report-root "$RUNNER_TEMP/bazel-evidence" --producer bazel-test test //...
 
       - name: Enforce diagnostic accountability
         if: ${{ !cancelled() }}
         run: |
+          shopt -s nullglob
+          logs=("$RUNNER_TEMP"/bazel-evidence/*/console.log)
           node tools/ci/bazel-diagnostics.mjs \
             --baseline tools/ci/bazel-diagnostics.json \
-            --report "$RUNNER_TEMP/bazel-diagnostics" \
-            "$RUNNER_TEMP/bazel-diagnostics/build.log" \
-            "$RUNNER_TEMP/bazel-diagnostics/test.log"
+            --report "$RUNNER_TEMP/bazel-evidence/diagnostics" "${logs[@]}"
 
-      - name: Upload diagnostic evidence
+      - name: Summarize invocation evidence
+        if: ${{ !cancelled() }}
+        run: node tools/ci/summarize-bazel.mjs "$RUNNER_TEMP/bazel-evidence"
+
+      - name: Upload BEP, profiles and diagnostic evidence
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: bazel-diagnostics-${{ matrix.name }}
-          path: ${{ runner.temp }}/bazel-diagnostics/
+          name: bazel-evidence-${{ matrix.name }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/bazel-evidence/
           if-no-files-found: error
           retention-days: 14
 

@@ -7,15 +7,15 @@ is required for local artifacts.
 
 ## Profiles and resource budgets
 
-| Profile            | Behavior                                                                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------- |
-| Base               | Two jobs, two CPU scheduling units, 4096 MB action budget; one worker/request per worker key.         |
-| `--config=local`   | Updates `MODULE.bazel.lock` when dependency resolution changes. Review that diff before committing.   |
-| `--config=ci`      | Rejects lockfile drift, prints timestamps and detailed test results, and continues collecting errors. |
-| `--config=debug`   | Prints action commands and preserves sandboxes; inspect privately and remove retained files later.    |
-| `--config=profile` | Enables JSON trace profiling; pass a unique `--profile=...` destination.                              |
-| `--config=bep`     | Publishes action outcomes and waits for local JSON output; pass `--build_event_json_file=...`.        |
-| `--config=bes`     | Optional synchronous BES transport policy with a 60-second timeout; enables no destination/upload.    |
+| Profile            | Behavior                                                                                            |
+| ------------------ | --------------------------------------------------------------------------------------------------- |
+| Base               | Two jobs, two CPU scheduling units, 4096 MB action budget; one worker/request per worker key.       |
+| `--config=local`   | Updates `MODULE.bazel.lock` when dependency resolution changes. Review that diff before committing. |
+| `--config=ci`      | Rejects lockfile drift, prints detailed test results, and continues collecting errors.              |
+| `--config=debug`   | Prints action commands and preserves sandboxes; inspect privately and remove retained files later.  |
+| `--config=profile` | Enables JSON trace profiling; pass a unique `--profile=...` destination.                            |
+| `--config=bep`     | Publishes action outcomes and waits for local JSON output; pass `--build_event_json_file=...`.      |
+| `--config=bes`     | Optional synchronous BES transport policy with a 60-second timeout; enables no destination/upload.  |
 
 The Bazel server heap is capped at 2 GiB and its idle lifetime is ten minutes. Java binaries/tests receive `-Xmx768m`;
 Java build tools receive `--host_jvmopt=-Xmx1536m`. A rule's own JVM flags may add or override options, so these are not
