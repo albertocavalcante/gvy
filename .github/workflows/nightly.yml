@@ -25,7 +25,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:
-      JAVA_TOOL_OPTIONS: -Xmx2g
+      # The wrapper consumes JAVA_OPTS without adding text to child JVM stderr.
+      JAVA_OPTS: -Xmx2g
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -51,7 +52,7 @@ jobs:
           node-version: 24
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4.2.0
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           version: 12.14.0
 
@@ -109,6 +110,7 @@ jobs:
       - name: Verify paired artifacts and write checksums
         env:
           NIGHTLY_VERSION: ${{ steps.version.outputs.version }}
+          JAVA_TOOL_OPTIONS: -Xmx2g
         run: |
           cp gls/build/editor-server/gls.jar dist/nightly/gls-nightly.jar
           node tools/ci/nightly-artifacts.mjs dist/nightly "$GITHUB_SHA" "$NIGHTLY_VERSION" \
