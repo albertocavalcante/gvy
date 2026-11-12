@@ -7,12 +7,14 @@ interface GroovyTestControllerType {
     context: unknown,
     executionService: unknown,
     testService: unknown,
+    coverageService?: unknown,
   ): { dispose: () => void };
 }
 
 interface ExecutionServiceMock {
   runTests: sinon.SinonStub;
   debugTests: sinon.SinonStub;
+  runTestsWithCoverage?: sinon.SinonStub;
 }
 
 interface TestServiceMock {
@@ -30,7 +32,9 @@ interface VscodeMock {
   window: {
     showErrorMessage: sinon.SinonStub;
     showWarningMessage: sinon.SinonStub;
+    showInformationMessage: sinon.SinonStub;
     visibleTextEditors: unknown[];
+    activeTextEditor?: unknown;
   };
   workspace: {
     workspaceFolders: {
@@ -48,7 +52,7 @@ interface VscodeMock {
     line: number,
     character: number,
   ) => { line: number; character: number };
-  Uri: { parse: (str: string) => { toString: () => string } };
+  Uri: { parse: sinon.SinonStub };
   TestRunProfileKind: { Run: number; Debug: number; Coverage: number };
   TestRunRequest: new (include: unknown[]) => { include: unknown[] };
   CancellationTokenSource: new () => {
@@ -143,6 +147,7 @@ describe("GroovyTestController", () => {
       window: {
         showErrorMessage: sandbox.stub(),
         showWarningMessage: sandbox.stub(),
+        showInformationMessage: sandbox.stub(),
         visibleTextEditors: [],
       },
       workspace: {
@@ -223,6 +228,7 @@ describe("GroovyTestController", () => {
     executionServiceMock = {
       runTests: sandbox.stub().resolves(),
       debugTests: sandbox.stub().resolves(),
+      runTestsWithCoverage: sandbox.stub().resolves(),
     };
 
     // Mock test service
@@ -246,6 +252,213 @@ describe("GroovyTestController", () => {
 
   afterEach(() => {
     sandbox.restore();
+  });
+
+  describe("command input boundary", () => {
+    const suite = "example.ExampleSpec";
+    const feature = "  keeps v1.2 and   spaces  ";
+    const uri = "file:///workspace/ExampleSpec.groovy";
+    const modes = ["run", "debug", "runWithCoverage"] as const;
+    let controller: { dispose: () => void };
+    const coverageService = {};
+
+    beforeEach(() => {
+      sandbox.useFakeTimers();
+      controller = new GroovyTestController(
+        contextMock,
+        executionServiceMock,
+        testServiceMock,
+        coverageService,
+      );
+    });
+
+    afterEach(() => controller.dispose());
+
+    function handler(mode: (typeof modes)[number]) {
+      const registration = vscodeMock.commands.registerCommand
+        .getCalls()
+        .find((call) => call.args[0] === `groovy.test.${mode}`);
+      assert.ok(registration);
+      return registration.args[1] as (input?: unknown) => Promise<void>;
+    }
+
+    function assertNoExecution() {
+      assert.equal(executionServiceMock.runTests.callCount, 0);
+      assert.equal(executionServiceMock.debugTests.callCount, 0);
+      assert.equal(
+        executionServiceMock.runTestsWithCoverage?.callCount ?? 0,
+        0,
+      );
+    }
+
+    async function discoverTests(sourceUri = uri) {
+      testServiceMock.discoverTestsInWorkspace.resolves([
+        { suite, uri: sourceUri, line: 1, tests: [{ test: feature, line: 2 }] },
+      ]);
+      assert.ok(testControllerMock.refreshHandler);
+      await testControllerMock.refreshHandler();
+    }
+
+    for (const mode of modes) {
+      it(`guides a no-argument ${mode} call without selecting the active file`, async () => {
+        vscodeMock.window.activeTextEditor = { document: { uri } };
+        await handler(mode)();
+        assert.equal(vscodeMock.window.showInformationMessage.callCount, 1);
+        assert.match(
+          vscodeMock.window.showInformationMessage.firstCall.args[0],
+          /Test Explorer.*CodeLens/,
+        );
+        assert.ok(
+          vscodeMock.window.showInformationMessage.firstCall.args[0].includes(
+            mode === "runWithCoverage"
+              ? "Run with Coverage"
+              : mode === "debug"
+                ? "Debug"
+                : "Run",
+          ),
+        );
+        assertNoExecution();
+        assert.equal(testServiceMock.discoverTestsInWorkspace.callCount, 0);
+      });
+
+      for (const [name, input] of [
+        ["null", null],
+        ["a primitive", 42],
+        ["an array", []],
+        ["missing fields", {}],
+        ["a numeric suite", { suite: 42, test: "*" }],
+        ["a blank suite", { suite: " ", test: "*" }],
+        ["a missing test", { suite }],
+        ["an object test", { suite, test: {} }],
+        ["a blank test", { suite, test: " " }],
+        ["a numeric URI", { suite, test: feature, uri: 42 }],
+        ["a null URI", { suite, test: feature, uri: null }],
+        ["an empty URI", { suite, test: feature, uri: "" }],
+      ] as const) {
+        it(`rejects ${name} for ${mode} without executing or discovering tests`, async () => {
+          await discoverTests();
+          testServiceMock.discoverTestsInWorkspace.resetHistory();
+          await handler(mode)(input);
+          assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
+          assertNoExecution();
+          assert.equal(testServiceMock.discoverTestsInWorkspace.callCount, 0);
+        });
+      }
+
+      it(`handles a URI parsing error for ${mode} without execution`, async () => {
+        vscodeMock.Uri.parse
+          .withArgs("invalid URI")
+          .throws(new Error("Invalid URI"));
+        await handler(mode)({ suite, test: feature, uri: "invalid URI" });
+        assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
+        assertNoExecution();
+      });
+
+      for (const test of [feature, "*"]) {
+        it(`preserves the exact ${test === "*" ? "suite" : "Spock feature"} target for ${mode}`, async () => {
+          await discoverTests();
+          await handler(mode)({
+            suite,
+            test,
+            uri,
+            framework: "SPOCK",
+            debug: true,
+          });
+          const expected =
+            mode === "run"
+              ? executionServiceMock.runTests
+              : mode === "debug"
+                ? executionServiceMock.debugTests
+                : executionServiceMock.runTestsWithCoverage;
+          assert.ok(expected);
+          assert.equal(expected.callCount, 1);
+          const request = expected.firstCall.args[0];
+          assert.equal(request.include.length, 1);
+          assert.equal(
+            request.include[0].id,
+            test === "*" ? suite : `${suite}.${feature}`,
+          );
+          assert.equal(request.include[0].uri.toString(), uri);
+          assert.equal(
+            executionServiceMock.runTests.callCount,
+            mode === "run" ? 1 : 0,
+          );
+          assert.equal(
+            executionServiceMock.debugTests.callCount,
+            mode === "debug" ? 1 : 0,
+          );
+          assert.equal(
+            executionServiceMock.runTestsWithCoverage?.callCount,
+            mode === "runWithCoverage" ? 1 : 0,
+          );
+        });
+      }
+    }
+
+    for (const missing of ["service", "capability"]) {
+      it(`refuses coverage when its ${missing} is unavailable`, async () => {
+        controller.dispose();
+        if (missing === "capability") {
+          delete executionServiceMock.runTestsWithCoverage;
+        }
+        controller = new GroovyTestController(
+          contextMock,
+          executionServiceMock,
+          testServiceMock,
+          missing === "service" ? undefined : coverageService,
+        );
+        await discoverTests();
+        const registrations = vscodeMock.commands.registerCommand
+          .getCalls()
+          .filter((call) => call.args[0] === "groovy.test.runWithCoverage");
+        const callback = registrations[registrations.length - 1].args[1];
+        await callback({ suite, test: feature, uri });
+        assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
+        assertNoExecution();
+      });
+    }
+
+    for (const cached of [true, false]) {
+      for (const test of [feature, "*", "not discovered"]) {
+        it(`refuses a different cached URI (${cached ? "before" : "after"} discovery, ${test})`, async () => {
+          if (cached) await discoverTests();
+          else {
+            testServiceMock.discoverTestsInWorkspace.resolves([
+              { suite, uri, line: 1, tests: [{ test: feature, line: 2 }] },
+            ]);
+          }
+          const originalSuite = testControllerMock.items.get(suite);
+          await handler("runWithCoverage")({
+            suite,
+            test,
+            uri: "file:///workspace/OtherSpec.groovy",
+          });
+          assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
+          assertNoExecution();
+          const currentSuite = testControllerMock.items.get(suite);
+          assert.equal(currentSuite.uri.toString(), uri);
+          if (cached) assert.equal(currentSuite, originalSuite);
+        });
+      }
+    }
+
+    it("accepts a legacy target without an optional URI", async () => {
+      await discoverTests();
+      await handler("runWithCoverage")({ suite, test: feature });
+      assert.equal(executionServiceMock.runTestsWithCoverage?.callCount, 1);
+      assert.equal(vscodeMock.window.showErrorMessage.callCount, 0);
+    });
+
+    it("checks the selected child URI as well as its suite URI", async () => {
+      await discoverTests();
+      const item = testControllerMock.items
+        .get(suite)
+        .children.get(`${suite}.${feature}`);
+      item.uri = vscodeMock.Uri.parse("file:///workspace/OtherSpec.groovy");
+      await handler("runWithCoverage")({ suite, test: feature, uri });
+      assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
+      assertNoExecution();
+    });
   });
 
   describe("runTestCommand with external files", () => {

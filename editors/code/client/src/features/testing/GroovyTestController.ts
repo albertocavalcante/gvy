@@ -27,6 +27,47 @@ interface TestItemMetadata {
 /** Cache for test item metadata. */
 const dataCache = new WeakMap<vscode.TestItem, TestItemMetadata>();
 
+interface TestCommandArgs {
+  suite: string;
+  test: string;
+  uri?: string;
+}
+
+function decodeTestCommandArgs(
+  input: unknown,
+): { args: TestCommandArgs } | { error: string } {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { error: "A test command requires a suite and test target" };
+  }
+  if (
+    !("suite" in input) ||
+    typeof input.suite !== "string" ||
+    input.suite.trim() === ""
+  ) {
+    return { error: "Test suite name must be a non-empty string" };
+  }
+  if (
+    !("test" in input) ||
+    typeof input.test !== "string" ||
+    input.test.trim() === ""
+  ) {
+    return { error: "Test name must be a non-empty string" };
+  }
+
+  let uri: string | undefined;
+  if ("uri" in input && input.uri !== undefined) {
+    if (typeof input.uri !== "string" || input.uri.trim() === "") {
+      return { error: "Test URI must be a non-empty URI string" };
+    }
+    try {
+      uri = vscode.Uri.parse(input.uri, true).toString();
+    } catch {
+      return { error: "Test URI must be a valid URI string" };
+    }
+  }
+  return { args: { suite: input.suite, test: input.test, uri } };
+}
+
 export class GroovyTestController {
   private readonly ctrl: vscode.TestController;
   private readonly subscriptions: vscode.Disposable[] = [];
@@ -395,22 +436,29 @@ export class GroovyTestController {
 
   // Unified command handler
   private async runTestCommand(
-    args: { suite: string; test: string; uri?: string },
+    input: unknown,
     debug: boolean,
     withCoverage: boolean = false,
   ) {
-    // Validate suite name
-    if (!args.suite || args.suite.trim() === "") {
-      vscode.window.showErrorMessage("Test suite name cannot be empty");
+    if (input === undefined) {
+      const action = withCoverage
+        ? "Run with Coverage"
+        : debug
+          ? "Debug"
+          : "Run";
+      const codeLens = withCoverage ? "Coverage" : action;
+      vscode.window.showInformationMessage(
+        `Select a test or suite in Test Explorer and choose ${action}, or use its ${codeLens} CodeLens.`,
+      );
       return;
     }
-
-    // Handle wildcard: run entire suite
+    const decoded = decodeTestCommandArgs(input);
+    if ("error" in decoded) {
+      vscode.window.showErrorMessage(decoded.error);
+      return;
+    }
+    const args = decoded.args;
     const isWildcard = args.test === "*";
-    if (!isWildcard && (!args.test || args.test.trim() === "")) {
-      vscode.window.showErrorMessage("Test name cannot be empty");
-      return;
-    }
 
     // Check if file is outside workspace - cannot run tests from external projects
     // TODO(#714): Support external file test execution by detecting their project root
@@ -422,14 +470,13 @@ export class GroovyTestController {
       return;
     }
 
-    // If wildcard, try to find and run the suite item directly first
-    if (isWildcard) {
-      const suiteItem = this.ctrl.items.get(args.suite);
-      if (suiteItem) {
-        await this.runTestItem(suiteItem, debug, withCoverage);
-        return;
-      }
-      // If suite not found, discovery might be needed
+    const suiteItem = this.ctrl.items.get(args.suite);
+    if (suiteItem && !this.validateTestItemUri(suiteItem, args.uri)) {
+      return;
+    }
+    if (isWildcard && suiteItem) {
+      await this.runTestItem(suiteItem, debug, withCoverage, args.uri);
+      return;
     }
 
     let item = isWildcard
@@ -441,11 +488,16 @@ export class GroovyTestController {
       // Try discovery first.
       await this.discoverTests();
 
+      const retrySuiteItem = this.ctrl.items.get(args.suite);
+      if (
+        retrySuiteItem &&
+        !this.validateTestItemUri(retrySuiteItem, args.uri)
+      ) {
+        return;
+      }
       if (isWildcard) {
-        // Retry finding suite
-        const retrySuiteItem = this.ctrl.items.get(args.suite);
         if (retrySuiteItem) {
-          await this.runTestItem(retrySuiteItem, debug, withCoverage);
+          await this.runTestItem(retrySuiteItem, debug, withCoverage, args.uri);
           return;
         }
       } else {
@@ -482,15 +534,38 @@ export class GroovyTestController {
     }
 
     if (item) {
-      await this.runTestItem(item, debug, withCoverage);
+      await this.runTestItem(item, debug, withCoverage, args.uri);
     }
+  }
+
+  private validateTestItemUri(item: vscode.TestItem, uri?: string): boolean {
+    if (uri !== undefined && item.uri?.toString() !== uri) {
+      vscode.window.showErrorMessage(
+        "Cannot run test: the requested URI does not match the discovered test. Refresh tests and try again.",
+      );
+      return false;
+    }
+    return true;
   }
 
   private async runTestItem(
     item: vscode.TestItem,
     debug: boolean,
     withCoverage: boolean = false,
+    uri?: string,
   ) {
+    if (!this.validateTestItemUri(item, uri)) {
+      return;
+    }
+    if (
+      withCoverage &&
+      (!this.executionService.runTestsWithCoverage || !this.coverageService)
+    ) {
+      vscode.window.showErrorMessage(
+        "Coverage execution is unavailable for this test runner",
+      );
+      return;
+    }
     const request = new vscode.TestRunRequest([item]);
     const tokenSource = new vscode.CancellationTokenSource();
     try {
