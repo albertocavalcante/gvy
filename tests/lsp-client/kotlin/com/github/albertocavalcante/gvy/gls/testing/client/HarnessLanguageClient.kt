@@ -94,7 +94,10 @@ class HarnessLanguageClient : GroovyLanguageClient {
 
     override fun applyEdit(params: ApplyWorkspaceEditParams): CompletableFuture<ApplyWorkspaceEditResponse> {
         recordNotification("workspace/applyEdit", params)
-        return CompletableFuture.completedFuture(ApplyWorkspaceEditResponse(true))
+        val response = ApplyWorkspaceEditResponse(false).apply {
+            failureReason = "Workspace edits are not supported by this client"
+        }
+        return CompletableFuture.completedFuture(response)
     }
 
     // LSP4J's Java interface requires CompletableFuture<Void>, rather than Kotlin Unit.
