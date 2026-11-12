@@ -379,47 +379,52 @@ class GroovySemanticsTest {
     }
 
     @Test
-    fun `retired module and cache entry are collectible while resolver and context stay alive`() {
+    fun `retired module and context are collectible while resolver stays alive`() {
         val semantics = GroovySemantics(stubSolver)
         val liveModule = parse("def live = 1")
-        semantics.inject(liveModule)
-        val (retiredModule, retiredContext) = retiredModuleAndContext(semantics)
+        val liveContext = semantics.inject(liveModule)
+        val (retiredModule, retiredContext) = retiredReferences(semantics)
 
-        // The live key is a control: eviction must not discard a still-owned module.
         awaitCollection(retiredModule)
-        assertEquals(null, retiredModule.get(), "The cached context must not retain its module")
+        assertEquals(null, retiredModule.get(), "The cache must not retain the retired module")
+        assertEquals(null, retiredContext.get(), "The cache must not retain the retired context")
         assertEquals(1, cacheSize(semantics), "Only the live module should remain cached")
-        assertTrue(semantics.getContext(liveModule) != null)
-        assertEquals(TypeConstants.STRING, retiredContext.getFieldType(SemanticType.Known("Retired"), "name"))
-        assertEquals(TypeConstants.STRING, retiredContext.getMethodReturnType(SemanticType.Known("Retired"), "label", emptyList()))
+        assertTrue(semantics.getContext(liveModule) === liveContext)
         Reference.reachabilityFence(liveModule)
-        Reference.reachabilityFence(retiredContext)
+        Reference.reachabilityFence(liveContext)
         Reference.reachabilityFence(semantics)
     }
 
     @Test
-    fun `context reflects changes to live module members`() {
-        val module = parse("class Mutable { String value; String label() { value } }")
+    fun `retained context owns module and observes live member updates through collection`() {
         val semantics = GroovySemantics(stubSolver)
-        val context = checkNotNull(semantics.getContext(module))
-        val cls = module.classes.first { it.name == "Mutable" }
-        cls.getField("value").type = ClassHelper.int_TYPE
-        cls.methods.first { it.name == "label" }.returnType = ClassHelper.int_TYPE
-        val receiver = SemanticType.Known("Mutable")
-        assertEquals(TypeConstants.INT, context.getFieldType(receiver, "value"))
-        assertEquals(TypeConstants.INT, context.getMethodReturnType(receiver, "label", emptyList()))
-        Reference.reachabilityFence(module)
-    }
-
-    private fun retiredModuleAndContext(semantics: GroovySemantics): Pair<WeakReference<ModuleNode>, NativeTypeContext> {
-        val module = parse("class Retired { String name; String label() { name } }")
-        val context = checkNotNull(semantics.getContext(module))
-        // Detached contexts use the signatures captured at injection, not later AST mutations.
-        val cls = module.classes.first { it.name == "Retired" }
+        val (module, context) = retainedContext(semantics)
+        requestCollection()
+        val cls = checkNotNull(module.get()).classes.first { it.name == "Retired" }
         cls.getField("name").type = ClassHelper.int_TYPE
         cls.methods.first { it.name == "label" }.returnType = ClassHelper.int_TYPE
-        return WeakReference(module) to context
+        requestCollection()
+        val receiver = SemanticType.Known("Retired")
+        assertEquals(TypeConstants.INT, context.getFieldType(receiver, "name"))
+        assertEquals(TypeConstants.INT, context.getMethodReturnType(receiver, "label", emptyList()))
+        Reference.reachabilityFence(context)
+        Reference.reachabilityFence(semantics)
     }
+
+    private fun retainedContext(semantics: GroovySemantics): Pair<WeakReference<ModuleNode>, NativeTypeContext> {
+        val module = parse("class Retired { String name; String label() { name } }")
+        return WeakReference(module) to semantics.inject(module)
+    }
+
+    private fun retiredReferences(
+        semantics: GroovySemantics,
+    ): Pair<WeakReference<ModuleNode>, WeakReference<NativeTypeContext>> {
+        val (module, context) = retainedContext(semantics)
+        return module to WeakReference(context)
+    }
+
+    @Suppress("ExplicitGarbageCollectionCall")
+    private fun requestCollection() = System.gc()
 
     private fun cacheSize(semantics: GroovySemantics): Int {
         val field = GroovySemantics::class.java.getDeclaredField("contextCache")

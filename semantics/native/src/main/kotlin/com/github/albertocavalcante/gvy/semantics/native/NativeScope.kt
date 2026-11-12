@@ -4,45 +4,19 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
-import java.lang.ref.WeakReference
 
 /**
  * Scope tracking for variable resolution in native Groovy AST.
  * Supports module-level resolution for field and method lookups.
  *
- * The module reference does not own the AST. Member lookups use the live module while available;
- * after collection they use signatures captured when this scope was created.
+ * An externally held scope owns its module. GroovySemantics holds cached contexts weakly,
+ * so its cache does not keep scopes or their modules alive.
  */
 class NativeScope private constructor(
     private val parent: NativeScope?,
     private val variables: MutableMap<String, SemanticType> = mutableMapOf(),
-    private val module: WeakReference<ModuleNode>? = null,
-    private val members: Map<String, ModuleMembers> = emptyMap(),
+    val currentModule: ModuleNode? = null,
 ) {
-
-    /** The source AST if it is still owned by the caller. */
-    val currentModule: ModuleNode? get() = module?.get()
-
-    internal fun findFieldType(classFqn: String, fieldName: String): SemanticType? {
-        val liveModule = module?.get()
-        if (liveModule != null) {
-            return liveModule.classes.find { it.name == classFqn }?.fields
-                ?.find { it.name == fieldName }?.let { NativeTypeContext.fromClassNode(it.type) }
-        }
-        return members[classFqn]?.fields?.get(fieldName)
-    }
-
-    internal fun findMethodType(classFqn: String, methodName: String, arity: Int): SemanticType? {
-        val liveModule = module?.get()
-        val types = if (liveModule != null) {
-            liveModule.classes.find { it.name == classFqn }?.methods.orEmpty()
-                .filter { it.name == methodName && it.parameters.size == arity }
-                .map { NativeTypeContext.fromClassNode(it.returnType) }
-        } else {
-            members[classFqn]?.methods?.get(methodName to arity).orEmpty()
-        }
-        return types.firstOrNull()?.takeIf { first -> types.all { it == first } }
-    }
 
     /**
      * Look up a variable by name in this scope or parent scopes.
@@ -58,9 +32,9 @@ class NativeScope private constructor(
 
     /**
      * Create a child scope.
-     * Shares the parent’s module reference and member snapshot.
+     * Propagates module reference from parent.
      */
-    fun child(): NativeScope = NativeScope(parent = this, module = module, members = members)
+    fun child(): NativeScope = NativeScope(parent = this, currentModule = this.currentModule)
 
     companion object {
         /**
@@ -106,20 +80,7 @@ class NativeScope private constructor(
          */
         fun fromModule(moduleNode: ModuleNode): NativeScope = NativeScope(
             parent = null,
-            module = WeakReference(moduleNode),
-            members = moduleNode.classes.distinctBy { it.name }.associate { classNode ->
-                classNode.name to ModuleMembers(
-                    fields = classNode.fields.distinctBy { it.name }
-                        .associate { it.name to NativeTypeContext.fromClassNode(it.type) },
-                    methods = classNode.methods.groupBy { it.name to it.parameters.size }
-                        .mapValues { (_, methods) -> methods.map { NativeTypeContext.fromClassNode(it.returnType) } },
-                )
-            },
+            currentModule = moduleNode,
         )
     }
 }
-
-private data class ModuleMembers(
-    val fields: Map<String, SemanticType>,
-    val methods: Map<Pair<String, Int>, List<SemanticType>>,
-)

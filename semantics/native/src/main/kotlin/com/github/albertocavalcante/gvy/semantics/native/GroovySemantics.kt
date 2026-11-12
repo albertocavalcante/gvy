@@ -15,6 +15,7 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import java.lang.ref.WeakReference
 import java.util.Collections.synchronizedMap
 import java.util.WeakHashMap
 
@@ -36,8 +37,9 @@ class GroovySemantics(
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
     private val workspaceMemberLookup: MemberLookup? = null,
 ) {
-    // Contexts hold only member signatures and a weak module reference, so weak keys can be retired.
-    private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
+    // Weak values break the context -> scope -> module back-reference. A caller owns a context for
+    // the duration of its operation; entries can be rebuilt when nobody holds the previous context.
+    private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, WeakReference<NativeTypeContext>>())
 
     // The workspace version each cached context was built at; guarded by the contextCache lock. Locals typed from
     // other files are baked into a context, so it is rebuilt once the workspace has changed (never served stale).
@@ -50,10 +52,11 @@ class GroovySemantics(
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
-    fun inject(module: ModuleNode) {
+    fun inject(module: ModuleNode): NativeTypeContext {
         val workspaceVersion = workspaceMemberLookup?.version ?: 0L
         synchronized(contextCache) {
-            if (contextCache.containsKey(module) && contextVersions[module] == workspaceVersion) return
+            val cached = contextCache[module]?.get()
+            if (cached != null && contextVersions[module] == workspaceVersion) return cached
         }
         // Built outside the lock: typing the locals can take long and must not block other modules' lookups.
         // Two threads may build the same module; both results are valid for this version.
@@ -71,10 +74,11 @@ class GroovySemantics(
 
         synchronized(contextCache) {
             val cachedVersion = contextVersions[module]
-            if (!contextCache.containsKey(module) || cachedVersion == null || cachedVersion <= workspaceVersion) {
-                contextCache[module] = context
-                contextVersions[module] = workspaceVersion
-            }
+            val cached = contextCache[module]?.get()
+            if (cached != null && cachedVersion != null && cachedVersion >= workspaceVersion) return cached
+            contextCache[module] = WeakReference(context)
+            contextVersions[module] = workspaceVersion
+            return context
         }
     }
 
@@ -130,9 +134,7 @@ class GroovySemantics(
     fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
         currentModule.set(module)
         try {
-            inject(module)
-            val context = contextCache[module]
-                ?: return SemanticType.Unknown("Module not injected")
+            val context = inject(module)
             return calculatorRegistry.calculate(node, context)
         } finally {
             currentModule.remove()
@@ -179,7 +181,7 @@ class GroovySemantics(
             val module = currentModule.get()
                 ?: return TypeInferenceError.InternalError("No module injected").left()
 
-            val context = contextCache[module]
+            val context = contextCache[module]?.get()
                 ?: return TypeInferenceError.InternalError("Module not in context cache").left()
 
             return calculatorRegistry.calculateResult(node, context)
@@ -194,8 +196,8 @@ class GroovySemantics(
     fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult {
         currentModule.set(module)
         try {
-            inject(module)
-            return resolveTypeResult(node)
+            val context = inject(module)
+            return calculatorRegistry.calculateResult(node, context)
         } finally {
             currentModule.remove()
         }
@@ -252,7 +254,7 @@ class GroovySemantics(
         // Find which module this node belongs to
         // TODO: Walk up using parent logic if we had it.
         // For now, we assume single module injection and return the first one.
-        return contextCache.values.firstOrNull()
+        return synchronized(contextCache) { contextCache.values.firstNotNullOfOrNull { it.get() } }
     }
 
     /**
@@ -263,7 +265,6 @@ class GroovySemantics(
      * @return The NativeTypeContext, or null if injection failed
      */
     fun getContext(module: ModuleNode): NativeTypeContext? {
-        inject(module)
-        return contextCache[module]
+        return inject(module)
     }
 }
