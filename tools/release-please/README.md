@@ -78,7 +78,9 @@ accepts that base version while requiring the extension's full prerelease versio
 receipt retains the server's actual version. `tools/release.sh checksums` can regenerate the checksum manifest; it
 excludes its own output and replaces the previous manifest only after hashing succeeds.
 
-Use a clean checkout whose base version matches the requested release, and provide the tag explicitly:
+Tagged artifact builds require Git 2.44 or newer for
+[`git show-ref --exists`](https://github.com/git/git/blob/v2.44.0/Documentation/git-show-ref.txt). Use a clean checkout
+whose base version matches the requested release, and provide the tag explicitly:
 
 ```bash
 make release-build RELEASE_VERSION=vX.Y.Z    # preview build steps and output paths
@@ -93,7 +95,10 @@ The tagged GitHub workflow publishes the resulting artifacts.
 The direct build command is `tools/release.sh build --version vX.Y.Z`; add `--dry-run` for the preview. The builder
 restores the original `package.json` contents and permissions after either successful packaging or an error. Artifact
 paths resolve inside the script's own checkout, including when it is invoked from another directory. Version and
-checkout preflight checks run before a real build resets `dist/`.
+checkout preflight checks run before a real build resets `dist/`. If the requested release tag exists locally, it must
+resolve to the checkout's HEAD commit; lightweight and annotated tags are supported. Fetch the tag before reproducing a
+published release, for example `git fetch origin tag vX.Y.Z`. Builds before the tag exists locally remain supported.
+Invalid tags and tag-read errors fail before artifact cleanup.
 
 Published v0.5.4 still contains the mismatched server tracked in
 [#1751](https://github.com/albertocavalcante/gvy/issues/1751). A source fix does not replace that release; publish and

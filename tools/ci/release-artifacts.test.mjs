@@ -81,7 +81,7 @@ function fixture(t, options = {}) {
   writeFileSync(join(root, 'fresh.jar'), server(options.serverVersion ?? version, options.commit ?? commit, options.dirty ?? false));
   writeFileSync(join(root, 'pinned.jar'), server('0.4.8-SNAPSHOT'));
   writeFileSync(join(root, 'fixture-zip.cjs'), `${crc32.toString()}\n${zip.toString()}\nmodule.exports = zip;\n`);
-  writeFileSync(join(root, 'bin/git'), '#!/bin/bash\nprintf "%s\\n" "$FIXTURE_COMMIT"\n', { mode: 0o755 });
+  writeFileSync(join(root, 'bin/git'), '#!/bin/bash\nif [[ "$1" = show-ref ]]; then exit 2; fi\nprintf "%s\\n" "$FIXTURE_COMMIT"\n', { mode: 0o755 });
   writeFileSync(join(root, 'gradlew'), `#!${process.execPath}
 const fs = require('node:fs');
 const path = require('node:path');
@@ -139,6 +139,91 @@ if (args[0] === 'run' && args[1] === 'package') {
   return { root, editor, originalPackage, run, command,
     calls: () => readFileSync(join(root, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse) };
 }
+
+function realGitFixture(t) {
+  const f = fixture(t);
+  rmSync(join(f.root, 'bin/git'));
+  const git = (...args) => {
+    const result = f.command('/usr/bin/git', ['-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false', ...args]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    return result.stdout.trim();
+  };
+  git('init', '--quiet');
+  git('config', 'user.name', 'Release fixture');
+  git('config', 'user.email', 'fixture@example.invalid');
+  const tree = git('mktree');
+  const sha = git('commit-tree', tree, '-m', 'Fixture source');
+  git('update-ref', 'HEAD', sha);
+  writeFileSync(join(f.root, 'fresh.jar'), server(version, sha));
+  return { ...f, git, tree, sha };
+}
+
+for (const kind of ['lightweight', 'annotated']) {
+  for (const matches of [true, false]) {
+    test(`an existing ${kind} release tag ${matches ? 'matches HEAD' : 'rejects another HEAD before artifact cleanup'}`, t => {
+      const f = realGitFixture(t);
+      f.git('tag', ...(kind === 'annotated' ? ['-a', '-m', 'Fixture release'] : []), 'v0.5.4');
+      if (!matches) {
+        const newer = f.git('commit-tree', f.tree, '-p', f.sha, '-m', 'Newer source');
+        f.git('update-ref', 'HEAD', newer);
+        writeFileSync(join(f.root, 'fresh.jar'), server(version, newer));
+      }
+      mkdirSync(join(f.root, 'dist'));
+      writeFileSync(join(f.root, 'dist/previous-artifact'), 'previous verified artifact');
+      const result = f.run();
+      if (matches) {
+        assert.equal(result.status, 0, result.stdout + result.stderr);
+        const receipt = JSON.parse(readFileSync(join(f.root, 'dist/release.json'), 'utf8'));
+        assert.equal(receipt.commit, f.sha);
+      } else {
+        assert.equal(readFileSync(join(f.root, 'dist/previous-artifact'), 'utf8'), 'previous verified artifact');
+        assert.notEqual(result.status, 0);
+        assert.match(result.stdout + result.stderr, /Release tag.*does not match HEAD/);
+        assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+      }
+    });
+  }
+}
+
+test('a release build remains supported before its tag exists', t => {
+  const f = realGitFixture(t);
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(JSON.parse(readFileSync(join(f.root, 'dist/release.json'), 'utf8')).commit, f.sha);
+});
+
+for (const condition of ['noncommit', 'malformed', 'read-error', 'unsupported-git']) {
+  test(`an existing release tag fails closed for ${condition} before changing artifacts`, t => {
+    const f = realGitFixture(t);
+    if (condition === 'noncommit') {
+      f.git('update-ref', 'refs/tags/v0.5.4', f.git('hash-object', '-w', 'editors/code/package.json'));
+    } else if (condition === 'malformed') {
+      writeFileSync(join(f.root, '.git/refs/tags/v0.5.4'), 'invalid object id\n');
+    } else {
+      f.git('tag', 'v0.5.4');
+      const exitCode = condition === 'read-error' ? 17 : 129;
+      writeFileSync(join(f.root, 'bin/git'), `#!/bin/bash\nif [[ "$1" = show-ref ]]; then exit ${exitCode}; fi\nexec /usr/bin/git "$@"\n`, { mode: 0o755 });
+    }
+    mkdirSync(join(f.root, 'dist'));
+    writeFileSync(join(f.root, 'dist/previous-artifact'), 'previous verified artifact');
+    const result = f.run();
+    assert.equal(readFileSync(join(f.root, 'dist/previous-artifact'), 'utf8'), 'previous verified artifact');
+    assert.equal(result.status, condition === 'read-error' ? 17 : condition === 'unsupported-git' ? 129 : 1);
+    assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  });
+}
+
+test('preview preserves existing artifacts even when a release tag points elsewhere', t => {
+  const f = realGitFixture(t);
+  f.git('tag', 'v0.5.4');
+  f.git('update-ref', 'HEAD', f.git('commit-tree', f.tree, '-p', f.sha, '-m', 'Newer source'));
+  mkdirSync(join(f.root, 'dist'));
+  writeFileSync(join(f.root, 'dist/previous-artifact'), 'previous verified artifact');
+  const result = f.run('--dry-run');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(readFileSync(join(f.root, 'dist/previous-artifact'), 'utf8'), 'previous verified artifact');
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+});
 
 test('release build prepares and packages the exact current server despite inherited pinned selection', t => {
   const f = fixture(t);

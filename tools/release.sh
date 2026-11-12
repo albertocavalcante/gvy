@@ -114,7 +114,24 @@ cmd_build() {
     return
   fi
 
-  source_commit="$(git rev-parse HEAD)"
+  source_commit="$(git rev-parse --verify 'HEAD^{commit}')"
+  local tag_commit tag_status=0
+  # --exists returns 2 only for absence; all other lookup failures stop the build.
+  git show-ref --exists "refs/tags/${VERSION}" 2>/dev/null || tag_status=$?
+  if [[ "${tag_status}" -eq 0 ]]; then
+    if ! tag_commit="$(git rev-parse --verify "refs/tags/${VERSION}^{commit}")"; then
+      log_error "Release tag ${VERSION} does not resolve to a commit"
+      return 1
+    fi
+    if [[ "${tag_commit}" != "${source_commit}" ]]; then
+      log_error "Release tag ${VERSION} does not match HEAD (${tag_commit} != ${source_commit})"
+      return 1
+    fi
+  elif [[ "${tag_status}" -ne 2 ]]; then
+    log_error "Cannot inspect release tag ${VERSION} (git exit ${tag_status}); Git 2.44+ is required"
+    return "${tag_status}"
+  fi
+
   rm -rf "${DIST_DIR}"
   mkdir -p "${DIST_DIR}"
 
