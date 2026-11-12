@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 name: CI
 on:
   push:
@@ -445,6 +448,38 @@ jobs:
             args+=("${GRADLE_SCAN_FLAG}")
           fi
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer unit "${args[@]}"
+
+      # Required desktop verification reuses this job's unit-test execution data.
+      - name: Verify Desktop Coverage
+        id: desktop_coverage
+        timeout-minutes: 5
+        env:
+          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
+        run: |
+          if [[ ! -s viz/desktop/build/kover/bin-reports/test.ic ]]; then
+            echo "::error::Desktop coverage data from the unit producer is missing."
+            exit 1
+          fi
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer desktop-coverage :viz:desktop:koverXmlReport :viz:desktop:koverVerify --no-parallel --max-workers=2 --build-cache --stacktrace
+
+      - name: Require Desktop Coverage Verification
+        if: ${{ !cancelled() }}
+        env:
+          DESKTOP_COVERAGE_OUTCOME: ${{ steps.desktop_coverage.outcome }}
+        run: |
+          if [[ "$DESKTOP_COVERAGE_OUTCOME" != success ]]; then
+            echo "::error::Required desktop coverage verification did not succeed."
+            exit 1
+          fi
+
+      - name: Upload Desktop Coverage Report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-coverage-${{ matrix.os }}-java${{ matrix.java }}-${{ github.run_attempt }}
+          path: viz/desktop/build/reports/kover/report.xml
+          if-no-files-found: error
+          retention-days: 14
 
       # Coverage reports (see COVERAGE above) come from this job's own test outputs: a separate job reran
       # the whole build (282 tasks) to get them. Their own invocation avoids the Kover hang with --parallel

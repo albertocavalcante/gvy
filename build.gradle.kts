@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import com.diffplug.gradle.spotless.SpotlessTask
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.tasks.compile.GroovyCompile
@@ -185,7 +188,7 @@ subprojects {
         reports {
             verify {
                 rule {
-                    minBound(54)
+                    minBound(if (project.path == ":viz:desktop") 70 else 54)
                 }
             }
         }

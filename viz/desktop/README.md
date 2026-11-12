@@ -11,7 +11,8 @@ From the repository root, run the focused suite and quality gate:
 ```
 
 Follow the [contributor guide](../../CONTRIBUTING.md#validate-your-changes) for toolchains and shared-host build limits.
-`check` includes the existing coverage rule. Coverage does not replace behavioral assertions.
+`check` includes Kover verification with a 70% minimum for desktop coverage. Run `./gradlew :viz:desktop:koverVerify` to
+check that gate directly. Coverage does not replace behavioral assertions.
 
 Use the narrowest test boundary that proves the behavior:
 

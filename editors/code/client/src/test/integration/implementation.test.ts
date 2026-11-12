@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import * as assert from "assert";
 import { createHash } from "crypto";
 import { existsSync, readFileSync, realpathSync } from "fs";
@@ -49,6 +52,13 @@ suite("Implementation navigation with the current server", () => {
       vscode.Uri.joinPath(workspace.uri, "Implementation.groovy"),
     );
     await vscode.window.showTextDocument(document);
+
+    // TODO(#1875): Keep workspace strategy initialization off the RPC thread.
+    // Activation can finish before initialized is handled; require a real server reply.
+    assertTarget(
+      await implementations("EditorGreeter"),
+      "class FriendlyEditorGreeter",
+    );
   });
 
   async function implementations(name: string) {
