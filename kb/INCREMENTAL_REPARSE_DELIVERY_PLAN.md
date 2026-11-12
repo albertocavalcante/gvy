@@ -310,21 +310,22 @@ live trackers.
 
 ### Coordinate existing work before opening a replacement
 
-All rows below were open drafts at this queue baseline. Read their current readiness and final reviewed heads before
-using them. Their existence does not establish that their gates have passed.
+The states below were refreshed during queue review after #1803 landed; the source planning baseline remains
+`dd3a3a20a`. Read each PR's current readiness and final reviewed head before using it. Open drafts do not establish
+passed gates.
 
 | Existing work                                                                                                                                            | Observed head / dependency                          | Use in this program                                                                                                                       |
 | -------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | [#1775](https://github.com/albertocavalcante/gvy/pull/1775), Native default hover                                                                        | `e1546e615`; base main                              | Finish with its owner; add any missing parser-count/coherence proof rather than repeat the engine/default change.                         |
-| [#1803](https://github.com/albertocavalcante/gvy/pull/1803), simultaneous editor edits                                                                   | `258ee8da8`; base main                              | Outbound client TextEdit[] semantics for #1654, not the sequential incoming-change algorithm in Q01.                                      |
-| [#1806](https://github.com/albertocavalcante/gvy/pull/1806), multi-buffer edit plans                                                                     | `d3a6a1c83`; stacked on #1803                       | Reuse when stateful workspace-edit tests are needed; it does not yet own a live editor transaction.                                       |
+| [#1803](https://github.com/albertocavalcante/gvy/pull/1803), simultaneous editor edits                                                                   | Merged `628407fe2`; reviewed head `258ee8da8`       | Outbound client TextEdit[] semantics for #1654, not the sequential incoming-change algorithm in Q01.                                      |
+| [#1806](https://github.com/albertocavalcante/gvy/pull/1806), multi-buffer edit plans                                                                     | Draft `8cea9ebbf`; rebased onto main                | Reuse when stateful workspace-edit tests are needed; it does not yet own a live editor transaction.                                       |
 | [#1813](https://github.com/albertocavalcante/gvy/pull/1813), refuse unapplied edits                                                                      | `8d9acd814`; base main                              | Keep the client honest until real application exists; do not treat this as applied-edit support.                                          |
 | [#1755](https://github.com/albertocavalcante/gvy/pull/1755), frozen declarations                                                                         | `8142ba3c7`; base main                              | Existing detached declaration representation; avoid inventing another one in Q07/Q13.                                                     |
 | [#1805](https://github.com/albertocavalcante/gvy/pull/1805) / [#1810](https://github.com/albertocavalcante/gvy/pull/1810), declaration cache/currentness | `96596eac1` / `2ed230434`; stacked on #1755 / #1805 | Reuse the immutable view and DB-retirement check after landing; neither supplies buffer/classpath or atomic response coherence by itself. |
 
 The full-sync replay in Q03 can use explicitly sent document notifications and public server endpoints. It does not need
 to wait for workspace/applyEdit support. The independent oracle must not be implemented using either edit applicator
-being tested. Do not stack Q01 on these draft client PRs.
+being tested. Q01 does not depend on the client edit stack.
 
 ### Q01: next PR — ordered UTF-16 document changes
 
@@ -454,13 +455,15 @@ the chosen cases and reproducible test invocation. Rollback: remove the new test
 **Q04 — incoming protocol adapter and recovery.** Convert ordered content-change events into Q01/Q02 without sorting,
 preserve full replacements and signed versions, and ignore deprecated rangeLength as authority. Add a synchronization
 state: a newer-version notification with an invalid batch retires incompatible analysis and marks the buffer
-desynchronized. Retain the last coherent text separately from the observed-version watermark; subsequent ranges and
-semantic/editing answers cannot treat that text as current. A complete replacement newer than that watermark, or a new
-didOpen, establishes a coherent state again. Duplicate/stale notifications do not poison a newer valid state. Surface a
-bounded client-visible error; do not invent a standard pull-buffer RPC. Gate: real notification tests cover rejection,
-quiet subsequent ranges, refused stale answers, reset recovery, cancellation and reopen races. Advertise Full by default
-until Q05; exercise this path through an explicit initialization/test mode. Rollback requires restart with Full and
-fresh didOpen, not mid-session capability mutation.
+desynchronized. Retain the last coherent text separately from the observed-version watermark; every newer notification
+advances the watermark, including a ranged update dropped during recovery. Subsequent ranges and semantic/editing
+answers cannot treat that text as current. A complete replacement newer than that watermark, or a new didOpen,
+establishes a coherent state again. Duplicate/stale notifications do not poison a newer valid state. Surface a bounded
+client-visible error; do not invent a standard pull-buffer RPC. Gate: real notification tests cover rejection, quiet
+subsequent ranges, refused stale answers, reset recovery, cancellation and reopen races. Include invalid v8 → ignored
+ranged v10 → full v9 still desynchronized → full v11 recovered. Advertise Full by default until Q05; the explicit opt-in
+initialization/test session advertises Incremental when exercising the new protocol path. Rollback requires restart with
+Full and fresh didOpen, not mid-session capability mutation.
 
 **Q05 — capability and real-client integration.** Update the initialize contract and feature documentation to
 Incremental only after a packaged client/server run covers UTF-16, multiple events, full reset, undo and rapid edits.
