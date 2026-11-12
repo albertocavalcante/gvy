@@ -48,11 +48,14 @@ gh api repos/actions/checkout/git/refs/tags/v6.0.1 --jq '.object.sha'
    gh run view RUN_ID
    ```
 
-2. Get job logs:
+2. Bind the requested repository, run, attempt, job and head using the
+   [canonical CI evidence procedure](../../docs/ci-diagnostics.md#preserve-the-requested-ci-attempt). For a readable,
+   normalized view after checking metadata:
    ```bash
-   gh run view RUN_ID --log
-   gh run view RUN_ID --log-failed
+   gh run view RUN_ID --repo OWNER/REPO --attempt ATTEMPT --job JOB_ID --log
    ```
+   Preserve original job API bytes separately. Retain the failed attempt when retrying; a latest successful log is not
+   evidence for an earlier job.
 
 3. Re-run failed jobs:
    ```bash

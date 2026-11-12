@@ -212,8 +212,12 @@ Verify CI passes on all platforms:
 
 ```bash
 gh run list --workflow=ci.yaml --limit=5
-gh run view <RUN_ID> --log-failed  # If any failed
+gh run view <RUN_ID> --repo <OWNER/REPO> --attempt <ATTEMPT> --job <JOB_ID> --log
 ```
+
+Use the [canonical CI evidence procedure](../../docs/ci-diagnostics.md#preserve-the-requested-ci-attempt) before
+accepting historical results. Readable CLI output is normalized; preserve each attempt's original job API bytes and
+verify repository/run/attempt/job/head identity separately.
 
 | Platform       | CI Status | Manual Verified |
 | -------------- | --------- | --------------- |
