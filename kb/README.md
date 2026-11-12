@@ -17,3 +17,4 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 - Testing harness notes: `testing/e2e-harness.md`
 - Troubleshooting: `TROUBLESHOOTING.md`
 - Plans and audits: `MODERNIZATION_AUDIT_2026-11.md` (debt inventory, Kotlin idiom plan, RFCs, phased PR plan)
+- Serialization migration: [kotlinx plan and eventual LSP4K migration](KOTLINX_SERIALIZATION_MIGRATION.md)
