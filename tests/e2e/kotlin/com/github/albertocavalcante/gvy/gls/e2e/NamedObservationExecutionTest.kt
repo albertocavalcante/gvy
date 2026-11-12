@@ -104,9 +104,14 @@ class NamedObservationExecutionTest {
     fun `unsupported named notification check is rejected before creating a workspace`() {
         val scenario = Scenario(
             name = "unsupported",
-            steps = listOf(ScenarioStep.WaitNotification("example", checks = listOf(
-                JsonCheck("$", JsonExpectation(), id = "notification"),
-            ))),
+            steps = listOf(
+                ScenarioStep.WaitNotification(
+                    "example",
+                    checks = listOf(
+                        JsonCheck("$", JsonExpectation(), id = "notification"),
+                    ),
+                ),
+            ),
         )
 
         assertThatThrownBy { ScenarioExecutor(factory).executeWithOutcome(ScenarioDefinition(scenario)) }
@@ -127,7 +132,8 @@ class NamedObservationExecutionTest {
     @Test
     fun `known failure cannot hide independent cleanup failure`() {
         every { WorkspaceFixture.cleanup(workspace) } throws IOException("cleanup failed")
-        val checks = listOf(JsonCheck("$.missing", JsonExpectation(), id = "known", xfail = Xfail(42, "known", "missing")))
+        val checks =
+            listOf(JsonCheck("$.missing", JsonExpectation(), id = "known", xfail = Xfail(42, "known", "missing")))
 
         val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(checks))
 

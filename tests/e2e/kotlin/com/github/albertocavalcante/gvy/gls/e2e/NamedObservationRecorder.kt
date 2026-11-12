@@ -13,8 +13,14 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
     private val cleanupFailures = mutableListOf<Throwable>()
     private var executing = false
 
-    @Synchronized fun executionStarted() { if (!sealed) executing = true }
-    @Synchronized fun workerFinished() { if (!sealed) workerFinished = true }
+    @Synchronized fun executionStarted() {
+        if (!sealed) executing = true
+    }
+
+    @Synchronized fun workerFinished() {
+        if (!sealed) workerFinished = true
+    }
+
     @Synchronized fun executorClosed(failure: Throwable?) {
         if (!sealed) {
             executorClosed = true
@@ -72,9 +78,19 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
         val executionFailure = failure?.takeUnless { candidate -> cleanupFailures.any { it === candidate } }
         val completion = when (executionFailure) {
             null -> ScenarioCompletion.Completed
-            is InterruptedException, is CancellationException -> ScenarioCompletion.Cancelled(executionFailure.stackTraceToString())
-            is AssertionError -> ScenarioCompletion.Failed(phase, ScenarioFailureKind.Product, executionFailure.stackTraceToString())
-            else -> ScenarioCompletion.Failed(phase, ScenarioFailureKind.Unclassified, executionFailure.stackTraceToString())
+            is InterruptedException, is CancellationException -> ScenarioCompletion.Cancelled(
+                executionFailure.stackTraceToString(),
+            )
+            is AssertionError -> ScenarioCompletion.Failed(
+                phase,
+                ScenarioFailureKind.Product,
+                executionFailure.stackTraceToString(),
+            )
+            else -> ScenarioCompletion.Failed(
+                phase,
+                ScenarioFailureKind.Unclassified,
+                executionFailure.stackTraceToString(),
+            )
         }
         return ScenarioOutcome(planned, observed, cleanup, completion)
     }
