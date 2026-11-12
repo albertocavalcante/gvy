@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { checkGradleDiagnostics, collectDiagnostics } from './check-gradle-diagnostics.mjs';
 import { prepareNativeProvisioning, readPinnedKotlinVersion, verifyNativeProvisioning } from './native-provisioning.mjs';
-import { readEvidenceBytes } from './read-evidence.mjs';
 
 const invocationId = '12345678-1234-4234-8234-123456789abc';
 const context = { schemaVersion: 1, headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '12345', runAttempt: 2, invocationId, command: 'gradle' };
@@ -72,14 +71,21 @@ for (const [platform, arch] of [['linux', 'x64'], ['darwin', 'arm64']]) {
     assert.equal(preflight.target, f.options.target);
     assert.equal(preflight.kotlinVersion, '2.3.0');
     assert.equal(lstatSync(preflight.freshRoot.path).mode & 0o777, 0o700);
-    assert.equal(lstatSync(plan.preflightPath).mode & 0o777, 0o400);
     assert.equal(lstatSync(preflight.freshRoot.path).uid, process.getuid());
     assert.deepEqual(readdirSync(preflight.freshRoot.path), []);
     assert.equal(existsSync(plan.childEnv.KONAN_DATA_DIR), false);
     assert.equal(dirname(preflight.freshRoot.path), f.options.runnerTemp);
     assert.equal(dirname(plan.preflightPath), f.options.producerDir);
     assert.deepEqual(plan.gradleArgs, [`-Pkonan.data.dir=${plan.childEnv.KONAN_DATA_DIR}`]);
-    assert.equal(plan.preflightSha256, digest(readEvidenceBytes(plan.preflightPath, 16 * 1024)));
+    const descriptor = openSync(plan.preflightPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+      const info = fstatSync(descriptor);
+      assert.equal(info.mode & 0o777, 0o400);
+      assert.ok(info.isFile() && info.size > 0 && info.size <= 16 * 1024);
+      assert.equal(plan.preflightSha256, digest(readFileSync(descriptor)));
+    } finally {
+      closeSync(descriptor);
+    }
     assert.notEqual(plan.childEnv.KONAN_DATA_DIR, fixture(t, platform, arch).prepare().childEnv.KONAN_DATA_DIR);
     invalid(f.prepare);
   });

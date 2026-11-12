@@ -58,7 +58,7 @@ test('requires positive test execution evidence even for cached passing summarie
       if (projected) {
         try { text = projectBep(text, context); }
         catch (error) {
-          assert.match(error.message, /Invalid numeric evidence field/);
+          assert.match(error.message, /Invalid numeric evidence field|Invalid typed test identity|Invalid BEP string identifier/);
           return { ok: false };
         }
       }
@@ -82,6 +82,16 @@ test('requires positive test execution evidence even for cached passing summarie
     const otherConfiguration = events();
     otherConfiguration[4].id.testResult.configuration = { id: 'other' };
     assert.equal(check(otherConfiguration).ok, false, 'a different configuration cannot satisfy a summary');
+    const wrongKinds = events();
+    wrongKinds[4].id = { progress: { opaqueCount: 1 } };
+    wrongKinds[5].id = { progress: { opaqueCount: 2 } };
+    assert.equal(check(wrongKinds).ok, false, 'untyped payloads cannot establish matching test identities');
+    for (const invalid of [{}, { label: '' }, { label: 1 }, { label: '//common:test', configuration: {} }, { label: '//common:test', configuration: { id: 1 } }]) {
+      const values = events();
+      values[4].id.testResult = invalid;
+      values[5].id.testSummary = invalid;
+      assert.equal(check(values).ok, false, 'malformed test identities cannot establish execution');
+    }
     for (const cached of ['fresh', 'local', 'remote']) {
       const values = events();
       delete values[4].testResult.cachedLocally;

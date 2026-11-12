@@ -127,6 +127,16 @@ export function projectBep(text, context, { publicInput = false } = {}) {
     let event;
     try { event = JSON.parse(line); } catch { throw new Error('Malformed BEP JSON'); }
     if (!object(event)) throw new Error('Invalid BEP event');
+    // Hashing an empty identifier must not turn malformed execution evidence
+    // into a nonempty public label that the evidence checker could accept.
+    for (const kind of ['testResult', 'testSummary']) {
+      if (event[kind] === undefined) continue;
+      const id = event.id?.[kind];
+      if (!object(id) || typeof id.label !== 'string' || !id.label.trim() ||
+          (id.configuration !== undefined && (!object(id.configuration) || typeof id.configuration.id !== 'string' || !id.configuration.id))) {
+        throw new Error('Invalid typed test identity');
+      }
+    }
     const projected = { id: projectId(event.id, schemas) };
     if (event.children !== undefined) projected.children = array(id => projectId(id, schemas))(event.children);
     if (event.lastMessage !== undefined) projected.lastMessage = boolean(event.lastMessage);

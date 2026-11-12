@@ -53,7 +53,11 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
   const pending = new Set();
   const testResults = new Map();
   const testSummaries = new Map();
-  const testIdentity = id => eventKey({ label: id?.label, configuration: id?.configuration ?? null });
+  const testIdentity = id => {
+    if (!isObject(id) || typeof id.label !== 'string' || !id.label.trim() ||
+        (id.configuration !== undefined && (!isObject(id.configuration) || typeof id.configuration.id !== 'string' || !id.configuration.id))) return null;
+    return eventKey({ label: id.label, configuration: id.configuration ?? null });
+  };
   let started = 0;
   let finished = 0;
   let metadata = 0;
@@ -125,6 +129,7 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
     }
     if (event.testResult) {
       const identity = testIdentity(event.id.testResult);
+      if (identity === null) { fail('Invalid typed test result identity'); continue; }
       const observed = testResults.get(identity) ?? { attempts: 0, cached: 0 };
       observed.attempts++;
       const local = event.testResult.cachedLocally;
@@ -140,10 +145,12 @@ export function evaluateEvidence(text, context, exitCode, captureExitCode = 0) {
     }
     if (event.testSummary) {
       const summary = event.testSummary;
+      const identity = testIdentity(event.id.testSummary);
+      if (identity === null) { fail('Invalid typed test summary identity'); continue; }
       const runs = summary.totalRunCount;
       const cached = summary.totalNumCached ?? 0;
       if (!Number.isSafeInteger(runs) || runs < 1 || !Number.isSafeInteger(cached) || cached < 0 || cached > runs) fail('Invalid or empty test execution counts');
-      testSummaries.set(testIdentity(event.id.testSummary), { runs, cached });
+      testSummaries.set(identity, { runs, cached });
       result.tests.summaries.push({
         label: event.id.testSummary?.label ?? 'unknown', status: summary.overallStatus ?? 'NO_STATUS',
         runs: summary.totalRunCount ?? 0, cachedRuns: summary.totalNumCached ?? 0,
