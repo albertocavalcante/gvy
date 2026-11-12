@@ -64,6 +64,10 @@ checks. These local experiments are not a substitute for review and CI on the fi
 
 ## What this means for the bundled runtime
 
+Direct main-class launch via `-cp` also failed for a Unicode JAR path on Zulu 21.0.12.1/ACP 1252. Both ASCII controls
+worked and emitted identical version JSON. The classpath attempt failed before application startup, so it did not
+establish a launcher-level workaround for [#1817](https://github.com/albertocavalcante/gvy/issues/1817).
+
 The Windows result gives the bundled/BYO split a concrete compatibility purpose. Bazel's
 [pinned minimized-JDK builder](https://bazel.googlesource.com/bazel/+/901cf95651c88ef796ebee17b36885c700c52633/src/minimize_jdk.sh#180)
 patches its **owned** Windows `java.exe` manifest with `activeCodePage=UTF-8`; Microsoft's
