@@ -260,11 +260,28 @@ jobs:
               --argjson worktreeCleanAfter "$clean" \
               '{candidateHead:$head,supportHead:$support,exitCode:$exitCode,worktreeCleanAfter:$worktreeCleanAfter,requestedClass:"com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndexTest",requestedTests:19,requestedTestJavaVersion:21,minimumJava17Validated:false}' >"$proof/focused-status.json"
           if python - <<'PY'
+          import hashlib
           import json
           import os
           import re
           import xml.etree.ElementTree as ET
           from pathlib import Path
+
+
+          def regular_bytes(path: Path, limit: int) -> bytes:
+              if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+                  raise ValueError("missing or oversized evidence")
+              data = path.read_bytes()
+              if len(data) > limit:
+                  raise ValueError("evidence grew beyond its bound")
+              return data
+
+
+          def object_fields(value: object) -> dict[str, object]:
+              if not isinstance(value, dict):
+                  raise ValueError("expected evidence object")
+              return {str(key): item for key, item in value.items()}
+
 
           proof = Path(os.environ["RUNNER_TEMP"]) / "gvy-b04-publication-proof"
           report = Path(
@@ -274,35 +291,85 @@ jobs:
               "complete": False,
               "requestedTests": 19,
               "compileTestKotlin": "not-observed",
-              "scope": "junit-discovery-and-compile",
+              "testTask": "not-observed",
+              "scope": "junit-fresh-execution-and-source",
           }
           try:
-              if report.is_symlink() or not report.is_file() or report.stat().st_size > 2 * 1024 * 1024:
-                  raise ValueError("missing or oversized JUnit")
-              data = report.read_bytes()
+              data = regular_bytes(report, 2 * 1024 * 1024)
               (proof / "junit.xml").write_bytes(data)
-              if b"<!DOCTYPE" in data or b"<!ENTITY" in data:
-                  raise ValueError("unsupported XML declarations")
-              suite = ET.fromstring(data)
+              xml_text = data.decode("utf-8")
+              if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", xml_text) or "<!DOCTYPE" in xml_text or "<!ENTITY" in xml_text:
+                  raise ValueError("unsupported XML declarations or encoding")
+              encoding = re.search(r"""<\?xml\b[^?]*\bencoding\s*=\s*["']([^"']+)["']""", xml_text)
+              if encoding and encoding.group(1).lower() != "utf-8":
+                  raise ValueError("unsupported JUnit encoding")
+              suite = ET.fromstring(xml_text)
               cases = suite.findall("testcase")
               counts = {key: int(suite.attrib[key]) for key in ("tests", "failures", "errors", "skipped")}
               classname = "com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndexTest"
               valid = suite.tag == "testsuite" and suite.get("name") == classname
+              valid = valid and all(0 <= value <= 19 for value in counts.values())
               valid = valid and counts["tests"] == len(cases) == 19 and counts["skipped"] == 0
-              valid = valid and all(case.get("classname") == classname for case in cases)
+              valid = valid and all(case.get("classname") == classname and bool(case.get("name", "").strip()) for case in cases)
               valid = valid and len({case.get("name") for case in cases}) == 19
               valid = valid and counts["failures"] == sum(case.find("failure") is not None for case in cases)
               valid = valid and counts["errors"] == sum(case.find("error") is not None for case in cases)
               valid = valid and all(case.find("skipped") is None for case in cases)
               valid = valid and all(sum(len(case.findall(tag)) for tag in ("failure", "error")) <= 1 for case in cases)
               logs = list((proof / "gradle").glob("b04-focused-*/raw.log"))
-              if len(logs) != 1 or logs[0].is_symlink() or not logs[0].is_file() or logs[0].stat().st_size > 128 * 1024 * 1024:
+              if len(logs) != 1:
                   raise ValueError("missing focused capture")
-              text = logs[0].read_text(encoding="utf-8")
+              raw = regular_bytes(logs[0], 128 * 1024 * 1024)
+              text = raw.decode("utf-8")
+              diagnostic = object_fields(
+                  json.loads(regular_bytes(logs[0].with_name("diagnostics.json"), 2 * 1024 * 1024).decode("utf-8"))
+              )
+              context = object_fields(diagnostic.get("context"))
+              raw_identity = object_fields(diagnostic.get("log"))
+              prepared = object_fields(json.loads(regular_bytes(proof / "prepared-commit.json", 4096).decode("utf-8")))
+              focused = object_fields(json.loads(regular_bytes(proof / "focused-status.json", 4096).decode("utf-8")))
+              candidate = prepared.get("head")
+              if not isinstance(candidate, str) or not re.fullmatch(r"[0-9a-f]{40}", candidate):
+                  raise ValueError("invalid candidate identity")
+              native_exit = diagnostic.get("commandExitCode")
+              if type(native_exit) is not int or native_exit not in (0, 1):
+                  raise ValueError("unexpected native Gradle exit")
+              capture_exit = diagnostic.get("captureExitCode")
+              if type(capture_exit) is not int or not 0 <= capture_exit <= 255:
+                  raise ValueError("invalid capture exit")
+              diagnostic_ok = diagnostic.get("ok")
+              if not isinstance(diagnostic_ok, bool):
+                  raise ValueError("invalid diagnostic verdict")
+              wrapper_exit = focused.get("exitCode")
+              if type(wrapper_exit) is not int or not 0 <= wrapper_exit <= 255:
+                  raise ValueError("invalid wrapper exit")
+              expected_wrapper = native_exit if native_exit else (0 if diagnostic_ok else 1)
+              required = {"schemaVersion", "complete", "captureExitCode", "producer", "worktreeDirty", "commandSignal"}
+              valid = valid and required <= diagnostic.keys()
+              valid = valid and type(diagnostic.get("schemaVersion")) is int and diagnostic.get("schemaVersion") == 1
+              valid = valid and diagnostic.get("producer") == "b04-focused" and diagnostic.get("complete") is True
+              valid = valid and capture_exit == 0
+              valid = valid and diagnostic.get("commandSignal") is None and diagnostic.get("worktreeDirty") is False
+              valid = valid and type(context.get("schemaVersion")) is int and context.get("schemaVersion") == 1
+              valid = valid and context.get("command") == "gradle"
+              valid = valid and context.get("headSha") == context.get("testedSha") == focused.get("candidateHead") == candidate
+              valid = valid and focused.get("worktreeCleanAfter") is True and wrapper_exit == expected_wrapper
+              valid = valid and (native_exit == 0 or not diagnostic_ok)
+              valid = valid and type(raw_identity.get("bytes")) is int and raw_identity.get("bytes") == len(raw)
+              valid = valid and raw_identity.get("sha256") == hashlib.sha256(raw).hexdigest()
               compile_states = re.findall(r"^> Task :parser:native:compileTestKotlin(?: ([A-Z_-]+))?$", text, re.MULTILINE)
+              test_states = re.findall(r"^> Task :parser:native:test(?: ([A-Z_-]+))?$", text, re.MULTILINE)
+              failed = counts["failures"] + counts["errors"] > 0
+              fresh_outcome = test_states == (["FAILED"] if failed else [""]) and native_exit == (1 if failed else 0)
               observation.update(counts)
+              observation["nativeCommandExitCode"] = native_exit
+              observation["captureExitCode"] = capture_exit
+              observation["toolDiagnosticsOk"] = diagnostic_ok
               observation["compileTestKotlin"] = "executed" if compile_states == [""] else "not-proved"
-              observation["complete"] = valid and compile_states == [""]
+              observation["testTask"] = (
+                  "executed-failed" if test_states == ["FAILED"] else "executed" if test_states == [""] else "not-proved"
+              )
+              observation["complete"] = valid and compile_states == [""] and fresh_outcome
           except (OSError, ValueError, KeyError, ET.ParseError):
               observation["error"] = "B04_JUNIT_OBSERVATION_INCOMPLETE"
           (proof / "junit-observation.json").write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
