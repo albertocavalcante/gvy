@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.gls.e2e
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.Test
 import org.opentest4j.TestAbortedException
+import java.util.concurrent.CancellationException
 
 class ScenarioOutcomeJUnitTest {
     @Test
@@ -55,7 +56,7 @@ class ScenarioOutcomeJUnitTest {
             completion = ScenarioCompletion.Cancelled("interrupted"),
         )
         assertThatThrownBy { ScenarioOutcomeJUnit.report(report) }
-            .isInstanceOf(AssertionError::class.java).hasMessageContaining("interrupted")
+            .isInstanceOf(CancellationException::class.java).hasMessageContaining("interrupted")
     }
 
     private fun outcome(
