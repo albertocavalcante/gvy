@@ -75,6 +75,8 @@ class EditorWorkspacePlanTest {
     }
 
     private fun change(uri: URI, version: Int?, replacement: String) = EditorDocumentChange(
-        uri, version, listOf(TextEdit(Range(Position(0, 0), Position(0, 999)), replacement)),
+        uri,
+        version,
+        listOf(TextEdit(Range(Position(0, 0), Position(0, 999)), replacement)),
     )
 }
