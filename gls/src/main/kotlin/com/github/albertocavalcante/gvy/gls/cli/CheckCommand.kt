@@ -167,7 +167,10 @@ class CheckCommand internal constructor(
                             file,
                             emptyList(),
                             listOf(
-                                FileFailure("analysis", "${failure.javaClass.name}: ${failure.message ?: "no details"}"),
+                                FileFailure(
+                                    "analysis",
+                                    "${failure.javaClass.name}: ${failure.message ?: "no details"}",
+                                ),
                             ),
                         )
                     }
