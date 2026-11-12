@@ -187,7 +187,7 @@ class CheckCommand internal constructor(
             val relativePath = workspace?.let { ws ->
                 outcome.file.relativeToOrSelf(ws).invariantSeparatorsPath
             } ?: outcome.file.invariantSeparatorsPath
-            writer.addFileCheck(relativePath, outcome.failures.map { it.id })
+            writer.addFileCheck(outcome.file.toURI().toASCIIString(), outcome.failures.map { it.id })
             writer.addDiagnostics(relativePath, outcome.diagnostics)
             outcome.failures.forEach { writer.addExecutionFailure(relativePath, it.message) }
         }

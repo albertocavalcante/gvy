@@ -67,8 +67,8 @@ class SarifWriter(
     }
 
     /** Records whether all requested analysis completed for a file. */
-    fun addFileCheck(filePath: String, failureIds: List<String>) {
-        fileChecks.add(SarifFileCheck(filePath, if (failureIds.isEmpty()) "complete" else "incomplete", failureIds))
+    fun addFileCheck(fileUri: String, failureIds: List<String>) {
+        fileChecks.add(SarifFileCheck(fileUri, if (failureIds.isEmpty()) "complete" else "incomplete", failureIds))
     }
 
     /** Records a failure without representing it as a source-code diagnostic. */

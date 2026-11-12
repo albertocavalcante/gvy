@@ -74,7 +74,7 @@ class CheckFailureTest {
 
     @Test
     fun `sarif accounts for each clean and incomplete file`(@TempDir dir: File) {
-        val clean = File(dir, "clean.groovy").apply { writeText("") }
+        val clean = File(dir, "clean file.groovy").apply { writeText("") }
         val failed = File(dir, "failed.groovy").apply { writeText("") }
         val output = File(dir, "results.sarif")
         val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { file, _ ->
@@ -95,8 +95,8 @@ class CheckFailureTest {
         }
         assertEquals(
             listOf(
-                Triple(clean.invariantSeparatorsPath, "complete", emptyList()),
-                Triple(failed.invariantSeparatorsPath, "incomplete", listOf("analysis")),
+                Triple(clean.toURI().toASCIIString(), "complete", emptyList()),
+                Triple(failed.toURI().toASCIIString(), "incomplete", listOf("analysis")),
             ),
             checks,
         )
@@ -105,7 +105,7 @@ class CheckFailureTest {
 
     @Test
     fun `sarif records a clean file when there are no findings`(@TempDir dir: File) {
-        val file = File(dir, "clean.groovy").apply { writeText("") }
+        val file = File(dir, "clean file.groovy").apply { writeText("") }
         val output = File(dir, "clean.sarif")
         val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ ->
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
@@ -113,7 +113,7 @@ class CheckFailureTest {
         command.parse(listOf("check", "--format", "sarif", "--output", output.path, file.path))
         val run = Json.parseToJsonElement(output.readText()).jsonObject.getValue("runs").jsonArray.single().jsonObject
         val check = run.getValue("properties").jsonObject.getValue("gvyFileChecks").jsonArray.single().jsonObject
-        assertEquals(file.invariantSeparatorsPath, check.getValue("uri").jsonPrimitive.content)
+        assertEquals(file.toURI().toASCIIString(), check.getValue("uri").jsonPrimitive.content)
         assertEquals("complete", check.getValue("status").jsonPrimitive.content)
         assertTrue(check.getValue("failureIds").jsonArray.isEmpty())
         assertTrue(run.getValue("results").jsonArray.isEmpty())
