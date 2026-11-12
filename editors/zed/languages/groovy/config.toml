@@ -1,3 +1,8 @@
 name = "Groovy"
 path_suffixes = ["groovy"]
 line_comments = ["// "]
+brackets = [
+    { start = "{", end = "}", close = true, newline = true },
+    { start = "[", end = "]", close = true, newline = true },
+    { start = "(", end = ")", close = true, newline = true },
+]

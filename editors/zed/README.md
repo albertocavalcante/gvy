@@ -84,3 +84,12 @@ targets, not claims that every environment supports them.
 
 Do not infer trust enforcement, language support or feature completeness from this checklist alone. Record actual
 results and limitations separately. Known Unicode position and semantic-token work is tracked in issues #1190 and #121.
+
+The language configuration supplies static `{}`, `[]` and `()` pairs. With Zed's bracket autoclose enabled, typing an
+opening delimiter at the end of a line inserts its closer. While inside that automatically inserted pair, typing the
+closer skips it, and Backspace inside the empty pair removes both. At other insertion positions, Zed checks the
+character after the cursor. Return inside an empty pair adds a line for the closer. These operations also work with the
+language server disabled. They do not provide syntax-aware exclusions: delimiters also close inside comments and
+strings. Quotes are not paired. In the tested grammar-free configuration, Return did not indent the new body line, even
+with `auto_indent: true` and `tab_size: 4`; use explicit indentation. Syntax selection and scope-aware editing remain
+experiment gates in #1175.
