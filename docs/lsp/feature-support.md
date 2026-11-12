@@ -137,3 +137,9 @@ Legend:
   at 10,000 ranges; this bounds response count, not document-processing cost.
 - `workspace/executeCommand` is implemented for `groovy.version` only and advertised via `executeCommandProvider`.
   Unknown commands fail with an `InvalidParams` error naming the command.
+
+## Coverage response migration
+
+The `groovy/getCoverage` response reports whether each line was covered. Its former `hitCount` field has been removed:
+JaCoCo supplies covered instruction counts, not execution counts. Clients should use the Boolean `covered` field. In the
+protobuf schema, field number 3 and the name `hit_count` are reserved to prevent reuse.

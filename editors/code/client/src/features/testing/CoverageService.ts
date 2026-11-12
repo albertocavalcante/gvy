@@ -77,19 +77,16 @@ export class CoverageService {
 
           // Add covered branches
           for (let i = 0; i < covered; i++) {
-            branches.push(new vscode.BranchCoverage(1, position));
+            branches.push(new vscode.BranchCoverage(true, position));
           }
           // Add missed branches
           for (let i = 0; i < missed; i++) {
-            branches.push(new vscode.BranchCoverage(0, position));
+            branches.push(new vscode.BranchCoverage(false, position));
           }
         }
 
-        // Use hitCount if available, otherwise 1 for covered, 0 for not
-        const hitCount = line.hitCount ?? (line.covered ? 1 : 0);
-
         return new vscode.StatementCoverage(
-          hitCount,
+          line.covered,
           position,
           branches.length > 0 ? branches : undefined,
         );
