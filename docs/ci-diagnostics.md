@@ -5,6 +5,86 @@ head they ship: failures, warnings, dependency advice, skips and tracked debt. I
 diagnostic summary before declaring work ready. Report counts, fixes, remaining issue links and validation limits in the
 PR and completion message. Independent review must cover changes to diagnostic policy and exceptions.
 
+## Preserve the requested CI attempt
+
+Bind every historical audit to the repository, run ID, attempt, job ID and publication head SHA. Read the requested
+attempt and job metadata before accepting their logs:
+
+```bash
+# Replace the example identities together for a different job.
+repository=albertocavalcante/gvy
+run_id=43237436692
+attempt=1
+job_id=131249849696
+head_sha=1d1b0d72aeafcdbd276ca530219f15e4f83c3b9d
+
+gh api "repos/$repository/actions/runs/$run_id/attempts/$attempt" \
+    --jq '{repository: .repository.full_name, id, run_attempt, head_sha, status, conclusion}'
+gh api "repos/$repository/actions/jobs/$job_id" \
+    --jq '{id, run_id, run_attempt, head_sha, status, conclusion}'
+```
+
+The repository, run, attempt and head must match the requested tuple; the job must additionally match its requested ID.
+Wait for applicable work to complete. Missing historical metadata, a mismatch or unavailable evidence blocks
+certification. Do not fall back to the latest run or a same-name job.
+
+For a readable view, select both the job and attempt explicitly:
+
+```bash
+gh run view "$run_id" --repo "$repository" --attempt "$attempt" --job "$job_id" --log
+```
+
+This output adds job/step prefixes and may contain `UNKNOWN STEP`. Label it **normalized CLI output**. Its digest, byte
+count and NUL count do not describe the original log.
+
+Retrieve original bytes from the selected job's API endpoint. Use a fresh private evidence directory; preserve the
+metadata and exact request identity beside the capture. The following capture requires Bash and Node.js:
+
+```bash
+set -euo pipefail
+mkdir -p .agent/out
+evidence=".agent/out/ci-${run_id}-attempt-${attempt}-job-${job_id}"
+mkdir -m 700 "$evidence" # Fails if this evidence directory already exists.
+gh api "repos/$repository/actions/runs/$run_id/attempts/$attempt" > "$evidence/run.json"
+gh api "repos/$repository/actions/jobs/$job_id" > "$evidence/job.json"
+jq -e --arg repository "$repository" --arg head "$head_sha" \
+    --argjson run "$run_id" --argjson attempt "$attempt" \
+    '.repository.full_name == $repository and .id == $run and .run_attempt == $attempt and
+     .head_sha == $head and .status == "completed"' "$evidence/run.json" > /dev/null
+jq -e --arg head "$head_sha" --argjson run "$run_id" \
+    --argjson attempt "$attempt" --argjson job "$job_id" \
+    '.id == $job and .run_id == $run and .run_attempt == $attempt and
+     .head_sha == $head and .status == "completed"' "$evidence/job.json" > /dev/null
+gh api "repos/$repository/actions/jobs/$job_id/logs" --allow-escape-sequences > "$evidence/job.log.partial"
+mv "$evidence/job.log.partial" "$evidence/job.log"
+node --input-type=module - "$evidence/job.log" <<'JS'
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+const bytes = readFileSync(process.argv[2]);
+console.log(JSON.stringify({
+  sha256: createHash('sha256').update(bytes).digest('hex'),
+  bytes: bytes.length,
+  nulBytes: bytes.reduce((count, byte) => count + Number(byte === 0), 0),
+}));
+JS
+```
+
+Record the log endpoint, requested tuple, retrieval success/failure, SHA-256, byte count and NUL count in the audit
+receipt. A failed retrieval leaves a partial capture; preserve it as incomplete evidence and stop certification. Keep
+original bytes separate from decoded or normalized analysis. Use binary-safe readers such as `rg --text`; removing NULs
+or escape sequences does not repair an incomplete producer capture.
+
+Retain the original failed attempt and each retry separately. A later success does not replace the earlier result. A
+matching command or test label proves presence in the log, not that checks executed: verify the actual report,
+assertions, test count and skips against the selected source/artifact.
+
+The decisive counterexample is [#1883](https://github.com/albertocavalcante/gvy/issues/1883). With GitHub CLI 2.103.3,
+the default view of attempt-1 job `131249849696` returned the same normalized log as successful attempt-2 job
+`131252364808`. Explicit `--attempt 1` recovered the failure; direct job API logs had different hashes and lengths. The
+[CLI manual](https://cli.github.com/manual/gh_run_view) documents a separate attempt selector and log-association
+limitations. This is evidence for explicit selection in gvy's procedure, not an established upstream defect. Executable
+retrieval/identity regression protection remains tracked in #1883; these instructions alone do not enforce it.
+
 ## Required readiness
 
 The required `Validation Check` evaluates the current workflow's dependency results. Applicable Gradle lint, unit/E2E

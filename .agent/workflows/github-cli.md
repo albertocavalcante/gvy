@@ -107,14 +107,18 @@ gh run list --limit 5
 
 # View run details
 gh run view <RUN_ID>
-gh run view <RUN_ID> --log
-gh run view <RUN_ID> --log-failed
+gh run view <RUN_ID> --repo <OWNER/REPO> --attempt <ATTEMPT> --job <JOB_ID> --log
 
 # Re-run failed jobs
 gh run rerun <RUN_ID> --failed
 ```
 
 ---
+
+Before accepting historical logs, follow the
+[canonical CI evidence procedure](../../docs/ci-diagnostics.md#preserve-the-requested-ci-attempt). Bind the
+repository/run/attempt/job/head tuple, retain each attempt and original API bytes, and label readable CLI output as
+normalized. Missing or ambiguous evidence blocks certification.
 
 ## Output Best Practices
 
