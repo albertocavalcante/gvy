@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -396,9 +397,27 @@ class GroovySemanticsTest {
         Reference.reachabilityFence(semantics)
     }
 
+    @Test
+    fun `context reflects changes to live module members`() {
+        val module = parse("class Mutable { String value; String label() { value } }")
+        val semantics = GroovySemantics(stubSolver)
+        val context = checkNotNull(semantics.getContext(module))
+        val cls = module.classes.first { it.name == "Mutable" }
+        cls.getField("value").type = ClassHelper.int_TYPE
+        cls.methods.first { it.name == "label" }.returnType = ClassHelper.int_TYPE
+        val receiver = SemanticType.Known("Mutable")
+        assertEquals(TypeConstants.INT, context.getFieldType(receiver, "value"))
+        assertEquals(TypeConstants.INT, context.getMethodReturnType(receiver, "label", emptyList()))
+        Reference.reachabilityFence(module)
+    }
+
     private fun retiredModuleAndContext(semantics: GroovySemantics): Pair<WeakReference<ModuleNode>, NativeTypeContext> {
         val module = parse("class Retired { String name; String label() { name } }")
         val context = checkNotNull(semantics.getContext(module))
+        // Detached contexts use the signatures captured at injection, not later AST mutations.
+        val cls = module.classes.first { it.name == "Retired" }
+        cls.getField("name").type = ClassHelper.int_TYPE
+        cls.methods.first { it.name == "label" }.returnType = ClassHelper.int_TYPE
         return WeakReference(module) to context
     }
 

@@ -10,8 +10,8 @@ import java.lang.ref.WeakReference
  * Scope tracking for variable resolution in native Groovy AST.
  * Supports module-level resolution for field and method lookups.
  *
- * Module member signatures are copied into the scope so cached contexts do not retain the AST.
- * The optional module reference is observational and does not own the module.
+ * The module reference does not own the AST. Member lookups use the live module while available;
+ * after collection they use signatures captured when this scope was created.
  */
 class NativeScope private constructor(
     private val parent: NativeScope?,
@@ -20,14 +20,27 @@ class NativeScope private constructor(
     private val members: Map<String, ModuleMembers> = emptyMap(),
 ) {
 
-    /** The source AST if it is still owned by the caller; member lookups use the captured signatures. */
+    /** The source AST if it is still owned by the caller. */
     val currentModule: ModuleNode? get() = module?.get()
 
-    internal fun findFieldType(classFqn: String, fieldName: String): SemanticType? =
-        members[classFqn]?.fields?.get(fieldName)
+    internal fun findFieldType(classFqn: String, fieldName: String): SemanticType? {
+        val liveModule = module?.get()
+        if (liveModule != null) {
+            return liveModule.classes.find { it.name == classFqn }?.fields
+                ?.find { it.name == fieldName }?.let { NativeTypeContext.fromClassNode(it.type) }
+        }
+        return members[classFqn]?.fields?.get(fieldName)
+    }
 
     internal fun findMethodType(classFqn: String, methodName: String, arity: Int): SemanticType? {
-        val types = members[classFqn]?.methods?.get(methodName to arity).orEmpty()
+        val liveModule = module?.get()
+        val types = if (liveModule != null) {
+            liveModule.classes.find { it.name == classFqn }?.methods.orEmpty()
+                .filter { it.name == methodName && it.parameters.size == arity }
+                .map { NativeTypeContext.fromClassNode(it.returnType) }
+        } else {
+            members[classFqn]?.methods?.get(methodName to arity).orEmpty()
+        }
         return types.firstOrNull()?.takeIf { first -> types.all { it == first } }
     }
 
