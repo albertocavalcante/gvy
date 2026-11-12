@@ -18,6 +18,26 @@ REQUIRED_LICENSE_PATHS = {"LICENSE", "LICENSES/Apache-2.0.txt", "editors/code/LI
 # Resources include byte-sensitive fixtures and bundled data; their provenance is
 # described by REUSE metadata. Imported code is audited separately there too.
 EXCLUDED_PARTS = {"node_modules", ".venv"}
+# Exact byte-sensitive source data, not a directory-wide header exemption.
+# The fixture-owning PRs add exact REUSE.toml records with audited holders and
+# licenses. REUSE coverage and tracked-file omission checks still apply.
+BYTE_SENSITIVE_FIXTURE_PATHS: frozenset[str] = frozenset(
+    {
+        "tools/perf/bench/corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy",
+        "tools/perf/bench/corpus/fixtures/upstream/spock-blocking-variables/BlockingVariables.groovy",
+        "tools/perf/bench/corpus/fixtures/upstream/groovy-grape-ivy/GrapeIvy.groovy",
+        "tools/perf/bench/corpus/fixtures/upstream/groovy-benchmark-driver/bench.groovy",
+        "tools/perf/bench/corpus/fixtures/upstream/ofbiz-filter-receipts/FilterOutReceipts.groovy",
+        "tools/perf/bench/corpus/fixtures/upstream/spock-gradle-build/build.gradle",
+        "tools/perf/bench/corpus/fixtures/upstream/geb-gradle-bootstrap/build.gradle",
+        "tools/perf/bench/corpus/fixtures/upstream/pipeline-parallel-list/parallelFromList.groovy",
+        "tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile",
+        "tools/perf/bench/corpus/fixtures/upstream/spock-feature-methods/FeatureMethods.groovy",
+        "tools/perf/bench/corpus/fixtures/upstream/geb-browser-spec/BrowserSpec.groovy",
+        "tools/perf/bench/native-contract/fixtures/valid.groovy",
+        "tools/perf/bench/native-contract/fixtures/malformed.groovy",
+    }
+)
 SUFFIXES = {
     ".kt",
     ".kts",
@@ -54,6 +74,7 @@ SUFFIXES = {
 }
 NAMES = {
     "Makefile",
+    "Jenkinsfile",
     "BUCK",
     "BUILD",
     "WORKSPACE",
@@ -69,6 +90,8 @@ TAG = re.compile(r"^SPDX-(FileCopyrightText|License-Identifier):\s*(.*?)\s*$")
 
 def maintained(path: Path, data: bytes) -> bool:
     """Classify original maintained source; REUSE still covers all other files."""
+    if path.as_posix() in BYTE_SENSITIVE_FIXTURE_PATHS:
+        return False
     if any(part in EXCLUDED_PARTS for part in path.parts):
         return False
     parts = path.parts
@@ -88,7 +111,7 @@ def header_errors(path: Path, data: bytes) -> list[str]:
     lines = text.splitlines()
     tags: dict[str, list[str]] = {"FileCopyrightText": [], "License-Identifier": []}
     block = False
-    hash_comments = (
+    hash_comments = path.name != "Jenkinsfile" and (
         path.suffix
         in {
             ".py",
@@ -111,7 +134,7 @@ def header_errors(path: Path, data: bytes) -> list[str]:
         or path.name in NAMES
         or (not path.suffix and data.startswith(b"#!"))
     )
-    slash_comments = path.suffix in {
+    slash_comments = path.name == "Jenkinsfile" or path.suffix in {
         ".kt",
         ".kts",
         ".java",
