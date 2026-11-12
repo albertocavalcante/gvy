@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+name: PR helper
+
+on:
+  pull_request:
+    paths:
+      - '.agent/scripts/pr.py'
+      - '.agent/scripts/pr.py.lock'
+      - '.agent/scripts/pr.py.lock.license'
+      - '.agent/scripts/test_pr.py'
+      - '.reuse/bootstrap-requirements.txt'
+      - 'tools/github-issues/pyproject.toml'
+      - 'tools/github-issues/uv.lock'
+      - '.github/workflows/pr-helper.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.agent/scripts/pr.py'
+      - '.agent/scripts/pr.py.lock'
+      - '.agent/scripts/pr.py.lock.license'
+      - '.agent/scripts/test_pr.py'
+      - '.reuse/bootstrap-requirements.txt'
+      - 'tools/github-issues/pyproject.toml'
+      - 'tools/github-issues/uv.lock'
+      - '.github/workflows/pr-helper.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: PR helper checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Install pinned uv
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
+      - name: Install locked test and analysis tools
+        run: uv sync --locked --project tools/github-issues
+      - name: Build isolated helper environment from its lockfile
+        run: |
+          uv export --offline --locked --script .agent/scripts/pr.py --format requirements.txt --output-file "$RUNNER_TEMP/pr-requirements.txt" > /dev/null
+          uv venv --python 3.11 "$RUNNER_TEMP/pr-helper-env"
+          uv pip sync --require-hashes --python "$RUNNER_TEMP/pr-helper-env/bin/python" "$RUNNER_TEMP/pr-requirements.txt"
+      - name: Test helper offline
+        run: >-
+          "$RUNNER_TEMP/pr-helper-env/bin/python" -m unittest discover -s .agent/scripts -p test_pr.py
+      - name: Check formatting and lint
+        run: |
+          uv run --offline --locked --project tools/github-issues ruff format --check .agent/scripts/pr.py .agent/scripts/test_pr.py
+          uv run --offline --locked --project tools/github-issues ruff check .agent/scripts/pr.py .agent/scripts/test_pr.py
+      - name: Check types
+        run: |
+          uv run --offline --locked --project tools/github-issues basedpyright --pythonpath "$RUNNER_TEMP/pr-helper-env/bin/python" .agent/scripts/pr.py .agent/scripts/test_pr.py
+          uv run --offline --locked --project tools/github-issues ty check --python "$RUNNER_TEMP/pr-helper-env" --extra-search-path .agent/scripts .agent/scripts/pr.py .agent/scripts/test_pr.py
