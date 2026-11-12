@@ -2,6 +2,8 @@ package com.github.albertocavalcante.gvy.gls.e2e
 
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.junit.jupiter.api.Assumptions
+import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeoutException
 
@@ -24,6 +26,7 @@ sealed interface XfailDecision {
  * or an LSP error response (a timeout only when [Xfail.match] is set). A harness error (bad YAML, missing fixture,
  * crashed process) is never hidden. When [Xfail.match] is set the failure message must also match it, so a different
  * failure in the same scenario is not swallowed.
+ * Suppressed failures may represent failed cleanup, so they always keep the result unexpected.
  */
 object XfailOutcome {
     /** Short step timeout applied to `xfail` scenarios, so a hung request does not eat shard time. */
@@ -48,6 +51,7 @@ object XfailOutcome {
         if (failure == null) {
             return XfailDecision.Fixed("gvy#${xfail.issue} appears fixed: remove xfail from $source")
         }
+        if (hasSuppressedFailure(failure)) return XfailDecision.Unexpected(failure)
         if (!isProductFailure(failure)) return XfailDecision.Unexpected(failure)
         // A timeout says little about why, and a slow machine can cause one, so it only counts with a `match`.
         if (failure is TimeoutException && xfail.match == null) return XfailDecision.Unexpected(failure)
@@ -83,6 +87,16 @@ object XfailOutcome {
         is AssertionError, is TimeoutException -> true
         is ExecutionException -> failure.cause is ResponseErrorException
         else -> false
+    }
+
+    private fun hasSuppressedFailure(failure: Throwable): Boolean {
+        val visited = Collections.newSetFromMap(IdentityHashMap<Throwable, Boolean>())
+        var current: Throwable? = failure
+        while (current != null && visited.add(current)) {
+            if (current.suppressed.isNotEmpty()) return true
+            current = current.cause
+        }
+        return false
     }
 
     private fun messageChain(failure: Throwable): String =
