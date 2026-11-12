@@ -60,6 +60,21 @@ For a full build, including tests:
 Match validation to the changed behavior. Documentation-only changes need formatting, link checks, and a review of the
 instructions and claims. Code changes need relevant tests and lint checks; required CI checks must pass before merge.
 
+### License metadata
+
+The standalone license checker is being introduced ahead of repository-wide adoption; it reports existing gaps until
+migration is complete. Install [uv](https://docs.astral.sh/uv/) and bootstrap the pinned tools once with
+`uv sync --project .reuse --locked`. Then run `make license-check` and `make license-test` offline. The equivalent
+portable check is `uv run --offline --project .reuse --locked python .reuse/check.py --root .`.
+
+Original maintained source files require leading SPDX copyright and Apache-2.0 license comments. Preserve existing
+copyright notices and attributed holders; use `Alberto Cavalcante and the gvy contributors` for original gvy source
+where a more specific holder is not known. This does not change the attribution or license of imported material. REUSE
+metadata covers non-commentable files and byte-sensitive fixtures, but does not replace the required source headers.
+Audit imported material and keep its provenance and license explicit. The checker validates the canonical Apache-2.0
+text and REUSE coverage as well as the leading comments. Do not use bulk annotation on fixtures or scripts without
+checking encodings and byte-sensitive behavior.
+
 ### JVM code
 
 Run a focused test while iterating, then the relevant broader checks:
