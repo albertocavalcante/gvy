@@ -30,6 +30,8 @@ class EditorWorkspacePlanTest {
         val plan = EditorWorkspacePlan.prepare(buffers, edits, EditorPositionEncoding.UTF16)
 
         assertThat(plan.getValue(first)).isEqualTo(PlannedBufferEdit(buffers.getValue(first), "one!"))
+        assertThat(plan.getValue(first).source)
+            .isNotEqualTo(buffers.getValue(first).copy(incarnation = UUID.randomUUID()))
         assertThat(plan.getValue(second)).isEqualTo(PlannedBufferEdit(buffers.getValue(second), "two!"))
         assertThat(buffers.getValue(first).text).isEqualTo("one")
         assertThat(buffers.getValue(first).version).isEqualTo(3)
