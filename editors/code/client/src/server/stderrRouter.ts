@@ -14,7 +14,7 @@ export interface LogSink {
 export interface StderrRouter {
   (line: string): void;
   flush(): void;
-  reset(): void;
+  truncated(line: string): void;
 }
 
 type Level = "trace" | "debug" | "info" | "warn" | "error";
@@ -137,7 +137,18 @@ export function createStderrRouter(sink: LogSink): StderrRouter {
     current = "error";
     exceptionLineNext = false;
   };
-  return Object.assign(route, { flush, reset });
+  const truncated = (line: string) => {
+    // An unpaired JUL header does not establish a severity for this line.
+    if (julHeader !== undefined && julLevelOf(line) === undefined) reset();
+    if (line.trim() === "") {
+      reset();
+      sink.error(line + TRUNCATION_MARKER);
+    } else {
+      route(line + TRUNCATION_MARKER);
+    }
+    reset();
+  };
+  return Object.assign(route, { flush, truncated });
 }
 
 /** Extra bytes beyond the payload limit are discarded; the marker is 28 bytes. */
@@ -150,8 +161,7 @@ export function pipeServerStderr(input: Readable, sink: LogSink): void {
     input,
     ({ text, truncated }) => {
       if (truncated) {
-        route.reset();
-        sink.error(text + TRUNCATION_MARKER);
+        route.truncated(text);
       } else {
         route(text);
       }
