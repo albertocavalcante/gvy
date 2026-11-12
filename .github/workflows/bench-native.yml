@@ -27,6 +27,7 @@ jobs:
       contents: read
     env:
       CARGO_BUILD_JOBS: '1'
+      CARGO_TERM_COLOR: never
       NODE_VERSION: '24.22.2'
       RUST_VERSION: '1.96.1'
       # Official rust-1.96.1-x86_64-unknown-linux-gnu.tar.xz.sha256.
@@ -40,39 +41,68 @@ jobs:
       - name: Install the verified Rust toolchain in an owned directory
         shell: bash
         run: |
+          set -euo pipefail
           : "${RUNNER_TEMP:?}"
-          archive="rust-${RUST_VERSION}-x86_64-unknown-linux-gnu.tar.xz"
-          download="${RUNNER_TEMP}/${archive}"
-          unpack="${RUNNER_TEMP}/benchmark-rust-source"
-          prefix="${RUNNER_TEMP}/benchmark-rust"
-          printf 'checksum rejection control\n' > "${RUNNER_TEMP}/checksum-control"
-          if printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "${RUNNER_TEMP}/checksum-control" | sha256sum --check --status; then
-            echo 'Checksum rejection control unexpectedly passed' >&2
-            exit 1
-          fi
-          curl --proto '=https' --tlsv1.2 --fail --location --connect-timeout 10 --max-time 300 \
-            --max-filesize 1073741824 --output "$download" "https://static.rust-lang.org/dist/${archive}"
-          printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "$download" | sha256sum --check --status
-          mkdir -p "$unpack"
-          tar --extract --xz --file "$download" --directory "$unpack"
-          "$unpack/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu/install.sh" \
-            --prefix="$prefix" --disable-ldconfig --without=rust-docs
-          printf '%s\n' "$prefix/bin" >> "$GITHUB_PATH"
           node_bin="${RUNNER_TOOL_CACHE:?}/node/${NODE_VERSION}/x64/bin"
           test -x "$node_bin/node"
-          printf '%s\n' "$node_bin" >> "$GITHUB_PATH"
-          rm "$download"
-          rm -rf "$unpack"
+          test "$("$node_bin/node" -p 'process.versions.node')" = "$NODE_VERSION"
+          log="${RUNNER_TEMP}/native-contract-install.log"
+          set +e
+          (
+            set -euo pipefail
+            archive="rust-${RUST_VERSION}-x86_64-unknown-linux-gnu.tar.xz"
+            download="${RUNNER_TEMP}/${archive}"
+            unpack="${RUNNER_TEMP}/benchmark-rust-source"
+            prefix="${RUNNER_TEMP}/benchmark-rust"
+            printf 'checksum rejection control\n' > "${RUNNER_TEMP}/checksum-control"
+            if printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "${RUNNER_TEMP}/checksum-control" | sha256sum --check --status; then
+              echo 'Checksum rejection control unexpectedly passed' >&2
+              exit 1
+            fi
+            curl --proto '=https' --tlsv1.2 --fail --location --silent --show-error --connect-timeout 10 --max-time 300 \
+              --max-filesize 1073741824 --output "$download" "https://static.rust-lang.org/dist/${archive}"
+            printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "$download" | sha256sum --check --status
+            mkdir -p "$unpack"
+            tar --extract --xz --file "$download" --directory "$unpack"
+            "$unpack/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu/install.sh" \
+              --prefix="$prefix" --disable-ldconfig --without=rust-docs
+            printf '%s\n' "$prefix/bin" >> "$GITHUB_PATH"
+            printf '%s\n' "$node_bin" >> "$GITHUB_PATH"
+            rm "$download"
+            rm -rf "$unpack"
+          ) 2>&1 | tee "$log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          diagnostic_exit=0
+          "$node_bin/node" tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+          printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+          if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+          if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+          exit "$diagnostic_exit"
 
       - name: Verify exact tool versions
         shell: bash
         run: |
-          test "$(rustc --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
-          test "$(cargo --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
-          rustc --version --verbose
-          cargo --version
-          node --version
-          test "$(node -p 'process.versions.node')" = "$NODE_VERSION"
+          set -euo pipefail
+          log="${RUNNER_TEMP}/native-contract-versions.log"
+          set +e
+          (
+            set -euo pipefail
+            test "$(rustc --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
+            test "$(cargo --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
+            rustc --version --verbose
+            cargo --version
+            node --version
+            test "$(node -p 'process.versions.node')" = "$NODE_VERSION"
+          ) 2>&1 | tee "$log"
+          codes=("${PIPESTATUS[@]}")
+          set -e
+          diagnostic_exit=0
+          node tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+          printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+          if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+          if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+          exit "$diagnostic_exit"
 
       - name: Test source-pin validation without native setup
         run: node --test tools/perf/bench/native-contract/*.test.mjs
@@ -80,15 +110,29 @@ jobs:
       - name: Verify the selected candidate and known secondary rejection
         shell: bash
         run: |
+          set -euo pipefail
           secondary_exit=0
           secondary_binary_sha256=''
           for variant in primary secondary; do
             export CARGO_TARGET_DIR="${RUNNER_TEMP}/native-contract-target/${variant}"
             manifest="tools/perf/bench/native-contract/${variant}/Cargo.toml"
-            cargo fmt --manifest-path "$manifest" --check
-            cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
-            cargo test --locked --manifest-path "$manifest"
-            cargo build --release --locked --manifest-path "$manifest"
+            log="${RUNNER_TEMP}/native-contract-rust-${variant}.log"
+            set +e
+            (
+              set -euo pipefail
+              cargo fmt --manifest-path "$manifest" --check
+              cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+              cargo test --locked --manifest-path "$manifest"
+              cargo build --release --locked --manifest-path "$manifest"
+            ) 2>&1 | tee "$log"
+            codes=("${PIPESTATUS[@]}")
+            set -e
+            diagnostic_exit=0
+            node tools/ci/check-rust-diagnostics.mjs "$log" || diagnostic_exit=$?
+            printf 'command=%s\ncapture=%s\ndiagnostics=%s\n' "${codes[0]}" "${codes[1]}" "$diagnostic_exit" > "${log%.log}.status"
+            if (( codes[0] != 0 )); then exit "${codes[0]}"; fi
+            if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
+            if (( diagnostic_exit != 0 )); then exit "$diagnostic_exit"; fi
             if [[ "$variant" == primary ]]; then
               node tools/perf/bench/native-contract/run.mjs primary > "${RUNNER_TEMP}/native-contract-primary.json"
             else
@@ -109,6 +153,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-contract-attempt-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/native-contract-*.json
+          path: |
+            ${{ runner.temp }}/native-contract-*.json
+            ${{ runner.temp }}/native-contract-*.log
+            ${{ runner.temp }}/native-contract-*.status
           if-no-files-found: error
           retention-days: 7
