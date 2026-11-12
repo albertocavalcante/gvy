@@ -147,10 +147,22 @@ class HoverContentGenerator(
     private fun ASTNode.isDeclarationNode(): Boolean = this is MethodNode || this is ClassNode ||
         this is FieldNode || this is PropertyNode || this is Parameter
 
-    private fun ASTNode.isExpressionNode(): Boolean = this is VariableExpression || this is MethodCallExpression ||
-        this is ConstructorCallExpression || this is PropertyExpression || this is BinaryExpression ||
-        this is DeclarationExpression || this is ClosureExpression || this is ListExpression ||
-        this is MapExpression || this is ConstantExpression || this is GStringExpression || this is ClassExpression
+    private fun ASTNode.isExpressionNode(): Boolean = when (this) {
+        is VariableExpression,
+        is MethodCallExpression,
+        is ConstructorCallExpression,
+        is PropertyExpression,
+        is BinaryExpression,
+        is DeclarationExpression,
+        is ClosureExpression,
+        is ListExpression,
+        is MapExpression,
+        is ConstantExpression,
+        is GStringExpression,
+        is ClassExpression,
+        -> true
+        else -> false
+    }
 
     private fun ASTNode.isMetadataNode(): Boolean = this is ImportNode || this is PackageNode || this is AnnotationNode
 

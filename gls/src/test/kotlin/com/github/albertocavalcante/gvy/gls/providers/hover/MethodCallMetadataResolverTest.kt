@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.gls.services.GroovyGdkProvider
 import com.github.albertocavalcante.gvy.gls.services.QualifiedGdkMethod
 import com.github.albertocavalcante.gvy.gls.services.ReflectedMethod
 import com.github.albertocavalcante.gvy.gls.types.SemanticTypeResolver
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import io.mockk.every
 import io.mockk.mockk
 import org.codehaus.groovy.ast.ClassHelper
@@ -108,8 +109,7 @@ class MethodCallMetadataResolverTest {
         every { call.arguments } returns args
 
         // Mock semantic resolver to return String type
-        every { semanticResolver.resolveType(receiver, null) } returns mockk()
-        every { semanticResolver.formatSemanticType(any()) } returns "java.lang.String"
+        every { semanticResolver.resolveType(receiver, null) } returns SemanticType.Known("java.lang.String")
 
         // Mock GDK provider to return a GDK method
         val gdkMethod = GdkExtensionMethod(
@@ -180,8 +180,7 @@ class MethodCallMetadataResolverTest {
         every { call.arguments } returns args
 
         // Mock semantic resolver
-        every { semanticResolver.resolveType(receiver, null) } returns mockk()
-        every { semanticResolver.formatSemanticType(any()) } returns "java.util.List"
+        every { semanticResolver.resolveType(receiver, null) } returns SemanticType.Known("java.util.List")
 
         // Mock GDK provider with overloaded methods
         val addMethod1 = GdkExtensionMethod(
@@ -224,8 +223,7 @@ class MethodCallMetadataResolverTest {
         every { call.arguments } returns args
 
         // Mock semantic resolver
-        every { semanticResolver.resolveType(receiver, null) } returns mockk()
-        every { semanticResolver.formatSemanticType(any()) } returns "java.lang.Object"
+        every { semanticResolver.resolveType(receiver, null) } returns SemanticType.Known("java.lang.Object")
 
         // Mock both providers to return empty
         every { gdkProvider.getMethodsForType("java.lang.Object") } returns emptyList()

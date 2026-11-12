@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.providers.hover
 
 import com.github.albertocavalcante.gvy.gls.services.ClasspathService
@@ -19,19 +22,24 @@ import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.Parameter
 import org.codehaus.groovy.ast.expr.ArgumentListExpression
+import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.SourceUnit
+import org.codehaus.groovy.transform.stc.ExtensionMethodNode
 import org.junit.jupiter.api.Test
 import java.lang.reflect.Modifier
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 class MethodCallHoverResolutionTest {
     private val classpath = mockk<ClasspathService> {
@@ -260,6 +268,102 @@ class MethodCallHoverResolutionTest {
     }
 
     @Test
+    fun `attached instance extension target uses its declaration without static or receiver parameters`() {
+        val target = extensionTarget()
+        val parameters = target.parameters
+        val parameterStaticContexts = parameters.map { it.isInStaticContext }
+        val owner = target.declaringClass
+        val declaration = target.extensionMethodNode
+        val declarationStaticContexts = declaration.parameters.map { it.isInStaticContext }
+        declaration.putNodeMetaData(
+            GroovydocHolder.DOC_COMMENT,
+            Groovydoc("Decorates text using the supplied suffix.", declaration),
+        )
+        val expression = call("decorate", ConstantExpression("!"), receiver = ConstantExpression("hello")).apply {
+            methodTarget = target
+        }
+
+        val metadata = assertNotNull(resolver.resolveMethodCall(expression, null))
+        val content = assertNotNull(HoverContentGenerator(semantic, resolver).generateHover(expression).getOrNull())
+            .contents.right.value
+
+        assertEquals("demo.HoverExtensions", metadata.declaringClass)
+        assertContains(metadata.signature, "String decorate(String suffix)")
+        assertFalse(metadata.signature.contains("static"), metadata.signature)
+        assertFalse(metadata.signature.contains("self"), metadata.signature)
+        assertContains(assertNotNull(metadata.documentation), "Decorates text using the supplied suffix.")
+        assertContains(content, "demo.HoverExtensions")
+        assertContains(content, "Decorates text using the supplied suffix.")
+        assertSame(target, expression.methodTarget)
+        assertSame(parameters, target.parameters)
+        assertEquals(parameterStaticContexts, target.parameters.map { it.isInStaticContext })
+        assertSame(owner, target.declaringClass)
+        assertTrue(target.isStatic)
+        assertEquals(2, declaration.parameters.size)
+        assertEquals("self", declaration.parameters.first().name)
+        assertEquals(declarationStaticContexts, declaration.parameters.map { it.isInStaticContext })
+        assertTrue(declaration.isStatic)
+    }
+
+    @Test
+    fun `attached static extension retains its static call style and underlying declaration owner`() {
+        val target = extensionTarget(
+            "static String decorate(Class<String> self, String suffix) { suffix }",
+            staticExtension = true,
+        )
+        val expression = call(
+            "decorate",
+            ConstantExpression("!"),
+            receiver = ClassExpression(ClassHelper.STRING_TYPE),
+        ).apply {
+            methodTarget = target
+        }
+
+        val metadata = assertNotNull(resolver.resolveMethodCall(expression, null))
+
+        assertEquals("demo.HoverExtensions", metadata.declaringClass)
+        assertContains(metadata.signature, "static")
+        assertContains(metadata.signature, "String decorate(String suffix)")
+        assertFalse(metadata.signature.contains("self"), metadata.signature)
+        assertTrue(target.isStaticExtension)
+        assertTrue(target.isStatic)
+    }
+
+    @Test
+    fun `attached extension preserves generic source varargs annotations and throws without mutating its AST`() {
+        val target = extensionTarget(
+            "@Deprecated static <T> T decorate(String self, @Deprecated T... values) throws IOException { null }",
+        )
+        val parameters = target.parameters
+        val generics = target.genericsTypes
+        val annotations = target.annotations.toList()
+        val exceptions = target.exceptions
+
+        val metadata = target.toHoverMetadata()
+
+        assertContains(metadata.signature, "<T> T decorate(@Deprecated T... values)")
+        assertContains(metadata.signature, "@Deprecated")
+        assertContains(metadata.signature, "throws IOException")
+        assertFalse(metadata.signature.contains("static"), metadata.signature)
+        assertSame(parameters, target.parameters)
+        assertSame(generics, target.genericsTypes)
+        assertEquals(annotations, target.annotations)
+        assertSame(exceptions, target.exceptions)
+        assertTrue(target.isStatic)
+    }
+
+    @Test
+    fun `attached extension keeps a fixed array parameter distinct from source varargs`() {
+        val target = extensionTarget("static String decorate(String self, String[] values) { self }")
+
+        val metadata = target.toHoverMetadata()
+
+        assertContains(metadata.signature, "String decorate(String[] values)")
+        assertFalse(metadata.signature.contains("..."), metadata.signature)
+        assertEquals("demo.HoverExtensions", metadata.declaringClass)
+    }
+
+    @Test
     fun `unrelated transform metadata does not hide a method call hover`() {
         val expression = call("unknown").apply { putNodeMetaData("targetMethod", "unrelated metadata") }
 
@@ -388,6 +492,32 @@ class MethodCallHoverResolutionTest {
             },
         )
         return unit.ast to calls.single()
+    }
+
+    private fun extensionTarget(
+        declaration: String = "static String decorate(String self, String suffix) { self + suffix }",
+        staticExtension: Boolean = false,
+    ): ExtensionMethodNode {
+        val unit = SourceUnit.create("HoverExtensions.groovy", "package demo; class HoverExtensions { $declaration }")
+        unit.parse()
+        unit.completePhase()
+        unit.nextPhase()
+        unit.convert()
+        val method = unit.ast.classes.single().methods.single { it.name == "decorate" }
+        return ExtensionMethodNode(
+            method,
+            method.name,
+            method.modifiers,
+            method.returnType,
+            method.parameters.drop(1).toTypedArray(),
+            method.exceptions,
+            method.code,
+            staticExtension,
+        ).apply {
+            declaringClass = method.parameters.first().type
+            genericsTypes = method.genericsTypes
+            addAnnotations(method.annotations)
+        }
     }
 
     private fun call(

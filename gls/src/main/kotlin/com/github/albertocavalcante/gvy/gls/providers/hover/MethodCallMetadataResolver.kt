@@ -19,6 +19,7 @@ import org.codehaus.groovy.ast.expr.ClassExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.TupleExpression
+import org.codehaus.groovy.transform.stc.ExtensionMethodNode
 import org.slf4j.LoggerFactory
 import java.lang.reflect.Modifier
 
@@ -119,6 +120,7 @@ class MethodCallMetadataResolver(
         return runCatching {
             when (val type = semanticResolver.resolveType(expression, module)) {
                 is SemanticType.Known -> module?.classes?.find { it.name == type.fqn } ?: ClassHelper.make(type.fqn)
+                is SemanticType.Array -> semanticResolver.toClassNode(type, module)
                 is SemanticType.Dynamic, is SemanticType.Unknown -> null
                 else -> ClassHelper.make(semanticResolver.formatSemanticType(type))
             }
@@ -182,10 +184,17 @@ class MethodCallMetadataResolver(
     )
 }
 
-internal fun MethodNode.toHoverMetadata(): MethodCallMetadataResolver.MethodMetadata =
-    MethodCallMetadataResolver.MethodMetadata(
-        SignatureFormatter.formatMethod(this),
-        declaringClass?.name ?: "unknown",
+internal fun MethodNode.toHoverMetadata(): MethodCallMetadataResolver.MethodMetadata {
+    val extension = this as? ExtensionMethodNode
+    val declaration = extension?.extensionMethodNode ?: this
+    val isInstanceExtension = extension != null && !extension.isStaticExtension
+    val displayModifiers = if (isInstanceExtension) modifiers and Modifier.STATIC.inv() else modifiers
+    return MethodCallMetadataResolver.MethodMetadata(
+        SignatureFormatter.formatMethod(this, displayModifiers = displayModifiers),
+        declaration.declaringClass?.name ?: "unknown",
         returnType.name,
-        DocFormatter.formatAsMarkdown(DocExtractor.extractAttachedDocumentation(this)).takeIf { it.isNotBlank() },
+        DocFormatter.formatAsMarkdown(DocExtractor.extractAttachedDocumentation(declaration)).takeIf {
+            it.isNotBlank()
+        },
     )
+}
