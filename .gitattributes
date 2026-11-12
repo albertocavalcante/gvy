@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 tools/ export-ignore
 .agent/ export-ignore
 .devcontainer/ export-ignore
@@ -15,3 +18,27 @@ tests/e2e/resources/snapshots/** text eol=lf
 /editors/code/LICENSE text eol=lf
 /editors/zed/LICENSE text eol=lf
 /LICENSES/Apache-2.0.txt text eol=lf
+/LICENSES/MIT.txt text eol=lf
+
+# Immutable imported snapshots retain their original bytes, including line endings.
+/tools/perf/bench/corpus/fixtures/upstream/geb-browser-spec/BrowserSpec.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/geb-gradle-bootstrap/build.gradle -text
+/tools/perf/bench/corpus/fixtures/upstream/groovy-benchmark-driver/bench.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/groovy-grape-ivy/GrapeIvy.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile -text
+/tools/perf/bench/corpus/fixtures/upstream/ofbiz-filter-receipts/FilterOutReceipts.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/pipeline-parallel-list/parallelFromList.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/spock-blocking-variables/BlockingVariables.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/spock-feature-methods/FeatureMethods.groovy -text
+/tools/perf/bench/corpus/fixtures/upstream/spock-gradle-build/build.gradle -text
+/tools/perf/bench/corpus/licenses/geb/LICENSE -text
+/tools/perf/bench/corpus/licenses/geb/NOTICE -text
+/tools/perf/bench/corpus/licenses/groovy4/LICENSE -text
+/tools/perf/bench/corpus/licenses/groovy4/NOTICE -text
+/tools/perf/bench/corpus/licenses/jenkins-docker/LICENSE.txt -text
+/tools/perf/bench/corpus/licenses/ofbiz/LICENSE -text
+/tools/perf/bench/corpus/licenses/ofbiz/NOTICE -text
+/tools/perf/bench/corpus/licenses/pipeline-examples/LICENSE.txt -text
+/tools/perf/bench/corpus/licenses/spock/LICENSE -text
+/tools/perf/bench/corpus/licenses/spock/NOTICE -text

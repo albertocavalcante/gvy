@@ -4,11 +4,15 @@ Validate the complete selected corpus without fetching, evaluating Groovy code, 
 
 ```bash
 node tools/perf/bench/corpus/check.mjs
-node --test tools/perf/bench/corpus/validate.test.mjs
+node --test tools/perf/benchmark-corpus.test.mjs
 ```
 
 The command emits a compact JSON integrity report. A missing or changed fixture, license, manifest entry, or declared
 profile fails with a fixed error and nonzero exit. The report explicitly states `compatibility: "not-executed"`.
+
+The test command also requires Git and exercises an isolated `core.autocrlf=true` checkout. All 21 imported files retain
+their declared hashes, canonical MIT text stays LF, and unlisted neighbors retain ordinary CRLF conversion. A mixed
+CRLF/LF control checks preservation at an exact imported path. This test does not fetch source or run a compiler.
 
 ## Selected workloads
 
@@ -68,7 +72,9 @@ six-project claim.
 
 A full `git diff --check` reports these five observations in four verbatim license files. They are preserved source
 bytes, not a passing whitespace check. Do not normalize them to make the command green. Code, manifest and authored
-documentation receive a separate whitespace check; no Git attribute or global diagnostic suppression is added.
+documentation receive a separate whitespace check. Exact-path `-text` checkout attributes preserve the 21 imported
+source/license files without line-ending conversion; canonical `LICENSES/MIT.txt` has an exact `text eol=lf` rule. These
+attributes control byte conversion only. They neither suppress whitespace diagnostics nor exempt future unlisted files.
 
 | Local license path                          | Observation           | Upstream revision/path                                 | SHA-256                                                            |
 | ------------------------------------------- | --------------------- | ------------------------------------------------------ | ------------------------------------------------------------------ |
