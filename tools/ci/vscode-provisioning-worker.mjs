@@ -135,16 +135,18 @@ export async function runSdkProvisioning(load, output, probe = probeVscodeVersio
     };
     phase('release-metadata');
     const expected = validateReleaseMetadata(await init.fetchRelease({ version: vscodeTestVersion, platform: init.platform, budgetMs: remaining() }), init.context);
+    const expectedArch = init.context.runnerArch === 'ARM64' ? 'arm64' : 'x64';
+    verification = validateVerification({ expected: { ...expected, arch: expectedArch }, observed: null,
+      metadataSource: 'vscode-update-api-exact-version', sdkProgressRevision, matched: null }, init.context);
     phase('runtime-probe');
     const delivered = await probe(init.sdk, executable, init.platform, remaining());
-    const expectedArch = init.context.runnerArch === 'ARM64' ? 'arm64' : 'x64';
     verification = validateVerification({ expected: { ...expected, arch: expectedArch }, observed: { version: delivered.version, commit: delivered.commit, arch: delivered.arch },
       metadataSource: 'vscode-update-api-exact-version', sdkProgressRevision,
       matched: delivered.version === expected.version && delivered.commit === expected.commit && delivered.arch === expectedArch }, init.context);
     require(verification.matched, `delivered-version-mismatch: expected version=${expected.version} commit=${expected.commit} arch=${expectedArch}; observed version=${delivered.version} commit=${delivered.commit} arch=${delivered.arch}`);
     phase('verified');
     output({ type: 'result', outcome: 'success', captureComplete, error: null, delivery: { version: delivered.version, commit: delivered.commit, arch: delivered.arch, platform: init.platform,
-      expectedCommit: expected.commit, archiveSha256: expected.archiveSha256, commitSource: 'vscode-update-api-exact-version' }, verification, executable });
+      expectedCommit: expected.commit, advertisedArchiveSha256: expected.archiveSha256, commitSource: 'vscode-update-api-exact-version' }, verification, executable });
   } catch (error) {
     logError(error);
     const outcome = !captureComplete ? 'capture-limit' : isResolutionTimeout(error, observed) ? 'version-resolution-timeout' :

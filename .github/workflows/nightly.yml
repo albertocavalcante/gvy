@@ -14,6 +14,7 @@ on:
       - tools/ci/nightly-artifacts*
       - tools/ci/provision-vscode*
       - tools/ci/vscode-provisioning*
+      - tools/ci/vscode-release-metadata*
       - editors/code/.vscode-test.mjs
       - editors/code/tools/vscode-test-config.mjs
       - tools/ci/gradle-memory-options*
@@ -124,7 +125,8 @@ jobs:
       - name: Test artifact verification and VS Code provisioning controls
         run: >-
           node --test --test-concurrency=1 tools/ci/nightly-artifacts.test.mjs
-          tools/ci/vscode-provisioning.test.mjs tools/ci/read-evidence.test.mjs
+          tools/ci/vscode-provisioning.test.mjs tools/ci/vscode-release-metadata.test.mjs
+          tools/ci/read-evidence.test.mjs
 
       # Build before stamping package.json so JAR provenance sees a clean tree.
       # stageEditorServer supplies an exact path; never select the first old JAR.

@@ -140,7 +140,7 @@ jobs:
       - name: Verify provisioning and evidence controls
         run: >-
           node --test --test-concurrency=1 tools/ci/vscode-provisioning.test.mjs
-          tools/ci/read-evidence.test.mjs tools/ci/windows-evidence.test.mjs
+          tools/ci/vscode-release-metadata.test.mjs tools/ci/read-evidence.test.mjs tools/ci/windows-evidence.test.mjs
         working-directory: .
 
       - name: Run unit tests and compile integration harness
@@ -266,7 +266,7 @@ jobs:
       - name: Verify provisioning and evidence controls
         run: >-
           node --test --test-concurrency=1 tools/ci/vscode-provisioning.test.mjs
-          tools/ci/read-evidence.test.mjs tools/ci/windows-evidence.test.mjs
+          tools/ci/vscode-release-metadata.test.mjs tools/ci/read-evidence.test.mjs tools/ci/windows-evidence.test.mjs
         working-directory: .
 
       - name: Setup pnpm

@@ -83,6 +83,27 @@ test('official fixture projects only the requested exact stable release identity
   assertDestroyed(value);
 });
 
+test('observed official schema projects each native platform release tuple without using its vendor URL', async () => {
+  // Later 2026-11-12 release tuples, not original failed-job/native evidence.
+  // Nonprojected vendor URL/SHA-1 fields remain synthetic canaries.
+  const platforms = [
+    ['linux-x64', '17b72a7e6f40a5b5dce9850f10eea13ce734a63052b67fa021cc01e715ad4cf1'],
+    ['win32-x64-archive', '055722269e3c9531af0c50a8b757c14e8062a0d02fc973b038863d9732c567ea'],
+    ['darwin-arm64', 'cf2a21dbcb23c4213b91243e3cdd37197e9169f905652587113f16329fc92b87'],
+    ['darwin', 'a15a04aaa109641bfbe5d1d6204fa96e7ff14e9fd7c495d89fa2376c3edc580b'],
+  ];
+  for (const [platform, archiveSha256] of platforms) {
+    const body = { ...fixture, sha256hash: archiveSha256, hash: 'a'.repeat(40), timestamp: 1793132887010, supportsFastUpdate: true };
+    const value = bodyTransport(JSON.stringify(body));
+    const observed = await fetchExactVscodeRelease({ ...input, platform }, value.options);
+    assert.deepEqual(observed, { version: input.version, platform, quality: 'stable', commit: fixture.version, archiveSha256 });
+    assert.equal(value.requests.length, 1);
+    assert.equal(value.requests[0].url, `https://update.code.visualstudio.com/api/versions/${input.version}/${platform}/stable`);
+    assert.ok(!JSON.stringify(observed).includes('PRIVATE'));
+    assertDestroyed(value);
+  }
+});
+
 test('all SDK download platforms use the fixed origin and stable route', async () => {
   for (const platform of ['linux-x64', 'linux-arm64', 'darwin', 'darwin-arm64', 'win32-x64-archive', 'win32-arm64-archive']) {
     const value = bodyTransport(JSON.stringify(fixture));

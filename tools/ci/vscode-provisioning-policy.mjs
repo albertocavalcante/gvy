@@ -78,6 +78,10 @@ export function validateVerification(value, context) {
   validateReleaseMetadata(release, context);
   require(arch === (context.runnerArch === 'ARM64' ? 'arm64' : 'x64') && value.metadataSource === 'vscode-update-api-exact-version' &&
     (value.sdkProgressRevision === null || commit(value.sdkProgressRevision)), 'invalid-verification-evidence');
+  if (value.observed === null) {
+    require(value.matched === null, 'unobserved-verification-verdict');
+    return value;
+  }
   keys(value.observed, ['version', 'commit', 'arch']);
   require(typeof value.observed.version === 'string' && /^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$/.test(value.observed.version) &&
     commit(value.observed.commit) && ['x64', 'arm64'].includes(value.observed.arch), 'invalid-verification-evidence');
@@ -103,17 +107,17 @@ export function validateAttempt(attempt, context, expectedNumber) {
     require(outcomes.includes(attempt.error.code) && attempt.error.code !== 'success' && (attempt.error.messageSha256 === null || hash(attempt.error.messageSha256)), 'invalid-error-evidence');
   }
   if (attempt.delivery !== null) {
-    keys(attempt.delivery, ['version', 'commit', 'arch', 'platform', 'expectedCommit', 'archiveSha256', 'commitSource']);
+    keys(attempt.delivery, ['version', 'commit', 'arch', 'platform', 'expectedCommit', 'advertisedArchiveSha256', 'commitSource']);
     require(attempt.delivery.version === vscodeTestVersion && commit(attempt.delivery.commit) && attempt.delivery.commit === attempt.delivery.expectedCommit &&
       attempt.delivery.arch === (context.runnerArch === 'ARM64' ? 'arm64' : 'x64') && attempt.delivery.platform === downloadPlatform(context) &&
-      hash(attempt.delivery.archiveSha256) && attempt.delivery.commitSource === 'vscode-update-api-exact-version', 'invalid-delivery-evidence');
+      hash(attempt.delivery.advertisedArchiveSha256) && attempt.delivery.commitSource === 'vscode-update-api-exact-version', 'invalid-delivery-evidence');
   }
   if (attempt.verification !== null) {
     validateVerification(attempt.verification, context);
     require(['runtime-probe', 'verified'].includes(attempt.phases.at(-1).phase), 'invalid-verification-phase');
   }
   if (attempt.outcome === 'success') require(attempt.phases.at(-1).phase === 'verified' && attempt.delivery !== null && attempt.verification?.matched &&
-    attempt.delivery.commit === attempt.verification.observed.commit && attempt.delivery.archiveSha256 === attempt.verification.expected.archiveSha256 &&
+    attempt.delivery.commit === attempt.verification.observed.commit && attempt.delivery.advertisedArchiveSha256 === attempt.verification.expected.archiveSha256 &&
     attempt.error === null && attempt.cleanupComplete && attempt.capture.complete, 'incomplete-success-evidence');
   else require(attempt.error?.code === attempt.outcome && attempt.delivery === null, 'invalid-error-evidence');
   if (attempt.outcome === 'capture-limit') require(!attempt.capture.complete, 'invalid-capture-evidence');

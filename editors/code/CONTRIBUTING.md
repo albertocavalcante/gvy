@@ -266,9 +266,10 @@ installed editor for the shared configuration.
 
 CI's [bounded preflight](../../tools/ci/provision-vscode.mjs) allows one additional provisioning attempt only for the
 pinned SDK's exact version-resolution timeout, before it reports any resolved version or archive activity. It uses a
-fresh owned cache and verifies the delivered version, build commit and architecture with the SDK's supported CLI path
-before publishing the executable to the integration runner. Unit tests, compilation and integration assertions are
-outside the retry. The packaged lane retains its existing implementation-navigation selection and required tests.
+fresh owned cache and verifies the delivered version, build commit and architecture against official exact-release
+metadata with the SDK's supported CLI path before publishing the executable to the integration runner. SDK progress
+headers do not approve runtime identity. Unit tests, compilation and integration assertions are outside the retry. The
+packaged lane retains its existing implementation-navigation selection and required tests.
 
 Each editor lane uploads an audited `vscode-provisioning-*` result, including failed attempts, source/tested/run/attempt
 and matrix identity, phase timings and raw-error hashes. A provisioning failure leaves integration unexecuted, so editor

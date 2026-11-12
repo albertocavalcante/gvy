@@ -119,10 +119,10 @@ steps. The wrapper invokes the existing pinned test CLI once, after unit tests a
 lane preserves its implementation-navigation selection. An integration-runner marker records that exact invocation,
 including a failed spawn, rather than claiming the editor launched or an assertion executed.
 
-The supported contract is `@vscode/test-electron` 3.1.0, `@vscode/test-cli` 0.0.15 and VS Code 1.144.0. The shared
-configuration verifies the manifest floor and guards both repository and packaged manifests against extension
-dependencies, installation options and CLI argument drift. The runner passes the exact guarded `.vscode-test.mjs` with
-the
+The supported contract is `@vscode/test-electron` 3.1.0, `@vscode/test-cli` 0.0.15, its SDK-declared `https-proxy-agent`
+7.0.6 and VS Code 1.144.0. The shared configuration verifies the manifest floor and guards both repository and packaged
+manifests against extension dependencies, installation options and CLI argument drift. The runner passes the exact
+guarded `.vscode-test.mjs` with the
 [supported `--config` option](https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/args.mts#L16-L21),
 so another discovered configuration cannot replace it. This matters because the
 [CLI dependency-install branch downloads again even with an installed path](https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/platform/desktop.mts#L128-L164).
@@ -136,20 +136,44 @@ never qualify. SDK archive attempts remain inside their original loop and are no
 
 The provisioning orchestration has a shared 180-second monotonic deadline, covering worker startup, metadata, archive
 attempts, verification, one five-second backoff and owned-child-tree cleanup. Each worker receives at most 80 seconds,
-with at most ten seconds of its remaining budget for the version probe and two seconds reserved for termination.
-Accepted cold hosted provisioning previously took about 10–20 seconds; these ceilings allow headroom while bounding slow
-or dripping responses. The SDK's 15-second idle timeout remains unchanged and
+with at most ten seconds of its remaining budget shared by exact-release metadata and the CLI probe, and two seconds
+reserved for termination. Accepted cold hosted provisioning previously took about 10–20 seconds; these ceilings allow
+headroom while bounding slow or dripping responses. The SDK's 15-second idle timeout remains unchanged and
 [resets on incoming data](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/request.ts#L21-L84).
 Neither that timeout nor Mocha's existing 30-second assertion timeout is raised. POSIX termination addresses only the
-new owned process group; Windows uses the owned worker PID's tree with bounded `taskkill /T /F`.
+new owned process group and probes its disappearance even after an unexpected worker exit. An unproven cleanup fails.
+Windows uses the live owned worker PID's tree with bounded `taskkill /T /F`. If that worker exits unexpectedly first,
+the controller cannot prove descendant cleanup: it reports `cleanup-incomplete`, forbids retry and blocks integration.
+It does not claim Windows job-object containment. That limitation remains owned in #1882.
 
-Every attempt has a fresh owned cache; an unexpected cache hit fails. The delivered editor must report the requested
-version and architecture, and its CLI build commit must equal the SDK's required `newInstallComplete.commitHash` from
-the archive response. The
+Every attempt has a fresh owned cache; an unexpected cache hit fails. Expected build identity comes from the fixed
+official exact-version/platform/stable metadata endpoint. The
+[official VS Code CLI maps that response's `version` to `Release.commit`](https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/cli/src/update_service.rs#L75-L109).
+The metadata projection requires matching `name` and `productVersion`, a commit and advertised archive SHA-256. The
+installed CLI must report that exact version, commit and host architecture;
+[its output uses `product.version` and `product.commit`](https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/src/vs/code/node/cli.ts#L104-L106).
+The
 [supported executable-to-CLI resolver](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/util.ts#L332-L394)
 handles platform layout; the verifier does not guess macOS executable names or Windows product directories. This
-compares delivered runtime identity with SDK archive metadata, not a GitHub tag SHA or an independent build-integrity
-attestation. Missing or inconsistent commit evidence fails before integration.
+verifies runtime identity against official release metadata. The SDK's separate transfer validation does not expose its
+actual checksum through its public reporter, so the advertised metadata digest is not proof of equality to this SDK
+transfer or an independent build-integrity attestation.
+
+The SDK's `newInstallComplete.commitHash` instead reads the
+[`x-source-commit` response header](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/download.ts#L335-L341).
+It remains informational and cannot approve runtime identity. Candidate `0cbad583` failed verification before
+integration in [Extension Validate](https://github.com/albertocavalcante/gvy/actions/runs/43265880210/job/131349988335)
+and [Nightly](https://github.com/albertocavalcante/gvy/actions/runs/43265879993/job/131349349730). That candidate did
+not retain the compared commit/architecture values; later API observations cannot reconstruct them. Future reports
+retain safe typed expected/observed identities separately from approved delivery.
+
+The extra metadata request has a 64 KiB raw-body bound, strict UTF-8/JSON projection, fixed origin and no redirects or
+vendor-provided URL fetch. Its deadline includes DNS/proxy/body activity, including dripping responses, within the
+shared verification budget. Metadata errors have a distinct safe class and never qualify for the SDK retry. Private
+`npm_config_https_proxy` overrides `npm_config_proxy`, matching the SDK; the adapter resolves and verifies the SDK's
+declared public proxy-agent dependency. Invalid or unavailable configured routing fails before a direct request.
+`NODE_EXTRA_CA_CERTS` remains inherited at worker startup, with no TLS CA override. Requests, responses and owned agents
+are destroyed on every terminal path; proxy credentials, raw URLs and arbitrary response fields are never projected.
 
 The public artifact contains one audited allowlisted JSON projection: source/tested SHA, repository/workflow/job/run and
 attempt/matrix identity, invocation UUID, exact tool/editor identity, phases, numeric timing, outcomes, cleanup and
@@ -170,8 +194,10 @@ runner is invoked, the audit requires editor log files even when assertions fail
 bounded no-link inventory quarantines any previous log directory into the invocation-private root without copying its
 bytes, then creates a fresh empty log directory. Rename, permission and cross-volume failures stop before invocation.
 The context-bound marker and public result record that preparation and the prior-file count, so probe or earlier logs
-cannot satisfy the current invocation. Extension CI's existing failed-editor log upload runs only in that invoked phase
-and treats absent files as an error. The audit fails closed on missing or stale invocation evidence and never changes an
+cannot satisfy the current invocation. The post-test audit again requires a canonical directory and parent, rejecting
+regular-file or linked replacements without reading their bytes. Extension CI's existing failed-editor log upload also
+requires the audit's positive nonempty inventory flag; a rejected replacement cannot select a raw upload path. Missing
+required logs still fail the audit. The audit fails closed on missing or stale invocation evidence and never changes an
 original integration failure into success. All three native platforms, the packaged test lane and Nightly remain
 required applicable hosted checks. Original timeout failures and ownership remain in
 [#1882](https://github.com/albertocavalcante/gvy/issues/1882); successful recovery does not retire the debt.

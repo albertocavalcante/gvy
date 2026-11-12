@@ -16,7 +16,7 @@ import { validateVscodeTestInputs, vscodeTestConfigurations, vscodeTestVersion }
 
 const context = { repository: 'albertocavalcante/gvy', headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '123', runAttempt: 2, workflow: 'Extension CI', jobKey: 'validate', matrix: 'ubuntu-24.04', runnerOS: 'Linux', runnerArch: 'X64', invocationId: '11111111-1111-4111-8111-111111111111' };
 const releaseMetadata = { version: vscodeTestVersion, platform: 'linux-x64', quality: 'stable', commit: 'c'.repeat(40), archiveSha256: 'e'.repeat(64) };
-const delivered = { version: vscodeTestVersion, commit: 'c'.repeat(40), arch: 'x64', platform: 'linux-x64', expectedCommit: 'c'.repeat(40), archiveSha256: 'e'.repeat(64), commitSource: 'vscode-update-api-exact-version' };
+const delivered = { version: vscodeTestVersion, commit: 'c'.repeat(40), arch: 'x64', platform: 'linux-x64', expectedCommit: 'c'.repeat(40), advertisedArchiveSha256: 'e'.repeat(64), commitSource: 'vscode-update-api-exact-version' };
 const verified = { expected: { ...releaseMetadata, arch: 'x64' }, observed: { version: vscodeTestVersion, commit: 'c'.repeat(40), arch: 'x64' }, metadataSource: 'vscode-update-api-exact-version', sdkProgressRevision: 'c'.repeat(40), matched: true };
 const successfulPhases = ['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'provisioned', 'verification', 'release-metadata', 'runtime-probe', 'verified'];
 const manifest = { engines: { vscode: `^${vscodeTestVersion}` }, devDependencies: { '@types/vscode': `^${vscodeTestVersion}` } };
@@ -138,6 +138,15 @@ test('exact-release metadata supplies expected runtime identity while a differen
   assert.equal(value.result.verification.sdkProgressRevision, 'd'.repeat(40));
   assert.equal(value.result.verification.observed.commit, delivered.commit);
   assert.equal(value.result.verification.matched, true);
+  const withoutHeader = successfulSdk();
+  const downloadWithoutHeader = withoutHeader.download;
+  withoutHeader.download = options => downloadWithoutHeader({ ...options, reporter: { ...options.reporter, report(event) {
+    if (event.stage === 'newInstallComplete') { const { commitHash, ...rest } = event; event = rest; }
+    options.reporter.report(event);
+  } } });
+  const noHeader = await workerCase({ sdk: withoutHeader });
+  assert.equal(noHeader.result.outcome, 'success');
+  assert.equal(noHeader.result.verification.sdkProgressRevision, null);
 });
 
 test('metadata failures never retry SDK provisioning and safe mismatched identities remain distinct from verified delivery', async () => {
@@ -171,6 +180,8 @@ test('metadata and CLI share the remaining verification budget and an exhausted 
   const expired = await workerCase({ budgetMs: 20, fetchRelease: async () => { await new Promise(resolve => setTimeout(resolve, 30)); return releaseMetadata; } },
     async () => { probes++; return { ...delivered }; });
   assert.equal(expired.result.outcome, 'verification-error'); assert.equal(probes, 0);
+  assert.equal(expired.result.verification.expected.commit, releaseMetadata.commit);
+  assert.equal(expired.result.verification.observed, null); assert.equal(expired.result.verification.matched, null);
 });
 
 test('pinned SDK ZIP extraction starts before the remaining download events without regressing phase evidence', async () => {
@@ -224,9 +235,9 @@ test('SDK-owned archive retry stays inside one download call and preserves its o
   assert.ok(!JSON.stringify(value.result).includes('PRIVATE'));
 });
 
-test('missing progress commit, unknown stages, cache hits, tool drift and wrong delivered version fail', async () => {
+test('invalid install progress, unknown stages, cache hits, tool drift and wrong delivered version fail', async () => {
   const cases = [
-    { sdkVersion: '3.2.0' }, { targetManifest: { ...manifest, extensionDependencies: ['other'] } },
+    { sdkVersion: '3.2.0' }, { proxyAgentVersion: '7.0.7' }, { targetManifest: { ...manifest, extensionDependencies: ['other'] } },
     { sdk: { download: async ({ reporter }) => { reporter.report({ stage: 'unknown-stage' }); } } },
     { sdk: { download: async ({ reporter }) => { reporter.report({ stage: 'resolvedVersion', version: vscodeTestVersion }); reporter.report({ stage: 'foundMatchingInstall' }); } } },
     { sdk: { download: async ({ reporter }) => { reporter.report({ stage: 'resolvedVersion', version: vscodeTestVersion }); reporter.report({ stage: 'newInstallComplete' }); } } },
