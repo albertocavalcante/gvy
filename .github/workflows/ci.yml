@@ -203,8 +203,7 @@ jobs:
               --tests '*.ParentProcessWatchdogTest' \
               :tests:e2eTest --tests '*.DiagnosticsTerminalProtocolTest' \
               --no-daemon --no-parallel --max-workers=1 \
-              '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
-              --console=plain
+              '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           native_reports=("$gradle_evidence"/preparation-terminal-native-*/console.log)
           [[ "${#native_reports[@]}" -eq 1 && -f "${native_reports[0]}" ]]
           cp "${native_reports[0]}" "$RUNNER_TEMP/gvy-diagnostics-native.log"
