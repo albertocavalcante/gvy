@@ -297,6 +297,7 @@ jobs:
           )
           observation: dict[str, object] = {
               "complete": False,
+              "focusedGatePassed": False,
               "requestedTests": 19,
               "compileTestKotlin": "not-observed",
               "testTask": "not-observed",
@@ -348,6 +349,9 @@ jobs:
               diagnostic_ok = diagnostic.get("ok")
               if not isinstance(diagnostic_ok, bool):
                   raise ValueError("invalid diagnostic verdict")
+              unexpected = diagnostic.get("unexpected")
+              if not isinstance(unexpected, list) or not all(isinstance(item, str) and bool(item.strip()) for item in unexpected):
+                  raise ValueError("invalid unexpected diagnostic list")
               wrapper_exit = focused.get("exitCode")
               if type(wrapper_exit) is not int or not 0 <= wrapper_exit <= 255:
                   raise ValueError("invalid wrapper exit")
@@ -363,21 +367,30 @@ jobs:
               valid = valid and context.get("headSha") == context.get("testedSha") == focused.get("candidateHead") == candidate
               valid = valid and focused.get("worktreeCleanAfter") is True and wrapper_exit == expected_wrapper
               valid = valid and (native_exit == 0 or not diagnostic_ok)
+              valid = valid and (not diagnostic_ok or not unexpected)
               valid = valid and type(raw_identity.get("bytes")) is int and raw_identity.get("bytes") == len(raw)
               valid = valid and raw_identity.get("sha256") == hashlib.sha256(raw).hexdigest()
               compile_states = re.findall(r"^> Task :parser:native:compileTestKotlin(?: ([A-Z_-]+))?$", text, re.MULTILINE)
-              test_states = re.findall(r"^> Task :parser:native:test(?: ([A-Z_-]+))?$", text, re.MULTILINE)
+              test_states = re.findall(r"^> Task :parser:native:test([ \t][^\n]*)?$", text, re.MULTILINE)
+              summaries = re.findall(r"^\d+ tests completed\b[^\n]*$", text, re.MULTILINE)
               failed = counts["failures"] + counts["errors"] > 0
-              fresh_outcome = test_states == (["FAILED"] if failed else [""]) and native_exit == (1 if failed else 0)
+              expected_summary = f"{counts['tests']} tests completed, {counts['failures'] + counts['errors']} failed"
+              # Gradle --info emits a start header and one terminal FAILED header for a single failed attempt.
+              failed_profile = test_states == ["", " FAILED"] and summaries == [expected_summary]
+              fresh_outcome = (failed_profile if failed else test_states == [""] and not summaries) and native_exit == (
+                  1 if failed else 0
+              )
               observation.update(counts)
               observation["nativeCommandExitCode"] = native_exit
               observation["captureExitCode"] = capture_exit
               observation["toolDiagnosticsOk"] = diagnostic_ok
+              observation["unexpectedDiagnosticCount"] = len(unexpected)
               observation["compileTestKotlin"] = "executed" if compile_states == [""] else "not-proved"
               observation["testTask"] = (
-                  "executed-failed" if test_states == ["FAILED"] else "executed" if test_states == [""] else "not-proved"
+                  "executed-failed" if failed_profile else "executed" if test_states == [""] else "not-proved"
               )
               observation["complete"] = valid and compile_states == [""] and fresh_outcome
+              observation["focusedGatePassed"] = observation["complete"] and not failed and diagnostic_ok and not unexpected
           except (OSError, ValueError, KeyError, ET.ParseError):
               observation["error"] = "B04_JUNIT_OBSERVATION_INCOMPLETE"
           (proof / "junit-observation.json").write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
