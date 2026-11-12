@@ -754,7 +754,9 @@ jobs:
           persist-credentials: false
       - name: Provision pinned Rust toolchain and WASM target
         working-directory: editors/zed
-        run: rustup show active-toolchain
+        run: |
+          rustup toolchain install --no-self-update
+          rustup show active-toolchain
       - name: Check Rust adapter
         run: make zed-check
       - name: Build WASM adapter
