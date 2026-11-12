@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 name: Extension CI
 
 on:
@@ -9,6 +12,7 @@ on:
       - 'docs/**'
       - 'kb/**'
       - 'editors/zed/**'
+      - 'tests/e2e/README.md'
   pull_request:
     # Backend changes must also prove the editor works with the current server.
     paths-ignore:
@@ -16,6 +20,7 @@ on:
       - 'docs/**'
       - 'kb/**'
       - 'editors/zed/**'
+      - 'tests/e2e/README.md'
 
 permissions:
   contents: read
