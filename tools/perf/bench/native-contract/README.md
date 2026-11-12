@@ -5,9 +5,9 @@ not a product parser dependency and does not publish performance numbers.
 
 ## Prerequisites and commands
 
-Use an installed Rust toolchain at least 1.90, Cargo, a native C compiler and Node 24 or later. The two packages have
-independent workspace roots and lockfiles: Cargo forbids linking two versions of the native `tree-sitter` library in one
-dependency graph. Do not combine these packages into a single workspace.
+Run this harness on macOS or Linux with an installed Rust toolchain at least 1.90, Cargo, a native C compiler and Node
+24 or later. The two packages have independent workspace roots and lockfiles: Cargo forbids linking two versions of the
+native `tree-sitter` library in one dependency graph. Do not combine these packages into a single workspace.
 
 From the repository root, run the source verification controls:
 
@@ -44,7 +44,14 @@ The primary uses `dekobon/tree-sitter-groovy` with tree-sitter/highlight 0.27.2.
 `murtaza64/tree-sitter-groovy` with 0.26.8. These intentionally differ in grammar and runtime; their receipts must not
 be used to attribute an isolated grammar effect. The JSON includes actual Rust/Cargo versions, OS/architecture, source
 identities, query digests, lock/manifest/binary digests and control outcomes. It omits local cache paths and environment
-values. Input reads, process duration and output buffering are bounded.
+values. The runner compares the child's actual embedded fixture bytes against the source fixture bytes, then removes
+that echo from the final receipt; a stale binary cannot claim a newer same-length fixture identity.
+
+Regular-file reads and process output have byte limits. On macOS/Linux, each command owns a POSIX process group;
+timeout, output overflow, cancellation or a leader leaving descendants triggers group termination. Success requires
+observed exit/stream closure and no remaining group. Uncertain cleanup fails explicitly. Deliberately escaped sessions
+and uninterruptible OS/filesystem calls cannot be contained by this helper. Other platforms are unsupported rather than
+silently receiving weaker cleanup.
 
 ## Correctness scope
 

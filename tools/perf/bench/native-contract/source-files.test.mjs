@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { readRegularBytes, verifyFiles } from './source-files.mjs';
+import { readRegularBytes, verifyFiles, verifyFixtureBytes } from './source-files.mjs';
 
 const sha256 = text => createHash('sha256').update(text).digest('hex');
 function fixture(t) {
@@ -39,4 +39,9 @@ test('source pin rejects symbolic links rather than hashing their target', t => 
 test('bounded read rejects an input larger than its explicit limit', t => {
   const root = fixture(t);
   assert.throws(() => readRegularBytes(path.join(root, 'src/parser.c'), 8), /SOURCE_FILE_INVALID/);
+});
+
+test('embedded fixture identity rejects stale same-length bytes', () => {
+  verifyFixtureBytes({ valid: [97, 98] }, { valid: Buffer.from('ab') });
+  assert.throws(() => verifyFixtureBytes({ valid: [98, 97] }, { valid: Buffer.from('ab') }), /FIXTURE_IDENTITY_MISMATCH/);
 });

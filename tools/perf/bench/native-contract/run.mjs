@@ -1,31 +1,28 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
-import { readRegularBytes, sha256, sourcePaths, verifyFiles } from './source-files.mjs';
+import { runCommand } from './command.mjs';
+import { readRegularBytes, sha256, sourcePaths, verifyFiles, verifyFixtureBytes } from './source-files.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fail = code => { throw new Error(code); };
-function command(executable, args, input, timeout = 300000) {
-  const result = spawnSync(executable, args, {
-    cwd: root, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024,
-    env: { ...process.env, CARGO_BUILD_JOBS: '1' }, input,
-  });
-  if (result.error || result.status !== 0) fail('NATIVE_CONTRACT_COMMAND_FAILED');
-  return result.stdout;
-}
+const controller = new AbortController();
+const cancel = () => controller.abort();
+process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
+const command = (executable, args, input, timeoutMs = 300000) => runCommand(executable, args, {
+  cwd: root, timeoutMs, environment: { ...process.env, CARGO_BUILD_JOBS: '1' }, input, signal: controller.signal,
+});
 
 try {
   const [engine, ...extra] = process.argv.slice(2);
   const verifyOnly = extra.length === 1 && extra[0] === '--verify-only';
   if (!['primary', 'secondary'].includes(engine) || (extra.length && !verifyOnly)) fail('NATIVE_CONTRACT_ARGUMENTS');
-  const pins = JSON.parse(fs.readFileSync(path.join(root, 'source-lock.json'), 'utf8'));
+  const pins = JSON.parse(readRegularBytes(path.join(root, 'source-lock.json'), 64 * 1024).toString('utf8'));
   if (pins.schemaVersion !== 1) fail('SOURCE_PIN_INVALID');
   const pin = pins.engines[engine];
   const manifest = path.join(root, engine, 'Cargo.toml');
-  const lockBytes = fs.readFileSync(path.join(root, engine, 'Cargo.lock'));
+  const lockBytes = readRegularBytes(path.join(root, engine, 'Cargo.lock'), 128 * 1024);
   if (sha256(lockBytes) !== pin.cargoLockSha256) fail('CARGO_LOCK_MISMATCH');
-  const metadata = JSON.parse(command('cargo', ['metadata', '--locked', '--format-version', '1', '--manifest-path', manifest], undefined, 90000));
+  const metadata = JSON.parse(await command('cargo', ['metadata', '--locked', '--format-version', '1', '--manifest-path', manifest], undefined, 90000));
   const grammar = metadata.packages.find(candidate => candidate.name === pin.grammarPackage);
   if (!grammar || grammar.source !== `git+${pin.grammarRepository}?rev=${pin.grammarRevision}#${pin.grammarRevision}`) fail('GRAMMAR_IDENTITY_MISMATCH');
   const grammarRoot = path.dirname(grammar.manifest_path);
@@ -34,7 +31,7 @@ try {
   const runtime = ['tree-sitter', 'tree-sitter-highlight'].map(name => {
     const candidate = metadata.packages.find(item => item.name === name);
     if (!candidate || candidate.version !== pin.runtimeVersion || !candidate.source.startsWith('registry+')) fail('RUNTIME_IDENTITY_MISMATCH');
-    const vcs = JSON.parse(fs.readFileSync(path.join(path.dirname(candidate.manifest_path), '.cargo_vcs_info.json'), 'utf8'));
+    const vcs = JSON.parse(readRegularBytes(path.join(path.dirname(candidate.manifest_path), '.cargo_vcs_info.json'), 4096).toString('utf8'));
     if (vcs.git.sha1 !== pin.runtimeRevision) fail('RUNTIME_REVISION_MISMATCH');
     return { package: name, version: candidate.version, revision: vcs.git.sha1 };
   });
@@ -42,7 +39,7 @@ try {
   const queryDigests = {};
   for (const kind of ['highlights', 'locals', 'injections']) {
     const relative = `${pin.queryDirectory}/${kind}.scm`;
-    queries[kind] = fs.readFileSync(path.join(grammarRoot, relative), 'utf8');
+    queries[kind] = readRegularBytes(path.join(grammarRoot, relative), 64 * 1024).toString('utf8');
     queryDigests[kind] = { rawSha256: pin.files[relative], effectiveSha256: sha256(Buffer.from(queries[kind])), policy: 'upstream-unchanged' };
     if (queryDigests[kind].effectiveSha256 !== queryDigests[kind].rawSha256) fail('QUERY_ENCODING_MISMATCH');
   }
@@ -50,27 +47,32 @@ try {
   if (Buffer.byteLength(input) > 64 * 1024) fail('QUERY_INPUT_LIMIT');
   if (verifyOnly) {
     console.log(JSON.stringify({ schemaVersion: 1, scope: 'source-pin-verification-only', engine, files, runtime, queryDigests }));
-    process.exit(0);
+  } else {
+    const fixtureBytes = Object.fromEntries(['valid', 'malformed'].map(name => [name, readRegularBytes(path.join(root, 'fixtures', `${name}.groovy`), 1024)]));
+    await command('cargo', ['build', '--release', '--locked', '--manifest-path', manifest]);
+    const packageName = metadata.packages.find(candidate => candidate.id === metadata.resolve.root).name;
+    const binary = path.join(metadata.target_directory, 'release', `${packageName}${process.platform === 'win32' ? '.exe' : ''}`);
+    const binarySha256 = sha256(readRegularBytes(binary, 64 * 1024 * 1024));
+    const native = JSON.parse(await command(binary, [], input, 10000));
+    if (native.schemaVersion !== 1 || native.scope !== 'native-feasibility-only' || native.engine !== engine || native.runtimeVersion !== pin.runtimeVersion || native.controlCount !== 6) fail('NATIVE_RESULT_IDENTITY_MISMATCH');
+    verifyFixtureBytes(native.fixtureBytes, fixtureBytes);
+    delete native.fixtureBytes;
+    console.log(JSON.stringify({
+      schemaVersion: 1, scope: 'native-feasibility-only', engine,
+      grammar: { repository: pin.grammarRepository, revision: pin.grammarRevision, files }, runtime,
+      compiler: (await command('rustc', ['--version'], undefined, 10000)).trim(),
+      cargo: (await command('cargo', ['--version'], undefined, 10000)).trim(),
+      os: process.platform, arch: process.arch,
+      cargoLockSha256: pin.cargoLockSha256, manifestSha256: sha256(readRegularBytes(manifest, 64 * 1024)),
+      binarySha256, queryDigests,
+      fixtureDigests: Object.fromEntries(Object.entries(fixtureBytes).map(([name, bytes]) => [name, sha256(bytes)])),
+      native,
+    }));
   }
-  command('cargo', ['build', '--release', '--locked', '--manifest-path', manifest]);
-  const packageName = metadata.packages.find(candidate => candidate.id === metadata.resolve.root).name;
-  const binary = path.join(metadata.target_directory, 'release', `${packageName}${process.platform === 'win32' ? '.exe' : ''}`);
-  const binarySha256 = sha256(readRegularBytes(binary, 64 * 1024 * 1024));
-  const native = JSON.parse(command(binary, [], input, 10000));
-  if (native.schemaVersion !== 1 || native.scope !== 'native-feasibility-only' || native.engine !== engine || native.runtimeVersion !== pin.runtimeVersion || native.controlCount !== 6) fail('NATIVE_RESULT_IDENTITY_MISMATCH');
-  console.log(JSON.stringify({
-    schemaVersion: 1, scope: 'native-feasibility-only', engine,
-    grammar: { repository: pin.grammarRepository, revision: pin.grammarRevision, files }, runtime,
-    compiler: command('rustc', ['--version'], undefined, 10000).trim(),
-    cargo: command('cargo', ['--version'], undefined, 10000).trim(),
-    os: process.platform, arch: process.arch,
-    cargoLockSha256: pin.cargoLockSha256, manifestSha256: sha256(fs.readFileSync(manifest)),
-    binarySha256, queryDigests,
-    fixtureDigests: Object.fromEntries(['valid', 'malformed'].map(name => [name, sha256(fs.readFileSync(path.join(root, 'fixtures', `${name}.groovy`)))])),
-    native,
-  }));
 } catch (error) {
   const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'NATIVE_CONTRACT_INVALID';
   console.error(code);
   process.exitCode = 1;
+} finally {
+  process.removeListener('SIGINT', cancel); process.removeListener('SIGTERM', cancel);
 }

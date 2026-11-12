@@ -237,6 +237,7 @@ fn run(
         "schemaVersion": 1, "scope": "native-feasibility-only", "engine": engine,
         "runtimeVersion": runtime, "grammarAbi": language.abi_version(),
         "queries": "upstream-unchanged", "controlCount": 6,
+        "fixtureBytes": { "valid": VALID.as_bytes(), "malformed": MALFORMED.as_bytes() },
         "controls": ["valid-parse", "malformed-error-location", "complete-highlight-event-stream", "regex-positive-negative", "unknown-predicate-rejected", "embedded-injection-explicitly-unsupported"],
         "validSpans": rendered, "malformedIssues": parse_issues,
         "limitations": {

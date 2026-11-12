@@ -5,6 +5,14 @@ import path from 'node:path';
 export const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const fail = code => { throw new Error(code); };
 
+export function verifyFixtureBytes(observed, expected) {
+  if (!observed || typeof observed !== 'object' || Array.isArray(observed) || Object.keys(observed).length !== Object.keys(expected).length) fail('FIXTURE_IDENTITY_MISMATCH');
+  for (const [name, bytes] of Object.entries(expected)) {
+    const actual = observed[name];
+    if (!Array.isArray(actual) || actual.length > 1024 || actual.some(value => !Number.isInteger(value) || value < 0 || value > 255) || !Buffer.from(actual).equals(bytes)) fail('FIXTURE_IDENTITY_MISMATCH');
+  }
+}
+
 export function readRegularBytes(file, limit) {
   let handle;
   try {
