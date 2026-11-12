@@ -77,17 +77,32 @@ jobs:
       - name: Test source-pin validation without native setup
         run: node --test tools/perf/bench/native-contract/*.test.mjs
 
-      - name: Verify both independently locked native contracts
+      - name: Verify the selected candidate and known secondary rejection
         shell: bash
         run: |
+          secondary_exit=0
+          secondary_binary_sha256=''
           for variant in primary secondary; do
+            export CARGO_TARGET_DIR="${RUNNER_TEMP}/native-contract-target/${variant}"
             manifest="tools/perf/bench/native-contract/${variant}/Cargo.toml"
             cargo fmt --manifest-path "$manifest" --check
             cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
             cargo test --locked --manifest-path "$manifest"
             cargo build --release --locked --manifest-path "$manifest"
-            node tools/perf/bench/native-contract/run.mjs "$variant" > "${RUNNER_TEMP}/native-contract-${variant}.json"
+            if [[ "$variant" == primary ]]; then
+              node tools/perf/bench/native-contract/run.mjs primary > "${RUNNER_TEMP}/native-contract-primary.json"
+            else
+              secondary_binary_sha256="$(sha256sum "${CARGO_TARGET_DIR}/release/gvy-native-secondary-contract" | cut -d ' ' -f 1)"
+              if node tools/perf/bench/native-contract/run.mjs secondary --attempt > "${RUNNER_TEMP}/native-contract-secondary.json"; then
+                secondary_exit=0
+              else
+                secondary_exit=$?
+              fi
+            fi
           done
+          node tools/perf/bench/native-contract/feasibility.mjs \
+            "${RUNNER_TEMP}/native-contract-primary.json" "${RUNNER_TEMP}/native-contract-secondary.json" \
+            "$secondary_exit" "$secondary_binary_sha256" > "${RUNNER_TEMP}/native-contract-feasibility.json"
 
       - name: Retain public-fixture attempt evidence
         if: ${{ always() }}
