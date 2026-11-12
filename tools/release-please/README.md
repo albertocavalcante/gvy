@@ -86,8 +86,8 @@ make release-publish RELEASE_VERSION=vX.Y.Z  # build verified local release arti
 ```
 
 The preview leaves existing artifacts and checksums unchanged. It invokes neither Gradle nor pnpm and creates no
-placeholder files. The `release-publish` target requires `RELEASE_VERSION`; it does not parse human-readable Gradle
-version output. The tagged GitHub workflow publishes the resulting artifacts.
+placeholder files. Other commands reject `--dry-run`. The `release-publish` target requires `RELEASE_VERSION`; it does
+not parse human-readable Gradle version output. The tagged GitHub workflow publishes the resulting artifacts.
 
 The direct build command is `tools/release.sh build --version vX.Y.Z`; add `--dry-run` for the preview. The builder
 restores the original `package.json` contents and permissions after either successful packaging or an error. Artifact

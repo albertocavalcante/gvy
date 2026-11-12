@@ -218,6 +218,24 @@ test('dry run preserves previously verified artifacts and their manifest', t => 
   assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
 });
 
+for (const command of ['checksums', 'validate', 'smoke-test']) {
+  test(`dry-run rejects ${command} without changing files or running tools`, t => {
+    const f = fixture(t);
+    const dist = join(f.root, 'dist');
+    mkdirSync(dist);
+    writeFileSync(join(dist, 'gls-0.5.4.jar'), 'verified server');
+    writeFileSync(join(dist, 'checksums.txt'), 'previous verified manifest\n');
+    writeFileSync(join(f.root, 'bin/java'), '#!/bin/bash\ntouch java-called\n', { mode: 0o755 });
+    const result = f.command('bash', ['tools/release.sh', command, '--version', 'v0.5.4', '--dry-run']);
+    assert.notEqual(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, /--dry-run is supported only for build/);
+    assert.equal(readFileSync(join(dist, 'checksums.txt'), 'utf8'), 'previous verified manifest\n');
+    assert.deepEqual(readdirSync(dist).sort(), ['checksums.txt', 'gls-0.5.4.jar']);
+    assert.equal(existsSync(join(f.root, 'java-called')), false);
+    assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  });
+}
+
 test('an unrelated package.json backup is preserved', t => {
   const f = fixture(t);
   const backup = join(f.editor, 'package.json.bak');

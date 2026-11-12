@@ -49,7 +49,7 @@ print_usage() {
   echo ""
   echo "Options:"
   echo "  --version <ver>   Specify version tag (e.g., v1.2.3)"
-  echo "  --dry-run         Preview build steps and output paths without changing files"
+  echo "  --dry-run         Preview build steps and output paths without changing files (build only)"
   echo "  --help            Show this help message"
 }
 
@@ -214,6 +214,11 @@ cmd_checksums() {
   cat checksums.txt
   popd >/dev/null || exit 1
 }
+
+if [[ "${DRY_RUN}" = true && "${COMMAND}" != build ]]; then
+  log_error "--dry-run is supported only for build"
+  exit 1
+fi
 
 case "${COMMAND}" in
 build)
