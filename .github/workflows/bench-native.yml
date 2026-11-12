@@ -1,0 +1,96 @@
+name: Native Benchmark Contract
+
+on:
+  pull_request:
+    paths:
+      - 'tools/perf/bench/**'
+      - '.github/workflows/bench-native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/perf/bench/**'
+      - '.github/workflows/bench-native.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  native-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: '1'
+      NODE_VERSION: '24.22.2'
+      RUST_VERSION: '1.96.1'
+      # Official rust-1.96.1-x86_64-unknown-linux-gnu.tar.xz.sha256.
+      RUST_ARCHIVE_SHA256: d29ccb1559a177c4e72291f6e5f629de7fe8885e7521ca47802627544b121e95
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install the verified Rust toolchain in an owned directory
+        shell: bash
+        run: |
+          : "${RUNNER_TEMP:?}"
+          archive="rust-${RUST_VERSION}-x86_64-unknown-linux-gnu.tar.xz"
+          download="${RUNNER_TEMP}/${archive}"
+          unpack="${RUNNER_TEMP}/benchmark-rust-source"
+          prefix="${RUNNER_TEMP}/benchmark-rust"
+          printf 'checksum rejection control\n' > "${RUNNER_TEMP}/checksum-control"
+          if printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "${RUNNER_TEMP}/checksum-control" | sha256sum --check --status; then
+            echo 'Checksum rejection control unexpectedly passed' >&2
+            exit 1
+          fi
+          curl --proto '=https' --tlsv1.2 --fail --location --connect-timeout 10 --max-time 300 \
+            --max-filesize 1073741824 --output "$download" "https://static.rust-lang.org/dist/${archive}"
+          printf '%s  %s\n' "$RUST_ARCHIVE_SHA256" "$download" | sha256sum --check --status
+          mkdir -p "$unpack"
+          tar --extract --xz --file "$download" --directory "$unpack"
+          "$unpack/rust-${RUST_VERSION}-x86_64-unknown-linux-gnu/install.sh" \
+            --prefix="$prefix" --disable-ldconfig --without=rust-docs
+          printf '%s\n' "$prefix/bin" >> "$GITHUB_PATH"
+          node_bin="${RUNNER_TOOL_CACHE:?}/node/${NODE_VERSION}/x64/bin"
+          test -x "$node_bin/node"
+          printf '%s\n' "$node_bin" >> "$GITHUB_PATH"
+          rm "$download"
+          rm -rf "$unpack"
+
+      - name: Verify exact tool versions
+        shell: bash
+        run: |
+          test "$(rustc --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
+          test "$(cargo --version | cut -d ' ' -f 2)" = "$RUST_VERSION"
+          rustc --version --verbose
+          cargo --version
+          node --version
+          test "$(node -p 'process.versions.node')" = "$NODE_VERSION"
+
+      - name: Test source-pin validation without native setup
+        run: node --test tools/perf/bench/native-contract/*.test.mjs
+
+      - name: Verify both independently locked native contracts
+        shell: bash
+        run: |
+          for variant in primary secondary; do
+            manifest="tools/perf/bench/native-contract/${variant}/Cargo.toml"
+            cargo fmt --manifest-path "$manifest" --check
+            cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
+            cargo test --locked --manifest-path "$manifest"
+            node tools/perf/bench/native-contract/run.mjs "$variant" > "${RUNNER_TEMP}/native-contract-${variant}.json"
+          done
+
+      - name: Retain the public-fixture feasibility receipts
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-contract-${{ github.sha }}
+          path: ${{ runner.temp }}/native-contract-*.json
+          if-no-files-found: error
+          retention-days: 7
