@@ -130,6 +130,7 @@ export class TestEventConsumer {
     switch (event.event) {
       case "testStarted":
         if (item) {
+          this.terminal.delete(item);
           this.started.add(item);
           this.run.started(item);
         }

@@ -1404,6 +1404,95 @@ describe("LSPTestExecutionService", () => {
       assert.ok(!run.errored.calledWith(passed));
     });
   });
+  describe("retried test with lost result", () => {
+    it("marks the restarted item incomplete without changing another completed item", async () => {
+      const uri = { toString: () => "file:///w/a" };
+      const retried = {
+        id: "suite.retry",
+        label: "retry",
+        uri,
+        children: { forEach: () => {} },
+      };
+      const completed = {
+        id: "suite.ok",
+        label: "ok",
+        uri,
+        children: { forEach: () => {} },
+      };
+      const suite = {
+        id: "suite",
+        label: "suite",
+        uri,
+        children: {
+          forEach: (f: (item: unknown) => void) =>
+            [retried, completed].forEach(f),
+        },
+      };
+      const token = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => {} }),
+      };
+      const run = {
+        enqueued: sandbox.stub(),
+        started: sandbox.stub(),
+        passed: sandbox.stub(),
+        failed: sandbox.stub(),
+        skipped: sandbox.stub(),
+        errored: sandbox.stub(),
+        appendOutput: sandbox.stub(),
+        end: sandbox.stub(),
+        token,
+      };
+      const controller = {
+        createTestRun: () => run,
+        items: { forEach: () => {} },
+      };
+      const proc = Object.assign(new EventEmitter(), {
+        pid: 123,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: sandbox.stub(),
+      });
+      cpMock.spawn.returns(proc);
+      testServiceMock.getTestCommand.resolves({
+        executable: "/w/gradlew",
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      const done = service.runTests({ include: [suite] }, token, controller);
+      await new Promise((resolve) => setImmediate(resolve));
+      const finish = (item: typeof retried) =>
+        JSON.stringify({
+          event: "testFinished",
+          id: item.id,
+          name: item.label,
+          result: "SUCCESS",
+        });
+      proc.stdout.write(finish(retried) + "\n" + finish(completed) + "\n");
+      proc.stdout.write(
+        JSON.stringify({
+          event: "testStarted",
+          id: retried.id,
+          name: retried.label,
+        }) + "\n",
+      );
+      proc.stdout.write(finish(retried) + " ".repeat(64 * 1024) + "\n");
+      proc.stdout.end();
+      proc.stderr.end();
+      await Promise.all([
+        new Promise((resolve) => proc.stdout.on("close", resolve)),
+        new Promise((resolve) => proc.stderr.on("close", resolve)),
+      ]);
+      proc.emit("close", 0);
+      await done;
+      assert.ok(run.passed.calledWith(retried));
+      assert.ok(run.started.calledWith(retried));
+      assert.ok(run.errored.calledWith(retried));
+      assert.ok(run.passed.calledWith(completed));
+      assert.ok(!run.errored.calledWith(completed));
+    });
+  });
   describe("excluded tests on output loss", () => {
     it("does not mark excluded descendants as errored", async () => {
       const uri = { toString: () => "file:///w/a" };
