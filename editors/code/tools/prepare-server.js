@@ -483,8 +483,9 @@ function downloadTempPath() {
 /**
  * Copies `sourcePath` into a private snapshot, verifies and validates that
  * snapshot, then atomically replaces `destPath` with it.
- * Source and destination aliases are rejected without removing either path.
- * For distinct paths, failures preserve the previous JAR and remove the source,
+ * Aliases, including hardlinks, and metadata lookup errors leave both paths
+ * untouched. A missing destination is allowed. After this precondition check,
+ * failures preserve the previous JAR and remove the source,
  * so an interrupted or tampered download can never become server/gls.jar.
  * The destination directory and private staging directory are trusted; the
  * caller's source pathname may be replaced at any point during validation.
@@ -495,18 +496,18 @@ async function installVerifiedJar(
   expectedChecksum,
   validate = validateJarFile,
 ) {
-  const sourceTarget = fs.realpathSync(sourcePath);
-  let destinationTarget;
+  const sourceStat = fs.statSync(sourcePath, { bigint: true });
+  let destinationStat;
   try {
-    destinationTarget = fs.realpathSync(destPath);
+    destinationStat = fs.statSync(destPath, { bigint: true });
   } catch (error) {
     if (error.code !== "ENOENT") throw error;
-    destinationTarget = path.join(
-      fs.realpathSync(path.dirname(destPath)),
-      path.basename(destPath),
-    );
   }
-  if (sourceTarget === destinationTarget) {
+  if (
+    destinationStat &&
+    sourceStat.dev === destinationStat.dev &&
+    sourceStat.ino === destinationStat.ino
+  ) {
     throw new Error("Staged JAR source must be distinct from destination");
   }
 

@@ -112,11 +112,15 @@ for (const alias of [
   });
 }
 
-test("preserves a different-name hardlink destination after publication failure", async (t) => {
+test("rejects a hardlink alias without removing either name", async (t) => {
   const bytes = jarBytes();
   const { dir, jar: dest } = jarFixture(t, bytes);
   const source = path.join(dir, "source.jar");
   fs.linkSync(dest, source);
+  const sourceStat = fs.statSync(source, { bigint: true });
+  const destStat = fs.statSync(dest, { bigint: true });
+  assert.equal(sourceStat.dev, destStat.dev);
+  assert.equal(sourceStat.ino, destStat.ino);
   const expected = crypto.createHash("sha256").update(bytes).digest("hex");
   const rename = fs.renameSync;
   t.mock.method(fs, "renameSync", (...args) => {
@@ -124,17 +128,85 @@ test("preserves a different-name hardlink destination after publication failure"
     return rename(...args);
   });
 
-  await assert.rejects(
-    installVerifiedJar(source, dest, expected),
-    /injected publication failure/,
+  const failure = await installVerifiedJar(source, dest, expected).then(
+    () => undefined,
+    (error) => error,
   );
 
+  assert.ok(failure instanceof Error);
+  assert.equal(fs.existsSync(source), true, "the source hardlink must remain");
   assert.equal(
     crypto.createHash("sha256").update(fs.readFileSync(dest)).digest("hex"),
     expected,
   );
+  assert.match(failure.message, /source must be distinct from destination/);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["server.jar", "source.jar"]);
+});
+
+test("rejects a native case-only alias on a case-insensitive volume", async (t) => {
+  const bytes = jarBytes();
+  const { dir, jar: dest } = jarFixture(t, bytes);
+  const source = path.join(dir, "Server.jar");
+  if (!fs.existsSync(source)) {
+    t.skip(
+      "Temporary volume is case sensitive; native case aliases are unavailable",
+    );
+    return;
+  }
+  const sourceStat = fs.statSync(source, { bigint: true });
+  const destStat = fs.statSync(dest, { bigint: true });
+  assert.equal(sourceStat.dev, destStat.dev);
+  assert.equal(sourceStat.ino, destStat.ino);
+  const expected = crypto.createHash("sha256").update(bytes).digest("hex");
+  const rename = fs.renameSync;
+  t.mock.method(fs, "renameSync", (...args) => {
+    if (args[1] === dest) throw new Error("injected publication failure");
+    return rename(...args);
+  });
+
+  const failure = await installVerifiedJar(source, dest, expected).then(
+    () => undefined,
+    (error) => error,
+  );
+
+  assert.ok(failure instanceof Error);
+  assert.equal(fs.existsSync(dest), true, "the prior destination must remain");
+  assert.equal(
+    crypto.createHash("sha256").update(fs.readFileSync(dest)).digest("hex"),
+    expected,
+  );
+  assert.match(failure.message, /source must be distinct from destination/);
   assert.deepEqual(fs.readdirSync(dir), ["server.jar"]);
 });
+
+for (const failedLookup of ["source", "destination"]) {
+  test(`preserves both paths when ${failedLookup} identity lookup fails`, async (t) => {
+    const bytes = jarBytes();
+    const { dir, jar: source } = jarFixture(t, bytes);
+    const dest = path.join(dir, "dest.jar");
+    fs.writeFileSync(dest, "prior verified artifact");
+    const expected = crypto.createHash("sha256").update(bytes).digest("hex");
+    const stat = fs.statSync;
+    const failure = Object.assign(
+      new Error("injected identity lookup failure"),
+      { code: "EIO" },
+    );
+    t.mock.method(fs, "statSync", (...args) => {
+      if (args[0] === (failedLookup === "source" ? source : dest))
+        throw failure;
+      return stat(...args);
+    });
+
+    await assert.rejects(installVerifiedJar(source, dest, expected), failure);
+
+    assert.equal(
+      crypto.createHash("sha256").update(fs.readFileSync(source)).digest("hex"),
+      expected,
+    );
+    assert.equal(fs.readFileSync(dest, "utf8"), "prior verified artifact");
+    assert.deepEqual(fs.readdirSync(dir).sort(), ["dest.jar", "server.jar"]);
+  });
+}
 
 test("installs verified original bytes when the source is replaced during validation", async (t) => {
   const bytes = jarBytes();
