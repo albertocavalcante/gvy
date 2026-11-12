@@ -1,0 +1,11 @@
+id = "groovy-gvy"
+name = "Groovy (gvy)"
+version = "0.1.0"
+schema_version = 1
+authors = ["gvy contributors"]
+description = "Local gvy language server adapter for Groovy"
+repository = "https://github.com/albertocavalcante/gvy"
+
+[language_servers.gvy]
+name = "gvy"
+language = "Groovy"

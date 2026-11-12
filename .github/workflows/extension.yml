@@ -8,12 +8,14 @@ on:
       - '*.md'
       - 'docs/**'
       - 'kb/**'
+      - 'editors/zed/**'
   pull_request:
     # Backend changes must also prove the editor works with the current server.
     paths-ignore:
       - '*.md'
       - 'docs/**'
       - 'kb/**'
+      - 'editors/zed/**'
 
 permissions:
   contents: read

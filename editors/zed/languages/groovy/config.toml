@@ -1,0 +1,3 @@
+name = "Groovy"
+path_suffixes = ["groovy"]
+line_comments = ["// "]

@@ -3,6 +3,7 @@
 
 # Allow injecting Gradle arguments (e.g. make build GRADLE_ARGS="--info")
 GRADLE_ARGS ?=
+export CARGO_BUILD_JOBS ?= 2
 
 # macOS: Check for JAVA_HOME, trust environment (direnv/sdkman)
 ifeq ($(shell uname),Darwin)
@@ -14,6 +15,8 @@ ifeq ($(shell uname),Darwin)
 endif
 
 .PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild harness-test e2e e2e-single ext-install ext-build ext-test ext-package ext-latest ext-rollback ext-latest-test
+
+.PHONY: zed-check zed-test zed-build zed-format
 
 # Default target
 help:
@@ -42,6 +45,12 @@ help:
 	@echo "  ext-package - Package the extension (.vsix)"
 	@echo "  ext-latest  - Install the newest green origin/main build (DRY_RUN=1 to preview)"
 	@echo "  ext-rollback - Reinstall the previous kept VSIX"
+	@echo ""
+	@echo "Zed adapter (editors/zed/):"
+	@echo "  zed-check  - Check Rust formatting, lint and host tests"
+	@echo "  zed-test   - Run adapter host tests"
+	@echo "  zed-build  - Build the pinned WASM adapter"
+	@echo "  zed-format - Format adapter Rust source"
 	@echo ""
 	@echo "Install Extension to Editors:"
 	@echo "  ext-vscode    - Install to VS Code"
@@ -127,6 +136,22 @@ version:
 
 # VS Code Extension (editors/code/)
 EXT_DIR := editors/code
+
+# Run inside the extension so rustup selects its scoped rust-toolchain.toml.
+zed-check:
+	cd editors/zed && cargo fmt --all -- --check
+	cd editors/zed && cargo clippy --locked --all-targets -- -D warnings
+	cd editors/zed && cargo clippy --locked --target wasm32-wasip2 -- -D warnings
+	$(MAKE) zed-test
+
+zed-test:
+	cd editors/zed && cargo test --locked
+
+zed-build:
+	cd editors/zed && cargo build --locked --release --target wasm32-wasip2
+
+zed-format:
+	cd editors/zed && cargo fmt --all
 
 # Smart install: the root workspace install includes client dependencies.
 $(EXT_DIR)/node_modules: $(EXT_DIR)/package.json $(EXT_DIR)/pnpm-lock.yaml $(EXT_DIR)/pnpm-workspace.yaml $(EXT_DIR)/client/package.json

@@ -110,6 +110,12 @@ enabling editor registry publishing.
 Follow the [editor validation instructions](editors/code/CONTRIBUTING.md#testing). Use pnpm for `editors/code/`. Backend
 integration tests must use a server built from the candidate checkout, as described there.
 
+### Zed adapter
+
+The experimental [Zed adapter](editors/zed/README.md) has a separate Rust toolchain and local-JAR development procedure.
+Run `make zed-check` and `make zed-build` for adapter changes. These commands validate Rust and WASM; the adapter guide
+also describes the required real-editor checks.
+
 ## Where documentation belongs
 
 | Audience or purpose         | Destination                                                                                                       | Content                                                      |
