@@ -158,6 +158,7 @@ class CheckCommand internal constructor(
             onFailure = { failure ->
                 when (failure) {
                     is CancellationException -> throw failure
+                    is InterruptedException -> throw failure
                     is Exception -> {
                         logger.error(failure) { "Error checking file ${file.path}" }
                         FileOutcome(

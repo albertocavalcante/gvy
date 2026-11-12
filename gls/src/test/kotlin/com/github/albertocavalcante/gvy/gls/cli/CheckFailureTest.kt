@@ -265,6 +265,15 @@ class CheckFailureTest {
     }
 
     @Test
+    fun `interruption propagates`(@TempDir dir: File) {
+        val file = File(dir, "interrupted.groovy").apply { writeText("") }
+        val interrupted = InterruptedException("interrupted")
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ -> throw interrupted }))
+        val observed = assertFailsWith<InterruptedException> { command.parse(listOf("check", file.path)) }
+        assertTrue(observed === interrupted)
+    }
+
+    @Test
     fun `shutdown failure does not replace cancellation or fatal error`(@TempDir dir: File) {
         val file = File(dir, "cancel.groovy").apply { writeText("") }
         listOf(CancellationException("cancelled"), LinkageError("fatal")).forEach { failure ->
