@@ -62,7 +62,18 @@ jobs:
       # Build before stamping package.json so JAR provenance sees a clean tree.
       # stageEditorServer supplies an exact path; never select the first old JAR.
       - name: Test and build current server
-        run: ./gradlew --no-daemon lint test :tests:e2eTest :gls:stageEditorServer --stacktrace --max-workers=2
+        run: >-
+          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/nightly-gradle-evidence" --producer nightly-server
+          --no-daemon lint test :tests:e2eTest :gls:stageEditorServer --stacktrace --max-workers=2
+
+      - name: Upload Gradle diagnostic evidence
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gradle-evidence-nightly-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/nightly-gradle-evidence/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Install extension dependencies with current server
         working-directory: editors/code
