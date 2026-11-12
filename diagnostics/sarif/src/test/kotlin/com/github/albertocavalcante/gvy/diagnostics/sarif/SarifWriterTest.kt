@@ -47,8 +47,8 @@ class SarifWriterTest {
         val location = result.locations?.firstOrNull()
         assertNotNull(location)
         assertEquals("src/main/groovy/Test.groovy", location.physicalLocation?.artifactLocation?.uri)
-        assertEquals(1, location.physicalLocation?.region?.startLine) // 0-based to 1-based
-        assertEquals(1, location.physicalLocation?.region?.startColumn)
+        assertEquals(1L, location.physicalLocation?.region?.startLine) // 0-based to 1-based
+        assertEquals(1L, location.physicalLocation?.region?.startColumn)
     }
 
     @Test

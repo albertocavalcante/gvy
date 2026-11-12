@@ -1,0 +1,6 @@
+kotlin_library(
+    name = "findings",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["PUBLIC"],
+    deps = ["//source:source"],
+)

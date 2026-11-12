@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.gvy.diagnostics.sarif
 
+import com.github.albertocavalcante.gvy.findings.Finding
+import com.github.albertocavalcante.gvy.findings.FindingCode
+import com.github.albertocavalcante.gvy.findings.FindingSeverity
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -7,9 +10,11 @@ import org.eclipse.lsp4j.Diagnostic
 import org.eclipse.lsp4j.DiagnosticSeverity
 import java.io.File
 import java.io.OutputStream
+import java.net.URI
+import java.net.URISyntaxException
 
 /**
- * Converts LSP Diagnostics to SARIF format.
+ * Builds SARIF from findings, with a compatibility entry point for LSP diagnostics.
  *
  * Supports both CodeNarc diagnostics (identified by source="codenarc") and
  * compiler diagnostics (source="groovy-compiler" or others).
@@ -30,31 +35,75 @@ class SarifWriter(
      * @param diagnostic The LSP diagnostic
      */
     fun addDiagnostic(filePath: String, diagnostic: Diagnostic) {
-        val ruleId = extractRuleId(diagnostic)
-        val ruleIndex = getOrCreateRuleIndex(ruleId, diagnostic)
-
-        val result = SarifResult(
-            ruleId = ruleId,
-            ruleIndex = ruleIndex,
-            level = diagnostic.severity.toSarifLevel(),
-            message = SarifMessage(text = diagnostic.message),
-            locations = listOf(
-                SarifLocation(
-                    physicalLocation = SarifPhysicalLocation(
-                        artifactLocation = SarifArtifactLocation(uri = filePath),
-                        region = SarifRegion(
-                            // SARIF uses 1-based lines, LSP uses 0-based
-                            startLine = diagnostic.range.start.line + 1,
-                            startColumn = diagnostic.range.start.character + 1,
-                            endLine = diagnostic.range.end.line + 1,
-                            endColumn = diagnostic.range.end.character + 1,
-                        ),
+        // The legacy caller supplies a filesystem path, not a URI reference. Preserve it until
+        // its host-specific path adapter is migrated; do not reinterpret it as a URI here.
+        val locations = listOf(
+            SarifLocation(
+                physicalLocation = SarifPhysicalLocation(
+                    artifactLocation = SarifArtifactLocation(uri = filePath),
+                    region = SarifRegion(
+                        startLine = diagnostic.range.start.line.toLong() + 1,
+                        startColumn = diagnostic.range.start.character.toLong() + 1,
+                        endLine = diagnostic.range.end.line.toLong() + 1,
+                        endColumn = diagnostic.range.end.character.toLong() + 1,
                     ),
                 ),
             ),
         )
+        val code = (diagnostic.code?.get() as? String)?.let { FindingCode.Text(it) }
+        val finding = Finding(
+            null,
+            diagnostic.message,
+            diagnostic.severity.toFindingSeverity(),
+            diagnostic.source,
+            code,
+        )
+        appendFinding(finding, locations)
+    }
 
-        results.add(result)
+    /**
+     * Adds a finding. The location URI is interpreted as a URI reference, including an empty one;
+     * non-ASCII characters are encoded as UTF-8. Invalid references fail before the writer changes.
+     * SARIF rule IDs are strings, so numeric and textual codes with the same spelling coincide.
+     * An unspecified severity is projected as a warning.
+     */
+    fun addFinding(finding: Finding) {
+        val locations = finding.location?.let { location ->
+            val uri = try {
+                URI(location.uri).toASCIIString()
+            } catch (error: URISyntaxException) {
+                throw IllegalArgumentException("Invalid source URI reference", error)
+            }
+            val region = location.range?.let { range ->
+                SarifRegion(
+                    startLine = range.start.line.toLong() + 1,
+                    startColumn = range.start.character.toLong() + 1,
+                    endLine = range.endExclusive.line.toLong() + 1,
+                    endColumn = range.endExclusive.character.toLong() + 1,
+                )
+            }
+            listOf(SarifLocation(physicalLocation = SarifPhysicalLocation(SarifArtifactLocation(uri), region)))
+        }
+        appendFinding(finding, locations)
+    }
+
+    private fun appendFinding(finding: Finding, locations: List<SarifLocation>?) {
+        val ruleId = when (val code = finding.code) {
+            is FindingCode.Text -> code.value.takeIf { it.isNotBlank() }
+            is FindingCode.Number -> code.value.toString()
+            null -> null
+        } ?: fallbackRuleId(finding.source)
+        val level = finding.severity.toSarifLevel()
+        val ruleIndex = getOrCreateRuleIndex(ruleId, level)
+        results.add(
+            SarifResult(
+                ruleId = ruleId,
+                ruleIndex = ruleIndex,
+                level = level,
+                message = SarifMessage(text = finding.message),
+                locations = locations,
+            ),
+        )
     }
 
     /**
@@ -89,7 +138,7 @@ class SarifWriter(
         val run = SarifRun(
             tool = SarifTool(driver = driver),
             results = results,
-            // LSP positions count UTF-16 code units, including supplementary characters.
+            // Source ranges and legacy LSP positions count UTF-16 code units.
             columnKind = "utf16CodeUnits",
         )
 
@@ -115,19 +164,14 @@ class SarifWriter(
         outputStream.write(toJson(prettyPrint).toByteArray())
     }
 
-    private fun extractRuleId(diagnostic: Diagnostic): String {
-        // CodeNarc diagnostics have the rule name in the code field
-        val code = diagnostic.code?.get()
-        return when {
-            code is String && code.isNotBlank() -> code
-            diagnostic.source == "codenarc" -> "CodeNarcRule"
-            diagnostic.source == "groovy-compiler" -> "CompilationError"
-            diagnostic.source != null -> "${diagnostic.source}Error"
-            else -> "UnknownRule"
-        }
+    private fun fallbackRuleId(source: String?): String = when (source) {
+        "codenarc" -> "CodeNarcRule"
+        "groovy-compiler" -> "CompilationError"
+        null -> "UnknownRule"
+        else -> "${source}Error"
     }
 
-    private fun getOrCreateRuleIndex(ruleId: String, diagnostic: Diagnostic): Int? {
+    private fun getOrCreateRuleIndex(ruleId: String, level: SarifLevel): Int? {
         if (ruleId in ruleIndices) {
             return ruleIndices[ruleId]
         }
@@ -138,7 +182,7 @@ class SarifWriter(
             name = ruleId,
             shortDescription = createRuleDescription(),
             defaultConfiguration = SarifRuleConfiguration(
-                level = diagnostic.severity.toSarifLevel(),
+                level = level,
             ),
         )
         rules[ruleId] = rule
@@ -168,10 +212,20 @@ class SarifWriter(
 /**
  * Extension function to convert LSP DiagnosticSeverity to SARIF level.
  */
-fun DiagnosticSeverity?.toSarifLevel(): SarifLevel = when (this) {
-    DiagnosticSeverity.Error -> SarifLevel.ERROR
-    DiagnosticSeverity.Warning -> SarifLevel.WARNING
-    DiagnosticSeverity.Information -> SarifLevel.NOTE
-    DiagnosticSeverity.Hint -> SarifLevel.NOTE
+fun DiagnosticSeverity?.toSarifLevel(): SarifLevel = toFindingSeverity().toSarifLevel()
+
+/** An absent producer severity is represented as a SARIF warning. */
+private fun FindingSeverity?.toSarifLevel(): SarifLevel = when (this) {
+    FindingSeverity.ERROR -> SarifLevel.ERROR
+    FindingSeverity.WARNING -> SarifLevel.WARNING
+    FindingSeverity.INFORMATION, FindingSeverity.HINT -> SarifLevel.NOTE
     null -> SarifLevel.WARNING
+}
+
+private fun DiagnosticSeverity?.toFindingSeverity(): FindingSeverity? = when (this) {
+    DiagnosticSeverity.Error -> FindingSeverity.ERROR
+    DiagnosticSeverity.Warning -> FindingSeverity.WARNING
+    DiagnosticSeverity.Information -> FindingSeverity.INFORMATION
+    DiagnosticSeverity.Hint -> FindingSeverity.HINT
+    null -> null
 }

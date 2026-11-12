@@ -4,7 +4,7 @@ plugins {
 }
 
 dependencies {
-    implementation(project(":diagnostics:api"))
+    api(project(":findings"))
 
     // LSP4J for Diagnostic types
     implementation(libs.lsp4j)

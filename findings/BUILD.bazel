@@ -1,0 +1,20 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "findings",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = ["//source"],
+)
+
+kt_test(
+    name = "findings_test",
+    timeout = "short",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":findings"],
+    test_packages = ["com.github.albertocavalcante.gvy.findings"],
+    deps = [
+        "//source",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
+    ],
+)

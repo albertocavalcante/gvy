@@ -143,10 +143,10 @@ data class SarifArtifactLocation(val uri: String, val uriBaseId: String? = null,
  */
 @Serializable
 data class SarifRegion(
-    val startLine: Int,
-    val startColumn: Int? = null,
-    val endLine: Int? = null,
-    val endColumn: Int? = null,
+    val startLine: Long,
+    val startColumn: Long? = null,
+    val endLine: Long? = null,
+    val endColumn: Long? = null,
 )
 
 /**
