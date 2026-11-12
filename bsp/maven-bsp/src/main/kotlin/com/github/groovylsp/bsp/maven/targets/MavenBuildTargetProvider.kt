@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.groovylsp.bsp.maven.targets
 
 import ch.epfl.scala.bsp4j.BuildTarget
@@ -76,10 +79,10 @@ class MavenBuildTargetProvider {
         ).apply {
             displayName = module.artifactId
             baseDirectory = module.baseDir.toUri().toString()
-            capabilities.canCompile = true
+            capabilities.canCompile = false
             capabilities.canTest = false
-            capabilities.canRun = true
-            capabilities.canDebug = true
+            capabilities.canRun = false
+            capabilities.canDebug = false
         }
     }
 
@@ -107,10 +110,10 @@ class MavenBuildTargetProvider {
         ).apply {
             displayName = "${module.artifactId} (test)"
             baseDirectory = module.baseDir.toUri().toString()
-            capabilities.canCompile = true
-            capabilities.canTest = true
-            capabilities.canRun = true
-            capabilities.canDebug = true
+            capabilities.canCompile = false
+            capabilities.canTest = false
+            capabilities.canRun = false
+            capabilities.canDebug = false
         }
     }
 

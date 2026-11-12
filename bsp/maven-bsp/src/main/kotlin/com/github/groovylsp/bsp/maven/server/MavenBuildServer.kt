@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.groovylsp.bsp.maven.server
 
 import ch.epfl.scala.bsp4j.BuildClient
@@ -17,7 +20,6 @@ import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.InitializeBuildResult
 import ch.epfl.scala.bsp4j.InverseSourcesParams
 import ch.epfl.scala.bsp4j.InverseSourcesResult
-import ch.epfl.scala.bsp4j.JvmEnvironmentItem
 import ch.epfl.scala.bsp4j.JvmRunEnvironmentParams
 import ch.epfl.scala.bsp4j.JvmRunEnvironmentResult
 import ch.epfl.scala.bsp4j.JvmTestEnvironmentParams
@@ -34,7 +36,6 @@ import ch.epfl.scala.bsp4j.RunParams
 import ch.epfl.scala.bsp4j.RunResult
 import ch.epfl.scala.bsp4j.SourcesParams
 import ch.epfl.scala.bsp4j.SourcesResult
-import ch.epfl.scala.bsp4j.StatusCode
 import ch.epfl.scala.bsp4j.TestParams
 import ch.epfl.scala.bsp4j.TestResult
 import ch.epfl.scala.bsp4j.WorkspaceBuildTargetsResult
@@ -46,13 +47,16 @@ import com.github.groovylsp.bsp.maven.workspace.MavenWorkspaceScanner
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 
 /**
  * Maven Build Server Protocol implementation.
  *
- * Implements the BSP 2.1 specification for Maven projects.
+ * Provides Maven project metadata over BSP 2.1. Build execution is unavailable.
  */
 @Suppress("TooManyFunctions") // BSP protocol implementation - one method per BSP endpoint (21 requests)
 class MavenBuildServer(
@@ -102,6 +106,7 @@ class MavenBuildServer(
     }
 
     override fun onBuildExit() {
+        // TODO(#1838): Give the standalone launcher an owned, bounded process-exit policy.
         logger.info { "Maven BSP server exiting" }
     }
 
@@ -205,36 +210,14 @@ class MavenBuildServer(
         }
 
     override fun buildTargetCompile(params: CompileParams): CompletableFuture<CompileResult> =
-        CompletableFuture.supplyAsync {
-            logger.info { "Compile requested for ${params.targets.size} targets" }
-            // For now, we just return success. Full implementation would invoke Maven compiler
-            CompileResult(StatusCode.OK).apply {
-                originId = params.originId
-            }
-        }
+        unsupported("buildTarget/compile")
 
-    override fun buildTargetTest(params: TestParams): CompletableFuture<TestResult> = CompletableFuture.supplyAsync {
-        logger.info { "Test requested for ${params.targets.size} targets" }
-        // For now, we just return success. Full implementation would invoke Maven surefire
-        TestResult(StatusCode.OK).apply {
-            originId = params.originId
-        }
-    }
+    override fun buildTargetTest(params: TestParams): CompletableFuture<TestResult> = unsupported("buildTarget/test")
 
-    override fun buildTargetRun(params: RunParams): CompletableFuture<RunResult> = CompletableFuture.supplyAsync {
-        logger.info { "Run requested for target: ${params.target.uri}" }
-        // For now, we just return success. Full implementation would invoke Maven exec
-        RunResult(StatusCode.OK).apply {
-            originId = params.originId
-        }
-    }
+    override fun buildTargetRun(params: RunParams): CompletableFuture<RunResult> = unsupported("buildTarget/run")
 
     override fun buildTargetCleanCache(params: CleanCacheParams): CompletableFuture<CleanCacheResult> =
-        CompletableFuture.supplyAsync {
-            logger.info { "Clean cache requested for ${params.targets.size} targets" }
-            // Full implementation would run mvn clean
-            CleanCacheResult(true)
-        }
+        unsupported("buildTarget/cleanCache")
 
     override fun buildTargetOutputPaths(params: OutputPathsParams): CompletableFuture<OutputPathsResult> =
         CompletableFuture.supplyAsync {
@@ -260,51 +243,21 @@ class MavenBuildServer(
     // === Debug Operations (stubs) ===
 
     override fun debugSessionStart(params: DebugSessionParams): CompletableFuture<DebugSessionAddress> =
-        CompletableFuture.failedFuture(UnsupportedOperationException("Debug not supported"))
+        unsupported("debugSession/start")
 
-    // === JVM Operations ===
-
+    @Deprecated("The server does not provide JVM run environments.")
+    @Suppress("UnusedParameter") // Preserve the published JVM signature for existing callers.
     fun jvmRunEnvironment(params: JvmRunEnvironmentParams): CompletableFuture<JvmRunEnvironmentResult> =
-        CompletableFuture.supplyAsync {
-            val items = params.targets.map { targetId ->
-                val module = findModuleForTarget(targetId)
-                val classpath = if (module != null) {
-                    dependencyProvider.getDependencySources(listOf(module)).items
-                        .flatMap { it.sources }
-                } else {
-                    emptyList()
-                }
-                JvmEnvironmentItem(
-                    targetId,
-                    classpath,
-                    emptyList(), // jvmOptions
-                    module?.baseDir?.toString() ?: workspaceRoot.toString(),
-                    emptyMap(), // environment
-                )
-            }
-            JvmRunEnvironmentResult(items)
-        }
+        unsupported("buildTarget/jvmRunEnvironment")
 
+    @Deprecated("The server does not provide JVM test environments.")
+    @Suppress("UnusedParameter") // Preserve the published JVM signature for existing callers.
     fun jvmTestEnvironment(params: JvmTestEnvironmentParams): CompletableFuture<JvmTestEnvironmentResult> =
-        CompletableFuture.supplyAsync {
-            val items = params.targets.map { targetId ->
-                val module = findModuleForTarget(targetId)
-                val classpath = if (module != null) {
-                    dependencyProvider.getDependencySources(listOf(module)).items
-                        .flatMap { it.sources }
-                } else {
-                    emptyList()
-                }
-                JvmEnvironmentItem(
-                    targetId,
-                    classpath,
-                    emptyList(), // jvmOptions
-                    module?.baseDir?.toString() ?: workspaceRoot.toString(),
-                    emptyMap(), // environment
-                )
-            }
-            JvmTestEnvironmentResult(items)
-        }
+        unsupported("buildTarget/jvmTestEnvironment")
+
+    private fun <T> unsupported(method: String): CompletableFuture<T> = CompletableFuture.failedFuture(
+        ResponseErrorException(ResponseError(ResponseErrorCode.MethodNotFound, "$method is not supported", null)),
+    )
 
     private fun findModuleForTarget(targetId: BuildTargetIdentifier): MavenModuleInfo? {
         val uri = targetId.uri.removeSuffix(":test")
