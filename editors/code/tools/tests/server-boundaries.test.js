@@ -54,6 +54,88 @@ function trackDescriptor(t) {
   };
 }
 
+for (const alias of [
+  "same path",
+  "relative path",
+  "parent symlink",
+  "file symlink",
+]) {
+  test(`rejects a ${alias} alias without removing the prior artifact`, async (t) => {
+    const bytes = jarBytes();
+    const { dir, jar: dest } = jarFixture(t, bytes);
+    let source = dest;
+    if (alias === "relative path") {
+      fs.mkdirSync(path.join(dir, "sub"));
+      source = `${path.relative(process.cwd(), dir)}/sub/../server.jar`;
+    } else if (alias === "parent symlink") {
+      const link = path.join(dir, "alias-dir");
+      fs.symlinkSync(dir, link, "junction");
+      source = path.join(link, "server.jar");
+    } else if (alias === "file symlink") {
+      source = path.join(dir, "alias.jar");
+      fs.symlinkSync(dest, source, "file");
+    }
+    const expected = crypto.createHash("sha256").update(bytes).digest("hex");
+    const entries = fs.readdirSync(dir).sort();
+    const rename = fs.renameSync;
+    let publications = 0;
+    t.mock.method(fs, "renameSync", (...args) => {
+      if (args[1] === dest) {
+        publications += 1;
+        throw new Error("injected publication failure");
+      }
+      return rename(...args);
+    });
+
+    const failure = await installVerifiedJar(source, dest, expected).then(
+      () => undefined,
+      (error) => error,
+    );
+
+    assert.ok(failure instanceof Error);
+    assert.equal(
+      fs.existsSync(dest),
+      true,
+      "the prior destination must remain",
+    );
+    assert.equal(
+      crypto.createHash("sha256").update(fs.readFileSync(dest)).digest("hex"),
+      expected,
+    );
+    assert.match(failure.message, /source must be distinct from destination/);
+    assert.equal(publications, 0);
+    assert.deepEqual(fs.readdirSync(dir).sort(), entries);
+    assert.equal(
+      crypto.createHash("sha256").update(fs.readFileSync(source)).digest("hex"),
+      expected,
+    );
+  });
+}
+
+test("preserves a different-name hardlink destination after publication failure", async (t) => {
+  const bytes = jarBytes();
+  const { dir, jar: dest } = jarFixture(t, bytes);
+  const source = path.join(dir, "source.jar");
+  fs.linkSync(dest, source);
+  const expected = crypto.createHash("sha256").update(bytes).digest("hex");
+  const rename = fs.renameSync;
+  t.mock.method(fs, "renameSync", (...args) => {
+    if (args[1] === dest) throw new Error("injected publication failure");
+    return rename(...args);
+  });
+
+  await assert.rejects(
+    installVerifiedJar(source, dest, expected),
+    /injected publication failure/,
+  );
+
+  assert.equal(
+    crypto.createHash("sha256").update(fs.readFileSync(dest)).digest("hex"),
+    expected,
+  );
+  assert.deepEqual(fs.readdirSync(dir), ["server.jar"]);
+});
+
 test("installs verified original bytes when the source is replaced during validation", async (t) => {
   const bytes = jarBytes();
   const { dir, jar: source } = jarFixture(t, bytes);
