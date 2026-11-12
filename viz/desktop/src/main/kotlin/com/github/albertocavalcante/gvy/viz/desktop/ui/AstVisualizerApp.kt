@@ -1,5 +1,8 @@
 @file:Suppress("ktlint:standard:function-naming", "FunctionNaming")
 
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.viz.desktop.ui
 
 import androidx.compose.foundation.background
