@@ -165,16 +165,9 @@ Never expose absolute paths in:
 
 ## Kotlin Idioms
 
-Prefer idiomatic Kotlin patterns:
-
-| Pattern          | Prefer                   | Avoid                            |
-| ---------------- | ------------------------ | -------------------------------- |
-| Null safety      | `?.`, `?:`, `let`        | `!!` (minimize)                  |
-| Collections      | `map`, `filter`, `fold`  | Manual loops                     |
-| Data holders     | `data class`             | Plain class with equals/hashCode |
-| Type hierarchies | `sealed class/interface` | Open class with instanceof       |
-| Utilities        | Extension functions      | Static utility classes           |
-| Initialization   | `lazy`, `apply`, `also`  | Manual init blocks               |
+Read and apply the canonical [Kotlin style and readability guide](../../docs/kotlin-style.md) before changing Kotlin.
+Readability is a review requirement beyond formatter success. Collection chains, scope functions, and lazy
+initialization are context-dependent tools; ordinary control flow and explicit locals are idiomatic too.
 
 ---
 

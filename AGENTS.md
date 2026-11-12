@@ -57,6 +57,9 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
    reviewed source before shipping. An applicable failing or pending check blocks readiness even when `Validation Check`
    passed; that verdict covers its declared producer graph, not every other workflow. Never silently expand a baseline
    or suppress a category.
+9. **Readable Kotlin**: Follow [Kotlin style and readability](docs/kotlin-style.md) for every Kotlin change, including
+   tests. Review readability separately from lint: make alternatives and logical groups visible, use meaningful names,
+   and prefer clear control flow over dense expressions. Preserve evaluation and failure behavior during style changes.
 
 ## Architecture
 
@@ -98,6 +101,7 @@ The git workflow rules apply to any branch, commit, or PR work.
 | IF task involves...             | THEN read                                 |
 | ------------------------------- | ----------------------------------------- |
 | Creating branch, committing, PR | `.agent/rules/git-workflow.md`            |
+| Writing or reviewing Kotlin     | `docs/kotlin-style.md`                    |
 | Writing tests, TDD, naming      | `.agent/rules/code-quality.md`            |
 | Addressing PR review comments   | `.agent/workflows/review.md`              |
 | Implementing a GitHub issue     | `.agent/workflows/solve.md`               |

@@ -6,6 +6,7 @@ Use this guide to build gvy, validate changes, and open a pull request. To insta
 ## Choose where to work
 
 - [Repository overview](docs/overview.md): modules and their responsibilities.
+- [Kotlin style and readability](docs/kotlin-style.md): readable conditions, control flow, naming, and idioms.
 - [Quality Bar](docs/quality-bar.md): project goals and priorities.
 - [Editor contributor guide](editors/code/CONTRIBUTING.md): TypeScript extension setup and testing.
 - [Knowledge base](kb/README.md): architecture, research, and design records.
