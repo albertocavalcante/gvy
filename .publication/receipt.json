@@ -1,0 +1,11 @@
+{
+  "base": "2714b9273401711f428a1ef23e4cc46804721366",
+  "tree": "854f1547c661e30c7edf0333eb26042d4f2d81b1",
+  "patchSha256": "f0635f14c079ed20c52b39af127e8ca874dea740ba3af8c587b222bfd0a14286",
+  "payloadSha256": "017b71277160f16615fad42debe7b5e700984b0a136253e6c5045e40fde59ed4",
+  "reviewedDependencyHeads": {
+    "pr1866": "c2faa7da99a68c27a801ae8a6de6c187e4c50b0d"
+  },
+  "dependencyStatus": "PR1866 awaiting required CI and actual squash; rebase final publication after landing",
+  "review": "Independent complete-index Terra review; expected tree approved, final committed-head review still required"
+}
