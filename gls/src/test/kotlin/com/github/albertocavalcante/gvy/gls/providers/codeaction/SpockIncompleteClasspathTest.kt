@@ -41,8 +41,9 @@ class SpockIncompleteClasspathTest {
                 }
             }
         """.trimIndent()
-        val logger = LoggerFactory.getLogger("com.github.albertocavalcante.groovyparser") as Logger
-        val previous = logger.level
+        val loggers = listOf("com.github.albertocavalcante.groovyparser", "com.github.albertocavalcante.gvy")
+            .map { LoggerFactory.getLogger(it) as Logger }
+        val previous = loggers.map { it.level }
         try {
             val healthy = GroovyParserFacade(javaClass.classLoader).parse(
                 ParseRequest(uri, content, classpath = listOf(completeJar), compilePhase = Phases.CANONICALIZATION),
@@ -53,7 +54,13 @@ class SpockIncompleteClasspathTest {
             )
             assertEquals(1, healthyActions.size, "The complete hierarchy proves this is a specification")
             val observations = listOf(Level.INFO, Level.DEBUG, Level.TRACE).map { level ->
-                logger.level = level
+                loggers.forEach { it.level = level }
+                loggers.forEach { assertEquals(level, it.effectiveLevel) }
+                listOf(
+                    "com.github.albertocavalcante.groovyparser.GroovyParserFacade",
+                    "com.github.albertocavalcante.gvy.spock.SpockSourceContext",
+                    "com.github.albertocavalcante.gvy.gls.providers.codeaction.SpockTableAction",
+                ).forEach { assertEquals(level, (LoggerFactory.getLogger(it) as Logger).effectiveLevel) }
                 val result = GroovyParserFacade(javaClass.classLoader).parse(
                     ParseRequest(uri, content, classpath = listOf(jar), compilePhase = Phases.CANONICALIZATION),
                 )
@@ -71,7 +78,7 @@ class SpockIncompleteClasspathTest {
             assertEquals(observations.first(), observations[1])
             assertEquals(observations.first(), observations[2])
         } finally {
-            logger.level = previous
+            loggers.zip(previous).forEach { (logger, level) -> logger.level = level }
         }
     }
 
