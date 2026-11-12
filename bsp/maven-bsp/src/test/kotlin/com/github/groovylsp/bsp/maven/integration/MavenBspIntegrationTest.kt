@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.groovylsp.bsp.maven.integration
 
 import ch.epfl.scala.bsp4j.BuildClientCapabilities
@@ -5,11 +8,13 @@ import ch.epfl.scala.bsp4j.BuildTargetIdentifier
 import ch.epfl.scala.bsp4j.CompileParams
 import ch.epfl.scala.bsp4j.InitializeBuildParams
 import ch.epfl.scala.bsp4j.SourcesParams
-import ch.epfl.scala.bsp4j.StatusCode
 import com.github.groovylsp.bsp.maven.TestResources
 import com.github.groovylsp.bsp.maven.launcher.MavenBspLauncher
 import com.github.groovylsp.bsp.maven.server.MavenBuildServer
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -58,7 +63,7 @@ class MavenBspIntegrationTest {
 
             // Then
             assertThat(mainTarget).isNotNull
-            assertThat(mainTarget!!.capabilities.canCompile).isTrue()
+            assertThat(mainTarget!!.capabilities.canCompile).isFalse()
             assertThat(mainTarget.capabilities.canTest).isFalse()
             assertThat(mainTarget.languageIds).contains("java")
         }
@@ -163,9 +168,10 @@ class MavenBspIntegrationTest {
             val pipelineLibPath = Paths.get(System.getProperty("user.home"))
                 .resolve("dev/refs/pipeline-library")
 
-            if (!pipelineLibPath.toFile().exists()) {
-                return
-            }
+            assumeTrue(
+                pipelineLibPath.toFile().isDirectory,
+                "Optional real-project fixture is absent: $pipelineLibPath",
+            )
 
             // When
             val server = MavenBspLauncher.createServer(pipelineLibPath)
@@ -196,18 +202,15 @@ class MavenBspIntegrationTest {
         }
 
         @Test
-        fun `should handle compile request`() {
+        fun `compile request reports unsupported`() {
             // Given
             val projectDir = TestResources.getSingleModuleFixture()
             val server = MavenBspLauncher.createServer(projectDir)
             initializeServer(server, projectDir)
             val params = CompileParams(listOf(BuildTargetIdentifier("maven:com.example:simple-app")))
 
-            // When
-            val result = server.buildTargetCompile(params).get()
-
-            // Then
-            assertThat(result.statusCode).isEqualTo(StatusCode.OK)
+            assertThatThrownBy { server.buildTargetCompile(params).get() }
+                .hasCauseInstanceOf(ResponseErrorException::class.java)
         }
     }
 

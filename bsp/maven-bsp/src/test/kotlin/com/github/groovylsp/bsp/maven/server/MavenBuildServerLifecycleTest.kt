@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.groovylsp.bsp.maven.server
 
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
@@ -13,10 +16,12 @@ import com.github.groovylsp.bsp.maven.server.TestFixtures.createSimpleMavenProje
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.resolution.DependencyRequest
 import org.eclipse.aether.resolution.DependencyResult
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -100,19 +105,12 @@ class MavenBuildServerLifecycleTest {
         }
 
         @Test
-        fun `buildTargetCompile before initialization succeeds with stub`() {
-            // ISSUE: Stub implementation doesn't check initialization state
-
-            // Given: Server not initialized
+        fun `buildTargetCompile before initialization reports unsupported`() {
             val params = CompileParams(listOf(BuildTargetIdentifier(APP_TARGET_ID)))
+            assertThatThrownBy { server.buildTargetCompile(params).get() }
+                .hasCauseInstanceOf(ResponseErrorException::class.java)
 
-            // When: Call buildTargetCompile before initialization
-            val result = server.buildTargetCompile(params).get()
-
-            // Then: CURRENT BEHAVIOR - Returns OK (stub doesn't check state)
-            assertThat(result.statusCode).isEqualTo(ch.epfl.scala.bsp4j.StatusCode.OK)
-
-            // TODO(#822): Should reject with -32002 error
+            // TODO(#822): Define pre-initialization behavior for supported requests.
         }
     }
 
@@ -132,15 +130,15 @@ class MavenBuildServerLifecycleTest {
             assertThat(result.version).isEqualTo(SERVER_VERSION)
             assertThat(result.bspVersion).isEqualTo(BSP_VERSION)
             assertThat(result.capabilities).isNotNull
-            assertThat(result.capabilities.compileProvider).isNotNull
-            assertThat(result.capabilities.testProvider).isNotNull
-            assertThat(result.capabilities.runProvider).isNotNull
+            assertThat(result.capabilities.compileProvider).isNull()
+            assertThat(result.capabilities.testProvider).isNull()
+            assertThat(result.capabilities.runProvider).isNull()
             assertThat(result.capabilities.dependencyModulesProvider).isTrue()
             assertThat(result.capabilities.dependencySourcesProvider).isTrue()
             assertThat(result.capabilities.resourcesProvider).isTrue()
             assertThat(result.capabilities.outputPathsProvider).isTrue()
-            assertThat(result.capabilities.jvmRunEnvironmentProvider).isTrue()
-            assertThat(result.capabilities.jvmTestEnvironmentProvider).isTrue()
+            assertThat(result.capabilities.jvmRunEnvironmentProvider).isFalse()
+            assertThat(result.capabilities.jvmTestEnvironmentProvider).isFalse()
             assertThat(result.capabilities.canReload).isTrue()
         }
 

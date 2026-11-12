@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.groovylsp.bsp.maven.targets
 
 import ch.epfl.scala.bsp4j.BuildTargetTag
@@ -99,15 +102,15 @@ class MavenBuildTargetProviderTest {
             // When
             val targets = provider.createTargets(listOf(module))
 
-            // Then: Main target should be compilable
+            // Neither target supports execution yet
             val mainTarget = targets.first { !it.id.uri.endsWith(":test") }
-            assertThat(mainTarget.capabilities.canCompile).isTrue()
-            assertThat(mainTarget.capabilities.canRun).isTrue()
-            assertThat(mainTarget.capabilities.canDebug).isTrue()
+            assertThat(mainTarget.capabilities.canCompile).isFalse()
+            assertThat(mainTarget.capabilities.canRun).isFalse()
+            assertThat(mainTarget.capabilities.canDebug).isFalse()
 
-            // Test target should additionally be testable
+            // Test metadata remains available
             val testTarget = targets.first { it.id.uri.endsWith(":test") }
-            assertThat(testTarget.capabilities.canTest).isTrue()
+            assertThat(testTarget.capabilities.canTest).isFalse()
         }
 
         @Test

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.groovylsp.bsp.maven.server
 
 import ch.epfl.scala.bsp4j.BuildClient
@@ -15,10 +18,12 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.resolution.DependencyRequest
 import org.eclipse.aether.resolution.DependencyResult
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -168,17 +173,18 @@ class MavenBuildServerNotificationTest {
         }
 
         @Test
-        fun `server does not send task notifications during compile`() {
-            // ISSUE: Stub implementation doesn't send notifications
+        fun `unsupported compile does not send task notifications`() {
+            // Unsupported compilation does not start a task
 
             // Given: Initialized server
             server.buildInitialize(createInitParams(tempDir)).get()
 
-            // When: Compile (stub)
+            // When: Compile is unsupported
             val params = CompileParams(
                 listOf(BuildTargetIdentifier(APP_TARGET_ID)),
             )
-            server.buildTargetCompile(params).get()
+            assertThatThrownBy { server.buildTargetCompile(params).get() }
+                .hasCauseInstanceOf(ResponseErrorException::class.java)
 
             // Then: CURRENT BEHAVIOR - No task notifications
             verify(exactly = 0) {
@@ -221,12 +227,13 @@ class MavenBuildServerNotificationTest {
             // ISSUE: No diagnostics support (reasonable for current scope)
             // Diagnostics are typically published during compilation
 
-            // When: Initialize and compile
+            // When: Initialize and request unsupported compilation
             server.buildInitialize(createInitParams(tempDir)).get()
             val params = CompileParams(
                 listOf(BuildTargetIdentifier(APP_TARGET_ID)),
             )
-            server.buildTargetCompile(params).get()
+            assertThatThrownBy { server.buildTargetCompile(params).get() }
+                .hasCauseInstanceOf(ResponseErrorException::class.java)
 
             // Then: CURRENT BEHAVIOR - No diagnostics
             verify(exactly = 0) {

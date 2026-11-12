@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.groovylsp.bsp.maven.server
 
 import ch.epfl.scala.bsp4j.BuildTargetIdentifier
@@ -7,17 +10,18 @@ import ch.epfl.scala.bsp4j.InverseSourcesParams
 import ch.epfl.scala.bsp4j.OutputPathsParams
 import ch.epfl.scala.bsp4j.ResourcesParams
 import ch.epfl.scala.bsp4j.SourcesParams
-import ch.epfl.scala.bsp4j.StatusCode
 import ch.epfl.scala.bsp4j.TextDocumentIdentifier
 import com.github.groovylsp.bsp.maven.server.TestFixtures.createInitParams
 import com.github.groovylsp.bsp.maven.server.TestFixtures.createSimpleMavenProject
 import io.mockk.every
 import io.mockk.mockk
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.aether.RepositorySystem
 import org.eclipse.aether.RepositorySystemSession
 import org.eclipse.aether.resolution.DependencyRequest
 import org.eclipse.aether.resolution.DependencyResult
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -69,8 +73,8 @@ class MavenBuildServerTest {
             // Then
             assertThat(result.displayName).isEqualTo("Maven BSP")
             assertThat(result.bspVersion).isEqualTo("2.1.0")
-            assertThat(result.capabilities.compileProvider).isNotNull
-            assertThat(result.capabilities.testProvider).isNotNull
+            assertThat(result.capabilities.compileProvider).isNull()
+            assertThat(result.capabilities.testProvider).isNull()
             assertThat(result.capabilities.dependencyModulesProvider).isTrue()
         }
 
@@ -168,18 +172,15 @@ class MavenBuildServerTest {
     inner class Compilation {
 
         @Test
-        fun `should handle compile request`() {
+        fun `compile request reports unsupported`() {
             // Given
             createSimpleMavenProject(tempDir)
             initializeServer()
 
             val params = CompileParams(listOf(BuildTargetIdentifier("maven:com.example:my-app")))
 
-            // When
-            val result = server.buildTargetCompile(params).get()
-
-            // Then
-            assertThat(result.statusCode).isEqualTo(StatusCode.OK)
+            assertThatThrownBy { server.buildTargetCompile(params).get() }
+                .hasCauseInstanceOf(ResponseErrorException::class.java)
         }
     }
 

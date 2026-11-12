@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 plugins {
     kotlin("jvm")
     kotlin("plugin.serialization")
@@ -52,9 +55,12 @@ tasks.test {
 }
 
 // Create fat JAR for standalone distribution
+// TODO(#1839): Isolate executable logging from the published Java component.
 tasks.register<Jar>("fatJar") {
     archiveClassifier.set("all")
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    // Dependency signatures cannot authenticate a JAR with a rebuilt manifest and merged contents.
+    exclude("META-INF/*.SF", "META-INF/*.RSA", "META-INF/*.DSA", "META-INF/*.EC")
 
     from(sourceSets.main.get().output)
     dependsOn(configurations.runtimeClasspath)
