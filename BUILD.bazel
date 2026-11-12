@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Root BUILD file for Groovy LSP
 
 load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")

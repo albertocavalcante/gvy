@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Jenkins GDSL Extractor
 #
 # This Dockerfile creates a Jenkins instance pre-configured with pipeline plugins

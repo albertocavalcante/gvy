@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Build definitions and toolchains for the Groovy Language Server project."""
 
 load("@rules_java//java:defs.bzl", "java_binary", "java_import")

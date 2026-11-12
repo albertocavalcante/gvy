@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 load("//tools/build_defs:wire.bzl", "wire_proto_library")
 
 # Generate Kotlin code from proto files using Wire

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // Verify the distributable pair before a nightly can be published. No downloads
 // or editor installation happen here; the build supplies both archives.
 // TODO(#1736): Reuse this paired-artifact contract for explicit nightly updates.

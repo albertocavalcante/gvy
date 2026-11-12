@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +31,7 @@ export function evaluateReadiness(needs) {
     errors.push('Runner provisioning is pending; rerun this revision after the runner is available.');
   }
   const requirements = {
+    license: 'true',
     'check-runner': applicability.run_main_ci,
     lint: applicability.run_main_ci,
     build: applicability.run_main_ci,
@@ -67,6 +71,15 @@ export function combineReadiness(graph, runner, context) {
   if (anchors.length !== 1 || anchor?.status !== 'completed' || anchor.conclusion !== 'success' ||
       !freshObserved(anchor)) {
     report.errors.push('A fresh successful observed check-paths execution is required for this attempt; rerun all CI jobs.');
+  }
+  // License compliance is independent of check-paths. A successful needs result
+  // alone may be reused from an earlier attempt or absent from this receipt.
+  const licenseJobs = jobs.filter(job => job.name === 'License compliance');
+  const licenseJob = licenseJobs[0];
+  if (licenseJobs.length !== 1 || licenseJob?.status !== 'completed' ||
+      licenseJob.conclusion !== 'success' || graph.jobs?.license?.result !== licenseJob.conclusion ||
+      !freshObserved(licenseJob)) {
+    report.errors.push('A fresh successful observed License compliance execution matching needs is required for this attempt; rerun all CI jobs.');
   }
   // Independent advisory jobs are not descendants of check-paths. Their reused
   // completed records can lose annotations too, so the ancestor alone is insufficient.

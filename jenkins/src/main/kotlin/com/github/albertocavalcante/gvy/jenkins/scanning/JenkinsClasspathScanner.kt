@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress(
     "TooGenericExceptionCaught", // Classpath scanning requires catch-all for resilience
     "ReturnCount", // Step name resolution has multiple early returns

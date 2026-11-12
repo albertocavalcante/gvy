@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress(
     "TooGenericExceptionCaught", // JSON parsing uses catch-all for resilience
     "LongMethod", // toBundledMetadata transforms all metadata types

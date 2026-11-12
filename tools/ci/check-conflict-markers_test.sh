@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Self-test for check-conflict-markers.sh: proves each marker form is caught,
 # that clean and documentation-only cases pass, and that --staged works.
 set -euo pipefail

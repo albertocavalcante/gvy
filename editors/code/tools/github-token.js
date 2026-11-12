@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * GitHub token resolution utilities.
  * Resolves authentication token from environment variables or gh CLI.

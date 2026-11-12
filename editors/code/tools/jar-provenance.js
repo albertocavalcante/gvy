@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Build provenance of a server JAR, as stamped into its version.properties by
  * the Gradle build, and the record kept next to the bundled JAR

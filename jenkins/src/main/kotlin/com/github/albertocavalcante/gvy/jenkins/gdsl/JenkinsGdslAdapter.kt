@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.jenkins.gdsl
 
 import com.github.albertocavalcante.gvy.gdsl.model.GdslParseResult

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress(
     "LongMethod", // Integration tests benefit from comprehensive in-line assertions
     "ImplicitDefaultLocale", // Test output formatting doesn't need locale awareness

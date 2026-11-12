@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # actionlint config: register custom self-hosted runner labels.
 self-hosted-runner:
   labels:

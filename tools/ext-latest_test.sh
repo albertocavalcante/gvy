@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Self-test for ext-latest.sh: pure helpers with fixture JSON (CI evaluation,
 # skipped-build inheritance, provenance, VSIX naming, pruning, rollback choice),
 # the stubbed-`gh` target walk, the clone ownership guard, the lock, and the

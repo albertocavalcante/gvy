@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Buck2 Configuration for Groovy LSP
 # https://buck2.build/docs/
 #

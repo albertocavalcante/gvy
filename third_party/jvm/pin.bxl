@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # BXL script for pinning JVM dependencies
 #
 # Usage: buck2 bxl //third_party/jvm:pin.bxl:pin

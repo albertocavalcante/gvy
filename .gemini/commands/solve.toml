@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Fetch GitHub issue details, analyze complexity, plan and execute implementation"
 prompt = """
 You are executing a strict issue resolution protocol.

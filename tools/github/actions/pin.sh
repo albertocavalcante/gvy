@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # tools/github/actions/pin.sh
 #
 # Fetches the latest release tag and corresponding SHA for GitHub Actions used in this project.

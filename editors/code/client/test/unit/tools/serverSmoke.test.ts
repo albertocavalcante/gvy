@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import * as assert from "node:assert";
 import { EventEmitter } from "node:events";
 import proxyquire from "proxyquire";

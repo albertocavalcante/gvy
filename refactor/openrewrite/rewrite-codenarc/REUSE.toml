@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+version = 1
+
+# Original documents, fixture payloads, generated data and uncommentable formats.
+# Exact paths make new files require an explicit licensing decision.
+[[annotations]]
+path = [
+  "CONTRIBUTING.md",
+  "README.md",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"

@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # cleanup-macos-runner.sh - Clean up GitHub Actions runners for groovy-lsp
 #
 # This script will:

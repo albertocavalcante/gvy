@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 pre-commit:
   commands:
     branch-check:
@@ -7,6 +10,10 @@ pre-commit:
           echo "Direct commits to main branch are forbidden!"
           exit 1
         fi
+    license-check:
+      # Checks the whole working tree; CI checks the committed publication tree.
+      run: uv run --offline --locked --no-dev --project .reuse python .reuse/check.py --root .
+      fail_text: "Install the pinned licensing tools and fix the reported metadata; see docs/licensing.md"
     conflict-markers:
       run: tools/ci/check-conflict-markers.sh --staged
     kotlin-lint:

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import * as path from "path";
 import { ExtensionContext } from "vscode";
 import { IFileSystem, NodeFileSystem } from "./FileSystem";

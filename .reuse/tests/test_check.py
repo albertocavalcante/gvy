@@ -65,6 +65,25 @@ class HeaderTests(unittest.TestCase):
         self.assertTrue(check.maintained(Path("tools/run"), b"#!/bin/sh\n"))
         self.assertFalse(check.maintained(Path("src/test/resources/fixture.kt"), b""))
 
+    def test_native_helper_sources_require_c_comments(self) -> None:
+        valid = (
+            b"// SPDX-FileCopyrightText: Alice\n// SPDX-License-Identifier: Apache-2.0\nint main(void) { return 0; }\n"
+        )
+        wrong = b"# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n"
+        for suffix in (".c", ".h"):
+            path = Path(f"tools/ci/helper{suffix}")
+            with self.subTest(suffix=suffix):
+                self.assertTrue(check.maintained(path, b""))
+                self.assertEqual([], check.header_errors(path, valid))
+                self.assertTrue(check.header_errors(path, wrong))
+
+    def test_runtime_sources_and_explicit_imports_have_distinct_policies(self) -> None:
+        self.assertTrue(check.maintained(Path("build-tool/src/main/kotlin/gvy/build/Build.kt"), b""))
+        self.assertTrue(check.maintained(Path("build-tool/src/main/resources/runtime.gradle"), b""))
+        self.assertTrue(check.maintained(Path(".devcontainer/Dockerfile"), b""))
+        self.assertFalse(check.maintained(Path("gradlew"), b"#!/bin/sh\n"))
+        self.assertFalse(check.maintained(Path("third_party/jvm/BUCK"), b"# DO NOT EDIT\n"))
+
     def test_wrong_comment_syntax_does_not_count(self) -> None:
         data = b"# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n"
         self.assertTrue(check.header_errors(Path("a.kt"), data))
@@ -234,6 +253,13 @@ class IntegrationTests(unittest.TestCase):
             "SPDX-FileCopyrightText: Alice\nSPDX-License-Identifier: Apache-2.0\n"
         )
         self.assertTrue(any("leading" in error for error in check.check(self.root)))
+
+    def test_native_helper_metadata_cannot_mask_missing_header(self) -> None:
+        (self.root / "src/helper.c").write_text("int main(void) { return 0; }\n")
+        (self.root / "src/helper.c.license").write_text(
+            "SPDX-FileCopyrightText: Alice\nSPDX-License-Identifier: Apache-2.0\n"
+        )
+        self.assertTrue(any("src/helper.c: missing" in error for error in check.check(self.root)))
 
     def test_unknown_license_and_missing_text_fail(self) -> None:
         self.source.write_text("# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: NotARealLicense\n")

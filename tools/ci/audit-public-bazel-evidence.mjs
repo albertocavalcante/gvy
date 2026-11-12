@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { createHash } from 'node:crypto';
 import { isUtf8 } from 'node:buffer';
 import { closeSync, constants, fstatSync, ftruncateSync, lstatSync, openSync, readdirSync, writeFileSync } from 'node:fs';

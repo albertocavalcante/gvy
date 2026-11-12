@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import jenkins.model.*
 import hudson.security.*
 import jenkins.security.s2m.AdminWhitelistRule

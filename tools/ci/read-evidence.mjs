@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { isUtf8 } from 'node:buffer';
 import { readWindowsEvidenceBytes } from './windows-evidence.mjs';

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Address PR review feedback with strict traceability using pr.py"
 prompt = """
 You are executing a strict review feedback protocol.

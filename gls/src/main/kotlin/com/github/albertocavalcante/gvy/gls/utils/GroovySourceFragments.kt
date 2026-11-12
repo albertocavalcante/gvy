@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.utils
 
 /** UTF-16 offsets for a Java/Groovy identifier inside an explicit source bound. */

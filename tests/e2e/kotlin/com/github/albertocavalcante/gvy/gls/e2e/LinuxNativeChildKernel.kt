@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.e2e
 
 internal data class LinuxNativeCall(val result: Int, val error: Int = 0, val status: Int = 0)

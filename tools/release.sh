@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 set -euo pipefail
 
 # Colors for output
@@ -36,6 +39,17 @@ enter_checkout() {
         return 1
     fi
     cd "${checkout_root}"
+}
+
+# Check the unmodified source tree before release commands write output.
+require_license() {
+    local checkout_root
+    checkout_root="$(pwd -P)"
+    if ! uv run --offline --locked --no-dev --project "${checkout_root}/.reuse" \
+        python "${checkout_root}/.reuse/check.py" --root "${checkout_root}"; then
+        log_error "License validation failed; release output was not changed"
+        return 1
+    fi
 }
 
 print_usage() {
@@ -113,6 +127,8 @@ cmd_build() {
         log_info "VSIX output: ${target_vsix}"
         return
     fi
+
+    require_license
 
     source_commit="$(git rev-parse --verify 'HEAD^{commit}')"
     local tag_commit tag_status=0
@@ -202,6 +218,7 @@ cmd_smoke_test() {
 
 cmd_checksums() {
     enter_checkout
+    require_license
     if [[ ! -d "${DIST_DIR}" ]]; then
         log_error "Directory ${DIST_DIR} does not exist."
         exit 1

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { defineConfig } from "@vscode/test-cli";
 
 // Set VSCODE_TEST_EXECUTABLE to an installed VS Code binary (for example

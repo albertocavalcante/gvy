@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # ext-latest: install the VS Code extension + server jar built from the newest
 # origin/main commit whose CI is green (#1576).
 #

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Local values for the runner infrastructure
 # Maps user-friendly image names to actual Magalu Cloud image identifiers
 

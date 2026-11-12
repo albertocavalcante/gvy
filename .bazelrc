@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Bazel 9.0.0. See docs/build-observability.md for profiles and artifacts.
 # Keep the output base workspace-specific; shared download/action caches are safe.
 startup --host_jvm_args=-Xmx2g

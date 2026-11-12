@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /** Converts VS Code's encoded Windows drive separator for Java's file URI handling. */
 export function toProtocolUri(
   uri: string,

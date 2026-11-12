@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
@@ -81,6 +84,7 @@ function fixture(t, options = {}) {
   writeFileSync(join(root, 'fresh.jar'), server(options.serverVersion ?? version, options.commit ?? commit, options.dirty ?? false));
   writeFileSync(join(root, 'pinned.jar'), server('0.4.8-SNAPSHOT'));
   writeFileSync(join(root, 'fixture-zip.cjs'), `${crc32.toString()}\n${zip.toString()}\nmodule.exports = zip;\n`);
+  writeFileSync(join(root, 'bin/uv'), '#!/bin/bash\nprintf "%s\\n" "$@" > "$FIXTURE_ROOT/uv-args"\n[[ "${FIXTURE_LICENSE_RESULT:-pass}" != fail ]]\n', { mode: 0o755 });
   writeFileSync(join(root, 'bin/git'), '#!/bin/bash\nif [[ "$1" = show-ref ]]; then exit 2; fi\nif [[ "$1" = check-ref-format ]]; then exit 0; fi\nprintf "%s\\n" "$FIXTURE_COMMIT"\n', { mode: 0o755 });
   writeFileSync(join(root, 'gradlew'), `#!${process.execPath}
 const fs = require('node:fs');
@@ -129,7 +133,7 @@ if (args[0] === 'run' && args[1] === 'package') {
     writeFileSync(join(editor, 'aaa-stale.vsix'), zip([['extension/package.json', '{}']]));
   }
   const environment = { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, CI: 'true', FIXTURE_ROOT: root,
-    FIXTURE_COMMIT: commit, FIXTURE_MODE: options.mode ?? '', GLS_USE_PINNED: 'true',
+    FIXTURE_COMMIT: commit, FIXTURE_MODE: options.mode ?? '', FIXTURE_LICENSE_RESULT: options.license ?? 'pass', GLS_USE_PINNED: 'true',
     GLS_CHANNEL: 'pinned', GLS_REQUIRE_FRESH: 'true', SKIP_PREPARE_SERVER: 'true' };
   const command = (program, args) => spawnSync(program, args, {
     // Allow shared-host I/O contention while bounding hung fixture commands.
@@ -157,6 +161,64 @@ function realGitFixture(t) {
   writeFileSync(join(f.root, 'fresh.jar'), server(version, sha));
   return { ...f, git, tree, sha };
 }
+
+function expectedLicenseArgs(root) {
+  return ['run', '--offline', '--locked', '--no-dev', '--project', join(root, '.reuse'),
+    'python', join(root, '.reuse/check.py'), '--root', root];
+}
+
+test('failed license check blocks release build before deleting outputs or invoking build tools', t => {
+  const f = fixture(t, { license: 'fail' });
+  mkdirSync(join(f.root, 'dist'));
+  writeFileSync(join(f.root, 'dist/sentinel'), 'keep output');
+  const result = f.run();
+  assert.notEqual(result.status, 0);
+  assert.equal(readFileSync(join(f.root, 'dist/sentinel'), 'utf8'), 'keep output');
+  assert.equal(readFileSync(join(f.editor, 'package.json'), 'utf8'), f.originalPackage);
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  assert.deepEqual(readFileSync(join(f.root, 'uv-args'), 'utf8').trimEnd().split('\n'), expectedLicenseArgs(f.root));
+});
+
+test('make release-publish inherits the fail-closed license barrier', t => {
+  const f = fixture(t, { license: 'fail' });
+  mkdirSync(join(f.root, 'dist'));
+  writeFileSync(join(f.root, 'dist/sentinel'), 'keep output');
+  const result = f.command('make', ['release-publish', 'RELEASE_VERSION=v0.5.4']);
+  assert.notEqual(result.status, 0);
+  assert.equal(readFileSync(join(f.root, 'dist/sentinel'), 'utf8'), 'keep output');
+  assert.equal(readFileSync(join(f.editor, 'package.json'), 'utf8'), f.originalPackage);
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  assert.deepEqual(readFileSync(join(f.root, 'uv-args'), 'utf8').trimEnd().split('\n'), expectedLicenseArgs(f.root));
+});
+
+test('passing license check allows the verified release build', t => {
+  const f = fixture(t);
+  const result = f.run();
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(readFileSync(join(f.root, 'uv-args'), 'utf8').trimEnd().split('\n'), expectedLicenseArgs(f.root));
+  assert.ok(f.calls().some(call => call.tool === 'gradle'));
+  assert.equal(readFileSync(join(f.editor, 'package.json'), 'utf8'), f.originalPackage);
+});
+
+test('failed license check preserves an existing checksum manifest', t => {
+  const f = fixture(t, { license: 'fail' });
+  mkdirSync(join(f.root, 'dist'));
+  writeFileSync(join(f.root, 'dist/checksums.txt'), 'keep manifest');
+  writeFileSync(join(f.root, 'dist/artifact'), 'artifact');
+  const result = f.command('bash', ['tools/release.sh', 'checksums']);
+  assert.notEqual(result.status, 0);
+  assert.equal(readFileSync(join(f.root, 'dist/checksums.txt'), 'utf8'), 'keep manifest');
+  assert.deepEqual(readFileSync(join(f.root, 'uv-args'), 'utf8').trimEnd().split('\n'), expectedLicenseArgs(f.root));
+});
+
+test('read-only release commands do not require the license environment', t => {
+  const f = fixture(t, { license: 'fail' });
+  for (const args of [['--help'], ['validate', '--version', 'v0.5.4'], ['build', '--version', 'v0.5.4', '--dry-run']]) {
+    const result = f.command('bash', ['tools/release.sh', ...args]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.equal(existsSync(join(f.root, 'uv-args')), false);
+  }
+});
 
 for (const kind of ['lightweight', 'annotated']) {
   for (const matches of [true, false]) {
@@ -473,7 +535,7 @@ test('checksum regeneration never hashes its own manifest or temporary output', 
   mkdirSync(dist);
   writeFileSync(join(dist, 'gls.jar'), 'server');
   writeFileSync(join(dist, '.checksums.abandoned'), 'incomplete old output');
-  const run = () => spawnSync('bash', ['tools/release.sh', 'checksums'], { cwd: f.root, encoding: 'utf8' });
+  const run = () => f.command('bash', ['tools/release.sh', 'checksums']);
   assert.equal(run().status, 0);
   const first = readFileSync(join(dist, 'checksums.txt'), 'utf8');
   assert.equal(run().status, 0);
@@ -491,9 +553,7 @@ test('a failed checksum command preserves the last manifest and its nonzero exit
   writeFileSync(join(dist, 'gls.jar'), 'server');
   writeFileSync(join(dist, 'checksums.txt'), 'previous verified manifest\n');
   writeFileSync(join(f.root, 'bin/shasum'), '#!/bin/bash\nprintf "partial output\\n"\nexit 7\n', { mode: 0o755 });
-  const result = spawnSync('bash', ['tools/release.sh', 'checksums'], {
-    cwd: f.root, encoding: 'utf8', env: { ...process.env, PATH: `${f.root}/bin:${process.env.PATH}` },
-  });
+  const result = f.command('bash', ['tools/release.sh', 'checksums']);
   assert.equal(result.status, 7);
   assert.equal(readFileSync(join(dist, 'checksums.txt'), 'utf8'), 'previous verified manifest\n');
   assert.doesNotMatch(result.stdout, /Checksums generated/);

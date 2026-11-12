@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Develop, verify, and manage End-to-End (E2E) test scenarios"
 prompt = """
 Execute the following workflow:

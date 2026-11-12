@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Platform definitions for Buck2
 #
 # NOTE: This project uses prelude//platforms:default as the execution

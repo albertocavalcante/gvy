@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Module extension to download JUnit jars directly.
 
 Historical GMM (Gradle Module Metadata) resolution produced JUnit cycles.

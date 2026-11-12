@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * TODO(#715): This interface is part of the hacky Maven workaround.
  * See: https://github.com/albertocavalcante/gvy/issues/715

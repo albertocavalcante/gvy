@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress(
     "TooGenericExceptionCaught", // Plugin resolution uses catch-all for resilience
     "ReturnCount", // Multiple early returns are clearer in search methods

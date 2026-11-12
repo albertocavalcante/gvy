@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 name: Sync rewrite-codenarc
 
 # ==============================================================================
@@ -44,16 +47,22 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
           persist-credentials: false
 
       - name: Setup Java (for Copybara)
-        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: 21
+
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+
+      - name: Check license metadata
+        run: uv run --offline --locked --no-dev --project .reuse python .reuse/check.py --root .
 
       - name: Run Copybara
         uses: olivr/copybara-action@042b4395839f3a374a6455b541e29e40c949d717 # v1.2.5

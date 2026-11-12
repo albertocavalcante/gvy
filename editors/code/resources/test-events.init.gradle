@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // Gradle Init Script: test-events.init.gradle
 // Emits JSON events for test lifecycle to be consumed by the VS Code extension.
 // Usage: ./gradlew --init-script test-events.init.gradle test

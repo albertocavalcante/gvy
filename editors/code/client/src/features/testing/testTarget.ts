@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Pure helpers that map Test Explorer items to what the language server's
  * `groovy/runTest` request expects. Kept free of the vscode API so they can be

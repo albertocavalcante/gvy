@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # OSV-Scanner checks dependencies for known vulnerabilities on PRs and on a schedule.
 name: OSV-Scanner
 

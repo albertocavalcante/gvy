@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.reports.results.parsers
 
 import com.github.albertocavalcante.reports.results.model.TestResultStatus

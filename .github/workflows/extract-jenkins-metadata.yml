@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Jenkins Metadata Extraction Workflow
 #
 # Extracts GDSL metadata from a running Jenkins instance with all pipeline plugins.

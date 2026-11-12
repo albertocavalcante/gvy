@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Wire protobuf rule for generating Kotlin code from .proto files.
 
 This rule wraps Square's Wire compiler to generate idiomatic Kotlin data classes

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // Keep tagged JAR and VSIX releases paired. Published v0.5.4 remains affected by
 // TODO(#1751): replace the mismatched stable release and coordinate distribution pins.
 //   See: https://github.com/albertocavalcante/gvy/issues/1751

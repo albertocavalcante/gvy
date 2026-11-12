@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Ship code (commit, push, PR) with maximum safety guarantees"
 prompt = """
 You are executing a strict shipping protocol.

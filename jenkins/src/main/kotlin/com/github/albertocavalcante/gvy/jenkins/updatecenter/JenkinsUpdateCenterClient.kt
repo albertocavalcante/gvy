@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress(
     "TooGenericExceptionCaught", // HTTP/network errors use catch-all for resilience
     "MagicNumber", // HTTP status codes and timeouts are self-documenting

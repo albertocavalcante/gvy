@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Computes cache key parts for Groovy LSP artifacts.
  * Outputs two lines to stdout:

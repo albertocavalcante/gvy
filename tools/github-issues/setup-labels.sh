@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # GitHub Labels Setup Script
 # This script creates comprehensive labels for both groovy-lsp and vscode-groovy repositories
 

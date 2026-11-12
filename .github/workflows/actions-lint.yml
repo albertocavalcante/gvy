@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Lint GitHub Actions workflows for security policy (ghalint) and correctness (actionlint).
 name: Actions Lint
 

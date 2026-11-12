@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import * as assert from "assert";
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";

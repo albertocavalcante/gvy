@@ -58,6 +58,33 @@ tasks.named<Test>("test") {
     )
 }
 
+val licenseCheck = tasks.register<Exec>("licenseCheck") {
+    description = "Verify repository licensing metadata and maintained source headers"
+    group = "verification"
+    workingDir(rootProject.layout.projectDirectory)
+    commandLine(
+        "uv",
+        "run",
+        "--offline",
+        "--locked",
+        "--no-dev",
+        "--project",
+        rootProject.file(".reuse").absolutePath,
+        "python",
+        rootProject.file(".reuse/check.py").absolutePath,
+        "--root",
+        rootProject.layout.projectDirectory.asFile.absolutePath,
+    )
+}
+
+allprojects {
+    tasks.matching {
+        it.name in setOf("check", "lint", "quality") || it.name.startsWith("publish")
+    }.configureEach {
+        dependsOn(licenseCheck)
+    }
+}
+
 subprojects {
     apply(plugin = "com.autonomousapps.dependency-analysis")
     apply(plugin = "io.gitlab.arturbosch.detekt")

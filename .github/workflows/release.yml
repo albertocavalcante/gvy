@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 name: Release
 "on":
   push:
@@ -77,6 +80,10 @@ jobs:
         fetch-depth: 0
         ref: ${{ steps.checkout_ref.outputs.ref }}
         persist-credentials: false
+    - name: Setup licensing tools
+      uses: ./.github/actions/setup-licensing
+    - name: Check license metadata before release
+      run: uv run --offline --locked --no-dev --project .reuse python .reuse/check.py --root .
     - name: "Set up JDK ${{ matrix.java }}"
       uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
       with:
@@ -282,12 +289,12 @@ jobs:
 
     # SLSA Level 3 Provenance Attestation
     - name: Generate provenance attestation for JAR
-      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
       with:
         subject-path: dist/gls-*.jar
 
     - name: Generate provenance attestation for VSIX
-      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+      uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
       with:
         subject-path: dist/*.vsix
       continue-on-error: true  # VSIX may not exist in all cases
@@ -440,7 +447,7 @@ jobs:
     if: ${{ !inputs.dry_run && vars.PUBLISH_HOMEBREW == 'true' }}
     steps:
       - name: Update Homebrew Formula
-        uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6
+        uses: mislav/bump-homebrew-formula-action@56a283fa15557e9abaa4bdb63b8212abc68e655c # v3.6 (upstream has no patch-version tag)
         with:
           homebrew-tap: albertocavalcante/homebrew-tap
           base-branch: main

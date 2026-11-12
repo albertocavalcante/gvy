@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { crc32 } from "node:zlib";
 
 // Stored ZIP fixtures exercise the real archive reader without invoking build tools.

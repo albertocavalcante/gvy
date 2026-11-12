@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // Main script for Groovy AST Visualization
 // Handles communication with VSCode and renders the AST tree
 

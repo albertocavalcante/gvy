@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.e2e
 
 /** A cursor marker found in scenario text; [name] is null for the anonymous `|^|` marker. */

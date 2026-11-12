@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import type { LanguageClient } from "vscode-languageclient/node";
 import { ErrorCodes } from "vscode-languageserver-protocol";
 

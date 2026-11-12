@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 export interface ServerVersionSources {
   /** `serverInfo.version` from the running server's initialize result. */
   reported: string | undefined;

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Module extension to download Wire compiler shadow jar.
 
 Historical GMM resolution did not select the runnable Wire shadow jar.

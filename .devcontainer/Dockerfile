@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 ARG BASE_IMAGE=registry.access.redhat.com/ubi9/ubi-minimal
 ARG BASE_IMAGE_TAG=latest
 

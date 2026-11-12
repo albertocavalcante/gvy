@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
+version = 1
+
+# Original documents, fixture payloads, generated data and uncommentable formats.
+# Exact paths make new files require an explicit licensing decision.
+[[annotations]]
+path = [
+  ".gitattributes",
+  ".gitignore",
+  ".mocharc.json",
+  ".prettierignore",
+  ".prettierrc",
+  ".vscode/launch.json",
+  ".vscode/tasks.json",
+  ".vscodeignore",
+  "AGENTS.md",
+  "CHANGELOG.md",
+  "CONTRIBUTING.md",
+  "README.md",
+  "client/package.json",
+  "client/tsconfig.json",
+  "language-configuration.json",
+  "package.json",
+  "syntaxes/groovy.tmLanguage.json",
+  "tools/tsconfig.json",
+  "tsconfig.json",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"

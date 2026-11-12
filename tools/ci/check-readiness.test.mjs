@@ -1,9 +1,13 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { combineReadiness, evaluateReadiness } from './check-readiness.mjs';
 
 function successful(main = true, bazel = true, zed = true) {
   return {
+    license: { result: 'success' },
     'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed) } },
     'check-runner': { result: main ? 'success' : 'skipped', outputs: { provisioning_triggered: '' } },
     lint: { result: main ? 'success' : 'skipped' },
@@ -21,6 +25,21 @@ test('only successful applicable jobs and verified exclusions pass', () => {
     for (const bazel of [false, true]) {
       for (const zed of [false, true]) assert.equal(evaluateReadiness(successful(main, bazel, zed)).ok, true);
     }
+  }
+});
+
+test('license compliance is required even for docs-only and fails closed', () => {
+  for (const main of [false, true]) {
+    for (const result of [undefined, 'failure', 'cancelled', 'skipped', 'unknown']) {
+      const jobs = successful(main, false, false);
+      jobs.license.result = result;
+      const report = evaluateReadiness(jobs);
+      assert.equal(report.ok, false, String(result));
+      assert.ok(report.errors.some(error => error.startsWith('license: expected success')));
+    }
+    const jobs = successful(main, false, false);
+    delete jobs.license;
+    assert.equal(evaluateReadiness(jobs).ok, false, 'missing license job');
   }
 });
 
@@ -97,6 +116,10 @@ function currentReceipt() {
     schemaVersion: 1, ok: true, observationComplete: true, context, attemptStartedAt,
     jobs: [{
       jobId: 2, checkId: 2, name: 'check-paths', headSha: context.headSha,
+      status: 'completed', conclusion: 'success', annotationsObserved: true,
+      startedAt: '2026-11-11T12:22:41Z',
+    }, {
+      jobId: 9, checkId: 9, name: 'License compliance', headSha: context.headSha,
       status: 'completed', conclusion: 'success', annotationsObserved: true,
       startedAt: '2026-11-11T12:22:41Z',
     }],
@@ -193,6 +216,21 @@ for (const [name, alter] of [
   });
 }
 
+test('license job success needs fresh observed execution evidence', () => {
+  const runner = currentReceipt();
+  const graph = evaluateReadiness(successful(false, false, false));
+  assert.equal(combineReadiness(graph, runner, context).ok, true);
+  for (const patch of [
+    { startedAt: '2026-11-11T12:14:11Z' },
+    { annotationsObserved: false },
+    { headSha: 'c'.repeat(40) },
+  ]) {
+    const changed = structuredClone(runner);
+    Object.assign(changed.jobs[1], patch);
+    assert.equal(combineReadiness(graph, changed, context).ok, false);
+  }
+});
+
 test('skipped and unfinished optional jobs retain their explicit snapshot boundary', () => {
   const runner = currentReceipt();
   runner.jobs.push(
@@ -201,4 +239,39 @@ test('skipped and unfinished optional jobs retain their explicit snapshot bounda
     { ...runner.jobs[0], jobId: 5, name: 'Validation Check', status: 'in_progress', conclusion: null, startedAt: null, annotationsObserved: false },
   );
   assert.equal(combineReadiness(evaluateReadiness(successful()), runner, context).ok, true);
+});
+
+test('license receipt must contain exactly one fresh successful execution matching needs', () => {
+  const graph = evaluateReadiness(successful(false, false, false));
+  const receipt = currentReceipt();
+  assert.equal(combineReadiness(graph, receipt, context).ok, true);
+  for (const [name, alter] of [
+    ['missing', value => { value.jobs.pop(); }],
+    ['skipped separately', value => { value.skippedJobs = [value.jobs.pop()]; }],
+    ['duplicate', value => { value.jobs.push({ ...value.jobs[1], jobId: 10, checkId: 10 }); }],
+    ['duplicate skipped', value => { value.jobs.push({ ...value.jobs[1], jobId: 10, checkId: 10, conclusion: 'skipped' }); }],
+    ['unfinished', value => { value.jobs[1].status = 'in_progress'; }],
+    ['missing status', value => { delete value.jobs[1].status; }],
+    ['skipped', value => { value.jobs[1].conclusion = 'skipped'; }],
+    ['failed', value => { value.jobs[1].conclusion = 'failure'; }],
+    ['cancelled', value => { value.jobs[1].conclusion = 'cancelled'; }],
+    ['unexpected conclusion', value => { value.jobs[1].conclusion = 'timed_out'; }],
+    ['missing conclusion', value => { delete value.jobs[1].conclusion; }],
+    ['stale', value => { value.jobs[1].startedAt = '2026-11-11T12:14:11Z'; }],
+    ['missing start', value => { delete value.jobs[1].startedAt; }],
+    ['invalid start', value => { value.jobs[1].startedAt = 'invalid'; }],
+    ['unobserved', value => { value.jobs[1].annotationsObserved = false; }],
+    ['different head', value => { value.jobs[1].headSha = 'c'.repeat(40); }],
+  ]) {
+    const changed = structuredClone(receipt);
+    alter(changed);
+    const report = combineReadiness(graph, changed, context);
+    assert.equal(report.ok, false, name);
+    assert.ok(report.errors.some(error => /fresh.*License compliance/.test(error)), name);
+  }
+  const inconsistent = structuredClone(graph);
+  inconsistent.jobs.license.result = 'failure';
+  const report = combineReadiness(inconsistent, receipt, context);
+  assert.equal(report.ok, false, 'needs and receipt disagree');
+  assert.ok(report.errors.some(error => /License compliance/.test(error)));
 });

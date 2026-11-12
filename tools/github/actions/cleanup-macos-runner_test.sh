@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 set -euo pipefail
 
 script_dir=$(dirname -- "${BASH_SOURCE[0]}")

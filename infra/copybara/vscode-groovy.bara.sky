@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Copybara configuration for syncing editors/code/ to vscode-groovy mirror
 #
 # This workflow syncs changes from the gvy monorepo to the standalone
@@ -16,6 +19,18 @@
 # - Keep as-is: release/download URLs (releases are published on gvy)
 # - Keep as-is: CI badge URLs (CI runs on gvy)
 
+def _safe_replace(before, after, paths, regex_groups = {}, multiline = False):
+    """Allow absent legacy text in this one-way export; verify required invariants below."""
+    return core.transform([
+        core.replace(
+            before = before,
+            after = after,
+            paths = paths,
+            regex_groups = regex_groups,
+            multiline = multiline,
+        ),
+    ], reversal = [], noop_behavior = "IGNORE_NOOP")
+
 core.workflow(
     name = "push-to-vscode-groovy",
     
@@ -29,9 +44,9 @@ core.workflow(
         push = "main",
     ),
     
-    # Only sync files from editors/code/
+    # Sync the editor subtree and the license referenced by its REUSE metadata.
     origin_files = glob(
-        include = ["editors/code/**"],
+        include = ["editors/code/**", "LICENSES/Apache-2.0.txt"],
         exclude = [
             # Exclude monorepo-specific tooling
             "editors/code/.gemini/**",
@@ -51,7 +66,7 @@ core.workflow(
         # Remove the monorepo-specific package.json "directory" field together
         # with the comma that precedes it, so the mirrored manifest stays valid
         # JSON ("directory" is the last key of "repository").
-        core.replace(
+        _safe_replace(
             before = '${sep}"directory": "editors/code"',
             after = "",
             regex_groups = {"sep": ",\\s*"},
@@ -60,42 +75,42 @@ core.workflow(
         ),
         
         # Transform repository .git URLs
-        core.replace(
+        _safe_replace(
             before = "https://github.com/albertocavalcante/gvy.git",
             after = "https://github.com/albertocavalcante/vscode-groovy.git",
             paths = glob(["package.json", "README.md", "CONTRIBUTING.md"]),
         ),
         
         # Transform homepage URLs (remove /tree/main/editors/code path)
-        core.replace(
+        _safe_replace(
             before = "https://github.com/albertocavalcante/gvy/tree/main/editors/code",
             after = "https://github.com/albertocavalcante/vscode-groovy",
             paths = glob(["package.json", "README.md"]),
         ),
         
         # Transform issues URLs
-        core.replace(
+        _safe_replace(
             before = "https://github.com/albertocavalcante/gvy/issues",
             after = "https://github.com/albertocavalcante/vscode-groovy/issues",
             paths = glob(["package.json", "README.md", "CONTRIBUTING.md", "client/src/server/client.ts"]),
         ),
         
         # Transform discussions URLs
-        core.replace(
+        _safe_replace(
             before = "https://github.com/albertocavalcante/gvy/discussions",
             after = "https://github.com/albertocavalcante/vscode-groovy/discussions",
             paths = glob(["CONTRIBUTING.md"]),
         ),
         
         # Transform standalone GitHub URLs in markdown links [GitHub](url)
-        core.replace(
+        _safe_replace(
             before = "https://github.com/albertocavalcante/gvy)",
             after = "https://github.com/albertocavalcante/vscode-groovy)",
             paths = glob(["README.md"]),
         ),
         
         # Transform clone directory name in docs
-        core.replace(
+        _safe_replace(
             before = "cd gvy",
             after = "cd vscode-groovy",
             paths = glob(["README.md", "CONTRIBUTING.md"]),

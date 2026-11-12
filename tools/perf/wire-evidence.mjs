@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // Offline inspection only: this module never reads a live stream or replaces SDK framing.
 // Bodies and field values remain original bytes / JSON lexemes, never rounded JS numbers.
 import { types } from 'node:util';

@@ -63,11 +63,10 @@ instructions and claims. Code changes need relevant tests and lint checks; requi
 
 ### License metadata
 
-The standalone license checker is being introduced ahead of repository-wide adoption; it reports existing gaps until
-migration is complete. Bootstrap the pinned uv version with
+Bootstrap the pinned uv version with
 `python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt`, then install the
 locked tools with `uv sync --project .reuse --locked`. Run `make license-check` and `make license-test` offline. The
-equivalent portable check is `uv run --offline --project .reuse --locked python .reuse/check.py --root .`.
+equivalent portable check is `uv run --offline --project .reuse --locked --no-dev python .reuse/check.py --root .`.
 
 When updating uv, update the version and all wheel SHA-256 hashes in `.reuse/bootstrap-requirements.txt` from the
 [uv release metadata](https://pypi.org/pypi/uv/0.13.7/json), then validate the Linux, macOS, and Windows tooling jobs.
@@ -79,6 +78,9 @@ metadata covers non-commentable files and byte-sensitive fixtures, but does not 
 Audit imported material and keep its provenance and license explicit. The checker validates the canonical Apache-2.0
 text and REUSE coverage as well as the leading comments. Do not use bulk annotation on fixtures or scripts without
 checking encodings and byte-sensitive behavior.
+
+See [license metadata and source headers](docs/licensing.md) for file classification, imported material and source
+export requirements. Gradle verification and publication tasks share the same offline check.
 
 ### JVM code
 

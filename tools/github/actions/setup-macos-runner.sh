@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # setup-macos-runner.sh - Setup GitHub Actions self-hosted runner on macOS
 #
 # Auto-mode (default): Uses gh CLI to generate token and installs service

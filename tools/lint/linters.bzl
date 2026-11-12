@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Linter aspect definitions for the Groovy Language Server project."""
 
 load("@aspect_rules_lint//lint:eslint.bzl", "lint_eslint_aspect")

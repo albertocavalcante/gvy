@@ -18,6 +18,8 @@ REQUIRED_LICENSE_PATHS = {"LICENSE", "LICENSES/Apache-2.0.txt", "editors/code/LI
 # Resources include byte-sensitive fixtures and bundled data; their provenance is
 # described by REUSE metadata. Imported code is audited separately there too.
 EXCLUDED_PARTS = {"node_modules", ".venv"}
+# These retain upstream/generated contents; adjacent or scoped metadata covers them.
+METADATA_SOURCE_PATHS = {"gradlew", "third_party/jvm/BUCK"}
 # Exact byte-sensitive source data, not a directory-wide header exemption.
 # The fixture-owning PRs add exact REUSE.toml records with audited holders and
 # licenses. REUSE coverage and tracked-file omission checks still apply.
@@ -56,6 +58,8 @@ SUFFIXES = {
     ".jsx",
     ".rs",
     ".go",
+    ".c",
+    ".h",
     ".css",
     ".bzl",
     ".bazel",
@@ -73,6 +77,7 @@ SUFFIXES = {
     ".pro",
 }
 NAMES = {
+    "Dockerfile",
     "Makefile",
     "Jenkinsfile",
     "BUCK",
@@ -90,7 +95,7 @@ TAG = re.compile(r"^SPDX-(FileCopyrightText|License-Identifier):\s*(.*?)\s*$")
 
 def maintained(path: Path, data: bytes) -> bool:
     """Classify original maintained source; REUSE still covers all other files."""
-    if path.as_posix() in BYTE_SENSITIVE_FIXTURE_PATHS:
+    if path.as_posix() in METADATA_SOURCE_PATHS or path.as_posix() in BYTE_SENSITIVE_FIXTURE_PATHS:
         return False
     if any(part in EXCLUDED_PARTS for part in path.parts):
         return False
@@ -135,6 +140,8 @@ def header_errors(path: Path, data: bytes) -> list[str]:
         or (not path.suffix and data.startswith(b"#!"))
     )
     slash_comments = path.name == "Jenkinsfile" or path.suffix in {
+        ".c",
+        ".h",
         ".kt",
         ".kts",
         ".java",

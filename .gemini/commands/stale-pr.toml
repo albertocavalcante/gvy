@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Review a potentially stale PR and decide whether to close, supersede, or extract valuable content"
 prompt = """
 You are executing a STRICT, DETERMINISTIC workflow for reviewing stale PRs.

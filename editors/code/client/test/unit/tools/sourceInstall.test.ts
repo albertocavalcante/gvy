@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /* eslint-disable @typescript-eslint/no-require-imports -- CommonJS tools are checked separately. */
 import * as assert from "node:assert";
 import * as fs from "node:fs";
