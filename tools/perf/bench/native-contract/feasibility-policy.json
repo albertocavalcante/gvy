@@ -141,16 +141,19 @@
       },
       "probeSourceDigests": {
         "contract.rs": "620cef77bac413791ef4d1a9a4a038352e61ba91e31df1f1ba2733286d842f2e",
-        "primary/src/main.rs": "be67ddf8ae5935d96e70dad87b53641455de0228858567e32e82c5438a28f3ef",
-        "run.mjs": "6ed7fbb702639c2482c40a2d178fea0f690e7fdfee72d3c312c592b648efb652",
-        "command.mjs": "027c470cf9c6dfafd04529c36876a8df4298db98093e8dbd9539867a66a75243",
+        "run.mjs": "97490bf5db44e381ae9efa108019888b3659fe7f478aad70a35245875578cc80",
+        "command.mjs": "5bd6049c9bacb77ac814caa7faeb07c5999c3df173f3fa0dab234a23b97a15a9",
         "diagnostics.mjs": "25493d4ddf89db429548508187b0ed81f3f08a8faaa83adb15d2a3a527b9fafd",
         "source-files.mjs": "70a95a4e7368d425cb93b9d2c0f48735ed8b0ec4ee5468b9f4dcece812a78c50",
         "attempt.mjs": "3bf18e3a602db182c85d3502ee57cfe9152c057beb98cea729a5b58bddc666dd",
         "feasibility-policy.mjs": "4f7ae19413c15276d58baacf771b90fb46a7f1b204b754eb3a56365d56afa389",
         "feasibility.mjs": "47fbd98a78d94f00cc67d31ea0d1824785b86561f6981e4348dc7a6fe05388a5",
+        "primary-result.mjs": "da148a375e67a6521961bd5921401a6b6038bd8f8f5c4c97c5386f081429c476",
+        "probe-sources.mjs": "a84d5cba8bbea22cf6573e633d51f7ae80fb861ff454183b78b98d4d2fa55c68",
         "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
-        "primary-result.mjs": "da148a375e67a6521961bd5921401a6b6038bd8f8f5c4c97c5386f081429c476"
+        "primary/src/main.rs": "be67ddf8ae5935d96e70dad87b53641455de0228858567e32e82c5438a28f3ef",
+        "tools/ci/check-rust-diagnostics.mjs": "224d812e56d8638e1f0bb2b6660ad579c2f5f1b1aa127e641991ad6068e5b9b2",
+        "tools/ci/read-evidence.mjs": "51f70fca27c3f9e5e15f050c318f9d6f24c2d146ff48e73ce1a2185e1489035e"
       }
     },
     "secondary": {
@@ -277,16 +280,19 @@
       },
       "probeSourceDigests": {
         "contract.rs": "620cef77bac413791ef4d1a9a4a038352e61ba91e31df1f1ba2733286d842f2e",
-        "secondary/src/main.rs": "c828b29b7dbc2b3a20726f3377c8caef65342cbe751eb805e6c0ee29a9baa2fd",
-        "run.mjs": "6ed7fbb702639c2482c40a2d178fea0f690e7fdfee72d3c312c592b648efb652",
-        "command.mjs": "027c470cf9c6dfafd04529c36876a8df4298db98093e8dbd9539867a66a75243",
+        "run.mjs": "97490bf5db44e381ae9efa108019888b3659fe7f478aad70a35245875578cc80",
+        "command.mjs": "5bd6049c9bacb77ac814caa7faeb07c5999c3df173f3fa0dab234a23b97a15a9",
         "diagnostics.mjs": "25493d4ddf89db429548508187b0ed81f3f08a8faaa83adb15d2a3a527b9fafd",
         "source-files.mjs": "70a95a4e7368d425cb93b9d2c0f48735ed8b0ec4ee5468b9f4dcece812a78c50",
         "attempt.mjs": "3bf18e3a602db182c85d3502ee57cfe9152c057beb98cea729a5b58bddc666dd",
         "feasibility-policy.mjs": "4f7ae19413c15276d58baacf771b90fb46a7f1b204b754eb3a56365d56afa389",
         "feasibility.mjs": "47fbd98a78d94f00cc67d31ea0d1824785b86561f6981e4348dc7a6fe05388a5",
+        "primary-result.mjs": "da148a375e67a6521961bd5921401a6b6038bd8f8f5c4c97c5386f081429c476",
+        "probe-sources.mjs": "a84d5cba8bbea22cf6573e633d51f7ae80fb861ff454183b78b98d4d2fa55c68",
         "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
-        "primary-result.mjs": "da148a375e67a6521961bd5921401a6b6038bd8f8f5c4c97c5386f081429c476"
+        "secondary/src/main.rs": "c828b29b7dbc2b3a20726f3377c8caef65342cbe751eb805e6c0ee29a9baa2fd",
+        "tools/ci/check-rust-diagnostics.mjs": "224d812e56d8638e1f0bb2b6660ad579c2f5f1b1aa127e641991ad6068e5b9b2",
+        "tools/ci/read-evidence.mjs": "51f70fca27c3f9e5e15f050c318f9d6f24c2d146ff48e73ce1a2185e1489035e"
       }
     }
   },

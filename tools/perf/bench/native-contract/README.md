@@ -39,6 +39,19 @@ diagnostic. A failure category does not certify completed work.
 Predicate failures additionally distinguish a closed expected case from the observed category class and exact/inexact
 span presence. These diagnostics preserve the failing assertion; they do not change its expected range or category.
 
+All Cargo and rustc calls inside the driver opt into the canonical Rust diagnostic classifier from
+`tools/ci/check-rust-diagnostics.mjs`. Original stdout and stderr bytes share the command's output cap. Each nonempty
+channel must be valid UTF-8 with a complete final newline and permitted controls before the canonical classifier checks
+it. Both channels empty cannot certify a clean Rust command. A zero-exit warning/error or invalid capture fails with a
+fixed safe code; no raw diagnostic strings or private-data hashes leave this boundary. The native probe uses its
+separate closed failure-envelope mode; the two diagnostic modes cannot be combined.
+
+Command errors retain their existing priority over diagnostic failures. Safe `rustCapture` fields classify only the
+observed bytes (`clean`, `diagnostics`, `invalid`, or `empty`); `complete` is true only after uninterrupted stream
+closure, normal process exit and observed group disappearance. Timeout, overflow, cancellation, descendants or cleanup
+uncertainty cannot certify complete capture, even if the observed prefix has no warning. Outer CI stages retain their
+own public build logs and use the same canonical classifier. Driver inner streams remain private.
+
 ## Recorded secondary rejection
 
 The pinned stock secondary fails the independent `Max_Value` identifier boundary control. Hosted execution at
@@ -86,6 +99,9 @@ seven completed controls. These checks retain B01's narrow scope; they do not es
 runtime release commits and Cargo lockfile digests. Cargo independently verifies registry package checksums and Git
 revisions. The runner checks registry package release provenance through `.cargo_vcs_info.json` before building. Source
 inventory changes, a modified generated parser, a missing query or a wrong digest fail verification.
+
+The probe source identities additionally bind the canonical Rust classifier and its `read-evidence.mjs` dependency.
+Their read targets come from an explicit fixed map; receipt or policy path strings never select files to read.
 
 `--verify-only` fetches/verifies source metadata without compiling or certifying native execution.
 

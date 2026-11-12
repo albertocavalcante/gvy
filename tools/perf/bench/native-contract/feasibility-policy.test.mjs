@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { sha256 } from './source-files.mjs';
+import { probeSourceFiles } from './probe-sources.mjs';
 import { validateFeasibility } from './feasibility-policy.mjs';
 
 const digest = 'a'.repeat(64);
@@ -113,7 +114,7 @@ test('frozen policy hashes match the reviewed local sources and dependency pins'
   const root = path.dirname(fileURLToPath(import.meta.url));
   const frozen = JSON.parse(fs.readFileSync(path.join(root, 'feasibility-policy.json'), 'utf8'));
   const pins = JSON.parse(fs.readFileSync(path.join(root, 'source-lock.json'), 'utf8'));
-  const sourceNames = ['contract.rs', 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'primary-result.mjs', 'source-lock.json'];
+  const sourceNames = ['contract.rs', 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'primary-result.mjs', 'probe-sources.mjs', 'source-lock.json', 'tools/ci/check-rust-diagnostics.mjs', 'tools/ci/read-evidence.mjs'];
   for (const engine of ['primary', 'secondary']) {
     const value = frozen.identities[engine];
     const pin = pins.engines[engine];
@@ -126,7 +127,10 @@ test('frozen policy hashes match the reviewed local sources and dependency pins'
     assert.equal(value.manifestSha256, sha256(fs.readFileSync(path.join(root, engine, 'Cargo.toml'))));
     for (const name of ['valid', 'malformed']) assert.equal(value.fixtureDigests[name], sha256(fs.readFileSync(path.join(root, 'fixtures', `${name}.groovy`))));
     assert.deepEqual(Object.keys(value.probeSourceDigests).sort(), [...sourceNames, `${engine}/src/main.rs`].sort());
-    for (const [name, digest] of Object.entries(value.probeSourceDigests)) assert.equal(digest, sha256(fs.readFileSync(path.join(root, name))), name);
+    const trustedFiles = probeSourceFiles(engine);
+    assert.deepEqual(Object.keys(trustedFiles).sort(), [...sourceNames, `${engine}/src/main.rs`].sort());
+    // Reads come only from the fixed trusted map, never from receipt/policy path strings.
+    for (const [name, file] of Object.entries(trustedFiles)) assert.equal(value.probeSourceDigests[name], sha256(fs.readFileSync(file)), name);
   }
   for (const name of ['valid', 'malformed']) assert.equal(frozen.nativeExpectations.fixtures[name], fs.readFileSync(path.join(root, 'fixtures', `${name}.groovy`), 'utf8'));
 });
@@ -138,6 +142,13 @@ test('policy CLI rejects missing receipts and private arguments without exposing
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
   assert.equal(result.stderr, 'FEASIBILITY_POLICY_MISMATCH\n');
+});
+
+test('probe source map accepts only fixed engines and canonical dependency targets', () => {
+  for (const engine of ['../private', 'PRIVATE_CANARY_7821', '', null]) assert.throws(() => probeSourceFiles(engine), /ENGINE_INVALID/);
+  const files = probeSourceFiles('primary');
+  assert.equal(files['tools/ci/check-rust-diagnostics.mjs'], fileURLToPath(new URL('../../../ci/check-rust-diagnostics.mjs', import.meta.url)));
+  assert.equal(files['tools/ci/read-evidence.mjs'], fileURLToPath(new URL('../../../ci/read-evidence.mjs', import.meta.url)));
 });
 
 test('policy CLI reads the frozen policy and preserves rejected-candidate labels', t => {

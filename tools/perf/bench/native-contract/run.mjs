@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCommand } from './command.mjs';
 import { verifyNativeRejection } from './attempt.mjs';
+import { probeSourceFiles } from './probe-sources.mjs';
 import { readRegularBytes, sha256, sourcePaths, verifyFiles, verifyFixtureBytes } from './source-files.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -9,9 +10,10 @@ const fail = code => { throw new Error(code); };
 const controller = new AbortController();
 const cancel = () => controller.abort();
 process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
-const command = (executable, args, input, timeoutMs = 300000, nativeProbe = false) => runCommand(executable, args, {
-  cwd: root, timeoutMs, environment: { ...process.env, CARGO_BUILD_JOBS: '1' }, input, signal: controller.signal, nativeProbe,
+const command = (executable, args, options = {}) => runCommand(executable, args, {
+  cwd: root, environment: { ...process.env, CARGO_BUILD_JOBS: '1' }, signal: controller.signal, ...options,
 });
+const rustCommand = (executable, args, timeoutMs = 300000) => command(executable, args, { timeoutMs, rustDiagnostics: true });
 
 try {
   const [engine, ...extra] = process.argv.slice(2);
@@ -24,7 +26,7 @@ try {
   const manifest = path.join(root, engine, 'Cargo.toml');
   const lockBytes = readRegularBytes(path.join(root, engine, 'Cargo.lock'), 128 * 1024);
   if (sha256(lockBytes) !== pin.cargoLockSha256) fail('CARGO_LOCK_MISMATCH');
-  const metadata = JSON.parse(await command('cargo', ['metadata', '--locked', '--format-version', '1', '--manifest-path', manifest], undefined, 90000));
+  const metadata = JSON.parse(await rustCommand('cargo', ['metadata', '--locked', '--format-version', '1', '--manifest-path', manifest], 90000));
   const grammar = metadata.packages.find(candidate => candidate.name === pin.grammarPackage);
   if (!grammar || grammar.source !== `git+${pin.grammarRepository}?rev=${pin.grammarRevision}#${pin.grammarRevision}`) fail('GRAMMAR_IDENTITY_MISMATCH');
   const grammarRoot = path.dirname(grammar.manifest_path);
@@ -51,7 +53,7 @@ try {
     console.log(JSON.stringify({ schemaVersion: 1, scope: 'source-pin-verification-only', engine, files, runtime, queryDigests }));
   } else {
     const fixtureBytes = Object.fromEntries(['valid', 'malformed'].map(name => [name, readRegularBytes(path.join(root, 'fixtures', `${name}.groovy`), 1024)]));
-    try { await command('cargo', ['build', '--release', '--locked', '--manifest-path', manifest]); }
+    try { await rustCommand('cargo', ['build', '--release', '--locked', '--manifest-path', manifest]); }
     catch (error) {
       if (error instanceof Error && error.message === 'NATIVE_COMMAND_FAILED') fail('NATIVE_RELEASE_BUILD_FAILED');
       throw error;
@@ -62,16 +64,16 @@ try {
     const identity = {
       schemaVersion: 1, scope: 'native-feasibility-only', engine,
       grammar: { repository: pin.grammarRepository, revision: pin.grammarRevision, files }, runtime,
-      compiler: (await command('rustc', ['--version'], undefined, 10000)).trim(),
-      cargo: (await command('cargo', ['--version'], undefined, 10000)).trim(),
+      compiler: (await rustCommand('rustc', ['--version'], 10000)).trim(),
+      cargo: (await rustCommand('cargo', ['--version'], 10000)).trim(),
       os: process.platform, arch: process.arch,
       cargoLockSha256: pin.cargoLockSha256, manifestSha256: sha256(readRegularBytes(manifest, 64 * 1024)),
       binarySha256, queryDigests,
       fixtureDigests: Object.fromEntries(Object.entries(fixtureBytes).map(([name, bytes]) => [name, sha256(bytes)])),
-      probeSourceDigests: Object.fromEntries(['contract.rs', `${engine}/src/main.rs`, 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'primary-result.mjs', 'source-lock.json'].map(name => [name, sha256(readRegularBytes(path.join(root, name), 64 * 1024))])),
+      probeSourceDigests: Object.fromEntries(Object.entries(probeSourceFiles(engine)).map(([name, file]) => [name, sha256(readRegularBytes(file, 64 * 1024))])),
     };
     let output;
-    try { output = await command(binary, [], input, 10000, true); }
+    try { output = await command(binary, [], { input, timeoutMs: 10000, nativeProbe: true }); }
     catch (error) {
       if (!attempt || error?.message !== 'NATIVE_PROBE_IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE') throw error;
       const rejection = verifyNativeRejection(error, engine, pin.runtimeVersion, fixtureBytes);

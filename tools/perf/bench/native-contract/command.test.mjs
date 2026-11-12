@@ -50,7 +50,7 @@ test('output overflow and timeout reject rather than return partial success', { 
 
 test('leader exit cannot leave a ready descendant running', { skip: !supported, timeout: 10000 }, async t => {
   const { pidFile, args } = descendantFixture(t, true);
-  await assert.rejects(runCommand(process.execPath, args, { timeoutMs: 5000 }), /NATIVE_COMMAND_DESCENDANTS/);
+  await assert.rejects(runCommand(process.execPath, args, { timeoutMs: 5000, rustDiagnostics: true }), error => error.message === 'NATIVE_COMMAND_DESCENDANTS' && error.rustCapture.complete === false);
   const pid = Number(fs.readFileSync(pidFile, 'utf8'));
   assert.ok(Number.isSafeInteger(pid) && pid > 0);
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
@@ -58,8 +58,8 @@ test('leader exit cannot leave a ready descendant running', { skip: !supported, 
 
 test('timeout terminates a definitely started live descendant', { skip: !supported, timeout: 12000 }, async t => {
   const { pidFile, args } = descendantFixture(t, false);
-  const terminal = runCommand(process.execPath, args, { timeoutMs: 5000 }).then(
-    () => ({ code: 'unexpected-success' }), error => ({ code: error.message }),
+  const terminal = runCommand(process.execPath, args, { timeoutMs: 5000, rustDiagnostics: true }).then(
+    () => ({ code: 'unexpected-success' }), error => ({ code: error.message, capture: error.rustCapture }),
   );
   const readyDeadline = performance.now() + 4000;
   while (!fs.existsSync(pidFile) && performance.now() < readyDeadline) await new Promise(resolve => setTimeout(resolve, 10));
@@ -69,6 +69,7 @@ test('timeout terminates a definitely started live descendant', { skip: !support
   const outcome = await terminal;
   assert.ok(observedLive, 'descendant must be ready and alive before the timeout');
   assert.equal(outcome.code, 'NATIVE_COMMAND_TIMEOUT');
+  assert.equal(outcome.capture.complete, false);
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
 });
 
@@ -81,8 +82,8 @@ test('an already cancelled command never starts', { skip: !supported }, async ()
 test('cancelling an in-flight command terminates its ready descendant', { skip: !supported, timeout: 10000 }, async t => {
   const { pidFile, args } = descendantFixture(t, false);
   const controller = new AbortController();
-  const terminal = runCommand(process.execPath, args, { timeoutMs: 5000, signal: controller.signal }).then(
-    () => ({ code: 'unexpected-success' }), error => ({ code: error.message }),
+  const terminal = runCommand(process.execPath, args, { timeoutMs: 5000, signal: controller.signal, rustDiagnostics: true }).then(
+    () => ({ code: 'unexpected-success' }), error => ({ code: error.message, capture: error.rustCapture }),
   );
   const readyDeadline = performance.now() + 4000;
   while (!fs.existsSync(pidFile) && performance.now() < readyDeadline) await new Promise(resolve => setTimeout(resolve, 10));
@@ -93,5 +94,6 @@ test('cancelling an in-flight command terminates its ready descendant', { skip: 
   const outcome = await terminal;
   assert.ok(observedLive, 'descendant must be ready and alive before cancellation');
   assert.equal(outcome.code, 'NATIVE_COMMAND_ABORTED');
+  assert.equal(outcome.capture.complete, false);
   assert.throws(() => process.kill(pid, 0), { code: 'ESRCH' });
 });
