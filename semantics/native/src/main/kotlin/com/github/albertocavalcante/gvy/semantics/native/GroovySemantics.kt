@@ -15,8 +15,10 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
+import java.lang.ref.WeakReference
 import java.util.Collections.synchronizedMap
 import java.util.WeakHashMap
+import java.util.concurrent.CancellationException
 
 /**
  * Main entry point for semantic analysis of Groovy code.
@@ -36,8 +38,13 @@ class GroovySemantics(
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
     private val workspaceMemberLookup: MemberLookup? = null,
 ) {
-    // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
-    private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
+    private companion object {
+        const val MAX_CONTEXT_BUILD_ATTEMPTS = 3
+    }
+
+    // Weak values break the context -> scope -> module back-reference. A caller owns a context for
+    // the duration of its operation; entries can be rebuilt when nobody holds the previous context.
+    private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, WeakReference<NativeTypeContext>>())
 
     // The workspace version each cached context was built at; guarded by the contextCache lock. Locals typed from
     // other files are baked into a context, so it is rebuilt once the workspace has changed (never served stale).
@@ -51,31 +58,47 @@ class GroovySemantics(
      * After injection, semantic operations are available.
      */
     fun inject(module: ModuleNode) {
-        val workspaceVersion = workspaceMemberLookup?.version ?: 0L
-        synchronized(contextCache) {
-            if (contextCache.containsKey(module) && contextVersions[module] == workspaceVersion) return
-        }
-        // Built outside the lock: typing the locals can take long and must not block other modules' lookups.
-        // Two threads may build the same module; both results are valid for this version.
-        val scope = buildRootScope(module)
-        val context = NativeTypeContext(
-            typeSolver = typeSolver,
-            calculatorRegistry = calculatorRegistry,
-            scope = scope,
-            isStaticCompilation = hasCompileStatic(module),
-            workspaceMemberLookup = workspaceMemberLookup,
-        )
+        acquireContext(module)
+    }
 
-        populateScriptVariables(module, scope, context)
-        populateClassMethodVariables(module, scope, context)
-
-        synchronized(contextCache) {
-            val cachedVersion = contextVersions[module]
-            if (!contextCache.containsKey(module) || cachedVersion == null || cachedVersion <= workspaceVersion) {
-                contextCache[module] = context
-                contextVersions[module] = workspaceVersion
+    private fun acquireContext(module: ModuleNode): NativeTypeContext {
+        repeat(MAX_CONTEXT_BUILD_ATTEMPTS) {
+            if (Thread.currentThread().isInterrupted) throw CancellationException("Semantic context build interrupted")
+            val workspaceVersion = workspaceMemberLookup?.version ?: 0L
+            synchronized(contextCache) {
+                val cached = contextCache[module]?.get()
+                if (cached != null && contextVersions[module] == workspaceVersion) return cached
             }
+            // Build outside the lock; unrelated modules must not wait for local type inference.
+            val scope = buildRootScope(module)
+            val context = NativeTypeContext(
+                typeSolver = typeSolver,
+                calculatorRegistry = calculatorRegistry,
+                scope = scope,
+                isStaticCompilation = hasCompileStatic(module),
+                workspaceMemberLookup = workspaceMemberLookup,
+            )
+            populateScriptVariables(module, scope, context)
+            populateClassMethodVariables(module, scope, context)
+            if (Thread.currentThread().isInterrupted) throw CancellationException("Semantic context build interrupted")
+
+            val published = synchronized(contextCache) {
+                if ((workspaceMemberLookup?.version ?: 0L) != workspaceVersion) {
+                    null
+                } else {
+                    val cached = contextCache[module]?.get()
+                    if (cached != null && contextVersions[module] == workspaceVersion) {
+                        cached
+                    } else {
+                        contextCache[module] = WeakReference(context)
+                        contextVersions[module] = workspaceVersion
+                        context
+                    }
+                }
+            }
+            if (published != null) return published
         }
+        error("Workspace changed repeatedly while building semantic context")
     }
 
     private fun populateScriptVariables(module: ModuleNode, scope: NativeScope, context: NativeTypeContext) {
@@ -130,9 +153,7 @@ class GroovySemantics(
     fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
         currentModule.set(module)
         try {
-            inject(module)
-            val context = contextCache[module]
-                ?: return SemanticType.Unknown("Module not injected")
+            val context = acquireContext(module)
             return calculatorRegistry.calculate(node, context)
         } finally {
             currentModule.remove()
@@ -149,8 +170,10 @@ class GroovySemantics(
     )
     fun resolveType(node: ASTNode): SemanticType {
         try {
-            val context = findContext(node)
+            // Legacy API cannot identify the node's module, so it keeps its original first-module behavior.
+            val module = synchronized(contextCache) { contextCache.keys.firstOrNull() }
                 ?: return SemanticType.Unknown("Node not in injected module")
+            val context = acquireContext(module)
             return calculatorRegistry.calculate(node, context)
         } finally {
             currentModule.remove()
@@ -179,7 +202,7 @@ class GroovySemantics(
             val module = currentModule.get()
                 ?: return TypeInferenceError.InternalError("No module injected").left()
 
-            val context = contextCache[module]
+            val context = contextCache[module]?.get()
                 ?: return TypeInferenceError.InternalError("Module not in context cache").left()
 
             return calculatorRegistry.calculateResult(node, context)
@@ -194,8 +217,8 @@ class GroovySemantics(
     fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult {
         currentModule.set(module)
         try {
-            inject(module)
-            return resolveTypeResult(node)
+            val context = acquireContext(module)
+            return calculatorRegistry.calculateResult(node, context)
         } finally {
             currentModule.remove()
         }
@@ -248,13 +271,6 @@ class GroovySemantics(
         }
     }
 
-    private fun findContext(@Suppress("UNUSED_PARAMETER") node: ASTNode): NativeTypeContext? {
-        // Find which module this node belongs to
-        // TODO: Walk up using parent logic if we had it.
-        // For now, we assume single module injection and return the first one.
-        return contextCache.values.firstOrNull()
-    }
-
     /**
      * Get the type context for a module.
      * Ensures the module is injected first.
@@ -262,8 +278,5 @@ class GroovySemantics(
      * @param module The module to get context for
      * @return The NativeTypeContext, or null if injection failed
      */
-    fun getContext(module: ModuleNode): NativeTypeContext? {
-        inject(module)
-        return contextCache[module]
-    }
+    fun getContext(module: ModuleNode): NativeTypeContext? = acquireContext(module)
 }

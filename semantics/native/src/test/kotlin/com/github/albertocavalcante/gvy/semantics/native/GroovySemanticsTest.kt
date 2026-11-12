@@ -6,8 +6,14 @@ import com.github.albertocavalcante.groovyparser.resolution.declarations.Resolve
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ASTNode
+import org.codehaus.groovy.ast.ClassHelper
 import org.codehaus.groovy.ast.ModuleNode
 import org.codehaus.groovy.ast.expr.ConstantExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
@@ -17,9 +23,18 @@ import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import java.lang.ref.Reference
+import java.lang.ref.WeakReference
 import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class GroovySemanticsTest {
 
@@ -372,83 +387,207 @@ class GroovySemanticsTest {
     }
 
     @Test
-    fun `cache entry is removed when ModuleNode is garbage collected`() {
-        val code = """
-            def x = "hello"
-        """.trimIndent()
-
+    fun `retired module and context are collectible while resolver stays alive`() {
         val semantics = GroovySemantics(stubSolver)
+        val liveModule = parse("def live = 1")
+        val liveContext = checkNotNull(semantics.getContext(liveModule))
+        val (retiredModule, retiredContext) = retiredReferences(semantics)
 
-        // Create and inject a module, then immediately lose the reference
-        var module: ModuleNode? = parse(code)
-        semantics.inject(module!!)
+        awaitCollection(retiredModule)
+        assertEquals(null, retiredModule.get(), "The cache must not retain the retired module")
+        assertEquals(null, retiredContext.get(), "The cache must not retain the retired context")
+        assertEquals(1, cacheSize(semantics), "Only the live module should remain cached")
+        assertTrue(semantics.getContext(liveModule) === liveContext)
+        Reference.reachabilityFence(liveModule)
+        Reference.reachabilityFence(liveContext)
+        Reference.reachabilityFence(semantics)
+    }
 
-        // Verify context exists before GC
-        val contextBefore = semantics.getContext(module)
-        assertTrue(contextBefore != null, "Context should exist after injection")
+    @Test
+    fun `older context build cannot replace a newer collected context`() {
+        val version = AtomicLong(1)
+        val entered = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val first = AtomicBoolean(true)
+        val lookup = object : MemberLookup {
+            override val version: Long get() = version.get()
+            override fun findField(classFqn: String, fieldName: String): MemberInfo? = null
+            override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? = null
+            override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> = emptyList()
+        }
+        val calculator = object : TypeCalculator<DeclarationExpression> {
+            override val nodeType = DeclarationExpression::class
+            override fun calculate(node: DeclarationExpression, context: TypeContext): SemanticType {
+                val observed = version.get()
+                if (first.compareAndSet(true, false)) {
+                    entered.countDown()
+                    check(resume.await(30, TimeUnit.SECONDS))
+                }
+                return SemanticType.Known("version.$observed")
+            }
+        }
+        val registry = TypeCalculatorRegistry.builder().register(calculator).build()
+        val semantics = GroovySemantics(stubSolver, registry, lookup)
+        val module = parse("def x = 1")
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val old = executor.submit<NativeTypeContext> { checkNotNull(semantics.getContext(module)) }
+            assertTrue(entered.await(30, TimeUnit.SECONDS))
+            version.set(2)
+            val newer = checkNotNull(semantics.getContext(module))
+            assertEquals(SemanticType.Known("version.2"), newer.lookupSymbol("x"))
+            val field = GroovySemantics::class.java.getDeclaredField("contextCache")
+            field.isAccessible = true
+            val cache = field.get(semantics) as Map<*, *>
+            (cache[module] as WeakReference<*>).clear()
+            resume.countDown()
+            assertEquals(SemanticType.Known("version.2"), old.get(30, TimeUnit.SECONDS).lookupSymbol("x"))
+            assertEquals(SemanticType.Known("version.2"), semantics.getContext(module)?.lookupSymbol("x"))
+            Reference.reachabilityFence(newer)
+        } finally {
+            resume.countDown()
+            executor.shutdownNow()
+        }
+    }
 
-        // Null the reference and request GC
-        module = null
-        @Suppress("ExplicitGarbageCollectionCall") // Testing WeakHashMap GC behavior
-        System.gc()
-        @Suppress("MagicNumber") // Test timing constant
-        Thread.sleep(100) // Give GC a chance to run
+    @Test
+    fun `continuous workspace changes fail rather than retry forever or return stale types`() {
+        val version = AtomicLong()
+        val lookup = object : MemberLookup {
+            override val version: Long get() = version.get()
+            override fun findField(classFqn: String, fieldName: String): MemberInfo? = null
+            override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? = null
+            override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> = emptyList()
+        }
+        val calculator = object : TypeCalculator<DeclarationExpression> {
+            override val nodeType = DeclarationExpression::class
+            override fun calculate(node: DeclarationExpression, context: TypeContext): SemanticType {
+                version.incrementAndGet()
+                return TypeConstants.INT
+            }
+        }
+        val registry = TypeCalculatorRegistry.builder().register(calculator).build()
+        val semantics = GroovySemantics(stubSolver, registry, lookup)
+        val module = parse("class Holder { def run() { def x = 1 } }")
+        assertThrows(IllegalStateException::class.java) { semantics.getContext(module) }
+        assertEquals(3L, version.get())
+    }
 
-        // NOTE: WeakHashMap cleanup is not guaranteed, but we're testing the mechanism is in place.
-        // The cache should be using WeakHashMap, which allows entries to be collected.
-        // We can't reliably verify the entry was removed without accessing private state,
-        // but we can verify the cache still works for other modules.
+    @Test
+    fun `interrupted context acquisition propagates cancellation`() {
+        val semantics = GroovySemantics(stubSolver)
+        val module = parse("def x = 1")
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val task = executor.submit {
+                Thread.currentThread().interrupt()
+                semantics.getContext(module)
+            }
+            val failure = assertThrows(ExecutionException::class.java) { task.get(30, TimeUnit.SECONDS) }
+            assertTrue(failure.cause is java.util.concurrent.CancellationException)
+        } finally {
+            executor.shutdownNow()
+        }
+    }
 
-        // Create a new module and verify it works independently
-        val newModule = parse(code)
-        val decl = findNode<DeclarationExpression>(newModule)!!
-        val expr = decl.rightExpression as ConstantExpression
-        val type = semantics.resolveType(expr, newModule)
-        assertEquals(TypeConstants.STRING, type, "New module should resolve correctly after GC")
+    @Test
+    fun `deprecated lookup rebuilds a collected context for a live injected module`() {
+        val semantics = GroovySemantics(stubSolver)
+        val module = parse("def x = 'value'")
+        semantics.inject(module)
+        val field = GroovySemantics::class.java.getDeclaredField("contextCache")
+        field.isAccessible = true
+        val cache = field.get(semantics) as Map<*, *>
+        (cache[module] as WeakReference<*>).clear()
+        val expression = findNode<DeclarationExpression>(module)!!.rightExpression
+        @Suppress("DEPRECATION")
+        assertEquals(TypeConstants.STRING, semantics.resolveType(expression))
+        Reference.reachabilityFence(module)
+    }
+
+    @Test
+    fun `retained context owns module and observes live member updates through collection`() {
+        val semantics = GroovySemantics(stubSolver)
+        val (module, context) = retainedContext(semantics)
+        requestCollection()
+        val cls = checkNotNull(module.get()).classes.first { it.name == "Retired" }
+        cls.getField("name").type = ClassHelper.int_TYPE
+        cls.methods.first { it.name == "label" }.returnType = ClassHelper.int_TYPE
+        requestCollection()
+        val receiver = SemanticType.Known("Retired")
+        assertEquals(TypeConstants.INT, context.getFieldType(receiver, "name"))
+        assertEquals(TypeConstants.INT, context.getMethodReturnType(receiver, "label", emptyList()))
+        Reference.reachabilityFence(context)
+        Reference.reachabilityFence(semantics)
+    }
+
+    private fun retainedContext(semantics: GroovySemantics): Pair<WeakReference<ModuleNode>, NativeTypeContext> {
+        val module = parse("class Retired { String name; String label() { name } }")
+        return WeakReference(module) to checkNotNull(semantics.getContext(module))
+    }
+
+    private fun retiredReferences(
+        semantics: GroovySemantics,
+    ): Pair<WeakReference<ModuleNode>, WeakReference<NativeTypeContext>> {
+        val (module, context) = retainedContext(semantics)
+        return module to WeakReference(context)
+    }
+
+    @Suppress("ExplicitGarbageCollectionCall")
+    private fun requestCollection() = System.gc()
+
+    private fun cacheSize(semantics: GroovySemantics): Int {
+        val field = GroovySemantics::class.java.getDeclaredField("contextCache")
+        field.isAccessible = true
+        return (field.get(semantics) as Map<*, *>).size
+    }
+
+    @Suppress("ExplicitGarbageCollectionCall", "MagicNumber")
+    private fun awaitCollection(reference: WeakReference<ModuleNode>) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (reference.get() != null && System.nanoTime() < deadline) {
+            System.gc()
+            Thread.sleep(20)
+        }
     }
 
     @Test
     fun `concurrent access to cache is thread-safe`() {
-        val code1 = """
-            def x = "string"
-        """.trimIndent()
-        val code2 = """
-            def y = 42
-        """.trimIndent()
-
         val semantics = GroovySemantics(stubSolver)
-        val modules = listOf(parse(code1), parse(code2))
-
-        // Use a barrier to synchronize thread start
-        val threads = modules.mapIndexed { index, module ->
-            Thread {
-                // Each thread repeatedly accesses the cache
-                @Suppress("MagicNumber") // Test constant for number of iterations
-                repeat(100) {
-                    semantics.inject(module)
-                    val context = semantics.getContext(module)
-                    assertTrue(
-                        context != null,
-                        "Context should remain available after concurrent inject operations in thread $index",
-                    )
+        val modules = listOf(parse("def x = 'string'"), parse("def y = 42"))
+        runWorkers(
+            modules.map { module ->
+                {
+                    @Suppress("MagicNumber")
+                    repeat(100) {
+                        semantics.inject(module)
+                        assertTrue(semantics.getContext(module) != null)
+                    }
                 }
-            }
-        }
-
-        // Start all threads
-        threads.forEach { it.start() }
-
-        // Wait for all threads to complete
-        threads.forEach { it.join() }
-
-        // Verify both modules still resolve correctly after concurrent access
+            },
+        )
         val decl1 = findNode<DeclarationExpression>(modules[0])!!
-        val type1 = semantics.resolveType(decl1.rightExpression, modules[0])
-        assertEquals(TypeConstants.STRING, type1, "First module should still resolve to String")
-
+        assertEquals(TypeConstants.STRING, semantics.resolveType(decl1.rightExpression, modules[0]))
         val decl2 = findNode<DeclarationExpression>(modules[1])!!
-        val type2 = semantics.resolveType(decl2.rightExpression, modules[1])
-        assertEquals(TypeConstants.INT, type2, "Second module should still resolve to int")
+        assertEquals(TypeConstants.INT, semantics.resolveType(decl2.rightExpression, modules[1]))
+    }
+
+    @Test
+    fun `worker assertion failures reach the test thread`() {
+        val failure = assertThrows(ExecutionException::class.java) {
+            runWorkers(listOf({ assertEquals("expected", "actual") }))
+        }
+        assertTrue(failure.cause is AssertionError)
+    }
+
+    private fun runWorkers(tasks: List<() -> Unit>) {
+        val executor = Executors.newFixedThreadPool(tasks.size)
+        try {
+            val futures = tasks.map { task -> executor.submit { task() } }
+            futures.forEach { it.get(30, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
+        }
     }
 
     @Test

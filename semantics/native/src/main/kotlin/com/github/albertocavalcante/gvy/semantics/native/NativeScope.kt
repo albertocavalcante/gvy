@@ -9,8 +9,8 @@ import org.codehaus.groovy.ast.ModuleNode
  * Scope tracking for variable resolution in native Groovy AST.
  * Supports module-level resolution for field and method lookups.
  *
- * WeakHashMap (used in GroovySemantics) handles weak keys properly even when values
- * contain strong references back to the key. This is by design - see WeakHashMap javadoc.
+ * An externally held scope owns its module. GroovySemantics holds cached contexts weakly,
+ * so its cache does not keep scopes or their modules alive.
  */
 class NativeScope private constructor(
     private val parent: NativeScope?,
