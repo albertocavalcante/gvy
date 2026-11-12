@@ -1,4 +1,9 @@
 import com.diffplug.gradle.spotless.SpotlessTask
+import gvy.gradle.DetektPathConsumer
+import gvy.gradle.GenerateDetektPathConfig
+import gvy.gradle.VerifyDetektPathConfiguration
+import io.gitlab.arturbosch.detekt.Detekt
+import io.gitlab.arturbosch.detekt.DetektCreateBaselineTask
 import org.gradle.api.artifacts.VersionCatalogsExtension
 import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.api.tasks.testing.Test
@@ -21,6 +26,22 @@ plugins {
     application
 }
 
+dependencies {
+    detektPlugins(libs.detekt.formatting)
+}
+
+spotless {
+    kotlin {
+        target("buildSrc/src/**/*.kt")
+        ktlint("1.7.1")
+            .editorConfigOverride(mapOf("max_line_length" to "120", "indent_size" to "4"))
+    }
+    kotlinGradle {
+        target("build.gradle.kts", "buildSrc/*.gradle.kts")
+        ktlint("1.7.1")
+    }
+}
+
 tasks.withType<org.gradle.api.tasks.compile.GroovyCompile>().configureEach {
     // Keep Groovy sources aligned with the Java 17 toolchain
     groovyOptions.encoding = "UTF-8"
@@ -41,9 +62,10 @@ version =
 extra["baseVersion"] = baseVersion
 
 val testJavaVersion = providers.gradleProperty("testJavaVersion").orElse("17").map { JavaLanguageVersion.of(it) }
-val testJavaLauncher = extensions.getByType<JavaToolchainService>().launcherFor {
-    languageVersion.set(testJavaVersion)
-}
+val testJavaLauncher =
+    extensions.getByType<JavaToolchainService>().launcherFor {
+        languageVersion.set(testJavaVersion)
+    }
 
 tasks.named<Test>("test") {
     javaLauncher.set(testJavaLauncher)
@@ -108,28 +130,12 @@ subprojects {
         }
     }
 
-    tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
-        reports {
-            html {
-                required.set(true)
-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.html"))
-            }
-            xml {
-                required.set(true)
-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.xml"))
-            }
-            sarif {
-                required.set(true)
-                outputLocation.set(layout.buildDirectory.file("reports/detekt/detekt.sarif"))
-            }
-        }
-    }
-
-    val generatedKotlin = rootProject.files(
-        rootProject.allprojects.map { owner ->
-            fileTree(owner.layout.buildDirectory) { include("**/*.kt") }
-        },
-    )
+    val generatedKotlin =
+        rootProject.files(
+            rootProject.allprojects.map { owner ->
+                fileTree(owner.layout.buildDirectory) { include("**/*.kt") }
+            },
+        )
     spotless {
         val ktlintVersion = "1.7.1"
         kotlin {
@@ -201,7 +207,6 @@ subprojects {
     tasks.register<io.gitlab.arturbosch.detekt.Detekt>("detektAutoCorrect") {
         description = "Run detekt with auto-correct enabled"
         parallel = true
-        config.setFrom(rootProject.files("tools/lint/detekt.yml"))
         buildUponDefaultConfig = true
         // Same per-module baseline as the `detekt` check; without it lintFix fails on findings
         // that `lint` deliberately tolerates.
@@ -209,12 +214,6 @@ subprojects {
         // Fix exactly what `detekt` checks (its configured source dirs), not all of src/ (e.g. jmh).
         setSource(detekt.source)
         autoCorrect = true
-        reports {
-            // Disable reports for auto-correct run to keep output clean
-            html.required.set(false)
-            xml.required.set(false)
-            sarif.required.set(false)
-        }
     }
 
     tasks.register("lintFix") {
@@ -284,11 +283,88 @@ subprojects {
             // Mirrors JenkinsStubsLocation.CACHE_ROOT_PROPERTY.
             systemProperty(
                 "groovy.lsp.jenkins.stubsCacheRoot",
-                layout.buildDirectory.dir("tmp/jenkins-stubs-cache").get().asFile.absolutePath,
+                layout.buildDirectory
+                    .dir("tmp/jenkins-stubs-cache")
+                    .get()
+                    .asFile.absolutePath,
             )
         }
     }
 }
+
+val detektRepositoryRoots = listOf(rootDir.absolutePath, rootDir.canonicalPath).distinct()
+val detektSourceConfig = layout.projectDirectory.file("tools/lint/detekt.yml")
+
+detekt {
+    config.setFrom(detektSourceConfig)
+    buildUponDefaultConfig = true
+}
+
+allprojects {
+    val consumerTools = objects.fileCollection()
+    val consumerIdentities = objects.mapProperty<String, List<String>>().convention(emptyMap())
+    val pathConfig =
+        tasks.register<GenerateDetektPathConfig>("detektPathConfig") {
+            customConfig.set(detektSourceConfig)
+            repositoryRoots.set(detektRepositoryRoots)
+            outputConfig.set(layout.buildDirectory.file("detekt/config/repository-paths.yml"))
+            toolClasspath.from(consumerTools)
+            consumerClasspaths.set(consumerIdentities)
+        }
+
+    // Kotlin's typed-task factories copy this extension after configuring their task, so keep it anchored too.
+    detekt {
+        config.setFrom(pathConfig.flatMap { it.outputConfig })
+    }
+
+    // Use each consumer's real tool and plugin classpaths, including plugins added by its source-set configuration.
+    tasks.withType<Detekt>().configureEach {
+        val reportName = name
+        val writeReports = reportName != "detektAutoCorrect"
+        reports {
+            html {
+                required.set(writeReports)
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.html"))
+            }
+            xml {
+                required.set(writeReports)
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.xml"))
+            }
+            sarif {
+                required.set(writeReports)
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.sarif"))
+            }
+            txt {
+                if (!writeReports) required.set(false)
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.txt"))
+            }
+            md {
+                if (!writeReports) required.set(false)
+                outputLocation.set(layout.buildDirectory.file("reports/detekt/$reportName.md"))
+            }
+        }
+        val consumerPath = path
+        val tools = detektClasspath + pluginClasspath
+        consumerTools.from(tools)
+        consumerIdentities.put(consumerPath, tools.elements.map { files -> files.map { it.asFile.absolutePath } })
+        config.setFrom(pathConfig.flatMap { it.outputConfig })
+    }
+    tasks.withType<DetektCreateBaselineTask>().configureEach {
+        val consumerPath = path
+        val tools = detektClasspath + pluginClasspath
+        consumerTools.from(tools)
+        consumerIdentities.put(consumerPath, tools.elements.map { files -> files.map { it.asFile.absolutePath } })
+        config.setFrom(pathConfig.flatMap { it.outputConfig })
+    }
+}
+
+val detektBuildLogic =
+    tasks.register<Detekt>("detektBuildLogic") {
+        description = "Check the repository's Kotlin build logic"
+        group = "verification"
+        setSource(fileTree("buildSrc/src") { include("**/*.kt") })
+        buildUponDefaultConfig = true
+    }
 
 sonar {
     properties {
@@ -313,77 +389,142 @@ data class KotlinFormattingTargetCase(
     val targets: FileCollection,
 )
 
-val verifyKotlinFormattingTargets = tasks.register("verifyKotlinFormattingTargets") {
-    description = "Verify Kotlin source layouts are formatted while generated output is excluded"
-    group = "verification"
-    val cases = mapOf(
-        ":build-tool" to listOf(
-            "src/main/kotlin/com/github/albertocavalcante/gvy/build/BuildToolManager.kt",
-            "src/test/kotlin/com/github/albertocavalcante/gvy/build/GradleBuildStrategyTest.kt",
-        ),
-        ":common" to listOf("src/main/kotlin/com/github/albertocavalcante/gvy/common/text/TextIndex.kt"),
-        ":viz:ast-model" to listOf(
-            "src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
-        ),
-        ":parser" to listOf(
-            "native/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParserFacade.kt",
-        ),
-        ":semantics" to listOf(
-            "native/src/main/kotlin/com/github/albertocavalcante/gvy/semantics/native/NativeScope.kt",
-        ),
-        ":viz" to listOf(
-            "ast-model/src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
-        ),
-        ":tests" to listOf(
-            "e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/JsonBridge.kt",
-            "lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt",
-        ),
-    ).flatMap { (path, sources) ->
-        val owner = project(path)
-        val targets = owner.tasks.named<SpotlessTask>("spotlessKotlin").get().target
-        rootProject.allprojects
-            .filter { it.projectDir.toPath().startsWith(owner.projectDir.toPath()) }
-            .map { outputOwner ->
-                KotlinFormattingTargetCase(
-                    "$path -> ${outputOwner.path}",
-                    sources.map { owner.file(it) }.toSet(),
-                    outputOwner.layout.buildDirectory.file("format-target-probe/Generated.kt").get().asFile,
-                    targets,
-                )
+val verifyKotlinFormattingTargets =
+    tasks.register("verifyKotlinFormattingTargets") {
+        description = "Verify Kotlin source layouts are formatted while generated output is excluded"
+        group = "verification"
+        val cases =
+            mapOf(
+                ":build-tool" to
+                    listOf(
+                        "src/main/kotlin/com/github/albertocavalcante/gvy/build/BuildToolManager.kt",
+                        "src/test/kotlin/com/github/albertocavalcante/gvy/build/GradleBuildStrategyTest.kt",
+                    ),
+                ":common" to listOf("src/main/kotlin/com/github/albertocavalcante/gvy/common/text/TextIndex.kt"),
+                ":viz:ast-model" to
+                    listOf(
+                        "src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
+                    ),
+                ":parser" to
+                    listOf(
+                        "native/src/main/kotlin/com/github/albertocavalcante/groovyparser/GroovyParserFacade.kt",
+                    ),
+                ":semantics" to
+                    listOf(
+                        "native/src/main/kotlin/com/github/albertocavalcante/gvy/semantics/native/NativeScope.kt",
+                    ),
+                ":viz" to
+                    listOf(
+                        "ast-model/src/commonMain/kotlin/com/github/albertocavalcante/gvy/viz/model/AstNodeDto.kt",
+                    ),
+                ":tests" to
+                    listOf(
+                        "e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/JsonBridge.kt",
+                        "lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt",
+                    ),
+            ).flatMap { (path, sources) ->
+                val owner = project(path)
+                val targets =
+                    owner.tasks
+                        .named<SpotlessTask>("spotlessKotlin")
+                        .get()
+                        .target
+                rootProject.allprojects
+                    .filter { it.projectDir.toPath().startsWith(owner.projectDir.toPath()) }
+                    .map { outputOwner ->
+                        KotlinFormattingTargetCase(
+                            "$path -> ${outputOwner.path}",
+                            sources.map { owner.file(it) }.toSet(),
+                            outputOwner.layout.buildDirectory
+                                .file("format-target-probe/Generated.kt")
+                                .get()
+                                .asFile,
+                            targets,
+                        )
+                    }
             }
-    }
-    doLast {
-        for (case in cases) {
-            check(case.sources.all { it.isFile }) { "Missing formatter regression source for ${case.name}" }
-            check(!case.generated.exists()) { "Refusing to overwrite formatter probe ${case.generated}" }
-            case.generated.parentFile.mkdirs()
-            try {
-                case.generated.writeText("val generated=1\n")
-                val targets = case.targets.files
-                check(targets.containsAll(case.sources)) { "Formatter excludes tracked sources for ${case.name}" }
-                check(case.generated !in targets) { "Formatter includes generated output for ${case.name}" }
-            } finally {
-                check(case.generated.delete() || !case.generated.exists()) {
-                    "Could not remove formatter probe ${case.generated}"
+        doLast {
+            for (case in cases) {
+                check(case.sources.all { it.isFile }) { "Missing formatter regression source for ${case.name}" }
+                check(!case.generated.exists()) { "Refusing to overwrite formatter probe ${case.generated}" }
+                case.generated.parentFile.mkdirs()
+                try {
+                    case.generated.writeText("val generated=1\n")
+                    val targets = case.targets.files
+                    check(targets.containsAll(case.sources)) { "Formatter excludes tracked sources for ${case.name}" }
+                    check(case.generated !in targets) { "Formatter includes generated output for ${case.name}" }
+                } finally {
+                    check(case.generated.delete() || !case.generated.exists()) {
+                        "Could not remove formatter probe ${case.generated}"
+                    }
+                    case.generated.parentFile.delete()
                 }
-                case.generated.parentFile.delete()
             }
+            logger.lifecycle("Verified Kotlin formatter source and generated-output targets for ${cases.size} layouts")
         }
-        logger.lifecycle("Verified Kotlin formatter source and generated-output targets for ${cases.size} layouts")
     }
-}
+
+val verifyDetektPathConfiguration =
+    tasks.register<VerifyDetektPathConfiguration>("verifyDetektPathConfiguration") {
+        description = "Verify every Detekt consumer uses anchored filters and distinct reports"
+        group = "verification"
+        consumers.set(
+            rootProject.allprojects.flatMap { owner ->
+                val outputDirectory = owner.layout.buildDirectory
+                val expected =
+                    outputDirectory
+                        .file("detekt/config/repository-paths.yml")
+                        .get()
+                        .asFile.absolutePath
+                val analyses = owner.tasks.withType<Detekt>().names
+                val baselines = owner.tasks.withType<DetektCreateBaselineTask>().names
+                val names = analyses + baselines
+                names.map { name ->
+                    when (val consumer = owner.tasks.named(name).get()) {
+                        is Detekt ->
+                            DetektPathConsumer(
+                                consumer.path,
+                                consumer.config.files.map { it.absolutePath },
+                                expected,
+                                consumer.buildUponDefaultConfig,
+                                listOf(
+                                    consumer.htmlReportFile,
+                                    consumer.xmlReportFile,
+                                    consumer.sarifReportFile,
+                                    consumer.txtReportFile,
+                                    consumer.mdReportFile,
+                                ).mapNotNull { it.orNull?.asFile?.absolutePath },
+                            )
+                        is DetektCreateBaselineTask ->
+                            DetektPathConsumer(
+                                consumer.path,
+                                consumer.config.files.map { it.absolutePath },
+                                expected,
+                                consumer.buildUponDefaultConfig.get(),
+                                emptyList(),
+                            )
+                        else -> error("Unexpected Detekt consumer: ${consumer.path}")
+                    }
+                }
+            },
+        )
+    }
 
 tasks.register("lint") {
     description = "Run all linting tasks"
     group = "verification"
     dependsOn(subprojects.map { it.tasks.named("lint") })
     dependsOn(verifyKotlinFormattingTargets)
+    dependsOn(detektBuildLogic)
+    dependsOn("spotlessCheck")
+    dependsOn(verifyDetektPathConfiguration)
 }
 
 tasks.register("lintFix") {
     description = "Fix all auto-correctable lint and formatting issues"
     group = "formatting"
     dependsOn(subprojects.map { it.tasks.named("lintFix") })
+    dependsOn("spotlessApply")
 }
 
 tasks.register("format") {
