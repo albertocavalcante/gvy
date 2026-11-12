@@ -166,7 +166,7 @@ class ScenarioContext internal constructor(
     private fun resolveExpression(expr: String): String = when (val targetNode = resolveNode(expr)) {
         is JsonPrimitive -> targetNode.content // content handles strings, numbers, booleans effectively
         is JsonNull -> "null"
-        else -> json.encodeToString(JsonElement.serializer(), targetNode)
+        else -> json.encodeToString(JsonElement.serializer(), targetNode.withExactNumberLiterals())
     }
 
     private fun resolveNode(expr: String): JsonElement {
