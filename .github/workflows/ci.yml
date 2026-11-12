@@ -172,6 +172,9 @@ jobs:
               - 'reports/**'
               # tests
               - 'tests/**'
+              # Readers shared by tagged-release and nightly artifact verification
+              - 'editors/code/tools/zip.js'
+              - 'editors/code/tools/jar-provenance.js'
               # Root build inputs
               - 'Makefile'
               - 'gradle/**'
