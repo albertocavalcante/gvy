@@ -183,7 +183,7 @@ tasks.test {
         "-XX:+PrintConcurrentLocks", // Show lock info in thread dumps
         "-XX:+UnlockDiagnosticVMOptions", // Enable diagnostic options
         "-XX:+LogVMOutput", // Enable JVM logging
-        "-XX:LogFile=build/test-jvm.log", // Log JVM events to file for post-mortem analysis
+        "-XX:LogFile=build/test-jvm-%p.log", // HotSpot expands %p per process, isolating parallel forks
     )
 
     // TODO: Tier 2 - Enable JVM Flight Recorder for continuous profiling
@@ -245,7 +245,7 @@ tasks.test {
         logger.lifecycle("║ Max parallel forks:  $maxParallelForks")
         logger.lifecycle("║ CPU cores:           ${Runtime.getRuntime().availableProcessors()}")
         logger.lifecycle("║ Max heap:            $maxHeapSize")
-        logger.lifecycle("║ JVM log:             build/test-jvm.log")
+        logger.lifecycle("║ JVM logs:            build/test-jvm-*.log")
         logger.lifecycle("╚════════════════════════════════════════╝")
     }
 
@@ -256,7 +256,7 @@ tasks.test {
 }
 
 // TODO: Tier 3 - Create custom Gradle task to analyze JVM logs for deadlocks
-// This would parse build/test-jvm.log and detect patterns like:
+// This would parse each build/test-jvm-*.log and detect patterns like:
 // - "deadlock" keyword
 // - High number of BLOCKED threads
 // - Circular lock dependencies
@@ -265,11 +265,10 @@ tasks.test {
 //     group = "verification"
 //     description = "Analyze JVM logs and test reports for hangs/deadlocks"
 //     doLast {
-//         val jvmLog = file("build/test-jvm.log")
-//         if (jvmLog.exists()) {
+//         fileTree("build") { include("test-jvm-*.log") }.forEach { jvmLog ->
 //             val content = jvmLog.readText()
 //             if (content.contains("deadlock") || content.contains("BLOCKED")) {
-//                 logger.error("⚠️ POTENTIAL DEADLOCK - Check build/test-jvm.log")
+//                 logger.error("⚠️ POTENTIAL DEADLOCK - Check build/test-jvm-*.log")
 //             }
 //         }
 //     }
