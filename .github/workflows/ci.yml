@@ -187,15 +187,22 @@ jobs:
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
+              --report-root "$gradle_evidence" --producer preparation-terminal-compile \
+              :tests:compileE2eTestKotlin --no-build-cache \
+              --no-daemon --no-parallel --max-workers=1 \
+              '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          git diff --exit-code
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           boundary_script="$GITHUB_WORKSPACE/support/.publication/boundary-controls.sh"
-          printf '%s  %s\n' 'afb92f186866e2a805b98d3b573042e1464de6549c41e0684abf114eaefe922c' "$boundary_script" | sha256sum -c -
+          printf '%s  %s\n' '553cff3a6b813a59dbff244cc0aca3d6b594b63ac269ab77f60f65cc56c700f8' "$boundary_script" | sha256sum -c -
           bash "$boundary_script" "$EXPECTED_TREE" \
               "$GITHUB_WORKSPACE/support/.publication/negative-control.patch" \
               "$GITHUB_WORKSPACE/support/.publication/negative-control-spec.json" \
               "$RUNNER_TEMP/gvy-diagnostics-boundary-red-proof"
           GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
               --report-root "$gradle_evidence" --producer preparation-terminal-native \
-              :gls:test \
+              :gls:test --no-build-cache \
               --tests '*.DiagnosticsRequestHandlerTest' \
               --tests '*.DiagnosticsRequestRegistrationTest' \
               --tests '*.DiagnosticsOrchestratorTest' \
