@@ -120,6 +120,22 @@ class NamedObservationExecutionTest {
     }
 
     @Test
+    fun `shared execution and cleanup throwable keeps both failure origins`() {
+        val shared = IOException("shared transport and cleanup failure")
+        every { factory.start(any(), any()) } throws shared
+        every { WorkspaceFixture.cleanup(workspace) } throws shared
+        val scenario = Scenario(name = "shared failure", steps = listOf(ScenarioStep.Initialized()))
+
+        val outcome = ScenarioExecutor(factory).executeWithOutcome(ScenarioDefinition(scenario))
+
+        val completion = outcome.completion as ScenarioCompletion.Failed
+        assertThat(completion.detail).contains("shared transport and cleanup failure")
+        val cleanup = outcome.cleanup as CleanupOutcome.Failed
+        assertThat(cleanup.detail).contains("shared transport and cleanup failure")
+        assertThat(cleanup.confirmed).isTrue()
+    }
+
+    @Test
     fun `empty plan still reports actual successful cleanup`() {
         val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(emptyList()))
 
