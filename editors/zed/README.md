@@ -2,8 +2,8 @@
 
 This is a provisional, grammar-free development extension for plain `.groovy` files. It launches a locally supplied gvy
 JAR over stdio. The extension ID `groovy-gvy` and server ID `gvy` are provisional. Grammar-free loading, editing
-features, trust behavior and platform support still require testing in Zed; this is not a registry release or a
-feature-support claim.
+features, trust behavior and platform support require explicit validation in each target environment; this is not a
+registry release or a broad feature-support claim.
 
 ## Prepare and install
 
@@ -49,18 +49,38 @@ is scoped to absolute Unix paths; other platforms remain untested.
 it for initialization and workspace configuration; launch settings are never part of that server map. Non-null raw
 `lsp.gvy.initialization_options` is rejected: Zed applies it at initialization but immediately sends the workspace
 configuration, which would replace its values. Put startup and live server configuration in `settings.server`. The
-adapter cannot verify arbitrary host JAR paths from WASM and does not check Java's version at launch. Check the Java
-executable and JAR independently; use Zed's language-server logs for process and JAR startup errors.
+adapter checks the chosen Java executable through the worktree's executable lookup before launch, but cannot guarantee
+it remains available until the process starts. It does not check Java's version or verify arbitrary host JAR paths from
+WASM. Check Java 17 or newer and the JAR independently; use Zed's language-server logs for process and JAR startup
+errors.
 
-## Checks and experiment
+## Build and test in Zed
 
-From this directory, `cargo fmt --check`, `cargo clippy --locked --all-targets
--- -D warnings`, `cargo test --locked`,
-and `cargo build --locked --release
---target wasm32-wasip2` use the pinned Rust toolchain. Limit build concurrency with
-`CARGO_BUILD_JOBS=2` on the shared machine.
+From the repository root, run `make zed-check zed-build`. These use the pinned Rust toolchain to format-check, lint,
+test and build the WASI extension. The build does not install the extension into Zed. Copy the
+[basic fixture](fixtures/README.md) to a scratch project and configure it as described above.
 
-Open a small Groovy project and record the exact Zed, extension, JAR and Java identities. Verify language loading
-without a grammar or legacy extension, then exercise completion, hover, definition and diagnostics after unsaved edits.
-Separately check semantic tokens, outline, folding, incomplete code, Unicode, spaces in paths, invalid Java/JAR,
-restart, worktree trust, and two projects. Record observed failures as well as successes before making support claims.
+Install the dev extension from `editors/zed` using Zed's **Install Dev Extension** action. After changing the extension,
+run the root checks again and use the extension's rebuild action in Zed. Verify server reconnection after rebuilding. If
+needed, save the scratch buffers, close only that project window, then reopen the scratch folder and `Main.groovy`. This
+recovered the server in one Zed 1.28.1 run whose scratch directory was ignored by Git; the restart action on those
+existing buffers alone did not reconnect. Use a scratch project outside the checkout for automatic LSP checks and record
+the behavior in your run. Keep the old Groovy extension disabled for the independent-loading check.
+
+Record Zed version and channel, extension revision and dirty state, SDK/toolchain, JAR source revision and checksum,
+Java version, platform, project trust state, and the exact settings used with private paths redacted. Record the action,
+observed result, logs or screenshots, and whether the buffer was saved for each check. The expectations below are test
+targets, not claims that every environment supports them.
+
+| Check                      | Action and expected result                                                                                                                                                 | Evidence to record                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Loading and trust          | Open the scratch `.groovy` files without the legacy extension. In restricted mode check that the server has not started; trust only the scratch project and check startup. | Selected language and server, trust state, startup log or process observation.                  |
+| Completion                 | In `Main.groovy`, type `greeter.gre` and request completion; expect `greet(String)` and insertion of a usable call.                                                        | Suggestions, inserted text and unsaved state.                                                   |
+| Hover and definition       | Hover over `greet` and navigate to its definition; expect method information and the declaration in `Greeter.groovy`.                                                      | Hover content and destination.                                                                  |
+| Diagnostics                | Introduce an incomplete expression without saving, then repair it; expect diagnostics to change and clear.                                                                 | Edit, diagnostics and buffer state before and after repair.                                     |
+| Highlighting and structure | Inspect semantic highlighting, document symbols and folding with the sample and incomplete edits.                                                                          | Observed tokens, symbols and ranges, including missing or stale results.                        |
+| Lifecycle and isolation    | Rebuild or restart the server, reopen the project if needed, and open a second scratch project. Expect each project to recover and use its own configuration.              | Reconnection steps, server logs and project separation; record failures.                        |
+| Configuration and failures | Exercise the server settings and test invalid Java and JAR paths, paths with spaces, and Unicode identifiers. Expect actionable failures and intact paths.                 | Settings with paths redacted, errors and behavior; distinguish tested cases from untested ones. |
+
+Do not infer trust enforcement, language support or feature completeness from this checklist alone. Record actual
+results and limitations separately. Known Unicode position and semantic-token work is tracked in issues #1190 and #121.
