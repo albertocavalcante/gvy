@@ -1,5 +1,10 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -24,6 +29,103 @@ class GroovySemanticDBTest {
     @BeforeEach
     fun setup() {
         db = GroovySemanticDB()
+    }
+
+    @Test
+    fun `publication detaches nested type arguments and unresolved names from the caller`() {
+        val arguments = mutableListOf<SemanticType>(TypeConstants.STRING)
+        val unresolved = mutableSetOf("first")
+        val symbol =
+            SymbolInfo(
+                "C#value.",
+                SymbolKind.FIELD,
+                Range(0, 0, 0, 1),
+                "value",
+                "C#",
+                SemanticType.Known("List", arguments),
+            )
+        db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(symbol), emptyList(), unresolved))
+        val version = db.version
+        arguments[0] = TypeConstants.INT
+        unresolved.add("later")
+        val stored = checkNotNull(db.getDocument(testUri1))
+        val type = stored.symbols.single().type as SemanticType.Known
+        assertEquals(listOf(TypeConstants.STRING), type.typeArgs)
+        assertEquals(setOf("first"), stored.unresolvedNames)
+        assertEquals(version, db.version)
+        assertThrows<UnsupportedOperationException> { (type.typeArgs as MutableList<SemanticType>).clear() }
+        assertThrows<UnsupportedOperationException> { (stored.unresolvedNames as MutableSet<String>).clear() }
+    }
+
+    @Test
+    fun `shared type graph is copied with bounded visits`() {
+        var visits = 0
+        var type: SemanticType = TypeConstants.STRING
+        repeat(10) {
+            val child = type
+            val args = object : AbstractList<SemanticType>() {
+                override val size: Int get() = 2
+                override fun get(index: Int): SemanticType {
+                    check(++visits <= 100) { "type graph was expanded repeatedly" }
+                    return child
+                }
+            }
+            type = SemanticType.Known("Pair", args)
+        }
+        val symbol = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", type)
+        db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(symbol), emptyList()))
+        assertTrue(visits <= 100)
+    }
+
+    @Test
+    fun `cyclic type is rejected without replacing the previous document`() {
+        val original = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", TypeConstants.INT)
+        db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(original), emptyList()))
+        val version = db.version
+        var visits = 0
+        lateinit var cyclic: SemanticType
+        val args = object : AbstractList<SemanticType>() {
+            override val size: Int get() = 1
+            override fun get(index: Int): SemanticType {
+                check(++visits <= 100) { "cycle was not detected" }
+                return cyclic
+            }
+        }
+        cyclic = SemanticType.Known("Cycle", args)
+        assertThrows<IllegalArgumentException> {
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(original.copy(type = cyclic)), emptyList()))
+        }
+        assertEquals(TypeConstants.INT, db.getDocument(testUri1)!!.symbols.single().type)
+        assertEquals(version, db.version)
+    }
+
+    @Test
+    fun `type depth and expanded size limits reject before changing the database`() {
+        fun document(type: SemanticType): SemanticDocument {
+            val symbol = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", type)
+            return SemanticDocument(testUri1, listOf(symbol), emptyList())
+        }
+        var legitimate: SemanticType = TypeConstants.STRING
+        repeat(127) { legitimate = SemanticType.Array(legitimate) }
+        db.updateDocument(testUri1, document(legitimate))
+        val version = db.version
+        db.updateDocument(testUri1, document(legitimate))
+        assertEquals(version, db.version)
+        var deep = legitimate
+        repeat(1) { deep = SemanticType.Array(deep) }
+        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(deep)) }
+        assertEquals(version, db.version)
+        assertEquals(legitimate, db.getDocument(testUri1)!!.symbols.single().type)
+        val maxSize = SemanticType.Known("Many", List(16383) { TypeConstants.INT })
+        db.updateDocument(testUri1, document(maxSize))
+        val maxVersion = db.version
+        val tooLarge = SemanticType.Known("Many", List(16384) { TypeConstants.INT })
+        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(tooLarge)) }
+        var shared: SemanticType = TypeConstants.INT
+        repeat(14) { shared = SemanticType.Known("Pair", listOf(shared, shared)) }
+        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(shared)) }
+        assertEquals(maxVersion, db.version)
+        assertEquals(maxSize, db.getDocument(testUri1)!!.symbols.single().type)
     }
 
     @Nested

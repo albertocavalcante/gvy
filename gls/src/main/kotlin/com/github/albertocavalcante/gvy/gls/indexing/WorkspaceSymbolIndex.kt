@@ -1,5 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.indexing
 
+import com.github.albertocavalcante.gvy.semantics.db.DeclarationIndexSnapshot
 import com.github.albertocavalcante.gvy.semantics.db.GroovySemanticDB
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationDocument
 import com.github.albertocavalcante.gvy.semantics.db.ImplementationFacts
@@ -14,6 +18,7 @@ import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import java.net.URI
+import java.util.Collections
 
 /**
  * Workspace-wide symbol index that aggregates semantic information from all files.
@@ -32,6 +37,16 @@ class WorkspaceSymbolIndex(
     private val semanticDb: GroovySemanticDB,
     private val shadowed: () -> Set<URI> = { emptySet() },
 ) : MemberLookup {
+
+    /**
+     * Captures a detached member view. [hiddenUris] is copied but is not coordinated with DB publication;
+     * request owners must capture and validate document/workspace identities separately. Capturing copies
+     * the declaration indexes; reuse the result rather than capturing for each member lookup.
+     */
+    fun captureMembers(hiddenUris: Set<URI>): MemberLookup = FrozenWorkspaceMemberLookup(
+        semanticDb.snapshotDeclarations(),
+        Collections.unmodifiableSet(hiddenUris.toSet()),
+    )
 
     /** The definition of [symbolId] in a document not [shadowed]: the database's first one when none is. */
     private fun definition(symbolId: String): Pair<URI, SymbolInfo>? {
@@ -227,14 +242,6 @@ class WorkspaceSymbolIndex(
         return semanticDb.findMembers(classSymbolId).filter { it.first !in hidden }.map { it.second }
     }
 
-    private fun SymbolInfo.toMemberInfo() = MemberInfo(
-        name = name,
-        kind = kind,
-        type = type,
-        signature = if (kind == SymbolKind.METHOD) symbol else null,
-        symbolId = symbol,
-    )
-
     /**
      * Get all members of a class (fields, methods, properties).
      *
@@ -308,59 +315,99 @@ class WorkspaceSymbolIndex(
             symbolId
         }
     }
+}
 
-    /**
-     * Extract parameter count from a method symbol ID.
-     *
-     * Examples:
-     * - "com/example/MyClass#myMethod()." -> 0
-     * - "com/example/MyClass#myMethod(String)." -> 1
-     * - "com/example/MyClass#myMethod(String,int)." -> 2
-     * - "com/example/MyClass#myMethod(Map<String,String>)." -> 1
-     *
-     * @param methodSymbolId The method symbol ID
-     * @return The number of parameters
-     */
-    @Suppress("ReturnCount") // Multiple validation checks require early returns
-    private fun extractParameterCount(methodSymbolId: String): Int {
-        val startIndex = methodSymbolId.indexOf('(')
-        val endIndex = methodSymbolId.indexOf(')')
+private class FrozenWorkspaceMemberLookup(
+    private val snapshot: DeclarationIndexSnapshot,
+    private val hidden: Set<URI>,
+) : MemberLookup {
+    override val version: Long get() = snapshot.version
 
-        if (startIndex < 0 || endIndex < 0 || startIndex >= endIndex) {
-            return 0
-        }
+    private fun definition(id: String): SymbolInfo? =
+        snapshot.findDefinitions(id).firstOrNull { it.first !in hidden }?.second
 
-        val params = methodSymbolId.substring(startIndex + 1, endIndex)
-        if (params.isEmpty()) return 0
-
-        // Split by comma while respecting angle brackets for generics
-        var count = 0
-        var bracketDepth = 0
-        var invalidBrackets = false
-        for (char in params) {
-            when (char) {
-                '<' -> bracketDepth++
-                '>' -> {
-                    bracketDepth--
-                    if (bracketDepth < 0) {
-                        invalidBrackets = true
-                        break
-                    }
-                }
-                ',' -> if (bracketDepth == 0) count++
-            }
-        }
-
-        // If brackets are unbalanced, fall back to a simple comma-based count
-        if (invalidBrackets || bracketDepth != 0) {
-            return params.split(',')
-                .map { it.trim() }
-                .count { it.isNotEmpty() }
-        }
-
-        // Add 1 for the last parameter (no trailing comma)
-        return count + 1
+    private fun directMembers(classFqn: String): List<SymbolInfo> {
+        val owner = "$classFqn#"
+        if (definition(owner) == null) return emptyList()
+        return snapshot.findMembers(owner).filter { it.first !in hidden }.map { it.second }
     }
+
+    override fun findField(classFqn: String, fieldName: String): MemberInfo? =
+        definition("$classFqn#$fieldName.")?.let { field ->
+            MemberInfo(field.name, field.kind, field.type, null, field.symbol)
+        }
+
+    override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? =
+        findMethods(classFqn, methodName, arity).firstOrNull()
+
+    override fun findMethods(classFqn: String, methodName: String, arity: Int?): List<MemberInfo> =
+        directMembers(classFqn).filter { it.kind == SymbolKind.METHOD && it.name == methodName }
+            .filter { arity == null || extractParameterCount(it.symbol) == arity }.map { it.toMemberInfo() }
+
+    override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> = directMembers(classFqn)
+        .filter { it.kind == SymbolKind.FIELD || it.kind == SymbolKind.METHOD || it.kind == SymbolKind.PROPERTY }
+        .map { it.toMemberInfo() }
+}
+
+private fun SymbolInfo.toMemberInfo() = MemberInfo(
+    name = name,
+    kind = kind,
+    type = type,
+    signature = if (kind == SymbolKind.METHOD) symbol else null,
+    symbolId = symbol,
+)
+
+/**
+ * Extract parameter count from a method symbol ID.
+ *
+ * Examples:
+ * - "com/example/MyClass#myMethod()." -> 0
+ * - "com/example/MyClass#myMethod(String)." -> 1
+ * - "com/example/MyClass#myMethod(String,int)." -> 2
+ * - "com/example/MyClass#myMethod(Map<String,String>)." -> 1
+ *
+ * @param methodSymbolId The method symbol ID
+ * @return The number of parameters
+ */
+@Suppress("ReturnCount") // Multiple validation checks require early returns
+private fun extractParameterCount(methodSymbolId: String): Int {
+    val startIndex = methodSymbolId.indexOf('(')
+    val endIndex = methodSymbolId.indexOf(')')
+
+    if (startIndex < 0 || endIndex < 0 || startIndex >= endIndex) {
+        return 0
+    }
+
+    val params = methodSymbolId.substring(startIndex + 1, endIndex)
+    if (params.isEmpty()) return 0
+
+    // Split by comma while respecting angle brackets for generics
+    var count = 0
+    var bracketDepth = 0
+    var invalidBrackets = false
+    for (char in params) {
+        when (char) {
+            '<' -> bracketDepth++
+            '>' -> {
+                bracketDepth--
+                if (bracketDepth < 0) {
+                    invalidBrackets = true
+                    break
+                }
+            }
+            ',' -> if (bracketDepth == 0) count++
+        }
+    }
+
+    // If brackets are unbalanced, fall back to a simple comma-based count
+    if (invalidBrackets || bracketDepth != 0) {
+        return params.split(',')
+            .map { it.trim() }
+            .count { it.isNotEmpty() }
+    }
+
+    // Add 1 for the last parameter (no trailing comma)
+    return count + 1
 }
 
 /**
