@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.groovyparser.resolution.TypeSolver
@@ -8,6 +11,7 @@ import java.io.File
 import java.net.URLClassLoader
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.ConcurrentSkipListSet
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,35 +23,29 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class ClasspathService(
     private val classpathIndex: ClasspathIndex = JvmClasspathIndex(),
-    reflectionProvider: ClasspathReflection? = null,
+    private val reflectionProvider: ClasspathReflection? = null,
 ) {
     private val logger = KotlinLogging.logger {}
 
-    // Start with the system classloader to access JDK and Groovy runtime. Replaced atomically. A replaced loader
-    // stays open for one more update, so reflection already in flight on it can finish, and is then closed:
-    // that releases its jar files; its metaspace is freed by GC once none of its classes are reachable (H2).
-    private val currentClassLoader = AtomicReference<ClassLoader>(ClassLoader.getSystemClassLoader())
+    internal companion object {
+        /** On success takes ownership of [loader] except the system loader; on failure the caller retains it. */
+        fun withInitialLoader(index: ClasspathIndex, loader: ClassLoader): ClasspathService =
+            ClasspathService(index).apply { generations.installInitial(loader) }
+    }
 
-    // Guarded by this: the loader replaced by the latest update, closed by the next one.
-    private var retiredClassLoader: ClassLoader? = null
+    private val generations = ClasspathGenerations()
 
-    // One solver per classpath generation: its cache (unsolved names included) never outlives the loader it
-    // was built for. Callers hold [typeSolverFacade], which always asks the current generation.
-    private val generationSolver = AtomicReference<TypeSolver>(solverFor(ClassLoader.getSystemClassLoader()))
-
-    /** What long-lived resolvers hold: each lookup goes to the solver of the current classpath generation. */
+    /** What long-lived legacy resolvers hold: each lookup uses the current generation. */
     private val typeSolverFacade = object : TypeSolver {
         override var parent: TypeSolver? = null
 
-        override fun tryToSolveType(name: String) = generationSolver.get().tryToSolveType(name)
+        override fun tryToSolveType(name: String) = generations.current().solver.tryToSolveType(name)
 
-        override fun toString(): String = "ClasspathTypeSolver(${generationSolver.get()})"
+        override fun toString(): String = "ClasspathTypeSolver(${generations.current().solver})"
     }
 
-    @Volatile
-    private var classpathEntries: List<String> = emptyList()
     private val reflection: ClasspathReflection =
-        reflectionProvider ?: JvmClasspathReflection { currentClassLoader.get() }
+        reflectionProvider ?: JvmClasspathReflection { generations.current().loader }
 
     // Class index for type parameter completion: SimpleName -> List<FullyQualifiedName>
     private val classIndex = ClassIndex()
@@ -56,51 +54,39 @@ class ClasspathService(
 
     /**
      * Updates the active classloader with the provided paths (JARs or directories).
+     * Callers must not mutate [paths] during this call; the generation owns a detached copy afterward.
      *
      * @param paths List of paths to add to the classpath
      */
     fun updateClasspath(paths: List<Path>) = synchronized(this) { replaceClasspath(paths) }
 
     private fun replaceClasspath(paths: List<Path>) {
-        val next = try {
+        val configured = paths.toList()
+        val loader = try {
             logger.info { "Updating classpath with ${paths.size} paths" }
-            val urls = paths.map { it.toUri().toURL() }.toTypedArray()
-            // System as parent, to inherit the JDK and the GDK classes
-            URLClassLoader(urls, ClassLoader.getSystemClassLoader())
+            URLClassLoader(configured.map { it.toUri().toURL() }.toTypedArray(), ClassLoader.getSystemClassLoader())
         } catch (e: java.net.MalformedURLException) {
-            // Nothing was replaced: the previous classloader and entries stay consistent
             logger.error(e) { "Failed to update classpath" }
             return
         }
-        val previous = currentClassLoader.getAndSet(next)
-        generationSolver.set(solverFor(next))
-        classpathEntries = paths.map { it.toString() }
-
-        // Invalidate index when classpath changes
+        generations.replace(loader, configured)
         isIndexed.set(false)
         classIndex.clear()
         qualifiedNameIndex.clear()
-        retiredClassLoader?.let(::close)
-        retiredClassLoader = previous
     }
 
-    /** Closes the current and retired classloaders (server shutdown); the service falls back to the system loader. */
-    fun close() = synchronized(this) {
-        retiredClassLoader?.let(::close)
-        retiredClassLoader = null
-        close(currentClassLoader.getAndSet(ClassLoader.getSystemClassLoader()))
-        generationSolver.set(solverFor(ClassLoader.getSystemClassLoader()))
+    /**
+     * Pins the current loader and solver until closed. Paths are ordered but file contents and class indexes
+     * are not frozen; request acquisition must validate the corresponding workspace/artifact identity.
+     * A prebuilt custom reflection provider is not known to be generation-bound, so acquisition rejects it.
+     */
+    fun acquireClasspath(): ClasspathLease {
+        check(reflectionProvider == null) { "Cannot lease a classpath with a custom reflection provider" }
+        return generations.acquire()
     }
 
-    private fun close(loader: ClassLoader) {
-        // Never the system loader; classes it already loaded stay usable after close.
-        val closable = loader as? URLClassLoader ?: return
-        try {
-            closable.close()
-        } catch (e: java.io.IOException) {
-            logger.warn(e) { "Failed to close the replaced classpath loader" }
-        }
-    }
+    /** Retires current and grace generations; active leases release their loaders when the last reader closes. */
+    fun close() = synchronized(this) { generations.shutdown() }
 
     /**
      * Indexes all classes from the classpath.
@@ -131,32 +117,8 @@ class ClasspathService(
     }
 
     private fun resolveClasspathEntries(): List<String> {
-        if (classpathEntries.isNotEmpty()) {
-            return classpathEntries
-        }
-
-        val urlEntries = (currentClassLoader.get() as? URLClassLoader)
-            ?.urLs
-            ?.mapNotNull { url ->
-                if (url.protocol != "file") {
-                    return@mapNotNull null
-                }
-                runCatching { Paths.get(url.toURI()).toString() }.getOrNull()
-            }
-            .orEmpty()
-        if (urlEntries.isNotEmpty()) {
-            return urlEntries.distinct()
-        }
-
-        val classpathProperty = System.getProperty("java.class.path").orEmpty()
-        if (classpathProperty.isBlank()) {
-            return emptyList()
-        }
-
-        return classpathProperty
-            .split(File.pathSeparator)
-            .filter { it.isNotBlank() }
-            .distinct()
+        val generation = generations.current()
+        return classpathEntriesFor(generation.loader, generation.paths, System.getProperty("java.class.path").orEmpty())
     }
 
     /**
@@ -239,9 +201,6 @@ class ClasspathService(
      */
     fun getTypeSolver(): TypeSolver = typeSolverFacade
 
-    private fun solverFor(loader: ClassLoader): TypeSolver =
-        CombinedTypeSolver(ReflectionTypeSolver(classLoader = loader, jreOnly = false))
-
     internal class ClassIndex {
         private val index = ConcurrentHashMap<String, MutableSet<String>>()
 
@@ -280,6 +239,121 @@ class ClasspathService(
             index.clear()
         }
     }
+}
+
+/** A request-owned classpath generation. Close once the request no longer uses any of its views. */
+class ClasspathLease internal constructor(
+    val solver: TypeSolver,
+    val reflection: ClasspathReflection,
+    val classpath: List<Path>,
+    internal val classLoader: ClassLoader,
+    private val release: () -> Unit,
+    private val current: () -> Boolean,
+) : AutoCloseable {
+    private val closed = AtomicBoolean(false)
+
+    /** False after close or replacement; file contents are not checked. Do not close concurrently with use. */
+    fun isCurrent(): Boolean = !closed.get() && current()
+
+    override fun close() {
+        if (closed.compareAndSet(false, true)) release()
+    }
+}
+
+/** Publishes one generation atomically and retires its loader only after grace and the last lease. */
+private class ClasspathGenerations {
+    private val logger = KotlinLogging.logger {}
+    private val current = AtomicReference(generation(ClassLoader.getSystemClassLoader(), emptyList()))
+    private var grace: ClasspathGeneration? = null
+
+    fun current(): ClasspathGeneration = current.get()
+
+    fun installInitial(loader: ClassLoader) = synchronized(this) {
+        check(grace == null && current.get().readers == 0)
+        current.set(generation(loader, emptyList()))
+    }
+
+    fun replace(loader: ClassLoader, paths: List<Path>) = synchronized(this) {
+        val next = runCatching { generation(loader, paths) }.getOrElse { failure ->
+            closeLoader(loader)
+            throw failure
+        }
+        val previous = current.getAndSet(next)
+        grace?.let { retire(it, gracePeriod = false) }
+        retire(previous, gracePeriod = true)
+        grace = previous
+    }
+
+    fun acquire(): ClasspathLease = synchronized(this) {
+        val generation = current.get()
+        generation.readers++
+        ClasspathLease(
+            solver = generation.solver,
+            reflection = JvmClasspathReflection { generation.loader },
+            classpath = generation.paths,
+            classLoader = generation.loader,
+            release = { release(generation) },
+            current = { synchronized(this) { current.get() === generation } },
+        )
+    }
+
+    fun shutdown() = synchronized(this) {
+        grace?.let { retire(it, gracePeriod = false) }
+        grace = null
+        val previous = current.getAndSet(generation(ClassLoader.getSystemClassLoader(), emptyList()))
+        retire(previous, gracePeriod = false)
+    }
+
+    private fun release(generation: ClasspathGeneration) = synchronized(this) {
+        check(generation.readers > 0)
+        generation.readers--
+        closeIfRetired(generation)
+    }
+
+    private fun retire(generation: ClasspathGeneration, gracePeriod: Boolean) {
+        generation.retired = true
+        generation.grace = gracePeriod
+        closeIfRetired(generation)
+    }
+
+    private fun closeIfRetired(generation: ClasspathGeneration) {
+        if (!generation.retired || generation.grace) return
+        if (generation.readers != 0 || generation.closed) return
+        generation.closed = true
+        closeLoader(generation.loader)
+    }
+
+    private fun closeLoader(loader: ClassLoader) {
+        if (loader === ClassLoader.getSystemClassLoader()) return
+        val closable = loader as? URLClassLoader ?: return
+        try {
+            closable.close()
+        } catch (e: java.io.IOException) {
+            logger.warn(e) { "Failed to close the replaced classpath loader" }
+        }
+    }
+
+    private fun generation(loader: ClassLoader, paths: List<Path>) = ClasspathGeneration(
+        loader = loader,
+        solver = CombinedTypeSolver(ReflectionTypeSolver(classLoader = loader, jreOnly = false)),
+        paths = Collections.unmodifiableList(paths.toList()),
+    )
+}
+
+private class ClasspathGeneration(val loader: ClassLoader, val solver: TypeSolver, val paths: List<Path>) {
+    var readers: Int = 0
+    var retired: Boolean = false
+    var grace: Boolean = false
+    var closed: Boolean = false
+}
+
+internal fun classpathEntriesFor(loader: ClassLoader, configured: List<Path>, systemClasspath: String): List<String> {
+    if (configured.isNotEmpty()) return configured.map { it.toString() }
+    val urls = (loader as? URLClassLoader)?.urLs?.mapNotNull { url ->
+        if (url.protocol != "file") null else runCatching { Paths.get(url.toURI()).toString() }.getOrNull()
+    }.orEmpty()
+    if (urls.isNotEmpty()) return urls.distinct()
+    return systemClasspath.split(File.pathSeparator).filter { it.isNotBlank() }.distinct()
 }
 
 /**
