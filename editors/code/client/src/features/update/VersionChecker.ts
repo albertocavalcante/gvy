@@ -24,6 +24,11 @@ export interface ReleaseInfo {
   publishedAt: string;
 }
 
+interface ParsedVersion {
+  core: [string, string, string];
+  prerelease: string[];
+}
+
 export class VersionChecker {
   private static readonly PREFERRED_JAR_PLATFORM = "linux-amd64";
 
@@ -36,24 +41,34 @@ export class VersionChecker {
     }
 
     for (let index = 0; index < 3; index += 1) {
-      if (aParts[index] > bParts[index]) return 1;
-      if (aParts[index] < bParts[index]) return -1;
+      const comparison = this.compareIdentifier(
+        aParts.core[index],
+        bParts.core[index],
+      );
+      if (comparison !== 0) return comparison;
     }
 
-    // Semver: a pre-release (0.5.0-rc.1) precedes its release (0.5.0).
-    const aPre = this.preRelease(a);
-    const bPre = this.preRelease(b);
-    if (aPre === bPre) return 0;
-    if (!aPre) return 1;
-    if (!bPre) return -1;
-    return aPre.localeCompare(bPre, "en", { numeric: true });
+    const aPre = aParts.prerelease;
+    const bPre = bParts.prerelease;
+    if (!aPre.length || !bPre.length) {
+      if (aPre.length === bPre.length) return 0;
+      return aPre.length ? -1 : 1;
+    }
+    for (let index = 0; index < Math.min(aPre.length, bPre.length); index++) {
+      const comparison = this.compareIdentifier(aPre[index], bPre[index]);
+      if (comparison !== 0) return comparison;
+    }
+    return aPre.length === bPre.length ? 0 : aPre.length < bPre.length ? -1 : 1;
   }
 
-  private preRelease(version: string): string {
-    const match = /^\d+\.\d+\.\d+-([0-9A-Za-z.-]+)/.exec(
-      this.normalizeVersion(version),
-    );
-    return match ? match[1] : "";
+  private compareIdentifier(a: string, b: string): number {
+    const aNumeric = /^\d+$/.test(a);
+    const bNumeric = /^\d+$/.test(b);
+    if (aNumeric !== bNumeric) return aNumeric ? -1 : 1;
+    // Validated numeric identifiers have no leading zeroes; length avoids Number rounding.
+    if (aNumeric && a.length !== b.length) return a.length < b.length ? -1 : 1;
+    // The grammar limits identifiers to ASCII, so string ordering is the SemVer ordering.
+    return a === b ? 0 : a < b ? -1 : 1;
   }
 
   isValidVersion(version: string): boolean {
@@ -99,18 +114,20 @@ export class VersionChecker {
     return version.startsWith("v") ? version.substring(1) : version;
   }
 
-  private parseVersion(version: string): [number, number, number] | null {
+  private parseVersion(version: string): ParsedVersion | null {
     const normalized = this.normalizeVersion(version);
-    const match = /^(\d+)\.(\d+)\.(\d+)/.exec(normalized);
-    if (!match) {
+    // SemVer 2.0.0 sections 2, 9 and 10; the wrapper also accepts GitHub's v prefix.
+    const match =
+      /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(
+        normalized,
+      );
+    // JavaScript's $ can match before a final newline; require the entire input.
+    if (!match || match[0] !== normalized) {
       return null;
     }
-
-    return [
-      Number.parseInt(match[1], 10),
-      Number.parseInt(match[2], 10),
-      Number.parseInt(match[3], 10),
-    ];
+    const prerelease = match[4]?.split(".") ?? [];
+    if (prerelease.some((identifier) => /^0\d+$/.test(identifier))) return null;
+    return { core: [match[1], match[2], match[3]], prerelease };
   }
 
   private selectJarAsset(assets: GitHubAsset[]): GitHubAsset | null {

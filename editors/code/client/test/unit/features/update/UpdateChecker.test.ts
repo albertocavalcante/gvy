@@ -131,6 +131,38 @@ describe("UpdateChecker", () => {
   });
 
   describe("Version comparison", () => {
+    for (const source of ["network", "cache"] as const) {
+      for (const [current, latest, status] of [
+        ["1.0.0-100", "1.0.0-2a", "update-available"],
+        ["1.0.0-alpha10", "1.0.0-alpha2", "update-available"],
+        ["1.0.0+001", "1.0.0+build.2", "up-to-date"],
+        ["1.0.0-SNAPSHOT", "1.0.0", "update-available"],
+        ["0.5.4-dev+gabc", "0.5.3", "up-to-date"],
+        ["9.0.0garbage", "1.0.0", "unknown"],
+        ["1.0.0", "9.0.0garbage", "unknown"],
+        ["1.0.0", "not-a-version", "unknown"],
+      ] as const) {
+        it(`reports ${status} for ${current} versus ${latest} from ${source}`, async () => {
+          const cache = new VersionCache(createMementoStub());
+          const release = sampleRelease(latest);
+          if (source === "cache") await cache.setCachedRelease(release);
+          const checker = new UpdateChecker(
+            current,
+            cache,
+            createReleaseProviderStub(release),
+            createClockStub(1000000),
+          );
+
+          const result = await checker.checkForUpdate();
+
+          assert.strictEqual(result.status, status);
+          assert.strictEqual(result.source, source);
+          assert.strictEqual(result.currentVersion, current);
+          assert.strictEqual(result.latestRelease?.version, latest);
+        });
+      }
+    }
+
     it('should return "update-available" when current version < latest', async () => {
       const memento = createMementoStub();
       const cache = new VersionCache(memento);
