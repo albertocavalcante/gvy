@@ -80,3 +80,11 @@ notation, alongside the previously tracked archives warning. Build/CI maintainer
 [#1603](https://github.com/albertocavalcante/gvy/issues/1603): reproduce with the native tasks, update compatible plugin
 APIs or versions, and retain native CLI/LSP parity. This limited compatibility exception expires on 2026-12-11 or before
 a Gradle 10 upgrade, whichever comes first. Warnings remain visible; native compiler and lint diagnostics must be fixed.
+
+The observed Native fingerprints are the `KotlinNativeBundleArtifactsTypes` attribute-enum diagnostic at
+`KotlinNativeBundleArtifactFormat.kt:26` and multi-string notation for
+`org.jetbrains.kotlin:kotlin-native-prebuilt:2.3.0:macos-aarch64@tar.gz` at the same file's line 79. Both are attributed
+by Gradle deprecation traces to the pinned plugin's
+[bundle resolver](https://github.com/JetBrains/kotlin/blob/f95cb2f7693a15966fd8fd9b1d78d440545e7b66/libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/targets/native/toolchain/KotlinNativeBundleArtifactFormat.kt).
+These are recorded compatibility exceptions, not a warning allowlist or an assertion that all build diagnostics are
+resolved.
