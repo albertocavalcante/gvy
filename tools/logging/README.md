@@ -1,7 +1,7 @@
 # Logging fixture and pipe baseline
 
 This is L00a: reproducible synthetic inputs and a pipe counter. It does not complete the logging baseline or measure the
-language server. Run from the repository root with Node:
+language server. Run from the repository root with Node 24 or newer:
 
 ```sh
 node --test tools/logging/fixtures.test.mjs

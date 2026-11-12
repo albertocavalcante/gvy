@@ -44,6 +44,12 @@ jobs:
       - name: Self-test make ext-latest helpers
         run: bash tools/ext-latest_test.sh
 
+      - name: Self-test logging baseline tools
+        run: |
+          node --version
+          node -e 'if (Number(process.versions.node.split(".")[0]) < 24) { console.error("Node 24 or newer is required"); process.exit(1); }'
+          node --test tools/logging/fixtures.test.mjs
+
   check-file-size:
     runs-on: ubuntu-latest
     timeout-minutes: 5
