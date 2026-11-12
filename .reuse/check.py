@@ -33,6 +33,7 @@ SUFFIXES = {
     ".cjs",
     ".ts",
     ".tsx",
+    ".jsx",
     ".rs",
     ".go",
     ".css",
@@ -121,6 +122,7 @@ def header_errors(path: Path, data: bytes) -> list[str]:
         ".cjs",
         ".ts",
         ".tsx",
+        ".jsx",
         ".rs",
         ".go",
         ".css",
@@ -271,7 +273,9 @@ def check(root: Path) -> list[str]:
                     path.parts[0] in {".reuse", "LICENSES"}
                     or path.name == "REUSE.toml"
                     or re.fullmatch(r"(?:LICEN[CS]E|COPYING)(?:[-.].*)?", path.name)
-                    or path.name.endswith((".license", ".spdx"))
+                    or path.name.endswith(
+                        (".license", ".spdx", ".spdx.rdf", ".spdx.json", ".spdx.xml", ".spdx.yml", ".spdx.yaml")
+                    )
                     or full_path.is_symlink()
                 ):
                     continue

@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 SPEC = importlib.util.spec_from_file_location("license_check", Path(__file__).parents[1] / "check.py")
 assert SPEC and SPEC.loader
@@ -106,10 +107,36 @@ class IntegrationTests(unittest.TestCase):
 
     def test_tracked_ignored_binary_is_detected(self) -> None:
         subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        (self.root / ".gitignore").write_text("ignored.bin\n")
+        (self.root / ".gitignore").write_text(
+            "# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\nignored.bin\n"
+        )
+        self.assertEqual([], check.check(self.root))
         (self.root / "ignored.bin").write_bytes(b"\x00\x01")
         subprocess.run(["git", "-C", str(self.root), "add", "-f", "ignored.bin"], check=True)
-        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(self.root))
+        self.assertEqual(["REUSE lint failed; run reuse --root . lint for details"], check.check(self.root))
+
+    def test_tracked_report_omission_is_rejected(self) -> None:
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        subprocess.run(["git", "-C", str(self.root), "add", "src/a.py"], check=True)
+        # Simulate a future scanner omission while using a real tracked source.
+        with patch.object(check, "parse_report", return_value=(True, {})):
+            self.assertIn("src/a.py: tracked file omitted by REUSE", check.check(self.root))
+
+    def test_standard_spdx_documents_match_reuse_exemptions(self) -> None:
+        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        names = ["report.spdx" + suffix for suffix in ("", ".rdf", ".json", ".xml", ".yml", ".yaml")]
+        for name in names:
+            (self.root / name).write_text("{}\n")
+        subprocess.run(["git", "-C", str(self.root), "add", *names], check=True)
+        self.assertEqual([], check.check(self.root))
+
+    def test_jsx_metadata_does_not_replace_a_leading_header(self) -> None:
+        source = self.root / "src/view.jsx"
+        source.write_text("export default () => <div />;\n")
+        source.with_suffix(".jsx.license").write_text(
+            "SPDX-FileCopyrightText: Alice\nSPDX-License-Identifier: Apache-2.0\n"
+        )
+        self.assertTrue(any("src/view.jsx: missing" in error for error in check.check(self.root)))
 
     def test_report_shape_is_validated(self) -> None:
         with self.assertRaises((ValueError, TypeError)):
