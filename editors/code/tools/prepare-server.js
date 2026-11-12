@@ -53,34 +53,60 @@ const PINNED_JAR_SHA256 =
   "552558bc588968c3127aa25114a86bb9137fa740572b39e7af44ff732a2802f2";
 
 /**
- * Sanitizes user-controlled strings for safe logging
- * Prevents log injection attacks by removing:
- * - Newlines (\n, \r) - prevents fake log entries
- * - ANSI escape codes - prevents terminal manipulation
- * - Control characters - prevents binary/malicious content
- * @param {string} str - User-controlled string to sanitize
- * @param {number} maxLength - Maximum length before truncation (default: 500)
- * @returns {string} Sanitized string safe for logging
+ * Render a bounded single-line local diagnostic. The limit is in UTF-16 code
+ * units and includes the truncation marker; this is not secret detection.
  */
-function sanitizeForLog(str, maxLength = 500) {
-  if (typeof str !== "string") {
-    return String(str);
+function sanitizeForLog(value, maxLength = 500) {
+  const input = typeof value === "string" ? value : "Unknown error";
+  const limit =
+    Number.isSafeInteger(maxLength) && maxLength >= 0
+      ? Math.min(maxLength, 500)
+      : 500;
+  const marker = "... (truncated)";
+  const scanLimit = 4096;
+  const clip = (text, end) => {
+    let cut = Math.min(text.length, end);
+    if (
+      cut > 0 &&
+      cut < text.length &&
+      /[\uD800-\uDBFF]/.test(text[cut - 1]) &&
+      /[\uDC00-\uDFFF]/.test(text[cut])
+    )
+      cut -= 1;
+    return text.slice(0, cut);
+  };
+  const prefix = clip(input, scanLimit);
+  // eslint-disable-next-line no-control-regex -- strips terminal color sequences
+  const withoutAnsi = prefix.replace(/\x1b\[[0-9;]*m/g, "");
+  // eslint-disable-next-line no-control-regex -- single-record control filtering
+  const clean = withoutAnsi.replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029]/g, "");
+  if (input.length <= scanLimit && clean.length <= limit) return clean;
+  if (limit <= marker.length) return marker.slice(0, limit);
+  return clip(clean, limit - marker.length) + marker;
+}
+
+/** Inspect an own data property without invoking accessors or coercion. */
+function rawErrorMessage(error) {
+  if (
+    (typeof error !== "object" && typeof error !== "function") ||
+    error === null
+  )
+    return null;
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(error, "message");
+    return descriptor &&
+      Object.hasOwn(descriptor, "value") &&
+      typeof descriptor.value === "string"
+      ? descriptor.value
+      : null;
+  } catch {
+    return null;
   }
+}
 
-  // Remove ANSI escape codes (e.g., \x1b[31m for colors)
-  // eslint-disable-next-line no-control-regex -- intentionally strips terminal escapes
-  let sanitized = str.replace(/\x1b\[[0-9;]*m/g, "");
-
-  // Remove all control characters (ASCII 0-31 except tab) including newlines
-  // eslint-disable-next-line no-control-regex -- intentionally strips control bytes
-  sanitized = sanitized.replace(/[\x00-\x08\x0B-\x1F\x7F]/g, "");
-
-  // Truncate if too long
-  if (sanitized.length > maxLength) {
-    sanitized = sanitized.substring(0, maxLength) + "... (truncated)";
-  }
-
-  return sanitized;
+function safeErrorMessage(error) {
+  const message = rawErrorMessage(error);
+  return message === null ? "Unknown error" : sanitizeForLog(message);
 }
 
 function expectValue(argv, index, flag) {
@@ -228,7 +254,9 @@ function findLocalGroovyLspJar() {
       // If it's a direct file path (from env var), check if it exists
       if (searchPath === process.env.GLS_LOCAL_JAR) {
         if (fs.existsSync(searchPath) && searchPath.endsWith(".jar")) {
-          console.log(`Found local JAR via GLS_LOCAL_JAR: ${searchPath}`);
+          console.log(
+            `Found local JAR via GLS_LOCAL_JAR: ${sanitizeForLog(searchPath)}`,
+          );
           return searchPath;
         }
         continue;
@@ -258,7 +286,7 @@ function findLocalGroovyLspJar() {
 
         if (jarFiles.length > 0) {
           const foundJar = path.join(searchPath, jarFiles[0]); // Use first match
-          console.log(`Found local JAR: ${foundJar}`);
+          console.log(`Found local JAR: ${sanitizeForLog(foundJar)}`);
           return foundJar;
         }
       }
@@ -277,9 +305,12 @@ function copyLocalJar(localJarPath, { forceDownload }) {
   try {
     validateJarFile(localJarPath);
   } catch (error) {
-    throw new Error(`Source JAR validation failed: ${error.message}`, {
-      cause: error,
-    });
+    throw new Error(
+      `Source JAR validation failed: ${rawErrorMessage(error) ?? "Unknown error"}`,
+      {
+        cause: error,
+      },
+    );
   }
 
   let shouldCopy = true;
@@ -441,7 +472,7 @@ function writeInstalledVersion(versionTag, source) {
     `${JSON.stringify(record, null, 2)}\n`,
     "utf8",
   );
-  console.log(`Server JAR: ${describeRecord(record)}`);
+  console.log(`Server JAR: ${sanitizeForLog(describeRecord(record))}`);
   if (record.gitSha === "unknown") {
     console.warn(
       `⚠️  ${CANONICAL_JAR_NAME} carries no git provenance (release or pre-provenance build).`,
@@ -547,7 +578,7 @@ async function downloadFromUrl(url, expectedChecksum) {
 
   if (artifact.kind === "browser") {
     console.log("Detected GitHub Actions artifact URL, transforming...");
-    console.log(`API URL: ${downloadUrl}`);
+    console.log(`API URL: ${sanitizeForLog(downloadUrl)}`);
   }
 
   // Resolve auth token (required for GitHub Actions artifact downloads)
@@ -573,7 +604,7 @@ async function downloadFromUrl(url, expectedChecksum) {
   const stagedJar = downloadTempPath();
 
   try {
-    console.log(`Downloading from URL: ${downloadUrl}`);
+    console.log(`Downloading from URL: ${sanitizeForLog(downloadUrl)}`);
     const { contentType } = await downloadToFile(downloadUrl, tempFile, {
       authToken,
     });
@@ -674,7 +705,7 @@ function buildLocalJar() {
   console.log(
     "🔨 Building local JAR via './gradlew :gls:stageEditorServer'...",
   );
-  console.log(`   Working directory: ${monorepoRoot}`);
+  console.log(`   Working directory: ${sanitizeForLog(monorepoRoot)}`);
 
   try {
     execFileSync(
@@ -693,7 +724,7 @@ function buildLocalJar() {
     console.log("✓ Local JAR build completed");
   } catch (error) {
     throw new Error(
-      `Failed to build local JAR: ${error.message || "./gradlew :gls:stageEditorServer failed"}`,
+      `Failed to build local JAR: ${rawErrorMessage(error) || "./gradlew :gls:stageEditorServer failed"}`,
       { cause: error },
     );
   }
@@ -868,7 +899,7 @@ async function prepareServer(runtimeOptions = {}) {
 
       if (stat.isDirectory()) {
         console.log(
-          `Provided path is a directory, searching for JAR files: ${resolvedLocal}`,
+          `Provided path is a directory, searching for JAR files: ${sanitizeForLog(resolvedLocal)}`,
         );
 
         // Search for groovy-lsp JAR in the directory and subdirectories
@@ -958,7 +989,7 @@ async function prepareServer(runtimeOptions = {}) {
           strict: requireFresh(process.env),
           rebuild: effectiveBuildLocal ? buildLocalJar : null,
           findJar: findLocalGroovyLspJar,
-          warn: (message) => console.warn(message),
+          warn: (message) => console.warn(sanitizeForLog(message)),
         });
         copyLocalJar(localJarPath, { forceDownload });
         return;
@@ -1000,7 +1031,9 @@ async function prepareServer(runtimeOptions = {}) {
       }
     }
 
-    console.log(`Requested Groovy LSP selection: ${selectionLabel}`);
+    console.log(
+      `Requested Groovy LSP selection: ${sanitizeForLog(selectionLabel)}`,
+    );
     const target = await resolveTarget(requestedSelection, { authToken });
     target.checksum = requireChecksum(target.checksum, target.assetName);
 
@@ -1013,14 +1046,14 @@ async function prepareServer(runtimeOptions = {}) {
         matchesRelease = true;
       } catch (checksumError) {
         console.warn(
-          `Existing ${CANONICAL_JAR_NAME} does not match ${target.tag}: ${checksumError.message}`,
+          `Existing ${CANONICAL_JAR_NAME} does not match ${sanitizeForLog(target.tag)}: ${safeErrorMessage(checksumError)}`,
         );
         console.warn("Re-downloading Groovy LSP...");
         existingJarRejected = true;
       }
       if (matchesRelease) {
         console.warn(
-          `⚠️  REUSING existing ${CANONICAL_JAR_NAME} for ${target.tag} (checksum matches; no download). (provably the requested release; set FORCE_DOWNLOAD=true to refresh anyway).`,
+          `⚠️  REUSING existing ${CANONICAL_JAR_NAME} for ${sanitizeForLog(target.tag)} (checksum matches; no download). (provably the requested release; set FORCE_DOWNLOAD=true to refresh anyway).`,
         );
         writeInstalledVersion(target.tag, "reused");
         return;
@@ -1040,10 +1073,10 @@ async function prepareServer(runtimeOptions = {}) {
         console.log(`\u2713 Final validation: ${CANONICAL_JAR_NAME} is valid`);
       } catch (error) {
         console.error(
-          `\u274c Final validation failed: ${sanitizeForLog(error.message)}`,
+          `\u274c Final validation failed: ${safeErrorMessage(error)}`,
         );
         throw new Error(
-          `Server JAR validation failed at completion: ${sanitizeForLog(error.message)}`,
+          `Server JAR validation failed at completion: ${safeErrorMessage(error)}`,
           { cause: error },
         );
       }
@@ -1052,7 +1085,7 @@ async function prepareServer(runtimeOptions = {}) {
     }
   } catch (error) {
     console.error("❌ Error preparing Groovy Language Server:");
-    console.error(sanitizeForLog(error.message));
+    console.error(safeErrorMessage(error));
 
     if (existingJarRejected) {
       fs.rmSync(JAR_PATH, { force: true });
@@ -1062,16 +1095,49 @@ async function prepareServer(runtimeOptions = {}) {
       );
     }
 
-    const httpError =
-      error instanceof HttpError
-        ? error
-        : error?.cause instanceof HttpError
-          ? error.cause
+    let httpError = null;
+    try {
+      const cause =
+        error && (typeof error === "object" || typeof error === "function")
+          ? Object.getOwnPropertyDescriptor(error, "cause")
           : null;
-    if (httpError?.isGitHubRateLimit) {
-      const reset = httpError.rateLimit?.reset
-        ? new Date(Number(httpError.rateLimit.reset) * 1000).toISOString()
-        : null;
+      if (error instanceof HttpError) httpError = error;
+      else if (
+        cause &&
+        Object.hasOwn(cause, "value") &&
+        cause.value instanceof HttpError
+      )
+        httpError = cause.value;
+    } catch {
+      // Hostile thrown values must not prevent the original diagnostic.
+    }
+    function ownValue(object, key) {
+      if (
+        (typeof object !== "object" && typeof object !== "function") ||
+        object === null
+      )
+        return undefined;
+      try {
+        const descriptor = Object.getOwnPropertyDescriptor(object, key);
+        return descriptor && Object.hasOwn(descriptor, "value")
+          ? descriptor.value
+          : undefined;
+      } catch {
+        return undefined;
+      }
+    }
+    if (ownValue(httpError, "isGitHubRateLimit") === true) {
+      const rawReset = ownValue(ownValue(httpError, "rateLimit"), "reset");
+      const seconds =
+        typeof rawReset === "number"
+          ? rawReset
+          : typeof rawReset === "string" && /^[0-9]{1,12}$/.test(rawReset)
+            ? Number(rawReset)
+            : NaN;
+      const reset =
+        Number.isFinite(seconds) && seconds > 0 && seconds <= 8640000000000
+          ? new Date(seconds * 1000).toISOString()
+          : null;
       console.error("");
       console.error("GitHub API rate limit exceeded.");
       console.error(
@@ -1084,8 +1150,8 @@ async function prepareServer(runtimeOptions = {}) {
 
     // Provide helpful error messages
     if (
-      error.message.includes("ENOTFOUND") ||
-      error.message.includes("timeout")
+      (rawErrorMessage(error) ?? "").includes("ENOTFOUND") ||
+      (rawErrorMessage(error) ?? "").includes("timeout")
     ) {
       console.error("");
       console.error(
@@ -1113,7 +1179,7 @@ async function prepareServer(runtimeOptions = {}) {
         } catch (fallbackError) {
           console.error(
             "❌ Fallback also failed:",
-            sanitizeForLog(fallbackError.message),
+            safeErrorMessage(fallbackError),
           );
         }
       }
@@ -1142,7 +1208,7 @@ async function prepareServer(runtimeOptions = {}) {
     );
     console.error("");
     console.error("You can also manually copy a JAR file to:");
-    console.error(`  ${JAR_PATH}`);
+    console.error(`  ${sanitizeForLog(JAR_PATH)}`);
 
     const ignoreFailure = process.env.IGNORE_DOWNLOAD_FAILURE === "true";
 
@@ -1174,7 +1240,7 @@ if (require.main === module) {
 
     if (cliOptions.unknown.length > 0) {
       console.warn(
-        `Ignoring unknown options: ${cliOptions.unknown.join(", ")}`,
+        `Ignoring unknown options: ${sanitizeForLog(cliOptions.unknown.join(", "))}`,
       );
     }
 
@@ -1189,7 +1255,10 @@ if (require.main === module) {
   }
 
   run().catch((error) => {
-    console.error("Failed to prepare Groovy Language Server:", error);
+    console.error(
+      "Failed to prepare Groovy Language Server:",
+      safeErrorMessage(error),
+    );
     process.exit(1);
   }); // NOSONAR: top-level await is not available in this CommonJS entrypoint
 }
