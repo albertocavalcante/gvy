@@ -31,6 +31,8 @@ for case in cases:
     if fail:
         typ=fail[0].attrib.get('type')
         if not typ: raise SystemExit('missing type')
+        message = ' '.join(fail[0].itertext()) + ' ' + fail[0].attrib.get('message', '')
+        if 'PackagedLaunchException' not in message or 'to be thrown, but nothing was thrown' not in message: raise SystemExit('unexpected assertion meaning')
         failures.append({'class':name,'name':key,'type':typ})
     errors+=len(err); skipped+=len(skip)
 if len(list(root.iter('failure'))) != len(failures) or len(list(root.iter('error'))) != errors or len(list(root.iter('skipped'))) != skipped: raise SystemExit('outcome outside testcase')
@@ -44,6 +46,5 @@ for (const c of r.classes) {
   const result=JSON.parse(execFileSync('python3',['-c',parser,file,c.name],{encoding:'utf8',maxBuffer:1024*1024,timeout:10000}));
   if(result.count!==c.count) throw Error('suite mismatch'); actual.push(...result.failures);
 }
-const normalize=a=>a.map(x=>JSON.stringify(x)).sort();
-if(JSON.stringify(normalize(actual))!==JSON.stringify(normalize(r.failures))) throw Error('unexpected failure');
+if (actual.length !== r.failures.length || actual.some(a => !r.failures.some(f => f.class === a.class && f.name === a.name && f.types.includes(a.type)))) throw Error('unexpected failure');
 console.log(`${phase} tests validated`);

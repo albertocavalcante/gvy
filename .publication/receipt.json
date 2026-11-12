@@ -1,26 +1,81 @@
 {
-  "base": "7dd46513b7c6efe6688f234505f548b276e3cfda",
-  "green": {
-    "tree": "804e1226101cc9fd2681fd9d6689ae8c3ce28ba6",
+  "base": "4335321c35aecba47d8b7e9201b0e6ba64fd1df7",
+  "red": {
+    "tree": "b3869d4a53592978adff08b088a6afc535d3b770",
     "patch": {
-      "sha256": "b12fd023655f57eba5c11ee1625b94a4186b417119cf8df68ab506c0ed5ffe6f",
-      "compressedSha256": "78ddba00d88ffb65c4c7d2f4274b1977a37a78b163adaab2309f82132846d2e8",
-      "bytes": 98604,
-      "compressedBytes": 17399
+      "sha256": "c9c919cc6b79ed61045bc7e934bf01dc8fb07b196732512d1bf612e00b30d503",
+      "compressedSha256": "6de224ca378d71bc51acb4c7becd90bf249eec5126c24cb56806204617711c7d",
+      "bytes": 7064,
+      "compressedBytes": 1597
     },
     "paths": [
-      "tests/BUILD.bazel",
-      "tests/build.gradle.kts",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSession.kt",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunch.kt",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt"
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt"
     ],
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 32
+        "count": 39
+      },
+      {
+        "name": "PackagedSessionFactoryTest",
+        "count": 26
+      },
+      {
+        "name": "SessionResourcesTest",
+        "count": 3
+      }
+    ],
+    "failures": [
+      {
+        "class": "PackagedLaunchTest",
+        "name": "duplicate attributes in a named manifest section are rejected without logging their name()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ]
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "empty main and repeated named section duplicate are rejected without logging name()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ]
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "duplicate attribute in split same name sections is rejected()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ]
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "folded multibyte entry name detects duplicate across sections()",
+        "types": [
+          "java.lang.AssertionError",
+          "org.opentest4j.AssertionFailedError"
+        ]
+      }
+    ]
+  },
+  "green": {
+    "tree": "0c9a415c7d0cc156b012e6e461c5479d3747e84b",
+    "patch": {
+      "sha256": "5c5e122a3cdb8043a3bec5707faf8481df5e0d1f7d66be765d2749fc1e0b0149",
+      "compressedSha256": "b7b07201c8cc09031efe817a4d70f61bc2f6828777cf2fd7777707bf47d3da1f",
+      "bytes": 3049,
+      "compressedBytes": 1108
+    },
+    "paths": [
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunch.kt",
+      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt"
+    ],
+    "classes": [
+      {
+        "name": "PackagedLaunchTest",
+        "count": 39
       },
       {
         "name": "PackagedSessionFactoryTest",
@@ -35,8 +90,8 @@
   },
   "helpers": {
     "phase": "d8be5aad1666ed2809192cf44b834ea30ea95a4d62d78b596e4039d62bcd3b3e",
-    "results": "9228defcb90c477fda9ac34fc47d795a385833786584a3121a1cfec9437b7424",
-    "worker": "d4772e56ce401a4253db6138ffd1160964fb1c623c578e0e1b67a51db77f105d",
+    "results": "fee05c6f142813afa64cc15a9a664e092a09ca4f2800e69c361fddf68f1a3eae",
+    "worker": "fb817993c41d4c1c2abc259f0d7433ce4d14e7a4857b69ca31fae3614afb312c",
     "capture": "e369b217ddf780fb09744ee23071d4c5818e4fabe4bd137ae8ad2f9dd1ea6b8b",
     "budget": "8fed9039bb2955e2fc2df95f993e50a7e80428113afad4022c1c11f090463ba6",
     "copy": "5d74adc6764c1a0ac0f6e8096471e539ae4192ec68615acf07e8179c63574e00"
