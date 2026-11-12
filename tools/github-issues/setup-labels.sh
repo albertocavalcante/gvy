@@ -141,6 +141,17 @@ setup_labels_for_repo() {
 
     # Validate and parse the desired labels before making any remote changes.
     local desired_labels
+    if ! jq -se '
+        length == 1 and (.[0] | type == "array" and all(.[];
+            if type != "object" then false else
+                ((.name | type) == "string" and (.name | length) > 0) and
+                (if (.color | type) == "string" then (.color | test("^[0-9a-fA-F]{6}$")) else false end) and
+                ((.description | type) == "string")
+            end))
+    ' "${LABELS_FILE}" >/dev/null; then
+        log_error "Labels file must contain one array of valid label objects: ${LABELS_FILE}"
+        return 1
+    fi
     desired_labels=$(jq -c '.[]' "${LABELS_FILE}")
 
     # Delete default labels

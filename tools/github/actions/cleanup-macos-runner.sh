@@ -95,9 +95,13 @@ saved_ifs=${IFS}
 IFS=''
 # Expand the requested glob with splitting disabled so all filename bytes survive.
 # shellcheck disable=SC2206
-RUNNER_DIRS=(${SEARCH_PATTERN})
+RUNNER_CANDIDATES=(${SEARCH_PATTERN})
 IFS=${saved_ifs}
 shopt -u nullglob dotglob
+RUNNER_DIRS=()
+for candidate in "${RUNNER_CANDIDATES[@]}"; do
+    [[ -d "${candidate}" ]] && RUNNER_DIRS+=("${candidate}")
+done
 
 if [[ ${#RUNNER_DIRS[@]} -eq 0 ]]; then
     echo "No runner directories found matching pattern."

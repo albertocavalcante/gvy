@@ -13,8 +13,8 @@ cat >"${test_dir}/bin/gh" <<'STUB'
 : "${LABEL_TEST_LOG:?}"
 case "$1 $2" in
     'auth status' | 'repo view') exit 0 ;;
-    'label list') printf '[]\n'; [ "${LABEL_TEST_FAIL-}" != yes ] ;;
-    'label create') printf '%s\n' "$*" >> "${LABEL_TEST_LOG}" ;;
+    'label list') if [ "${LABEL_TEST_DEFAULTS-}" = yes ]; then printf '[{"name":"duplicate"}]\n'; else printf '[]\n'; fi; [ "${LABEL_TEST_FAIL-}" != yes ] ;;
+    'label create' | 'label edit' | 'label delete') printf '%s\n' "$*" >> "${LABEL_TEST_LOG}" ;;
     *) echo "unexpected gh command" >&2; exit 1 ;;
 esac
 STUB
@@ -41,6 +41,24 @@ if "${BASH}" "${test_dir}/scripts/setup-labels.sh" --groovy-lsp-only >"${test_di
     exit 1
 fi
 [[ ! -e "${LABEL_TEST_LOG}" ]]
+# Invalid records must be rejected before even existing default labels are removed.
+LABEL_TEST_DEFAULTS=yes
+export LABEL_TEST_DEFAULTS
+for invalid in '' 'null' '{}' '[{"name":"one","color":"aaaaaa","description":"first"},42]' \
+    '[{"name":"one","color":"nothex","description":"first"}]' \
+    '[{"name":"one","color":"aaaaaa"}]' '[{"name":null,"color":"aaaaaa","description":"first"}]' \
+    '[] []'; do
+    printf '%s' "${invalid}" >"${test_dir}/scripts/github-labels.json"
+    if "${BASH}" "${test_dir}/scripts/setup-labels.sh" --groovy-lsp-only >"${test_dir}/out" 2>&1; then
+        echo "Invalid label schema unexpectedly succeeded: ${invalid}" >&2
+        exit 1
+    fi
+    [[ ! -e "${LABEL_TEST_LOG}" ]] || {
+        echo 'Invalid input triggered mutation.' >&2
+        exit 1
+    }
+done
+LABEL_TEST_DEFAULTS=no
 printf '%s\n' '[]' >"${test_dir}/scripts/github-labels.json"
 "${BASH}" "${test_dir}/scripts/setup-labels.sh" --groovy-lsp-only >"${test_dir}/out" 2>&1
 [[ ! -e "${LABEL_TEST_LOG}" ]]

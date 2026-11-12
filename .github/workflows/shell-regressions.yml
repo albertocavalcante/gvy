@@ -5,6 +5,7 @@ on:
     paths:
       - '.devcontainer/post-create.sh'
       - '.envrc'
+      - 'tools/ci/envrc_test.sh'
       - '.github/actions/runner-status/runner-status.sh'
       - '.github/actions/runner-status/runner-status_test.sh'
       - '.github/workflows/shell-regressions.yml'
@@ -51,6 +52,7 @@ on:
     paths:
       - '.devcontainer/post-create.sh'
       - '.envrc'
+      - 'tools/ci/envrc_test.sh'
       - '.github/actions/runner-status/runner-status.sh'
       - '.github/actions/runner-status/runner-status_test.sh'
       - '.github/workflows/shell-regressions.yml'
@@ -131,6 +133,7 @@ jobs:
             tools/github-issues/setup-labels_test.sh
             tools/devcontainer/check-updates_test.sh
             tools/github/actions/setup-macos-runner_test.sh
+            tools/ci/envrc_test.sh
             tools/ci/check-conflict-markers_test.sh
             tools/ci/check-large-files_test.sh
             tools/ext-latest_test.sh
