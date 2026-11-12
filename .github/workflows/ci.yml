@@ -42,19 +42,19 @@ jobs:
         run: |
           set -euo pipefail
           payload="$GITHUB_WORKSPACE/support/.publication/candidate.patch.gz"
-          [[ "$(stat -c %s "$payload")" == 103609 ]]
-          printf '%s  %s\n' 168e371a729781d162b4f0921743e0162e2f14927720cd6a983098b6a5bc5304 "$payload" | sha256sum -c -
+          [[ "$(stat -c %s "$payload")" == 103648 ]]
+          printf '%s  %s\n' 9052c3ec0787e2bf9cd5e24cde095575487a01dfebacbe1810c57f05306f3b9e "$payload" | sha256sum -c -
           python3 - "$payload" "$RUNNER_TEMP/candidate.patch" <<'PY'
           import gzip, pathlib, sys
           with gzip.open(sys.argv[1], 'rb') as source:
-              data = source.read(526424)
-          assert len(data) == 526423
+              data = source.read(526606)
+          assert len(data) == 526605
           pathlib.Path(sys.argv[2]).write_bytes(data)
           PY
-          printf '%s  %s\n' d1bd0928db48d3edaec2809eeb92203b84f4d7f528f3846d5d831af4520dd758 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
+          printf '%s  %s\n' f5274b2e5e5539cc3e02fde30d911d85cb55b69f24bef0d823162b5c70ea71b0 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
           git apply --check --index "$RUNNER_TEMP/candidate.patch"
           git apply --index "$RUNNER_TEMP/candidate.patch"
-          [[ "$(git write-tree)" == e3fb83cc5adee3fb91d30a38b80248407ccd7bcf ]]
+          [[ "$(git write-tree)" == 7794c19f77d17c551c9c9f969164e2e70cbb1970 ]]
           git diff --quiet
           git diff --cached --check
       - name: Set up JDK
@@ -118,6 +118,12 @@ jobs:
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/receipt-proof/kotlin-exit.txt"
+          # Preserve the first test outputs before any verifier or RED control can stop/overwrite them.
+          mkdir -p "$RUNNER_TEMP/receipt-proof/original-test-results" "$RUNNER_TEMP/receipt-proof/original-test-reports"
+          for task in harnessTest e2eTest; do
+            if [[ -d "tests/build/test-results/$task" ]]; then cp -R "tests/build/test-results/$task" "$RUNNER_TEMP/receipt-proof/original-test-results/"; fi
+            if [[ -d "tests/build/reports/tests/$task" ]]; then cp -R "tests/build/reports/tests/$task" "$RUNNER_TEMP/receipt-proof/original-test-reports/"; fi
+          done
           python3 "$RUNNER_TEMP/receipt-proof/verify-producer.py" receipt-kotlin 0 > "$RUNNER_TEMP/receipt-proof/kotlin-dir.txt"
           (( status == 0 ))
           grep -Fx '> Task :tests:harnessTest' "$(cat "$RUNNER_TEMP/receipt-proof/kotlin-dir.txt")/raw.log" >/dev/null
@@ -162,12 +168,12 @@ jobs:
           set -euo pipefail
           # The checkout has the reviewed patch staged. This 12-hex tree-derived token is a
           # synthetic test identity, not an artifact source stamp or compiler attestation.
-          [[ "$(git write-tree)" == e3fb83cc5adee3fb91d30a38b80248407ccd7bcf ]]
+          [[ "$(git write-tree)" == 7794c19f77d17c551c9c9f969164e2e70cbb1970 ]]
           git diff --cached --quiet && exit 1
           java_path=$(readlink -f "$(command -v java)")
           java_hash=$(sha256sum "$java_path" | cut -d' ' -f1)
           set +e
-          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=e3fb83cc5ade -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=7794c19f77d1 -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/receipt-proof/prepare-exit.txt"
@@ -179,7 +185,7 @@ jobs:
           import { createHash } from 'node:crypto';
           import { inspectPreparedClasspath } from './tools/perf/prepared-classpath.mjs';
           const bytes = await fs.readFile(process.env.MANIFEST);
-          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: 'e3fb83cc5ade', javaSha256: process.env.JAVA_HASH };
+          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: '7794c19f77d1', javaSha256: process.env.JAVA_HASH };
           if ((await inspectPreparedClasspath(options)).status !== 'verified') throw Error('Gradle/Node classpath hashes differ');
           if ((await inspectPreparedClasspath({ ...options, javaSha256: '0'.repeat(64) })).status !== 'unavailable') throw Error('Java mismatch accepted');
           const entry = JSON.parse(bytes).entries.find(e => e.kind === 'directory' && e.path.startsWith(process.cwd() + '/tests/build/'));
@@ -243,5 +249,7 @@ jobs:
             ${{ runner.temp }}/receipt-proof/gradle/
             ${{ runner.temp }}/receipt-proof/green-xml/
             ${{ runner.temp }}/receipt-proof/red-xml/
+            ${{ runner.temp }}/receipt-proof/original-test-results/
+            ${{ runner.temp }}/receipt-proof/original-test-reports/
           if-no-files-found: error
           retention-days: 7
