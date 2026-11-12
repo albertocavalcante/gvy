@@ -59,8 +59,8 @@ class ScenarioExecutor internal constructor(
     }
 
     /**
-     * Executes named assert checks and returns an immutable report. Other check-bearing steps do not yet accept
-     * named metadata. Operational failures without an established origin are reported as Unclassified; runner
+     * Executes named assert and high-level request checks and returns an immutable report. Other check-bearing steps
+     * do not yet accept named metadata. Operational failures without an established origin are reported as Unclassified; runner
      * integration is responsible for distinguishing transport failures and interpreting known failures.
      * An empty observation plan records no product verification. Unconfirmed cleanup may still be running.
      */
@@ -69,8 +69,10 @@ class ScenarioExecutor internal constructor(
         require(definition.scenario.xfail == null) { "Scenario-level xfail cannot be combined with named outcomes" }
         authored.forEach { (step, check) ->
             require(check.xfail == null || check.id != null) { "A check xfail requires an ID" }
-            require(step is ScenarioStep.Assert || (check.id == null && check.xfail == null)) {
-                "Named checks are currently supported only in assert steps"
+            val supported = step is ScenarioStep.Assert || step is ScenarioStep.Completion ||
+                step is ScenarioStep.CodeAction || step is ScenarioStep.Formatting || step is ScenarioStep.Rename
+            require(supported || (check.id == null && check.xfail == null)) {
+                "Named checks are not supported in ${step::class.simpleName} steps"
             }
             check.id?.let { require(it.isNotBlank()) { "A check ID must not be blank" } }
             check.xfail?.let {
