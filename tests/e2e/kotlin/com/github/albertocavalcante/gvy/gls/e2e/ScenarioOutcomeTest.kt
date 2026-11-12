@@ -96,11 +96,13 @@ class ScenarioOutcomeTest {
     @Test
     fun `scenario completion keeps cancellation and operational failures separate`() {
         val cancelled = ScenarioOutcome(emptyList(), emptyList(), CleanupOutcome.Succeeded, ScenarioCompletion.Cancelled("cancelled"))
-        val failed = ScenarioOutcome(emptyList(), emptyList(), CleanupOutcome.Succeeded, ScenarioCompletion.Failed(ScenarioFailureKind.Transport, "broken"))
+        val failed = ScenarioOutcome(emptyList(), emptyList(), CleanupOutcome.Succeeded, ScenarioCompletion.Failed(ScenarioFailurePhase.Setup, ScenarioFailureKind.Transport, "broken"))
+        val later = ScenarioOutcome(emptyList(), emptyList(), CleanupOutcome.Succeeded, ScenarioCompletion.Failed(ScenarioFailurePhase.Execution, ScenarioFailureKind.Transport, "broken"))
         assertThat(cancelled.isSuccessful).isFalse()
         assertThat(failed.isSuccessful).isFalse()
         assertThat(cancelled.completion).isInstanceOf(ScenarioCompletion.Cancelled::class.java)
-        assertThat(failed.completion).isEqualTo(ScenarioCompletion.Failed(ScenarioFailureKind.Transport, "broken"))
+        assertThat(failed.completion).isNotEqualTo(later.completion)
+        assertThat(failed.completion).isEqualTo(ScenarioCompletion.Failed(ScenarioFailurePhase.Setup, ScenarioFailureKind.Transport, "broken"))
     }
 
     @Test
