@@ -7,12 +7,12 @@ Status: gvy-owned migrations complete; replacement readiness work is active, whi
 
 ## Goal and boundary
 
-Use kotlinx.serialization for gvy-owned JSON models and resource/configuration handling. Confine Gson to explicit
-LSP4J/BSP4J integration and protocol-test adapters while those dependencies remain.
+Use kotlinx.serialization for gvy-owned JSON models and resource/configuration handling. Retain Gson only where an
+identified dependency or explicit integration requires it, and verify every runtime route before claiming its removal.
 
-The current language-server launcher and BSP connector both use LSP4J JSON-RPC, which requires Gson. Migrating gvy's own
-codecs does not remove Gson from the shipped dependency graph. Do not exclude its runtime artifact to make a dependency
-report appear clean.
+The current language-server launcher and BSP connector use LSP4J JSON-RPC, which requires Gson. Maven resolution has a
+separate Gson dependency as described below. Migrating gvy-owned codecs does not establish Gson removal from the shipped
+dependency graph. Do not exclude a required runtime artifact to make a dependency report appear clean.
 
 Jenkins metadata, SARIF, AST models and BSP connection descriptors already use kotlinx.serialization. The remaining
 production Gson use at the start of this work is the Gradle/JDK resource reader, initialization/settings conversion, and
@@ -54,6 +54,38 @@ The production import inventory is now confined to two files in the server's `tr
 | `StatusNotificationAdapter.kt`                            | Registers the pure kotlinx status/error codec with LSP4J's Gson launcher.                                                                                                                  | Replace LSP4J's launcher and remove this temporary registration.                  |
 | BSP4J/LSP4J JSON-RPC runtime                              | Both protocol integrations still require Gson transitively.                                                                                                                                | Validate a replacement BSP integration as well as the language-server migration.  |
 | Protocol-test bridges and malformed LSP4J-object fixtures | Typed Java LSP objects and raw dynamic JSON still cross the current SDK boundary. Numeric fidelity and raw-parameter handling remain deliberate protocol behavior.                         | Migrate the corresponding SDK/test-client path and preserve its wire regressions. |
+
+### Maven resolution and build tooling
+
+The following is a source-declared dependency inventory at gvy commit
+[`cac97c2`](https://github.com/albertocavalcante/gvy/tree/cac97c2b7892b62cae742a374c083a6e694179ab), not a resolved
+Gradle or Bazel graph or a shipped-archive inspection. Multiple independent paths can retain Gson:
+
+| Source or POM boundary                                       | Evidence and scope                                                                                                                                                                                  |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConfigurationPayload.kt` and `StatusNotificationAdapter.kt` | The two gvy production import bridges above serve LSP4J; LSP4J/BSP4J runtime and test bridges remain separate migration gates.                                                                      |
+| `build-tool` and `bsp/maven-bsp`                             | The [build-tool supplier][supplier] and [BSP launcher][launcher] use Resolver 1.9.27 HTTP; its [POM][http-pom] declares Gson, used in [problem-response parsing][parser].                           |
+| ProGuard                                                     | [ProGuard Gradle][proguard] depends on [base][proguard-base], which [declares Gson][proguard-gson]. This build-time route does not prove it is packaged; verify the selected tool graph separately. |
+
+[supplier]: https://github.com/albertocavalcante/gvy/blob/cac97c2b7892b62cae742a374c083a6e694179ab/build-tool/src/main/kotlin/com/github/albertocavalcante/gvy/build/maven/AetherSessionFactory.kt
+[launcher]: https://github.com/albertocavalcante/gvy/blob/cac97c2b7892b62cae742a374c083a6e694179ab/bsp/maven-bsp/src/main/kotlin/com/github/groovylsp/bsp/maven/launcher/MavenBspLauncher.kt
+[http-pom]: https://github.com/apache/maven-resolver/blob/maven-resolver-1.9.27/maven-resolver-transport-http/pom.xml
+[parser]: https://github.com/apache/maven-resolver/blob/maven-resolver-1.9.27/maven-resolver-transport-http/src/main/java/org/eclipse/aether/transport/http/RFC9457/RFC9457Parser.java
+[proguard]: https://github.com/albertocavalcante/gvy/blob/cac97c2b7892b62cae742a374c083a6e694179ab/gradle/libs.versions.toml
+[proguard-base]: https://github.com/Guardsquare/proguard/blob/v7.8.2/gradle-plugin/build.gradle
+[proguard-gson]: https://github.com/Guardsquare/proguard/blob/v7.8.2/base/build.gradle
+
+Resolver 2's JDK transport is not automatically Gson-free: its
+[transport POM](https://github.com/apache/maven-resolver/blob/maven-resolver-2.0.25/maven-resolver-transport-jdk-parent/maven-resolver-transport-jdk/pom.xml)
+depends on SPI, whose
+[POM](https://github.com/apache/maven-resolver/blob/maven-resolver-2.0.25/maven-resolver-spi/pom.xml) declares Gson.
+Excluding Gson would leave a real error-handling dependency unresolved. The gvy build-tool and Maven BSP maintainers,
+coordinating with the architecture owner, should first characterize both bootstraps and the selected Gradle/Bazel and
+packaged runtime graphs; evaluate a coherent transport or Resolver migration only if its behavior and dependency closure
+justify it. Acceptance requires a clean Java 17 consumer, aligned Maven/Resolver modules, and tests preserving existing
+resolution results, error handling and session lifecycle, including relevant HTTP timeout, checksum, range and
+credential/proxy behavior against the measured baseline. The present settings reader's local-repository handling is not
+proof of full Maven authentication or proxy support. Keep this work distinct from the conditional LSP4J replacement.
 
 The `gls` Bazel Gson dependency remains necessary for its retained adapters. The shared Buck2 third-party Gson
 declaration remains alongside the LSP4J inventory. Buck2 currently has no gvy application target; this batch does not
