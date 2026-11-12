@@ -42,6 +42,21 @@ class LexicalScopeTest {
     }
 
     @Test
+    fun `adding and reordering an unrelated class preserves existing bindings`() {
+        val target = "class Target { def read(Integer x) { def probe = x } }"
+        val unrelated = "class Other { def read(String x) { def probe = x } }"
+        val variants = listOf(target, "$target\n$unrelated", "$unrelated\n$target")
+        val inferred = variants.map { code ->
+            val module = parse(code)
+            val method = module.classes.first { it.name == "Target" }.methods.first { it.name == "read" }
+            val body = method.code as BlockStatement
+            val probe = (body.statements.first() as ExpressionStatement).expression as DeclarationExpression
+            GroovySemantics(solver).resolveType(probe.rightExpression, module)
+        }
+        assertEquals(List(variants.size) { SemanticType.Known("java.lang.Integer") }, inferred)
+    }
+
+    @Test
     fun `same name inferred locals remain distinct across methods`() {
         val module =
             parse("class Sample { def a() { def x = 42; def probe = x }; def b() { def x = 's'; def probe = x } }")
