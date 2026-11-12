@@ -69,6 +69,10 @@ while [[ $# -gt 0 ]]; do
     print_usage
     exit 0
     ;;
+  -*)
+    log_error "Unknown option: $1"
+    exit 1
+    ;;
   *)
     ARGS+=("$1")
     shift
@@ -78,7 +82,12 @@ done
 
 # Restore positional arguments
 set -- "${ARGS[@]}"
-COMMAND="${1:-}"
+if [[ $# -ne 1 ]]; then
+  log_error "Expected exactly one command"
+  print_usage
+  exit 1
+fi
+COMMAND="$1"
 
 check_version() {
   if [[ -z "${VERSION}" ]]; then

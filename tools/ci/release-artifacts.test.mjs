@@ -254,6 +254,35 @@ test('malformed versions fail before touching existing artifacts', t => {
   assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
 });
 
+for (const extra of [['--dryrun'], ['--unknown-option'], ['extra', 'arguments']]) {
+  test(`unsupported build arguments ${extra.join(' ')} fail before changing artifacts or invoking tools`, t => {
+    const f = fixture(t);
+    const dist = join(f.root, 'dist');
+    mkdirSync(dist);
+    writeFileSync(join(dist, 'previous-artifact'), 'previous verified artifact');
+    writeFileSync(join(dist, 'checksums.txt'), 'previous verified manifest\n');
+    writeFileSync(join(f.root, 'bin/git'), '#!/bin/bash\ntouch git-called\nprintf "%s\\n" "$FIXTURE_COMMIT"\n', { mode: 0o755 });
+    writeFileSync(join(f.root, 'gradlew'), '#!/bin/bash\ntouch build-started\nexit 37\n', { mode: 0o755 });
+    const result = f.run(...extra);
+    assert.equal(existsSync(join(dist, 'previous-artifact')), true, result.stdout + result.stderr);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, /Unknown option|Expected exactly one command/);
+    assert.equal(readFileSync(join(dist, 'previous-artifact'), 'utf8'), 'previous verified artifact');
+    assert.equal(readFileSync(join(dist, 'checksums.txt'), 'utf8'), 'previous verified manifest\n');
+    assert.equal(existsSync(join(f.root, 'git-called')), false);
+    assert.equal(existsSync(join(f.root, 'build-started')), false);
+    assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  });
+}
+
+test('recognized global options can precede the build command', t => {
+  const f = fixture(t);
+  const result = f.command('bash', ['tools/release.sh', '--dry-run', '--version', 'v0.5.4', 'build']);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(existsSync(join(f.root, 'dist')), false);
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+});
+
 for (const mode of ['', 'package-failure']) {
   test(`package.json permissions survive ${mode || 'successful packaging'}`, t => {
     const f = fixture(t, { mode });
