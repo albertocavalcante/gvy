@@ -51,20 +51,72 @@ class ScenarioExecutor internal constructor(
     )
 
     fun execute(definition: ScenarioDefinition) {
-        val timeoutMs = System.getProperty("groovy.lsp.e2e.scenarioTimeoutMs")?.let {
-            requireNotNull(it.toLongOrNull()) { "groovy.lsp.e2e.scenarioTimeoutMs must be a positive integer" }
-        } ?: DEFAULT_SCENARIO_TIMEOUT_MS
-        val execution = createExecution(Duration.ofMillis(timeoutMs))
+        require(checks(definition).none { (_, check) -> check.id != null || check.xfail != null }) {
+            "Named checks require executeWithOutcome"
+        }
+        val execution = execution()
         execution.run(definition.scenario.name) { execute(definition, execution) }
     }
 
-    private fun execute(definition: ScenarioDefinition, execution: ScenarioExecution) {
+    fun executeWithOutcome(definition: ScenarioDefinition): ScenarioOutcome {
+        val authored = checks(definition)
+        require(definition.scenario.xfail == null) { "Scenario-level xfail cannot be combined with named outcomes" }
+        authored.forEach { (step, check) ->
+            require(check.xfail == null || check.id != null) { "A check xfail requires an ID" }
+            require(step is ScenarioStep.Assert || (check.id == null && check.xfail == null)) {
+                "Named checks are currently supported only in assert steps"
+            }
+            check.id?.let { require(it.isNotBlank()) { "A check ID must not be blank" } }
+            check.xfail?.let {
+                require(it.issue > 0 && it.reason.isNotBlank()) { "A check xfail needs an issue and reason" }
+                it.match?.let(::Regex)
+            }
+        }
+        val planned = authored.mapNotNull { it.second.id }
+        require(planned.distinct().size == planned.size) { "Check IDs must be unique" }
+        val recorder = NamedObservationRecorder(planned, definition.source)
+        val execution = execution()
+        val failure = try {
+            execution.run(definition.scenario.name) { execute(definition, execution, recorder) }
+            null
+        } catch (failure: VirtualMachineError) {
+            throw failure
+        } catch (failure: ThreadDeath) {
+            throw failure
+        } catch (failure: LinkageError) {
+            throw failure
+        } catch (failure: InterruptedException) {
+            Thread.currentThread().interrupt()
+            failure
+        } catch (failure: Throwable) {
+            failure
+        }
+        return recorder.finish(failure)
+    }
+
+    private fun execution(): ScenarioExecution {
+        val timeoutMs = System.getProperty("groovy.lsp.e2e.scenarioTimeoutMs")?.let {
+            requireNotNull(it.toLongOrNull()) { "groovy.lsp.e2e.scenarioTimeoutMs must be a positive integer" }
+        } ?: DEFAULT_SCENARIO_TIMEOUT_MS
+        return createExecution(Duration.ofMillis(timeoutMs))
+    }
+
+    private fun execute(
+        definition: ScenarioDefinition,
+        execution: ScenarioExecution,
+        recorder: NamedObservationRecorder? = null,
+    ) {
         execution.checkActive()
         val (workspace, inlineMarkers) = prepareWorkspace(definition)
         val scenario = definition.scenario
 
-        AutoCloseable { workspace.cleanup() }.use {
-            ScenarioSession(execution) { sessionFactory.start(scenario.server, scenario.name) }.use { session ->
+        AutoCloseable {
+            if (recorder == null) workspace.cleanup() else recorder.closeWorkspace { workspace.cleanup() }
+        }.use {
+            val session = ScenarioSession(execution) { sessionFactory.start(scenario.server, scenario.name) }
+            AutoCloseable {
+                if (recorder == null) session.close() else recorder.closeSession { session.close() }
+            }.use {
                 val context = ScenarioContext(
                     definition = definition,
                     sessionAccess = ScenarioSessionAccess(session::get, execution::checkActive),
@@ -74,10 +126,12 @@ class ScenarioExecutor internal constructor(
                     timeoutCapMs = scenario.xfail?.let { XfailOutcome.STEP_TIMEOUT_CAP_MS },
                 )
                 context.registerBuiltInVariables()
+                context.namedAssertion = recorder?.let { it::observe }
                 inlineMarkers.forEach { (path, markers) ->
                     context.registerCursors(workspace.resolveUri(path), markers)
                 }
 
+                recorder?.executionStarted()
                 scenario.steps.forEachIndexed { index, step ->
                     execution.checkActive()
                     logger.info {
@@ -121,6 +175,21 @@ class ScenarioExecutor internal constructor(
 }
 
 private const val DEFAULT_SCENARIO_TIMEOUT_MS = 300_000L
+
+private fun checks(definition: ScenarioDefinition): List<Pair<ScenarioStep, JsonCheck>> =
+    definition.scenario.steps.flatMap { step ->
+        val checks = when (step) {
+            is ScenarioStep.Assert -> step.checks
+            is ScenarioStep.WaitNotification -> step.checks
+            is ScenarioStep.Completion -> step.checks
+            is ScenarioStep.CodeAction -> step.checks
+            is ScenarioStep.Formatting -> step.checks
+            is ScenarioStep.Rename -> step.checks
+            is ScenarioStep.CliCommand -> step.checks
+            else -> emptyList()
+        }
+        checks.map { step to it }
+    }
 
 /**
  * Writes [files] into the materialized workspace at [root]. On any failure the workspace is deleted, since the

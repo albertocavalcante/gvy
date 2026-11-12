@@ -57,6 +57,7 @@ class ScenarioContext internal constructor(
     var lastResult: JsonElement? = null
     var currentStepIndex: Int = 0
     var totalSteps: Int = 0
+    internal var namedAssertion: ((JsonCheck, () -> Unit) -> Unit)? = null
 
     fun registerBuiltInVariables() {
         val workspaceObject = buildJsonObject {

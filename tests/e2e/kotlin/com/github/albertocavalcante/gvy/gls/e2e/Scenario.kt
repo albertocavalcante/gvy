@@ -364,7 +364,13 @@ data class TestPosition(val line: Int, val character: Int)
 
 data class JsonExtraction(val variable: String, val jsonPath: String)
 
-data class JsonCheck(val jsonPath: String, val expect: JsonExpectation, val message: String? = null)
+data class JsonCheck(
+    val jsonPath: String,
+    val expect: JsonExpectation,
+    val message: String? = null,
+    val id: String? = null,
+    val xfail: Xfail? = null,
+)
 
 data class JsonExpectation(
     val type: ExpectationType = ExpectationType.EXISTS,

@@ -555,7 +555,9 @@ class AssertStepExecutor : StepExecutor<ScenarioStep.Assert> {
         }
         step.checks.forEach { check ->
             try {
-                context.evaluateCheck(sourceNode, check)
+                val evaluate = { context.evaluateCheck(sourceNode, check); Unit }
+                val observer = context.namedAssertion
+                if (observer == null) evaluate() else observer(check, evaluate)
             } catch (e: AssertionError) {
                 logger.error { "Assertion failed in step: $step" }
                 logger.error { "Source node: $sourceNode" }
