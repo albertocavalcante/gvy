@@ -226,6 +226,7 @@ val harnessTest =
             "XfailOutcomeTest",
             "ScenarioExecutorResourcesTest",
             "ScenarioExecutionTest",
+            "ScenarioDeadlineTest",
             "ScenarioContextTest",
             "ScenarioOutcomeTest",
             "NamedObservationExecutionTest",
