@@ -13,15 +13,9 @@ data class BranchInfo(val covered: Int, val total: Int)
  *
  * @property line 1-indexed line number
  * @property covered Whether the line was executed
- * @property hitCount Number of times the line was executed (null if not available)
  * @property branchInfo Branch coverage for this line (null if no branches)
  */
-data class LineCoverage(
-    val line: Int,
-    val covered: Boolean,
-    val hitCount: Int? = null,
-    val branchInfo: BranchInfo? = null,
-)
+data class LineCoverage(val line: Int, val covered: Boolean, val branchInfo: BranchInfo? = null)
 
 /**
  * Coverage summary for a single file.

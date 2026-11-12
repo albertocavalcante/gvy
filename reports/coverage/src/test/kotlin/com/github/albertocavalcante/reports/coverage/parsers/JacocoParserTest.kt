@@ -36,20 +36,17 @@ class JacocoParserTest {
         val line10 = myClass.lines.find { it.line == 10 }
         assertNotNull(line10)
         assertTrue(line10!!.covered)
-        assertEquals(3, line10.hitCount)
         assertEquals(null, line10.branchInfo)
 
         // Line 11: not covered (mi=5, ci=0)
         val line11 = myClass.lines.find { it.line == 11 }
         assertNotNull(line11)
         assertFalse(line11!!.covered)
-        assertEquals(0, line11.hitCount)
 
         // Line 12: covered with branches (ci=2, mb=2, cb=1)
         val line12 = myClass.lines.find { it.line == 12 }
         assertNotNull(line12)
         assertTrue(line12!!.covered)
-        assertEquals(2, line12.hitCount)
         assertNotNull(line12.branchInfo)
         assertEquals(1, line12.branchInfo!!.covered)
         assertEquals(3, line12.branchInfo.total) // mb + cb = 2 + 1
@@ -58,7 +55,6 @@ class JacocoParserTest {
         val line13 = myClass.lines.find { it.line == 13 }
         assertNotNull(line13)
         assertTrue(line13!!.covered)
-        assertEquals(1, line13.hitCount)
         assertNotNull(line13.branchInfo)
         assertEquals(2, line13.branchInfo!!.covered)
         assertEquals(2, line13.branchInfo.total)
@@ -235,7 +231,7 @@ class JacocoParserTest {
             </report>
         """.trimIndent()
 
-        // Second report: line 10 covered with higher hit count, line 11 covered
+        // Second report: line 10 has more covered instructions, line 11 covered
         val xml2 = """
             <?xml version="1.0" encoding="UTF-8"?>
             <report name="module2">
@@ -258,9 +254,9 @@ class JacocoParserTest {
         val myClass = response.files[0]
         assertEquals(2, myClass.lines.size)
 
-        // Line 10 should have max hit count (5)
+        // Covered instruction counts establish coverage, not execution frequency.
         val line10 = myClass.lines.find { it.line == 10 }
-        assertEquals(5, line10?.hitCount)
+        assertTrue(line10?.covered == true)
 
         // Line 11 should be present
         val line11 = myClass.lines.find { it.line == 11 }

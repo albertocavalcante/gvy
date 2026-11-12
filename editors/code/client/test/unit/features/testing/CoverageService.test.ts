@@ -138,6 +138,39 @@ describe("CoverageService", () => {
     coverageService = new CoverageService(testServiceMock, loggerMock);
   });
 
+  it("uses boolean coverage without inventing execution counts", async () => {
+    testServiceMock.getCoverage.resolves({
+      files: [
+        {
+          uri: "file:///workspace/Example.groovy",
+          lines: [
+            { line: 1, covered: true, branchInfo: { covered: 1, total: 2 } },
+            { line: 2, covered: false },
+          ],
+        },
+      ],
+      summary: {
+        linesTotal: 2,
+        linesCovered: 1,
+        lineCoveragePercent: 50,
+        branchesTotal: 2,
+        branchesCovered: 1,
+        branchCoveragePercent: 50,
+      },
+    });
+    const testRun = { addCoverage: sinon.spy() };
+    await coverageService.addCoverageToRun(testRun, "/workspace");
+    const details = testRun.addCoverage.firstCall.args[0].details;
+    assert.strictEqual(details[0].executed, true);
+    assert.strictEqual(details[1].executed, false);
+    assert.deepStrictEqual(
+      details[0].branches.map(
+        (branch: { executed: boolean }) => branch.executed,
+      ),
+      [true, false],
+    );
+  });
+
   it("should correctly create multiple branch coverage entries for cb/mb counts", async () => {
     const workspacePath = "/workspace";
 
@@ -150,7 +183,6 @@ describe("CoverageService", () => {
             {
               line: 1,
               covered: true,
-              hitCount: 3,
               branchInfo: {
                 covered: 2,
                 total: 3,
@@ -196,13 +228,13 @@ describe("CoverageService", () => {
 
     // Verify Covered Branches (cb=2)
     const coveredBranches = line.branches.filter(
-      (b: unknown) => (b as { executed: number }).executed === 1,
+      (b: unknown) => (b as { executed: boolean }).executed === true,
     );
     assert.equal(coveredBranches.length, 2, "Should have 2 covered branches");
 
     // Verify Missed Branches (mb=1)
     const missedBranches = line.branches.filter(
-      (b: unknown) => (b as { executed: number }).executed === 0,
+      (b: unknown) => (b as { executed: boolean }).executed === false,
     );
     assert.equal(missedBranches.length, 1, "Should have 1 missed branch");
   });
@@ -219,7 +251,6 @@ describe("CoverageService", () => {
             {
               line: 2,
               covered: true,
-              hitCount: 3,
             },
           ],
         },
@@ -261,7 +292,6 @@ describe("CoverageService", () => {
             {
               line: 1,
               covered: true,
-              hitCount: 1,
             },
           ],
         },
@@ -271,7 +301,6 @@ describe("CoverageService", () => {
             {
               line: 5,
               covered: true,
-              hitCount: 1,
             },
           ],
         },

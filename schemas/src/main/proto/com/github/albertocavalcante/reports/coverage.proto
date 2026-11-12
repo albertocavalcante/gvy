@@ -19,8 +19,9 @@ message LineCoverage {
   int32 line = 1;
   // Whether this line was executed at least once.
   bool covered = 2;
-  // Number of times this line was executed.
-  optional int32 hit_count = 3;
+  // Removed: JaCoCo reports instruction coverage, not execution counts.
+  reserved 3;
+  reserved "hit_count";
   // Branch coverage data associated with this line.
   optional BranchInfo branch_info = 4;
 }

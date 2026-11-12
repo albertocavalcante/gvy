@@ -101,7 +101,6 @@ export interface BranchInfo {
 export interface LineCoverage {
   line: number;
   covered: boolean;
-  hitCount?: number;
   branchInfo?: BranchInfo;
 }
 

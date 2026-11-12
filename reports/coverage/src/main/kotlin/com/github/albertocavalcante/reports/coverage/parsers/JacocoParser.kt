@@ -204,7 +204,6 @@ object JacocoParser : CoverageParser {
         val cb = lineEl.getAttribute("cb").toIntOrNull() ?: 0
 
         val covered = ci > 0
-        val hitCount = if (covered) ci else 0
 
         val branchInfo = if (mb > 0 || cb > 0) {
             BranchInfo(covered = cb, total = mb + cb)
@@ -215,7 +214,6 @@ object JacocoParser : CoverageParser {
         return LineCoverage(
             line = lineNum,
             covered = covered,
-            hitCount = hitCount,
             branchInfo = branchInfo,
         )
     }
@@ -294,14 +292,13 @@ object JacocoParser : CoverageParser {
             lineMap[line.line] = line
         }
 
-        // Merge lines from b (take max hit count, merge branches)
+        // Merge coverage status and branch counts from b
         for (line in b.lines) {
             val existing = lineMap[line.line]
             if (existing != null) {
                 lineMap[line.line] = LineCoverage(
                     line = line.line,
                     covered = existing.covered || line.covered,
-                    hitCount = maxOf(existing.hitCount ?: 0, line.hitCount ?: 0),
                     branchInfo = mergeBranchInfo(existing.branchInfo, line.branchInfo),
                 )
             } else {
