@@ -49,7 +49,7 @@ print_usage() {
   echo ""
   echo "Options:"
   echo "  --version <ver>   Specify version tag (e.g., v1.2.3)"
-  echo "  --dry-run         Simulate actions without permanent changes"
+  echo "  --dry-run         Preview build steps and output paths without changing files"
   echo "  --help            Show this help message"
 }
 
@@ -98,20 +98,16 @@ cmd_build() {
   root_dir="$(pwd)"
   target_jar="${root_dir}/${DIST_DIR}/gls-${release_version}.jar"
   target_vsix="${root_dir}/${DIST_DIR}/gvy-${release_version}.vsix"
-  if [[ "${DRY_RUN}" != true ]]; then
-    source_commit="$(git rev-parse HEAD)"
-  fi
-
-  # Clean and prepare dist
-  rm -rf "${DIST_DIR}"
-  mkdir -p "${DIST_DIR}"
-
-  # Dry runs retain placeholder artifacts without installing dependencies or building.
   if [[ "${DRY_RUN}" = true ]]; then
-    log_warn "DRY RUN MODE: Skipping builds, packaging, and verification"
-    touch "${target_jar}" "${target_vsix}"
+    log_info "DRY RUN: Would reset ${DIST_DIR}/, test and stage the server, package the extension, and verify the pair"
+    log_info "JAR output: ${target_jar}"
+    log_info "VSIX output: ${target_vsix}"
     return
   fi
+
+  source_commit="$(git rev-parse HEAD)"
+  rm -rf "${DIST_DIR}"
+  mkdir -p "${DIST_DIR}"
 
   log_info "Testing and staging the current server..."
   GITHUB_REF_TYPE=tag ./gradlew --no-daemon test :gls:stageEditorServer

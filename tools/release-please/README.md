@@ -78,11 +78,21 @@ accepts that base version while requiring the extension's full prerelease versio
 receipt retains the server's actual version. `tools/release.sh checksums` can regenerate the checksum manifest; it
 excludes its own output and replaces the previous manifest only after hashing succeeds.
 
-Use a clean checkout whose base version matches the requested release. `tools/release.sh build --version vX.Y.Z`
-produces the verified artifacts; `--dry-run` creates placeholders without invoking Gradle or pnpm. The builder restores
-the original `package.json` contents and permissions after either successful packaging or an error. Artifact paths
-resolve inside the script's own checkout, including when it is invoked from another directory. Version and checkout
-preflight checks run before the builder resets `dist/`.
+Use a clean checkout whose base version matches the requested release, and provide the tag explicitly:
+
+```bash
+make release-build RELEASE_VERSION=vX.Y.Z    # preview build steps and output paths
+make release-publish RELEASE_VERSION=vX.Y.Z  # build verified local release artifacts
+```
+
+The preview leaves existing artifacts and checksums unchanged. It invokes neither Gradle nor pnpm and creates no
+placeholder files. The `release-publish` target requires `RELEASE_VERSION`; it does not parse human-readable Gradle
+version output. The tagged GitHub workflow publishes the resulting artifacts.
+
+The direct build command is `tools/release.sh build --version vX.Y.Z`; add `--dry-run` for the preview. The builder
+restores the original `package.json` contents and permissions after either successful packaging or an error. Artifact
+paths resolve inside the script's own checkout, including when it is invoked from another directory. Version and
+checkout preflight checks run before a real build resets `dist/`.
 
 Published v0.5.4 still contains the mismatched server tracked in
 [#1751](https://github.com/albertocavalcante/gvy/issues/1751). A source fix does not replace that release; publish and

@@ -173,6 +173,7 @@ jobs:
               # tests
               - 'tests/**'
               # Root build inputs
+              - 'Makefile'
               - 'gradle/**'
               - '*.gradle'
               - '*.gradle.kts'

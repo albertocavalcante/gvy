@@ -72,6 +72,7 @@ function fixture(t, options = {}) {
   mkdirSync(join(root, 'bin'));
   mkdirSync(join(root, 'gls/build/libs'), { recursive: true });
   cpSync(join(repository, 'tools/release.sh'), join(root, 'tools/release.sh'));
+  cpSync(join(repository, 'Makefile'), join(root, 'Makefile'));
   cpSync(join(repository, 'tools/ci'), join(root, 'tools/ci'), { recursive: true });
   cpSync(join(repository, 'editors/code/tools'), join(editor, 'tools'), { recursive: true });
   const originalPackage = '{ "name": "gvy", "publisher": "fixture", "version": "0.1.0" }\n';
@@ -85,6 +86,9 @@ function fixture(t, options = {}) {
 const fs = require('node:fs');
 const path = require('node:path');
 fs.appendFileSync('calls.jsonl', JSON.stringify({tool:'gradle',args:process.argv.slice(2)})+'\\n');
+if (process.argv.includes('printVersion')) {
+  console.log(['Base version: 0.5.4', 'Final version: 0.5.4-SNAPSHOT', 'GITHUB_REF_TYPE: not set', 'GITHUB_HEAD_REF: not set', 'Is release build: false'].join('\\n'));
+}
 if (process.argv.some(a => /shadowJar|stageEditorServer/.test(a))) {
   fs.mkdirSync('gls/build/editor-server', {recursive:true});
   if (process.env.FIXTURE_MODE !== 'missing-server') fs.copyFileSync('fresh.jar', 'gls/build/editor-server/gls.jar');
@@ -124,14 +128,15 @@ if (args[0] === 'run' && args[1] === 'package') {
     writeFileSync(join(root, 'gls/build/libs/gls-0.1.0-all.jar'), server('0.1.0'));
     writeFileSync(join(editor, 'aaa-stale.vsix'), zip([['extension/package.json', '{}']]));
   }
-  const run = (...extra) => spawnSync('bash', ['tools/release.sh', 'build', '--version', `v${version}`, ...extra], {
+  const environment = { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, CI: 'true', FIXTURE_ROOT: root,
+    FIXTURE_COMMIT: commit, FIXTURE_MODE: options.mode ?? '', GLS_USE_PINNED: 'true',
+    GLS_CHANNEL: 'pinned', GLS_REQUIRE_FRESH: 'true', SKIP_PREPARE_SERVER: 'true' };
+  const command = (program, args) => spawnSync(program, args, {
     // Allow shared-host I/O contention while bounding hung fixture commands.
-    cwd: root, encoding: 'utf8', timeout: 60000,
-    env: { ...process.env, PATH: `${root}/bin:${process.env.PATH}`, CI: 'true', FIXTURE_ROOT: root,
-      FIXTURE_COMMIT: commit, FIXTURE_MODE: options.mode ?? '', GLS_USE_PINNED: 'true',
-      GLS_CHANNEL: 'pinned', GLS_REQUIRE_FRESH: 'true', SKIP_PREPARE_SERVER: 'true' },
+    cwd: root, encoding: 'utf8', timeout: 60000, env: environment,
   });
-  return { root, editor, originalPackage, run,
+  const run = (...extra) => command('bash', ['tools/release.sh', 'build', '--version', `v${version}`, ...extra]);
+  return { root, editor, originalPackage, run, command,
     calls: () => readFileSync(join(root, 'calls.jsonl'), 'utf8').trim().split('\n').map(JSON.parse) };
 }
 
@@ -189,14 +194,28 @@ for (const options of [{ serverVersion: '0.4.8' }, { commit: 'a'.repeat(40) }, {
   });
 }
 
-test('dry run creates placeholders without invoking Gradle or pnpm and preserves package.json', t => {
+test('dry run previews outputs without invoking tools or creating artifacts', t => {
   const f = fixture(t);
   const result = f.run('--dry-run');
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
-  assert.equal(existsSync(join(f.root, 'dist/gls-0.5.4.jar')), true);
-  assert.equal(existsSync(join(f.root, 'dist/gvy-0.5.4.vsix')), true);
+  assert.equal(existsSync(join(f.root, 'dist')), false);
+  assert.match(result.stdout, /gls-0\.5\.4\.jar/);
+  assert.match(result.stdout, /gvy-0\.5\.4\.vsix/);
   assert.equal(readFileSync(join(f.editor, 'package.json'), 'utf8'), f.originalPackage);
+});
+
+test('dry run preserves previously verified artifacts and their manifest', t => {
+  const f = fixture(t);
+  const dist = join(f.root, 'dist');
+  mkdirSync(dist);
+  const originals = { 'gls-0.5.4.jar': 'verified server', 'gvy-0.5.4.vsix': 'verified editor', 'checksums.txt': 'verified checksums' };
+  for (const [name, content] of Object.entries(originals)) writeFileSync(join(dist, name), content);
+  const result = f.run('--dry-run');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.deepEqual(readdirSync(dist).sort(), Object.keys(originals).sort());
+  for (const [name, content] of Object.entries(originals)) assert.equal(readFileSync(join(dist, name), 'utf8'), content);
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
 });
 
 test('an unrelated package.json backup is preserved', t => {
@@ -298,6 +317,35 @@ test('an absolute invocation from another directory preserves that directory art
   });
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(readFileSync(join(caller, 'dist/previous-artifact'), 'utf8'), 'keep caller output');
-  assert.equal(existsSync(join(f.root, 'dist/gls-0.5.4.jar')), true);
+  assert.equal(existsSync(join(f.root, 'dist')), false);
+  assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+});
+
+for (const input of ['', '../invalid']) {
+  test(`make release-publish rejects ${input || 'an absent version'} before build tools run`, t => {
+    const f = fixture(t);
+    const result = f.command('make', ['release-publish', `RELEASE_VERSION=${input}`]);
+    assert.notEqual(result.status, 0);
+    assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+    assert.equal(existsSync(join(f.root, 'dist')), false);
+    if (!input) assert.match(result.stdout + result.stderr, /RELEASE_VERSION/);
+  });
+}
+
+test('make release-publish forwards an explicit tag without parsing human version output', t => {
+  const f = fixture(t);
+  const result = f.command('make', ['release-publish', 'RELEASE_VERSION=v0.5.4']);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const receipt = JSON.parse(readFileSync(join(f.root, 'dist/release.json'), 'utf8'));
+  assert.equal(receipt.version, version);
+  assert.equal(f.calls().some(call => call.args.includes('printVersion')), false);
+});
+
+test('make release-build previews and names the explicit version needed for a real build', t => {
+  const f = fixture(t);
+  const result = f.command('make', ['release-build']);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /make release-publish RELEASE_VERSION=vX\.Y\.Z/);
+  assert.equal(existsSync(join(f.root, 'dist')), false);
   assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
 });
