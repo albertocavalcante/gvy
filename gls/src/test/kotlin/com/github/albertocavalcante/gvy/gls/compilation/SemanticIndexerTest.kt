@@ -50,9 +50,12 @@ class SemanticIndexerTest {
         var oversized = false
         val guarded = SemanticIndexer(index, build = { ast, u ->
             val document = com.github.albertocavalcante.gvy.semantics.db.SemanticDocumentBuilder(ast, u).build()
-            if (!oversized) document else {
+            if (!oversized) {
+                document
+            } else {
                 val type = com.github.albertocavalcante.gvy.semantics.SemanticType.Known(
-                    "TooLarge", List(16384) { com.github.albertocavalcante.gvy.semantics.TypeConstants.INT },
+                    "TooLarge",
+                    List(16384) { com.github.albertocavalcante.gvy.semantics.TypeConstants.INT },
                 )
                 document.copy(symbols = document.symbols.map { it.copy(type = type) })
             }

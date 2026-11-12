@@ -342,7 +342,9 @@ private class TypeFreezer {
                     type.copy(typeArgs = Collections.unmodifiableList(arguments))
                 }
                 is SemanticType.Array -> type.copy(componentType = child(type.componentType))
-                is SemanticType.Union -> type.copy(types = Collections.unmodifiableSet(type.types.mapTo(linkedSetOf(), ::child)))
+                is SemanticType.Union -> type.copy(
+                    types = Collections.unmodifiableSet(type.types.mapTo(linkedSetOf(), ::child)),
+                )
                 else -> type
             }
             return Frozen(detached, size, height).also { completed[type] = it }
