@@ -297,6 +297,13 @@ jobs:
               return {str(key): item for key, item in value.items()}
 
 
+          def one_match(pattern: str, text: str) -> re.Match[str]:
+              matches = list(re.finditer(pattern, text, re.MULTILINE))
+              if len(matches) != 1:
+                  raise ValueError("incomplete execution frame")
+              return matches[0]
+
+
           proof = Path(os.environ["RUNNER_TEMP"]) / "gvy-b04-publication-proof"
           report = Path(
               "parser/native/build/test-results/test/TEST-com.github.albertocavalcante.groovyparser.tokens.GroovyTokenIndexTest.xml"
@@ -376,26 +383,70 @@ jobs:
               valid = valid and (not diagnostic_ok or not unexpected)
               valid = valid and type(raw_identity.get("bytes")) is int and raw_identity.get("bytes") == len(raw)
               valid = valid and raw_identity.get("sha256") == hashlib.sha256(raw).hexdigest()
-              compile_states = re.findall(r"^> Task :parser:native:compileTestKotlin(?: ([A-Z_-]+))?$", text, re.MULTILINE)
-              test_states = re.findall(r"^> Task :parser:native:test([ \t][^\n]*)?$", text, re.MULTILINE)
-              summaries = re.findall(r"^\d+ tests completed\b[^\n]*$", text, re.MULTILINE)
+              compile_headers = list(re.finditer(r"^> Task :parser:native:compileTestKotlin([ \t][^\n]*)?$", text, re.MULTILINE))
+              compile_states = [match.group(1) or "" for match in compile_headers]
+              test_headers = list(re.finditer(r"^> Task :parser:native:test([ \t][^\n]*)?$", text, re.MULTILINE))
+              test_states = [match.group(1) or "" for match in test_headers]
+              summary_matches = list(re.finditer(r"^\d+ tests completed\b[^\n]*$", text, re.MULTILINE))
+              summaries = [match.group() for match in summary_matches]
               failed = counts["failures"] + counts["errors"] > 0
               expected_summary = f"{counts['tests']} tests completed, {counts['failures'] + counts['errors']} failed"
-              # Gradle --info emits a start header and one terminal FAILED header for a single failed attempt.
+              # Gradle --info renders the task heading at the start and again after executor completion.
               failed_profile = test_states == ["", " FAILED"] and summaries == [expected_summary]
-              fresh_outcome = (failed_profile if failed else test_states == [""] and not summaries) and native_exit == (
-                  1 if failed else 0
+              success_profile = test_states == ["", ""] and not summaries
+              started = one_match(r"^Gradle Test Executor ([1-9][0-9]*) started executing tests\.$", text)
+              finished = one_match(r"^Gradle Test Executor ([1-9][0-9]*) finished executing tests\.$", text)
+              spawned = one_match(r"^Successfully started process 'Gradle Test Executor ([1-9][0-9]*)'$", text)
+              spawn = one_match(
+                  r"^Starting process 'Gradle Test Executor ([1-9][0-9]*)'\. Working directory: [^\n]+ Command: "
+                  r"[^\n]+worker\.org\.gradle\.process\.internal\.worker\.GradleWorkerMain 'Gradle Test Executor \1'$",
+                  text,
               )
+              build = one_match(r"^BUILD (SUCCESSFUL|FAILED) in [^\n]+$", text)
+              executor_lines = re.findall(
+                  r"^(?:Gradle Test Executor|Starting process 'Gradle Test Executor|Successfully started process 'Gradle Test Executor)[^\n]*$",
+                  text,
+                  re.MULTILINE,
+              )
+              build_lines = re.findall(r"^BUILD\b[^\n]*$", text, re.MULTILINE)
+              frame_valid = (
+                  compile_states == [""] and len(test_headers) == 2 and len(executor_lines) == 4 and len(build_lines) == 1
+              )
+              if frame_valid:
+                  frame_valid = len({started.group(1), finished.group(1), spawn.group(1), spawned.group(1)}) == 1
+                  frame_valid = frame_valid and build.group(1) == ("FAILED" if failed else "SUCCESSFUL")
+                  frame_valid = frame_valid and (
+                      compile_headers[0].end()
+                      < test_headers[0].start()
+                      < spawn.start()
+                      < spawned.start()
+                      < finished.start()
+                      < test_headers[1].start()
+                      < build.start()
+                  )
+                  # The executor start marker may precede the first heading in the merged console stream.
+                  frame_valid = frame_valid and compile_headers[0].end() < started.start() < finished.start()
+                  if failed:
+                      frame_valid = (
+                          frame_valid
+                          and len(summary_matches) == 1
+                          and (test_headers[1].end() < summary_matches[0].start() < build.start())
+                      )
+              fresh_outcome = (failed_profile if failed else success_profile) and native_exit == (1 if failed else 0)
               observation.update(counts)
               observation["nativeCommandExitCode"] = native_exit
               observation["captureExitCode"] = capture_exit
               observation["toolDiagnosticsOk"] = diagnostic_ok
               observation["unexpectedDiagnosticCount"] = len(unexpected)
               observation["compileTestKotlin"] = "executed" if compile_states == [""] else "not-proved"
-              observation["testTask"] = (
-                  "executed-failed" if failed_profile else "executed" if test_states == [""] else "not-proved"
-              )
-              observation["complete"] = valid and compile_states == [""] and fresh_outcome
+              observation["executorLifecycle"] = "executed" if frame_valid else "not-proved"
+              if frame_valid and failed_profile:
+                  observation["testTask"] = "executed-failed"
+              elif frame_valid and success_profile:
+                  observation["testTask"] = "executed"
+              else:
+                  observation["testTask"] = "not-proved"
+              observation["complete"] = valid and frame_valid and fresh_outcome
               observation["focusedGatePassed"] = observation["complete"] and not failed and diagnostic_ok and not unexpected
           except (OSError, ValueError, KeyError, ET.ParseError):
               observation["error"] = "B04_JUNIT_OBSERVATION_INCOMPLETE"
