@@ -159,14 +159,18 @@ jobs:
         working-directory: candidate
         shell: bash
         env:
-          GITHUB_SHA: ${{ steps.receipt.outputs.base }}
+          EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
           EXPECTED_TREE: ${{ steps.receipt.outputs.tree }}
         run: |
           set -euo pipefail
           proof="$RUNNER_TEMP/gvy-b04-publication-proof"
           source='parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndexTest.kt'
+          head=$(git rev-parse HEAD)
+          [[ "$head" == "$EXPECTED_BASE" ]]
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
-          if timeout --signal=TERM --kill-after=30s 15m node tools/ci/run-gradle.mjs --report-root "$proof/gradle" --producer b04-format lintFix --no-daemon --no-parallel --max-workers=1 -PtestJavaVersion=21 --stacktrace; then
+          jq -n --arg source "$head" --arg support "$GITHUB_SHA" --arg tree "$EXPECTED_TREE" \
+              '{sourceHead:$source,supportHead:$support,inputTree:$tree,overlay:true}' >"$proof/format-input-context.json"
+          if GITHUB_SHA="$EXPECTED_BASE" timeout --signal=TERM --kill-after=30s 15m node tools/ci/run-gradle.mjs --report-root "$proof/gradle" --producer b04-format lintFix --no-daemon --no-parallel --max-workers=1 -PtestJavaVersion=21 --stacktrace; then
               status=0
           else
               status=$?
@@ -221,7 +225,11 @@ jobs:
           set -e
           jq -n --argjson commandExitCode "${statuses[0]}" --argjson captureExitCode "${statuses[1]}" \
               '{commandExitCode:$commandExitCode,captureExitCode:$captureExitCode}' >"$proof/hooks-status.json"
-          if node tools/ci/check-gradle-diagnostics.mjs --log "$proof/commit-hooks.log" --report "$proof/hook-diagnostics" --baseline tools/ci/gradle-diagnostics.json --producer b04-commit-hooks --root "$PWD" --exit-code "${statuses[0]}" --capture-exit-code "${statuses[1]}"; then
+          head_after_hooks=$(git rev-parse HEAD)
+          # The pure log classifier has no Git guard; retain its observed source binding separately.
+          jq -n --arg before "$EXPECTED_BASE" --arg after "$head_after_hooks" --arg tree "$EXPECTED_TREE" --arg support "$GITHUB_SHA" \
+              '{scope:"post-hook-source-binding",headBeforeHooks:$before,headAfterHooks:$after,sourceTreeDuringHooks:$tree,supportHead:$support}' >"$proof/hook-source-context.json"
+          if GITHUB_SHA="$head_after_hooks" node tools/ci/check-gradle-diagnostics.mjs --log "$proof/commit-hooks.log" --report "$proof/hook-diagnostics" --baseline tools/ci/gradle-diagnostics.json --producer b04-commit-hooks --root "$PWD" --exit-code "${statuses[0]}" --capture-exit-code "${statuses[1]}"; then
               diagnostic=0
           else
               diagnostic=$?
