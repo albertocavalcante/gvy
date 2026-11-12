@@ -138,12 +138,13 @@ rather than introduce a competing roadmap.
 | Defer                          | Editor attachment, execution tools and DSL explanations                             | They need explicit session, lifecycle and semantic contracts.                     |
 | Reject for the initial surface | Arbitrary command execution, guessed rename targets and automatic patch application | These exceed the proposed query and preview scope.                                |
 
-Use separate LSP and MCP adapters over one set of workspace services. Keep semantic logic out of the transport modules.
-Ship headless MCP stdio first; design the runtime boundary so an editor-attached endpoint can reuse overlays and caches
-later. An attached endpoint must deliberately select the editor session. For a network transport, evaluate Streamable
-HTTP and client-version compatibility rather than reproducing legacy SSE [S17].
+Use separate CLI, LSP and optional MCP adapters over one set of workspace services. Keep semantic logic out of command
+parsing and transport modules. Establish useful CLI operations first. If MCP demonstrates additional value, start its
+native adapter with headless stdio; design the runtime boundary so an editor-attached endpoint can later reuse overlays
+and caches. An attached endpoint must deliberately select the editor session. For a network transport, evaluate
+Streamable HTTP and client-version compatibility rather than reproducing legacy SSE [S17].
 
-Initial tools, all proposals:
+The CLI should expose these semantic operations directly. The optional MCP tool names below are proposals:
 
 | Tool                   | Useful question                                     | Required scope                                                             |
 | ---------------------- | --------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -170,21 +171,25 @@ useful candidate tasks. These are proposals contingent on actual analyzer suppor
 script intelligence remains explicitly undesigned in the quality bar. Test execution and dependency/build changes should
 be separate capabilities after their lifecycle and trust contracts are established.
 
-## First experiment and decision gate
+## CLI baseline and optional bridge comparison
 
-Use one small original Groovy fixture through Serena and gvy, with no installations performed in this research pass.
-Check launch/config compatibility first: gvy supports no-argument stdio JAR startup, but Serena sends nested
-initialization settings while gvy reads flattened `groovy.*` settings. In the inspected Serena adapter JVM options are
-appended after `-jar <jar>`, so any experiment should ensure heap flags reach the JVM correctly [S13, S15].
+First establish the direct CLI task and result/completeness contract on one small original Groovy fixture. Record
+which semantic operations are supported and which still need shared-service work. Then use the same tasks for an
+optional Serena-to-gvy comparison; no installations were performed in this research pass.
+
+For that bridge comparison, check launch/config compatibility: gvy supports no-argument stdio JAR startup, but Serena
+sends nested initialization settings while gvy reads flattened `groovy.*` settings. In the inspected Serena adapter JVM
+options are appended after `-jar <jar>`, so ensure heap flags reach the JVM correctly [S13, S15].
 
 Acceptance: correct outline; explicit overload ambiguity; correct known cross-file navigation/references; refreshed
 answers after an external edit; labelled malformed/dynamic-code uncertainty; cancellation; clean shutdown; and readiness
 beyond the initialize response. Verify watchers and classpath loading rather than assuming them.
 
-Compare a few real tasks with text search/file tools alone and with semantic tools: locate a receiver-specific call,
-assess a signature change, and diagnose an edit. Record task correctness first, then total model input/output tokens,
-tool calls, cold/warm latency and heap/process count. Do not infer savings from shorter tool output alone. If native MCP
-is built, add protocol-level cases for stale hashes, concurrent editor edits, partial diagnostics, refused cross-file
+Compare a few real tasks with text search/file tools, direct semantic CLI operations and optionally the MCP bridge:
+locate a receiver-specific call, assess a signature change, and diagnose an edit. Record task correctness first, then
+total model input/output tokens, tool calls, cold/warm latency and heap/process count. Do not infer savings from shorter
+tool output alone. If native MCP is justified and built, add protocol-level cases for stale hashes, concurrent editor
+edits, partial diagnostics, refused cross-file
 rename, capped results and closed-client cleanup.
 
 ## Claims and unresolved work
@@ -314,5 +319,6 @@ Coordinate with [#1709](https://github.com/albertocavalcante/gvy/issues/1709) fo
 [#676](https://github.com/albertocavalcante/gvy/issues/676) for editor automation. This proposal does not replace those
 owners or claim their acceptance criteria are complete.
 
-The next useful action is the bounded compatibility experiment. The source review establishes design plausibility; it
-does not establish runtime compatibility or performance.
+The next useful action is the CLI contract and task baseline, followed by an optional bridge comparison if it can
+establish additional value. The source review establishes design plausibility; it does not establish runtime
+compatibility or performance.
