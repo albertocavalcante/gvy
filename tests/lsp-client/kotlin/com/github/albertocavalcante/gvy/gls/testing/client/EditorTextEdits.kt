@@ -1,4 +1,4 @@
-package com.github.albertocavalcante.gvy.gls.e2e
+package com.github.albertocavalcante.gvy.gls.testing.client
 
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextEdit

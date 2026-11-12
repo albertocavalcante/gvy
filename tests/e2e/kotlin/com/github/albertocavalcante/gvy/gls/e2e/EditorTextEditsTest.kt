@@ -1,5 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.testing.client.EditorPositionEncoding
+import com.github.albertocavalcante.gvy.gls.testing.client.EditorTextEdits
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.lsp4j.Position
