@@ -34,8 +34,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.github.albertocavalcante.gvy.viz.desktop.state.CodeError
+import com.github.albertocavalcante.gvy.viz.desktop.state.SourceCoordinates
 import com.github.albertocavalcante.gvy.viz.desktop.state.SourceNavigation
-import com.github.albertocavalcante.gvy.viz.desktop.state.sourceOffset
+import com.github.albertocavalcante.gvy.viz.desktop.state.errorSpans
 
 /**
  * Panel displaying the source code in an editor-like style.
@@ -65,10 +66,8 @@ fun CodePanel(
     // Sync external selection (from tree) to editor
     LaunchedEffect(sourceNavigation) {
         sourceNavigation?.range?.let { range ->
-            val start = getOffset(textFieldValue.text, range.startLine, range.startColumn)
-            val end = getOffset(textFieldValue.text, range.endLine, range.endColumn)
-            if (start != -1 && end > start) {
-                val targetSelection = TextRange(start, end)
+            SourceCoordinates(textFieldValue.text).span(range)?.let { span ->
+                val targetSelection = TextRange(span.first, span.last + 1)
                 if (textFieldValue.selection != targetSelection) {
                     textFieldValue = textFieldValue.copy(selection = targetSelection)
                 }
@@ -95,7 +94,7 @@ fun CodePanel(
                     }
 
                     if (selectionChanged && !codeChanged) {
-                        val pos = getLineAndColumn(newValue.text, newValue.selection.start)
+                        val pos = SourceCoordinates(newValue.text).position(newValue.selection.start)
                         onCursorChange(pos.first, pos.second)
                     }
                 },
@@ -151,11 +150,9 @@ private class ErrorVisualTransformation(private val errors: List<CodeError>) : V
     override fun filter(text: AnnotatedString): TransformedText {
         if (errors.isEmpty()) return TransformedText(text, OffsetMapping.Identity)
 
-        val lines = text.text.lines()
         val builder = AnnotatedString.Builder(text)
 
-        for (error in errors) {
-            val span = errorSpan(text.text, lines, error) ?: continue
+        for (span in errorSpans(text.text, errors)) {
             builder.addStyle(
                 SpanStyle(
                     textDecoration = TextDecoration.Underline,
@@ -168,54 +165,4 @@ private class ErrorVisualTransformation(private val errors: List<CodeError>) : V
 
         return TransformedText(builder.toAnnotatedString(), OffsetMapping.Identity)
     }
-}
-
-private fun errorSpan(text: String, lines: List<String>, error: CodeError): IntRange? {
-    if (error.startLine == -1) return null
-
-    val start = getOffset(text, error.startLine, error.startColumn)
-    if (start == -1) return null
-
-    val end = when {
-        error.endLine != -1 && error.endColumn != -1 -> getOffset(text, error.endLine, error.endColumn)
-        else -> endOfLineOffset(text, lines, error.startLine, start)
-    }
-
-    return end.takeIf { it != -1 && it > start }?.let { start until it }
-}
-
-private fun endOfLineOffset(text: String, lines: List<String>, line: Int, fallbackStart: Int): Int {
-    val lineStartOffset = getOffset(text, line, 1)
-    val lineLength = lines.getOrNull(line - 1)?.length ?: 0
-    return if (lineStartOffset != -1) lineStartOffset + lineLength else fallbackStart + 1
-}
-
-private fun getOffset(text: String, line: Int, column: Int): Int = sourceOffset(text, line, column) ?: -1
-
-private fun getLineAndColumn(text: String, offset: Int): Pair<Int, Int> {
-    val target = offset.coerceIn(0, text.length)
-    var line = 1
-    var column = 1
-    var index = 0
-
-    while (index < target) {
-        val ch = text[index]
-        if (ch == '\n') {
-            line++
-            column = 1
-            index++
-        } else if (ch == '\r') {
-            line++
-            column = 1
-            index++
-            if (index < target && text[index] == '\n') {
-                index++
-            }
-        } else {
-            column++
-            index++
-        }
-    }
-
-    return line to column
 }

@@ -34,18 +34,8 @@ class AstViewModelTest {
     private fun node(id: String, range: RangeDto?, vararg children: AstNodeDto) =
         CoreAstNodeDto(id, id, range, children.toList(), emptyMap())
 
-    private fun hit(root: AstNodeDto, line: Int, column: Int): AstNodeDto? {
-        val method = AstViewModel::class.java.getDeclaredMethod(
-            "findSmallestNodeAt",
-            AstNodeDto::class.java,
-            Int::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType,
-        )
-        method.isAccessible = true
-        val model = testModel()
-        model.updateSourceCode("abc")
-        return method.invoke(model, root, line, column) as AstNodeDto?
-    }
+    private fun hit(root: AstNodeDto, line: Int, column: Int): AstNodeDto? =
+        AstNavigation(root, "abc").nodeAt(line, column)
 
     @Test
     fun `adjacent ranges exclude the end and overlapping siblings choose the smallest`() {
@@ -157,21 +147,13 @@ class AstViewModelTest {
 
     @Test
     fun `multiline ranges use actual span length and deterministic depth ties`() {
-        val model = testModel()
-        model.updateSourceCode("abc\r\ndef\nxy")
         val deep = node("deep", RangeDto(1, 3, 2, 2))
         val tied = node("tied", RangeDto(1, 3, 2, 2), deep)
         val wide = node("wide", RangeDto(1, 1, 3, 2))
         val root = node("root", null, wide, tied)
-        val method = AstViewModel::class.java.getDeclaredMethod(
-            "findSmallestNodeAt",
-            AstNodeDto::class.java,
-            Int::class.javaPrimitiveType,
-            Int::class.javaPrimitiveType,
-        )
-        method.isAccessible = true
-        assertEquals(deep, method.invoke(model, root, 2, 1))
-        assertEquals(wide, method.invoke(model, root, 2, 2))
+        val navigation = AstNavigation(root, "abc\r\ndef\nxy")
+        assertEquals(deep, navigation.nodeAt(2, 1))
+        assertEquals(wide, navigation.nodeAt(2, 2))
     }
 
     @Test

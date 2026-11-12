@@ -5,9 +5,6 @@ package com.github.albertocavalcante.gvy.viz.desktop.state
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import com.github.albertocavalcante.groovyparser.GroovyParser
-import com.github.albertocavalcante.groovyparser.ParserConfiguration
-import com.github.albertocavalcante.groovyparser.printer.DotPrinter
 import com.github.albertocavalcante.gvy.viz.model.AstNodeDto
 import com.github.albertocavalcante.gvy.viz.model.RangeDto
 import kotlinx.coroutines.CancellationException
@@ -25,9 +22,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.ExperimentalSerializationApi
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.prefs.Preferences
@@ -53,14 +47,10 @@ data class CodeError(
 
 data class SourceNavigation(val sequence: Long, val range: RangeDto)
 
-internal enum class ExportFormat { JSON, DOT }
-
-internal data class ExportSnapshot(val format: ExportFormat, val source: String, val tree: AstNodeDto?)
-
 internal class FileEnvironment(
     val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
     val fileOperations: DesktopFileOperations = LocalDesktopFileOperations,
-    val prefs: Preferences = Preferences.userNodeForPackage(AstViewModel::class.java),
+    val prefs: Preferences,
 )
 
 /**
@@ -74,7 +64,8 @@ class AstViewModel internal constructor(
     private val backgroundDispatcher: CoroutineDispatcher,
     private val parseEngine: suspend (ParseSnapshot, AtomicBoolean) -> ParseOutput,
     debounceMillis: Long,
-    private val files: FileEnvironment = FileEnvironment(),
+    private val files: FileEnvironment,
+    private val encode: suspend (ExportSnapshot) -> String = ::encodeExport,
 ) {
     constructor() : this(Preferences.userNodeForPackage(AstViewModel::class.java))
 
@@ -95,9 +86,11 @@ class AstViewModel internal constructor(
     private val preferencesMutex = Mutex()
     private var readJob: Job? = null
     private var closed = false
+    private var navigation: AstNavigation? = null
     private val parser = ParseCoordinator(scope, backgroundDispatcher, { input, token ->
         parseMutex.withLock { parseEngine(input, token) }
     }, { result ->
+        navigation = result.tree?.let { AstNavigation(it, sourceCode) }
         astTree = result.tree
         parseErrors = result.errors
         isParsing = false
@@ -137,8 +130,7 @@ class AstViewModel internal constructor(
      * Select a node in the tree.
      */
     fun selectNode(node: AstNodeDto?) {
-        fun contains(root: AstNodeDto): Boolean = root === node || root.children.any(::contains)
-        if (node != null && astTree?.let(::contains) != true) return
+        if (node != null && navigation?.contains(node) != true) return
         selectedNode = node
         sourceNavigation = node?.range?.let { SourceNavigation(++navigationSequence, it) }
     }
@@ -147,42 +139,11 @@ class AstViewModel internal constructor(
      * Find the smallest node containing the given line and column.
      */
     fun selectNodeAt(line: Int, column: Int) {
-        val root = astTree ?: return
-        val node = findSmallestNodeAt(root, line, column)
-        selectedNode = node
-    }
-
-    private fun findSmallestNodeAt(node: AstNodeDto, line: Int, column: Int): AstNodeDto? {
-        val coordinates = SourceCoordinates(sourceCode)
-        val cursor = coordinates.offset(line, column) ?: return null
-        data class Candidate(val node: AstNodeDto, val length: Int, val depth: Int)
-        var best: Candidate? = null
-        fun visit(current: AstNodeDto, depth: Int) {
-            current.range?.let { range ->
-                val start = coordinates.offset(range.startLine, range.startColumn) ?: return@let
-                val end = coordinates.offset(range.endLine, range.endColumn) ?: return@let
-                val validRange = start < end
-                val containsCursor = cursor >= start && cursor < end
-                if (!validRange || !containsCursor) return@let
-
-                val candidate = Candidate(current, end - start, depth)
-                val previous = best
-                // Equal spans prefer the deeper node, then the first in tree order.
-                if (previous == null) {
-                    best = candidate
-                } else {
-                    val smallerSpan = candidate.length < previous.length
-                    val deeperEqualSpan = candidate.length == previous.length && candidate.depth > previous.depth
-                    if (smallerSpan || deeperEqualSpan) best = candidate
-                }
-            }
-            current.children.forEach { visit(it, depth + 1) }
-        }
-        visit(node, 0)
-        return best?.node
+        selectedNode = navigation?.nodeAt(line, column)
     }
 
     private fun invalidateParse() {
+        navigation = null
         astTree = null
         selectedNode = null
         sourceNavigation = null
@@ -204,14 +165,6 @@ class AstViewModel internal constructor(
     // Path input text
     var inputPath by mutableStateOf("")
         private set
-
-    // JSON serializer
-    @OptIn(ExperimentalSerializationApi::class)
-    private val json = Json {
-        prettyPrint = true
-        prettyPrintIndent = "  "
-        classDiscriminator = "nodeClass"
-    }
 
     /** Read off the event thread; edits and newer requests invalidate this result. */
     fun loadFile(file: File) {
@@ -332,8 +285,8 @@ class AstViewModel internal constructor(
                 try {
                     val contents = withContext(backgroundDispatcher) {
                         when (snapshot.format) {
-                            ExportFormat.JSON -> json.encodeToString<AstNodeDto>(requireNotNull(snapshot.tree))
-                            ExportFormat.DOT -> parseMutex.withLock { exportDot(snapshot.source) }
+                            ExportFormat.JSON -> encode(snapshot)
+                            ExportFormat.DOT -> parseMutex.withLock { encode(snapshot) }
                         }
                     }
                     withContext(ioDispatcher) { fileOperations.write(file, contents) }
@@ -348,13 +301,6 @@ class AstViewModel internal constructor(
                     if (!closed) isExporting = false
                 }
             }
-        }
-    }
-
-    private fun exportDot(source: String): String {
-        val result = GroovyParser(ParserConfiguration()).parse(source)
-        return result.result.map { DotPrinter().print(it) }.orElseThrow {
-            IllegalStateException("Failed to parse source for DOT export")
         }
     }
 }

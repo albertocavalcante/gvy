@@ -1,22 +1,14 @@
 package com.github.albertocavalcante.gvy.viz.desktop.ui.components
 
 import com.github.albertocavalcante.gvy.viz.desktop.state.CodeError
+import com.github.albertocavalcante.gvy.viz.desktop.state.SourceCoordinates
+import com.github.albertocavalcante.gvy.viz.desktop.state.errorSpans
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class CodePanelTest {
-    private fun offset(text: String, line: Int, column: Int): Int {
-        val method = Class.forName("com.github.albertocavalcante.gvy.viz.desktop.ui.components.CodePanelKt")
-            .getDeclaredMethod(
-                "getOffset",
-                String::class.java,
-                Int::class.javaPrimitiveType,
-                Int::class.javaPrimitiveType,
-            )
-        method.isAccessible = true
-        return method.invoke(null, text, line, column) as Int
-    }
+    private fun offset(text: String, line: Int, column: Int): Int = SourceCoordinates(text).offset(line, column) ?: -1
 
     @Test
     fun `offsets stay on their line across LF and CRLF`() {
@@ -27,12 +19,7 @@ class CodePanelTest {
             assertEquals(text.length, offset(text, 2, 3))
         }
     }
-    private fun span(text: String, error: CodeError): IntRange? {
-        val method = Class.forName("com.github.albertocavalcante.gvy.viz.desktop.ui.components.CodePanelKt")
-            .getDeclaredMethod("errorSpan", String::class.java, List::class.java, CodeError::class.java)
-        method.isAccessible = true
-        return method.invoke(null, text, text.lines(), error) as IntRange?
-    }
+    private fun span(text: String, error: CodeError): IntRange? = errorSpans(text, listOf(error)).singleOrNull()
 
     @Test
     fun `diagnostic spans are exclusive for first and later lines and points remain empty`() {
