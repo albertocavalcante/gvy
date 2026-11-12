@@ -241,6 +241,8 @@ export class LSPTestExecutionService implements ITestExecutionService {
         }
       }
 
+      const excluded = new Set(this.collectAllTestItems(request.exclude ?? []));
+
       // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
       if (healthyMavenItems.length > 0 && !isCancelled()) {
         await this.applyTestResults(
@@ -249,14 +251,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
           healthyMavenItems,
           consumer,
           affectedByLoss,
+          excluded,
         );
       }
 
       if (!isCancelled()) {
         const selected = new Set(testsToRun);
-        const excluded = new Set(
-          this.collectAllTestItems(request.exclude ?? []),
-        );
         for (const item of affectedByLoss) {
           if (
             !consumer.isTerminal(item) &&
@@ -318,6 +318,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     testsToRun: readonly vscode.TestItem[],
     consumer: TestEventConsumer,
     affectedByLoss: ReadonlySet<vscode.TestItem>,
+    excluded: ReadonlySet<vscode.TestItem>,
   ): Promise<void> {
     try {
       const results = await this.testService.getTestResults(workspaceUri);
@@ -396,7 +397,12 @@ export class LSPTestExecutionService implements ITestExecutionService {
           result = resultMap.get(methodName);
         }
 
-        if (result && !affectedByLoss.has(item) && !consumer.isTerminal(item)) {
+        if (
+          result &&
+          !excluded.has(item) &&
+          !affectedByLoss.has(item) &&
+          !consumer.isTerminal(item)
+        ) {
           this.applyResultToItem(run, item, result);
           consumer.markTerminal(item);
         }

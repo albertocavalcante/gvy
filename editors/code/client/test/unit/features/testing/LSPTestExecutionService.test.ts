@@ -1732,6 +1732,48 @@ describe("LSPTestExecutionService", () => {
       assert.ok(run.passed.calledWith(maven));
     });
 
+    it("does not apply a healthy Maven report to excluded descendants", async () => {
+      const { token, run, controller, item, proc } = setup("/w/mvnw");
+      const child = {
+        id: "suite.test.child",
+        label: "child",
+        uri: item.uri,
+        children: { forEach: () => {} },
+      };
+      const suite = {
+        ...item,
+        children: { forEach: (f: (value: unknown) => void) => f(child) },
+      };
+      testServiceMock.getTestResults.resolves({
+        results: [
+          {
+            testId: child.id,
+            name: child.label,
+            status: "SUCCESS",
+            durationMs: 3,
+          },
+        ],
+      });
+      const done = service.runTests(
+        { include: [suite], exclude: [child] },
+        token,
+        controller,
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      proc.stdout.end();
+      proc.stderr.end();
+      await Promise.all([
+        new Promise((resolve) => proc.stdout.on("close", resolve)),
+        new Promise((resolve) => proc.stderr.on("close", resolve)),
+      ]);
+      proc.emit("close", 0);
+      await done;
+      assert.ok(!run.passed.calledWith(child));
+      assert.ok(!run.failed.calledWith(child));
+      assert.ok(!run.errored.calledWith(child));
+      assert.ok(!run.skipped.calledWith(child));
+    });
+
     it("does not mark cancelled runs as errors after output loss", async () => {
       const { token, run, controller, item, proc } = setup("/w/gradlew");
       const done = service.runTests({ include: [item] }, token, controller);
