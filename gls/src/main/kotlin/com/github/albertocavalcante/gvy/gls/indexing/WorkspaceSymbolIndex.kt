@@ -40,8 +40,8 @@ class WorkspaceSymbolIndex(
 
     /**
      * Captures a detached member view. [hiddenUris] is copied but is not coordinated with DB publication;
-     * request owners must capture and validate document/workspace identities separately. Capturing copies
-     * the declaration indexes; reuse the result rather than capturing for each member lookup.
+     * request owners must capture and validate document/workspace identities separately. The first capture after
+     * a DB mutation copies declaration indexes; later captures reuse them, while each call copies [hiddenUris].
      */
     fun captureMembers(hiddenUris: Set<URI>): MemberLookup = FrozenWorkspaceMemberLookup(
         semanticDb.snapshotDeclarations(),

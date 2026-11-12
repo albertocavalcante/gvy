@@ -44,6 +44,9 @@ class GroovySemanticDB {
 
     private val versionCounter = AtomicLong()
 
+    // Guarded by lock; invalidated by every successful document graph mutation.
+    private var cachedDeclarations: DeclarationIndexSnapshot? = null
+
     /**
      * Increases whenever a stored document's declarations change (a class, method, field or property added,
      * removed, renamed or retyped), or the database is cleared, so a derived value can tell it was computed earlier.
@@ -101,6 +104,7 @@ class GroovySemanticDB {
             documents[uri] = StoredDocument(snapshot, sourceText, facts)
             previous?.let { removeFromIndexes(uri, it.document) }
             addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex, ownerIndex)
+            cachedDeclarations = null
             if (declarationsChanged) {
                 versionCounter.incrementAndGet()
             }
@@ -114,17 +118,26 @@ class GroovySemanticDB {
         lock.write {
             documents.remove(uri)?.let {
                 removeFromIndexes(uri, it.document)
+                cachedDeclarations = null
                 if (declarations(it.document).isNotEmpty()) versionCounter.incrementAndGet()
             }
         }
     }
 
     /**
-     * A detached ordered declaration view and version captured under one read lock.
-     * Copies the indexes in O(index size); callers should reuse a view, not capture for each lookup.
+     * An immutable ordered declaration view. The first capture after a database mutation copies the indexes
+     * under the write lock in O(index size); subsequent captures reuse that view in O(1). A declaration version
+     * alone does not identify this view: range, body and ordering changes also retire it.
      */
-    fun snapshotDeclarations(): DeclarationIndexSnapshot = lock.read {
-        DeclarationIndexSnapshot(versionCounter.get(), symbolIndex.snapshot(), ownerIndex.snapshot())
+    fun snapshotDeclarations(): DeclarationIndexSnapshot {
+        lock.read { cachedDeclarations?.let { return it } }
+        return lock.write {
+            cachedDeclarations ?: DeclarationIndexSnapshot(
+                versionCounter.get(),
+                symbolIndex.snapshot(),
+                ownerIndex.snapshot(),
+            ).also { cachedDeclarations = it }
+        }
     }
 
     /**
@@ -220,6 +233,7 @@ class GroovySemanticDB {
             symbolIndex = SymbolIndex()
             occurrenceIndex = SymbolIndex()
             ownerIndex = SymbolIndex()
+            cachedDeclarations = null
             versionCounter.incrementAndGet()
         }
     }
