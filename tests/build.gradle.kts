@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
@@ -87,6 +90,11 @@ testing {
                         description = "Runs end-to-end LSP scenarios."
                         shouldRunAfter(tasks.test)
 
+                        // Cached test results cannot verify the current server process or host tooling.
+                        // Compile and distribution tasks still reuse their own caches.
+                        outputs.upToDateWhen { false }
+                        outputs.doNotCacheIf("Protocol checks require a fresh test process") { true }
+
                         val glsProject = project(":gls")
                         val shadowJarFileProvider =
                             glsProject.tasks
@@ -169,8 +177,7 @@ testing {
                             filter.includeTestsMatching("*.ScenarioRunnerTest")
                         }
                         systemProperty("groovy.lsp.e2e.updateGolden", System.getProperty("groovy.lsp.e2e.updateGolden"))
-                        // Local-only: rewrites snapshot files (refused on CI and under Bazel). Re-run with --rerun,
-                        // because Gradle may serve the test task from its build cache.
+                        // Local-only: rewrites snapshot files (refused on CI and under Bazel).
                         systemProperty(
                             "groovy.lsp.e2e.updateSnapshots",
                             System.getProperty("groovy.lsp.e2e.updateSnapshots"),
