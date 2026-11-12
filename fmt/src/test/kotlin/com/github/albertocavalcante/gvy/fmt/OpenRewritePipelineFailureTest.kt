@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestFactory
 import org.openrewrite.Cursor
 import org.openrewrite.ExecutionContext
+import org.openrewrite.InMemoryExecutionContext
 import org.openrewrite.Recipe
 import org.openrewrite.SourceFile
 import org.openrewrite.Tree
@@ -151,6 +152,28 @@ class OpenRewritePipelineFailureTest {
 
         assertThat(outcome).isInstanceOf(FormatOutcome.Refused::class.java)
         assertThat(outcome.text).isEqualTo(source)
+    }
+
+    @TestFactory
+    fun `syntax failures cannot hide suppressed cleanup failures`(): List<DynamicTest> = listOf(
+        IOException("parser cleanup failed"),
+        CancellationException("parser cleanup cancelled"),
+        LinkageError("parser cleanup fatal"),
+    ).map { cleanup ->
+        dynamicTest(cleanup.javaClass.simpleName) {
+            val operations = object : RewriteOperations() {
+                override fun parse(text: String, context: ExecutionContext): List<SourceFile> = super.parse(
+                    "def x = ",
+                    InMemoryExecutionContext { sourceFailure ->
+                        // GroovyParser also suppresses classloader-close failures onto a syntax failure.
+                        sourceFailure.addSuppressed(cleanup)
+                        context.onError.accept(sourceFailure)
+                    },
+                )
+            }
+
+            assertThatThrownBy { formatter(operations).formatChecked(SOURCE) }.isSameAs(cleanup)
+        }
     }
 
     @Test
