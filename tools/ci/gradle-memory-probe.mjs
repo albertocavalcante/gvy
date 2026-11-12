@@ -80,7 +80,7 @@ export function identifyOwnedGradleDaemon(record, { ownerArgument, uid }) {
   if (!bytes.length || bytes.length > 64 * 1024 || bytes.at(-1) !== 0 || /[^\x00\x20-\x7e]/.test(bytes.toString('latin1'))) return null;
   const argv = bytes.toString('utf8').split('\0'); argv.pop();
   const mainIndex = javaMainIndex(argv);
-  const owners = argv.flatMap((arg, index) => arg.startsWith('-XX:ErrorFile') ? [{ arg, index }] : []);
+  const owners = argv.flatMap((arg, index) => /^-XX:[+-]?ErrorFile/.test(arg) ? [{ arg, index }] : []);
   if (mainIndex < 0 || argv[mainIndex] !== MAIN || owners.length !== 1 || owners[0].arg !== ownerArgument || owners[0].index >= mainIndex) return null;
   return parseProcStat(record.stat, record.pid);
 }

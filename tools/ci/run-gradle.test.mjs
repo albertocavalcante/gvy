@@ -41,12 +41,14 @@ else if (process.argv[2] === 'status') {
 else process.exitCode = 1;
 `);
   chmodSync(join(dir, 'git'), 0o755);
+  writeFileSync(join(dir, 'gradle.properties'), 'org.gradle.jvmargs=-Xms512m -Xmx3g -XX:MaxMetaspaceSize=2g\n');
   const env = { ...process.env, PATH: dir };
   for (const key of Object.keys(env)) if (key.startsWith('GITHUB_')) delete env[key];
+  delete env.GVY_GRADLE_MEMORY_PROBE;
   const reportRoot = join(dir, 'reports');
   const run = (args = ['lint'], extraEnv = {}) => spawnSync(process.execPath,
     [runner, '--report-root', reportRoot, '--producer', 'gradle-lint', ...args],
-    { encoding: 'utf8', cwd: dir, env: { ...env, ...extraEnv } });
+    { encoding: 'utf8', cwd: dir, env: { ...env, ...extraEnv }, timeout: 10000 });
   const artifactDirs = () => readdirSync(reportRoot).map(name => join(reportRoot, name));
   const summaries = () => artifactDirs().map(path => JSON.parse(readFileSync(join(path, 'summary.json'), 'utf8')));
   return { dir, env, reportRoot, executable, run, artifactDirs, summaries };
@@ -165,4 +167,47 @@ test('termination reaches only the wrapper child and records the interrupted sta
   assert.equal(summary.commandSignal, 'SIGTERM');
   assert.equal(summary.commandExitCode, 143);
   assert.equal(summary.ok, false);
+});
+
+test('memory opt-in fails closed on unsupported runners and cannot invent healthy samples for a short producer', t => {
+  const f = fixture(t);
+  const event = join(f.dir, 'event.json');
+  const privateTemp = mkdtempSync(join(tmpdir(), 'gvy-memory-runner-temp-'));
+  t.after(() => rmSync(privateTemp, { recursive: true, force: true }));
+  writeFileSync(event, JSON.stringify({ pull_request: { head: { sha: 'a'.repeat(40) } } }));
+  const env = { GVY_GRADLE_MEMORY_PROBE: 'true', GITHUB_ACTIONS: 'true', GITHUB_SHA: sha,
+    GITHUB_EVENT_PATH: event, GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_JOB: 'build',
+    RUNNER_OS: 'Linux', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_TEMP: privateTemp };
+  const result = f.run(['test'], env);
+  assert.equal(result.signal, null, 'a stopped discovery loop must not wait out its full timeout');
+  assert.notEqual(result.status, 0);
+  const summary = f.summaries()[0];
+  assert.equal(summary.memoryProbe.required, true);
+  assert.equal(summary.memoryProbe.complete, false);
+  assert.equal(summary.complete, false);
+  assert.equal(summary.ok, false);
+  if (process.platform === 'linux') {
+    assert.equal(summary.commandExitCode, 0);
+    assert.ok(summary.memoryProbe.report);
+    const args = JSON.parse(readFileSync(join(f.dir, 'args.json'), 'utf8'));
+    const jvm = args.find(value => value.startsWith('-Dorg.gradle.jvmargs='));
+    assert.match(jvm, /-Xmx3g -XX:MaxMetaspaceSize=2g -XX:ErrorFile=/);
+    assert.doesNotMatch(JSON.stringify(summary), /gvy-memory-[a-f0-9]{64}-hs_err/);
+  } else {
+    assert.equal(summary.commandExitCode, 2);
+    assert.equal(summary.memoryProbe.report, null);
+    assert.match(summary.errors.join(' '), /Linux GitHub-hosted runner/);
+  }
+});
+
+test('invalid memory configuration does not disclose its value or become successful evidence', t => {
+  const f = fixture(t);
+  const secret = 'PRIVATE-MEMORY-OPTION';
+  const result = f.run(['test'], { GVY_GRADLE_MEMORY_PROBE: secret });
+  assert.notEqual(result.status, 0);
+  const summary = f.summaries()[0];
+  assert.equal(summary.ok, false);
+  assert.equal(summary.complete, false);
+  assert.match(summary.errors.join(' '), /Invalid memory observation opt-in/);
+  assert.doesNotMatch(JSON.stringify(summary) + result.stdout + result.stderr, new RegExp(secret));
 });

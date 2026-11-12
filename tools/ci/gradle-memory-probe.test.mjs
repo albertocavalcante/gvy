@@ -60,6 +60,8 @@ test('proc identity requires the immutable argument, actual Gradle main class, U
     record({ cmdline: argv(['/jdk/bin/java', main, marker]) }),
     record({ cmdline: argv(['/jdk/bin/java', marker, marker, main]) }),
     record({ cmdline: argv(['/jdk/bin/java', marker, '-XX:ErrorFile=/private/other', main]) }),
+    record({ cmdline: argv(['/jdk/bin/java', marker, '-XX:+ErrorFileToStdout', main]) }),
+    record({ cmdline: argv(['/jdk/bin/java', marker, '-XX:+ErrorFileToStderr', main]) }),
     record({ status: `Name:\tjava\nUid:\t${uid + 1}\t${uid + 1}\t${uid + 1}\t${uid + 1}\n` }),
   ]) assert.equal(identifyOwnedGradleDaemon(changed, { ownerArgument: marker, uid }), null);
   assert.throws(() => parseProcStat(stat(43), 42), /Invalid process/);

@@ -1,11 +1,14 @@
 import { isUtf8 } from 'node:buffer';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { appendFileSync, createWriteStream, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants as fsConstants, createWriteStream, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { constants } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { finished } from 'node:stream/promises';
+import { isDeepStrictEqual } from 'node:util';
 import { checkGradleDiagnostics, renderSummary } from './check-gradle-diagnostics.mjs';
+import { effectiveGradleJvmArgs, gradleMemoryPlan } from './gradle-memory-options.mjs';
+import { startGradleMemoryProbe } from './gradle-memory-probe.mjs';
 import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
 
 function parseArgs(args) {
@@ -55,6 +58,29 @@ function createContext(invocationId) {
   return { schemaVersion: 1, headSha, testedSha, runId, runAttempt: Number(attempt), invocationId, command: 'gradle' };
 }
 
+function memoryPrivateDirectory(reportRoot) {
+  try {
+    if (!isAbsolute(process.env.RUNNER_TEMP ?? '')) throw new Error();
+    const temp = realpathSync(process.env.RUNNER_TEMP);
+    const dir = join(temp, 'gvy-gradle-memory-private');
+    const inside = (parent, child) => {
+      const suffix = relative(parent, child);
+      return suffix === '' || (suffix !== '..' && !suffix.startsWith('..' + sep) && !isAbsolute(suffix));
+    };
+    const report = realpathSync(reportRoot);
+    if (inside(realpathSync(process.cwd()), dir) || inside(report, dir) || inside(dir, report)) throw new Error();
+    try { mkdirSync(dir, { mode: 0o700 }); }
+    catch (error) { if (error.code !== 'EEXIST') throw error; }
+    const stat = lstatSync(dir);
+    if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid() || (stat.mode & 0o777) !== 0o700 || realpathSync(dir) !== dir) throw new Error();
+    accessSync(dir, fsConstants.W_OK | fsConstants.X_OK);
+    return dir;
+  } catch {
+    // Filesystem errors may contain private paths. Keep them out of artifacts.
+    throw new Error('Cannot prepare private owner-only daemon crash routing outside workspace and artifacts');
+  }
+}
+
 async function capture(args, dir) {
   let captureExitCode = 0;
   const streams = ['stdout.log', 'stderr.log', 'console.log'].map(name => createWriteStream(join(dir, name), { flags: 'wx' }));
@@ -94,16 +120,58 @@ async function main(args) {
   let status = { commandExitCode: 2, captureExitCode: 0, commandSignal: null };
   let bytes;
   let exceptions;
+  const memoryRequired = process.env.GVY_GRADLE_MEMORY_PROBE === 'true';
+  const memoryPath = join(dir, 'memory.json');
+  let memoryProbe = null;
+  let memoryPlan = null;
+  let memoryOutcome = null;
+  let memoryReport = null;
+  let memoryComplete = false;
   const errors = [];
   try {
     exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8'));
     context = createContext(invocationId);
     writeFileSync(join(dir, 'context.json'), `${JSON.stringify(context, null, 2)}\n`, { flag: 'wx' });
     worktreeDirty = Boolean(git(['status', '--porcelain', '--untracked-files=normal']));
-    status = await capture([...options.gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true'], dir);
+    const gradleArgs = [...options.gradleArgs];
+    if (!['true', 'false', undefined].includes(process.env.GVY_GRADLE_MEMORY_PROBE)) throw new Error('Invalid memory observation opt-in');
+    if (memoryRequired) {
+      if (process.platform !== 'linux' || process.env.GITHUB_ACTIONS !== 'true' || process.env.RUNNER_OS !== 'Linux' || process.env.RUNNER_ENVIRONMENT !== 'github-hosted') {
+        throw new Error('Required memory observation needs a Linux GitHub-hosted runner');
+      }
+      if (['JDK_JAVA_OPTIONS', 'JAVA_TOOL_OPTIONS', '_JAVA_OPTIONS'].some(key => /-XX:[+-]?ErrorFile/.test(process.env[key] ?? ''))) {
+        throw new Error('Memory observation cannot use an inherited ErrorFile override');
+      }
+      const properties = readEvidenceText(join(process.cwd(), 'gradle.properties'), 64 * 1024);
+      memoryPlan = gradleMemoryPlan({ context, producer: options.producer, job: process.env.GITHUB_JOB,
+        jvmArgs: effectiveGradleJvmArgs(gradleArgs, properties), privateDirectory: memoryPrivateDirectory(options.reportRoot) });
+      // Private crash-file routing proves ownership without changing memory/GC limits.
+      gradleArgs.push('-Dorg.gradle.jvmargs=' + memoryPlan.jvmArgs);
+      memoryProbe = startGradleMemoryProbe({ ownerArgument: memoryPlan.ownerArgument, identity: memoryPlan.identity,
+        reportPath: memoryPath, intervalMs: 5000, maxDurationMs: 1800000 });
+    }
+    status = await capture([...gradleArgs, '--console=plain', '--warning-mode=all', '-Dorg.gradle.deprecation.trace=true'], dir);
     // Oversize logs stay intact as artifacts; evidence fails instead of truncating.
     bytes = readEvidenceBytes(join(dir, 'console.log'), 128 * 1024 * 1024);
   } catch (error) { errors.push(error.message); }
+  finally {
+    if (memoryProbe) {
+      try { memoryOutcome = await memoryProbe.stop(); }
+      catch { errors.push('Gradle memory observation failed'); }
+    }
+  }
+  if (memoryRequired && memoryPlan && memoryOutcome) {
+    try {
+      const reportBytes = readEvidenceBytes(memoryPath, 256 * 1024);
+      if (!isUtf8(reportBytes)) throw new Error('Invalid memory report encoding');
+      const report = JSON.parse(reportBytes.toString('utf8'));
+      if (report.schemaVersion !== 1 || !isDeepStrictEqual(report.identity, memoryPlan.identity) ||
+          typeof report.complete !== 'boolean' || report.complete !== memoryOutcome.complete) throw new Error('Invalid memory report identity');
+      memoryReport = { bytes: reportBytes.length, sha256: createHash('sha256').update(reportBytes).digest('hex') };
+      memoryComplete = report.complete;
+    } catch { errors.push('Gradle memory evidence is missing, malformed or mismatched'); }
+  }
+  if (memoryRequired && !memoryComplete) errors.push('Required Gradle memory observation is incomplete');
   const result = checkGradleDiagnostics({
     log: bytes?.toString('utf8'), exceptions,
     commandExitCode: status.commandExitCode, captureExitCode: status.captureExitCode,
@@ -113,6 +181,7 @@ async function main(args) {
     producer: options.producer, context, worktreeDirty, commandSignal: status.commandSignal,
     log: bytes ? { bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') } : null,
   });
+  if (memoryRequired) result.memoryProbe = { schemaVersion: 1, required: true, complete: memoryComplete, report: memoryReport };
   result.errors.push(...errors);
   result.ok &&= errors.length === 0 && context !== null;
   result.complete &&= errors.length === 0 && context !== null;

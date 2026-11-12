@@ -378,6 +378,16 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
+      - name: Set up diagnostic Node runtime
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+      - name: Verify daemon memory sampler with the real JDK
+        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+        timeout-minutes: 2
+        env:
+          GVY_MEMORY_PROBE_NATIVE_TEST: 'true'
+        run: node --test tools/ci/gradle-memory-probe.test.mjs
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
@@ -420,12 +430,16 @@ jobs:
       # keep compiling modules without tests. Lint runs in a separate parallel job; unit tests
       # also feed the coverage reports below.
       - name: Verify protobuf generation with bounded JVMs
+        env:
+          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
         run: >-
           node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer proto-generation
           :schemas:generateProtos :indexer:scip:generateProtos --rerun-tasks --build-cache --stacktrace
 
       - name: Compile and Run Unit Tests
         timeout-minutes: 25
+        env:
+          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
         run: |
           args=(classes testClasses test --parallel --build-cache --stacktrace)
           if [[ -n "${TEST_LOG_FLAG}" ]]; then
@@ -441,6 +455,8 @@ jobs:
       # (Kotlin/kotlinx-kover#509). SonarCloud only uploads when opted in (see SONAR above).
       - name: Generate Coverage Reports
         if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
+        env:
+          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
         run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer coverage koverXmlReport koverHtmlReport --parallel --build-cache --stacktrace
 
       - name: Upload Coverage Reports
@@ -486,6 +502,8 @@ jobs:
 
       # Build shadowJar for verification (E2E tests run in parallel job)
       - name: Build Shadow JAR
+        env:
+          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
         if: matrix.os == env.PRIMARY_OS && matrix.java == 17
         run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer shadow-jar :gls:shadowJar --parallel --build-cache --stacktrace
 

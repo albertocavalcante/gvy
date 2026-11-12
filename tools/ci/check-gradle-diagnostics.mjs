@@ -151,6 +151,9 @@ export function renderSummary(result) {
     '## Gradle diagnostic accountability', '',
     `**${result.ok ? 'PASS' : 'FAIL'}** (${escape(result.producer)}): ${result.diagnostics.length} diagnostics; ${result.unexpected.length} unexpected; evidence ${result.complete ? 'complete' : 'incomplete'}.`, '',
     `Original command exit: ${result.commandExitCode}; log capture exit: ${result.captureExitCode}.`, '',
+    ...(result.memoryProbe ? [
+      `Required numeric daemon memory observation: ${result.memoryProbe.complete ? 'complete' : 'incomplete'} (memory.json). Sampled maxima are observations, not guaranteed peaks.`, '',
+    ] : []),
     ...result.errors.map(value => `- ${escape(value)}`), '',
     ...result.unexpected.map(value => `<pre>${escape(value)}</pre>`), '',
     '### Tracked debt (including exceptions absent from cached output)', '',

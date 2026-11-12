@@ -40,6 +40,27 @@
     },
     "worktreeDirty": { "type": ["boolean", "null"] },
     "commandSignal": { "type": ["string", "null"] },
+    "memoryProbe": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "required", "complete", "report"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "required": { "const": true },
+        "complete": { "type": "boolean" },
+        "report": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object", "additionalProperties": false, "required": ["bytes", "sha256"],
+              "properties": {
+                "bytes": { "type": "integer", "minimum": 1, "maximum": 262144 },
+                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              }
+            }
+          ]
+        }
+      }
+    },
     "log": {
       "oneOf": [
         { "type": "null" },

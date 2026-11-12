@@ -106,6 +106,24 @@ Cold compilation previously exhausted the 1 GiB metaspace allowance. Daemon expi
 diagnostics too; successful commands must not silently accept them. Test-worker heaps and parallelism are separate
 budgets, so shared hosts still require the build slot and bounded local overrides.
 
+Hosted Linux main-build producers also require bounded numeric daemon memory observations in each invocation's
+memory.json. The sampler records heap/metaspace usage, GC and loaded/unloaded class counters without changing the
+configured heap or metaspace limits. Its sampled maxima are the highest observations, not guaranteed peaks. Missing,
+ambiguous, unsupported or failed sampling is incomplete evidence and fails the opted-in producer while preserving the
+original Gradle exit. Local and self-hosted invocations keep their existing behavior.
+
+The sampler identifies the current job's daemon with one exact immutable ErrorFile argument, current user and pinned
+PID/start time. The argument is stable across protobuf, unit and JAR producers so their daemon remains reusable. Its
+owner-only crash directory is outside the workspace and artifact root. Reports retain neither the argument/private path
+nor command lines, environment values or class names. Only the sampler's own tool processes can be terminated; the probe
+does not stop daemons or force GC. HotSpot can fall back to other crash-log destinations if its configured file cannot
+open, so this does not make arbitrary fatal console output safe. Crash/core/replay files remain outside the explicit
+artifact inputs.
+
+Observations are bounded to five-second intervals, 30 minutes, 360 samples and a 256 KiB report. Each jstat command has
+an explicit 64 MiB heap, a two-second timeout and a 32 KiB output limit. Use the complete context-bound observations to
+evaluate cold compilation pressure before changing a resource profile; the memory-health warning remains a gate.
+
 Gradle's indented captured test output is outside the tool classifier. Runtime warnings need scenario/test identity and
 executed negative-test assertions; they cannot be safely accepted by baselining a whole console stream.
 
