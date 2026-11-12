@@ -81,8 +81,8 @@ object XfailOutcome {
 
     internal fun validateDeclaration(xfail: Xfail) {
         require(xfail.issue > 0) { "xfail.issue must be a gvy issue number" }
-        require(xfail.reason.isNotBlank()) { "xfail.reason must say what is wrong" }
         require(xfail.reason.length <= MAX_REASON_CHARS) { "xfail reason exceeds $MAX_REASON_CHARS characters" }
+        require(xfail.reason.isNotBlank()) { "xfail.reason must say what is wrong" }
         xfail.match?.let(::compileMatch)
     }
 

@@ -73,7 +73,7 @@ class ScenarioExecutor internal constructor(
                 "Named checks are currently supported only in assert steps"
             }
             check.id?.let {
-                require(it.isNotBlank() && it.length <= 256) { "A check ID must be nonblank and at most 256 characters" }
+                require(it.length <= 256 && it.isNotBlank()) { "A check ID must be nonblank and at most 256 characters" }
             }
             check.xfail?.let(XfailOutcome::validateDeclaration)
         }
