@@ -42,19 +42,19 @@ jobs:
         run: |
           set -euo pipefail
           payload="$GITHUB_WORKSPACE/support/.publication/candidate.patch.gz"
-          [[ "$(stat -c %s "$payload")" == 103648 ]]
-          printf '%s  %s\n' 9052c3ec0787e2bf9cd5e24cde095575487a01dfebacbe1810c57f05306f3b9e "$payload" | sha256sum -c -
+          [[ "$(stat -c %s "$payload")" == 103914 ]]
+          printf '%s  %s\n' 3fca751e727597d28c9d227b33d2a6757c4748b6a2a9c2c3e9e0b6b1450407b8 "$payload" | sha256sum -c -
           python3 - "$payload" "$RUNNER_TEMP/candidate.patch" <<'PY'
           import gzip, pathlib, sys
           with gzip.open(sys.argv[1], 'rb') as source:
-              data = source.read(526606)
-          assert len(data) == 526605
+              data = source.read(527832)
+          assert len(data) == 527831
           pathlib.Path(sys.argv[2]).write_bytes(data)
           PY
-          printf '%s  %s\n' f5274b2e5e5539cc3e02fde30d911d85cb55b69f24bef0d823162b5c70ea71b0 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
+          printf '%s  %s\n' c36267581e5420cb383a6353c5dc7ada6bb5a7d3adfa81bbe7b6cc78f2064922 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
           git apply --check --index "$RUNNER_TEMP/candidate.patch"
           git apply --index "$RUNNER_TEMP/candidate.patch"
-          [[ "$(git write-tree)" == 7794c19f77d17c551c9c9f969164e2e70cbb1970 ]]
+          [[ "$(git write-tree)" == 235ae7b20a223e7f84befc08dd8b4e5463e159c3 ]]
           git diff --quiet
           git diff --cached --check
       - name: Set up JDK
@@ -168,15 +168,19 @@ jobs:
           set -euo pipefail
           # The checkout has the reviewed patch staged. This 12-hex tree-derived token is a
           # synthetic test identity, not an artifact source stamp or compiler attestation.
-          [[ "$(git write-tree)" == 7794c19f77d17c551c9c9f969164e2e70cbb1970 ]]
+          [[ "$(git write-tree)" == 235ae7b20a223e7f84befc08dd8b4e5463e159c3 ]]
           git diff --cached --quiet && exit 1
           java_path=$(readlink -f "$(command -v java)")
           java_hash=$(sha256sum "$java_path" | cut -d' ' -f1)
           set +e
-          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=7794c19f77d1 -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=235ae7b20a22 -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/receipt-proof/prepare-exit.txt"
+          if [[ -f "$RUNNER_TEMP/receipt-proof/classpath.json" && ! -L "$RUNNER_TEMP/receipt-proof/classpath.json" ]]; then
+            cp "$RUNNER_TEMP/receipt-proof/classpath.json" "$RUNNER_TEMP/receipt-proof/first-classpath.json"
+            sha256sum "$RUNNER_TEMP/receipt-proof/first-classpath.json" > "$RUNNER_TEMP/receipt-proof/first-manifest.sha256"
+          fi
           python3 "$RUNNER_TEMP/receipt-proof/verify-producer.py" receipt-prepare 0 > "$RUNNER_TEMP/receipt-proof/prepare-dir.txt"
           (( status == 0 ))
           grep -Fx '> Task :tests:prepareAgentVerification' "$(cat "$RUNNER_TEMP/receipt-proof/prepare-dir.txt")/raw.log" >/dev/null
@@ -185,7 +189,7 @@ jobs:
           import { createHash } from 'node:crypto';
           import { inspectPreparedClasspath } from './tools/perf/prepared-classpath.mjs';
           const bytes = await fs.readFile(process.env.MANIFEST);
-          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: '7794c19f77d1', javaSha256: process.env.JAVA_HASH };
+          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: '235ae7b20a22', javaSha256: process.env.JAVA_HASH };
           if ((await inspectPreparedClasspath(options)).status !== 'verified') throw Error('Gradle/Node classpath hashes differ');
           if ((await inspectPreparedClasspath({ ...options, javaSha256: '0'.repeat(64) })).status !== 'unavailable') throw Error('Java mismatch accepted');
           const entry = JSON.parse(bytes).entries.find(e => e.kind === 'directory' && e.path.startsWith(process.cwd() + '/tests/build/'));
@@ -195,6 +199,42 @@ jobs:
           try { if ((await inspectPreparedClasspath(options)).status !== 'mismatch') throw Error('Classpath mutation accepted'); }
           finally { await fs.unlink(marker); }
           JS
+      - name: Verify configuration-cache reuse
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          manifest="$RUNNER_TEMP/receipt-proof/classpath.json"
+          [[ -f "$manifest" && ! -L "$manifest" ]]
+          first="$RUNNER_TEMP/receipt-proof/first-classpath.json"
+          [[ -f "$first" && ! -L "$first" ]]
+          cmp "$first" "$manifest"
+          rm -- "$manifest"
+          java_path=$(readlink -f "$(command -v java)")
+          java_hash=$(sha256sum "$java_path" | cut -d' ' -f1)
+          set +e
+          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare-reuse :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$manifest" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=235ae7b20a22 -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          status=$?
+          set -e
+          printf '%s\n' "$status" > "$RUNNER_TEMP/receipt-proof/prepare-reuse-exit.txt"
+          if [[ -f "$manifest" && ! -L "$manifest" ]]; then
+            cp "$manifest" "$RUNNER_TEMP/receipt-proof/reused-classpath.json"
+            sha256sum "$RUNNER_TEMP/receipt-proof/reused-classpath.json" > "$RUNNER_TEMP/receipt-proof/reused-manifest.sha256"
+          fi
+          python3 "$RUNNER_TEMP/receipt-proof/verify-producer.py" receipt-prepare-reuse 0 > "$RUNNER_TEMP/receipt-proof/prepare-reuse-dir.txt"
+          (( status == 0 ))
+          grep -F 'Reusing configuration cache.' "$(cat "$RUNNER_TEMP/receipt-proof/prepare-reuse-dir.txt")/raw.log" >/dev/null
+          grep -Fx '> Task :tests:prepareAgentVerification' "$(cat "$RUNNER_TEMP/receipt-proof/prepare-reuse-dir.txt")/raw.log" >/dev/null
+          cmp "$first" "$manifest"
+          cmp "$RUNNER_TEMP/receipt-proof/reused-classpath.json" "$manifest"
+          JAVA_HASH="$java_hash" MANIFEST="$manifest" node --input-type=module <<'JSREUSE'
+          import fs from 'node:fs/promises';
+          import { createHash } from 'node:crypto';
+          import { inspectPreparedClasspath } from './tools/perf/prepared-classpath.mjs';
+          const bytes = await fs.readFile(process.env.MANIFEST);
+          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: '235ae7b20a22', javaSha256: process.env.JAVA_HASH };
+          if ((await inspectPreparedClasspath(options)).status !== 'verified') throw Error('Reused classpath verification failed');
+          JSREUSE
       - name: Interrupt restoration behavioral RED control
         working-directory: candidate
         shell: bash
@@ -245,6 +285,10 @@ jobs:
             ${{ runner.temp }}/receipt-proof/node.tap
             ${{ runner.temp }}/receipt-proof/*-exit.txt
             ${{ runner.temp }}/receipt-proof/*-status.txt
+            ${{ runner.temp }}/receipt-proof/*-manifest.sha256
+            ${{ runner.temp }}/receipt-proof/first-classpath.json
+            ${{ runner.temp }}/receipt-proof/reused-classpath.json
+            ${{ runner.temp }}/receipt-proof/classpath.json
             ${{ runner.temp }}/receipt-proof/support-sha.txt
             ${{ runner.temp }}/receipt-proof/gradle/
             ${{ runner.temp }}/receipt-proof/green-xml/
