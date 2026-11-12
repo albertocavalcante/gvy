@@ -1,0 +1,9 @@
+# UTF-8 budget<TAB>input (literal \n denotes LF; \uD800 denotes an isolated high surrogate)<TAB>expected output<TAB>truncated
+6	é🙂	é🙂	false
+5	é🙂	é~	true
+32	token=shh	token=[REDACTED]	false
+64	https://user:pw@repo.example/x?token=a	https://repo.example	false
+64	one\ntwo	one\ntwo	false
+16	\uD800	�	false
+128	Authorization: Basic dXNlcjpwYXNz next=visible	Authorization:[REDACTED] next=visible	false
+128	{"password":"json-secret","ok":"visible"}	{"password":[REDACTED],"ok":"visible"}	false
