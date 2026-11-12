@@ -481,9 +481,12 @@ function downloadTempPath() {
 }
 
 /**
- * Validates and verifies `sourcePath`, then atomically replaces `destPath`.
+ * Copies `sourcePath` into a private snapshot, verifies and validates that
+ * snapshot, then atomically replaces `destPath` with it.
  * On any failure the previous JAR stays in place and the source is removed,
  * so an interrupted or tampered download can never become server/gls.jar.
+ * The destination directory and private staging directory are trusted; the
+ * caller's source pathname may be replaced at any point during validation.
  */
 async function installVerifiedJar(
   sourcePath,
@@ -491,12 +494,26 @@ async function installVerifiedJar(
   expectedChecksum,
   validate = validateJarFile,
 ) {
+  let snapshotDir;
+  let sourceRemoved = false;
   try {
-    await verifyChecksum(sourcePath, expectedChecksum);
-    validate(sourcePath);
-    fs.renameSync(sourcePath, destPath);
-  } finally {
+    expectedChecksum = requireChecksum(expectedChecksum, sourcePath);
+    snapshotDir = fs.mkdtempSync(
+      path.join(path.dirname(destPath), ".gls-verified-"),
+    );
+    const snapshot = path.join(snapshotDir, path.basename(sourcePath));
+    fs.copyFileSync(sourcePath, snapshot, fs.constants.COPYFILE_EXCL);
+    await verifyChecksum(snapshot, expectedChecksum);
+    validate(snapshot);
     fs.rmSync(sourcePath, { force: true });
+    sourceRemoved = true;
+    fs.renameSync(snapshot, destPath);
+  } finally {
+    try {
+      if (!sourceRemoved) fs.rmSync(sourcePath, { force: true });
+    } finally {
+      if (snapshotDir) fs.rmSync(snapshotDir, { recursive: true, force: true });
+    }
   }
 }
 

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const { EventEmitter } = require("node:events");
 const fs = require("node:fs");
 const https = require("node:https");
@@ -10,6 +11,8 @@ const path = require("node:path");
 const { Readable } = require("node:stream");
 const { test } = require("node:test");
 const { validateJarFile } = require("../validate-server.js");
+const { installVerifiedJar } = require("../prepare-server.js");
+const { replaceLocalJar } = require("../source-install.js");
 
 const GROOVY_CLASS = "org/codehaus/groovy/ast/ClassNode.class";
 
@@ -50,6 +53,146 @@ function trackDescriptor(t) {
     }
   };
 }
+
+test("installs verified original bytes when the source is replaced during validation", async (t) => {
+  const bytes = jarBytes();
+  const { dir, jar: source } = jarFixture(t, bytes);
+  const dest = path.join(dir, "dest.jar");
+  const replacement = path.join(dir, "replacement.jar");
+  fs.writeFileSync(dest, "prior verified artifact");
+  fs.writeFileSync(replacement, "unverified replacement");
+  const expected = crypto.createHash("sha256").update(bytes).digest("hex");
+  const open = fs.openSync;
+  let replaced = false;
+  t.mock.method(fs, "openSync", (...args) => {
+    const fd = open(...args);
+    if (!replaced) {
+      replaced = true;
+      fs.renameSync(replacement, source);
+    }
+    return fd;
+  });
+
+  await installVerifiedJar(source, dest, expected);
+
+  assert.equal(replaced, true);
+  assert.equal(
+    crypto.createHash("sha256").update(fs.readFileSync(dest)).digest("hex"),
+    expected,
+  );
+  assert.deepEqual(fs.readdirSync(dir), ["dest.jar"]);
+});
+
+for (const failure of ["checksum", "validation"]) {
+  test(`preserves the prior artifact and cleans snapshots on ${failure} failure`, async (t) => {
+    const bytes = jarBytes({ name: "another/Class.class" });
+    const { dir, jar: source } = jarFixture(t, bytes);
+    const dest = path.join(dir, "dest.jar");
+    fs.writeFileSync(dest, "prior verified artifact");
+    const expected =
+      failure === "checksum"
+        ? "0".repeat(64)
+        : crypto.createHash("sha256").update(bytes).digest("hex");
+
+    await assert.rejects(
+      installVerifiedJar(source, dest, expected),
+      failure === "checksum" ? /Checksum mismatch/ : /thin JAR detected/,
+    );
+
+    assert.equal(fs.readFileSync(dest, "utf8"), "prior verified artifact");
+    assert.deepEqual(fs.readdirSync(dir), ["dest.jar"]);
+  });
+}
+
+test("preserves the prior artifact when a substituted source cannot be removed", async (t) => {
+  const bytes = jarBytes();
+  const { dir, jar: source } = jarFixture(t, bytes);
+  const dest = path.join(dir, "dest.jar");
+  const previous = "prior verified artifact";
+  fs.writeFileSync(dest, previous);
+  const expected = crypto.createHash("sha256").update(bytes).digest("hex");
+
+  await assert.rejects(
+    installVerifiedJar(source, dest, expected, (candidate) => {
+      validateJarFile(candidate);
+      fs.unlinkSync(source);
+      fs.mkdirSync(source);
+    }),
+  );
+
+  assert.equal(
+    crypto.createHash("sha256").update(fs.readFileSync(dest)).digest("hex"),
+    crypto.createHash("sha256").update(previous).digest("hex"),
+  );
+  assert.equal(fs.statSync(source).isDirectory(), true);
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["dest.jar", "server.jar"]);
+});
+
+test("concurrent installs use distinct private snapshots and retain file permissions", async (t) => {
+  const bytes = jarBytes();
+  const { dir, jar: firstSource } = jarFixture(t, bytes);
+  const secondSource = path.join(dir, "second.jar");
+  fs.writeFileSync(secondSource, bytes);
+  fs.chmodSync(firstSource, 0o640);
+  const firstDest = path.join(dir, "first-dest.jar");
+  const secondDest = path.join(dir, "second-dest.jar");
+  const expected = crypto.createHash("sha256").update(bytes).digest("hex");
+  const candidates = [];
+  const validate = (candidate) => {
+    candidates.push(candidate);
+    assert.notEqual(candidate, firstSource);
+    assert.notEqual(candidate, secondSource);
+    if (process.platform !== "win32") {
+      assert.equal(fs.statSync(path.dirname(candidate)).mode & 0o777, 0o700);
+    }
+    validateJarFile(candidate);
+  };
+
+  await Promise.all([
+    installVerifiedJar(firstSource, firstDest, expected, validate),
+    installVerifiedJar(secondSource, secondDest, expected, validate),
+  ]);
+
+  assert.equal(candidates.length, 2);
+  assert.notEqual(path.dirname(candidates[0]), path.dirname(candidates[1]));
+  assert.deepEqual(fs.readFileSync(firstDest), bytes);
+  assert.deepEqual(fs.readFileSync(secondDest), bytes);
+  if (process.platform !== "win32") {
+    assert.equal(fs.statSync(firstDest).mode & 0o777, 0o640);
+  }
+  assert.deepEqual(fs.readdirSync(dir).sort(), [
+    "first-dest.jar",
+    "second-dest.jar",
+  ]);
+});
+
+test("local-copy installation preserves the prior artifact when its source changes", (t) => {
+  const bytes = jarBytes();
+  const { dir, jar: source } = jarFixture(t, bytes);
+  const dest = path.join(dir, "dest.jar");
+  const replacement = path.join(dir, "replacement.jar");
+  fs.writeFileSync(dest, "prior verified artifact");
+  fs.writeFileSync(replacement, "unverified replacement");
+  const open = fs.openSync;
+  let replaced = false;
+  t.mock.method(fs, "openSync", (...args) => {
+    const fd = open(...args);
+    if (!replaced) {
+      replaced = true;
+      fs.renameSync(replacement, source);
+    }
+    return fd;
+  });
+
+  assert.throws(
+    () => replaceLocalJar(source, dest, validateJarFile),
+    /Local JAR changed while copying/,
+  );
+
+  assert.equal(replaced, true);
+  assert.equal(fs.readFileSync(dest, "utf8"), "prior verified artifact");
+  assert.deepEqual(fs.readdirSync(dir).sort(), ["dest.jar", "server.jar"]);
+});
 
 test("validates the opened JAR when its path is replaced after opening", (t) => {
   const { dir, jar } = jarFixture(t);
