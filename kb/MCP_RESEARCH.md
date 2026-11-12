@@ -173,9 +173,9 @@ be separate capabilities after their lifecycle and trust contracts are establish
 
 ## CLI baseline and optional bridge comparison
 
-First establish the direct CLI task and result/completeness contract on one small original Groovy fixture. Record
-which semantic operations are supported and which still need shared-service work. Then use the same tasks for an
-optional Serena-to-gvy comparison; no installations were performed in this research pass.
+First establish the direct CLI task and result/completeness contract on one small original Groovy fixture. Record which
+semantic operations are supported and which still need shared-service work. Then use the same tasks for an optional
+Serena-to-gvy comparison; no installations were performed in this research pass.
 
 For that bridge comparison, check launch/config compatibility: gvy supports no-argument stdio JAR startup, but Serena
 sends nested initialization settings while gvy reads flattened `groovy.*` settings. In the inspected Serena adapter JVM
@@ -189,8 +189,7 @@ Compare a few real tasks with text search/file tools, direct semantic CLI operat
 locate a receiver-specific call, assess a signature change, and diagnose an edit. Record task correctness first, then
 total model input/output tokens, tool calls, cold/warm latency and heap/process count. Do not infer savings from shorter
 tool output alone. If native MCP is justified and built, add protocol-level cases for stale hashes, concurrent editor
-edits, partial diagnostics, refused cross-file
-rename, capped results and closed-client cleanup.
+edits, partial diagnostics, refused cross-file rename, capped results and closed-client cleanup.
 
 ## Claims and unresolved work
 
