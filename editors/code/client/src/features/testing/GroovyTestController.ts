@@ -481,7 +481,7 @@ export class GroovyTestController {
 
     let item = isWildcard
       ? undefined
-      : await this.findTestItem(args.suite, args.test);
+      : this.findTestItem(args.suite, args.test);
 
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
@@ -501,7 +501,7 @@ export class GroovyTestController {
           return;
         }
       } else {
-        const retryItem = await this.findTestItem(args.suite, args.test);
+        const retryItem = this.findTestItem(args.suite, args.test);
         if (retryItem) {
           item = retryItem;
         }
@@ -594,10 +594,10 @@ export class GroovyTestController {
     }
   }
 
-  private async findTestItem(
+  private findTestItem(
     suiteName: string,
     testName: string,
-  ): Promise<vscode.TestItem | undefined> {
+  ): vscode.TestItem | undefined {
     // First find suite
     const suiteItem = this.ctrl.items.get(suiteName);
     if (!suiteItem) {
@@ -610,14 +610,14 @@ export class GroovyTestController {
   }
 
   /**
-   * Create a test item on-the-fly for external files that are not in the workspace.
-   * This allows running tests from CodeLens on files opened from outside the workspace.
+   * Create a missing test item for a validated command target without replacing
+   * another discovery's suite or reusing a child from a different URI.
    */
   private createOnTheFlyTestItem(
     uriString: string,
     suiteName: string,
     testName: string,
-  ): vscode.TestItem {
+  ): vscode.TestItem | undefined {
     // Validate inputs (defensive programming - caller should validate, but guard here too)
     // This protects against future refactoring and ensures method contract is explicit
     if (!suiteName || suiteName.trim() === "") {
@@ -633,6 +633,9 @@ export class GroovyTestController {
 
     // Check if suite item already exists, if not create it
     let suiteItem = this.ctrl.items.get(suiteName);
+    if (suiteItem && !this.validateTestItemUri(suiteItem, uri.toString())) {
+      return;
+    }
     if (!suiteItem) {
       suiteItem = this.ctrl.createTestItem(
         suiteName,
@@ -640,22 +643,14 @@ export class GroovyTestController {
         uri,
       );
       this.ctrl.items.add(suiteItem);
-    } else if (suiteItem.uri && suiteItem.uri.toString() !== uri.toString()) {
-      // Suite exists but from a different file (workspace vs external)
-      // Update URI to match the file we're creating tests for
-      suiteItem = this.ctrl.createTestItem(
-        suiteName,
-        this.getClassName(suiteName),
-        uri,
-      );
-      // Delete old suite and add updated one, preserving other test items
-      this.ctrl.items.delete(suiteName);
-      this.ctrl.items.add(suiteItem);
     }
 
     // Check if test item already exists under the suite
     const testId = `${suiteName}.${testName}`;
     let testItem = suiteItem.children.get(testId);
+    if (testItem && !this.validateTestItemUri(testItem, uri.toString())) {
+      return;
+    }
     if (!testItem) {
       testItem = this.ctrl.createTestItem(testId, testName, uri);
       // We don't have line information for on-the-fly items, so skip setting range

@@ -82,9 +82,11 @@ describe("GroovyTestController", () => {
   let vscodeMock: VscodeMock;
   let testControllerMock: TestControllerMock;
   let sandbox: sinon.SinonSandbox;
+  let onChildLookup: ((parentId: string, childId: string) => void) | undefined;
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    onChildLookup = undefined;
 
     // Mock test items
     const testItemsMock = new Map();
@@ -104,9 +106,11 @@ describe("GroovyTestController", () => {
               add: sandbox.stub().callsFake((item: { id: string }) => {
                 childrenMap.set(item.id, item);
               }),
-              get: sandbox
-                .stub()
-                .callsFake((childId: string) => childrenMap.get(childId)),
+              get: sandbox.stub().callsFake((childId: string) => {
+                const child = childrenMap.get(childId);
+                onChildLookup?.(id, childId);
+                return child;
+              }),
               replace: sandbox.stub().callsFake(() => childrenMap.clear()),
             },
           };
@@ -458,6 +462,70 @@ describe("GroovyTestController", () => {
       await handler("runWithCoverage")({ suite, test: feature, uri });
       assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
       assertNoExecution();
+    });
+
+    describe("fallback cache ownership", () => {
+      for (const timing of ["synchronous", "microtask"]) {
+        it(`preserves another discovery's suite at the ${timing} retry boundary`, async () => {
+          await discoverTests();
+          testServiceMock.discoverTestsInWorkspace.resolves([
+            { suite, uri, line: 1, tests: [] },
+          ]);
+          const replacement = testControllerMock.createTestItem(
+            suite,
+            "OtherSpec",
+            vscodeMock.Uri.parse("file:///workspace/OtherSpec.groovy"),
+          );
+          let lookups = 0;
+          let pendingInstall: Promise<void> | undefined;
+          onChildLookup = () => {
+            if (++lookups === 2) {
+              const install = () => {
+                testControllerMock.items.add(replacement);
+              };
+              if (timing === "microtask")
+                pendingInstall = Promise.resolve().then(install);
+              else install();
+            }
+          };
+          await handler("runWithCoverage")({ suite, test: "new feature", uri });
+          await pendingInstall;
+          assert.equal(testControllerMock.items.get(suite), replacement);
+          if (timing === "synchronous") {
+            assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
+            assertNoExecution();
+          }
+          for (const call of executionServiceMock.runTestsWithCoverage?.getCalls() ??
+            []) {
+            assert.equal(call.args[0].include[0].uri.toString(), uri);
+          }
+        });
+      }
+
+      it("refuses a mismatched child installed before fallback reuse", async () => {
+        await discoverTests();
+        testServiceMock.discoverTestsInWorkspace.resolves([
+          { suite, uri, line: 1, tests: [] },
+        ]);
+        const child = testControllerMock.createTestItem(
+          `${suite}.new feature`,
+          "new feature",
+          vscodeMock.Uri.parse("file:///workspace/OtherSpec.groovy"),
+        );
+        let lookups = 0;
+        onChildLookup = () => {
+          if (++lookups === 2) {
+            testControllerMock.items.get(suite).children.add(child);
+          }
+        };
+        await handler("runWithCoverage")({ suite, test: "new feature", uri });
+        assert.equal(vscodeMock.window.showErrorMessage.callCount, 1);
+        assertNoExecution();
+        assert.equal(
+          testControllerMock.items.get(suite).children.get(child.id),
+          child,
+        );
+      });
     });
   });
 
