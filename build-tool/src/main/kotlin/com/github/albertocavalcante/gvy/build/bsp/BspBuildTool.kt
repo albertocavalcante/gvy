@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.build.bsp
 
 import ch.epfl.scala.bsp4j.DependencyModulesResult
@@ -16,7 +19,10 @@ import kotlin.io.path.exists
  * Connects to BSP servers that advertise themselves via .bsp directory JSON files.
  * This enables support for build tools without direct API implementations.
  */
-class BspBuildTool : BspCompatibleBuildTool {
+class BspBuildTool internal constructor(private val clientFactory: (BspConnectionDetails, Path) -> BspClient) :
+    BspCompatibleBuildTool {
+
+    constructor() : this(::BspClient)
 
     private val logger = KotlinLogging.logger {}
 
@@ -35,23 +41,30 @@ class BspBuildTool : BspCompatibleBuildTool {
     }
 
     override fun resolve(workspaceRoot: Path, onProgress: ((String) -> Unit)?): WorkspaceResolution {
-        val connection = BspConnectionDetails.findFirst(workspaceRoot)
-            ?: return WorkspaceResolution.empty().also {
-                logger.warn { "No BSP connection found in ${workspaceRoot.resolve(".bsp")}" }
-            }
+        val connection = BspConnectionDetails.findFirst(workspaceRoot) ?: run {
+            val message = "No BSP connection found in ${workspaceRoot.resolve(".bsp")}"
+            logger.warn { message }
+            return WorkspaceResolution.failed("BSP_CONNECTION_NOT_FOUND", message)
+        }
 
         logger.info { "Resolving dependencies via BSP server: ${connection.name}" }
         onProgress?.invoke("Connecting to ${connection.name}...")
 
-        return BspClient(connection, workspaceRoot).use { client ->
+        return clientFactory(connection, workspaceRoot).use { client ->
             if (!client.connect(onProgress)) {
-                logger.error { "Failed to connect to BSP server ${connection.name}" }
-                return@use WorkspaceResolution.empty()
+                val message = "Failed to connect to BSP server ${connection.name}"
+                logger.error { message }
+                return@use WorkspaceResolution.failed("BSP_CONNECTION_FAILED", message)
             }
 
             onProgress?.invoke("Fetching build targets...")
             val targets = client.workspaceBuildTargets()
-            if (targets == null || targets.targets.isEmpty()) {
+            if (targets == null) {
+                val message = "Failed to discover targets from BSP server ${connection.name}"
+                logger.warn { message }
+                return@use WorkspaceResolution.failed("BSP_TARGET_DISCOVERY_FAILED", message)
+            }
+            if (targets.targets.isEmpty()) {
                 logger.warn { "No build targets found from BSP server" }
                 return@use WorkspaceResolution.empty()
             }
@@ -59,6 +72,8 @@ class BspBuildTool : BspCompatibleBuildTool {
             val targetIds = targets.targets.map { it.id }
             logger.info { "Found ${targetIds.size} build targets" }
 
+            // TODO(#1859): Report incomplete source and dependency metadata explicitly.
+            //   See: https://github.com/albertocavalcante/gvy/issues/1859
             onProgress?.invoke("Fetching source directories...")
             val sources = client.buildTargetSources(targetIds)
             val sourceDirectories = extractSourceDirectories(sources)
