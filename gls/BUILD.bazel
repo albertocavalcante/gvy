@@ -17,6 +17,7 @@ kt_library(
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
         # Internal dependencies
         "//common",
+        "//source",
         "//fmt",
         "//build-tool",
         "//diagnostics/api",

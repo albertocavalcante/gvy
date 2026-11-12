@@ -1,0 +1,16 @@
+load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
+
+kt_library(
+    name = "source",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["//visibility:public"],
+)
+
+kt_test(
+    name = "source_test",
+    timeout = "short",
+    srcs = glob(["src/test/kotlin/**/*.kt"]),
+    associates = [":source"],
+    test_packages = ["com.github.albertocavalcante.gvy.source"],
+    deps = ["@maven//:org_jetbrains_kotlin_kotlin_test"],
+)
