@@ -23,6 +23,8 @@ export interface TestEvent {
  */
 export class TestEventConsumer {
   private readonly testItems: Map<string, vscode.TestItem>;
+  private readonly started = new Set<vscode.TestItem>();
+  private readonly terminal = new Set<vscode.TestItem>();
 
   constructor(
     private readonly run: vscode.TestRun,
@@ -45,6 +47,8 @@ export class TestEventConsumer {
    */
   public clear(): void {
     this.testItems.clear();
+    this.started.clear();
+    this.terminal.clear();
   }
 
   /**
@@ -126,6 +130,7 @@ export class TestEventConsumer {
     switch (event.event) {
       case "testStarted":
         if (item) {
+          this.started.add(item);
           this.run.started(item);
         }
         this.logger.appendLine(`[TEST] Started: ${event.name}`);
@@ -192,6 +197,7 @@ export class TestEventConsumer {
   }
 
   private reportTestResult(item: vscode.TestItem, event: TestEvent): void {
+    this.markTerminal(item);
     switch (event.result) {
       case "SUCCESS":
         this.run.passed(item, event.duration);
@@ -219,6 +225,18 @@ export class TestEventConsumer {
     }
   }
 
+  public markTerminal(item: vscode.TestItem): void {
+    this.terminal.add(item);
+  }
+
+  public wasStarted(item: vscode.TestItem): boolean {
+    return this.started.has(item);
+  }
+
+  public isTerminal(item: vscode.TestItem): boolean {
+    return this.terminal.has(item);
+  }
+
   // TODO(#715): These helpers are for hacky Maven support.
   // Proper implementation should parse Surefire XML reports.
 
@@ -233,6 +251,7 @@ export class TestEventConsumer {
    * Mark a test as passed.
    */
   public markPassed(item: vscode.TestItem): void {
+    this.markTerminal(item);
     this.run.passed(item);
   }
 
@@ -240,6 +259,7 @@ export class TestEventConsumer {
    * Mark a test as failed with a message.
    */
   public markFailed(item: vscode.TestItem, message: string): void {
+    this.markTerminal(item);
     this.run.failed(item, new vscode.TestMessage(message));
   }
 }

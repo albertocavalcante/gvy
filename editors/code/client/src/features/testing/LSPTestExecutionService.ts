@@ -2,7 +2,7 @@ import * as vscode from "vscode";
 import * as cp from "child_process";
 import * as path from "path";
 import * as fs from "fs";
-import * as readline from "readline";
+import { createBoundedLines, pipeBoundedLines } from "../../utils/boundedLines";
 import { ITestExecutionService } from "./ITestExecutionService";
 import { resolveTestTarget, selectRunItems } from "./testTarget";
 import {
@@ -32,6 +32,48 @@ function normalizeTestId(id: string): string {
       // Remove leading or trailing underscores
       .replace(/^_+|_+$/g, "")
   );
+}
+
+/** Detect fixed ASCII Maven messages with bounded state, even in discarded bytes. */
+function createHttpBlockerMatcher(
+  found: () => void,
+): (chunk: Buffer | string) => void {
+  const patterns = [
+    "maven-default-http-blocker",
+    "blocked mirror for repositories",
+  ].map((text) => Buffer.from(text));
+  const tables = patterns.map((pattern) => {
+    const prefix = new Array<number>(pattern.length).fill(0);
+    for (let i = 1, j = 0; i < pattern.length; i++) {
+      while (j > 0 && pattern[i] !== pattern[j]) j = prefix[j - 1];
+      if (pattern[i] === pattern[j]) j++;
+      prefix[i] = j;
+    }
+    return prefix;
+  });
+  const states = patterns.map(() => 0);
+  return (chunk) => {
+    if (!Buffer.isBuffer(chunk)) return;
+    for (const value of chunk) {
+      const byte = value >= 65 && value <= 90 ? value + 32 : value;
+      for (let i = 0; i < patterns.length; i++) {
+        const pattern = patterns[i];
+        const prefix = tables[i];
+        let j = states[i];
+        if (byte === 10 || byte === 13) {
+          states[i] = 0;
+          continue;
+        }
+        while (j > 0 && byte !== pattern[j]) j = prefix[j - 1];
+        if (byte === pattern[j]) j++;
+        if (j === pattern.length) {
+          found();
+          j = prefix[j - 1];
+        }
+        states[i] = j;
+      }
+    }
+  };
 }
 
 /** The build command for a test item cannot be spawned safely. */
@@ -123,6 +165,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       const workspaceUri = workspaceFolder?.uri.toString() || "";
 
       let isMavenExecution = false;
+      const affectedByLoss = new Set<vscode.TestItem>();
 
       for (const item of testsToRun) {
         if (isCancelled()) break;
@@ -148,6 +191,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
           this.logger.appendLine(
             `[Testing] LSP returned no test execution command for test item '${item.id}'. This may indicate a configuration issue for this test or that the build tool does not support running it.`,
           );
+          consumer.markTerminal(item);
           run.errored(
             item,
             new vscode.TestMessage(
@@ -176,11 +220,15 @@ export class LSPTestExecutionService implements ITestExecutionService {
         }
 
         try {
-          await this.executeCommand(
+          const incomplete = await this.executeCommand(
             { ...command, args: coverageArgs },
             consumer,
             tokens,
           );
+          if (incomplete) {
+            for (const affected of this.collectAllTestItems([item]))
+              affectedByLoss.add(affected);
+          }
           // Only builds that ran leave Surefire reports for this run.
           if (isMaven) {
             isMavenExecution = true;
@@ -188,6 +236,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
         } catch (error) {
           if (!(error instanceof UnrunnableCommandError)) throw error;
           this.logger.appendLine(`[Error] ${error.message}`);
+          consumer.markTerminal(item);
           run.errored(item, new vscode.TestMessage(error.message));
         }
       }
@@ -195,6 +244,28 @@ export class LSPTestExecutionService implements ITestExecutionService {
       // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
       if (isMavenExecution && !isCancelled()) {
         await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
+      }
+
+      if (!isCancelled()) {
+        const selected = new Set(testsToRun);
+        const excluded = new Set(
+          this.collectAllTestItems(request.exclude ?? []),
+        );
+        for (const item of affectedByLoss) {
+          if (
+            !consumer.isTerminal(item) &&
+            !excluded.has(item) &&
+            (selected.has(item) || consumer.wasStarted(item))
+          ) {
+            consumer.markTerminal(item);
+            run.errored(
+              item,
+              new vscode.TestMessage(
+                "Test output was incomplete; the result could not be determined.",
+              ),
+            );
+          }
+        }
       }
 
       // After all tests complete, fetch and add coverage if requested
@@ -239,7 +310,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     workspaceUri: string,
     run: vscode.TestRun,
     testsToRun: readonly vscode.TestItem[],
-    _consumer: TestEventConsumer,
+    consumer: TestEventConsumer,
   ): Promise<void> {
     try {
       const results = await this.testService.getTestResults(workspaceUri);
@@ -320,6 +391,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
 
         if (result) {
           this.applyResultToItem(run, item, result);
+          consumer.markTerminal(item);
         }
       }
     } catch (error) {
@@ -470,7 +542,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     cmd: TestCommand,
     consumer: TestEventConsumer,
     tokens: readonly vscode.CancellationToken[],
-  ): Promise<void> {
+  ): Promise<boolean> {
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
@@ -551,39 +623,69 @@ export class LSPTestExecutionService implements ITestExecutionService {
         dispose: () => cancelSubscriptions.forEach((d) => d.dispose()),
       };
 
-      // Output Parsing
-      const rl = readline.createInterface({ input: proc.stdout });
-
-      // Maven specific state
+      let incomplete = false;
       let foundHttpBlocker = false;
-      const httpBlockerPattern =
-        /maven-default-http-blocker|Blocked mirror for repositories/i;
-
-      rl.on("line", (line) => {
-        if (isGradle) {
-          consumer.processLine(line);
+      const onBlocker = () => {
+        foundHttpBlocker = true;
+      };
+      const stdoutMatcher = createHttpBlockerMatcher(onBlocker);
+      const stderrMatcher = createHttpBlockerMatcher(onBlocker);
+      if (isMaven) {
+        proc.stdout.on("data", stdoutMatcher);
+        proc.stderr.on("data", stderrMatcher);
+      }
+      let stdoutFinished = false;
+      const stdoutLines = createBoundedLines(({ text, truncated }) => {
+        if (truncated) {
+          incomplete = true;
+          this.logger.appendLine(`${text} [test output line truncated]`);
         } else {
-          // Basic Maven parsing or just log
-          consumer.processLine(line); // It logs internally
-          if (isMaven && httpBlockerPattern.test(line)) {
-            foundHttpBlocker = true;
-          }
+          consumer.processLine(text);
         }
       });
-
-      proc.stderr.on("data", (data) => {
-        const str = data.toString();
-        this.logger.appendLine(`[STDERR] ${str}`);
-        if (isMaven) {
-          if (httpBlockerPattern.test(str)) {
-            foundHttpBlocker = true;
-          }
+      const failStdout = (message: string) => {
+        if (!stdoutFinished) {
+          stdoutFinished = true;
+          incomplete = true;
+          this.logger.appendLine(message);
+        }
+      };
+      proc.stdout.on("data", (chunk: Buffer | string) => {
+        if (stdoutFinished) return;
+        if (Buffer.isBuffer(chunk)) stdoutLines.write(chunk);
+        else
+          failStdout("Reading test stdout failed: Expected a raw byte stream");
+      });
+      proc.stdout.once("end", () => {
+        if (!stdoutFinished) {
+          stdoutFinished = true;
+          stdoutLines.end();
         }
       });
+      proc.stdout.on("error", (error: Error) =>
+        failStdout(`Reading test stdout failed: ${error.message}`),
+      );
+      proc.stdout.once("close", () =>
+        failStdout("Reading test stdout failed: stream closed before end"),
+      );
+      pipeBoundedLines(
+        proc.stderr,
+        ({ text, truncated }) => {
+          this.logger.appendLine(
+            `[STDERR] ${text}${truncated ? " [test output line truncated]" : ""}`,
+          );
+        },
+        (error) =>
+          this.logger.appendLine(
+            `Reading test stderr failed: ${error.message}`,
+          ),
+      );
 
+      let processClosed = false;
       proc.on("close", (code) => {
+        if (processClosed) return;
+        processClosed = true;
         cancelDis.dispose();
-        rl.close();
 
         // Maven Error Handling
         if (isMaven && code !== 0 && foundHttpBlocker) {
@@ -621,15 +723,14 @@ export class LSPTestExecutionService implements ITestExecutionService {
             `Test execution process exited with code ${code}`,
           );
         }
-        resolve();
+        resolve(incomplete);
       });
 
       proc.on("error", (err) => {
-        cancelDis.dispose();
-        rl.close();
+        if (processClosed) return;
         this.logger.appendLine(`Process error: ${err}`);
-        // Caller handles failure via test item state, not promise rejection
-        resolve();
+        // Node emits close after a spawn error; wait for stream cleanup.
+        incomplete = true;
       });
     });
   }
