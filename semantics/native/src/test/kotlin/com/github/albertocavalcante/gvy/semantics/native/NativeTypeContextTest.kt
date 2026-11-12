@@ -800,16 +800,9 @@ class NativeTypeContextTest {
         }
     }
 
-    // Helper function to access internal context cache
-    private fun getTypeContext(module: ModuleNode, semantics: GroovySemantics): NativeTypeContext = try {
-        val contextCacheField = GroovySemantics::class.java.getDeclaredField("contextCache")
-        contextCacheField.isAccessible = true
-        @Suppress("UNCHECKED_CAST")
-        val cache = contextCacheField.get(
-            semantics,
-        ) as Map<ModuleNode, NativeTypeContext>
-        cache[module] ?: throw IllegalStateException("Context not found for module after injection")
-    } catch (e: NoSuchFieldException) {
+    private fun getTypeContext(module: ModuleNode, semantics: GroovySemantics): NativeTypeContext =
+        checkNotNull(semantics.getContext(module))
+ catch (e: NoSuchFieldException) {
         throw IllegalStateException("Could not access contextCache field", e)
     }
 }
