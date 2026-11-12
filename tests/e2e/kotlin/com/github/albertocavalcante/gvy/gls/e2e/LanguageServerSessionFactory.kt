@@ -4,6 +4,7 @@ import com.github.albertocavalcante.gvy.gls.GroovyLanguageServer
 import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
 import com.github.albertocavalcante.gvy.gls.testing.api.GroovyLanguageServerProtocol
 import com.github.albertocavalcante.gvy.gls.testing.client.HarnessLanguageClient
+import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
 import com.github.albertocavalcante.gvy.jenkins.stubs.JenkinsStubsLocation
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
@@ -81,7 +82,10 @@ class LanguageServerSessionFactory(
                 .setInput(process.inputStream)
                 .setOutput(process.outputStream)
                 .setExecutorService(executor.service)
-                .configureGson { it.registerRawJsonRpcParams() }
+                .configureGson {
+                    it.registerRawJsonRpcParams()
+                    registerStatusNotificationAdapter(it)
+                }
                 .create()
             val listening = launcher.startListening()
             pending.own(AutoCloseable { listening.cancel(true) })
@@ -169,6 +173,7 @@ class LanguageServerSessionFactory(
                 .setInput(serverIn)
                 .setOutput(serverOut)
                 .setExecutorService(executor.service)
+                .configureGson(::registerStatusNotificationAdapter)
                 .create()
             server.connect(serverLauncher.remoteProxy)
             val serverListening = serverLauncher.startListening()
@@ -181,7 +186,10 @@ class LanguageServerSessionFactory(
                 .setInput(clientIn)
                 .setOutput(clientOut)
                 .setExecutorService(executor.service)
-                .configureGson { it.registerRawJsonRpcParams() }
+                .configureGson {
+                    it.registerRawJsonRpcParams()
+                    registerStatusNotificationAdapter(it)
+                }
                 .create()
             val clientListening = clientLauncher.startListening()
             pending.own(AutoCloseable { clientListening.cancel(true) })

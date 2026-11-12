@@ -1,27 +1,25 @@
 package com.github.albertocavalcante.gvy.gls.services
 
-// TODO: Migrate from Gson to kotlinx.serialization for better Kotlin-native serialization support.
-//       This would allow using @Serializable annotations and remove the Gson dependency.
-//       See: https://kotlinlang.org/docs/serialization.html
-import com.google.gson.annotations.JsonAdapter
-import com.google.gson.annotations.SerializedName
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /**
  * Server health status for the `groovy/status` notification.
  *
  * Follows rust-analyzer's experimental/serverStatus pattern.
  */
+@Serializable
 enum class Health {
     /** Server is fully functional. */
-    @SerializedName("ok")
+    @SerialName("ok")
     Ok,
 
     /** Server is partially functional (e.g., some missing dependencies). */
-    @SerializedName("warning")
+    @SerialName("warning")
     Warning,
 
     /** Server is not functional (e.g., fatal build configuration problem). */
-    @SerializedName("error")
+    @SerialName("error")
     Error,
 }
 
@@ -68,7 +66,6 @@ data class StatusNotification(
  * @property type Discriminator field for polymorphic JSON serialization.
  * @property suggestions List of actionable suggestions to resolve the error.
  */
-@JsonAdapter(ErrorDetailsAdapter::class)
 sealed interface ErrorDetails {
     val type: String
     val suggestions: List<String>
@@ -80,6 +77,7 @@ sealed interface ErrorDetails {
  * This is a common error when the LSP runs on a newer JDK than the project's
  * Gradle wrapper supports. Actionable via Gradle upgrade or JDK downgrade.
  */
+@Serializable
 data class GradleJdkIncompatibleError(
     val gradleVersion: String,
     val jdkVersion: Int,
@@ -95,6 +93,7 @@ data class GradleJdkIncompatibleError(
  *
  * The LSP is running in syntax-only mode without classpath resolution.
  */
+@Serializable
 data class NoBuildToolError(
     val searchedPaths: List<String> = emptyList(),
     override val suggestions: List<String> = emptyList(),
@@ -107,6 +106,7 @@ data class NoBuildToolError(
  *
  * Catch-all for build tool failures that don't fit other categories.
  */
+@Serializable
 data class DependencyResolutionError(
     val buildTool: String,
     val cause: String?,
@@ -118,6 +118,7 @@ data class DependencyResolutionError(
 /**
  * Error: Java runtime not found or invalid.
  */
+@Serializable
 data class JavaNotFoundError(
     val configuredPath: String?,
     val searchedLocations: List<String> = emptyList(),
@@ -137,6 +138,7 @@ data class JavaNotFoundError(
  * - Toolchain download repositories not configured (foojay plugin missing)
  * - org.gradle.java.installations.paths not pointing to JDK locations
  */
+@Serializable
 data class ToolchainProvisioningError(val requiredVersion: Int?, val vendor: String?, val platform: String?) :
     ErrorDetails {
     override val type: String = "TOOLCHAIN_PROVISIONING_FAILED"
@@ -169,6 +171,7 @@ data class ToolchainProvisioningError(val requiredVersion: Int?, val vendor: Str
  * @property minGroovyVersion The minimum Groovy version required for this JDK (e.g., "4.0.0").
  * @property maxJdkVersion The maximum JDK version supported by the current Groovy version (e.g., "16").
  */
+@Serializable
 data class GroovyJdkIncompatibleError(
     val groovyVersion: String?,
     val jdkVersion: Int,
@@ -193,6 +196,7 @@ data class GroovyJdkIncompatibleError(
  * @property requiredJdkVersion The JDK version required by the project (e.g., 17).
  * @property configurationSource Where the requirement was found (e.g., "maven-compiler-plugin").
  */
+@Serializable
 data class ProjectJdkIncompatibleError(
     val runningJdkVersion: Int,
     val requiredJdkVersion: Int,
@@ -216,6 +220,7 @@ data class ProjectJdkIncompatibleError(
  * @property targetJdkVersion The JDK version the project targets (e.g., 8).
  * @property configurationSource Where the target was found (e.g., "build.gradle sourceCompatibility").
  */
+@Serializable
 data class ProjectJdkNewerWarning(
     val runningJdkVersion: Int,
     val targetJdkVersion: Int,
@@ -233,6 +238,7 @@ data class ProjectJdkNewerWarning(
  *
  * Use this when a more specific error type doesn't exist yet.
  */
+@Serializable
 data class GenericError(
     val errorCode: String,
     val details: Map<String, String> = emptyMap(),

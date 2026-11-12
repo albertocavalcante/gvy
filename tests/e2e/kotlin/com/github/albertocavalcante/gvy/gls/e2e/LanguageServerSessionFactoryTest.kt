@@ -1,5 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.services.GenericError
+import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
+import com.github.albertocavalcante.gvy.gls.services.Health
+import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.lsp4j.InitializeParams
@@ -11,6 +15,35 @@ import java.util.concurrent.TimeUnit
 
 class LanguageServerSessionFactoryTest {
     private val server = SessionTestServer()
+
+    @Test
+    fun `factory transports typed status details and signals readiness`() {
+        val factory = LanguageServerSessionFactory(createServer = { server })
+        factory.start(ServerConfig(mode = ServerLaunchMode.InProcess), "status-wire").use { session ->
+            val remoteClient = server.connectedClient as GroovyLanguageClient
+            val warning = StatusNotification(
+                Health.Warning,
+                errorDetails = GenericError("DEPENDENCY_RESOLUTION_FAILED", mapOf("host" to "repository")),
+            )
+            remoteClient.groovyStatus(warning)
+            val received = session.client.awaitNotificationDetailed("groovy/status", 5_000, { it == warning })
+            assertThat(received.envelope?.payload).isEqualTo(warning)
+            remoteClient.groovyStatus(StatusNotification())
+            session.client.readyFuture.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        }
+    }
+
+    @Test
+    fun `factory propagates error health to readiness failure`() {
+        LanguageServerSessionFactory(createServer = { server })
+            .start(ServerConfig(mode = ServerLaunchMode.InProcess), "status-error-wire").use { session ->
+                val remoteClient = server.connectedClient as GroovyLanguageClient
+                remoteClient.groovyStatus(StatusNotification(Health.Error, message = "Build failed"))
+                assertThatThrownBy { session.client.readyFuture.get(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS) }
+                    .isInstanceOf(ExecutionException::class.java)
+                    .hasMessageContaining("Build failed")
+            }
+    }
 
     @Test
     fun `closing an in-process session stops both listener threads and shuts down the server`() {

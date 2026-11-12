@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
 import com.google.gson.Gson
+import com.google.gson.GsonBuilder
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
@@ -18,7 +20,7 @@ import com.google.gson.JsonElement as GsonJsonElement
  * This consolidates JSON conversion logic used across the E2E test harness.
  */
 object JsonBridge {
-    private val gson = Gson()
+    private val gson = GsonBuilder().also(::registerStatusNotificationAdapter).create()
 
     /**
      * Converts a kotlinx JsonElement to a Java object suitable for JsonPath queries.

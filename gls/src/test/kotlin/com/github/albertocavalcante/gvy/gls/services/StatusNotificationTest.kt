@@ -1,7 +1,5 @@
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.google.gson.Gson
-import com.google.gson.GsonBuilder
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -13,8 +11,6 @@ import org.junit.jupiter.api.Test
  */
 class StatusNotificationTest {
 
-    private val gson: Gson = GsonBuilder().create()
-
     @Test
     fun `StatusNotification with error health serializes correctly`() {
         val notification = StatusNotification(
@@ -23,7 +19,7 @@ class StatusNotificationTest {
             message = "Gradle/JDK incompatible",
         )
 
-        val json = gson.toJson(notification)
+        val json = StatusNotificationCodec.encode(notification)
         assertTrue(json.contains("\"health\":\"error\""))
         assertTrue(json.contains("\"quiescent\":true"))
         assertTrue(json.contains("Gradle/JDK incompatible"))
@@ -60,7 +56,7 @@ class StatusNotificationTest {
             suggestions = listOf("Upgrade Gradle"),
         )
 
-        val json = gson.toJson(error)
+        val json = StatusNotificationCodec.encode(StatusNotification(errorDetails = error))
 
         assertTrue(json.contains("\"type\":\"GRADLE_JDK_INCOMPATIBLE\""))
         assertTrue(json.contains("\"gradleVersion\":\"7.0\""))
@@ -136,7 +132,7 @@ class StatusNotificationTest {
             errorDetails = errorDetails,
         )
 
-        val json = gson.toJson(notification)
+        val json = StatusNotificationCodec.encode(notification)
 
         assertTrue(json.contains("\"errorCode\":\"GRADLE_JDK_INCOMPATIBLE\""))
         assertTrue(json.contains("\"type\":\"GRADLE_JDK_INCOMPATIBLE\""))
@@ -201,7 +197,7 @@ class StatusNotificationTest {
             platform = null,
         )
 
-        val json = gson.toJson(error)
+        val json = StatusNotificationCodec.encode(StatusNotification(errorDetails = error))
 
         assertTrue(json.contains("\"type\":\"TOOLCHAIN_PROVISIONING_FAILED\""))
         assertTrue(json.contains("\"requiredVersion\":21"))
