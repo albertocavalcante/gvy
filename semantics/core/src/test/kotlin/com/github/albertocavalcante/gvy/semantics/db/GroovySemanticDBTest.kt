@@ -96,6 +96,28 @@ class GroovySemanticDBTest {
         assertEquals(version, db.version)
     }
 
+    @Test
+    fun `type depth and expanded size limits reject before changing the database`() {
+        fun document(type: SemanticType): SemanticDocument {
+            val symbol = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", type)
+            return SemanticDocument(testUri1, listOf(symbol), emptyList())
+        }
+        var legitimate: SemanticType = TypeConstants.STRING
+        repeat(100) { legitimate = SemanticType.Array(legitimate) }
+        db.updateDocument(testUri1, document(legitimate))
+        val version = db.version
+        db.updateDocument(testUri1, document(legitimate))
+        assertEquals(version, db.version)
+        var deep = legitimate
+        repeat(30) { deep = SemanticType.Array(deep) }
+        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(deep)) }
+        var expanded: SemanticType = TypeConstants.INT
+        repeat(14) { expanded = SemanticType.Known("Pair", listOf(expanded, expanded)) }
+        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(expanded)) }
+        assertEquals(version, db.version)
+        assertEquals(legitimate, db.getDocument(testUri1)!!.symbols.single().type)
+    }
+
     @Nested
     @DisplayName("Range Tests")
     inner class RangeTests {

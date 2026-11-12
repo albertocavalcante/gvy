@@ -3,6 +3,7 @@ package com.github.albertocavalcante.gvy.semantics.db
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import java.net.URI
 import java.util.Collections
+import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.locks.ReentrantReadWriteLock
 import kotlin.concurrent.read
@@ -79,17 +80,20 @@ class GroovySemanticDB {
         sourceText: String?,
         implementations: ImplementationFacts.Snapshot,
     ) {
+        val freezer = TypeFreezer()
         val snapshot = doc.copy(
-            symbols = Collections.unmodifiableList(doc.symbols.map(::freezeSymbol)),
+            symbols = Collections.unmodifiableList(doc.symbols.map { it.copy(type = it.type?.let(freezer::freeze)) }),
             occurrences = Collections.unmodifiableList(doc.occurrences.toList()),
             unresolvedNames = Collections.unmodifiableSet(doc.unresolvedNames.toSet()),
         )
         val facts = ImplementationFacts.freeze(implementations)
         lock.write {
-            val previous = documents.put(uri, StoredDocument(snapshot, sourceText, facts))
+            val previous = documents[uri]
+            val declarationsChanged = previous == null || declarations(previous.document) != declarations(snapshot)
+            documents[uri] = StoredDocument(snapshot, sourceText, facts)
             previous?.let { removeFromIndexes(uri, it.document) }
             addToIndexes(uri, snapshot, symbolIndex, occurrenceIndex, ownerIndex)
-            if (previous == null || declarations(previous.document) != declarations(snapshot)) {
+            if (declarationsChanged) {
                 versionCounter.incrementAndGet()
             }
         }
@@ -295,15 +299,57 @@ class DeclarationIndexSnapshot internal constructor(
     fun findMembers(ownerId: String): List<Pair<URI, SymbolInfo>> = members[ownerId].orEmpty()
 }
 
-private fun freezeSymbol(symbol: SymbolInfo): SymbolInfo = symbol.copy(type = symbol.type?.let(::freezeType))
+/**
+ * Copies an acyclic type graph while preserving sharing. Expanded size is bounded as the data classes'
+ * structural equals/hashCode traverse shared edges again; depth is bounded before recursion can exhaust the stack.
+ */
+private class TypeFreezer {
+    private data class Frozen(val type: SemanticType, val size: Int, val height: Int)
 
-private fun freezeType(type: SemanticType): SemanticType = when (type) {
-    is SemanticType.Known -> type.copy(typeArgs = Collections.unmodifiableList(type.typeArgs.map(::freezeType)))
-    is SemanticType.Array -> type.copy(componentType = freezeType(type.componentType))
-    is SemanticType.Union -> type.copy(
-        types = Collections.unmodifiableSet(type.types.mapTo(linkedSetOf(), ::freezeType)),
-    )
-    else -> type
+    private val completed = IdentityHashMap<SemanticType, Frozen>()
+    private val active = IdentityHashMap<SemanticType, Boolean>()
+
+    fun freeze(type: SemanticType): SemanticType = visit(type, 1).type
+
+    private fun visit(type: SemanticType, depth: Int): Frozen {
+        require(depth <= MAX_DEPTH) { "Semantic type exceeds maximum depth $MAX_DEPTH" }
+        completed[type]?.let {
+            require(depth + it.height - 1 <= MAX_DEPTH) { "Semantic type exceeds maximum depth $MAX_DEPTH" }
+            return it
+        }
+        require(active.put(type, true) == null) { "Semantic type contains a cycle" }
+        try {
+            var size = 1
+            var height = 1
+            fun child(value: SemanticType): SemanticType {
+                val result = visit(value, depth + 1)
+                require(result.size <= MAX_EXPANDED_SIZE - size) {
+                    "Semantic type exceeds maximum expanded size $MAX_EXPANDED_SIZE"
+                }
+                size += result.size
+                height = maxOf(height, result.height + 1)
+                return result.type
+            }
+            val detached = when (type) {
+                is SemanticType.Known -> {
+                    val arguments = mutableListOf<SemanticType>()
+                    type.typeArgs.forEach { arguments.add(child(it)) }
+                    type.copy(typeArgs = Collections.unmodifiableList(arguments))
+                }
+                is SemanticType.Array -> type.copy(componentType = child(type.componentType))
+                is SemanticType.Union -> type.copy(types = Collections.unmodifiableSet(type.types.mapTo(linkedSetOf(), ::child)))
+                else -> type
+            }
+            return Frozen(detached, size, height).also { completed[type] = it }
+        } finally {
+            active.remove(type)
+        }
+    }
+
+    private companion object {
+        const val MAX_DEPTH = 128
+        const val MAX_EXPANDED_SIZE = 16384
+    }
 }
 
 /**
