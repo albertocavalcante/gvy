@@ -23,6 +23,10 @@ import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class LoggingProviderTest {
+    private companion object {
+        const val MAX_CAPTURE_BYTES = 8192
+    }
+
     @Test
     fun `test logging uses the Logback provider`() {
         assertEquals("ch.qos.logback.classic.LoggerContext", LoggerFactory.getILoggerFactory().javaClass.name)
@@ -68,12 +72,12 @@ class LoggingProviderTest {
 
     private fun boundedCapture(): ByteArrayOutputStream = object : ByteArrayOutputStream() {
         override fun write(value: Int) {
-            check(size() < 8192) { "Test log capture exceeded its bound" }
+            check(size() < MAX_CAPTURE_BYTES) { "Test log capture exceeded its bound" }
             super.write(value)
         }
 
         override fun write(bytes: ByteArray, offset: Int, length: Int) {
-            check(length <= 8192 - size()) { "Test log capture exceeded its bound" }
+            check(length <= MAX_CAPTURE_BYTES - size()) { "Test log capture exceeded its bound" }
             super.write(bytes, offset, length)
         }
     }
