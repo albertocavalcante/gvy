@@ -26,13 +26,13 @@ jobs:
       - name: Checkout base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 130e449ecd3136e12f8800094e121ed872703d9d
+          ref: 7dd46513b7c6efe6688f234505f548b276e3cfda
           path: baseline
           persist-credentials: false
       - name: Checkout candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: a65db7838e0804a62d2a6bc1287157b52288872a
+          ref: 71457e7338d4016f19821273557ea179dcc702f1
           path: candidate
           fetch-depth: 0
           persist-credentials: false
@@ -74,13 +74,13 @@ jobs:
         run: |
           set -euo pipefail
           proof="$RUNNER_TEMP/parity-proof"
-          [[ "$(git rev-parse HEAD)" == a65db7838e0804a62d2a6bc1287157b52288872a ]]
-          [[ "$(git rev-parse 'HEAD^{tree}')" == 17ce7dc488019f20c59e22e82476642760fe1864 ]]
-          git merge-base --is-ancestor 130e449ecd3136e12f8800094e121ed872703d9d HEAD
+          [[ "$(git rev-parse HEAD)" == 71457e7338d4016f19821273557ea179dcc702f1 ]]
+          [[ "$(git rev-parse 'HEAD^{tree}')" == 36717e1f75617789e41e92492b6069a0589c7774 ]]
+          git merge-base --is-ancestor 7dd46513b7c6efe6688f234505f548b276e3cfda HEAD
           printf '%s  %s\n' 7ed933ec81e68c3b98066f2b3273f475ad9a82cdcb19258ce7f835dd56797f5f "$GITHUB_WORKSPACE/support/.publication/parity.init.gradle" | sha256sum -c -
           git switch -c test/logging-backend-parity
-          git reset --soft 130e449ecd3136e12f8800094e121ed872703d9d
-          [[ "$(git write-tree)" == 17ce7dc488019f20c59e22e82476642760fe1864 ]]
+          git reset --soft 7dd46513b7c6efe6688f234505f548b276e3cfda
+          [[ "$(git write-tree)" == 36717e1f75617789e41e92492b6069a0589c7774 ]]
           git diff --quiet
           printf '%s\n' build-tool/BUILD.bazel build-tool/build.gradle.kts build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/LoggingProviderTest.kt jenkins/BUILD.bazel jenkins/build.gradle.kts jenkins/src/test/kotlin/com/github/albertocavalcante/gvy/jenkins/LoggingProviderTest.kt tools/test-logging/BUILD.bazel tools/test-logging/src/test/resources/logback-test.xml >"$RUNNER_TEMP/expected-paths"
           git diff --cached --name-only >"$RUNNER_TEMP/input-paths"
@@ -106,6 +106,20 @@ jobs:
           git write-tree >"$proof/formatted-tree"
           git diff --cached --binary >"$proof/formatted.patch"
           sha256sum "$proof/formatted.patch" >"$proof/formatted.sha256"
+      - name: Validate canonical license metadata
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          bootstrap="$RUNNER_TEMP/license-bootstrap"
+          python3 -m venv "$bootstrap"
+          "$bootstrap/bin/python" -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-bootstrap.log"
+          export PATH="$bootstrap/bin:$PATH"
+          uv sync --project .reuse --locked 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-sync.log"
+          make license-check 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-check.log"
+          make license-test 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-test.log"
+          git diff --quiet
+          [[ "$(git write-tree)" == "$(cat "$RUNNER_TEMP/parity-proof/formatted-tree")" ]]
       - name: Four independent config mutations
         working-directory: candidate
         shell: bash
@@ -134,31 +148,58 @@ jobs:
           	status=$?
           	set -e
           	printf '%s\n' "$status" >"$proof/$mode.status"
+          	for module in build-tool jenkins; do
+          		if [[ "$module" == build-tool ]]; then package=build; else package=jenkins; fi
+          		xml="$module/build/test-results/test/TEST-com.github.albertocavalcante.gvy.$package.LoggingProviderTest.xml"
+          		if [[ -f "$xml" ]]; then cp "$xml" "$proof/$mode-$module.xml"; fi
+          	done
           	[[ "$status" != 0 ]]
-          	python3 - "$proof/$mode.log" "$JAVA_HOME_17_X64/bin/java" <<'PYJVM'
+          	python3 - "$proof/$mode.log" "$JAVA_HOME_17_X64/bin/java" "$GITHUB_WORKSPACE/candidate" >"$proof/$mode-java.txt" <<'PYJVM'
+          import os
+          import re
           import shlex
+          import subprocess
           import sys
-          log, java = sys.argv[1:]
+          log, setup_java, checkout = sys.argv[1:]
+          allowed = {setup_java, "/usr/lib/jvm/temurin-17-jdk-amd64/bin/java"}
+          expected_dirs = {os.path.join(checkout, "build-tool"), os.path.join(checkout, "jenkins")}
+          seen_dirs = set()
           with open(log, encoding="utf-8", errors="replace") as stream:
               lines = [line.strip() for line in stream if "Starting process 'Gradle Test Executor " in line]
           if len(lines) != 2:
               raise SystemExit(f"expected two actual test executor launches, observed {len(lines)}")
           for line in lines:
-              if " Command: " not in line:
-                  raise SystemExit("missing executor command")
+              if " Working directory: " not in line or " Command: " not in line:
+                  raise SystemExit("missing executor directory or command")
+              directory = line.split(" Working directory: ", 1)[1].split(" Command: ", 1)[0]
+              if directory not in expected_dirs or directory in seen_dirs:
+                  raise SystemExit("unexpected or duplicate test worker directory")
+              seen_dirs.add(directory)
               args = shlex.split(line.split(" Command: ", 1)[1])
               heaps = [arg for arg in args if arg.startswith("-Xmx")]
               metaspace = [arg for arg in args if arg.startswith("-XX:MaxMetaspaceSize=")]
-              if not args or args[0] != java or heaps != ["-Xmx512m"] or metaspace != ["-XX:MaxMetaspaceSize=512m"]:
-                  raise SystemExit("executor Java or memory flags differ")
+              if not args or args[0] not in allowed or not heaps or set(heaps) != {"-Xmx512m"} or not metaspace or set(metaspace) != {"-XX:MaxMetaspaceSize=512m"}:
+                  raise SystemExit("executor Java or effective memory flags differ")
+              env = os.environ.copy()
+              env.pop("JDK_JAVA_OPTIONS", None)
+              env.pop("JAVA_TOOL_OPTIONS", None)
+              version = subprocess.run([args[0], "-Xmx64m", "-XX:MaxMetaspaceSize=128m", "-XshowSettings:properties", "-version"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15, check=True).stdout
+              if not re.search(r"(?m)^\s*java\.specification\.version\s*=\s*17\s*$", version):
+                  raise SystemExit("actual executor binary is not Java 17")
+              print(directory, args[0], " ".join(heaps), " ".join(metaspace))
+              print(version)
+          if seen_dirs != expected_dirs:
+              raise SystemExit("missing module test worker")
           PYJVM
           	for module in build-tool jenkins; do
           		if [[ "$module" == build-tool ]]; then package=build; else package=jenkins; fi
-          		xml="$module/build/test-results/test/TEST-com.github.albertocavalcante.gvy.$package.LoggingProviderTest.xml"
-          		python3 - "$mode" "$xml" <<'PYXML'
+          		xml="$proof/$mode-$module.xml"
+          		source="$module/src/test/kotlin/com/github/albertocavalcante/gvy/$package/LoggingProviderTest.kt"
+          		test -f "$xml"
+          		python3 - "$mode" "$xml" "$source" "$package" <<'PYXML'
           import sys
           import xml.etree.ElementTree as ET
-          mode, path = sys.argv[1:]
+          mode, path, source, package = sys.argv[1:]
           root = ET.parse(path).getroot()
           cases = root.findall("testcase")
           failed = [(case, case.find("failure")) for case in cases if case.find("failure") is not None]
@@ -166,14 +207,18 @@ jobs:
               raise SystemExit("mutation did not produce the intended single assertion failure")
           case, failure = failed[0]
           text = (failure.get("message") or "") + (failure.text or "")
-          expected = {"missing": ("not null",), "wrong-target": ("System.err", "System.out"),
+          expected = {"missing": ("actual value is null", "expected: not <null>"), "wrong-target": ("System.err", "System.out"),
                       "duplicate": ("<1>", "<2>"), "missing-level": ("Unexpected rendered log record",)}
-          if "quiet test policy" not in case.get("name", "") or "AssertionFailedError" not in failure.get("type", ""):
-              raise SystemExit("wrong failing case or failure type")
+          if case.get("classname") != f"com.github.albertocavalcante.gvy.{package}.LoggingProviderTest" or "quiet test policy" not in case.get("name", "") or "AssertionFailedError" not in failure.get("type", ""):
+              raise SystemExit("wrong failing class, case or failure type")
+          marker = {"missing": "val resource = assertNotNull(", "wrong-target": 'assertEquals("System.err", console.target)', "duplicate": "assertEquals(1, appenders.size)", "missing-level": "Unexpected rendered log record:"}[mode]
+          with open(source, encoding="utf-8") as stream:
+              matching = [number for number, line in enumerate(stream, 1) if marker in line]
+          if len(matching) != 1 or f"LoggingProviderTest.kt:{matching[0]}" not in text:
+              raise SystemExit("wrong assertion source location for mutation " + mode)
           if not all(part in text for part in expected[mode]):
               raise SystemExit("wrong assertion failure for mutation " + mode)
           PYXML
-          		cp "$xml" "$proof/$mode-$module.xml"
           	done
           done
           cp "$RUNNER_TEMP/parity-canonical.xml" "$config"
@@ -193,22 +238,42 @@ jobs:
           	-I "$GITHUB_WORKSPACE/support/.publication/parity.init.gradle" \
           	'-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
           	"-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64" 2>&1 | tee "$proof/positive.log"
-          python3 - "$proof/positive.log" "$JAVA_HOME_17_X64/bin/java" <<'PYJVM'
+          python3 - "$proof/positive.log" "$JAVA_HOME_17_X64/bin/java" "$GITHUB_WORKSPACE/candidate" >"$proof/positive-java.txt" <<'PYJVM'
+          import os
+          import re
           import shlex
+          import subprocess
           import sys
-          log, java = sys.argv[1:]
+          log, setup_java, checkout = sys.argv[1:]
+          allowed = {setup_java, "/usr/lib/jvm/temurin-17-jdk-amd64/bin/java"}
+          expected_dirs = {os.path.join(checkout, "build-tool"), os.path.join(checkout, "jenkins")}
+          seen_dirs = set()
           with open(log, encoding="utf-8", errors="replace") as stream:
               lines = [line.strip() for line in stream if "Starting process 'Gradle Test Executor " in line]
           if len(lines) != 2:
               raise SystemExit(f"expected two actual test executor launches, observed {len(lines)}")
           for line in lines:
-              if " Command: " not in line:
-                  raise SystemExit("missing executor command")
+              if " Working directory: " not in line or " Command: " not in line:
+                  raise SystemExit("missing executor directory or command")
+              directory = line.split(" Working directory: ", 1)[1].split(" Command: ", 1)[0]
+              if directory not in expected_dirs or directory in seen_dirs:
+                  raise SystemExit("unexpected or duplicate test worker directory")
+              seen_dirs.add(directory)
               args = shlex.split(line.split(" Command: ", 1)[1])
               heaps = [arg for arg in args if arg.startswith("-Xmx")]
               metaspace = [arg for arg in args if arg.startswith("-XX:MaxMetaspaceSize=")]
-              if not args or args[0] != java or heaps != ["-Xmx512m"] or metaspace != ["-XX:MaxMetaspaceSize=512m"]:
-                  raise SystemExit("executor Java or memory flags differ")
+              if not args or args[0] not in allowed or not heaps or set(heaps) != {"-Xmx512m"} or not metaspace or set(metaspace) != {"-XX:MaxMetaspaceSize=512m"}:
+                  raise SystemExit("executor Java or effective memory flags differ")
+              env = os.environ.copy()
+              env.pop("JDK_JAVA_OPTIONS", None)
+              env.pop("JAVA_TOOL_OPTIONS", None)
+              version = subprocess.run([args[0], "-Xmx64m", "-XX:MaxMetaspaceSize=128m", "-XshowSettings:properties", "-version"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, timeout=15, check=True).stdout
+              if not re.search(r"(?m)^\s*java\.specification\.version\s*=\s*17\s*$", version):
+                  raise SystemExit("actual executor binary is not Java 17")
+              print(directory, args[0], " ".join(heaps), " ".join(metaspace))
+              print(version)
+          if seen_dirs != expected_dirs:
+              raise SystemExit("missing module test worker")
           PYJVM
           for module in build-tool jenkins; do
           	if [[ "$module" == build-tool ]]; then package=build; else package=jenkins; fi
@@ -283,10 +348,10 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git diff --quiet && [[ "$(git write-tree)" == "$(cat "$proof/formatted-tree")" ]]
           direnv exec . git commit -m 'test(logging): align test backend behavior' 2>&1 | tee "$proof/hooks.log"
-          [[ "$(git rev-parse HEAD^)" == 130e449ecd3136e12f8800094e121ed872703d9d ]]
+          [[ "$(git rev-parse HEAD^)" == 7dd46513b7c6efe6688f234505f548b276e3cfda ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$(cat "$proof/formatted-tree")" ]]
           git diff --quiet && git diff --cached --quiet
-          git bundle create "$proof/candidate.bundle" HEAD ^130e449ecd3136e12f8800094e121ed872703d9d
+          git bundle create "$proof/candidate.bundle" HEAD ^7dd46513b7c6efe6688f234505f548b276e3cfda
           git bundle verify "$proof/candidate.bundle"
           git rev-parse HEAD >"$proof/head"
           (cd "$proof" && sha256sum candidate.bundle >bundle.sha256)
