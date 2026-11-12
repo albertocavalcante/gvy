@@ -978,7 +978,7 @@
     "install-extension": "node tools/install-extension.js",
     "clean": "rm -rf client/out/ client/tsconfig.tsbuildinfo server/*.jar server/.gls-version",
     "postinstall": "pnpm run prepare-server",
-    "test": "mocha",
+    "test": "node --test tools/tests/codicons.test.js && mocha",
     "test:watch": "mocha --watch",
     "compile:tests": "tsc -b --force client/tsconfig.json",
     "test:integration": "pnpm run compile:tests && vscode-test",
