@@ -39,7 +39,10 @@ private val logger = KotlinLogging.logger {}
  * - TEXT: Human-readable colored output (default)
  * - SARIF: SARIF 2.1.0 format for GitHub Code Scanning integration
  */
-class CheckCommand : CliktCommand(name = "check") {
+class CheckCommand internal constructor(
+    private val analyze: suspend (File, GroovyTextDocumentService) -> List<Diagnostic>,
+) : CliktCommand(name = "check") {
+    constructor() : this({ file, service -> service.diagnose(file.toURI(), file.readText()) })
     override fun help(context: Context) = "Run diagnostics on specified files"
 
     private val workspace by option("-w", "--workspace")
@@ -135,9 +138,7 @@ class CheckCommand : CliktCommand(name = "check") {
 
     private suspend fun checkFile(file: File, service: GroovyTextDocumentService): List<Diagnostic>? {
         val result = runCatching {
-            val uri = file.toURI()
-            val content = file.readText()
-            service.diagnose(uri, content)
+            analyze(file, service)
         }
 
         return result
