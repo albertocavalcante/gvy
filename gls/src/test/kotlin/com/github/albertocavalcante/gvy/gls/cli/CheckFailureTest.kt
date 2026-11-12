@@ -2,6 +2,8 @@ package com.github.albertocavalcante.gvy.gls.cli
 
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.parse
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticProviderFailure
+import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import kotlinx.coroutines.CancellationException
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -21,7 +23,7 @@ class CheckFailureTest {
         val bad = File(dir, "bad.groovy").apply { writeText("class Bad {}") }
         val command = GlsCommand(FormatCommand(), CheckCommand { file, _ ->
             if (file == bad) throw IOException("analysis unavailable")
-            emptyList()
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         })
         val output = ByteArrayOutputStream()
         val previous = System.out
@@ -46,7 +48,7 @@ class CheckFailureTest {
         val command = GlsCommand(FormatCommand(), CheckCommand { requested, _ ->
             requested.delete()
             requested.readText()
-            emptyList()
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
         })
         val result = assertFailsWith<ProgramResult> { command.parse(listOf("check", file.path)) }
         assertEquals(1, result.statusCode)
@@ -62,6 +64,28 @@ class CheckFailureTest {
         }
         assertEquals(1, result.statusCode)
         assertTrue(outputFile.readText().contains("\"executionSuccessful\": false"))
+    }
+
+    @Test
+    fun `provider failure retains partial diagnostics and fails sarif`(@TempDir dir: File) {
+        val file = File(dir, "partial.groovy").apply { writeText("") }
+        val outputFile = File(dir, "partial.sarif")
+        val diagnostic = org.eclipse.lsp4j.Diagnostic(
+            org.eclipse.lsp4j.Range(org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.Position(0, 1)),
+            "partial warning",
+        )
+        val command = GlsCommand(FormatCommand(), CheckCommand { _, _ ->
+            DiagnosticsCollectionResult(
+                listOf(diagnostic), listOf("broken"), listOf(DiagnosticProviderFailure("broken", "IOException", "offline")),
+            )
+        })
+        assertFailsWith<ProgramResult> {
+            command.parse(listOf("check", "--format", "sarif", "--output", outputFile.path, file.path))
+        }
+        val json = outputFile.readText()
+        assertTrue(json.contains("partial warning"), json)
+        assertTrue(json.contains("executionSuccessful\": false"), json)
+        assertTrue(json.contains("broken") && json.contains("offline") && json.contains(file.name), json)
     }
 
     @Test

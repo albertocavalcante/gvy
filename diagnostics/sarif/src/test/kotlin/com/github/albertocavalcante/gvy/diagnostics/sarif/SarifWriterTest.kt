@@ -52,6 +52,20 @@ class SarifWriterTest {
     }
 
     @Test
+    fun `execution failures are notifications rather than source diagnostics`() {
+        val writer = SarifWriter()
+        writer.addExecutionFailure("bad.groovy", "provider unavailable")
+
+        val run = writer.build().runs.single()
+        assertTrue(run.results.isEmpty())
+        val invocation = run.invocations!!.single()
+        assertEquals(false, invocation.executionSuccessful)
+        val notification = invocation.toolExecutionNotifications!!.single()
+        assertEquals("provider unavailable", notification.message.text)
+        assertEquals("bad.groovy", notification.locations!!.single().physicalLocation!!.artifactLocation.uri)
+    }
+
+    @Test
     fun `should map diagnostic severities correctly`() {
         assertEquals(SarifLevel.ERROR, DiagnosticSeverity.Error.toSarifLevel())
         assertEquals(SarifLevel.WARNING, DiagnosticSeverity.Warning.toSarifLevel())

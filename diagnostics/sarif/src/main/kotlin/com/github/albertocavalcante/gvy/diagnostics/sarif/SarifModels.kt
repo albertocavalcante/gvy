@@ -163,8 +163,13 @@ data class SarifLogicalLocation(
 @Serializable
 data class SarifInvocation(
     val executionSuccessful: Boolean,
+    val toolExecutionNotifications: List<SarifNotification>? = null,
     val commandLine: String? = null,
     val workingDirectory: SarifArtifactLocation? = null,
     val startTimeUtc: String? = null,
     val endTimeUtc: String? = null,
 )
+
+/** An operational failure encountered during tool execution. */
+@Serializable
+data class SarifNotification(val message: SarifMessage, val locations: List<SarifLocation>? = null)
