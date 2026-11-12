@@ -1,6 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.Test
 import org.opentest4j.TestAbortedException
 import java.util.concurrent.CancellationException
@@ -57,6 +59,18 @@ class ScenarioOutcomeJUnitTest {
         )
         assertThatThrownBy { ScenarioOutcomeJUnit.report(report) }
             .isInstanceOf(CancellationException::class.java).hasMessageContaining("interrupted")
+    }
+
+    @Test
+    fun `cancellation retains independent cleanup failure`() {
+        val report = ScenarioOutcome(
+            planned = emptyList(), observed = emptyList(),
+            cleanup = CleanupOutcome.Failed("close failed", confirmed = false),
+            completion = ScenarioCompletion.Cancelled("interrupted"),
+        )
+        val failure = catchThrowable { ScenarioOutcomeJUnit.report(report) }
+        assertThat(failure).isInstanceOf(CancellationException::class.java)
+        assertThat(failure.suppressed).singleElement().hasMessageContaining("close failed")
     }
 
     @Test
