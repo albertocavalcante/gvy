@@ -9,9 +9,9 @@ controls.
 
 `canonicalizeContext` accepts at most 32 KiB of UTF-8 JSON in a Buffer. It checks a closed versioned field set and
 returns deterministically ordered JSON bytes. Native and JVM records have different typed runtime fields. Native
-grammars retain both raw and effective query identities. JVM records include the exact numeric build, runtime binary
-identities, heap, collector and selected typed settings. Unknown state remains explicit; no raw paths, arguments or
-environments are fields.
+grammars retain both raw and effective query identities. JVM records include the exact numeric build, distribution and
+binary identities, heap, collector and selected typed settings. Unknown state remains explicit; no raw paths, arguments
+or environments are fields.
 
 `bindRawArtifact` binds at most 16 MiB of opaque bytes to that context using SHA-256 and byte length.
 `verifyRawArtifact` checks the binding against supplied bytes and context. Both use fixed error codes. A raw-kind label

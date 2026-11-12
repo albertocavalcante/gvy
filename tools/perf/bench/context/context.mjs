@@ -49,10 +49,10 @@ function validateRuntime(runtime) {
     record(runtime.options, ['rustFlags', 'cFlags']);
     for (const setting of Object.values(runtime.options)) member(setting, ['default', 'unknown']);
   } else if (runtime?.kind === 'jvm') {
-    record(runtime, ['kind', 'vendor', 'vm', 'version', 'earlyAccess', 'launcherSha256', 'vmSha256', 'heapMinBytes', 'heapMaxBytes', 'gc', 'options', 'cacheSha256']);
+    record(runtime, ['kind', 'vendor', 'vm', 'version', 'earlyAccess', 'distributionSha256', 'launcherSha256', 'vmSha256', 'heapMinBytes', 'heapMaxBytes', 'gc', 'options', 'cacheSha256']);
     member(runtime.vendor, ['openjdk', 'temurin', 'oracle', 'graalvm', 'zulu']);
-    member(runtime.vm, ['hotspot', 'graal', 'openj9']); version(runtime.version, 5); bool(runtime.earlyAccess);
-    digest(runtime.launcherSha256); digest(runtime.vmSha256);
+    member(runtime.vm, ['hotspot', 'graal']); version(runtime.version, 5); bool(runtime.earlyAccess);
+    digest(runtime.distributionSha256); digest(runtime.launcherSha256); digest(runtime.vmSha256);
     integer(runtime.heapMinBytes, 1); integer(runtime.heapMaxBytes, runtime.heapMinBytes);
     member(runtime.gc, ['g1', 'serial', 'parallel', 'zgc', 'shenandoah']);
     record(runtime.options, ['tieredCompilation', 'backgroundCompilation', 'cds', 'otherOptions']);

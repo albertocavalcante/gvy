@@ -37,7 +37,7 @@ function jvmContext() {
   value.grammar = null;
   value.runtime = {
     kind: 'jvm', vendor: 'temurin', vm: 'hotspot', version: [17, 0, 17, 0, 10], earlyAccess: false,
-    launcherSha256: digest, vmSha256: digest, heapMinBytes: 268435456, heapMaxBytes: 2147483648, gc: 'g1',
+    distributionSha256: digest, launcherSha256: digest, vmSha256: digest, heapMinBytes: 268435456, heapMaxBytes: 2147483648, gc: 'g1',
     options: { tieredCompilation: 'on', backgroundCompilation: 'on', cds: 'default', otherOptions: 'none' },
     cacheSha256: null,
   };
