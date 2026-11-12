@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
 import { isUtf8 } from 'node:buffer';
 import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -47,7 +49,19 @@ function isDaemonMemoryAdvice(line) {
     /^For more information on how to set these values, please refer to https:\/\/docs\.gradle\.org\/[^\s/]+\/userguide\/build_environment\.html#sec:configuring_jvm_memory in the Gradle documentation\.$/.test(line);
 }
 
+const koverLazyVisibilityMessage = 'The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property';
+const koverLazyVisibilityOrigins = new Set([
+  'kotlinx.kover.gradle.plugin.appliers.artifacts.AbstractVariantArtifacts$2.execute(AbstractVariantArtifacts.kt:52)',
+  'kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)',
+]);
+
 function deprecationOrigin(message, origin) {
+  // Kover 0.9.11 registers these actions lazily; they can run after all projects
+  // are evaluated. The last displayed project does not identify their owner.
+  // Pinned sources and the cold trace: fixtures/gradle-kover-lazy-provenance.json.
+  if (message === koverLazyVisibilityMessage && koverLazyVisibilityOrigins.has(origin)) {
+    return { origin, context: 'emitter kover lazy configuration' };
+  }
   // NOTE: These Native consumers run outside reliable project/task output. Keep
   // the first real codec caller, not the common Attribute.of validation frame or
   // a deeper codec caller. Exact messages and origins are still policy keys.

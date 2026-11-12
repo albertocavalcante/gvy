@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -354,6 +356,73 @@ test('the inspected pinned-plugin trace matches only its exact reviewed debt led
   assert.equal(check(log.replaceAll('DetektPlugin.kt:28', 'DetektPlugin.kt:29'), { exceptions }).ok, false);
   assert.equal(check(log.replace('> Configure project :viz:desktop', '> Configure project :other'), { exceptions }).ok, false);
   assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
+});
+
+const koverLazyLog = readFileSync(new URL('./fixtures/gradle-kover-lazy-visibility.txt', import.meta.url), 'utf8');
+const koverVisibilityMessage = 'The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property';
+const koverLazyOrigins = [
+  'kotlinx.kover.gradle.plugin.appliers.artifacts.AbstractVariantArtifacts$2.execute(AbstractVariantArtifacts.kt:52)',
+  'kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)',
+];
+const koverLazyDiagnostics = koverLazyOrigins.map(origin => `[emitter kover lazy configuration] ${koverVisibilityMessage} [origin ${origin}]`);
+
+test('cold Kover traces after project evaluation use their proven lazy emitter instead of the last project', () => {
+  const provenance = JSON.parse(readFileSync(new URL('./fixtures/gradle-kover-lazy-provenance.json', import.meta.url)));
+  assert.equal(provenance.source.sha256, 'a9faf2df0fcafd62cca454670ad142c8cde864c0eb8411209e0394d353b0d0f8');
+  assert.equal(provenance.source.bytes, 782340);
+  assert.equal(provenance.sourceTree, '723dc26257397a36d8a5148f98874ee838d28b31');
+  assert.equal(provenance.runId, '43243639625');
+  assert.equal(provenance.runAttempt, 1);
+  assert.equal(createHash('sha256').update(koverLazyLog).digest('hex'), provenance.fixture.sha256);
+  assert.equal(koverLazyLog.match(/^The Configuration.setVisible/gm).length, provenance.fixture.events);
+  assert.ok(koverLazyLog.includes('All projects evaluated.'));
+  assert.ok(koverLazyLog.includes("Selected primary task 'harnessTest' from project :tests"));
+  assert.ok(!koverLazyLog.includes('BUILD SUCCESSFUL'), 'captured snippets do not invent completion');
+  for (const header of ['> Configure project :refactor:openrewrite:rewrite-codenarc', '> Configure project :viz:desktop',
+    '> Configure project :unrelated', '> Task :tests:harnessTest', '']) {
+    const log = koverLazyLog.replace('> Configure project :refactor:openrewrite:rewrite-codenarc', header);
+    assert.deepEqual(collectDiagnostics(log), koverLazyDiagnostics, header);
+  }
+});
+
+test('only the two exact Kover messages and origins use the migrated debt keys', () => {
+  const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
+  const result = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`, { exceptions });
+  assert.equal(result.ok, true);
+  assert.equal(result.accepted.length, 2);
+  assert.deepEqual(result.unexpected, []);
+  const failed = check(`${koverLazyLog}BUILD FAILED in 1s\n`, { exceptions, commandExitCode: 1 });
+  assert.equal(failed.complete, true);
+  assert.equal(failed.ok, false);
+  assert.deepEqual(failed.unexpected, []);
+  assert.deepEqual(failed.errors, ['Gradle command failed with exit 1']);
+  const untracked = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`);
+  assert.equal(untracked.ok, false);
+  assert.deepEqual(untracked.unexpected, koverLazyDiagnostics);
+  const expired = check(`${koverLazyLog}BUILD SUCCESSFUL in 1s\n`, { exceptions, now: new Date('2026-12-12T00:00:00Z') });
+  assert.equal(expired.ok, false);
+});
+
+test('unknown Kover origins, messages, versions and first-party callers remain unexpected', () => {
+  const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
+  const changed = [
+    ['AbstractVariantArtifacts.kt:52', 'AbstractVariantArtifacts.kt:53'],
+    ['Configurations.kt:141', 'Configurations.kt:142'],
+    ['ConfigurationsKt.asConsumer', 'ConfigurationsKt.otherConsumer'],
+    ['setVisible(boolean)', 'setVisible(String)'],
+    ['Gradle 11.', 'Gradle 12.'],
+    ['gradle.org/9.8.2/', 'gradle.org/9.9.0/'],
+    [koverLazyOrigins[0], 'other.Plugin.configure(Plugin.kt:52)'],
+    [`\tat ${koverLazyOrigins[0]}\n`, ''],
+    [koverLazyOrigins[1], 'Build_gradle.configure(build.gradle.kts:25)'],
+  ];
+  for (const [before, after] of changed) {
+    const result = check(koverLazyLog.replaceAll(before, after) + 'BUILD SUCCESSFUL in 1s\n', { exceptions });
+    assert.equal(result.ok, false, `${before} -> ${after}`);
+    assert.ok(result.unexpected.length >= 1, `${before} -> ${after}`);
+  }
+  const adjacent = collectDiagnostics(`${koverLazyLog}WARNING: unrelated diagnostic\n`);
+  assert.ok(adjacent.includes('[project :refactor:openrewrite:rewrite-codenarc] WARNING: unrelated diagnostic'));
 });
 
 const wireRoot = '/workspace/gvy';

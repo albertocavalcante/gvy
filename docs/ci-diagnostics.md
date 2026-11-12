@@ -125,6 +125,20 @@ exact source-attributed exceptions in `tools/ci/gradle-diagnostics.json`; inspec
 candidates and removal criteria remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). These
 exceptions are debt, not proof that newer plugin releases have the same limitation.
 
+Two Kover 0.9.11 visibility origins use `[emitter kover lazy configuration]` instead of a project name.
+[Kover registers these configuration actions lazily](https://github.com/Kotlin/kotlinx-kover/blob/39fcc803490dbeecdcbc8d5535a165b1d472aaf9/kover-gradle-plugin/src/main/kotlin/kotlinx/kover/gradle/plugin/appliers/artifacts/AbstractVariantArtifacts.kt#L48-L68);
+[Gradle executes registration actions when required](https://github.com/gradle/gradle/blob/8de7bcf76e785507ad92f0741ab9235a430c95e6/subprojects/core-api/src/main/java/org/gradle/api/NamedDomainObjectContainer.java#L104-L118).
+The original cold trace emits both warnings after all projects were evaluated and `:tests:harnessTest` was selected, so
+the last project header cannot establish their project ownership. The exact Gradle 9.8.2 message and full caller frames
+remain part of each key; changed messages, Gradle versions, callers and first-party sources remain unexpected.
+
+The [captured trace and provenance](../tools/ci/fixtures/gradle-kover-lazy-provenance.json) bind the two events to the
+original run, tree, log hash and selected lines. Original context remains in the raw log; the existing string diagnostic
+and strict report schema do not gain a separate project field. Only the two former `:viz:desktop` debt keys are
+migrated; owners, expiry dates and the unresolved Kover retirement work in
+[#1603](https://github.com/albertocavalcante/gvy/issues/1603) remain unchanged. A failed original command remains failed
+after diagnostic attribution is corrected.
+
 Linux/macOS Native integration adds fourteen exact upstream fingerprints from thirteen observed events per host. Windows
 adds one exact bundle-notation fingerprint; its remaining plugin traces reuse existing entries. Three Native enum
 consumer stacks retain distinct configuration-cache codec origins; Native download advice retains its verified bundle
