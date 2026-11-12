@@ -1,0 +1,167 @@
+name: Native launcher CI
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: launcher-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build-server:
+    name: Stage launcher server payload
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      server_sha256: ${{ steps.upload_server.outputs.artifact-digest }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Setup build Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Stage candidate server
+        run: >-
+          ./gradlew :gls:stageEditorServer --no-daemon --no-parallel --build-cache --console=plain --stacktrace
+          --max-workers=2 '-Dorg.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=2g -Dfile.encoding=UTF-8'
+
+      - name: Upload candidate server
+        id: upload_server
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          path: gls/build/editor-server/gls.jar
+          # The JAR is already an archive; direct transfer avoids the deprecated ZIP extractor.
+          # In this mode the action uses the uploaded filename, gls.jar, as the artifact name.
+          archive: false
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Require uploaded server digest
+        env:
+          GVY_SERVER_SHA256: ${{ steps.upload_server.outputs.artifact-digest }}
+        run: |
+          if [[ ! "$GVY_SERVER_SHA256" =~ ^[0-9a-fA-F]{64}$ ]]; then
+            echo "::error::Uploaded server SHA-256 is missing or invalid"
+            exit 1
+          fi
+
+  native:
+    name: Launcher (${{ matrix.target }})
+    needs: build-server
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            arch: x86_64
+            target: linuxX64
+            test-task: linuxX64Test
+            link-task: linkReleaseExecutableLinuxX64
+          # macos-15 is the standard Arm64 runner; macos-15-intel is a separate image.
+          - os: macos-15
+            arch: arm64
+            target: macosArm64
+            test-task: macosArm64Test
+            link-task: linkReleaseExecutableMacosArm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: test "$(uname -m)" = "$EXPECTED_ARCH"
+
+      - name: Setup build Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Test and link native launcher
+        env:
+          NATIVE_TEST_TASK: ${{ matrix.test-task }}
+          NATIVE_LINK_TASK: ${{ matrix.link-task }}
+        run: >-
+          ./gradlew ":launcher:$NATIVE_TEST_TASK" ":launcher:$NATIVE_LINK_TASK"
+          --no-daemon --no-parallel --build-cache --console=plain --stacktrace --max-workers=2
+          '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -Dfile.encoding=UTF-8'
+          -Pkotlin.native.jvmArgs=-Xmx1536m
+
+      - name: Setup minimum runtime Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+
+      - name: Download candidate server
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: gls.jar
+          path: gls/build/editor-server
+          skip-decompress: true
+          digest-mismatch: error
+
+      - name: Verify candidate server SHA-256
+        env:
+          GVY_TEST_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
+          GVY_SERVER_SHA256: ${{ needs.build-server.outputs.server_sha256 }}
+        run: |
+          node <<'NODE'
+          const { createHash } = require('node:crypto');
+          const { readFileSync } = require('node:fs');
+          const expected = process.env.GVY_SERVER_SHA256;
+          if (!expected || !/^[0-9a-f]{64}$/i.test(expected)) {
+            throw new Error('Server SHA-256 is missing or invalid');
+          }
+          const actual = createHash('sha256').update(readFileSync(process.env.GVY_TEST_JAR)).digest('hex');
+          if (actual !== expected.toLowerCase()) {
+            throw new Error('Downloaded server SHA-256 does not match the producer');
+          }
+          NODE
+
+      - name: Verify forwarding and actual server CLI/LSP
+        env:
+          GVY_LAUNCHER: ${{ github.workspace }}/launcher/build/bin/${{ matrix.target }}/releaseExecutable/gvy.kexe
+          GVY_TEST_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
+        run: |
+          test -x "$GVY_LAUNCHER"
+          test -s "$GVY_TEST_JAR"
+          node --test launcher/test/launcher.test.cjs

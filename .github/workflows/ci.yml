@@ -138,6 +138,10 @@ jobs:
               - 'source/**'
               # gls (main LSP server)
               - 'gls/**'
+              # native CLI launcher
+              - 'launcher/**'
+              # Shared real-server protocol smoke used by native launcher validation
+              - 'editors/code/tools/smoke-server.js'
               # parser (api, native, core, rewrite)
               - 'parser/**'
               # indexer (core, scip, lsif)
@@ -182,6 +186,7 @@ jobs:
               - 'settings.gradle.kts'
               - 'gradlew*'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/ci-launcher.yml'
 
   check-runner:
     name: Check Runner Availability
@@ -743,6 +748,14 @@ jobs:
           java -jar "$JAR_FILE" --help
           echo "✅ Smoke test passed on ${{ matrix.os }}!"
 
+  launcher:
+    name: Native launcher
+    needs: check-paths
+    if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci-launcher.yml
+
   validate:
     name: Validation Check
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
@@ -751,7 +764,7 @@ jobs:
       contents: read
     # Coverage is advisory (reports + SonarCloud, which already tolerates failure): it starts only
     # after the build and took 2-5 min on top of it, so the required check no longer waits for it.
-    needs: [lint, build, e2e-test, check-runner, check-paths]
+    needs: [lint, build, e2e-test, launcher, check-runner, check-paths]
     if: always()
     steps:
       - name: Check build status
@@ -759,14 +772,24 @@ jobs:
           LINT_RESULT="${{ needs.lint.result }}"
           BUILD_RESULT="${{ needs.build.result }}"
           E2E_RESULT="${{ needs.e2e-test.result }}"
+          LAUNCHER_RESULT="${{ needs.launcher.result }}"
           PROVISIONING="${{ needs.check-runner.outputs.provisioning_triggered }}"
           RUN_MAIN_CI="${{ needs.check-paths.outputs.run_main_ci }}"
 
           echo "Lint result: $LINT_RESULT"
           echo "Build result: $BUILD_RESULT"
           echo "E2E result: $E2E_RESULT"
+          echo "Native launcher result: $LAUNCHER_RESULT"
           echo "Provisioning triggered: $PROVISIONING"
           echo "Run main CI: $RUN_MAIN_CI"
+
+          # Relevant changes and manual runs must execute native compilation and real-JAR smoke tests.
+          if [[ "$RUN_MAIN_CI" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "$LAUNCHER_RESULT" != "success" ]]; then
+              echo "::error::Native launcher validation did not succeed: $LAUNCHER_RESULT"
+              exit 1
+            fi
+          fi
 
           # If paths filter determined no CI needed, skipped build is OK
           if [[ "$RUN_MAIN_CI" != "true" && "$BUILD_RESULT" == "skipped" ]]; then

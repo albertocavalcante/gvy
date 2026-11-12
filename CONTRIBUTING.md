@@ -46,6 +46,9 @@ See the [server usage guide](docs/lsp/usage.md) for LSP transports and editor co
 [build and install this checkout](editors/code/CONTRIBUTING.md#build-and-install-this-checkout) to try the extension
 with your server changes.
 
+To try the native command entry point, see the [Kotlin/Native launcher preview](launcher/README.md). It builds the same
+JVM payload behind a native executable and currently targets macOS Apple silicon and Linux x64.
+
 For a full build, including tests:
 
 ```bash
