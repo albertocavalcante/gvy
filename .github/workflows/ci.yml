@@ -45,7 +45,7 @@ jobs:
           chmod 700 "$private/wrapper"
           bazel --version >"$private/bazel-version" 2>&1
           echo 'BAZELISK_GITHUB_TOKEN=' >>"$GITHUB_ENV"
-          if ! bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m --run_under="$private/wrapper" //build-tool:build-tool_test //jenkins:jenkins_test >"$private/bazel.log" 2>&1; then
+          if ! bazel --host_jvm_args=-Xmx1024m test --jobs=1 --local_test_jobs=1 --nocache_test_results --zip_undeclared_test_outputs --test_output=errors --test_env=JDK_JAVA_OPTIONS=-Xmx512m --run_under="$private/wrapper" //build-tool:build-tool_test //jenkins:jenkins_test >"$private/bazel.log" 2>&1; then
           	echo "Focused Bazel witness failed; private output withheld." >&2
           	exit 1
           fi
