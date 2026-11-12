@@ -208,16 +208,24 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          # Reuse the MinGW dependency selected by the pinned Kotlin/Native distribution.
-          $konan = if ($env:KONAN_DATA_DIR) { $env:KONAN_DATA_DIR } else { Join-Path $env:USERPROFILE '.konan' }
-          $compiler = Join-Path $konan 'dependencies\msys2-mingw-w64-x86_64-2\bin\gcc.exe'
+          # TODO(#1828): Recheck the pinned K/N compiler compatibility by 2026-12-11.
+          # See: https://github.com/albertocavalcante/gvy/issues/1828
+          # The runner image installs modern MinGW here. K/N's older GCC crashes on Server 2025.
+          $compiler = 'C:\mingw64\bin\gcc.exe'
           if (!(Test-Path -LiteralPath $compiler -PathType Leaf)) {
-            throw 'The completed Kotlin/Native build did not provide its MinGW x64 compiler'
+            throw 'The Windows runner must provide its documented MinGW x64 compiler'
           }
           $target = (& $compiler -dumpmachine).Trim()
           if ($LASTEXITCODE -ne 0 -or $target -ne 'x86_64-w64-mingw32') {
             throw 'The Windows probe compiler must target native MinGW x64'
           }
+          $version = (& $compiler -dumpfullversion).Trim()
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^([0-9]+)\.' -or [int]$Matches[1] -lt 15) {
+            throw 'The Windows probe requires GCC 15 or newer'
+          }
+          & $compiler --version
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the Windows probe compiler' }
+          Write-Output "Probe compiler SHA-256: $((Get-FileHash $compiler -Algorithm SHA256).Hash)"
           "GVY_PROBE_CC=$compiler" >> $env:GITHUB_ENV
           Split-Path -Parent $compiler >> $env:GITHUB_PATH
 

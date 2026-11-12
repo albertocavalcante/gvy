@@ -1,8 +1,9 @@
 # Native launcher dogfood: CLI agents and Windows
 
-Date: 2026-11-11. Scope: the Kotlin/Native entry point from #1769, real JVM CLI/LSP workloads, and native Windows x64.
-The [build guide](../launcher/README.md) is canonical for commands. Distribution design remains in
-[the CLI/runtime study](CLI_DISTRIBUTION_RESEARCH.md) and [#1741](https://github.com/albertocavalcante/gvy/issues/1741).
+Started: 2026-11-11. Updated: 2026-11-12. Scope: the Kotlin/Native entry point from #1769, real JVM CLI/LSP workloads,
+and native Windows x64. The [build guide](../launcher/README.md) is canonical for commands. Distribution design remains
+in [the CLI/runtime study](CLI_DISTRIBUTION_RESEARCH.md) and
+[#1741](https://github.com/albertocavalcante/gvy/issues/1741).
 
 ## Findings and changes
 
@@ -29,6 +30,16 @@ The Windows native unit quoting test was first run with an identity quoting impl
 quoting test failed. Correct escaping then passed. Early process-tree assertions passed, but synchronous fixture cleanup
 crashed Node; awaiting the owned control process's close fixed that harness failure. This was not attributed to the
 launcher.
+
+CI exposed two additional validation issues. The GCC 9.2.0 shipped with the pinned Kotlin/Native dependency crashed in
+an AVX-512 header while compiling the independent C probe on Windows Server 2025. The launcher and Java 17 agent
+workload had already succeeded. The probe now selects the image's documented modern MinGW compiler, checks its target
+and version, and records its hash. [#1828](https://github.com/albertocavalcante/gvy/issues/1828) owns compatibility
+investigation and the 2026-12-11 review; no first fixed GCC release is claimed.
+
+Bazel's default unit-test logger also writes ordinary diagnostics to stdout. The component regression checks that the
+CodeNarc summary stays off stdout and appears on stderr; the packaged CLI tests independently require the complete SARIF
+stdout stream to parse as JSON. A redundant native conversion warning found by hosted Windows compilation was removed.
 
 ## What this means for the bundled runtime
 

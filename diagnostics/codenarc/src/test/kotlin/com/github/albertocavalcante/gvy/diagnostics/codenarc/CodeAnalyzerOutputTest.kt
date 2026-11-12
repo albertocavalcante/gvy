@@ -7,6 +7,7 @@ import org.junit.jupiter.api.parallel.Isolated
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -37,7 +38,9 @@ class CodeAnalyzerOutputTest {
                         originalRunnerMetaClass,
                         GroovySystem.getMetaClassRegistry().getMetaClass(CodeNarcRunner::class.java),
                     )
-                    assertEquals("", stdout.toString(Charsets.UTF_8))
+                    // Bazel's default test logger can write other messages to stdout. This unit test
+                    // isolates the runner summary; packaged CLI tests require the entire stream to parse as JSON.
+                    assertFalse(stdout.toString(Charsets.UTF_8).contains("CodeNarc completed:"))
                     assertTrue(stderr.toString(Charsets.UTF_8).contains("CodeNarc completed:"))
                 } finally {
                     System.setOut(originalOut)

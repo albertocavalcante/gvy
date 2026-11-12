@@ -92,7 +92,7 @@ internal fun windowsReadableFile(path: String): Boolean = memScoped {
     if (path.isBlank()) return false
     val file = CreateFileW(
         extendedPath(windowsAbsolutePath(path)),
-        GENERIC_READ.toUInt(),
+        GENERIC_READ,
         (FILE_SHARE_READ or FILE_SHARE_WRITE or FILE_SHARE_DELETE).toUInt(),
         null,
         OPEN_EXISTING.toUInt(),
