@@ -114,6 +114,18 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `cause node budget accepts exact limit and rejects one extra`() {
+        fun chain(additional: Int): AssertionError {
+            val root = AssertionError("known")
+            var tail: Throwable = root
+            repeat(additional) { index -> IOException("cause-$index").also { tail.initCause(it); tail = it } }
+            return root
+        }
+        assertThat(classify(xfail, chain(31))).isInstanceOf(XfailDecision.Expected::class.java)
+        assertThat(classify(xfail, chain(32))).isInstanceOf(XfailDecision.Unexpected::class.java)
+    }
+
+    @Test
     fun `unsupported lookbehind fails before classification`() {
         assertThatThrownBy { classify(xfail.copy(match = "(?<=a)b"), AssertionError("ab")) }
             .isInstanceOf(IllegalArgumentException::class.java)
