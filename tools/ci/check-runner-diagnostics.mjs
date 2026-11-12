@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -10,6 +12,7 @@ const MAX_PAGES = 100;
 const MAX_REQUESTS = 500;
 const MAX_JOBS = 5000;
 const MAX_ANNOTATIONS = 10000;
+const MAX_NOTICE_BYTES = 256 * 1024;
 const TIME_BUDGET_MS = 120000;
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const positiveId = value => Number.isSafeInteger(value) && value > 0;
@@ -57,6 +60,7 @@ export async function observeRunnerDiagnostics(context, request, exceptions, now
     context, observedAt: now.toISOString(), attemptStartedAt: null,
     boundary: `Completed jobs in this exact run attempt, excluding ${OBSERVER_NAME}; unfinished jobs and observer annotations are unobserved.`,
     errors: [], jobs: [], skippedJobs: [], unfinishedJobs: [], excludedJobs: [], annotations: [], diagnostics: [],
+    notices: [], noticeBytes: 2, noticeLimitBytes: MAX_NOTICE_BYTES,
     unexpected: [], accepted: [], exceptions,
   };
   const root = `/repos/${context.repository}`;
@@ -109,23 +113,38 @@ export async function observeRunnerDiagnostics(context, request, exceptions, now
       const expectedCount = check?.output?.annotations_count;
       if (!isObject(check) || check.id !== job.checkId || check.head_sha !== context.headSha || check.status !== 'completed' || !Number.isSafeInteger(expectedCount) || expectedCount < 0 || expectedCount > MAX_ANNOTATIONS) throw new Error(`Invalid or stale check metadata for job ${job.jobId}`);
       const annotations = [];
+      let jobAnnotationCount = 0;
       let finished = false;
       for (let page = 1; page <= MAX_PAGES; page++) {
         const values = await get(`${path}/annotations?per_page=100&page=${page}`);
         if (!Array.isArray(values) || values.length > 100) throw new Error(`Invalid annotation page for job ${job.jobId}`);
-        annotations.push(...values);
+        jobAnnotationCount += values.length;
         annotationCount += values.length;
-        if (annotationCount > MAX_ANNOTATIONS || annotations.length > expectedCount) throw new Error('Annotation count exceeds declared count or observer limit');
+        if (annotationCount > MAX_ANNOTATIONS || jobAnnotationCount > expectedCount) throw new Error('Annotation count exceeds declared count or observer limit');
+        for (const item of values) {
+          if (!isObject(item) || !['notice', 'warning', 'failure'].includes(item.annotation_level) || typeof item.path !== 'string' || typeof item.message !== 'string' || !item.message || !positiveId(item.start_line) || !positiveId(item.end_line) || item.end_line < item.start_line || (item.title !== undefined && item.title !== null && typeof item.title !== 'string') || (item.raw_details !== undefined && item.raw_details !== null && typeof item.raw_details !== 'string')) throw new Error(`Invalid annotation schema for job ${job.jobId}`);
+          if (item.annotation_level === 'notice') {
+            // Notices are public API text, projected without raw_details or unknown response fields.
+            const notice = {
+              repository: context.repository, runId: context.runId, runAttempt: context.runAttempt,
+              jobId: job.jobId, jobName: job.name, checkId: job.checkId, headSha: job.headSha, testedSha: context.testedSha,
+              level: item.annotation_level, path: item.path, startLine: item.start_line, endLine: item.end_line,
+              title: item.title ?? '', message: item.message,
+            };
+            const bytes = Buffer.byteLength(JSON.stringify(notice)) + (result.notices.length ? 1 : 0);
+            if (result.noticeBytes + bytes > MAX_NOTICE_BYTES) throw new Error('Retained notice JSON exceeds 256 KiB observer limit');
+            result.notices.push(notice);
+            result.noticeBytes += bytes;
+          } else annotations.push(item);
+        }
         if (values.length < 100) {
-          if (annotations.length !== expectedCount) throw new Error(`Truncated annotations for job ${job.jobId}`);
+          if (jobAnnotationCount !== expectedCount) throw new Error(`Truncated annotations for job ${job.jobId}`);
           finished = true;
           break;
         }
       }
       if (!finished) throw new Error('Annotation pagination limit exceeded');
       for (const item of annotations) {
-        if (!isObject(item) || !['notice', 'warning', 'failure'].includes(item.annotation_level) || typeof item.path !== 'string' || typeof item.message !== 'string' || !item.message || !positiveId(item.start_line) || !positiveId(item.end_line) || item.end_line < item.start_line || (item.title !== undefined && item.title !== null && typeof item.title !== 'string') || (item.raw_details !== undefined && item.raw_details !== null && typeof item.raw_details !== 'string')) throw new Error(`Invalid annotation schema for job ${job.jobId}`);
-        if (item.annotation_level === 'notice') continue;
         const details = { level: item.annotation_level, path: item.path, startLine: item.start_line, endLine: item.end_line, title: item.title ?? '', message: item.message, rawDetails: item.raw_details ?? '' };
         const diagnostic = JSON.stringify({ job: job.name, ...details });
         result.annotations.push({ jobId: job.jobId, jobName: job.name, checkId: job.checkId, headSha: job.headSha, ...details, diagnostic });
@@ -176,15 +195,18 @@ async function main(args) {
     };
     result = await observeRunnerDiagnostics(context, request, exceptions);
   } catch (error) {
-    result = { schemaVersion: 1, ok: false, observationComplete: false, runWideComplete: false, attemptStartedAt: null, errors: [error.message], annotations: [], unexpected: [], accepted: [], exceptions: [], jobs: [], skippedJobs: [], unfinishedJobs: [], excludedJobs: [] };
+    result = { schemaVersion: 1, ok: false, observationComplete: false, runWideComplete: false, attemptStartedAt: null, errors: [error.message], annotations: [], notices: [], noticeBytes: 2, noticeLimitBytes: MAX_NOTICE_BYTES, unexpected: [], accepted: [], exceptions: [], jobs: [], skippedJobs: [], unfinishedJobs: [], excludedJobs: [] };
   }
   const summary = [
     '## Actions and runner diagnostic snapshot', '',
-    `**${result.ok ? 'PASS' : 'FAIL'}**: ${result.unexpected.length} new annotations; ${result.accepted.length} tracked annotations.`, '',
+    `**${result.ok ? 'PASS' : 'FAIL'}**: ${result.unexpected.length} new warning/failure annotations; ${result.accepted.length} tracked warning/failure annotations; ${result.notices.length} retained notices (informational).`, '',
     result.boundary ?? 'Observation failed before a completed-job boundary could be established.',
     `Observation complete: ${result.observationComplete}. Run-wide annotation completeness: false.`, '',
     ...result.errors.map(value => `- ${escape(value)}`),
     ...result.unexpected.map(value => `<pre>${escape(value)}</pre>`), '',
+    '### Informational notices (nonfatal)', '',
+    `Compact notice-array payload: ${result.noticeBytes} / ${result.noticeLimitBytes} bytes; this limit excludes the rest of the report. Incomplete observations may contain only partial notice evidence.`, '',
+    ...result.notices.map(value => `<pre>${escape(JSON.stringify(value))}</pre>`), '',
     `Unfinished jobs: ${result.unfinishedJobs.map(job => escape(job.name)).join(', ') || 'none observed'}.`,
     `Skipped jobs: ${result.skippedJobs.map(job => escape(job.name)).join(', ') || 'none observed'}.`,
     `Excluded observer jobs: ${result.excludedJobs.map(job => escape(job.name)).join(', ') || 'none observed'}.`, '',
@@ -195,7 +217,7 @@ async function main(args) {
   writeFileSync(join(report, 'diagnostics.json'), `${JSON.stringify(result, null, 2)}\n`);
   writeFileSync(join(report, 'summary.md'), summary);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
-  console.log(`Runner diagnostics ${result.ok ? 'passed' : 'failed'}: ${result.unexpected.length} new annotations; snapshot complete=${result.observationComplete}`);
+  console.log(`Runner diagnostics ${result.ok ? 'passed' : 'failed'}: ${result.unexpected.length} new warning/failure annotations; ${result.notices.length} retained notices (informational); snapshot complete=${result.observationComplete}`);
   process.exitCode = result.ok ? 0 : 1;
 }
 

@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -5,6 +7,7 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { observeRunnerDiagnostics } from './check-runner-diagnostics.mjs';
+import { combineReadiness } from './check-readiness.mjs';
 
 const sourceSha = 'a'.repeat(40);
 const testedSha = 'b'.repeat(40);
@@ -21,6 +24,7 @@ const job = (id, name = 'Build', status = 'completed', conclusion = 'success') =
   check_run_url: `https://api.github.com${base}/check-runs/${id + 1000}`,
 });
 const annotation = { annotation_level: 'warning', path: '.github/workflows/ci.yml', start_line: 1, end_line: 1, title: 'Runner', message: 'Deprecated action runtime' };
+const notice = { ...annotation, annotation_level: 'notice', message: 'Hosted image migration notice' };
 const check = (id, count = 0) => ({ id: id + 1000, head_sha: sourceSha, status: 'completed', output: { annotations_count: count } });
 
 function fixture(jobs = [job(1), job(2, 'Optional', 'queued', null), job(3, 'Skipped', 'completed', 'skipped'), job(4, 'Validation Check', 'in_progress', null)]) {
@@ -131,6 +135,143 @@ test('rejects changed or malformed final attempt starts while retaining the init
   }
 });
 
+test('notice annotations retain original severity and exact run, attempt, job, check and source provenance', async () => {
+  const f = fixture([job(1)]);
+  const original = { ...notice, message: 'Image <migration> & UTF-8 café', raw_details: 'Unneeded raw payload', extra: 'not a public report field' };
+  f.responses.set(`${base}/check-runs/1001`, check(1, 1));
+  f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, [original]);
+  const result = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(result.ok, true, result.errors.join('\n'));
+  assert.equal(result.observationComplete, true);
+  assert.deepEqual(result.notices, [{
+    repository: context.repository, runId: context.runId, runAttempt: context.runAttempt,
+    jobId: 1, jobName: 'Build', checkId: 1001, headSha: sourceSha, testedSha,
+    level: 'notice', path: notice.path, startLine: 1, endLine: 1, title: notice.title, message: original.message,
+  }]);
+  assert.equal(result.noticeBytes, Buffer.byteLength(JSON.stringify(result.notices)));
+  assert.equal(result.noticeLimitBytes, 256 * 1024);
+  assert.deepEqual(result.annotations, []);
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(result.unexpected, []);
+  assert.deepEqual(result.accepted, []);
+  assert.ok(!JSON.stringify(result).includes(original.raw_details));
+});
+
+test('malformed notices fail observation with stable errors instead of disappearing', async () => {
+  for (const patch of [{ message: '' }, { message: null }, { path: null }, { start_line: 0 },
+    { end_line: 0 }, { title: {} }, { raw_details: {} }]) {
+    const f = fixture([job(1)]);
+    f.responses.set(`${base}/check-runs/1001`, check(1, 1));
+    f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, [{ ...notice, ...patch }]);
+    const result = await observeRunnerDiagnostics(context, f.request, []);
+    assert.equal(result.ok, false);
+    assert.equal(result.observationComplete, false);
+    assert.deepEqual(result.notices, []);
+    assert.deepEqual(result.errors, ['Invalid annotation schema for job 1']);
+  }
+});
+
+test('a warning alongside a retained notice still fails the unchanged exact diagnostic policy', async () => {
+  const f = fixture([job(1)]);
+  f.responses.set(`${base}/check-runs/1001`, check(1, 2));
+  f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, [notice, annotation]);
+  const result = await observeRunnerDiagnostics(context, f.request, []);
+  const diagnostic = JSON.stringify({ job: 'Build', level: 'warning', path: annotation.path,
+    startLine: 1, endLine: 1, title: annotation.title, message: annotation.message, rawDetails: '' });
+  assert.equal(result.observationComplete, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.notices.length, 1);
+  assert.deepEqual(result.diagnostics, [diagnostic]);
+  assert.deepEqual(result.unexpected, [diagnostic]);
+});
+
+test('notice retention enforces the total serialized UTF-8 byte budget without truncating a notice', async () => {
+  const f = fixture([job(1)]);
+  const endpoint = `${base}/check-runs/1001/annotations?per_page=100&page=1`;
+  f.responses.set(`${base}/check-runs/1001`, check(1, 1));
+  f.responses.set(endpoint, [notice]);
+  const probe = await observeRunnerDiagnostics(context, f.request, []);
+  const overhead = probe.noticeBytes - Buffer.byteLength(notice.message);
+  const payloadBytes = 256 * 1024 - overhead;
+  const exact = 'é'.repeat(Math.floor(payloadBytes / 2)) + (payloadBytes % 2 ? 'a' : '');
+  f.responses.set(endpoint, [{ ...notice, message: exact }]);
+  const complete = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(complete.ok, true);
+  assert.equal(complete.noticeBytes, 256 * 1024);
+  assert.equal(complete.notices[0].message, exact);
+  f.responses.set(endpoint, [{ ...notice, message: exact + 'é' }]);
+  const exceeded = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(exceeded.ok, false);
+  assert.equal(exceeded.observationComplete, false);
+  assert.deepEqual(exceeded.notices, []);
+  assert.equal(exceeded.noticeBytes, 2);
+  assert.deepEqual(exceeded.errors, ['Retained notice JSON exceeds 256 KiB observer limit']);
+});
+
+test('notice byte budget is shared across jobs and partial retained evidence remains explicitly incomplete', async () => {
+  const f = fixture([job(1), job(2)]);
+  for (const id of [1, 2]) {
+    f.responses.set(`${base}/check-runs/${id + 1000}`, check(id, 1));
+    f.responses.set(`${base}/check-runs/${id + 1000}/annotations?per_page=100&page=1`, [{ ...notice, message: 'x'.repeat(128 * 1024) }]);
+  }
+  const result = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(result.ok, false);
+  assert.equal(result.observationComplete, false);
+  assert.equal(result.notices.length, 1);
+  assert.equal(result.notices[0].jobId, 1);
+  assert.equal(result.noticeBytes, Buffer.byteLength(JSON.stringify(result.notices)));
+  assert.equal(result.jobs[0].annotationsObserved, true);
+  assert.equal(result.jobs[1].annotationsObserved, false);
+});
+
+test('notice evidence cannot turn stale source or attempt identities into a complete snapshot', async () => {
+  for (const patch of [{ run_attempt: 1 }, { head_sha: testedSha }]) {
+    const f = fixture([{ ...job(1), ...patch }]);
+    const result = await observeRunnerDiagnostics(context, f.request, []);
+    assert.equal(result.ok, false);
+    assert.equal(result.observationComplete, false);
+    assert.deepEqual(result.notices, []);
+  }
+  const f = fixture([job(1)]);
+  f.responses.set(`${base}/check-runs/1001`, check(1, 1));
+  f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, [notice]);
+  f.responses.set(runPath, { ...run, run_attempt: 1 });
+  const staleRun = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(staleRun.observationComplete, false);
+  assert.deepEqual(staleRun.notices, []);
+  f.responses.set(runPath, run);
+  f.responses.set(`${base}/check-runs/1001`, { ...check(1, 1), head_sha: testedSha });
+  const staleCheck = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(staleCheck.observationComplete, false);
+  assert.deepEqual(staleCheck.notices, []);
+  f.responses.set(`${base}/check-runs/1001`, check(1, 1));
+  let reads = 0;
+  const changed = endpoint => endpoint === runPath && ++reads === 2 ? { ...run, run_attempt: 3 } : f.request(endpoint);
+  const result = await observeRunnerDiagnostics(context, changed, []);
+  assert.equal(result.ok, false);
+  assert.equal(result.observationComplete, false);
+  assert.equal(result.notices[0].runAttempt, 2);
+  assert.equal(result.notices[0].headSha, sourceSha);
+});
+
+test('readiness accepts observed informational notices and rejects incomplete or warning-bearing evidence', async () => {
+  const f = fixture([job(1, 'check-paths')]);
+  const endpoint = `${base}/check-runs/1001/annotations?per_page=100&page=1`;
+  const graph = { schemaVersion: 1, ok: true, errors: [] };
+  f.responses.set(`${base}/check-runs/1001`, check(1, 1));
+  f.responses.set(endpoint, [notice]);
+  const complete = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(combineReadiness(graph, complete, context).ok, true);
+  f.responses.set(`${base}/check-runs/1001`, check(1, 2));
+  const incomplete = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(incomplete.notices.length, 1);
+  assert.equal(combineReadiness(graph, incomplete, context).ok, false);
+  f.responses.set(endpoint, [notice, annotation]);
+  const warned = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(warned.observationComplete, true);
+  assert.equal(combineReadiness(graph, warned, context).ok, false);
+});
+
 test('warning/failure annotations have stable exact keys and full job/check/source provenance', async () => {
   const f = fixture([job(1)]);
   f.responses.set(`${base}/check-runs/1001`, check(1, 3));
@@ -145,6 +286,8 @@ test('warning/failure annotations have stable exact keys and full job/check/sour
   assert.equal(result.annotations[0].checkId, 1001);
   assert.equal(result.annotations[0].headSha, sourceSha);
   assert.equal(result.unexpected.length, 2);
+  assert.equal(result.notices.length, 1);
+  assert.equal(result.notices[0].level, 'notice');
   const accepted = { diagnostic: result.diagnostics[0], owner: 'CI maintainers', issue: 'https://github.com/albertocavalcante/gvy/issues/1', reason: 'Upstream limitation.', nextAction: 'Upgrade fixed action.', acceptance: 'Warning disappears.', expires: '2099-01-01' };
   const tracked = await observeRunnerDiagnostics(context, f.request, [accepted]);
   assert.equal(tracked.accepted.length, 1);
@@ -161,9 +304,14 @@ test('paginates jobs and annotations and fails declared-count truncation, duplic
   f.responses.set(`${base}/check-runs/1001`, check(1, 101));
   f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, annotations.slice(0, 100));
   f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=2`, annotations.slice(100));
-  assert.equal((await observeRunnerDiagnostics(context, f.request, [])).ok, true);
+  const complete = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(complete.ok, true);
+  assert.deepEqual(complete.notices.map(value => value.message), annotations.map(value => value.message));
   f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=2`, []);
-  assert.equal((await observeRunnerDiagnostics(context, f.request, [])).ok, false);
+  const truncated = await observeRunnerDiagnostics(context, f.request, []);
+  assert.equal(truncated.ok, false);
+  assert.equal(truncated.observationComplete, false);
+  assert.equal(truncated.notices.length, 100);
   for (const patch of [{ run_id: 124 }, { run_attempt: 1 }, { head_sha: testedSha }, { id: -1 }, { status: 'mystery' }]) {
     const invalid = fixture([{ ...job(1), ...patch }]);
     assert.equal((await observeRunnerDiagnostics(context, invalid.request, [])).ok, false);
@@ -212,6 +360,9 @@ test('CLI uses only isolated fake gh GET endpoints, writes reports and redacts A
   const dir = mkdtempSync(join(tmpdir(), 'gvy-runner-observer-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const f = fixture();
+  const visibleNotice = { ...notice, title: '<img src=x>', message: '</pre><script>image & migration</script>', raw_details: 'unneeded-private-details' };
+  f.responses.set(`${base}/check-runs/1001`, check(1, 1));
+  f.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, [visibleNotice]);
   const data = join(dir, 'responses.json');
   writeFileSync(data, JSON.stringify(Object.fromEntries(f.responses)));
   const gh = join(dir, 'gh');
@@ -230,12 +381,23 @@ if (!(endpoint in data)) process.exit(2); console.log(JSON.stringify(data[endpoi
   delete env.GITHUB_STEP_SUMMARY;
   const script = resolve('tools/ci/check-runner-diagnostics.mjs');
   const execute = extra => spawnSync(process.execPath, [script, '--report', report], { encoding: 'utf8', env: { ...env, ...extra } });
-  assert.equal(execute({}).status, 0);
+  const success = execute({});
+  assert.equal(success.status, 0);
+  assert.match(success.stdout, /0 new warning\/failure annotations; 1 retained notices \(informational\)/);
   const result = JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8'));
   assert.equal(result.ok, true);
   assert.equal(result.attemptStartedAt, attemptStartedAt);
   assert.equal(result.jobs[0].startedAt, jobStartedAt);
-  assert.match(readFileSync(join(report, 'summary.md'), 'utf8'), /unfinished|observer/i);
+  assert.equal(result.notices[0].message, visibleNotice.message);
+  const summary = readFileSync(join(report, 'summary.md'), 'utf8');
+  assert.match(summary, /unfinished|observer/i);
+  assert.match(summary, /0 new warning\/failure annotations; 0 tracked warning\/failure annotations; 1 retained notices \(informational\)/);
+  assert.match(summary, /Compact notice-array payload: .*this limit excludes the rest of the report/);
+  assert.ok(summary.includes('&lt;img src=x&gt;'));
+  assert.ok(summary.includes('&lt;/pre&gt;&lt;script&gt;image &amp; migration&lt;/script&gt;'));
+  assert.ok(summary.includes('"runId":"123","runAttempt":2'));
+  assert.ok(!summary.includes('<script>') && !summary.includes('unneeded-private-details'));
+  assert.ok(!JSON.stringify(result).includes('unneeded-private-details'));
   const calls = readFileSync(env.FAKE_CALLS, 'utf8').trim().split('\n').map(line => JSON.parse(line));
   for (const args of calls) {
     const hostnameIndex = args.indexOf('--hostname');
@@ -250,6 +412,13 @@ if (!(endpoint in data)) process.exit(2); console.log(JSON.stringify(data[endpoi
   assert.equal(failed.status, 1);
   assert.ok(!failed.stdout.includes('secret-token-value') && !failed.stderr.includes('secret-token-value'));
   assert.equal(JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8')).observationComplete, false);
+  assert.deepEqual(JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8')).notices, []);
+  assert.equal(execute({ GH_TOKEN: '' }).status, 1);
+  const failedContext = JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8'));
+  assert.deepEqual(failedContext.notices, []);
+  assert.equal(failedContext.noticeBytes, 2);
+  assert.equal(failedContext.noticeLimitBytes, 256 * 1024);
+  assert.deepEqual(failedContext.errors, ['GH_TOKEN is required with Actions/Checks read permissions']);
   assert.notEqual(execute({ GITHUB_RUN_ATTEMPT: '0' }).status, 0);
   assert.notEqual(execute({ GITHUB_REPOSITORY: 'other/../../secret' }).status, 0);
 });

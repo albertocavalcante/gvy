@@ -210,11 +210,29 @@ timeout still fails.
 
 ## Actions annotations and coverage limits
 
-The validation job also inspects Actions warning/failure annotations from completed jobs in the exact run attempt.
-Read-only API errors, stale identity and incomplete annotation pagination fail. It retains provenance and lists skipped,
-unfinished and observer-excluded jobs; its snapshot is not a claim that its own later upload/post-job output or another
-workflow was inspected. New runner/action diagnostics require the same exact, owned, expiring policy. Maintained main-CI
-actions use verified Node 24 versions; removing old annotations from logs alone would not satisfy this check.
+The validation job also inspects Actions notice/warning/failure annotations from completed jobs in the exact run
+attempt. Read-only API errors, stale identity and incomplete annotation pagination fail. It retains provenance and lists
+skipped, unfinished and observer-excluded jobs; its snapshot is not a claim that its own later upload/post-job output or
+another workflow was inspected. New runner/action diagnostics require the same exact, owned, expiring policy. Maintained
+main-CI actions use verified Node 24 versions; removing old annotations from logs alone would not satisfy this check.
+
+Notices remain informational and nonfatal by default. The snapshot's separate `notices` array preserves their original
+severity, title, message and location with the repository, run, attempt, job, check, source and tested-checkout
+identity. The summary shows their count and escaped contents even when the observation fails. Notices do not enter the
+exact warning/failure diagnostic policy or its exception ledger; a notice alongside a new warning cannot make that
+warning pass.
+
+The retained notice array has a 256 KiB compact JSON UTF-8 budget, including its brackets, commas and provenance. Each
+notice is validated and checked against that shared budget while its API page is processed; the observer never truncates
+a notice. Exceeding the budget, malformed notice schema or failed/incomplete pagination fails the observation. Already
+retained notices remain explicitly partial evidence, with `observationComplete: false`; they cannot establish readiness.
+The report records the retained byte count and limit, including on observation errors. This budget applies to the
+compact notice-array payload, not the entire report or formatted summary.
+
+Notice title/message/location and identity are published in the existing diagnostic JSON artifact and escaped summary.
+Notice `raw_details` and unknown API response fields are omitted. These are text fields from the repository's public
+Checks API, not a private-log projection; never place credentials in annotations. Warning/failure diagnostic keys and
+their existing raw-detail handling remain unchanged.
 
 GitHub selective reruns can copy earlier successful job outputs into a new attempt while omitting their annotations. The
 snapshot retains the trusted attempt start and each job's actual execution start. Required readiness demands one
