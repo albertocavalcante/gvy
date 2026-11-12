@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Offline regression tests for PR message generation and editing."""
 
+import re
 import subprocess
 import tempfile
 import unittest
@@ -150,7 +151,8 @@ class MessageTests(unittest.TestCase):
     def test_cli_exposes_related_issue_option(self) -> None:
         result = CliRunner().invoke(pr.app, ["merge", "--help"])
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("--relates-to", result.output)
+        plain_output = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+        self.assertIn("--relates-to", plain_output)
 
     def test_cli_accepts_repeated_related_issues_without_merging(self) -> None:
         details = {
