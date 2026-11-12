@@ -300,7 +300,9 @@ private fun freezeSymbol(symbol: SymbolInfo): SymbolInfo = symbol.copy(type = sy
 private fun freezeType(type: SemanticType): SemanticType = when (type) {
     is SemanticType.Known -> type.copy(typeArgs = Collections.unmodifiableList(type.typeArgs.map(::freezeType)))
     is SemanticType.Array -> type.copy(componentType = freezeType(type.componentType))
-    is SemanticType.Union -> type.copy(types = Collections.unmodifiableSet(type.types.mapTo(linkedSetOf(), ::freezeType)))
+    is SemanticType.Union -> type.copy(
+        types = Collections.unmodifiableSet(type.types.mapTo(linkedSetOf(), ::freezeType)),
+    )
     else -> type
 }
 

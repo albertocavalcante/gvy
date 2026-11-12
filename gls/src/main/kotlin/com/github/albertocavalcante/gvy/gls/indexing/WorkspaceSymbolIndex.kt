@@ -341,10 +341,9 @@ private class FrozenWorkspaceMemberLookup(
         directMembers(classFqn).filter { it.kind == SymbolKind.METHOD && it.name == methodName }
             .filter { arity == null || extractParameterCount(it.symbol) == arity }.map { it.toMemberInfo() }
 
-    override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> =
-        directMembers(classFqn)
-            .filter { it.kind == SymbolKind.FIELD || it.kind == SymbolKind.METHOD || it.kind == SymbolKind.PROPERTY }
-            .map { it.toMemberInfo() }
+    override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> = directMembers(classFqn)
+        .filter { it.kind == SymbolKind.FIELD || it.kind == SymbolKind.METHOD || it.kind == SymbolKind.PROPERTY }
+        .map { it.toMemberInfo() }
 }
 
 private fun SymbolInfo.toMemberInfo() = MemberInfo(

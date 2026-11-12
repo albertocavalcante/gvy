@@ -2,7 +2,6 @@ package com.github.albertocavalcante.gvy.semantics.db
 
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
-
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -33,7 +32,15 @@ class GroovySemanticDBTest {
     fun `publication detaches nested type arguments and unresolved names from the caller`() {
         val arguments = mutableListOf<SemanticType>(TypeConstants.STRING)
         val unresolved = mutableSetOf("first")
-        val symbol = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", SemanticType.Known("List", arguments))
+        val symbol =
+            SymbolInfo(
+                "C#value.",
+                SymbolKind.FIELD,
+                Range(0, 0, 0, 1),
+                "value",
+                "C#",
+                SemanticType.Known("List", arguments),
+            )
         db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(symbol), emptyList(), unresolved))
         val version = db.version
         arguments[0] = TypeConstants.INT

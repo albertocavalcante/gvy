@@ -35,12 +35,19 @@ class FrozenMemberLookupTest {
                 val before = captured.findField("C", "value")?.type
                 started.countDown()
                 check(published.await(30, TimeUnit.SECONDS))
-                listOf(before, captured.findField("C", "value")?.type, captured.findMethods("C", "read", 0).single().type)
+                listOf(
+                    before,
+                    captured.findField("C", "value")?.type,
+                    captured.findMethods("C", "read", 0).single().type,
+                )
             }
             assertTrue(started.await(30, TimeUnit.SECONDS))
             index.updateDocument(uri, document(TypeConstants.INT))
             published.countDown()
-            assertEquals(listOf(TypeConstants.STRING, TypeConstants.STRING, TypeConstants.STRING), reader.get(30, TimeUnit.SECONDS))
+            assertEquals(
+                listOf(TypeConstants.STRING, TypeConstants.STRING, TypeConstants.STRING),
+                reader.get(30, TimeUnit.SECONDS),
+            )
             assertEquals(initialVersion, captured.version)
             assertEquals(TypeConstants.INT, index.findField("C", "value")?.type)
         } finally {
