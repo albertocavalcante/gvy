@@ -15,6 +15,7 @@ Start with the guide for your task. For a short introduction and installation st
 ## Contribute
 
 - [Contributor guide](../CONTRIBUTING.md): build, test, and prepare a pull request.
+- [Kotlin style and readability](kotlin-style.md): write and review clear, idiomatic Kotlin.
 - [Editor contributor guide](../editors/code/CONTRIBUTING.md): develop and test the VS Code extension.
 - [Repository overview](overview.md): find the module responsible for a change.
 - [Semantics and type inference](semantics/design.md): understand the semantic model.
