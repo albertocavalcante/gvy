@@ -1,5 +1,9 @@
 import * as vscode from "vscode";
-import { DependencyService, DependencyInfo } from "./DependencyService";
+import {
+  DependencyService,
+  DependencyInfo,
+  DependenciesResult,
+} from "./DependencyService";
 
 /**
  * Tree item representing either a scope group or a dependency
@@ -31,7 +35,9 @@ export class DependencyItem extends vscode.TreeItem {
 /**
  * Provides tree data for the Groovy Dependencies view
  */
-export class DependencyTreeProvider implements vscode.TreeDataProvider<DependencyItem> {
+export class DependencyTreeProvider
+  implements vscode.TreeDataProvider<DependencyItem>, vscode.Disposable
+{
   private static readonly SCOPE_ORDER = [
     "compile",
     "runtime",
@@ -47,16 +53,42 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Dependenc
     DependencyItem | undefined | null | void
   > = this._onDidChangeTreeData.event;
 
-  private dependenciesCache: Map<string, DependencyItem[]> = new Map();
+  private readonly dependenciesCache = new Map<string, DependenciesResult>();
+  private rootRequest: Promise<DependencyItem[]> | undefined;
+  private generation = 0;
+  private disposed = false;
+  private readonly folderSubscription: vscode.Disposable;
 
-  constructor(private readonly dependencyService: DependencyService) {}
+  constructor(
+    private readonly dependencyService: Pick<
+      DependencyService,
+      "getDependencies"
+    >,
+  ) {
+    this.folderSubscription = vscode.workspace.onDidChangeWorkspaceFolders(() =>
+      this.refresh(),
+    );
+  }
 
   /**
    * Refresh the tree view
    */
   refresh(): void {
+    if (this.disposed) return;
+    this.generation++;
+    this.rootRequest = undefined;
     this.dependenciesCache.clear();
     this._onDidChangeTreeData.fire();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.generation++;
+    this.rootRequest = undefined;
+    this.dependenciesCache.clear();
+    this.folderSubscription.dispose();
+    this._onDidChangeTreeData.dispose();
   }
 
   /**
@@ -70,6 +102,7 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Dependenc
    * Get children for a tree item
    */
   async getChildren(element?: DependencyItem): Promise<DependencyItem[]> {
+    if (this.disposed) return [];
     if (!element) {
       // Root level - show scope groups for each workspace
       return this.getRootItems();
@@ -87,6 +120,17 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Dependenc
    * Get root level items (scope groups for all workspaces)
    */
   private async getRootItems(): Promise<DependencyItem[]> {
+    if (this.disposed) return [];
+    const request = this.rootRequest ?? this.loadRootItems(this.generation);
+    this.rootRequest = request;
+    try {
+      return await request;
+    } finally {
+      if (this.rootRequest === request) this.rootRequest = undefined;
+    }
+  }
+
+  private async loadRootItems(generation: number): Promise<DependencyItem[]> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders || workspaceFolders.length === 0) {
       return [];
@@ -97,25 +141,22 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Dependenc
     for (const workspaceFolder of workspaceFolders) {
       const cacheKey = workspaceFolder.uri.toString();
 
-      // Check cache first
-      if (this.dependenciesCache.has(cacheKey)) {
-        const cached = this.dependenciesCache.get(cacheKey);
-        if (cached) {
-          allItems.push(...cached);
-          continue;
-        }
-      }
-
       try {
-        const result = await this.dependencyService.getDependencies(
-          workspaceFolder.uri.toString(),
-        );
+        let result = this.dependenciesCache.get(cacheKey);
+        if (result === undefined) {
+          const response =
+            await this.dependencyService.getDependencies(cacheKey);
+          if (this.disposed) return [];
+          // Old callers join the current read instead of publishing stale/empty UI.
+          if (generation !== this.generation) return this.getRootItems();
+          if (!response) continue;
+          result = response;
+        }
 
-        if (
-          !result ||
-          !result.dependencies ||
-          result.dependencies.length === 0
-        ) {
+        if (!result.dependencies) continue;
+        if (result.dependencies.length === 0) {
+          if (result.buildTool !== "unknown")
+            this.dependenciesCache.set(cacheKey, result);
           // No dependencies found for this workspace - this is expected for non-Groovy projects
           // The LSP server returns empty dependencies with buildTool="unknown" for such cases
           console.debug(`No dependencies found for ${workspaceFolder.name}`);
@@ -129,10 +170,13 @@ export class DependencyTreeProvider implements vscode.TreeDataProvider<Dependenc
           workspaceFolders.length > 1 ? workspaceFolder.name : undefined,
         );
 
-        // Cache the result
-        this.dependenciesCache.set(cacheKey, scopeItems);
+        // Unknown also means temporarily unavailable in the current server DTO.
+        if (result.buildTool !== "unknown")
+          this.dependenciesCache.set(cacheKey, result);
         allItems.push(...scopeItems);
       } catch (error) {
+        if (this.disposed) return [];
+        if (generation !== this.generation) return this.getRootItems();
         // Log the error for debugging but don't show popup for expected scenarios
         console.error(
           `Failed to fetch dependencies for ${workspaceFolder.name}:`,

@@ -1,5 +1,5 @@
 import * as vscode from "vscode";
-import { getClient } from "../../server/client";
+import { getClient, onClientStarted } from "../../server/client";
 import { DependencyService } from "./DependencyService";
 import { DependencyTreeProvider } from "./DependencyTreeProvider";
 
@@ -13,6 +13,8 @@ export function registerDependencyFeatures(
   const provider = new DependencyTreeProvider(new DependencyService(getClient));
 
   context.subscriptions.push(
+    provider,
+    onClientStarted(() => provider.refresh()),
     vscode.window.registerTreeDataProvider("groovyDependencies", provider),
     vscode.commands.registerCommand("groovy.dependencies.refresh", () =>
       provider.refresh(),
