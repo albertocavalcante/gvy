@@ -14,6 +14,7 @@ import com.github.groovylsp.bsp.maven.server.MavenBuildServer
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -167,9 +168,10 @@ class MavenBspIntegrationTest {
             val pipelineLibPath = Paths.get(System.getProperty("user.home"))
                 .resolve("dev/refs/pipeline-library")
 
-            if (!pipelineLibPath.toFile().exists()) {
-                return
-            }
+            assumeTrue(
+                pipelineLibPath.toFile().isDirectory,
+                "Optional real-project fixture is absent: $pipelineLibPath",
+            )
 
             // When
             val server = MavenBspLauncher.createServer(pipelineLibPath)

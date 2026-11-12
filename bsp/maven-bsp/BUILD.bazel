@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 kt_library(
@@ -22,6 +25,8 @@ kt_library(
     ],
 )
 
+# TODO(#1858): reproduce --batch worker teardown exit 37 with fresh compilation.
+#   See: https://github.com/albertocavalcante/gvy/issues/1858
 kt_test(
     name = "maven-bsp_test",
     timeout = "short",
@@ -36,6 +41,7 @@ kt_test(
         "@maven//:org_apache_maven_resolver_maven_resolver_api",
         "@maven//:org_assertj_assertj_core",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
+        "@maven//:org_jetbrains_kotlin_kotlin_test",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_core_jvm",
         "@maven//:org_jetbrains_kotlinx_kotlinx_serialization_json_jvm",
     ],
