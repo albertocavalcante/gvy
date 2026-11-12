@@ -55,6 +55,7 @@ testing {
 
                 implementation(libs.lsp4j)
                 implementation(libs.groovy.core)
+                implementation(libs.jna)
                 implementation(platform(libs.jackson.bom))
                 implementation(libs.jackson.dataformat.yaml)
                 implementation(libs.jackson.databind)

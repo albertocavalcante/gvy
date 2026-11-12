@@ -53,6 +53,7 @@ kt_test(
         "@maven//:com_jayway_jsonpath_json_path",
         "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
+        "@maven//:net_java_dev_jna_jna",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j",
         "@maven//:org_eclipse_lsp4j_org_eclipse_lsp4j_jsonrpc",
         "@maven//:org_apache_groovy_groovy",
