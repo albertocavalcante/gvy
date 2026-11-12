@@ -13,22 +13,22 @@
 set -euo pipefail
 
 usage() {
-  echo "usage: check-conflict-markers.sh --staged | <base-ref>" >&2
-  exit 2
+    echo "usage: check-conflict-markers.sh --staged | <base-ref>" >&2
+    exit 2
 }
 
 [[ $# -eq 1 ]] || usage
 if [[ "$1" == "--staged" ]]; then
-  range=(--cached)
+    range=(--cached)
 else
-  range=("$1...HEAD")
+    range=("$1...HEAD")
 fi
 
 # --no-ext-diff/--no-textconv keep the output literal; -z is not used because
 # the file name only labels the report.
 git diff "${range[@]}" --unified=0 --no-color --no-ext-diff --no-textconv \
-  --diff-filter=d |
-  awk '
+    --diff-filter=d |
+    awk '
     function flush(   i, n, keep, doc) {
       for (i = 1; i <= count; i++) {
         keep = 1

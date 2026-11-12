@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # ANSI Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -22,7 +21,7 @@ echo "🧹 Pruning Docker Data (Safe Mode)..."
 echo "This will remove unused data to free up space."
 echo "It will NOT delete running containers or named volumes."
 
-if ! docker ps > /dev/null 2>&1; then
+if ! docker ps >/dev/null 2>&1; then
     log_error "Docker is not running! Please start Docker first."
     exit 1
 fi
@@ -41,5 +40,3 @@ echo ""
 echo "✅ Cleanup complete."
 echo "If you still have issues, try 'docker system prune -a' (deletes all unused images)."
 echo "If you have severe corruption, use 'tools/docker/factory-reset-docker-macos.sh'."
-
-

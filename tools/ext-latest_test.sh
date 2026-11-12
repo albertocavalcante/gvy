@@ -18,12 +18,12 @@ trap 'rm -rf "${work}"; jobs -p | xargs kill 2>/dev/null || true' EXIT
 fails=0
 # expect <description> <expected> <actual>
 expect() {
-  if [[ $2 == "$3" ]]; then
-    echo "ok   - $1"
-  else
-    echo "FAIL - $1: expected '$2', got '$3'"
-    fails=$((fails + 1))
-  fi
+    if [[ $2 == "$3" ]]; then
+        echo "ok   - $1"
+    else
+        echo "FAIL - $1: expected '$2', got '$3'"
+        fails=$((fails + 1))
+    fi
 }
 # yes_no <command...>: "yes" when it succeeds, else "no".
 yes_no() { if ("$@") >/dev/null 2>&1; then echo yes; else echo no; fi; }
@@ -37,24 +37,24 @@ proof="CI=Build and Test;Extension CI=Build current server"
 # run <name> <status> <conclusion json> <id>
 run() { printf '{"id":%s,"name":"%s","status":"%s","conclusion":%s}' "$4" "$1" "$2" "$3"; }
 runs() {
-  local IFS=,
-  printf '{"workflow_runs":[%s]}' "$*"
+    local IFS=,
+    printf '{"workflow_runs":[%s]}' "$*"
 }
 # jobs <id> <job name> <conclusion> ... -> {"id":[{name,conclusion}...]}
 jobmap() {
-  local id=$1 out="" sep=""
-  shift
-  while [[ $# -gt 0 ]]; do
-    out="${out}${sep}{\"name\":\"$1\",\"conclusion\":\"$2\"}"
-    sep=,
-    shift 2
-  done
-  printf '{"%s":[%s]}' "${id}" "${out}"
+    local id=$1 out="" sep=""
+    shift
+    while [[ $# -gt 0 ]]; do
+        out="${out}${sep}{\"name\":\"$1\",\"conclusion\":\"$2\"}"
+        sep=,
+        shift 2
+    done
+    printf '{"%s":[%s]}' "${id}" "${out}"
 }
 st() {
-  local j=${2-}
-  [[ -n ${j} ]] || j='{}'
-  commit_states "${req}" "${opt}" "${proof}" "$1" "${j}"
+    local j=${2-}
+    [[ -n ${j} ]] || j='{}'
+    commit_states "${req}" "${opt}" "${proof}" "$1" "${j}"
 }
 
 ci_ok=$(run CI completed '"success"' 1)
@@ -83,8 +83,8 @@ ci_skip='{"CI":"unproven","Extension CI":"ok"}'
 ci_red='{"CI":"failed","Extension CI":"ok"}'
 ext_miss='{"CI":"ok","Extension CI":"unproven"}'
 vd() {
-  local IFS=,
-  verdicts "[$*]" | paste -sd'|' -
+    local IFS=,
+    verdicts "[$*]" | paste -sd'|' -
 }
 
 expect "build skipped, green parent: green" "green|green" "$(vd "${ci_skip}" "${ok}")"
@@ -158,12 +158,12 @@ expect "in_kept misses legacy install" no "$(yes_no in_kept 9999999aaaa <<<"${na
 # ------------------------------------------- VSIX provenance (kept-file reuse)
 
 mkvsix() { # <file> <record json or ->
-  local d
-  d=$(mktemp -d "${work}/vsix.XXXXXX")
-  mkdir -p "${d}/extension/server"
-  echo jar >"${d}/extension/server/gls.jar"
-  [[ $2 == - ]] || printf '%s' "$2" >"${d}/extension/server/.gls-version"
-  (cd "${d}" && zip -qr "$1" extension)
+    local d
+    d=$(mktemp -d "${work}/vsix.XXXXXX")
+    mkdir -p "${d}/extension/server"
+    echo jar >"${d}/extension/server/gls.jar"
+    [[ $2 == - ]] || printf '%s' "$2" >"${d}/extension/server/.gls-version"
+    (cd "${d}" && zip -qr "$1" extension)
 }
 mkvsix "${work}/good.vsix" '{"gitSha":"'"${full}"'","dirty":false,"source":"local"}'
 mkvsix "${work}/other.vsix" '{"gitSha":"ffffffffffffffffffffffffffffffffffffffff","dirty":false}'
@@ -212,8 +212,8 @@ expect "SRC_DIR equal to the invoking checkout is refused even if marked" no "$(
 
 lockdir="${work}/cache/lock"
 (
-  acquire_lock_io "${lockdir}"
-  [[ $(cat "${lockdir}/pid") == "$$" ]] && cleanup && [[ ! -e ${lockdir} ]]
+    acquire_lock_io "${lockdir}"
+    [[ $(cat "${lockdir}/pid") == "$$" ]] && cleanup && [[ ! -e ${lockdir} ]]
 ) && r=yes || r=no
 expect "lock is taken, then released by cleanup" yes "${r}"
 
@@ -280,25 +280,25 @@ export FX=${fx}
 
 # fx_commit <sha> <ci: pass|skip|fail|none> <ext: pass|none>; run ids derive from the sha.
 fx_commit() {
-  local sha=$1 ci=$2 ext=$3 rs="" id
-  id=$(printf '%d' "'${sha:0:1}")
-  case ${ci} in
-    pass)
-      rs="${rs}$(run CI completed '"success"' "${id}1"),"
-      echo '{"jobs":[{"name":"Build and Test (ubuntu-24.04, 17)","conclusion":"success"}]}' >"${fx}/jobs-${id}1.json"
-      ;;
-    skip)
-      rs="${rs}$(run CI completed '"success"' "${id}1"),"
-      echo '{"jobs":[{"name":"Build and Test","conclusion":"skipped"}]}' >"${fx}/jobs-${id}1.json"
-      ;;
-    fail) rs="${rs}$(run CI completed '"failure"' "${id}1")," ;;
-    *) ;;
-  esac
-  if [[ ${ext} == pass ]]; then
-    rs="${rs}$(run 'Extension CI' completed '"success"' "${id}2"),"
-    echo '{"jobs":[{"name":"Build current server","conclusion":"success"}]}' >"${fx}/jobs-${id}2.json"
-  fi
-  echo "{\"workflow_runs\":[${rs%,}]}" >"${fx}/runs-${sha}.json"
+    local sha=$1 ci=$2 ext=$3 rs="" id
+    id=$(printf '%d' "'${sha:0:1}")
+    case ${ci} in
+        pass)
+            rs="${rs}$(run CI completed '"success"' "${id}1"),"
+            echo '{"jobs":[{"name":"Build and Test (ubuntu-24.04, 17)","conclusion":"success"}]}' >"${fx}/jobs-${id}1.json"
+            ;;
+        skip)
+            rs="${rs}$(run CI completed '"success"' "${id}1"),"
+            echo '{"jobs":[{"name":"Build and Test","conclusion":"skipped"}]}' >"${fx}/jobs-${id}1.json"
+            ;;
+        fail) rs="${rs}$(run CI completed '"failure"' "${id}1")," ;;
+        *) ;;
+    esac
+    if [[ ${ext} == pass ]]; then
+        rs="${rs}$(run 'Extension CI' completed '"success"' "${id}2"),"
+        echo '{"jobs":[{"name":"Build current server","conclusion":"success"}]}' >"${fx}/jobs-${id}2.json"
+    fi
+    echo "{\"workflow_runs\":[${rs%,}]}" >"${fx}/runs-${sha}.json"
 }
 # Window, newest first: dddddddd (extension-only) cccccccc bbbbbbbb aaaaaaaa
 printf 'dddddddd\ncccccccc\nbbbbbbbb\naaaaaaaa\n' >"${fx}/commits-main.txt"
@@ -354,7 +354,7 @@ expect "forced green commit accepted" bbbbbbbb "${TARGET_SHA}"
 unset EXT_LATEST_SHA
 
 if [[ ${fails} -ne 0 ]]; then
-  echo "${fails} failure(s)"
-  exit 1
+    echo "${fails} failure(s)"
+    exit 1
 fi
 echo "all passed"

@@ -34,8 +34,8 @@ while [[ $# -gt 0 ]]; do
             CUSTOM_PATH="$2"
             shift 2
             ;;
-        --help|-h)
-            cat << EOF
+        --help | -h)
+            cat <<EOF
 GitHub Actions Runner Cleanup
 
 USAGE:
@@ -79,26 +79,28 @@ echo "GitHub Actions Runner Cleanup"
 echo ""
 
 # Determine search pattern
-if [ -n "$CUSTOM_PATH" ]; then
+if [[ -n "${CUSTOM_PATH}" ]]; then
     # Expand tilde manually for custom paths
-    SEARCH_PATTERN="${CUSTOM_PATH/#\~/$HOME}"
-    echo "Searching: $CUSTOM_PATH"
+    SEARCH_PATTERN="${CUSTOM_PATH/#\~/${HOME}}"
+    echo "Searching: ${CUSTOM_PATH}"
 else
-    SEARCH_PATTERN="$HOME/.gha-runners/groovy-lsp-*"
+    SEARCH_PATTERN="${HOME}/.gha-runners/groovy-lsp-*"
     echo "Searching: ~/.gha-runners/groovy-lsp-*"
 fi
 echo ""
 
 # Find runner directories using glob expansion
 shopt -s nullglob dotglob
-mapfile -t RUNNER_DIRS < <(compgen -G "$SEARCH_PATTERN")
+RUNNER_DIRS=()
+while IFS= read -r runner_dir; do
+    RUNNER_DIRS+=("${runner_dir}")
+done < <(compgen -G "${SEARCH_PATTERN}" || true)
 shopt -u nullglob dotglob
 
-
-if [ ${#RUNNER_DIRS[@]} -eq 0 ]; then
+if [[ ${#RUNNER_DIRS[@]} -eq 0 ]]; then
     echo "No runner directories found matching pattern."
 
-    if [ "$CLEAN_CACHE" = true ]; then
+    if [[ "${CLEAN_CACHE}" = true ]]; then
         echo "Checking for cache..."
     else
         echo "Nothing to clean up."
@@ -107,13 +109,13 @@ if [ ${#RUNNER_DIRS[@]} -eq 0 ]; then
 else
     echo "Found ${#RUNNER_DIRS[@]} runner(s):"
     for dir in "${RUNNER_DIRS[@]}"; do
-        echo "  - $(basename "$dir")"
+        echo "  - $(basename "${dir}")"
     done
     echo ""
 
     read -p "Remove all runners? (y/N) " -n 1 -r
     echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ ! ${REPLY} =~ ^[Yy]$ ]]; then
         echo "Cancelled."
         exit 0
     fi
@@ -121,11 +123,11 @@ else
 
     # Process each runner directory
     for RUNNER_DIR in "${RUNNER_DIRS[@]}"; do
-        echo "Processing: $(basename "$RUNNER_DIR")"
-        cd "$RUNNER_DIR"
+        echo "Processing: $(basename "${RUNNER_DIR}")"
+        cd "${RUNNER_DIR}"
 
         # Stop and uninstall service
-        if [ -f "./svc.sh" ]; then
+        if [[ -f "./svc.sh" ]]; then
             echo "  Stopping service..."
             ./svc.sh stop 2>/dev/null || echo "  (service not running)"
 
@@ -134,20 +136,20 @@ else
         fi
 
         # Unregister from GitHub
-        if [ "$SKIP_UNREGISTER" = false ]; then
-            if [ -f "./config.sh" ]; then
+        if [[ "${SKIP_UNREGISTER}" = false ]]; then
+            if [[ -f "./config.sh" ]]; then
                 echo "  Unregistering from GitHub..."
 
                 # Generate removal token via gh CLI
-                if command -v gh &> /dev/null && gh auth status &> /dev/null; then
+                if command -v gh &>/dev/null && gh auth status &>/dev/null; then
                     REMOVAL_TOKEN=$(gh api \
                         --method POST \
                         -H "Accept: application/vnd.github+json" \
                         "/repos/${REPO_OWNER}/${REPO_NAME}/actions/runners/remove-token" \
                         --jq '.token' 2>/dev/null || true)
 
-                    if [ -n "$REMOVAL_TOKEN" ]; then
-                        ./config.sh remove --token "$REMOVAL_TOKEN" 2>/dev/null || echo "  (unregistration failed - may be orphaned)"
+                    if [[ -n "${REMOVAL_TOKEN}" ]]; then
+                        ./config.sh remove --token "${REMOVAL_TOKEN}" 2>/dev/null || echo "  (unregistration failed - may be orphaned)"
                     else
                         echo "  (could not get removal token - skipping unregistration)"
                     fi
@@ -161,24 +163,24 @@ else
 
         echo "  Removing directory..."
         cd ~
-        rm -rf "$RUNNER_DIR"
+        rm -rf "${RUNNER_DIR}"
         echo "  Done."
         echo ""
     done
 fi
 
 # Clean cache if requested
-if [ "$CLEAN_CACHE" = true ]; then
+if [[ "${CLEAN_CACHE}" = true ]]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-    CACHE_DIR="$PROJECT_ROOT/.github/.cache/runners"
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+    CACHE_DIR="${PROJECT_ROOT}/.github/.cache/runners"
 
-    if [ -d "$CACHE_DIR" ]; then
-        echo "Cleaning cache: $CACHE_DIR"
-        rm -rf "$CACHE_DIR"
+    if [[ -d "${CACHE_DIR}" ]]; then
+        echo "Cleaning cache: ${CACHE_DIR}"
+        rm -rf "${CACHE_DIR}"
         echo "Cache removed."
     else
-        echo "No cache found at: $CACHE_DIR"
+        echo "No cache found at: ${CACHE_DIR}"
     fi
 fi
 

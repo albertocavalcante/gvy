@@ -33,16 +33,18 @@ log_error() {
 
 # Check for uv
 ensure_uv() {
-    if command -v uv &> /dev/null; then
+    if command -v uv &>/dev/null; then
         log_info "uv is already installed."
         return
     fi
 
     log_warn "uv is not installed."
 
-    if [[ "$(uname -s)" == "Darwin" ]]; then
+    local os_name
+    os_name=$(uname -s)
+    if [[ "${os_name}" == "Darwin" ]]; then
         log_info "MacOS detected. Attempting to install uv via Homebrew..."
-        if command -v brew &> /dev/null; then
+        if command -v brew &>/dev/null; then
             brew install uv
             log_info "uv installed successfully via Homebrew."
         else
@@ -58,8 +60,8 @@ ensure_uv() {
 
 install_tool() {
     local package=$1
-    log_step "Installing $package..."
-    uv tool install "$package"
+    log_step "Installing ${package}..."
+    uv tool install "${package}"
 }
 
 main() {

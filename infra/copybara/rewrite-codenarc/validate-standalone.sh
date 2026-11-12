@@ -23,7 +23,10 @@ NC='\033[0m'
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+    exit 1
+}
 
 # Create temp directory
 TEMP_DIR=$(mktemp -d)
@@ -63,9 +66,9 @@ cp "${MONOREPO_ROOT}/gradle/wrapper/"* "${TEMP_DIR}/gradle/wrapper/"
 cp "${MONOREPO_ROOT}/LICENSE" "${TEMP_DIR}/"
 
 # Copy README and CONTRIBUTING if they exist
-[[ -f "${MONOREPO_ROOT}/refactor/openrewrite/rewrite-codenarc/README.md" ]] && \
+[[ -f "${MONOREPO_ROOT}/refactor/openrewrite/rewrite-codenarc/README.md" ]] &&
     cp "${MONOREPO_ROOT}/refactor/openrewrite/rewrite-codenarc/README.md" "${TEMP_DIR}/"
-[[ -f "${MONOREPO_ROOT}/refactor/openrewrite/rewrite-codenarc/CONTRIBUTING.md" ]] && \
+[[ -f "${MONOREPO_ROOT}/refactor/openrewrite/rewrite-codenarc/CONTRIBUTING.md" ]] &&
     cp "${MONOREPO_ROOT}/refactor/openrewrite/rewrite-codenarc/CONTRIBUTING.md" "${TEMP_DIR}/"
 
 # --- Validate ---

@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # -----------------------------------------------------------------------------
 # tools/editor/install-kotlin-lsp
@@ -11,10 +11,10 @@ set -e
 
 # Resolve paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-DEVCONTAINER_DIR="$ROOT_DIR/.devcontainer"
-CACHE_DIR="$DEVCONTAINER_DIR/cache"
-JSON_FILE="$DEVCONTAINER_DIR/devcontainer.json"
+ROOT_DIR="$(dirname "$(dirname "${SCRIPT_DIR}")")"
+DEVCONTAINER_DIR="${ROOT_DIR}/.devcontainer"
+CACHE_DIR="${DEVCONTAINER_DIR}/cache"
+JSON_FILE="${DEVCONTAINER_DIR}/devcontainer.json"
 
 # Default behaviors
 UPDATE_CONFIG=true
@@ -39,7 +39,7 @@ TMP_FILES=()
 
 cleanup() {
     for tmp in "${TMP_FILES[@]}"; do
-        [ -f "$tmp" ] && rm -f "$tmp"
+        [[ -f "${tmp}" ]] && rm -f "${tmp}"
     done
 }
 trap cleanup EXIT
@@ -49,11 +49,14 @@ log_success() { echo -e "${GREEN}✅ $1${NC}"; }
 log_warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
 log_error() { echo -e "${RED}❌ $1${NC}"; }
 log_section() { echo -e "\n${BOLD}$1${NC}"; }
-fail() { log_error "$1"; exit 1; }
+fail() {
+    log_error "$1"
+    exit 1
+}
 
 # Wrapper for sed -i that works on both macOS (BSD) and Linux (GNU)
 sed_i() {
-    if [[ "$OS" == "Darwin" ]]; then
+    if [[ "${OS}" == "Darwin" ]]; then
         sed -i '' "$@"
     else
         sed -i "$@"
@@ -61,7 +64,7 @@ sed_i() {
 }
 
 check_cmd() {
-    if ! command -v "$1" &> /dev/null; then
+    if ! command -v "$1" &>/dev/null; then
         fail "'$1' is required but not installed."
     fi
 }
@@ -71,7 +74,7 @@ check_cmd() {
 fetch_url() {
     local url="$1"
     local output="$2"
-    
+
     local curl_opts=(
         -fSL
         -4
@@ -80,10 +83,10 @@ fetch_url() {
         --connect-timeout 30
     )
 
-    if [ -n "$output" ]; then
-        curl "${curl_opts[@]}" -o "$output" "$url"
+    if [[ -n "${output}" ]]; then
+        curl "${curl_opts[@]}" -o "${output}" "${url}"
     else
-        curl "${curl_opts[@]}" -s "$url"
+        curl "${curl_opts[@]}" -s "${url}"
     fi
 }
 
@@ -136,7 +139,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ ${#POSITIONAL_ARGS[@]} -gt 0 ]; then
+if [[ ${#POSITIONAL_ARGS[@]} -gt 0 ]]; then
     EDITOR_CMD="${POSITIONAL_ARGS[0]}"
 fi
 
@@ -148,20 +151,20 @@ check_cmd jq
 check_cmd curl
 
 # Auto-detect editor
-if [ -z "$EDITOR_CMD" ]; then
+if [[ -z "${EDITOR_CMD}" ]]; then
     for cmd in code cursor agy codium; do
-        if command -v "$cmd" &> /dev/null; then
-            EDITOR_CMD="$cmd"
+        if command -v "${cmd}" &>/dev/null; then
+            EDITOR_CMD="${cmd}"
             break
         fi
     done
-    if [ -z "$EDITOR_CMD" ]; then
+    if [[ -z "${EDITOR_CMD}" ]]; then
         fail "No compatible editor found (checked: code, cursor, agy, codium). Please specify one."
     fi
-    log_info "Auto-detected editor: ${BOLD}$EDITOR_CMD${NC}"
+    log_info "Auto-detected editor: ${BOLD}${EDITOR_CMD}${NC}"
 else
-    if ! command -v "$EDITOR_CMD" &> /dev/null; then
-        fail "Editor '$EDITOR_CMD' not found."
+    if ! command -v "${EDITOR_CMD}" &>/dev/null; then
+        fail "Editor '${EDITOR_CMD}' not found."
     fi
 fi
 
@@ -169,49 +172,51 @@ fi
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
-case "$OS" in
+case "${OS}" in
     Darwin) PLATFORM_OS="mac" ;;
-    Linux)  PLATFORM_OS="linux" ;;
-    *)      fail "Unsupported OS: $OS" ;;
+    Linux) PLATFORM_OS="linux" ;;
+    *) fail "Unsupported OS: ${OS}" ;;
 esac
 
-case "$ARCH" in
+case "${ARCH}" in
     x86_64) PLATFORM_ARCH="x64" ;;
-    arm64|aarch64) PLATFORM_ARCH="aarch64" ;;
-    *)      fail "Unsupported Architecture: $ARCH" ;;
+    arm64 | aarch64) PLATFORM_ARCH="aarch64" ;;
+    *) fail "Unsupported Architecture: ${ARCH}" ;;
 esac
 
 PLATFORM_SUFFIX="${PLATFORM_OS}-${PLATFORM_ARCH}"
-log_info "Detected Platform: ${BOLD}$PLATFORM_SUFFIX${NC}"
+log_info "Detected Platform: ${BOLD}${PLATFORM_SUFFIX}${NC}"
 
 # -----------------------------------------------------------------------------
 # 3. Resolve Version
 # -----------------------------------------------------------------------------
 log_section "Resolving Version..."
-if [ "$TARGET_VERSION" == "latest" ]; then
+if [[ "${TARGET_VERSION}" == "latest" ]]; then
     log_info "Fetching latest version info from GitHub..."
-    
-    LATEST_JSON=$(fetch_url "$GITHUB_API")
-    LATEST_TAG=$(echo "$LATEST_JSON" | jq -r '.tag_name')
-    
-    if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" == "null" ]; then
+
+    # fetch_url returns the status of its curl command directly.
+    # shellcheck disable=SC2311
+    LATEST_JSON=$(fetch_url "${GITHUB_API}")
+    LATEST_TAG=$(echo "${LATEST_JSON}" | jq -r '.tag_name')
+
+    if [[ -z "${LATEST_TAG}" ]] || [[ "${LATEST_TAG}" == "null" ]]; then
         fail "Failed to fetch latest version from GitHub."
     fi
-    
+
     # Robust extraction
-    VERSION=$(echo "$LATEST_TAG" | sed -E 's/^[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
-    
-    log_info "Latest version is: ${BOLD}$VERSION${NC}"
+    VERSION=$(echo "${LATEST_TAG}" | sed -E 's/^[^0-9]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+
+    log_info "Latest version is: ${BOLD}${VERSION}${NC}"
 else
-    VERSION="$TARGET_VERSION"
-    log_info "Using specified version: ${BOLD}$VERSION${NC}"
+    VERSION="${TARGET_VERSION}"
+    log_info "Using specified version: ${BOLD}${VERSION}${NC}"
 fi
 
 # -----------------------------------------------------------------------------
 # 4. Construct URL & Filename
 # -----------------------------------------------------------------------------
 IS_LEGACY=false
-if [[ "$VERSION" == 0.253* ]]; then
+if [[ "${VERSION}" == 0.253* ]]; then
     IS_LEGACY=true
     FILENAME="kotlin-${VERSION}.vsix"
 else
@@ -219,57 +224,61 @@ else
 fi
 
 DOWNLOAD_URL="${BASE_URL}/${VERSION}/${FILENAME}"
-FILE_PATH="$CACHE_DIR/$FILENAME"
+FILE_PATH="${CACHE_DIR}/${FILENAME}"
 
 # -----------------------------------------------------------------------------
 # 5. Download & Verify (with Auto-Retry)
 # -----------------------------------------------------------------------------
 log_section "Downloading Artifacts..."
-mkdir -p "$CACHE_DIR"
+mkdir -p "${CACHE_DIR}"
 
 MAX_RETRIES=1
 RETRY_COUNT=0
 
-while [ $RETRY_COUNT -le $MAX_RETRIES ]; do
-    if [ -f "$FILE_PATH" ]; then
-        log_info "Found cached file: $FILE_PATH"
+while [[ "${RETRY_COUNT}" -le "${MAX_RETRIES}" ]]; do
+    if [[ -f "${FILE_PATH}" ]]; then
+        log_info "Found cached file: ${FILE_PATH}"
     else
-        log_info "Downloading ${BOLD}$FILENAME${NC}..."
-        fetch_url "$DOWNLOAD_URL" "$FILE_PATH" || {
-            rm -f "$FILE_PATH"
-            fail "Failed to download $DOWNLOAD_URL"
+        log_info "Downloading ${BOLD}${FILENAME}${NC}..."
+        # fetch_url returns the status of its curl command directly.
+        # shellcheck disable=SC2310
+        fetch_url "${DOWNLOAD_URL}" "${FILE_PATH}" || {
+            rm -f "${FILE_PATH}"
+            fail "Failed to download ${DOWNLOAD_URL}"
         }
     fi
 
     # Verify Checksum
-    if [ "$IS_LEGACY" == "true" ]; then
+    if [[ "${IS_LEGACY}" == "true" ]]; then
         log_warn "Skipping checksum verification for legacy version."
         break # No verification means success for legacy
     else
         CHECKSUM_URL="${DOWNLOAD_URL}.sha256"
         log_info "Fetching checksum..."
-        
-        EXPECTED_SUM=$(fetch_url "$CHECKSUM_URL" | awk '{print $1}')
-        
-        if [ -z "$EXPECTED_SUM" ]; then
-            fail "Could not fetch checksum from $CHECKSUM_URL"
+
+        # fetch_url returns the status of its curl command directly.
+        # shellcheck disable=SC2311
+        EXPECTED_SUM=$(fetch_url "${CHECKSUM_URL}" | awk '{print $1}')
+
+        if [[ -z "${EXPECTED_SUM}" ]]; then
+            fail "Could not fetch checksum from ${CHECKSUM_URL}"
         fi
-        
-        CURRENT_SUM=$(sha256sum "$FILE_PATH" | awk '{print $1}')
-        
-        if [ "$EXPECTED_SUM" == "$CURRENT_SUM" ]; then
+
+        CURRENT_SUM=$(sha256sum "${FILE_PATH}" | awk '{print $1}')
+
+        if [[ "${EXPECTED_SUM}" == "${CURRENT_SUM}" ]]; then
             log_success "Checksum verified."
             break # Success, exit loop
         else
             log_error "Checksum mismatch!"
-            echo "Expected: $EXPECTED_SUM"
-            echo "Found:    $CURRENT_SUM"
+            echo "Expected: ${EXPECTED_SUM}"
+            echo "Found:    ${CURRENT_SUM}"
             log_warn "Deleting corrupted file..."
-            rm -f "$FILE_PATH"
-            
-            if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-                log_info "Retrying download (Attempt $((RETRY_COUNT+1))/$MAX_RETRIES)..."
-                RETRY_COUNT=$((RETRY_COUNT+1))
+            rm -f "${FILE_PATH}"
+
+            if [[ "${RETRY_COUNT}" -lt "${MAX_RETRIES}" ]]; then
+                log_info "Retrying download (Attempt $((RETRY_COUNT + 1))/${MAX_RETRIES})..."
+                RETRY_COUNT=$((RETRY_COUNT + 1))
             else
                 fail "Checksum verification failed after retries."
             fi
@@ -281,44 +290,48 @@ done
 # 6. Install Extension
 # -----------------------------------------------------------------------------
 log_section "Installing Extension..."
-log_info "Installing to ${BOLD}$EDITOR_CMD${NC}..."
-"$EDITOR_CMD" --install-extension "$FILE_PATH" --force 2>/dev/null || fail "Failed to install extension."
+log_info "Installing to ${BOLD}${EDITOR_CMD}${NC}..."
+"${EDITOR_CMD}" --install-extension "${FILE_PATH}" --force 2>/dev/null || fail "Failed to install extension."
 log_success "Extension installed successfully!"
 
 # -----------------------------------------------------------------------------
 # 7. Update devcontainer.json (using jq)
 # -----------------------------------------------------------------------------
-if [ "$UPDATE_CONFIG" == "true" ] && [ -f "$JSON_FILE" ]; then
+if [[ "${UPDATE_CONFIG}" == "true" ]] && [[ -f "${JSON_FILE}" ]]; then
     log_section "Updating Configuration..."
-    log_info "Target: $JSON_FILE"
-    
-    if [ "$IS_LEGACY" == "true" ]; then
+    log_info "Target: ${JSON_FILE}"
+
+    if [[ "${IS_LEGACY}" == "true" ]]; then
         log_warn "Cannot update config for legacy version automatically."
     else
         # Construct URLs for both architectures
         # Use simple variable substitution to avoid repetition
         URL_X64="${BASE_URL}/${VERSION}/kotlin-lsp-${VERSION}-linux-x64.vsix.sha256"
         URL_ARM64="${BASE_URL}/${VERSION}/kotlin-lsp-${VERSION}-linux-aarch64.vsix.sha256"
-        
+
         log_info "Fetching Linux checksums..."
-        SUM_X64=$(fetch_url "$URL_X64" | awk '{print $1}')
-        SUM_ARM64=$(fetch_url "$URL_ARM64" | awk '{print $1}')
-        
-        if [ -n "$SUM_X64" ] && [ -n "$SUM_ARM64" ]; then
-            log_info "Updating fields in ${BOLD}$JSON_FILE${NC}..."
-            
+        # fetch_url returns the status of its curl command directly.
+        # shellcheck disable=SC2311
+        SUM_X64=$(fetch_url "${URL_X64}" | awk '{print $1}')
+        # fetch_url returns the status of its curl command directly.
+        # shellcheck disable=SC2311
+        SUM_ARM64=$(fetch_url "${URL_ARM64}" | awk '{print $1}')
+
+        if [[ -n "${SUM_X64}" ]] && [[ -n "${SUM_ARM64}" ]]; then
+            log_info "Updating fields in ${BOLD}${JSON_FILE}${NC}..."
+
             # Use sed to update, protecting against JSONC comments which jq would strip.
             # We match key, quote, colon, space, quote, value, end quote.
-            
+
             # Update Version
-            sed_i -E "s/(\"KOTLIN_LSP_VERSION\": \")[^\"]*(\")/\1$VERSION\2/" "$JSON_FILE"
-            
+            sed_i -E "s/(\"KOTLIN_LSP_VERSION\": \")[^\"]*(\")/\1${VERSION}\2/" "${JSON_FILE}"
+
             # Update X64 Checksum
-            sed_i -E "s/(\"KOTLIN_LSP_SHA256_X64\": \")[^\"]*(\")/\1$SUM_X64\2/" "$JSON_FILE"
-            
+            sed_i -E "s/(\"KOTLIN_LSP_SHA256_X64\": \")[^\"]*(\")/\1${SUM_X64}\2/" "${JSON_FILE}"
+
             # Update ARM64 Checksum
-            sed_i -E "s/(\"KOTLIN_LSP_SHA256_ARM64\": \")[^\"]*(\")/\1$SUM_ARM64\2/" "$JSON_FILE"
-            
+            sed_i -E "s/(\"KOTLIN_LSP_SHA256_ARM64\": \")[^\"]*(\")/\1${SUM_ARM64}\2/" "${JSON_FILE}"
+
             log_success "devcontainer.json updated."
         else
             log_error "Failed to fetch Linux checksums. Skipping config update."
