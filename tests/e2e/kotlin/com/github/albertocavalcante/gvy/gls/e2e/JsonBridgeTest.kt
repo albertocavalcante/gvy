@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.services.GenericError
+import com.github.albertocavalcante.gvy.gls.services.Health
+import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import org.assertj.core.api.Assertions.assertThat
@@ -10,6 +13,14 @@ import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Test
 
 class JsonBridgeTest {
+    @Test
+    fun `status notifications retain their wire health and structured details`() {
+        val status = StatusNotification(Health.Warning, errorDetails = GenericError("CUSTOM"))
+        val expected = """{"health":"warning","quiescent":true,
+            "errorDetails":{"errorCode":"CUSTOM","details":{},"suggestions":[],"type":"CUSTOM"}}"""
+        assertThat(JsonBridge.wrapJavaObject(status)).isEqualTo(Json.parseToJsonElement(expected))
+    }
+
     @Test
     fun `null remains JSON null`() {
         assertThat(JsonBridge.wrapJavaObject(null)).isEqualTo(JsonNull)

@@ -22,6 +22,7 @@ internal class SessionTestServer :
     LanguageClientAware {
     var shutdownCalls = 0
     var connectCalls = 0
+    var connectedClient: LanguageClient? = null
     var exitCalls = 0
     var connectFailure: IllegalStateException? = null
     var onExit: ((Int) -> Unit)? = null
@@ -54,6 +55,7 @@ internal class SessionTestServer :
 
     override fun connect(client: LanguageClient) {
         connectCalls++
+        connectedClient = client
         connectFailure?.let { throw it }
     }
 }

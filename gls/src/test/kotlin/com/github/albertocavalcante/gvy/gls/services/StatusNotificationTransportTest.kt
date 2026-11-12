@@ -1,6 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.services
 
-import com.google.gson.Gson
+import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
 import com.google.gson.JsonParser
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse
@@ -20,7 +20,45 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
 class StatusNotificationTransportTest {
-    private val gson = Gson()
+
+    @Test
+    fun `outgoing status notifications preserve independent wire fixtures`() {
+        val output = ByteArrayOutputStream()
+        val launcher = Launcher.Builder<GroovyLanguageClient>()
+            .setLocalService(Any())
+            .setRemoteInterface(GroovyLanguageClient::class.java)
+            .setInput(ByteArrayInputStream(byteArrayOf()))
+            .setOutput(output)
+            .configureGson(::registerStatusNotificationAdapter)
+            .create()
+        Health.entries.forEach { launcher.remoteProxy.groovyStatus(StatusNotification(health = it)) }
+        launcher.remoteProxy.groovyStatus(
+            StatusNotification(Health.Warning, errorDetails = ToolchainProvisioningError(17, null, null)),
+        )
+        launcher.remoteProxy.groovyStatus(
+            StatusNotification(Health.Error, errorDetails = GenericError("DEPENDENCY_RESOLUTION_FAILED")),
+        )
+        val wire = output.toString(Charsets.UTF_8)
+        val headers = Regex("Content-Length: (\\d+)\\r\\n\\r\\n").findAll(wire).toList()
+        val expected = listOf(
+            """{"health":"ok","quiescent":true}""",
+            """{"health":"warning","quiescent":true}""",
+            """{"health":"error","quiescent":true}""",
+            """{"health":"warning","quiescent":true,"errorDetails":{"requiredVersion":17,
+                "type":"TOOLCHAIN_PROVISIONING_FAILED"}}""",
+            """{"health":"error","quiescent":true,"errorDetails":{"errorCode":"DEPENDENCY_RESOLUTION_FAILED",
+                "details":{},"suggestions":[],"type":"DEPENDENCY_RESOLUTION_FAILED"}}""",
+        )
+        assertEquals(expected.size, headers.size)
+        headers.forEachIndexed { index, header ->
+            val end = headers.getOrNull(index + 1)?.range?.first ?: wire.length
+            val body = wire.substring(header.range.last + 1, end)
+            assertEquals(header.groupValues[1].toInt(), body.toByteArray(Charsets.UTF_8).size)
+            val message = JsonParser.parseString(body).asJsonObject
+            assertEquals("groovy/status", message["method"].asString)
+            assertEquals(JsonParser.parseString(expected[index]), message["params"])
+        }
+    }
 
     private val errors = listOf(
         GradleJdkIncompatibleError("7.0", 21, "8.5", "17", listOf("Upgrade Gradle")),
@@ -39,36 +77,30 @@ class StatusNotificationTransportTest {
     )
 
     @Test
-    fun `plain Gson roundtrips typed statuses including generic discriminator collisions`() {
+    fun `status codec roundtrips typed statuses including generic discriminator collisions`() {
         errors.forEach { error ->
             val sent = StatusNotification(Health.Warning, errorDetails = error)
-            assertEquals(sent, gson.fromJson(gson.toJson(sent), StatusNotification::class.java))
+            assertEquals(sent, StatusNotificationCodec.decode(StatusNotificationCodec.encode(sent)))
         }
     }
 
     @Test
-    fun `all structured error variants survive typed JSON RPC without changing wire fields`() {
+    fun `all structured error variants survive typed JSON RPC`() {
         val expected = errors.map { error ->
             StatusNotification(Health.Error, true, "Build failed", errorCode = error.type, errorDetails = error)
         }
 
-        // LSP4J writes custom enums as their ordinal, independently of Gson's SerializedName.
-        val payloads = expected.map { status ->
-            gson.toJsonTree(status).asJsonObject.apply { addProperty("health", status.health.ordinal) }.toString()
-        }
+        val payloads = expected.map(StatusNotificationCodec::encode)
         val received = receive(*payloads.toTypedArray())
 
         assertEquals(expected, received)
-        expected.zip(received).forEach { (sent, decoded) ->
-            assertEquals(JsonParser.parseString(gson.toJson(sent)), JsonParser.parseString(gson.toJson(decoded)))
-        }
     }
 
     @Test
     fun `future error kinds retain status health discriminator and generic details`() {
         val received = receive(
             """
-                {"health":1,"quiescent":true,"message":"Future warning","errorCode":"FUTURE",
+                {"health":"warning","quiescent":true,"message":"Future warning","errorCode":"FUTURE",
                  "errorDetails":{"type":"FUTURE","suggestions":["Inspect"],
                                  "details":{"host":"repository"},"class":"untrusted.Name"}}
             """.trimIndent(),
@@ -108,7 +140,8 @@ class StatusNotificationTransportTest {
         )
         val received = receive(
             *details.map { value ->
-                """{"health":2,"quiescent":true,"message":"Build failed","errorCode":"FAILED","errorDetails":$value}"""
+                """{"health":"error","quiescent":true,"message":"Build failed",
+                    "errorCode":"FAILED","errorDetails":$value}"""
             }.toTypedArray(),
         )
 
@@ -139,6 +172,7 @@ class StatusNotificationTransportTest {
                         .setInput(input)
                         .setOutput(output)
                         .setExecutorService(executor)
+                        .configureGson(::registerStatusNotificationAdapter)
                         .create()
                     launcher.startListening().get(10, TimeUnit.SECONDS)
                     assertEquals(1, client.requestsHandled, "Requests after an error status must remain usable")

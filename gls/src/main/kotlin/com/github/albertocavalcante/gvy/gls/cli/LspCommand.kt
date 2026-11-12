@@ -10,6 +10,7 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
 import com.github.albertocavalcante.gvy.gls.GroovyLanguageServer
 import com.github.albertocavalcante.gvy.gls.services.GroovyLanguageClient
+import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
 import io.github.oshai.kotlinlogging.KotlinLogging
 import org.eclipse.lsp4j.jsonrpc.Launcher
 import java.io.IOException
@@ -180,6 +181,7 @@ class LspCommand : CliktCommand(name = "lsp") {
             .setRemoteInterface(GroovyLanguageClient::class.java)
             .setInput(input)
             .setOutput(output)
+            .configureGson(::registerStatusNotificationAdapter)
             .create()
 
         val client = launcher.remoteProxy
