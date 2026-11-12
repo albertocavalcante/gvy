@@ -183,7 +183,12 @@ jobs:
             --report-root "$RUNNER_TEMP/gvy-assertion-lint" --producer assertion-publication-lint \
             lintFix --no-daemon --no-parallel --max-workers=1 \
             '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
-          git diff --quiet
+          if ! git diff --quiet; then
+            git diff --binary --full-index > "$RUNNER_TEMP/gvy-assertion-formatter.patch"
+            git diff --name-only -z > "$RUNNER_TEMP/gvy-assertion-formatter-paths.nul"
+            echo 'Formatter changed the reviewed candidate; preserving the diff for review.' >&2
+            exit 1
+          fi
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           GITHUB_SHA="$EXPECTED_BASE" direnv exec . node tools/ci/run-gradle.mjs \
             --report-root "$RUNNER_TEMP/gvy-assertion-green" --producer assertion-publication-green \
@@ -282,6 +287,8 @@ jobs:
         with:
           name: gvy-assertion-evidence-publication-failed
           path: |
+            ${{ runner.temp }}/gvy-assertion-formatter.patch
+            ${{ runner.temp }}/gvy-assertion-formatter-paths.nul
             ${{ runner.temp }}/gvy-assertion-lint/
             ${{ runner.temp }}/gvy-assertion-green/
             ${{ runner.temp }}/gvy-assertion-hook-diagnostics/
