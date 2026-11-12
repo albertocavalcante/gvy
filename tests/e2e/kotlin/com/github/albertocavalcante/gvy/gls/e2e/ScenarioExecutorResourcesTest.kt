@@ -83,6 +83,28 @@ class ScenarioExecutorResourcesTest {
     }
 
     @Test
+    fun `xfail does not hide cleanup failure after a matching scenario assertion`() {
+        val cleanupFailure = IOException("session cleanup failed")
+        every { session.close() } throws cleanupFailure
+        val step = ScenarioStep.Assert(
+            source = "workspace",
+            checks = listOf(JsonCheck("$.missing", JsonExpectation())),
+        )
+
+        val observed = checkNotNull(
+            catchThrowable {
+                XfailOutcome.run(Xfail(issue = 42, reason = "known bug", match = "missing"), "scenario.yaml") {
+                    ScenarioExecutor(factory).execute(definition(listOf(step)))
+                }
+            },
+        )
+
+        assertThat(observed).isInstanceOf(AssertionError::class.java).hasMessageContaining("missing")
+        assertThat(observed.suppressed).containsExactly(cleanupFailure)
+        assertThat(workspace).doesNotExist()
+    }
+
+    @Test
     fun `an invalid inline file remains the primary error when rollback cleanup fails`() {
         val cleanupFailure = IOException("rollback cleanup failed")
         every { WorkspaceFixture.cleanup(workspace) } throws cleanupFailure

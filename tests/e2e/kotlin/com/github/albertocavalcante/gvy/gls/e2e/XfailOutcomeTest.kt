@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import org.opentest4j.AssertionFailedError
 import org.opentest4j.TestAbortedException
+import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeoutException
@@ -128,6 +129,32 @@ class XfailOutcomeTest {
             assertThatThrownBy { XfailOutcome.run(declaration, file) { throw failure } }
                 .isSameAs(failure)
         }
+    }
+
+    @Test
+    fun `matching assertion with failed cleanup remains a failure`() {
+        val assertion = AssertionFailedError("product failed")
+        val cleanup = IOException("cleanup failed")
+
+        assertThatThrownBy {
+            XfailOutcome.run(xfail.copy(match = "product failed"), file) {
+                AutoCloseable { throw cleanup }.use { throw assertion }
+            }
+        }.isSameAs(assertion)
+        assertThat(assertion.suppressed).containsExactly(cleanup)
+    }
+
+    @Test
+    fun `matching response error with suppressed failure on its cause remains a failure`() {
+        val response = ResponseErrorException(ResponseError(ResponseErrorCode.InternalError, "product failed", null))
+        val cleanup = IOException("cleanup failed")
+        response.addSuppressed(cleanup)
+        val failure = ExecutionException(response)
+
+        assertThatThrownBy {
+            XfailOutcome.run(xfail.copy(match = "product failed"), file) { throw failure }
+        }.isSameAs(failure)
+        assertThat(response.suppressed).containsExactly(cleanup)
     }
 
     @Test
