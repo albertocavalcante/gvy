@@ -24,11 +24,14 @@ The end state includes:
 Language neutrality, JVM independence and production readiness are separate claims. A generic BSP or Jupyter library may
 remain JVM-specific. A portable value schema may remain deliberately Groovy-specific.
 
-## Current boundaries
+## Audited baseline
 
 The initial audit used gvy `ce45ade0bd665ad1970d74482f8ed28aec1c628d`; the delivery inventory was refreshed against
 `583798140`. At that baseline, settings declares 41 modules. `gls` has 289 production Kotlin files and 22 direct
 production project dependencies. The source inventory is architectural evidence, not a performance measurement.
+
+These constraints describe the audited baseline. [Delivery evidence](#delivery-evidence) records subsequent changes and
+their remaining limits.
 
 Important constraints:
 
@@ -111,6 +114,34 @@ consumer with sibling substitutions disabled. Do not publish every helper as a s
 | `repl`, `jupyter:kernel-core`, `jupyter:kernels:groovy`, `jupyter:kernels:jenkins`        | Isolated execution adapter, neutral kernel runtime and honest separate apps; park placeholder                 |
 | `viz:ast-model`, `viz:desktop`                                                            | Pure tree model, parser converters and viewer product; general SDK publication requires a real consumer       |
 | `tests`, `test-utils`                                                                     | Product regressions and owner-local fixtures; generic black-box capabilities converge toward existing harness |
+
+## Delivery evidence
+
+Updated 2026-11-12. These merged slices establish prerequisites; several parent units still need additional work.
+
+| Delivered slice                                      | Merged evidence                                             | Remaining gate                                                                                                        |
+| ---------------------------------------------------- | ----------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| S1: neutral UTF-16 line indexing                     | [#1774](https://github.com/albertocavalcante/gvy/pull/1774) | The GLS facade retains existing behavior. Snapshot identity and safe edit preconditions remain S2.                    |
+| R1a: Boolean JaCoCo line coverage                    | [#1779](https://github.com/albertocavalcante/gvy/pull/1779) | Source attribution, partial parsing and aggregation remain R1/R2 work.                                                |
+| SARIF UTF-16 column declaration                      | [#1784](https://github.com/albertocavalcante/gvy/pull/1784) | URI adapters and shared finding consumption remain F1/F2 work.                                                        |
+| Buck bootstrap integrity and action runtime          | [#1798](https://github.com/albertocavalcante/gvy/pull/1798) | Build infrastructure validation does not establish SDK or native readiness.                                           |
+| Coverage wire assertions use the project JSON reader | [#1821](https://github.com/albertocavalcante/gvy/pull/1821) | Production serialization stays on the existing runtime; protocol migration remains #1704.                             |
+| B4a: truthful Maven BSP execution capabilities       | [#1855](https://github.com/albertocavalcante/gvy/pull/1855) | Unsupported operations fail explicitly. Target metadata, shutdown (#1838) and executable logging (#1839) remain open. |
+| B1a: failed BSP connection and target discovery      | [#1862](https://github.com/albertocavalcante/gvy/pull/1862) | Genuine empty success stays distinct. Source/dependency completeness and consumer progress remain #1859.              |
+
+F1's primitive findings and structural source locations remain in
+[draft #1845](https://github.com/albertocavalcante/gvy/pull/1845). Its public dependency exports expose a producer
+defect tracked in [#1861](https://github.com/albertocavalcante/gvy/issues/1861). The diagnostic suggests removing an
+undeclared edge. A separate producer correction and fresh integrated validation are required. Keep the strict dependency
+gate; the local reproduction and an unbuilt patch do not establish a deployed fix.
+
+F1 still needs the later provenance and fix contracts. F2 must preserve diagnostic outcomes. CLI adoption also waits for
+[#1731](https://github.com/albertocavalcante/gvy/pull/1731). The current application continues to use LSP4J/BSP4J;
+protocol SDK improvements do not establish gvy integration readiness.
+
+The analysis SDK, metadata backend, supervised JVM worker and Go/Rust stages retain their original acceptance gates. No
+native implementation, AOT compatibility, measured performance gain or public SDK release follows from these
+prerequisite slices.
 
 ## PR delivery DAG
 
