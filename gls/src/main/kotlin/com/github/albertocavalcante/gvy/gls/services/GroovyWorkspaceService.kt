@@ -8,6 +8,7 @@ import com.github.albertocavalcante.gvy.gls.compilation.GroovyCompilationService
 import com.github.albertocavalcante.gvy.gls.compilation.SymbolIndexingService
 import com.github.albertocavalcante.gvy.gls.config.ServerConfiguration
 import com.github.albertocavalcante.gvy.gls.providers.symbols.toSymbolInformation
+import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.gls.utils.isScannedUnder
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
@@ -16,8 +17,6 @@ import com.github.albertocavalcante.gvy.gls.worker.WorkerFeature
 import com.github.albertocavalcante.gvy.gls.worker.WorkerRouter
 import com.github.albertocavalcante.gvy.gls.worker.WorkerRouterFactory
 import com.github.albertocavalcante.gvy.gls.worker.defaultWorkerDescriptors
-import com.google.gson.Gson
-import com.google.gson.JsonObject
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -117,13 +116,7 @@ class GroovyWorkspaceService(
     override fun didChangeConfiguration(params: DidChangeConfigurationParams) {
         logger.info { "Configuration changed, updating Jenkins context if applicable" }
 
-        @Suppress("UNCHECKED_CAST")
-        val settingsMap = when (val settings = params.settings) {
-            is Map<*, *> -> settings as? Map<String, Any>
-            // LSP4J represents Object-typed notification payloads as JSON, unlike direct callers.
-            is JsonObject -> Gson().fromJson(settings, Map::class.java) as Map<String, Any>
-            else -> null
-        }
+        val settingsMap = configurationPayload(params.settings)
 
         if (settingsMap != null) {
             val newConfig = ServerConfiguration.fromMap(settingsMap)
