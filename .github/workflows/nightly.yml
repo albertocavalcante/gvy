@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 name: Nightly Build
 
 on:
@@ -9,6 +12,10 @@ on:
       - .github/workflows/nightly.yml
       - .github/workflows/extension-nightly.yml
       - tools/ci/nightly-artifacts*
+      - tools/ci/provision-vscode*
+      - tools/ci/vscode-provisioning*
+      - editors/code/.vscode-test.mjs
+      - editors/code/tools/vscode-test-config.mjs
       - tools/ci/gradle-memory-options*
       - tools/ci/gradle-memory-probe*
       - tools/ci/run-gradle*
@@ -84,6 +91,7 @@ jobs:
       JAVA_OPTS: -Xmx2g
       GVY_GRADLE_MEMORY_PROBE: 'true'
       GVY_GRADLE_MEMORY_PROFILE: nightly
+      GVY_VSCODE_MATRIX: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -113,8 +121,10 @@ jobs:
         with:
           version: 12.14.0
 
-      - name: Test artifact verification
-        run: node --test tools/ci/nightly-artifacts.test.mjs
+      - name: Test artifact verification and VS Code provisioning controls
+        run: >-
+          node --test --test-concurrency=1 tools/ci/nightly-artifacts.test.mjs
+          tools/ci/vscode-provisioning.test.mjs tools/ci/read-evidence.test.mjs
 
       # Build before stamping package.json so JAR provenance sees a clean tree.
       # stageEditorServer supplies an exact path; never select the first old JAR.
@@ -140,13 +150,38 @@ jobs:
           GLS_ALLOW_PINNED_FALLBACK: 'false'
           FORCE_DOWNLOAD: 'true'
 
-      - name: Build and test extension with current server
+      - name: Build, run unit tests and compile integration harness
         working-directory: editors/code
-        run: |
-          pnpm run compile
-          xvfb-run -a pnpm run test:all
         env:
           GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
+        run: |
+          pnpm run compile
+          pnpm run test
+          pnpm run compile:tests
+
+      - name: Provision pinned VS Code
+        run: node tools/ci/provision-vscode.mjs --provision --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Test extension with current server once
+        id: editor_integration
+        working-directory: editors/code
+        run: xvfb-run -a node ../../tools/ci/provision-vscode.mjs --run --report "$RUNNER_TEMP/gvy-vscode-public"
+        env:
+          GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
+
+      - name: Audit provisioning and integration evidence
+        id: vscode_audit
+        if: ${{ !cancelled() }}
+        run: node tools/ci/provision-vscode.mjs --audit --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Upload audited VS Code provisioning result
+        if: ${{ !cancelled() && steps.vscode_audit.outputs.safe == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vscode-provisioning-nightly-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gvy-vscode-public/result.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Compute nightly version
         id: version

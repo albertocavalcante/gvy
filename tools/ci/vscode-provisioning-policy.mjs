@@ -19,13 +19,14 @@ function keys(value, expected) {
 }
 
 export function validateProvisioningContext(context) {
-  keys(context, ['repository', 'headSha', 'testedSha', 'runId', 'runAttempt', 'jobKey', 'matrix', 'runnerOS', 'runnerArch', 'invocationId']);
+  keys(context, ['repository', 'headSha', 'testedSha', 'runId', 'runAttempt', 'workflow', 'jobKey', 'matrix', 'runnerOS', 'runnerArch', 'invocationId']);
   require(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(context.repository) && commit(context.headSha) && commit(context.testedSha), 'invalid-context');
   require(/^[1-9][0-9]*$/.test(context.runId) && Number.isSafeInteger(Number(context.runId)) && integer(context.runAttempt) && context.runAttempt > 0, 'invalid-context');
   require(/^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/.test(context.invocationId), 'invalid-context');
   const hosts = { 'ubuntu-24.04': 'Linux', 'windows-latest': 'Windows', 'macos-latest': 'macOS' };
   require(hosts[context.matrix] === context.runnerOS && ['X64', 'ARM64'].includes(context.runnerArch), 'invalid-context');
-  require(['validate', 'test-matrix', 'package'].includes(context.jobKey), 'invalid-context');
+  require(context.workflow === 'Extension CI' ? ['validate', 'test-matrix', 'package'].includes(context.jobKey) :
+    context.workflow === 'Nightly Build' && context.jobKey === 'build', 'invalid-context');
   require(context.jobKey === 'test-matrix' ? context.matrix !== 'ubuntu-24.04' : context.matrix === 'ubuntu-24.04', 'invalid-context');
   return context;
 }
@@ -39,7 +40,7 @@ export function downloadPlatform(context) {
 export const phases = Object.freeze(['configuration', 'version-resolution', 'version-resolved', 'archive-resolution', 'archive-transfer', 'archive-extraction', 'sdk-archive-retry', 'sdk-error', 'cache-hit', 'provisioned', 'verification', 'verified']);
 const transitions = {
   configuration: ['version-resolution'], 'version-resolution': ['version-resolved'],
-  'version-resolved': ['archive-resolution', 'cache-hit'],
+  'version-resolved': ['archive-resolution', 'cache-hit', 'sdk-archive-retry', 'sdk-error'],
   'archive-resolution': ['archive-transfer', 'sdk-archive-retry', 'sdk-error'],
   'archive-transfer': ['archive-extraction', 'provisioned', 'sdk-archive-retry', 'sdk-error'],
   'archive-extraction': ['provisioned', 'sdk-archive-retry', 'sdk-error'],
@@ -81,11 +82,14 @@ export function validateAttempt(attempt, context, expectedNumber) {
     require(outcomes.includes(attempt.error.code) && attempt.error.code !== 'success' && (attempt.error.messageSha256 === null || hash(attempt.error.messageSha256)), 'invalid-error-evidence');
   }
   if (attempt.delivery !== null) {
-    keys(attempt.delivery, ['version', 'commit', 'expectedCommit', 'commitSource']);
-    require(attempt.delivery.version === vscodeTestVersion && commit(attempt.delivery.commit) && attempt.delivery.commit === attempt.delivery.expectedCommit && attempt.delivery.commitSource === 'sdk-new-install-progress', 'invalid-delivery-evidence');
+    keys(attempt.delivery, ['version', 'commit', 'arch', 'platform', 'expectedCommit', 'commitSource']);
+    require(attempt.delivery.version === vscodeTestVersion && commit(attempt.delivery.commit) && attempt.delivery.commit === attempt.delivery.expectedCommit &&
+      attempt.delivery.arch === (context.runnerArch === 'ARM64' ? 'arm64' : 'x64') && attempt.delivery.platform === downloadPlatform(context) &&
+      attempt.delivery.commitSource === 'sdk-new-install-progress', 'invalid-delivery-evidence');
   }
   if (attempt.outcome === 'success') require(attempt.phases.at(-1).phase === 'verified' && attempt.delivery !== null && attempt.error === null && attempt.cleanupComplete && attempt.capture.complete, 'incomplete-success-evidence');
   else require(attempt.error?.code === attempt.outcome && attempt.delivery === null, 'invalid-error-evidence');
+  if (attempt.outcome === 'capture-limit') require(!attempt.capture.complete, 'invalid-capture-evidence');
   if (attempt.outcome === 'version-resolution-timeout') {
     require(isDeepStrictEqual(attempt.phases.map(event => event.phase), ['configuration', 'version-resolution']) &&
       attempt.error.messageSha256 === digest(resolutionTimeoutMessage) && attempt.errorLogs.length === 1 && attempt.capture.complete && attempt.cleanupComplete, 'invalid-timeout-evidence');
@@ -106,7 +110,15 @@ export async function provisionWithBudget(context, attempt, { now = () => perfor
   for (let number = 1; number <= 2; number++) {
     const budgetMs = Math.min(limits.attemptMs, Math.floor(deadline - now() - limits.killMs));
     if (budgetMs <= 0) return { ok: false, attempts, elapsedMs: Math.ceil(now() - started), error: 'deadline-exceeded' };
-    const result = validateAttempt(await attempt({ context, number, budgetMs }), context, number);
+    let result;
+    try { result = validateAttempt(await attempt({ context, number, budgetMs }), context, number); }
+    catch {
+      // Preserve preceding attempts when an invocation cannot supply valid
+      // evidence. This row explicitly claims neither capture nor cleanup.
+      result = { number, contextSha256: digest(JSON.stringify(context)), outcome: 'invalid-evidence', elapsedMs: 0,
+        phases: [{ phase: 'configuration', elapsedMs: 0 }], errorLogs: [], error: { code: 'invalid-evidence', messageSha256: null },
+        delivery: null, capture: { ...emptyCapture(), complete: false }, cleanupComplete: false };
+    }
     attempts.push(result);
     if (now() >= deadline) return { ok: false, attempts, elapsedMs: Math.ceil(now() - started), error: 'deadline-exceeded' };
     if (result.outcome === 'success') return { ok: true, attempts, elapsedMs: Math.ceil(now() - started), error: null };

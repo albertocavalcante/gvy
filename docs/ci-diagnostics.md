@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # CI diagnostic accountability
 
 A successful command is insufficient when it emits actionable diagnostics. Agents own the complete CI result for the
@@ -107,6 +110,64 @@ state machine and Git-diff classifier have failure and negative-control tests.
 The Zed gate covers pinned Rust formatting, host tests, host/WASM Clippy and the WASM build. Editor runtime, Java/JAR
 launch, platform and lifecycle validation remain tracked in
 [#1175](https://github.com/albertocavalcante/gvy/issues/1175).
+
+## VS Code provisioning
+
+Extension CI's Linux/macOS/Windows integration and packaged-extension jobs, plus Nightly's Linux integration job, use
+`tools/ci/provision-vscode.mjs`. Provisioning, test-runner invocation and the post-test evidence audit are separate
+steps. The wrapper invokes the existing pinned test CLI once, after unit tests and harness compilation; the packaged
+lane preserves its implementation-navigation selection. An integration-runner marker records that exact invocation,
+including a failed spawn, rather than claiming the editor launched or an assertion executed.
+
+The supported contract is `@vscode/test-electron` 3.1.0, `@vscode/test-cli` 0.0.15 and VS Code 1.144.0. The shared
+configuration verifies the manifest floor and guards both repository and packaged manifests against extension
+dependencies, installation options and CLI argument drift. This matters because the
+[CLI dependency-install branch downloads again even with an installed path](https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/platform/desktop.mts#L128-L164).
+Tool or configuration changes must update these controls through review.
+
+Only the pinned SDK's exact `TimeoutError` constructor/message before its first `resolvedVersion` event qualifies for
+one outer retry. The
+[fixed-version metadata request precedes that event and the SDK's archive retry loop](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/download.ts#L461-L579).
+DNS, unknown errors/phases, archive/checksum failures, verification errors, incomplete evidence and assertion failures
+never qualify. SDK archive attempts remain inside their original loop and are not retried by this controller.
+
+The provisioning orchestration has a shared 180-second monotonic deadline, covering worker startup, metadata, archive
+attempts, verification, one five-second backoff and owned-child-tree cleanup. Each worker receives at most 80 seconds,
+with at most ten seconds of its remaining budget for the version probe and two seconds reserved for termination.
+Accepted cold hosted provisioning previously took about 10–20 seconds; these ceilings allow headroom while bounding slow
+or dripping responses. The SDK's 15-second idle timeout remains unchanged and
+[resets on incoming data](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/request.ts#L21-L84).
+Neither that timeout nor Mocha's existing 30-second assertion timeout is raised. POSIX termination addresses only the
+new owned process group; Windows uses the owned worker PID's tree with bounded `taskkill /T /F`.
+
+Every attempt has a fresh owned cache; an unexpected cache hit fails. The delivered editor must report the requested
+version and architecture, and its CLI build commit must equal the SDK's required `newInstallComplete.commitHash` from
+the archive response. The
+[supported executable-to-CLI resolver](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/util.ts#L332-L394)
+handles platform layout; the verifier does not guess macOS executable names or Windows product directories. This
+compares delivered runtime identity with SDK archive metadata, not a GitHub tag SHA or an independent build-integrity
+attestation. Missing or inconsistent commit evidence fails before integration.
+
+The public artifact contains one audited allowlisted JSON projection: source/tested SHA, repository/workflow/job/run and
+attempt/matrix identity, invocation UUID, exact tool/editor identity, phases, numeric timing, outcomes, cleanup and
+capture completeness, and private stream/error byte counts and SHA-256 hashes. Compact report JSON is limited to 32 KiB.
+Unknown fields, stale identity, noncanonical receipts, malformed phases, links and unexpected publication files block
+upload. Windows uses the existing compiled no-follow evidence reader before provisioning controls and the post-test
+audit. Its native link/replacement negative controls run on the hosted Windows lane.
+
+Raw SDK errors and probe output stay outside the artifact directory, with at most 128 KiB combined per attempt. Capture
+overflow stops the worker and fails explicitly; unreported output, including unknown warnings, also fails. The original
+bytes and each recorded error hash remain available in private job captures; they are never substituted for the audited
+artifact. Ordinary SDK errors and integration output still stream to GitHub console logs under runner masking, which
+does not make arbitrary output safe. Never dump environment variables or place credentials in process arguments.
+Artifact projection does not suppress runtime diagnostics.
+
+A failed preflight records integration as unexecuted; editor logs are not expected in that phase. Once the integration
+runner is invoked, the audit requires editor log files even when assertions fail. Extension CI's existing failed-editor
+log upload runs only in that invoked phase and treats absent files as an error. The audit fails closed on missing or
+stale invocation evidence and never changes an original integration failure into success. All three native platforms,
+the packaged test lane and Nightly remain required applicable hosted checks. Original timeout failures and ownership
+remain in [#1882](https://github.com/albertocavalcante/gvy/issues/1882); successful recovery does not retire the debt.
 
 ## Bazel gate and build observability
 

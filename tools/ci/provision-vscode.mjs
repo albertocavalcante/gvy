@@ -3,7 +3,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, realpathSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
@@ -12,11 +12,17 @@ import { createProvisioningReport, digest, downloadPlatform, provisionWithBudget
 import { launchProvisioningAttempt } from './vscode-provisioning-process.mjs';
 import { validateVscodeTestInputs, vscodeTestCliVersion, vscodeTestVersion } from '../../editors/code/tools/vscode-test-config.mjs';
 
-const editorRoot = fileURLToPath(new URL('../../editors/code/', import.meta.url));
+const editorRoot = resolve(fileURLToPath(new URL('../../editors/code/', import.meta.url)));
 const require = (condition, code) => { if (!condition) throw new Error(code); };
 const json = path => JSON.parse(readEvidenceText(path, 64 * 1024));
 const encode = value => JSON.stringify(value, null, 2) + '\n';
 const writeNew = (path, value) => writeFileSync(path, encode(value), { flag: 'wx', mode: 0o600 });
+const canonicalJson = path => {
+  const bytes = readEvidenceText(path, 64 * 1024);
+  const value = JSON.parse(bytes);
+  require(bytes === encode(value), 'noncanonical-private-evidence');
+  return value;
+};
 const git = args => execFileSync('git', args, { cwd: editorRoot, encoding: 'utf8', timeout: 10000, maxBuffer: 4096 }).trim();
 const inside = (parent, child) => { const suffix = relative(parent, child); return suffix !== '' && suffix !== '..' && !suffix.startsWith('..' + sep) && !isAbsolute(suffix); };
 
@@ -27,7 +33,7 @@ export function provisioningContext(invocationId) {
   require(/^[1-9][0-9]*$/.test(process.env.GITHUB_RUN_ATTEMPT ?? ''), 'invalid-context');
   const context = {
     repository: process.env.GITHUB_REPOSITORY, headSha: event.pull_request?.head?.sha ?? testedSha, testedSha,
-    runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), jobKey: process.env.GITHUB_JOB,
+    runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT), workflow: process.env.GITHUB_WORKFLOW, jobKey: process.env.GITHUB_JOB,
     matrix: process.env.GVY_VSCODE_MATRIX, runnerOS: process.env.RUNNER_OS, runnerArch: process.env.RUNNER_ARCH, invocationId,
   };
   validateProvisioningContext(context);
@@ -64,9 +70,10 @@ function readInitial(reportRoot) {
   validateProvisioningReport(report, context);
   require(bytes === encode(report) && report.integration.state === 'unexecuted', 'noncanonical-provisioning-evidence');
   const paths = roots(reportRoot, context.invocationId);
-  const state = json(join(paths.privateRoot, 'state.json'));
+  const state = canonicalJson(join(paths.privateRoot, 'state.json'));
   require(isDeepStrictEqual(Object.keys(state).sort(), ['context', 'executable', 'receiptSha256']) &&
-    isDeepStrictEqual(state.context, context) && state.receiptSha256 === digest(bytes), 'stale-private-evidence');
+    isDeepStrictEqual(state.context, context) && state.receiptSha256 === digest(bytes) &&
+    (report.provisioning.ok ? typeof state.executable === 'string' : state.executable === null), 'stale-private-evidence');
   return { report, context, state, ...paths };
 }
 
@@ -100,7 +107,7 @@ export async function provisionEditor(reportRoot) {
   const text = encode(report);
   writeFileSync(join(paths.publicRoot, 'provisioning.json'), text, { flag: 'wx', mode: 0o600 });
   writeNew(join(paths.privateRoot, 'state.json'), { context, executable, receiptSha256: digest(text) });
-  console.log(`VS Code provisioning ${result.ok ? 'passed' : 'failed'}: requested ${vscodeTestVersion}, ${result.attempts.length} attempt(s); assertions unexecuted.`);
+  console.log(`VS Code provisioning ${result.ok ? 'passed' : `failed (${result.error})`}: requested ${vscodeTestVersion}, ${result.attempts.length} attempt(s); assertions unexecuted.`);
   return result.ok;
 }
 
@@ -126,23 +133,33 @@ export async function invokeEditorTests(reportRoot) {
   const targetRoot = process.env.GVY_TEST_EXTENSION_ROOT;
   require((data.context.jobKey === 'package') === Boolean(targetRoot), 'unsupported-extension-root');
   if (targetRoot) validateVscodeTestInputs(json(join(targetRoot, 'package.json')), configurations, executable);
-  const args = [join(packageRoot, 'out', 'bin.mjs')];
-  if (data.context.jobKey === 'package') args.push('--grep', 'Implementation navigation', '--fail-zero', '--forbid-pending');
+  return invokeIntegrationOnce(data.context, join(data.privateRoot, 'integration.json'), join(packageRoot, 'out', 'bin.mjs'), { ...process.env, VSCODE_TEST_EXECUTABLE: executable });
+}
+
+export async function invokeIntegrationOnce(context, markerPath, cli, env, spawnChild = spawn) {
+  validateProvisioningContext(context);
+  const args = [cli];
+  if (context.jobKey === 'package') args.push('--grep', 'Implementation navigation', '--fail-zero', '--forbid-pending');
   // This marker proves invocation of the integration runner, not editor launch.
-  const marker = { context: data.context, state: 'invoked', outcome: 'pending', exitCode: null };
-  const markerPath = join(data.privateRoot, 'integration.json');
-  writeNew(markerPath, marker);
-  const child = spawn(process.execPath, args, { cwd: editorRoot, env: process.env, stdio: 'inherit', windowsHide: true, shell: false });
-  let spawnFailed = false;
-  child.on('error', () => { spawnFailed = true; });
-  const forward = signal => child.kill(signal);
-  const interrupt = () => forward('SIGINT'); const terminate = () => forward('SIGTERM');
-  process.once('SIGINT', interrupt); process.once('SIGTERM', terminate);
-  const status = await new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal })));
-  process.off('SIGINT', interrupt); process.off('SIGTERM', terminate);
-  marker.outcome = !spawnFailed && status.code === 0 && !status.signal ? 'success' : 'failure';
-  marker.exitCode = spawnFailed ? 127 : status.code ?? 1;
-  writeFileSync(markerPath, encode(marker), { mode: 0o600 });
+  const marker = { context, state: 'invoked', outcome: 'pending', exitCode: null };
+  const markerDescriptor = openSync(markerPath, 'wx', 0o600);
+  try {
+    writeSync(markerDescriptor, encode(marker));
+    if (process.env.GITHUB_OUTPUT) writeFileSync(process.env.GITHUB_OUTPUT, 'invoked=true\n', { flag: 'a' });
+    let status = { code: 127, signal: null }, spawnFailed = false;
+    try {
+      const child = spawnChild(process.execPath, args, { cwd: editorRoot, env, stdio: 'inherit', windowsHide: true, shell: false });
+      child.on('error', () => { spawnFailed = true; });
+      const interrupt = () => child.kill('SIGINT'), terminate = () => child.kill('SIGTERM');
+      process.once('SIGINT', interrupt); process.once('SIGTERM', terminate);
+      try { status = await new Promise(resolve => child.once('close', (code, signal) => resolve({ code, signal }))); }
+      finally { process.off('SIGINT', interrupt); process.off('SIGTERM', terminate); }
+    } catch { spawnFailed = true; }
+    marker.outcome = !spawnFailed && status.code === 0 && !status.signal ? 'success' : 'failure';
+    marker.exitCode = spawnFailed ? 127 : status.code ?? 1;
+    ftruncateSync(markerDescriptor, 0);
+    writeSync(markerDescriptor, encode(marker), 0);
+  } finally { closeSync(markerDescriptor); }
   return marker.outcome === 'success';
 }
 
@@ -161,18 +178,18 @@ export function countEditorLogs(root) {
   return files;
 }
 
-export function auditEditorProvisioning(reportRoot) {
+export function auditEditorProvisioning(reportRoot, editorLogsRoot = join(editorRoot, '.vscode-test', 'user-data', 'logs')) {
   require(isDeepStrictEqual(readdirSync(reportRoot).sort(), ['provisioning.json']), 'unexpected-public-evidence-file');
   const data = readInitial(reportRoot);
   const markerPath = join(data.privateRoot, 'integration.json');
   if (existsSync(markerPath)) {
-    const marker = json(markerPath);
+    const marker = canonicalJson(markerPath);
     require(isDeepStrictEqual(Object.keys(marker).sort(), ['context', 'exitCode', 'outcome', 'state']) && isDeepStrictEqual(marker.context, data.context) &&
       marker.state === 'invoked' && ['success', 'failure'].includes(marker.outcome) && Number.isInteger(marker.exitCode) && marker.exitCode >= 0 && marker.exitCode <= 255 &&
       (marker.outcome === 'success') === (marker.exitCode === 0), 'invalid-integration-marker');
     require(data.report.provisioning.ok, 'integration-before-provisioning');
     validateInstalledPath(data.state, data.privateRoot);
-    const files = countEditorLogs(join(editorRoot, '.vscode-test', 'user-data', 'logs'));
+    const files = countEditorLogs(editorLogsRoot);
     data.report.integration = { state: 'invoked', outcome: marker.outcome, editorLogs: { present: files > 0, files } };
   }
   data.report.ok = data.report.provisioning.ok && data.report.integration.outcome === 'success' && data.report.integration.editorLogs.present;

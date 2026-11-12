@@ -6,11 +6,12 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { readEvidenceText } from './read-evidence.mjs';
-import { digest, downloadPlatform, isResolutionTimeout, provisioningLimits, validateProvisioningContext } from './vscode-provisioning-policy.mjs';
+import { digest, downloadPlatform, isResolutionTimeout, provisioningLimits, validatePhases, validateProvisioningContext } from './vscode-provisioning-policy.mjs';
 import { validateVscodeTestInputs, vscodeTestVersion, vscodeTestSdkVersion, vscodeTestCliVersion, vscodeTestIdleTimeout } from '../../editors/code/tools/vscode-test-config.mjs';
 
 const sha = value => typeof value === 'string' && /^[a-f0-9]{40}$/.test(value);
 const require = (condition, code) => { if (!condition) throw new Error(code); };
+const probeEvidence = new WeakMap();
 
 /** Exactly one supported CLI probe; it does not invoke runVSCodeCommand(), which downloads again. */
 export function probeVscodeVersion(sdk, executable, platform, timeoutMs) {
@@ -18,7 +19,7 @@ export function probeVscodeVersion(sdk, executable, platform, timeoutMs) {
   require(isAbsolute(command) && !/[\0\r\n]/.test(command), 'invalid-version-probe');
   let binary = command;
   let args = [...prefix, '--version'];
-  const options = { encoding: 'utf8', timeout: timeoutMs, maxBuffer: 16 * 1024, windowsHide: true, shell: false };
+  const options = { encoding: 'buffer', timeout: timeoutMs, maxBuffer: 4096, windowsHide: true, shell: false };
   if (process.platform === 'win32') {
     const quote = value => {
       require(typeof value === 'string' && !/["%!?&|<>^\r\n\0]/.test(value), 'invalid-version-probe');
@@ -29,9 +30,21 @@ export function probeVscodeVersion(sdk, executable, platform, timeoutMs) {
     options.windowsVerbatimArguments = true;
   }
   const result = spawnSync(binary, args, options);
-  require(!result.error && !result.signal && result.status === 0 && result.stderr === '', 'version-probe-failed');
-  const lines = result.stdout.trim().split(/\r?\n/);
-  require(lines.length === 3 && lines[0] === vscodeTestVersion && sha(lines[1]) && ['x64', 'arm64'].includes(lines[2]), 'delivered-version-mismatch');
+  const fail = code => {
+    const error = new Error(code);
+    // Preserve bounded original probe output privately, including unexpected
+    // warnings. Only its byte counts and hashes enter the public projection.
+    const stdout = result.stdout ?? Buffer.alloc(0), stderr = result.stderr ?? Buffer.alloc(0);
+    const incomplete = result.error?.code === 'ENOBUFS' || stdout.length > 4096 || stderr.length > 4096;
+    probeEvidence.set(error, { incomplete, bytes: Buffer.concat([
+      Buffer.from(`${code}: status=${result.status}; signal=${result.signal}; incomplete=${incomplete}\n${result.error?.stack ?? ''}\nstdout bytes=${stdout.length} sha256=${digest(stdout)}:\n`),
+      stdout.subarray(0, 4096), Buffer.from(`\nstderr bytes=${stderr.length} sha256=${digest(stderr)}:\n`), stderr.subarray(0, 4096), Buffer.from('\n'),
+    ]) });
+    throw error;
+  };
+  if (result.error || result.signal || result.status !== 0 || result.stderr.length) fail('version-probe-failed');
+  const lines = result.stdout.toString('utf8').trim().split(/\r?\n/);
+  if (!(lines.length === 3 && lines[0] === vscodeTestVersion && sha(lines[1]) && ['x64', 'arm64'].includes(lines[2]))) fail('delivered-version-mismatch');
   return { version: lines[0], commit: lines[1], arch: lines[2] };
 }
 
@@ -43,14 +56,18 @@ export async function runSdkProvisioning(load, output, probe = probeVscodeVersio
   let executable;
   let expectedCommit;
   let init;
+  let captureComplete = true;
   const phase = value => {
     if (observed.at(-1) === value) return;
+    try { validatePhases([...observed, value].map(phase => ({ phase, elapsedMs: 0 }))); }
+    catch { fatal ??= new Error('invalid-sdk-phase'); throw fatal; }
     observed.push(value);
     output({ type: 'phase', phase: value });
   };
   const logError = error => {
-    const raw = `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`;
-    const bytes = Buffer.from(raw);
+    const probe = probeEvidence.get(error);
+    if (probe?.incomplete) captureComplete = false;
+    const bytes = probe?.bytes ?? Buffer.from(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
     require(bytes.length <= 16 * 1024, 'error-evidence-limit');
     output({ type: 'error-log', phase: observed.at(-1), bytes: bytes.length, sha256: digest(bytes) });
     output({ type: 'raw-error', bytes });
@@ -77,14 +94,21 @@ export async function runSdkProvisioning(load, output, probe = probeVscodeVersio
           case 'resolvingCDNLocation': phase('archive-resolution'); break;
           case 'downloading':
             if (!Number.isSafeInteger(event.bytesSoFar) || !Number.isSafeInteger(event.totalBytes) || event.bytesSoFar < 0 || event.bytesSoFar > event.totalBytes || event.totalBytes > 1024 * 1024 * 1024) invalid();
-            phase('archive-transfer'); break;
+            // ZIP extraction is reported before the SDK awaits its incoming
+            // stream. Validate later download events without moving backwards.
+            if (observed.at(-1) !== 'archive-extraction') phase('archive-transfer');
+            break;
           case 'extractingSynchonrously': phase('archive-extraction'); break;
           case 'retrying': phase('sdk-archive-retry'); logError(event.error); break;
           case 'foundMatchingInstall': phase('cache-hit'); invalid(); break;
           case 'newInstallComplete':
             if (!sha(event.commitHash)) invalid();
             expectedCommit = event.commitHash; phase('provisioned'); break;
-          default: invalid();
+          default:
+            // Keep the unexpected stage in private error evidence without
+            // projecting arbitrary event fields or URLs into the artifact.
+            fatal ??= new Error(`invalid-sdk-phase: ${typeof event.stage === 'string' ? event.stage : typeof event.stage}`);
+            throw fatal;
         }
       },
       error(error) {
@@ -104,13 +128,13 @@ export async function runSdkProvisioning(load, output, probe = probeVscodeVersio
     const delivered = await probe(init.sdk, executable, init.platform, Math.min(provisioningLimits.verifyMs, remaining));
     require(delivered.version === vscodeTestVersion && delivered.commit === expectedCommit && delivered.arch === (init.context.runnerArch === 'ARM64' ? 'arm64' : 'x64'), 'delivered-version-mismatch');
     phase('verified');
-    output({ type: 'result', outcome: 'success', error: null, delivery: { version: delivered.version, commit: delivered.commit, expectedCommit, commitSource: 'sdk-new-install-progress' }, executable });
+    output({ type: 'result', outcome: 'success', captureComplete, error: null, delivery: { version: delivered.version, commit: delivered.commit, arch: delivered.arch, platform: init.platform, expectedCommit, commitSource: 'sdk-new-install-progress' }, executable });
   } catch (error) {
     logError(error);
-    const outcome = isResolutionTimeout(error, observed) ? 'version-resolution-timeout' :
+    const outcome = !captureComplete ? 'capture-limit' : isResolutionTimeout(error, observed) ? 'version-resolution-timeout' :
       fatal ? 'invalid-evidence' : observed.at(-1) === 'configuration' ? 'configuration-error' :
         observed.at(-1) === 'verification' ? 'verification-error' : 'provisioning-error';
-    output({ type: 'result', outcome, error: { code: outcome, messageSha256: error instanceof Error ? digest(error.message) : null }, delivery: null, executable: null });
+    output({ type: 'result', outcome, captureComplete, error: { code: outcome, messageSha256: error instanceof Error ? digest(error.message) : null }, delivery: null, executable: null });
   }
 }
 

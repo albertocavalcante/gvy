@@ -71,6 +71,8 @@ jobs:
           compression-level: 0
 
   validate:
+    env:
+      GVY_VSCODE_MATRIX: ubuntu-24.04
     name: Validate
     needs: build-server
     runs-on: ubuntu-24.04
@@ -135,20 +137,54 @@ jobs:
       - name: Build
         run: pnpm run compile
 
-      - name: Run tests
+      - name: Verify provisioning and evidence controls
+        run: >-
+          node --test --test-concurrency=1 tools/ci/vscode-provisioning.test.mjs
+          tools/ci/read-evidence.test.mjs tools/ci/windows-evidence.test.mjs
+        working-directory: .
+
+      - name: Run unit tests and compile integration harness
+        env:
+          GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
+        run: |
+          pnpm run test
+          pnpm run compile:tests
+
+      - name: Provision pinned VS Code
+        shell: bash
+        run: node ../../tools/ci/provision-vscode.mjs --provision --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Run integration tests once
+        id: editor_integration
         env:
           GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
         run: |
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
           export DISPLAY=:99
-          pnpm run test:all
+          node ../../tools/ci/provision-vscode.mjs --run --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Audit provisioning and integration evidence
+        id: vscode_audit
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node ../../tools/ci/provision-vscode.mjs --audit --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Upload audited VS Code provisioning result
+        if: ${{ !cancelled() && steps.vscode_audit.outputs.safe == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vscode-provisioning-linux-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gvy-vscode-public/result.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload failed editor logs
-        if: failure()
+        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: editor-logs-linux
           path: editors/code/.vscode-test/user-data/logs
+          if-no-files-found: error
           retention-days: 1
 
       - name: Check bundle size
@@ -167,6 +203,8 @@ jobs:
           fi
 
   test-matrix:
+    env:
+      GVY_VSCODE_MATRIX: ${{ matrix.os }}
     name: Test (${{ matrix.os }})
     needs: [build-server, validate]
     timeout-minutes: 20
@@ -189,6 +227,46 @@ jobs:
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 24
+
+      - name: Select Windows PE probe compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Reuse the established ci-launcher compiler and no-follow reader.
+          $compiler = 'C:\mingw64\bin\gcc.exe'
+          if (!(Test-Path -LiteralPath $compiler -PathType Leaf)) {
+            throw 'The Windows runner must provide its documented MinGW x64 compiler'
+          }
+          $target = (& $compiler -dumpmachine).Trim()
+          if ($LASTEXITCODE -ne 0 -or $target -ne 'x86_64-w64-mingw32') {
+            throw 'The Windows probe compiler must target native MinGW x64'
+          }
+          $version = (& $compiler -dumpfullversion).Trim()
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^([0-9]+)\.' -or [int]$Matches[1] -lt 15) {
+            throw 'The Windows probe requires GCC 15 or newer'
+          }
+          & $compiler --version
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the Windows probe compiler' }
+          Write-Output "Probe compiler SHA-256: $((Get-FileHash $compiler -Algorithm SHA256).Hash)"
+          "GVY_PROBE_CC=$compiler" >> $env:GITHUB_ENV
+          Split-Path -Parent $compiler >> $env:GITHUB_PATH
+
+      - name: Build Windows evidence reader
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: .
+        run: |
+          $reader = Join-Path $env:RUNNER_TEMP 'gvy-windows-evidence-reader.exe'
+          & $env:GVY_PROBE_CC -std=c11 -O2 -static -Wall -Wextra -Werror tools/ci/windows-evidence-reader.c -o $reader
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot build the Windows evidence reader' }
+          Write-Output "Evidence reader SHA-256: $((Get-FileHash $reader -Algorithm SHA256).Hash)"
+          "GVY_CI_EVIDENCE_READER=$reader" >> $env:GITHUB_ENV
+
+      - name: Verify provisioning and evidence controls
+        run: >-
+          node --test --test-concurrency=1 tools/ci/vscode-provisioning.test.mjs
+          tools/ci/read-evidence.test.mjs tools/ci/windows-evidence.test.mjs
+        working-directory: .
 
       - name: Setup pnpm
         uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
@@ -234,21 +312,51 @@ jobs:
         run: pnpm run compile
         working-directory: editors/code
 
-      - name: Run tests
+      - name: Run unit tests and compile integration harness
         env:
           GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
-        run: pnpm run test:all
-        working-directory: editors/code
+        run: |
+          pnpm run test
+          pnpm run compile:tests
+
+      - name: Provision pinned VS Code
+        shell: bash
+        run: node ../../tools/ci/provision-vscode.mjs --provision --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Run integration tests once
+        id: editor_integration
+        env:
+          GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
+        shell: bash
+        run: node ../../tools/ci/provision-vscode.mjs --run --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Audit provisioning and integration evidence
+        id: vscode_audit
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node ../../tools/ci/provision-vscode.mjs --audit --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Upload audited VS Code provisioning result
+        if: ${{ !cancelled() && steps.vscode_audit.outputs.safe == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vscode-provisioning-${{ matrix.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gvy-vscode-public/result.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload failed editor logs
-        if: failure()
+        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: editor-logs-${{ matrix.os }}
           path: editors/code/.vscode-test/user-data/logs
+          if-no-files-found: error
           retention-days: 1
 
   package:
+    env:
+      GVY_VSCODE_MATRIX: ubuntu-24.04
     name: Package VSIX
     needs: [build-server, validate]
     runs-on: ubuntu-24.04
@@ -338,7 +446,14 @@ jobs:
       - name: Unpack VSIX
         run: unzip -q ./*.vsix -d "$RUNNER_TEMP/gvy-packaged-extension"
 
-      - name: Test packaged implementation navigation
+      - name: Provision pinned VS Code for the packaged extension
+        env:
+          GVY_TEST_EXTENSION_ROOT: ${{ runner.temp }}/gvy-packaged-extension/extension
+        shell: bash
+        run: node ../../tools/ci/provision-vscode.mjs --provision --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Test packaged implementation navigation once
+        id: editor_integration
         env:
           # Exercise the workspace fallback even when an override is present but empty.
           GVY_TEST_SERVER_JAR: ''
@@ -346,14 +461,30 @@ jobs:
         run: |
           /usr/bin/Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
           export DISPLAY=:99
-          pnpm exec vscode-test --grep "Implementation navigation" --fail-zero --forbid-pending
+          node ../../tools/ci/provision-vscode.mjs --run --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Audit provisioning and integration evidence
+        id: vscode_audit
+        if: ${{ !cancelled() }}
+        shell: bash
+        run: node ../../tools/ci/provision-vscode.mjs --audit --report "$RUNNER_TEMP/gvy-vscode-public"
+
+      - name: Upload audited VS Code provisioning result
+        if: ${{ !cancelled() && steps.vscode_audit.outputs.safe == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vscode-provisioning-package-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gvy-vscode-public/result.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload failed editor logs
-        if: failure()
+        if: ${{ !cancelled() && failure() && steps.editor_integration.outputs.invoked == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: editor-logs-package
           path: editors/code/.vscode-test/user-data/logs
+          if-no-files-found: error
           retention-days: 1
 
       - name: Upload VSIX

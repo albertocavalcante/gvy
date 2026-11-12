@@ -34,23 +34,35 @@ export function validateVscodeTestInputs(manifest, configurations, installed) {
   if (!Array.isArray(configurations) || configurations.length !== 1)
     throw new Error("unsupported-test-configuration");
   const config = configurations[0];
+  const allowed = [
+    "label",
+    "files",
+    "extensionDevelopmentPath",
+    "workspaceFolder",
+    "mocha",
+    installed ? "useInstallation" : "version",
+  ];
   if (
+    !config ||
+    Object.keys(config).some((key) => !allowed.includes(key)) ||
     config?.label !== "integrationTests" ||
+    config.files !== "client/out/test/integration/**/*.test.js" ||
+    config.workspaceFolder !== "client/src/test/fixtures" ||
+    config.mocha?.ui !== "tdd" ||
     config.mocha?.timeout !== 30000 ||
+    Object.keys(config.mocha).some(
+      (key) => !["ui", "timeout", "retries"].includes(key),
+    ) ||
     ![undefined, 0].includes(config.mocha?.retries) ||
-    config.skipExtensionDependencies === true ||
-    (config.installExtensions !== undefined &&
-      (!Array.isArray(config.installExtensions) ||
-        config.installExtensions.length !== 0)) ||
-    (config.download !== undefined &&
-      config.download.timeout !== vscodeTestIdleTimeout)
+    config.installExtensions !== undefined
   )
     throw new Error("unsupported-test-configuration");
   if (
     installed
       ? config.useInstallation?.fromPath !== installed ||
-        config.useInstallation.fromMachine !== undefined
-      : config.version !== vscodeTestVersion || config.useInstallation !== undefined
+        Object.keys(config.useInstallation).some((key) => key !== "fromPath")
+      : config.version !== vscodeTestVersion ||
+        config.useInstallation !== undefined
   )
     throw new Error("unsupported-editor-selection");
 }

@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # Contributing to VS Code Groovy Extension
 
 Thank you for your interest in contributing to the Groovy Language Support extension for Visual Studio Code!
@@ -254,6 +257,25 @@ pnpm run test:all
 
 _Note: Integration tests on Linux require `xvfb`. Using the CI environment or a Docker container is recommended for
 headless testing._
+
+**CI provisioning** Extension CI and Nightly provision the editor before invoking the integration runner. The
+[canonical test configuration](tools/vscode-test-config.mjs) keeps VS Code 1.144.0 aligned with `engines.vscode` and
+`@types/vscode`; the SDK idle timeout remains 15 seconds and Mocha's assertion timeout remains 30 seconds. Local
+`test:integration` and `test:all` commands keep their normal behavior. `VSCODE_TEST_EXECUTABLE` selects an already
+installed editor for the shared configuration.
+
+CI's [bounded preflight](../../tools/ci/provision-vscode.mjs) allows one additional provisioning attempt only for the
+pinned SDK's exact version-resolution timeout, before it reports any resolved version or archive activity. It uses a
+fresh owned cache and verifies the delivered version, build commit and architecture with the SDK's supported CLI path
+before publishing the executable to the integration runner. Unit tests, compilation and integration assertions are
+outside the retry. The packaged lane retains its existing implementation-navigation selection and required tests.
+
+Each editor lane uploads an audited `vscode-provisioning-*` result, including failed attempts, source/tested/run/attempt
+and matrix identity, phase timings and raw-error hashes. A provisioning failure leaves integration unexecuted, so editor
+logs are not expected. After the integration runner is invoked, missing editor logs fail the evidence check; invocation
+alone does not prove that the editor launched. See [CI diagnostics](../../docs/ci-diagnostics.md#vs-code-provisioning)
+for budgets, source contracts and the public artifact boundary. Reliability debt and original failures remain tracked in
+[#1882](https://github.com/albertocavalcante/gvy/issues/1882).
 
 **Running Unit Tests** Unit tests cover individual components in isolation:
 

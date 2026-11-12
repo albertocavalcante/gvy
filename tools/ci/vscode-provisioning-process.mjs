@@ -89,7 +89,7 @@ export async function launchProvisioningAttempt(input, { logDir, script = worker
         if (!sameKeys(message, [...base, 'phase', 'bytes', 'sha256']) || errorLogs.length >= 8 || message.phase !== events.at(-1)?.phase || !Number.isSafeInteger(message.bytes) || message.bytes < 1 || message.bytes > 16 * 1024 || !/^[a-f0-9]{64}$/.test(message.sha256)) throw new Error();
         errorLogs.push({ phase: message.phase, bytes: message.bytes, sha256: message.sha256 });
       } else if (message.type === 'result') {
-        if (!sameKeys(message, [...base, 'outcome', 'error', 'delivery', 'executable']) || (message.executable !== null && (typeof message.executable !== 'string' || message.executable.length > 4096 || !isAbsolute(message.executable) || /[\0\r\n]/.test(message.executable)))) throw new Error();
+        if (!sameKeys(message, [...base, 'outcome', 'captureComplete', 'error', 'delivery', 'executable']) || typeof message.captureComplete !== 'boolean' || (message.executable !== null && (typeof message.executable !== 'string' || message.executable.length > 4096 || !isAbsolute(message.executable) || /[\0\r\n]/.test(message.executable)))) throw new Error();
         final = message;
         // The reviewed worker flushes raw evidence and then waits on IPC. Stop
         // its owned tree even on a handled result, including probe descendants.
@@ -111,8 +111,10 @@ export async function launchProvisioningAttempt(input, { logDir, script = worker
   clearTimeout(watchdog); clearTimeout(forceTimer); clearTimeout(finishTimer);
   process.off('SIGINT', interrupted); process.off('SIGTERM', interrupted);
   const stdout = Buffer.concat(chunks.stdout), stderr = Buffer.concat(chunks.stderr);
-  writeFileSync(join(logDir, 'stdout.log'), stdout, { flag: 'wx', mode: 0o600 });
-  writeFileSync(join(logDir, 'stderr.log'), stderr, { flag: 'wx', mode: 0o600 });
+  try {
+    writeFileSync(join(logDir, 'stdout.log'), stdout, { flag: 'wx', mode: 0o600 });
+    writeFileSync(join(logDir, 'stderr.log'), stderr, { flag: 'wx', mode: 0o600 });
+  } catch { fatal ??= 'invalid-evidence'; captureComplete = false; }
   let offset = 0;
   for (const error of errorLogs) {
     if (digest(stderr.subarray(offset, offset + error.bytes)) !== error.sha256) fatal ??= 'unexpected-output';
@@ -127,7 +129,7 @@ export async function launchProvisioningAttempt(input, { logDir, script = worker
     phases: events.length ? events : [{ phase: 'configuration', elapsedMs: 0 }], errorLogs,
     error: fatal ? { code: fatal, messageSha256: null } : final.error,
     delivery: fatal ? null : final.delivery,
-    capture: { ...emptyCapture(), stdoutBytes: stdout.length, stdoutSha256: digest(stdout), stderrBytes: stderr.length, stderrSha256: digest(stderr), complete: captureComplete },
+    capture: { ...emptyCapture(), stdoutBytes: stdout.length, stdoutSha256: digest(stdout), stderrBytes: stderr.length, stderrSha256: digest(stderr), complete: captureComplete && (final?.captureComplete ?? true) },
     cleanupComplete,
   };
   try { validateAttempt(result, input.context, input.number); }
