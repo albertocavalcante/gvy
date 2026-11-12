@@ -9,3 +9,9 @@ tools/ export-ignore
 
 # Snapshot files are compared byte for byte after CRLF normalization; keep them LF on every platform.
 tests/e2e/resources/snapshots/** text eol=lf
+
+# License checks and distributed artifacts use the approved file bytes on every platform.
+/LICENSE text eol=lf
+/editors/code/LICENSE text eol=lf
+/editors/zed/LICENSE text eol=lf
+/LICENSES/Apache-2.0.txt text eol=lf

@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+name: License tooling
+
+on:
+  pull_request:
+    paths:
+      - '.reuse/**'
+      - 'LICENSES/**'
+      - '.github/workflows/license-tooling.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.reuse/**'
+      - 'LICENSES/**'
+      - '.github/workflows/license-tooling.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  self-test:
+    name: Self-test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Install pinned uv
+        run: >-
+          python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
+      - name: Install locked dependencies
+        run: uv sync --locked --project .reuse
+      - name: Run tests
+        run: uv run --offline --locked --project .reuse python -m unittest discover -s .reuse/tests
+      - name: Check formatting
+        run: uv run --offline --locked --project .reuse ruff format --check .reuse/check.py .reuse/tests/test_check.py
+      - name: Lint
+        run: uv run --offline --locked --project .reuse ruff check .reuse/check.py .reuse/tests/test_check.py
+      - name: Check types with BasedPyright
+        run: uv run --offline --locked --project .reuse basedpyright .reuse/check.py .reuse/tests/test_check.py
+      - name: Check types with ty
+        run: uv run --offline --locked --project .reuse ty check .reuse/check.py .reuse/tests/test_check.py
