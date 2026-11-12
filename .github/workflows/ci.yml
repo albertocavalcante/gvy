@@ -370,6 +370,14 @@ jobs:
           fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
           persist-credentials: false
 
+      - name: Set up Node.js for profiling tools
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 24
+
+      - name: Test profiling tools
+        run: node --test tools/perf/*.test.mjs
+
       - name: 🖥️ Runner Specs
         shell: bash
         run: |
