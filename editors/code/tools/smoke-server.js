@@ -7,16 +7,31 @@ const path = require("node:path");
  * @returns {Promise<void>}
  */
 function smokeServer(jar, timeoutMs = 30000) {
+  const java = process.env.JAVA_HOME
+    ? path.join(
+        process.env.JAVA_HOME,
+        "bin",
+        process.platform === "win32" ? "java.exe" : "java",
+      )
+    : "java";
+  return smokeServerCommand(java, ["-jar", jar], timeoutMs);
+}
+
+/** Verify an LSP command with inherited application environment.
+ * @param {string} command @param {string[]} args @param {number} timeoutMs
+ * @param {NodeJS.ProcessEnv} env
+ * @returns {Promise<void>}
+ */
+function smokeServerCommand(
+  command,
+  args,
+  timeoutMs = 30000,
+  env = process.env,
+) {
   return new Promise((resolve, reject) => {
-    const java = process.env.JAVA_HOME
-      ? path.join(
-          process.env.JAVA_HOME,
-          "bin",
-          process.platform === "win32" ? "java.exe" : "java",
-        )
-      : "java";
-    const child = spawn(java, ["-jar", jar], {
+    const child = spawn(command, args, {
       stdio: ["pipe", "pipe", "pipe"],
+      env,
     });
     let buffer = Buffer.alloc(0);
     let stderr = "";
@@ -104,7 +119,7 @@ function smokeServer(jar, timeoutMs = 30000) {
   });
 }
 
-module.exports = { smokeServer };
+module.exports = { smokeServer, smokeServerCommand };
 if (require.main === module) {
   if (!process.argv[2])
     throw new Error("Usage: node tools/smoke-server.js <server.jar>");

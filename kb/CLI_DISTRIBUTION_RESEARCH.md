@@ -178,6 +178,17 @@ Reuse #1675 for release-channel synchronization, #1736 for explicit update/rollb
 budgets, and #1709/#1713 for verification/session ownership. Track launcher/runtime acceptance in #1741 and keep #1727
 CLI-first. These are dependencies and ownership links, not claims that their work is complete.
 
+## Initial implementation decision
+
+The owner selected Kotlin/Native for the first launcher so it can be dogfooded in a real project. Learning its practical
+strengths and shortcomings is an explicit objective; a Go comparison is not a prerequisite. Start with the actual JVM
+artifact and preserve its commands, arguments, streams, environment, cancellation and exits. Keep semantic operations in
+the JVM and the launcher replaceable through that process boundary.
+
+The [source preview](../launcher/README.md) implements the first external-Java slice for macOS Apple silicon and Linux
+x64. This does not establish a smaller runtime, a faster startup, single-file delivery or complete platform coverage.
+Bundled/BYO runtime parity, Windows process behavior and the remaining packaging decisions stay in #1741.
+
 ## Claims and open decisions
 
 | Claim                                                  | Status                                          | Evidence or decision gate                                       |
