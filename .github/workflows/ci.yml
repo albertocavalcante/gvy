@@ -378,10 +378,6 @@ jobs:
         with:
           distribution: temurin
           java-version: ${{ matrix.java }}
-      - name: Set up diagnostic Node runtime
-        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
-        with:
-          node-version: 24
       - name: Verify daemon memory sampler with the real JDK
         if: runner.os == 'Linux' && runner.environment == 'github-hosted'
         timeout-minutes: 2
