@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: Apache-2.0
 import hashlib
 import importlib.util
+import io
 import json
+import os
 import shutil
 import subprocess
+import sys
+import tarfile
 import tempfile
 import tomllib
 import unittest
@@ -120,6 +124,15 @@ class HeaderTests(unittest.TestCase):
 
 
 class IntegrationTests(unittest.TestCase):
+    def git(self, *arguments: str, directory: Path | None = None) -> subprocess.CompletedProcess[bytes]:
+        environment = {name: value for name, value in os.environ.items() if not name.upper().startswith("GIT_")}
+        environment.update(GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull, GIT_ATTR_NOSYSTEM="1")
+        with tempfile.TemporaryDirectory() as template:
+            command = ["git", "-c", f"core.attributesFile={os.devnull}", "-C", str(directory or self.root), *arguments]
+            if arguments[0] == "init":
+                command.append(f"--template={template}")
+            return subprocess.run(command, env=environment, stdout=subprocess.PIPE, check=True, timeout=30)
+
     def write_inventory(self, *, include_mit: bool = False) -> None:
         """Give each synthetic project only the license texts it actually uses."""
         approved_paths = {"LICENSE", "LICENSES/Apache-2.0.txt", "editors/code/LICENSE", "editors/zed/LICENSE"}
@@ -215,6 +228,138 @@ class IntegrationTests(unittest.TestCase):
                 self.write_inventory(include_mit=True)
                 self.assertEqual([], check.check(self.root))
                 self.write_inventory()
+
+    def test_git_archive_preserves_licensed_corpus_and_excludes_other_tools(self) -> None:
+        project = Path(__file__).parents[2]
+        shutil.copy(project / ".gitattributes", self.root / ".gitattributes")
+        shutil.copy(project / "LICENSES/MIT.txt", self.root / "LICENSES/MIT.txt")
+        self.write_inventory(include_mit=True)
+        metadata = tomllib.loads((project / "REUSE.toml").read_text(encoding="utf-8"))
+        blocks = ["version = 1\n"]
+        corpus_paths: list[str] = []
+        for raw_annotation in metadata["annotations"]:
+            annotation = check.as_object(raw_annotation)
+            if annotation.get("SPDX-License-Identifier") != "MIT":
+                continue
+            blocks.append(
+                "[[annotations]]\n" + "\n".join(f"{key} = {json.dumps(value)}" for key, value in annotation.items())
+            )
+            paths = annotation.get("path")
+            if not isinstance(paths, list):
+                raise TypeError("missing corpus annotation paths")
+            for name in paths:
+                if not isinstance(name, str):
+                    raise TypeError("invalid corpus annotation path")
+                source = project / name
+                destination = self.root / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+                corpus_paths.append(name)
+        self.assertEqual(4, len(corpus_paths))
+        (self.root / "REUSE.toml").write_text("\n\n".join(blocks), encoding="utf-8")
+        excluded = ("tools/other.py", "tools/perf/other.py", "tools/perf/bench/driver.py")
+        for name in excluded:
+            (self.root / name).write_text("not part of the distributed corpus\n", encoding="utf-8")
+        tracked = [
+            ".gitattributes",
+            "REUSE.toml",
+            ".reuse/license-hashes.toml",
+            "LICENSE",
+            "LICENSES/Apache-2.0.txt",
+            "LICENSES/MIT.txt",
+            "editors/code/LICENSE",
+            "editors/zed/LICENSE",
+            "src/a.py",
+            *corpus_paths,
+            *excluded,
+        ]
+        self.git("init", "-q")
+        self.git("add", "--", *tracked)
+        executable = "tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile"
+        self.git("update-index", "--chmod=+x", "--", executable)
+        tree = self.git("write-tree").stdout.strip()
+        archive = self.git("archive", "--format=tar", tree.decode("ascii")).stdout
+        export_temp = tempfile.TemporaryDirectory()
+        self.addCleanup(export_temp.cleanup)
+        exported = Path(export_temp.name)
+        with tarfile.open(fileobj=io.BytesIO(archive)) as contents:
+            members = {member.name: member for member in contents if member.isfile()}
+            self.assertEqual(set(tracked) - set(excluded), set(members))
+            self.assertEqual(0o111, members[executable].mode & 0o111)
+            self.assertEqual(0, members["src/a.py"].mode & 0o111)
+            for name, member in members.items():
+                stream = contents.extractfile(member)
+                if stream is None:
+                    raise AssertionError(f"missing archived contents: {name}")
+                with stream:
+                    data = stream.read()
+                if name in corpus_paths:
+                    self.assertEqual((project / name).read_bytes(), data)
+                destination = exported / name
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_bytes(data)
+        self.assertFalse((exported / ".git").exists())
+        self.assertEqual([], check.check(exported))
+        mit = exported / "LICENSES/MIT.txt"
+        canonical = mit.read_bytes()
+        mit.unlink()
+        self.assertTrue(any(error.startswith("LICENSES/MIT.txt: cannot read:") for error in check.check(exported)))
+        mit.write_bytes(canonical)
+        for name in corpus_paths:
+            (exported / name).unlink()
+        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(exported))
+        result = subprocess.run(
+            [sys.executable, "-m", "reuse", "--no-multiprocessing", "--root", str(exported), "lint", "--json"],
+            capture_output=True,
+            check=False,
+        )
+        report = check.as_object(json.loads(result.stdout))
+        self.assertEqual(1, result.returncode)
+        self.assertEqual(["MIT"], check.as_object(report["non_compliant"])["unused_licenses"])
+
+    def test_git_archive_preserves_external_git_state_with_hostile_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as external_temp:
+            external = Path(external_temp)
+            self.git("init", "-q", directory=external)
+            (external / "sentinel.txt").write_text("external work\n", encoding="utf-8")
+            self.git("config", "core.filemode", "false", directory=external)
+            self.git("add", "--", "sentinel.txt", directory=external)
+            template = external / "template"
+            (template / "hooks").mkdir(parents=True)
+            (template / "hooks/sentinel").write_bytes(b"caller-owned template sentinel\n")
+            config = external / "caller.gitconfig"
+            config.write_text(f'[init]\n\ttemplateDir = "{template.as_posix()}"\n', encoding="utf-8")
+
+            def snapshot() -> dict[str, str]:
+                return {
+                    path.relative_to(external).as_posix(): hashlib.sha256(path.read_bytes()).hexdigest()
+                    for path in external.rglob("*")
+                    if path.is_file()
+                }
+
+            before = snapshot()
+            hostile = {
+                "GIT_DIR": str(external / ".git"),
+                "GIT_COMMON_DIR": str(external / ".git"),
+                "GIT_WORK_TREE": str(self.root),
+                "GIT_INDEX_FILE": str(external / ".git/index"),
+                "GIT_OBJECT_DIRECTORY": str(external / ".git/objects"),
+                "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(external / ".git/objects"),
+                "GIT_CONFIG_GLOBAL": str(config),
+                "GIT_CONFIG_SYSTEM": str(config),
+                "GIT_CONFIG_COUNT": "1",
+                "GIT_CONFIG_KEY_0": "core.filemode",
+                "GIT_CONFIG_VALUE_0": "false",
+                "GIT_CONFIG_PARAMETERS": "'core.ignorecase=true'",
+                "GIT_TEMPLATE_DIR": str(template),
+                "GIT_TRACE": str(external / "unexpected-trace"),
+            }
+            with patch.dict(os.environ, hostile):
+                try:
+                    self.test_git_archive_preserves_licensed_corpus_and_excludes_other_tools()
+                finally:
+                    self.assertEqual(before, snapshot())
+            self.assertFalse((self.root / ".git/hooks/sentinel").exists())
 
     def test_mit_like_custom_license_does_not_require_canonical_mit(self) -> None:
         (self.root / "LICENSES/LicenseRef-MIT-fixture.txt").write_text("Synthetic custom license\n", encoding="utf-8")
@@ -314,28 +459,28 @@ class IntegrationTests(unittest.TestCase):
         self.assertTrue(any("effective REUSE license" in error for error in check.check(self.root)))
 
     def test_tracked_ignored_binary_is_detected(self) -> None:
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        self.git("init", "-q")
         (self.root / ".gitignore").write_text(
             "# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\nignored.bin\n"
         )
         self.assertEqual([], check.check(self.root))
         (self.root / "ignored.bin").write_bytes(b"\x00\x01")
-        subprocess.run(["git", "-C", str(self.root), "add", "-f", "ignored.bin"], check=True)
+        self.git("add", "-f", "ignored.bin")
         self.assertEqual(["REUSE lint failed; run reuse --root . lint for details"], check.check(self.root))
 
     def test_tracked_report_omission_is_rejected(self) -> None:
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
-        subprocess.run(["git", "-C", str(self.root), "add", "src/a.py"], check=True)
+        self.git("init", "-q")
+        self.git("add", "src/a.py")
         # Simulate a future scanner omission while using a real tracked source.
         with patch.object(check, "parse_report", return_value=(True, {})):
             self.assertIn("src/a.py: tracked file omitted by REUSE", check.check(self.root))
 
     def test_standard_spdx_documents_match_reuse_exemptions(self) -> None:
-        subprocess.run(["git", "init", "-q", str(self.root)], check=True)
+        self.git("init", "-q")
         names = ["report.spdx" + suffix for suffix in ("", ".rdf", ".json", ".xml", ".yml", ".yaml")]
         for name in names:
             (self.root / name).write_text("{}\n")
-        subprocess.run(["git", "-C", str(self.root), "add", *names], check=True)
+        self.git("add", *names)
         self.assertEqual([], check.check(self.root))
 
     def test_jsx_metadata_does_not_replace_a_leading_header(self) -> None:
