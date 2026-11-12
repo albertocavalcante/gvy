@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.source
 
 /** Raw zero-based line and UTF-16 code-unit coordinates; invalid values are reported at batch application. */
