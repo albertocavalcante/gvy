@@ -1,4 +1,4 @@
-import * as readline from "readline";
+import { pipeBoundedLines } from "../utils/boundedLines";
 import type { Readable } from "stream";
 
 /** The severity methods of a VS Code `LogOutputChannel` that we use. */
@@ -14,6 +14,7 @@ export interface LogSink {
 export interface StderrRouter {
   (line: string): void;
   flush(): void;
+  truncated(line: string): void;
 }
 
 type Level = "trace" | "debug" | "info" | "warn" | "error";
@@ -131,27 +132,57 @@ export function createStderrRouter(sink: LogSink): StderrRouter {
     }
     sink[current](line);
   };
-  return Object.assign(route, { flush });
+  const reset = () => {
+    flush();
+    current = "error";
+    exceptionLineNext = false;
+  };
+  const truncated = (line: string) => {
+    // An unpaired JUL header does not establish a severity for this line.
+    if (julHeader !== undefined && julLevelOf(line) === undefined) reset();
+    if (line.trim() === "") {
+      reset();
+      sink.error(line + TRUNCATION_MARKER);
+    } else {
+      route(line + TRUNCATION_MARKER);
+    }
+    reset();
+  };
+  return Object.assign(route, { flush, truncated });
 }
 
-/** Feeds complete stderr lines of the server process to `sink`. */
+/** Extra bytes beyond the payload limit are discarded; the marker is 28 bytes. */
+const TRUNCATION_MARKER = " [diagnostic line truncated]";
+
+/** Feeds bounded server stderr lines to the severity router. */
 export function pipeServerStderr(input: Readable, sink: LogSink): void {
   const route = createStderrRouter(sink);
-  // readline closes only on `end`; a destroyed stream emits just `close`.
-  input.once("close", route.flush);
-  readline
-    .createInterface({
-      input,
-      crlfDelay: Infinity,
-      terminal: false,
-      historySize: 0,
-    })
-    .on("line", route)
-    .on("close", route.flush)
-    // readline re-emits input errors on the interface, where an unhandled
-    // `error` would be thrown; a listener on `input` alone does not stop it.
-    .on("error", (error: Error) => {
+  pipeBoundedLines(
+    input,
+    ({ text, truncated }) => {
+      if (truncated) {
+        route.truncated(text);
+      } else {
+        route(text);
+      }
+    },
+    (error) => {
       route.flush();
       sink.error(`Reading server stderr failed: ${error.message}`);
-    });
+    },
+  );
+  // A JUL header can remain pending after the last complete line.
+  input.once("end", route.flush);
+  input.once("close", route.flush);
+}
+
+/** Used only for auxiliary stdout on non-stdio language-client transports. */
+export function pipeServerStdout(input: Readable, sink: LogSink): void {
+  pipeBoundedLines(
+    input,
+    ({ text, truncated }) => {
+      sink.info(truncated ? text + TRUNCATION_MARKER : text);
+    },
+    (error) => sink.error(`Reading server stdout failed: ${error.message}`),
+  );
 }

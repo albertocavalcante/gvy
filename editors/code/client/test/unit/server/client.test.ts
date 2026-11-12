@@ -1,5 +1,6 @@
 import * as assert from "assert";
 import * as sinon from "sinon";
+import { PassThrough } from "stream";
 import proxyquire from "proxyquire";
 
 type Deferred = {
@@ -26,6 +27,7 @@ interface FakeErrorHandler {
 
 interface FakeClientOptions {
   outputChannel?: unknown;
+  stdioOptions?: { stdout: (input: PassThrough, channel: unknown) => void };
   errorHandler?: FakeErrorHandler;
 }
 
@@ -203,6 +205,23 @@ describe("server/client lifecycle", () => {
       FakeClient.instances[1].clientOptions.outputChannel,
       channel,
     );
+  });
+
+  it("bounds auxiliary stdout through the configured language-client adapter", async () => {
+    await mod.startClient();
+    const stdout = new PassThrough();
+    const info = sinon.stub();
+    const error = sinon.stub();
+    FakeClient.instances[0].clientOptions.stdioOptions!.stdout(stdout, {
+      info,
+      error,
+    });
+    stdout.end("x".repeat(64 * 1024 + 1));
+    await new Promise((resolve) => stdout.on("close", resolve));
+    assert.strictEqual(info.callCount, 1);
+    assert.match(info.firstCall.args[0], /truncated/);
+    assert.ok(Buffer.byteLength(info.firstCall.args[0]) < 64 * 1024 + 128);
+    assert.strictEqual(error.callCount, 0);
   });
 
   it("disposes the per-start file watcher when the server stops", async () => {

@@ -1,4 +1,3 @@
-import * as readline from "readline";
 import * as vscode from "vscode";
 import { workspace, ExtensionContext, window, commands } from "vscode";
 import {
@@ -20,7 +19,7 @@ import { getConfiguration } from "../configuration/settings";
 import { buildJavaArgs, envJavaOptions } from "./launchArgs";
 import { toProtocolUri } from "./uri";
 import { ServerResolver } from "../services/ServerResolver";
-import { pipeServerStderr } from "./stderrRouter";
+import { pipeServerStderr, pipeServerStdout } from "./stderrRouter";
 
 /**
  * Jenkins shared library configuration
@@ -448,11 +447,7 @@ function createClientOptions(
     outputChannelName: outputChannel ? undefined : "Groovy Language Server",
     // Keep the server's own log severity: the default logs all stderr as errors.
     stdioOptions: {
-      stdout: (input, channel) => {
-        readline
-          .createInterface({ input, crlfDelay: Infinity, terminal: false })
-          .on("line", (line) => channel.info(line));
-      },
+      stdout: (input, channel) => pipeServerStdout(input, channel),
       stderr: (input, channel) => pipeServerStderr(input, channel),
     },
     traceOutputChannel: getTraceOutputChannel(),
