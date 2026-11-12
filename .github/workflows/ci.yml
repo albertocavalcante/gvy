@@ -1,11 +1,11 @@
 # Temporary execution support only. Never merge into main or the product PR.
-name: Verification assertion validity publication
+name: Verification licensed assertion validity publication
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: verification-assertion-validity-publication-${{ github.sha }}
+  group: verification-licensed-assertion-validity-publication-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   candidate:
@@ -71,7 +71,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
-          git switch -c fix/assertion-validity-publication
+          git switch -c fix/assertion-validity-licensed-publication
           git apply --check --index "$RUNNER_TEMP/gvy-reviewed.patch"
           git apply --index "$RUNNER_TEMP/gvy-reviewed.patch"
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
@@ -176,6 +176,17 @@ jobs:
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           direnv allow
           direnv exec . java -version
+          mkdir "$RUNNER_TEMP/gvy-assertion-license"
+          set +e
+          make license-check 2>&1 | tee "$RUNNER_TEMP/gvy-assertion-license/check.log"
+          license_check_status=("${PIPESTATUS[@]}")
+          make license-test 2>&1 | tee "$RUNNER_TEMP/gvy-assertion-license/test.log"
+          license_test_status=("${PIPESTATUS[@]}")
+          set -e
+          jq -n --argjson check "${license_check_status[0]}" --argjson checkCapture "${license_check_status[1]}" \
+            --argjson test "${license_test_status[0]}" --argjson testCapture "${license_test_status[1]}" \
+            '{check:$check,checkCapture:$checkCapture,test:$test,testCapture:$testCapture}' > "$RUNNER_TEMP/gvy-assertion-license/status.json"
+          [[ "${license_check_status[0]}" == 0 && "${license_check_status[1]}" == 0 && "${license_test_status[0]}" == 0 && "${license_test_status[1]}" == 0 ]]
           # The wrapper checkout is the reviewed base plus a staged patch; workflow SHA identifies support.
           [[ "$(git -C "$GITHUB_WORKSPACE/support" rev-parse HEAD)" == "$GITHUB_SHA" ]]
           mkdir "$RUNNER_TEMP/gvy-assertion-lint" "$RUNNER_TEMP/gvy-assertion-green"
@@ -265,6 +276,7 @@ jobs:
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
           cp "$RUNNER_TEMP/gvy-commit-hooks.log" "$RUNNER_TEMP/gvy-publication-proof/"
+          cp -R "$RUNNER_TEMP/gvy-assertion-license" "$RUNNER_TEMP/gvy-publication-proof/license"
           cp -R "$RUNNER_TEMP/gvy-assertion-lint" "$RUNNER_TEMP/gvy-publication-proof/lint"
           cp -R "$RUNNER_TEMP/gvy-assertion-green" "$RUNNER_TEMP/gvy-publication-proof/green"
           cp -R "$RUNNER_TEMP/gvy-assertion-hook-diagnostics" "$RUNNER_TEMP/gvy-publication-proof/hook-diagnostics"
@@ -287,6 +299,7 @@ jobs:
         with:
           name: gvy-assertion-evidence-publication-failed
           path: |
+            ${{ runner.temp }}/gvy-assertion-license/
             ${{ runner.temp }}/gvy-assertion-formatter.patch
             ${{ runner.temp }}/gvy-assertion-formatter-paths.nul
             ${{ runner.temp }}/gvy-assertion-lint/

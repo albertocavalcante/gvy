@@ -1,10 +1,10 @@
 {
-  "base": "130e449ecd3136e12f8800094e121ed872703d9d",
-  "tree": "c2b0aadb75eeaebe5353a72aa256633699b021c4",
-  "patchSha256": "edd7bad0a04b7974d07e5fd2a9805b4a28cf6013e4610092bfd21455a0f1342d",
-  "payloadSha256": "f71f46d66c920c8b33d58d75b2078eaf3bf14858843f5e8750327b18d79e5d58",
-  "patchBytes": 12449,
-  "payloadBytes": 3032,
+  "base": "eb9d0251900a1a51894c13634db0e88a4cd846ff",
+  "tree": "56b7c44cca6a6ca66c1e66a5e840595ac7370929",
+  "patchSha256": "284d6e3d982774c19ea80b3bfa5b5125e997a02d50344f2c38e54b5f1d0f872a",
+  "payloadSha256": "a4452c32f96847652bf150a2c2b7ddd9c9b8ac4acdc9716fe76c0d6cb7da2863",
+  "patchBytes": 12201,
+  "payloadBytes": 3000,
   "allowedPaths": [
     "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/ScenarioCheckValidation.kt",
     "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/ScenarioContext.kt",
@@ -14,12 +14,7 @@
     "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/StepExecutorsTest.kt"
   ],
   "commitMessage": "fix(e2e): validate assertion expressions before execution",
-  "reviewedPriorHead": "1c116a5cb9419330394ca8685d5b04ffe90c19d6",
-  "priorBase": "7ad3b2fcfebd6563828fa48c6887d86fd99c6c42",
-  "composition": "Reconcile ScenarioExecutor with named-outcome API: validate static checks at both public execution entries before workspace; extend existing invalid path/regex controls to named execution; add required SPDX to three previously unheaded files.",
-  "scope": "Part of #1715; strict notification predicate error handling remains separate.",
-  "formatterEvidence": {
-    "run": 43281460225,
-    "capturedPatchSha256": "7c32c884d7af418a5bceb196d3610598745e75deb280d761a6aeedd609ad99da"
-  }
+  "reviewedPriorHead": "64753f1d2886c9a4d28d906a59f18066ea2fd7d7",
+  "composition": "Preserve main no-year SPDX header in StepExecutorsTest; all six source bodies match reviewed prior head.",
+  "scope": "Part of #1715; strict notification predicate errors remain #1766."
 }
