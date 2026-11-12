@@ -127,6 +127,23 @@ transport. Typed initialization and document lifecycle steps, plus the typed `gr
 request routes, keep their SDK models and serialization rules. Received raw JSON trees retain explicit nulls for
 assertions.
 
+## Numeric JSON Values
+
+YAML JSON fields preserve large integers and supported precise decimal values through protocol transport, response
+decoding, JsonPath field/index access and variable extraction. Ordinary integral values use `Long`, larger integers use
+`BigInteger`, and supported decimals use `BigDecimal` in the JSON-to-Java bridge. Typed SDK fields keep their declared
+types.
+
+`GTE` and `LTE` compare exact numeric values and require two JSON numbers; quoted numeric strings are rejected. `EQUALS`
+keeps representation-sensitive structural JSON matching. YAML retains decimal scale, while exponent spelling and the
+sign of negative zero can canonicalize. Numeric bounds treat negative zero as zero.
+
+YAML decimal loading and mathematical comparison support BigDecimal's scale range. Larger valid JSON numbers remain
+available to raw transport, field/index access and structural equality, while unsupported comparisons fail explicitly.
+YAML outside that decimal range and nonfinite forms such as `.nan` and `.inf` fail parsing. Extending the numeric domain
+is tracked in [#1700](https://github.com/albertocavalcante/gvy/issues/1700); precise third-party JsonPath numeric filter
+comparison is a separate, unverified contract.
+
 ## Document Versions
 
 `openDocument` defaults to version 1. When `changeDocument.version` is omitted, YAML and Kotlin steps send the next

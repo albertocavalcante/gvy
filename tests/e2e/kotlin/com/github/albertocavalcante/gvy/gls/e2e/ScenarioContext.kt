@@ -398,8 +398,8 @@ object JsonExpectationEvaluator {
             ExpectationType.SIZE -> pathExists && hasSize(actualNode, expectation.value)
             ExpectationType.EMPTY -> !pathExists || isEmpty(actualNode)
             ExpectationType.NOT_EMPTY -> pathExists && !isEmpty(actualNode)
-            ExpectationType.GTE -> pathExists && isGreaterThanOrEqual(actualNode, expectation.value)
-            ExpectationType.LTE -> pathExists && isLessThanOrEqual(actualNode, expectation.value)
+            ExpectationType.GTE -> pathExists && JsonNumberComparison.isAtLeast(actualNode, expectation.value)
+            ExpectationType.LTE -> pathExists && JsonNumberComparison.isAtMost(actualNode, expectation.value)
             ExpectationType.ANY_CONTAINS -> pathExists && anyContainsSubstring(actualNode, expectation.value)
             ExpectationType.NONE_CONTAINS -> !pathExists || !anyContainsSubstring(actualNode, expectation.value)
         }
@@ -474,20 +474,6 @@ object JsonExpectationEvaluator {
         (actual is JsonPrimitive && actual.isString && actual.content.isEmpty()) ||
         (actual is JsonArray && actual.isEmpty()) ||
         (actual is JsonObject && actual.isEmpty())
-
-    private fun isGreaterThanOrEqual(actual: JsonElement?, expected: JsonElement?): Boolean {
-        if (actual == null || expected == null) return false
-        val actualNum = (actual as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return false
-        val expectedNum = (expected as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return false
-        return actualNum >= expectedNum
-    }
-
-    private fun isLessThanOrEqual(actual: JsonElement?, expected: JsonElement?): Boolean {
-        if (actual == null || expected == null) return false
-        val actualNum = (actual as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return false
-        val expectedNum = (expected as? JsonPrimitive)?.content?.toDoubleOrNull() ?: return false
-        return actualNum <= expectedNum
-    }
 
     /**
      * Checks if any element in an array contains the expected substring.

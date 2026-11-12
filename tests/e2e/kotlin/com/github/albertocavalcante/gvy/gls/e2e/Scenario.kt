@@ -12,9 +12,11 @@ import com.fasterxml.jackson.databind.DeserializationContext
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.databind.cfg.JsonNodeFeature
 import com.fasterxml.jackson.databind.deser.std.StdDeserializer
 import com.fasterxml.jackson.databind.module.SimpleModule
 import com.fasterxml.jackson.databind.node.ArrayNode
+import com.fasterxml.jackson.databind.node.NumericNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import com.fasterxml.jackson.databind.node.ValueNode
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory
@@ -47,12 +49,12 @@ class JsonElementDeserializer : StdDeserializer<JsonElement>(JsonElement::class.
             node.elements().asSequence().map { treeNodeToJsonElement(it) }.toList(),
         )
 
+        is NumericNode -> JsonPrimitive(node.numberValue())
+
         is ValueNode -> when {
             node.isNull -> JsonNull
             node.isTextual -> JsonPrimitive(node.asText())
             node.isBoolean -> JsonPrimitive(node.asBoolean())
-            node.isInt || node.isLong -> JsonPrimitive(node.asLong())
-            node.isFloat || node.isDouble || node.isNumber -> JsonPrimitive(node.asDouble())
             else -> JsonPrimitive(node.asText())
         }
 
@@ -83,6 +85,8 @@ class JacksonScenarioParser : ScenarioParser {
         registerModule(jsonElementModule)
         configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, true)
         configure(DeserializationFeature.READ_ENUMS_USING_TO_STRING, true)
+        configure(JsonNodeFeature.USE_BIG_DECIMAL_FOR_FLOATS, true)
+        configure(JsonNodeFeature.STRIP_TRAILING_BIGDECIMAL_ZEROES, false)
         enable(com.fasterxml.jackson.databind.MapperFeature.ACCEPT_CASE_INSENSITIVE_ENUMS)
     }
 

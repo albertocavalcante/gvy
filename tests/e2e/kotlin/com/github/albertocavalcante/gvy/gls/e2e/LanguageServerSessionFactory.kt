@@ -83,7 +83,7 @@ class LanguageServerSessionFactory(
                 .setOutput(process.outputStream)
                 .setExecutorService(executor.service)
                 .configureGson {
-                    it.registerRawJsonRpcParams()
+                    it.registerRawJsonRpcParams().preserveUntypedJsonNumbers()
                     registerStatusNotificationAdapter(it)
                 }
                 .create()
@@ -187,7 +187,7 @@ class LanguageServerSessionFactory(
                 .setOutput(clientOut)
                 .setExecutorService(executor.service)
                 .configureGson {
-                    it.registerRawJsonRpcParams()
+                    it.registerRawJsonRpcParams().preserveUntypedJsonNumbers()
                     registerStatusNotificationAdapter(it)
                 }
                 .create()

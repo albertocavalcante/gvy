@@ -3,15 +3,20 @@ package com.github.albertocavalcante.gvy.gls.e2e
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.Strictness
+import com.google.gson.ToNumberPolicy
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.longOrNull
 import com.google.gson.JsonElement as GsonJsonElement
+
+/** Untyped SDK response fields retain their number text before the harness can apply exact numeric conversions. */
+internal fun GsonBuilder.preserveUntypedJsonNumbers(): GsonBuilder =
+    setObjectToNumberStrategy(ToNumberPolicy.LAZILY_PARSED_NUMBER)
 
 /**
  * Bridge utilities for converting between kotlinx.serialization.json.JsonElement
@@ -21,11 +26,13 @@ import com.google.gson.JsonElement as GsonJsonElement
  */
 object JsonBridge {
     private val gson = GsonBuilder().also(::registerStatusNotificationAdapter).create()
+    private val exactNumberReader = GsonBuilder().setStrictness(Strictness.STRICT)
+        .setNumberToNumberStrategy(ToNumberPolicy.LAZILY_PARSED_NUMBER).create()
 
     /**
      * Converts a kotlinx JsonElement to a Java object suitable for JsonPath queries.
      * - JsonNull → null
-     * - JsonPrimitive → String, Boolean, Long, Double (based on content)
+     * - JsonPrimitive → String, Boolean, Long, BigInteger, BigDecimal or an exact lazy Number
      * - JsonArray → List<Any?>
      * - JsonObject → Map<String, Any?>
      */
@@ -35,11 +42,20 @@ object JsonBridge {
             if (isString) {
                 content
             } else {
-                booleanOrNull ?: longOrNull ?: doubleOrNull ?: content
+                booleanOrNull ?: longOrNull ?: content.toBigIntegerOrNull() ?: content.toBigDecimalOrNull()
+                    ?: readUnboundedNumber(content)
             }
         }
         is JsonArray -> map { it.toJavaObject() }
         is JsonObject -> mapValues { it.value.toJavaObject() }
+    }
+
+    private fun readUnboundedNumber(content: String): Number {
+        val parsed = exactNumberReader.fromJson(content, GsonJsonElement::class.java)
+        require(parsed != null && parsed.isJsonPrimitive && parsed.asJsonPrimitive.isNumber) {
+            "Expected JSON number: $content"
+        }
+        return exactNumberReader.fromJson(parsed, Number::class.java)
     }
 
     /**
