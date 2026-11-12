@@ -27,6 +27,7 @@ import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import org.codehaus.groovy.ast.expr.MethodCallExpression
 import org.codehaus.groovy.ast.expr.VariableExpression
+import org.codehaus.groovy.control.Phases
 import org.codehaus.groovy.control.SourceUnit
 import org.codehaus.groovy.syntax.Token
 import org.codehaus.groovy.syntax.Types
@@ -72,6 +73,29 @@ class InlayHintsProviderTest {
     @Nested
     @DisplayName("Type Hints")
     inner class TypeHintsTests {
+
+        @Test
+        fun `type hints follow the parameter binding in each method`() {
+            val code = """
+                class Sample {
+                    def a(Integer x) { def probe = x }
+                    def b(String x) { def probe = x }
+                }
+            """.trimIndent()
+            val result = GroovyParserFacade().parse(ParseRequest(testUri, code, compilePhase = Phases.CANONICALIZATION))
+            every { compilationService.getAstModel(testUri) } returns result.astModel
+            every { compilationService.getAst(testUri) } returns result.ast
+            provider = InlayHintsProvider(
+                compilationService,
+                semanticResolver,
+                InlayHintsConfiguration(typeHints = true, parameterHints = false),
+            )
+
+            val hints = provider.provideInlayHints(createParams(0, 0, 5, 100))
+                .filter { it.kind == InlayHintKind.Type }
+            assertEquals(": Integer", hints.single { it.position.line == 1 }.label.left)
+            assertEquals(": String", hints.single { it.position.line == 2 }.label.left)
+        }
 
         @Test
         fun `should show type hint for def variable with string literal`() {
