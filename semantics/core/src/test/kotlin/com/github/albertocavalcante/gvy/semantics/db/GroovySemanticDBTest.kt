@@ -54,6 +54,48 @@ class GroovySemanticDBTest {
         assertThrows<UnsupportedOperationException> { (stored.unresolvedNames as MutableSet<String>).clear() }
     }
 
+    @Test
+    fun `shared type graph is copied with bounded visits`() {
+        var visits = 0
+        var type: SemanticType = TypeConstants.STRING
+        repeat(10) {
+            val child = type
+            val args = object : AbstractList<SemanticType>() {
+                override val size: Int get() = 2
+                override fun get(index: Int): SemanticType {
+                    check(++visits <= 100) { "type graph was expanded repeatedly" }
+                    return child
+                }
+            }
+            type = SemanticType.Known("Pair", args)
+        }
+        val symbol = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", type)
+        db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(symbol), emptyList()))
+        assertTrue(visits <= 100)
+    }
+
+    @Test
+    fun `cyclic type is rejected without replacing the previous document`() {
+        val original = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", TypeConstants.INT)
+        db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(original), emptyList()))
+        val version = db.version
+        var visits = 0
+        lateinit var cyclic: SemanticType
+        val args = object : AbstractList<SemanticType>() {
+            override val size: Int get() = 1
+            override fun get(index: Int): SemanticType {
+                check(++visits <= 100) { "cycle was not detected" }
+                return cyclic
+            }
+        }
+        cyclic = SemanticType.Known("Cycle", args)
+        assertThrows<IllegalArgumentException> {
+            db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(original.copy(type = cyclic)), emptyList()))
+        }
+        assertEquals(TypeConstants.INT, db.getDocument(testUri1)!!.symbols.single().type)
+        assertEquals(version, db.version)
+    }
+
     @Nested
     @DisplayName("Range Tests")
     inner class RangeTests {
