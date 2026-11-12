@@ -139,11 +139,12 @@ validation remain pending. Source inspection and offline policy replay do not es
 successful producer run.
 
 The source graph contract requires every job in `ci.yml` to appear in the readiness policy and terminal `validate.needs`
-list. It supports reviewed plain job keys and immediate fields, checks the terminal one-line `needs` syntax and verifies
-the dependency-update job's exact applicability wiring. Unsupported declarations in those boundaries fail for deliberate
-review; other job dependencies remain under Actions lint and GitHub validation. Readiness rejects unknown needs and
-unfinished non-observer jobs. This makes producer uploads and post-job outcomes precede the final annotation snapshot,
-without waiting on the observer itself.
+list. License compliance remains unconditional, including for narrative-only changes, with a unique fresh successful
+observed execution matching its required result. The contract supports reviewed plain job keys and immediate fields,
+checks the terminal one-line `needs` syntax and verifies the dependency-update job's exact applicability wiring.
+Unsupported declarations in those boundaries fail for deliberate review; other job dependencies remain under Actions
+lint and GitHub validation. Readiness rejects unknown needs and unfinished non-observer jobs. This makes producer
+uploads and post-job outcomes precede the final annotation snapshot, without waiting on the observer itself.
 
 The canonical wrapper validates evidence within the producer. The final observer checks job results and Actions
 annotations; it does not download and verify uploaded diagnostic artifacts. Artifact inspection remains a separate
