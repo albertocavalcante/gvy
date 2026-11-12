@@ -65,22 +65,22 @@ and validation, so another contributor can independently check completion.
 
 ## Related required gates
 
-| Gate                              | Existing tracking / next action                                                                                                | Status        |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------- |
-| Harness lint                      | #1557/#1687: restore compatible typed analysis, gate actual harness sources, then retire verified findings.                    | In progress   |
-| Configuration intent              | #1653 fixes reader-key drift (#1465); observed configuration effects still need coverage.                                      | Partial       |
-| Valid language/engine contracts   | Reconcile #432/#433 and preserve the Core/Native distinction.                                                                  | Pending       |
-| Pure assertion/typed step core    | Consolidate duplicate #804/#808 ownership, remove unchecked dispatch and fill #809 helper coverage.                            | Pending       |
-| Fast tests and CLI-only execution | #1745 adds an inspected packaging-free harness task; extend coverage and verify cache reuse and equivalent cold/warm runs.     | Partial       |
-| Notification cost                 | #1652 evaluates each candidate once and adds checkpoints; bound notifications, compatibility stores and per-wait evidence.     | Partial       |
-| In-process global isolation       | Verify repeated sessions against shared GradleConnectionPool shutdown/reopen behavior; fix per-session ownership where needed. | Investigating |
-| Coverage inventory                | Official 3.17 model pinned; classify method/capability evidence and gate newly advertised behavior.                            | In progress   |
-| Raw protocol evidence             | Preserve original envelopes alongside normalized views, including missing/null, unions, IDs and outer member omission.         | Pending       |
-| Issue-linked repros               | #1523-#1543: retain exact issue/variant linkage; integrate pending repro PRs only after successful-response controls.          | Pending       |
-| Expectation-free checks           | #1546/#1548: incremental/fresh equivalence, compiler agreement, token/range invariants and corpus diffs.                       | Pending       |
-| Performance evidence              | #1564/#1558: named-build long sessions and deterministic cost tests; measure startup/analysis/request/teardown separately.     | Pending       |
-| Packaged editor                   | #1272/#1584: actual middleware results, log/task behavior and restoration synchronized by document version.                    | Pending       |
-| Diagnostic evidence               | #1603: unexpected server diagnostics fail the run; deliberate negative-test output is explicitly asserted.                     | Pending       |
+| Gate                              | Existing tracking / next action                                                                                                                              | Status        |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------- |
+| Harness lint                      | #1557/#1687: restore compatible typed analysis, gate actual harness sources, then retire verified findings.                                                  | In progress   |
+| Configuration intent              | #1653 fixes reader-key drift (#1465); observed configuration effects still need coverage.                                                                    | Partial       |
+| Valid language/engine contracts   | Reconcile #432/#433 and preserve the Core/Native distinction.                                                                                                | Pending       |
+| Pure assertion/typed step core    | Consolidate duplicate #804/#808 ownership, remove unchecked dispatch and fill #809 helper coverage.                                                          | Pending       |
+| Fast tests and CLI-only execution | #1745 adds an inspected harness task that avoids server fat-JAR/distribution assembly; extend coverage and verify cache reuse and equivalent cold/warm runs. | Partial       |
+| Notification cost                 | #1652 evaluates each candidate once and adds checkpoints; bound notifications, compatibility stores and per-wait evidence.                                   | Partial       |
+| In-process global isolation       | Verify repeated sessions against shared GradleConnectionPool shutdown/reopen behavior; fix per-session ownership where needed.                               | Investigating |
+| Coverage inventory                | Official 3.17 model pinned; classify method/capability evidence and gate newly advertised behavior.                                                          | In progress   |
+| Raw protocol evidence             | Preserve original envelopes alongside normalized views, including missing/null, unions, IDs and outer member omission.                                       | Pending       |
+| Issue-linked repros               | #1523-#1543: retain exact issue/variant linkage; integrate pending repro PRs only after successful-response controls.                                        | Pending       |
+| Expectation-free checks           | #1546/#1548: incremental/fresh equivalence, compiler agreement, token/range invariants and corpus diffs.                                                     | Pending       |
+| Performance evidence              | #1564/#1558: named-build long sessions and deterministic cost tests; measure startup/analysis/request/teardown separately.                                   | Pending       |
+| Packaged editor                   | #1272/#1584: actual middleware results, log/task behavior and restoration synchronized by document version.                                                  | Pending       |
+| Diagnostic evidence               | #1603: unexpected server diagnostics fail the run; deliberate negative-test output is explicitly asserted.                                                   | Pending       |
 
 ## Validation and publication records
 
