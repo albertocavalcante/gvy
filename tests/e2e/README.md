@@ -27,6 +27,11 @@ behavior. `e2eTest` continues to run the full suite, including these controls an
 The Make targets inherit the outer build's Gradle user home, preserving shared caches and daemons. Server processes
 still use the harness's isolated runtime Gradle home unless a scenario explicitly configures one.
 
+The `e2eTest` task always starts a fresh test process, including filtered invocations and snapshot update runs. It does
+not reuse cached test results or report itself as up-to-date: those results cannot establish the current server,
+transport or host-tool readiness. Compilation and server packaging retain their normal caches. Use the focused
+`harnessTest` task for cacheable harness controls.
+
 ## Architecture
 
 ```

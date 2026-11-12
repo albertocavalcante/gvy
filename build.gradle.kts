@@ -7,6 +7,7 @@ import org.gradle.api.tasks.compile.GroovyCompile
 import org.gradle.api.tasks.testing.Test
 import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.jvm.toolchain.JavaToolchainService
+import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
     alias(libs.plugins.kotlin.jvm) apply false
@@ -285,9 +286,15 @@ subprojects {
 
             // Keep generated Jenkins stubs out of the real ~/.groovy-lsp cache during tests.
             // Mirrors JenkinsStubsLocation.CACHE_ROOT_PROPERTY.
-            systemProperty(
-                "groovy.lsp.jenkins.stubsCacheRoot",
-                layout.buildDirectory.dir("tmp/jenkins-stubs-cache").get().asFile.absolutePath,
+            val stubsCacheRoot = layout.buildDirectory.dir("tmp/jenkins-stubs-cache/$name")
+            jvmArgumentProviders.add(
+                object : CommandLineArgumentProvider {
+                    @get:LocalState
+                    val cacheRoot = stubsCacheRoot
+
+                    override fun asArguments() =
+                        listOf("-Dgroovy.lsp.jenkins.stubsCacheRoot=${cacheRoot.get().asFile.absolutePath}")
+                },
             )
         }
     }
