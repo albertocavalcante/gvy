@@ -31,6 +31,12 @@
       "automerge": true,
       "automergeType": "pr",
       "platformAutomerge": true
+    },
+    {
+      "description": "Zed SDK and Rust toolchain updates need an explicit editor compatibility review.",
+      "matchFileNames": ["editors/zed/**"],
+      "matchPackageNames": ["zed_extension_api", "rust"],
+      "automerge": false
     }
   ]
 }

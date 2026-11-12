@@ -11,6 +11,8 @@ on:
       - '**/package.json'
       - '**/pnpm-lock.yaml'
       - '**/pnpm-workspace.yaml'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
       - 'MODULE.bazel'
       - 'MODULE.bazel.lock'
       - '**/*.lockfile'

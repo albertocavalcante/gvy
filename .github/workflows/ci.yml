@@ -106,9 +106,11 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      pull-requests: read
     outputs:
       # The release PR is main's code (CI already ran on main) plus version bumps and the changelog.
       run_main_ci: ${{ startsWith(github.head_ref, 'release-please--') && 'false' || steps.filter.outputs.run_main_ci }}
+      run_zed_ci: ${{ steps.filter.outputs.run_zed_ci }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
@@ -124,6 +126,10 @@ jobs:
           # Exclusions like !**/*.md don't work as expected with default 'some' predicate
           # Files in excluded dirs (docs/, .agent/) simply won't match positive patterns
           filters: |
+            run_zed_ci:
+              - 'editors/zed/**'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
             run_main_ci:
               # Code that requires CI to run
               - 'src/**'
@@ -763,6 +769,29 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci-launcher.yml
 
+  zed:
+    name: Zed adapter
+    needs: check-paths
+    if: needs.check-paths.outputs.run_zed_ci == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Provision pinned Rust toolchain and WASM target
+        working-directory: editors/zed
+        run: rustup show active-toolchain
+      - name: Check Rust adapter
+        run: make zed-check
+      - name: Build WASM adapter
+        run: make zed-build
+
   validate:
     name: Validation Check
     runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-latest' }}
@@ -771,7 +800,7 @@ jobs:
       contents: read
     # Coverage is advisory (reports + SonarCloud, which already tolerates failure): it starts only
     # after the build and took 2-5 min on top of it, so the required check no longer waits for it.
-    needs: [lint, build, e2e-test, launcher, check-runner, check-paths]
+    needs: [lint, build, e2e-test, launcher, zed, check-runner, check-paths]
     if: always()
     steps:
       - name: Check build status
@@ -780,15 +809,30 @@ jobs:
           BUILD_RESULT="${{ needs.build.result }}"
           E2E_RESULT="${{ needs.e2e-test.result }}"
           LAUNCHER_RESULT="${{ needs.launcher.result }}"
+          ZED_RESULT="${{ needs.zed.result }}"
           PROVISIONING="${{ needs.check-runner.outputs.provisioning_triggered }}"
           RUN_MAIN_CI="${{ needs.check-paths.outputs.run_main_ci }}"
+          RUN_ZED_CI="${{ needs.check-paths.outputs.run_zed_ci }}"
 
           echo "Lint result: $LINT_RESULT"
           echo "Build result: $BUILD_RESULT"
           echo "E2E result: $E2E_RESULT"
           echo "Native launcher result: $LAUNCHER_RESULT"
+          echo "Zed adapter result: $ZED_RESULT"
           echo "Provisioning triggered: $PROVISIONING"
           echo "Run main CI: $RUN_MAIN_CI"
+
+          # Failed path detection must never turn a required check into an allowed skip.
+          if [[ "${{ needs.check-paths.result }}" != "success" ]]; then
+            echo "::error::Change detection did not succeed"
+            exit 1
+          fi
+          if [[ "$RUN_ZED_CI" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "$ZED_RESULT" != "success" ]]; then
+              echo "::error::Zed adapter validation did not succeed: $ZED_RESULT"
+              exit 1
+            fi
+          fi
 
           # Relevant changes and manual runs must execute native compilation and real-JAR smoke tests.
           if [[ "$RUN_MAIN_CI" == "true" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
