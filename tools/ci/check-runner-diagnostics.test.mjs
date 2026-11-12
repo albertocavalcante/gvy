@@ -408,6 +408,81 @@ if (!(endpoint in data)) process.exit(2); console.log(JSON.stringify(data[endpoi
     assert.equal(args[methodIndex + 1], 'GET');
     assert.match(args.at(-1), /^\/repos\/albertocavalcante\/gvy\/(?:actions|check-runs)\//);
   }
+  const summaryFile = join(dir, 'github-step-summary.md');
+  const publish = () => execute({ GITHUB_STEP_SUMMARY: summaryFile });
+  const captured = () => JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8'));
+  const readSummary = () => readFileSync(join(report, 'summary.md'), 'utf8');
+  const graph = { schemaVersion: 1, ok: true, errors: [] };
+  const summaryLimit = 512 * 1024;
+  const budgetFixture = fixture([job(1, 'check-paths')]);
+  const setNotices = values => {
+    budgetFixture.responses.set(`${base}/check-runs/1001`, check(1, values.length));
+    budgetFixture.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, values);
+    writeFileSync(data, JSON.stringify(Object.fromEntries(budgetFixture.responses)));
+  };
+  const amplified = Array.from({ length: 4 }, () => ({ ...notice, message: '&'.repeat(60 * 1024) }));
+  setNotices(amplified);
+  writeFileSync(summaryFile, '');
+  assert.equal(publish().status, 1, 'escaped notice expansion must fail before GitHub drops an oversized summary');
+  const renderedFailure = captured();
+  assert.equal(renderedFailure.observationComplete, true);
+  assert.equal(renderedFailure.ok, false);
+  assert.ok(renderedFailure.noticeBytes < 256 * 1024);
+  assert.deepEqual(renderedFailure.notices.map(value => value.message), amplified.map(value => value.message));
+  assert.deepEqual(renderedFailure.errors, ['Rendered diagnostic summary exceeds 512 KiB observer limit']);
+  assert.equal(combineReadiness(graph, renderedFailure, context).ok, false);
+  assert.equal(combineReadiness(graph, { ...renderedFailure, ok: true }, context).ok, true);
+  assert.ok(Buffer.byteLength(readSummary()) < summaryLimit);
+  assert.match(readSummary(), /\*\*FAIL\*\*.*rendered summary/i);
+  assert.match(readSummary(), /diagnostics\.json/);
+  assert.equal(readFileSync(summaryFile, 'utf8'), readSummary());
+
+  // The whole summary budget includes warning text and measures UTF-8 bytes, not string length.
+  const largeWarning = { ...annotation, message: '界'.repeat(180000) };
+  setNotices([notice, largeWarning]);
+  writeFileSync(summaryFile, '');
+  assert.equal(publish().status, 1);
+  assert.equal(captured().notices[0].message, notice.message);
+  assert.ok(captured().diagnostics[0].includes(largeWarning.message));
+  assert.deepEqual(captured().errors, ['Rendered diagnostic summary exceeds 512 KiB observer limit']);
+  assert.ok(Buffer.byteLength(readSummary()) < summaryLimit);
+  assert.equal(readFileSync(summaryFile, 'utf8'), readSummary());
+
+  setNotices([notice]);
+  writeFileSync(summaryFile, '');
+  assert.equal(publish().status, 0);
+  const ordinarySummary = readSummary();
+  const prefixBytes = summaryLimit - Buffer.byteLength(ordinarySummary);
+  const exactPrefix = 'é'.repeat(Math.floor(prefixBytes / 2)) + (prefixBytes % 2 ? 'a' : '');
+  writeFileSync(summaryFile, exactPrefix);
+  assert.equal(publish().status, 0);
+  assert.equal(Buffer.byteLength(readFileSync(summaryFile)), summaryLimit);
+  assert.equal(readFileSync(summaryFile, 'utf8'), exactPrefix + ordinarySummary);
+
+  writeFileSync(summaryFile, exactPrefix + 'x');
+  assert.equal(publish().status, 1);
+  assert.deepEqual(captured().errors, ['GitHub step summary exceeds 512 KiB observer limit']);
+  assert.ok(Buffer.byteLength(readFileSync(summaryFile)) <= summaryLimit);
+  assert.equal(readFileSync(summaryFile, 'utf8'), exactPrefix + 'x' + readSummary());
+
+  const fullPrefix = 'é'.repeat(summaryLimit / 2);
+  writeFileSync(summaryFile, fullPrefix);
+  const noSpace = publish();
+  assert.equal(noSpace.status, 1);
+  assert.match(noSpace.stderr, /GitHub step summary exceeds 512 KiB observer limit/);
+  assert.equal(captured().ok, false);
+  assert.equal(readFileSync(summaryFile, 'utf8'), fullPrefix);
+  assert.ok(Buffer.byteLength(readSummary()) < summaryLimit);
+  assert.match(readSummary(), /diagnostics\.json/);
+  const cannotWrite = execute({ GITHUB_STEP_SUMMARY: dir });
+  assert.equal(cannotWrite.status, 1);
+  assert.deepEqual(captured().errors, ['GitHub step summary could not be written']);
+  assert.equal(captured().ok, false);
+  assert.equal(captured().notices[0].message, notice.message);
+  assert.match(cannotWrite.stderr, /GitHub step summary could not be written/);
+  assert.ok(!cannotWrite.stderr.includes(dir));
+  assert.ok(Buffer.byteLength(readSummary()) < summaryLimit);
+  writeFileSync(data, JSON.stringify(Object.fromEntries(f.responses)));
   const failed = execute({ FAKE_FAIL: '1' });
   assert.equal(failed.status, 1);
   assert.ok(!failed.stdout.includes('secret-token-value') && !failed.stderr.includes('secret-token-value'));

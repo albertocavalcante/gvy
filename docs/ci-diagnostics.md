@@ -229,6 +229,19 @@ retained notices remain explicitly partial evidence, with `observationComplete: 
 The report records the retained byte count and limit, including on observation errors. This budget applies to the
 compact notice-array payload, not the entire report or formatted summary.
 
+The whole rendered summary has a separate 512 KiB UTF-8 limit, below GitHub's
+[1 MiB per-step limit](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-commands#step-isolation-and-limits).
+This includes escaping expansion and all warning, error, job and debt text. Overflow sets `ok: false`, adds a stable
+error and replaces the rendered output with a small failure report pointing to the complete `diagnostics.json` artifact.
+Captured notice JSON remains intact; `observationComplete` continues to describe API capture, while failed rendering
+blocks readiness.
+
+Before appending to `GITHUB_STEP_SUMMARY`, the observer checks the existing prefix and new text against the same 512 KiB
+limit. If the full report cannot fit, it fails and attempts the small failure report. If that also cannot fit, the
+prefix is preserved and no text is appended; stderr, the JSON verdict and artifact `summary.md` still report the
+failure. A summary-file write error also fails the verdict. Summary publication checks run before the final JSON verdict
+is written, so these failures cannot become successful readiness evidence.
+
 Notice title/message/location and identity are published in the existing diagnostic JSON artifact and escaped summary.
 Notice `raw_details` and unknown API response fields are omitted. These are text fields from the repository's public
 Checks API, not a private-log projection; never place credentials in annotations. Warning/failure diagnostic keys and

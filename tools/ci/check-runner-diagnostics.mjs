@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, closeSync, fstatSync, mkdirSync, openSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { evaluate } from './bazel-diagnostics.mjs';
@@ -13,6 +13,7 @@ const MAX_REQUESTS = 500;
 const MAX_JOBS = 5000;
 const MAX_ANNOTATIONS = 10000;
 const MAX_NOTICE_BYTES = 256 * 1024;
+const MAX_SUMMARY_BYTES = 512 * 1024;
 const TIME_BUDGET_MS = 120000;
 const isObject = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const positiveId = value => Number.isSafeInteger(value) && value > 0;
@@ -197,7 +198,7 @@ async function main(args) {
   } catch (error) {
     result = { schemaVersion: 1, ok: false, observationComplete: false, runWideComplete: false, attemptStartedAt: null, errors: [error.message], annotations: [], notices: [], noticeBytes: 2, noticeLimitBytes: MAX_NOTICE_BYTES, unexpected: [], accepted: [], exceptions: [], jobs: [], skippedJobs: [], unfinishedJobs: [], excludedJobs: [] };
   }
-  const summary = [
+  let summary = [
     '## Actions and runner diagnostic snapshot', '',
     `**${result.ok ? 'PASS' : 'FAIL'}**: ${result.unexpected.length} new warning/failure annotations; ${result.accepted.length} tracked warning/failure annotations; ${result.notices.length} retained notices (informational).`, '',
     result.boundary ?? 'Observation failed before a completed-job boundary could be established.',
@@ -214,9 +215,35 @@ async function main(args) {
     ...result.exceptions.map(entry => `- ${escape(entry.owner)}: ${entry.issue}, expires ${entry.expires}. ${escape(entry.reason)} Next: ${escape(entry.nextAction)} Acceptance: ${escape(entry.acceptance)}`), '',
     'Only completed jobs in this attempt were inspected. Producer/readiness checks separately establish required validation coverage. GitHub may cap emitted step annotations; this observer cannot detect messages that were never published as annotations.', '',
   ].join('\n');
+  const summaryErrors = [];
+  const failSummary = reason => {
+    result.ok = false;
+    result.errors.push(reason);
+    summaryErrors.push(reason);
+    return [
+      '## Actions and runner diagnostic snapshot', '',
+      '**FAIL**: rendered summary unavailable; captured evidence retained.', '',
+      reason, '',
+      `${result.unexpected.length} new warning/failure annotations; ${result.accepted.length} tracked warning/failure annotations; ${result.notices.length} retained notices (informational).`, '',
+      `Observation complete: ${result.observationComplete}. Run-wide annotation completeness: false.`, '',
+      'See `diagnostics.json` in the runner-diagnostics artifact for complete retained notices, annotations and errors. The JSON evidence has not been truncated.', '',
+    ].join('\n');
+  };
+  if (Buffer.byteLength(summary) > MAX_SUMMARY_BYTES) summary = failSummary('Rendered diagnostic summary exceeds 512 KiB observer limit');
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    try {
+      const descriptor = openSync(process.env.GITHUB_STEP_SUMMARY, 'a');
+      try {
+        const prefixBytes = fstatSync(descriptor).size;
+        if (prefixBytes + Buffer.byteLength(summary) > MAX_SUMMARY_BYTES) summary = failSummary('GitHub step summary exceeds 512 KiB observer limit');
+        // Preserve a prefix that cannot fit even the small failure report; stderr and JSON still fail readiness.
+        if (prefixBytes + Buffer.byteLength(summary) <= MAX_SUMMARY_BYTES) appendFileSync(descriptor, summary);
+      } finally { closeSync(descriptor); }
+    } catch { summary = failSummary('GitHub step summary could not be written'); }
+  }
   writeFileSync(join(report, 'diagnostics.json'), `${JSON.stringify(result, null, 2)}\n`);
   writeFileSync(join(report, 'summary.md'), summary);
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+  for (const error of summaryErrors) console.error(error);
   console.log(`Runner diagnostics ${result.ok ? 'passed' : 'failed'}: ${result.unexpected.length} new warning/failure annotations; ${result.notices.length} retained notices (informational); snapshot complete=${result.observationComplete}`);
   process.exitCode = result.ok ? 0 : 1;
 }
