@@ -28,6 +28,7 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
     // kotlin-logging needs SLF4J impl at test runtime
     testImplementation(libs.logback.classic)
+    testImplementation("ch.qos.logback:logback-core:${libs.versions.logback.get()}")
     testImplementation(libs.slf4j.api)
 }
 

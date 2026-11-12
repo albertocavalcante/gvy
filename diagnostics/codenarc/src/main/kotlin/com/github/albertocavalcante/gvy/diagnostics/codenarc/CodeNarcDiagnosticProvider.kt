@@ -40,6 +40,7 @@ class CodeNarcDiagnosticProvider(
 
     companion object {
         private val logger = KotlinLogging.logger {}
+        private const val LOG_FILE_NAME_LIMIT = 120
         private const val CODENARC_HIGH_PRIORITY = 1
         private const val CODENARC_MEDIUM_PRIORITY = 2
         private const val CODENARC_LOW_PRIORITY = 3
@@ -94,7 +95,9 @@ class CodeNarcDiagnosticProvider(
         val diagnostics = convertResultsToDiagnosticsFixed(results, sourceCode, uri) +
             ignoredRulesetNotice(rulesetConfig.ignoredWorkspaceRulesets, uri)
 
-        logger.info { "CodeNarc analysis completed for $fileName: ${diagnostics.size} diagnostics" }
+        logger.debug {
+            "CodeNarc analysis completed for ${fileName.take(LOG_FILE_NAME_LIMIT)}: ${diagnostics.size} diagnostics"
+        }
         return diagnostics
     }
 

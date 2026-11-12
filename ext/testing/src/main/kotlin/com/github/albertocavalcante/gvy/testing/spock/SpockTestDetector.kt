@@ -21,6 +21,8 @@ import org.codehaus.groovy.ast.ModuleNode
 import java.lang.ref.WeakReference
 import java.util.concurrent.atomic.AtomicReference
 
+private const val LOG_CLASS_NAME_LIMIT = 120
+
 /**
  * Spock test framework detector.
  *
@@ -71,9 +73,10 @@ class SpockTestDetector internal constructor(private val classify: (ModuleNode) 
         } else {
             SpockDetector.isSpockSpec(classNode, module, specClassNode)
         }
-        logger.info {
+        logger.debug {
             val specStatus = if (specClassNode != null) "loaded" else "null"
-            "SpockTestDetector.appliesTo(${classNode.name}) = $result (specClassNode=$specStatus)"
+            val className = classNode.name.take(LOG_CLASS_NAME_LIMIT)
+            "SpockTestDetector.appliesTo($className) = $result (specClassNode=$specStatus)"
         }
         return result
     }
