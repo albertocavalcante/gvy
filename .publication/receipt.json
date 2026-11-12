@@ -1,12 +1,12 @@
 {
   "base": "b0e39c60e2210d8e5e65818025f2e42f004d06b3",
   "red": {
-    "tree": "427cb40b3ace439a4aaedcff5d4f952f217dc3e8",
+    "tree": "e115011de91fc2763aaea19fc684ea43b95af6e5",
     "patch": {
-      "sha256": "db9bbaaf5826c76ac971d296ee5b1947fac0407f1bf7cfa512e16d7616fd7126",
-      "compressedSha256": "3fb5dd58532fc267f8285f4eeb10284c1cbe3b4b9cf7625065ff916f9498c92a",
-      "bytes": 18959,
-      "compressedBytes": 3546
+      "sha256": "61a43b31b9c557a8cdca8facc38db2646c1ada1054f9454d7c46e3b590aa2e40",
+      "compressedSha256": "6f58bc8a687012e2bb9a3cb7c4b32d6974e1478d581b25714b304a636c888680",
+      "bytes": 20763,
+      "compressedBytes": 3821
     },
     "paths": [
       "tests/build.gradle.kts",
@@ -16,7 +16,7 @@
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 29
+        "count": 31
       },
       {
         "name": "PackagedSessionFactoryTest",
@@ -92,16 +92,26 @@
         "class": "PackagedSessionFactoryTest",
         "name": "private cleanup retains interruption flag even when fatal error takes priority()",
         "type": "org.opentest4j.AssertionFailedError"
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "dirty expected source does not retain arbitrary hash content()",
+        "type": "org.opentest4j.AssertionFailedError"
+      },
+      {
+        "class": "PackagedLaunchTest",
+        "name": "dirty embedded source does not retain arbitrary hash content()",
+        "type": "org.opentest4j.AssertionFailedError"
       }
     ]
   },
   "green": {
-    "tree": "e02afc53a251eced8d1f94d73b5f124205ead9a0",
+    "tree": "075c8430a056509088e51ef780ede9917a65c12f",
     "patch": {
-      "sha256": "1cd23472114888723f95396844080903fb541567ec1c9a2c8fdcdd0704597ba9",
-      "compressedSha256": "e2b9c5bf42f54672790203080eba695acc1847588a2960f9f289544021b4536e",
-      "bytes": 30792,
-      "compressedBytes": 6049
+      "sha256": "031351bf82517bc2d0916ea4c74a2fa94c30727a9560f4dccf121ff6840cc5f7",
+      "compressedSha256": "168261ec4061bebfb8f56001d9b9acd5ee1b8fc16317ad5db409559a3b2e1a59",
+      "bytes": 25375,
+      "compressedBytes": 5477
     },
     "paths": [
       "tests/build.gradle.kts",
@@ -114,7 +124,7 @@
     "classes": [
       {
         "name": "PackagedLaunchTest",
-        "count": 30
+        "count": 32
       },
       {
         "name": "PackagedSessionFactoryTest",
