@@ -63,7 +63,7 @@ class DiagnoseResultTest {
         val error = Diagnostic(Range(Position(0, 0), Position(0, 1)), "error").apply {
             severity = DiagnosticSeverity.Error
         }
-        val compilation = compilation(CompilationResult(true, null, listOf(warning, error), source, true))
+        val compilation = compilation(CompilationResult(true, null, listOf(warning, warning, warning, error), source, true))
         val config = ServerConfiguration().let {
             it.copy(
                 maxNumberOfProblems = 1,
@@ -76,7 +76,7 @@ class DiagnoseResultTest {
             CoroutineScope(currentCoroutineContext()), compilation, GroovyTextDocumentServiceOptions(serverConfiguration = config),
         )
 
-        assertEquals(listOf(warning, error), service.diagnoseResult(uri, source).diagnostics)
+        assertEquals(listOf(warning, warning, warning, error), service.diagnoseResult(uri, source).diagnostics)
         assertEquals(listOf(warning), service.diagnose(uri, source))
     }
 

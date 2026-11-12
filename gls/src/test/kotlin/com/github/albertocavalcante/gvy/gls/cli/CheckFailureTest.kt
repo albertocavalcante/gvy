@@ -89,6 +89,23 @@ class CheckFailureTest {
     }
 
     @Test
+    fun `later errors make the command fail after many warnings`(@TempDir dir: File) {
+        val file = File(dir, "many.groovy").apply { writeText("") }
+        val range = org.eclipse.lsp4j.Range(org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.Position(0, 1))
+        val warning = org.eclipse.lsp4j.Diagnostic(range, "warning").apply {
+            severity = org.eclipse.lsp4j.DiagnosticSeverity.Warning
+        }
+        val error = org.eclipse.lsp4j.Diagnostic(range, "late error").apply {
+            severity = org.eclipse.lsp4j.DiagnosticSeverity.Error
+        }
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ ->
+            DiagnosticsCollectionResult(List(101) { warning } + error, emptyList(), emptyList())
+        }))
+        val result = assertFailsWith<ProgramResult> { command.parse(listOf("check", file.path)) }
+        assertEquals(1, result.statusCode)
+    }
+
+    @Test
     fun `workspace dependency failure makes text check incomplete`(@TempDir dir: File) {
         val file = File(dir, "good.groovy").apply { writeText("class Good {}") }
         val command = GlsCommand(FormatCommand(), CheckCommand(
