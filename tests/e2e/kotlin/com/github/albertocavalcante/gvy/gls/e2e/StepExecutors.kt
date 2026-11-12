@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -382,9 +385,8 @@ class SendRequestStepExecutor : StepExecutor<ScenarioStep.SendRequest> {
             result
         }
 
-        logger.info { "Raw response for ${step.method}: $response (type=${response?.javaClass?.simpleName})" }
-        val responseNode = wrapJavaObject(response) // Convert whatever Gson returned to JsonElement
-        val normalized = context.normalizeResponse(step.method, responseNode)
+        logger.info { "Decoded SDK response for ${step.method}: $response (type=${response?.javaClass?.simpleName})" }
+        val normalized = SdkResponseProjection.project(response)
         context.lastResult = normalized
         logger.info { "Response for ${step.method}: $normalized" }
 
