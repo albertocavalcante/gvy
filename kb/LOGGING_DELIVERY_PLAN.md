@@ -683,7 +683,7 @@ coordinator verified their squash commits in `origin/main`. Private raw validati
 | ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | L00a  | [#1743](https://github.com/albertocavalcante/gvy/pull/1743), `test/logging-baseline`, Terra client author        | Four frozen-fixture tests pass on hosted Node 24.22.2; root lintFix and final workflow/Gradle/E2E/extension checks pass. Full application/editor baseline and cost measurements remain open.                                                                                                                       |
 | L01a  | [#1749](https://github.com/albertocavalcante/gvy/pull/1749), `fix/parser-debug-observation`, Terra server author | Actual visitor/tracker logging-only failures have independent failing controls and nine green focused tests; native lint, hooks and final Gradle/Bazel/E2E/extension checks pass. The separate semantic hierarchy investigation is tracked in #1831.                                                               |
-| L00b  | [#1794](https://github.com/albertocavalcante/gvy/pull/1794), server measurement driver                           | The driver and its stream/protocol controls are shipped. The immutable baseline reported an object on shutdown and no version-matched terminal diagnostics, so it is a protocol-deviation observation, not a successful full baseline or latency comparison.                                                       |
+| L00b  | [#1794](https://github.com/albertocavalcante/gvy/pull/1794), server measurement driver                           | The driver and its stream/protocol controls are shipped. The immutable baseline observed no version-matched first diagnostics publication; the terminal method was unavailable, and shutdown returned an object. This is a protocol-deviation observation, not a full baseline or latency comparison.              |
 | L01b  | [#1804](https://github.com/albertocavalcante/gvy/pull/1804), incomplete-classpath fallback controls              | Two generated-JAR cases reach the existing conversion fallback at INFO, DEBUG and TRACE; the Spock control withholds a table edit with a missing superclass and its healthy control offers one. These tests do not prove every post-compile hierarchy path safe.                                                   |
 | L08a  | [#1753](https://github.com/albertocavalcante/gvy/pull/1753), `fix/vscode-bounded-lines`, Terra client author     | Server streams retain bounded UTF-8 records and preserve known severity on truncation; 684 unit tests, root lintFix and final Bazel/platform extension checks pass. Main Gradle/E2E were intentionally path-filtered. Test-process loss handling is separate #1764; dedicated packaged logging proof remains open. |
 
@@ -701,9 +701,12 @@ coordinator verified their squash commits in `origin/main`. Private raw validati
   canonical validation still apply. The clean finished Air clone used for both root lintFix checks was also removed.
 - L00b: reviewed head `9d5e5593cadb6805c60db40e4c21f2a6f84b3d18`; squash `c92e43281d8e5808ca74f944ddaa8576fd2e9344`. The
   original JAR's shutdown deviation remains tracked in #1793; terminal diagnostics completion remains tracked in #1754.
-  The original receipt cannot be made conformant retroactively.
+  The original receipt cannot be made conformant retroactively. The Mini worktree and local and remote branches were
+  removed after landing.
 - L01b: reviewed head `3b56b99c9a0ce720677a5f16cc1134c5f7c7009c`; squash `826f36b8362571d6a803b06f83554966c8cbb43e`.
-  This is tests-only and does not add semantic recovery.
+  This is tests-only and does not add semantic recovery. The Mini worktree and local and remote branches were removed.
+  The Air clone remains because the test-backend parity clone borrows its objects; remove it only after the borrower is
+  finished or repacked and object independence is verified.
 
 Final-head CI and diagnostic details are in each PR. The JVM/Bazel reviews retain the existing exact exceptions in
 #1599/#1601/#1607; other inherited tool/runtime diagnostics have explicit ownership in
@@ -752,7 +755,7 @@ Status checked on 2026-11-12 UTC; recheck the actual heads and checks before act
   check remain pending. Packaged navigation does not itself exercise the changed test-run route. #1767 remains open.
 - **L05a / #1792:** draft head `67b3d0e1bff475ac90e9a77a6ab82fc1b4ff6d49` supplies pure rendering helpers and the shared
   fixture, not the default Logback boundary. Prior CI observed metaspace retirement. Rebase and validate against the
-  merged #1646 resource changes; its current draft is not yet merged and its nightly-pair check failed. L05b remains
+  merged #1646 resource changes; #1646 remains unmerged and its current nightly-pair check failed. L05b remains
   separate, and its prepared tests have not demonstrated a failing baseline.
 - **L09a:** a reviewed client diagnostics sink and lifecycle slice is prepared but uncommitted. Its Node controls do not
   replace canonical checks, the #1792 fixture prerequisite, publication, or review of the published head. L09 also
