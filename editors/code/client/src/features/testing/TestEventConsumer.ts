@@ -10,7 +10,7 @@ export interface TestEvent {
   event: TestEventType;
   id: string;
   name?: string;
-  parent?: string;
+  parent?: string | null;
   result?: "SUCCESS" | "FAILURE" | "SKIPPED";
   duration?: number;
   message?: string;
@@ -25,16 +25,70 @@ export interface TestEvent {
 function isTestEvent(value: unknown): value is TestEvent {
   if (typeof value !== "object" || value === null || Array.isArray(value))
     return false;
-  if (!("event" in value) || !("id" in value) || typeof value.id !== "string")
+  const event = value as Record<string, unknown>;
+  if (typeof event.id !== "string") return false;
+  // Reject invalid types for any recognized field, including optional fields.
+  for (const key of ["name", "message", "stackTrace"]) {
+    if (event[key] !== undefined && typeof event[key] !== "string")
+      return false;
+  }
+  if (
+    event.parent !== undefined &&
+    event.parent !== null &&
+    typeof event.parent !== "string"
+  )
     return false;
-  if (value.event === "suiteFinished") return true;
-  return (
-    (value.event === "suiteStarted" ||
-      value.event === "testStarted" ||
-      value.event === "testFinished") &&
-    "name" in value &&
-    typeof value.name === "string"
-  );
+  if (
+    event.duration !== undefined &&
+    (typeof event.duration !== "number" || !Number.isFinite(event.duration))
+  )
+    return false;
+  for (const key of [
+    "testCount",
+    "successfulCount",
+    "failedCount",
+    "skippedCount",
+  ]) {
+    const count = event[key];
+    if (
+      count !== undefined &&
+      (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0)
+    )
+      return false;
+  }
+  const validResult =
+    event.result === "SUCCESS" ||
+    event.result === "FAILURE" ||
+    event.result === "SKIPPED";
+  if (event.result !== undefined && !validResult) return false;
+  switch (event.event) {
+    case "suiteStarted":
+      return typeof event.name === "string";
+    case "testStarted":
+      return (
+        typeof event.name === "string" &&
+        (typeof event.parent === "string" || event.parent === null)
+      );
+    case "testFinished":
+      return (
+        typeof event.name === "string" &&
+        validResult &&
+        typeof event.duration === "number"
+      );
+    case "suiteFinished":
+      return (
+        validResult &&
+        typeof event.duration === "number" &&
+        [
+          event.testCount,
+          event.successfulCount,
+          event.failedCount,
+          event.skippedCount,
+        ].every((count) => typeof count === "number")
+      );
+    default:
+      return false;
+  }
 }
 
 /**
@@ -115,7 +169,7 @@ export class TestEventConsumer {
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) {
       // Not JSON, could be regular Gradle output
-      this.logger.appendLine(trimmed);
+      this.logger.appendLine(line);
       return false;
     }
 
@@ -129,7 +183,7 @@ export class TestEventConsumer {
       return false;
     } catch {
       // Not valid JSON, log as regular output
-      this.logger.appendLine(trimmed);
+      this.logger.appendLine(line);
       return false;
     }
   }
@@ -139,7 +193,7 @@ export class TestEventConsumer {
 
     // Fallback: try to find by name if exact ID match fails
     if (!item && event.name) {
-      item = this.findItemByName(event.name, event.parent);
+      item = this.findItemByName(event.name, event.parent ?? undefined);
     }
 
     // For Spock @Unroll: dynamically create subtest if not found
