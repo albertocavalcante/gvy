@@ -1,0 +1,6 @@
+# Buck2 currently builds individual Kotlin libraries; the server has no Buck2 target.
+kotlin_library(
+    name = "source",
+    srcs = glob(["src/main/kotlin/**/*.kt"]),
+    visibility = ["PUBLIC"],
+)

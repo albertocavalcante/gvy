@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.utils
 
 import com.github.albertocavalcante.gvy.semantics.sourceSimpleName
+import com.github.albertocavalcante.gvy.source.Utf16LineIndex
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.FieldNode
@@ -25,24 +26,17 @@ fun ASTNode.declaredName(): String? = when (this) {
 
 /** Line-start table for one text, built once and reused for many offset/position lookups. */
 class TextIndex(val text: String) {
-    private val lineStarts = calculateLineStarts(includeCarriageReturns = true)
-    private val groovyLineStarts = calculateLineStarts(includeCarriageReturns = false)
-    private val lineLengths = IntArray(lineStarts.size) { line ->
-        val start = lineStarts[line]
-        val beforeBreak = lineStarts.getOrNull(line + 1)?.minus(1) ?: text.length
-        val end = if (beforeBreak > start && text[beforeBreak - 1] == '\r') beforeBreak - 1 else beforeBreak
-        end - start
-    }
+    private val protocolIndex = Utf16LineIndex(text)
+    private val groovyLineStarts = calculateGroovyLineStarts()
     private val groovyColumns = ConcurrentHashMap<Int, IntArray>()
 
     /** Offset of [p], clamped to the text. */
-    fun offsetOf(p: Position): Int =
-        if (p.line >= lineStarts.size) text.length else minOf(lineStarts[p.line] + p.character, text.length)
+    fun offsetOf(p: Position): Int = protocolIndex.offsetOf(p.line, p.character)
 
     /** Position of [offset], found by binary search over the protocol line starts. */
     fun positionOf(offset: Int): Position {
-        val line = lineAt(offset, lineStarts)
-        return Position(line, offset - lineStarts[line])
+        val line = protocolIndex.lineAt(offset)
+        return Position(line, offset - protocolIndex.lineStart(line))
     }
 
     /** Groovy counts code points and advances lines on LF; LSP uses UTF-16 and also recognizes bare CR. */
@@ -75,10 +69,10 @@ class TextIndex(val text: String) {
     }
 
     internal fun isValidPosition(position: Position): Boolean =
-        lineLengths.getOrNull(position.line)?.let { position.character in 0..it } ?: false
+        protocolIndex.isValidPosition(position.line, position.character)
 
     internal fun lineRange(line: Int): Range? =
-        lineLengths.getOrNull(line)?.let { Range(Position(line, 0), Position(line, it)) }
+        protocolIndex.lineLength(line)?.let { Range(Position(line, 0), Position(line, it)) }
 
     /** Absolute UTF-16 offset in Groovy's LF-only coordinate system, including line-break interiors. */
     internal fun groovyOffset(position: Position): Int? {
@@ -104,17 +98,10 @@ class TextIndex(val text: String) {
         }
     }
 
-    private fun calculateLineStarts(includeCarriageReturns: Boolean): IntArray {
+    private fun calculateGroovyLineStarts(): IntArray {
         val starts = arrayListOf(0)
-        var at = 0
-        while (at < text.length) {
-            val char = text[at]
-            val crlf = char == '\r' && at + 1 < text.length && text[at + 1] == '\n'
-            if (char == '\n' || (includeCarriageReturns && char == '\r')) {
-                if (includeCarriageReturns && crlf) at++
-                starts += at + 1
-            }
-            at++
+        for (at in text.indices) {
+            if (text[at] == '\n') starts += at + 1
         }
         return starts.toIntArray()
     }

@@ -1,6 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.utils
 
 import org.eclipse.lsp4j.Position
+import org.eclipse.lsp4j.Range
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
@@ -41,5 +42,14 @@ class TextIndexTest {
         assertNull(text.utf16Position(Position(-1, 0)))
         assertNull(text.codePointPosition(Position(2, 0)))
         assertNull(text.utf16Position(Position(0, -1)))
+    }
+
+    @Test
+    fun `identifier lookup uses protocol coordinates across mixed line endings`() {
+        val text = TextIndex("😀\rignored\r\nvalue")
+        assertEquals(
+            Range(Position(2, 0), Position(2, 5)),
+            firstNameOccurrence(text, Range(Position(0, 0), Position(2, 5)), "value"),
+        )
     }
 }

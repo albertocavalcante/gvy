@@ -114,6 +114,7 @@ dependencies {
 
     // Local Modules
     implementation(project(":common"))
+    implementation(project(":source"))
     implementation(project(":fmt"))
     implementation(project(":parser:native"))
     implementation(project(":parser:core"))
