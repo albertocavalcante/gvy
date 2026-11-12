@@ -1,0 +1,42 @@
+{
+  "runId": "43243639625",
+  "runAttempt": 1,
+  "supportHead": "431f20f15ba213b8349ccf4da0facbbd6df7926d",
+  "sourceBase": "f5acb2645d81bf146ef575f249164c6f0053d5e1",
+  "sourceTree": "723dc26257397a36d8a5148f98874ee838d28b31",
+  "command": {
+    "phase": "red/tests",
+    "exitCode": 1,
+    "captureExitCode": 0,
+    "expectedTestFailures": 4
+  },
+  "source": {
+    "file": "red/tests.log",
+    "bytes": 782340,
+    "sha256": "a9faf2df0fcafd62cca454670ad142c8cde864c0eb8411209e0394d353b0d0f8"
+  },
+  "fixture": {
+    "file": "gradle-kover-lazy-visibility.txt",
+    "sha256": "aa8b95fe7de147081c58cfc56b1a467734f9898d965e07af4cc68c599db4f9a3",
+    "selectedLines": [
+      [
+        2400,
+        2400
+      ],
+      [
+        2406,
+        2409
+      ],
+      [
+        2422,
+        2429
+      ]
+    ],
+    "events": 2
+  },
+  "sources": [
+    "https://github.com/Kotlin/kotlinx-kover/blob/39fcc803490dbeecdcbc8d5535a165b1d472aaf9/kover-gradle-plugin/src/main/kotlin/kotlinx/kover/gradle/plugin/appliers/artifacts/AbstractVariantArtifacts.kt#L48-L68",
+    "https://github.com/Kotlin/kotlinx-kover/blob/39fcc803490dbeecdcbc8d5535a165b1d472aaf9/kover-gradle-plugin/src/main/kotlin/kotlinx/kover/gradle/plugin/commons/Configurations.kt#L138-L141",
+    "https://github.com/gradle/gradle/blob/8de7bcf76e785507ad92f0741ab9235a430c95e6/subprojects/core-api/src/main/java/org/gradle/api/NamedDomainObjectContainer.java#L104-L118"
+  ]
+}

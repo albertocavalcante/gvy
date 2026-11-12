@@ -1,0 +1,13 @@
+> Configure project :refactor:openrewrite:rewrite-codenarc
+All projects evaluated.
+Task path ':tests:harnessTest' matched project ':tests'
+Task name matched 'harnessTest'
+Selected primary task 'harnessTest' from project :tests
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.appliers.artifacts.AbstractVariantArtifacts$2.execute(AbstractVariantArtifacts.kt:52)
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)
+	at kotlinx.kover.gradle.plugin.commons.ConfigurationsKt.asConsumer(Configurations.kt:141)
