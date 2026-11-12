@@ -142,14 +142,15 @@
       "probeSourceDigests": {
         "contract.rs": "620cef77bac413791ef4d1a9a4a038352e61ba91e31df1f1ba2733286d842f2e",
         "primary/src/main.rs": "be67ddf8ae5935d96e70dad87b53641455de0228858567e32e82c5438a28f3ef",
-        "run.mjs": "2aca961601c16841655057475d92bc28e6960defbee358f0d6be15ae64a18ea8",
+        "run.mjs": "6ed7fbb702639c2482c40a2d178fea0f690e7fdfee72d3c312c592b648efb652",
         "command.mjs": "027c470cf9c6dfafd04529c36876a8df4298db98093e8dbd9539867a66a75243",
         "diagnostics.mjs": "25493d4ddf89db429548508187b0ed81f3f08a8faaa83adb15d2a3a527b9fafd",
         "source-files.mjs": "70a95a4e7368d425cb93b9d2c0f48735ed8b0ec4ee5468b9f4dcece812a78c50",
         "attempt.mjs": "3bf18e3a602db182c85d3502ee57cfe9152c057beb98cea729a5b58bddc666dd",
-        "feasibility-policy.mjs": "f186a8854a9a555eed60bbad79f4517fd1817fb5a4851e89b1e4a51f4530bb42",
+        "feasibility-policy.mjs": "4f7ae19413c15276d58baacf771b90fb46a7f1b204b754eb3a56365d56afa389",
         "feasibility.mjs": "47fbd98a78d94f00cc67d31ea0d1824785b86561f6981e4348dc7a6fe05388a5",
-        "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413"
+        "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
+        "primary-result.mjs": "da148a375e67a6521961bd5921401a6b6038bd8f8f5c4c97c5386f081429c476"
       }
     },
     "secondary": {
@@ -277,14 +278,36 @@
       "probeSourceDigests": {
         "contract.rs": "620cef77bac413791ef4d1a9a4a038352e61ba91e31df1f1ba2733286d842f2e",
         "secondary/src/main.rs": "c828b29b7dbc2b3a20726f3377c8caef65342cbe751eb805e6c0ee29a9baa2fd",
-        "run.mjs": "2aca961601c16841655057475d92bc28e6960defbee358f0d6be15ae64a18ea8",
+        "run.mjs": "6ed7fbb702639c2482c40a2d178fea0f690e7fdfee72d3c312c592b648efb652",
         "command.mjs": "027c470cf9c6dfafd04529c36876a8df4298db98093e8dbd9539867a66a75243",
         "diagnostics.mjs": "25493d4ddf89db429548508187b0ed81f3f08a8faaa83adb15d2a3a527b9fafd",
         "source-files.mjs": "70a95a4e7368d425cb93b9d2c0f48735ed8b0ec4ee5468b9f4dcece812a78c50",
         "attempt.mjs": "3bf18e3a602db182c85d3502ee57cfe9152c057beb98cea729a5b58bddc666dd",
-        "feasibility-policy.mjs": "f186a8854a9a555eed60bbad79f4517fd1817fb5a4851e89b1e4a51f4530bb42",
+        "feasibility-policy.mjs": "4f7ae19413c15276d58baacf771b90fb46a7f1b204b754eb3a56365d56afa389",
         "feasibility.mjs": "47fbd98a78d94f00cc67d31ea0d1824785b86561f6981e4348dc7a6fe05388a5",
-        "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413"
+        "source-lock.json": "5a363abacc55eef32695c5ca646b92b640497cdeeae2772abda5088973cfb413",
+        "primary-result.mjs": "da148a375e67a6521961bd5921401a6b6038bd8f8f5c4c97c5386f081429c476"
+      }
+    }
+  },
+  "nativeExpectations": {
+    "fixtures": {
+      "valid": "int value = 1\nString label = '🙂'\ndef MAX_VALUE = 2\ndef Max_Value = MAX_VALUE\n",
+      "malformed": "def broken = (\n"
+    },
+    "primary": {
+      "grammarAbi": 15,
+      "limitations": {
+        "embeddedLanguages": "unsupported-rejected",
+        "incrementalHighlighting": "not-tested",
+        "performance": "not-measured",
+        "prebuiltTreeHighlighting": "unavailable-in-official-api",
+        "unrecognizedLocalDefinitionCaptures": [
+          "local.definition.parameter",
+          "local.definition.var",
+          "local.definition.field"
+        ],
+        "upstreamLocalBindingParity": "not-established"
       }
     }
   }

@@ -11,9 +11,12 @@ import { validateFeasibility } from './feasibility-policy.mjs';
 const digest = 'a'.repeat(64);
 const controls = ['valid-parse', 'exact-variable-identifier-boundary', 'malformed-error-location', 'complete-highlight-event-stream', 'regex-positive-negative', 'unknown-predicate-rejected', 'embedded-injection-explicitly-unsupported'];
 const identity = engine => ({ grammar: { revision: engine, files: [{ path: 'src/parser.c', sha256: digest }] }, runtime: [{ version: engine, revision: engine }], queryDigests: { highlights: { rawSha256: digest, effectiveSha256: digest, policy: 'upstream-unchanged' } }, cargoLockSha256: digest, manifestSha256: digest, fixtureDigests: { valid: digest, malformed: digest }, probeSourceDigests: { 'contract.rs': digest } });
-const policy = { schemaVersion: 1, policyId: 'b01-stock-secondary-rejected-v1', identities: { primary: identity('primary'), secondary: identity('secondary') } };
+const fixtures = { valid: "int value = 1\nString label = '🙂'\ndef MAX_VALUE = 2\ndef Max_Value = MAX_VALUE\n", malformed: 'def broken = (\n' };
+const limitations = { embeddedLanguages: 'unsupported-rejected', incrementalHighlighting: 'not-tested', performance: 'not-measured', prebuiltTreeHighlighting: 'unavailable-in-official-api', unrecognizedLocalDefinitionCaptures: ['local.definition.parameter', 'local.definition.var', 'local.definition.field'], upstreamLocalBindingParity: 'not-established' };
+const policy = { schemaVersion: 1, policyId: 'b01-stock-secondary-rejected-v1', identities: { primary: identity('primary'), secondary: identity('secondary') }, nativeExpectations: { fixtures, primary: { grammarAbi: 15, limitations } } };
+for (const engine of ['primary', 'secondary']) policy.identities[engine].fixtureDigests = Object.fromEntries(Object.entries(fixtures).map(([name, source]) => [name, sha256(Buffer.from(source))]));
 const inputs = () => ({
-  primary: { schemaVersion: 1, scope: 'native-feasibility-only', engine: 'primary', ...structuredClone(policy.identities.primary), binarySha256: digest, native: { schemaVersion: 1, scope: 'native-feasibility-only', engine: 'primary', runtimeVersion: 'primary', queries: 'upstream-unchanged', controlCount: 7, controls } },
+  primary: { schemaVersion: 1, scope: 'native-feasibility-only', engine: 'primary', ...structuredClone(policy.identities.primary), binarySha256: digest, native: { schemaVersion: 1, scope: 'native-feasibility-only', engine: 'primary', runtimeVersion: 'primary', queries: 'upstream-unchanged', controlCount: 7, controls, grammarAbi: 15, limitations: structuredClone(limitations), validSpans: [{startByte:0,endByte:3,category:'type.builtin'},{startByte:3,endByte:14,category:null},{startByte:14,endByte:20,category:'type'},{startByte:20,endByte:80,category:null}], malformedIssues: [{kind:'ERROR',startByte:11,endByte:14}] } },
   secondary: { schemaVersion: 1, scope: 'native-feasibility-attempt', engine: 'secondary', ...structuredClone(policy.identities.secondary), binarySha256: digest, outcome: 'rejected-candidate', failureCode: 'NATIVE_PROBE_IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE', fixtureBytesVerified: true, completedControls: ['unknown-predicate-rejected', 'valid-parse'], failedControl: 'exact-variable-identifier-boundary', notRunAfterRejection: ['malformed-error-location', 'complete-highlight-event-stream', 'regex-positive-negative', 'embedded-injection-explicitly-unsupported'] },
   observed: { secondaryExitCode: 1, secondaryBinarySha256: digest },
 });
@@ -57,11 +60,60 @@ test('unexpected success, other errors, partial primary and missing actual exit 
   }
 });
 
+test('primary result integrity rejects missing, partial, invalid ranges and false compatibility claims', () => {
+  for (const mutate of [
+    n => { delete n.validSpans; }, n => { n.validSpans = []; }, n => { n.validSpans.pop(); },
+    n => { n.validSpans[0].category = 'type'; }, n => { n.validSpans[2].category = 'type.builtin'; },
+    n => { n.validSpans[1].startByte = 4; }, n => { n.validSpans[1].startByte = 2; },
+    n => { n.validSpans[0].endByte = 0; }, n => { n.validSpans[0].startByte = 0.5; },
+    n => { n.validSpans[3].endByte = 32; n.validSpans.push({startByte:32,endByte:80,category:null}); },
+    n => { n.validSpans[3].category = 'x'.repeat(129); }, n => { n.validSpans[3].category = {}; },
+    n => { n.validSpans[3].endByte = 81; }, n => { n.validSpans.reverse(); },
+    n => { delete n.malformedIssues; }, n => { n.malformedIssues = []; },
+    n => { n.malformedIssues = [{kind:'ERROR',startByte:0,endByte:1}]; },
+    n => { n.malformedIssues.push({kind:'OTHER',startByte:11,endByte:14}); },
+    n => { n.malformedIssues.push({kind:'ERROR',startByte:14,endByte:99}); },
+    n => { n.malformedIssues.push({kind:'MISSING',startByte:13,endByte:14}); },
+    n => { n.malformedIssues = [{kind:'ERROR',startByte:15,endByte:15}]; },
+    n => { n.grammarAbi = 14; }, n => { delete n.limitations; },
+    n => { n.limitations.upstreamLocalBindingParity = 'established'; },
+    n => { n.limitations.embeddedLanguages = 'supported'; },
+  ]) {
+    const value = inputs(); mutate(value.primary.native);
+    assert.throws(() => validateFeasibility(value.primary, value.secondary, value.observed, policy));
+  }
+});
+
+test('primary recovery accepts legitimate overlapping errors and zero-width missing EOF nodes', () => {
+  for (const issues of [
+    [{kind:'ERROR',startByte:11,endByte:14},{kind:'ERROR',startByte:12,endByte:14}],
+    [{kind:'MISSING',startByte:14,endByte:14}], [{kind:'MISSING',startByte:15,endByte:15}],
+  ]) {
+    const value = inputs(); value.primary.native.malformedIssues = issues;
+    assert.equal(validateFeasibility(value.primary, value.secondary, value.observed, policy).primary, 'passed-seven-controls');
+  }
+});
+
+test('every malformed issue boundary and frozen fixture hash is checked', () => {
+  const changed = structuredClone(policy);
+  changed.nativeExpectations.fixtures.malformed = 'def broken = (🙂\n';
+  const value = inputs();
+  for (const engine of ['primary', 'secondary']) {
+    changed.identities[engine].fixtureDigests.malformed = sha256(Buffer.from(changed.nativeExpectations.fixtures.malformed));
+    value[engine].fixtureDigests.malformed = changed.identities[engine].fixtureDigests.malformed;
+  }
+  value.primary.native.malformedIssues = [{kind:'ERROR',startByte:11,endByte:18},{kind:'ERROR',startByte:15,endByte:16}];
+  assert.throws(() => validateFeasibility(value.primary, value.secondary, value.observed, changed));
+  const wrongText = structuredClone(policy); wrongText.nativeExpectations.fixtures.valid += ' ';
+  const original = inputs();
+  assert.throws(() => validateFeasibility(original.primary, original.secondary, original.observed, wrongText));
+});
+
 test('frozen policy hashes match the reviewed local sources and dependency pins', () => {
   const root = path.dirname(fileURLToPath(import.meta.url));
   const frozen = JSON.parse(fs.readFileSync(path.join(root, 'feasibility-policy.json'), 'utf8'));
   const pins = JSON.parse(fs.readFileSync(path.join(root, 'source-lock.json'), 'utf8'));
-  const sourceNames = ['contract.rs', 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'source-lock.json'];
+  const sourceNames = ['contract.rs', 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'primary-result.mjs', 'source-lock.json'];
   for (const engine of ['primary', 'secondary']) {
     const value = frozen.identities[engine];
     const pin = pins.engines[engine];
@@ -76,6 +128,7 @@ test('frozen policy hashes match the reviewed local sources and dependency pins'
     assert.deepEqual(Object.keys(value.probeSourceDigests).sort(), [...sourceNames, `${engine}/src/main.rs`].sort());
     for (const [name, digest] of Object.entries(value.probeSourceDigests)) assert.equal(digest, sha256(fs.readFileSync(path.join(root, name))), name);
   }
+  for (const name of ['valid', 'malformed']) assert.equal(frozen.nativeExpectations.fixtures[name], fs.readFileSync(path.join(root, 'fixtures', `${name}.groovy`), 'utf8'));
 });
 
 test('policy CLI rejects missing receipts and private arguments without exposing them', () => {

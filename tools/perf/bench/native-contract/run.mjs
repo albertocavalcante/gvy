@@ -68,7 +68,7 @@ try {
       cargoLockSha256: pin.cargoLockSha256, manifestSha256: sha256(readRegularBytes(manifest, 64 * 1024)),
       binarySha256, queryDigests,
       fixtureDigests: Object.fromEntries(Object.entries(fixtureBytes).map(([name, bytes]) => [name, sha256(bytes)])),
-      probeSourceDigests: Object.fromEntries(['contract.rs', `${engine}/src/main.rs`, 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'source-lock.json'].map(name => [name, sha256(readRegularBytes(path.join(root, name), 64 * 1024))])),
+      probeSourceDigests: Object.fromEntries(['contract.rs', `${engine}/src/main.rs`, 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'primary-result.mjs', 'source-lock.json'].map(name => [name, sha256(readRegularBytes(path.join(root, name), 64 * 1024))])),
     };
     let output;
     try { output = await command(binary, [], input, 10000, true); }

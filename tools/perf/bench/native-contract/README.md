@@ -75,6 +75,11 @@ The resulting decision labels primary `passed-seven-controls` and secondary `rej
 both grammars compatible. In particular, secondary controls not run after rejection are not certified. Both ordinary
 strict commands remain available to detect a later changed result.
 
+Before declaring primary success, the policy independently checks the retained parsed result: contiguous complete UTF-8
+source-byte coverage, both exact primary predicate anchors, valid error/missing-node ranges at the malformed delimiter
+or EOF, the supported ABI and the declared limitations. Empty or truncated useful output cannot pass merely by claiming
+seven completed controls. These checks retain B01's narrow scope; they do not establish full lexical or semantic parity.
+
 ## Inputs and identity
 
 `source-lock.json` pins the grammar commits, all generated/parser/scanner/header/query/Rust-binding inputs, licenses,
