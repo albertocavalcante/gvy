@@ -375,7 +375,7 @@ class DiagnosticTests(unittest.TestCase):
                 if expected == "timeout":
                     self.assertIn("partial context", text)
 
-    def test_compliant_stderr_is_visible_in_cli_without_failing(self) -> None:
+    def test_compliant_warning_is_visible_in_cli_and_fails_diagnostic_policy(self) -> None:
         result = subprocess.CompletedProcess(
             ["reuse"], 0, json.dumps(self.report(compliant=True)).encode(), b"warning: note\n"
         )
@@ -388,9 +388,56 @@ class DiagnosticTests(unittest.TestCase):
             patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
             patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
         ):
-            self.assertEqual(0, check.main())
+            self.assertEqual(1, check.main())
         self.assertIn("warning: note", stderr.getvalue())
-        self.assertIn("checks passed", stdout.getvalue())
+        self.assertIn("gvy diagnostic policy", stderr.getvalue())
+        self.assertNotIn("checks passed", stdout.getvalue())
+
+    def test_only_exact_empty_successful_stderr_passes_shared_api_and_cli(self) -> None:
+        captures = (
+            b"",
+            b"warning: note\n",
+            b"unknown text",
+            b" \r\n\t",
+            b"\x1b[31mwarning: note",
+            b"\x1b[0m",
+            b"\0",
+            b"\xff",
+        )
+        policy = "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)"
+        for capture in captures:
+            with self.subTest(capture=capture):
+                result = subprocess.CompletedProcess(
+                    ["reuse"], 0, json.dumps(self.report(compliant=True)).encode(), capture
+                )
+                with (
+                    patch.object(check.subprocess, "run", return_value=result) as run,
+                    patch.object(check, "REQUIRED_LICENSE_PATHS", set()),
+                    patch.object(check.tomllib, "loads", return_value={"license": []}),
+                    patch.object(Path, "read_text", return_value=""),
+                ):
+                    with self.subTest(channel="check without collector"):
+                        errors = check.check(self.root)
+                        self.assertEqual(1, run.call_count)
+                        self.assertEqual(bool(capture), bool(errors))
+                        if capture:
+                            self.assertIn(policy, errors)
+                            self.assertNotIn("REUSE lint failed", "\n".join(errors))
+                    run.reset_mock()
+                    with self.subTest(channel="CLI"):
+                        with (
+                            patch.object(sys, "argv", ["check.py", "--root", str(self.root)]),
+                            patch.object(sys, "stderr", new_callable=io.StringIO) as stderr,
+                            patch.object(sys, "stdout", new_callable=io.StringIO) as stdout,
+                        ):
+                            self.assertEqual(int(bool(capture)), check.main())
+                        self.assertEqual(1, run.call_count)
+                        if capture:
+                            self.assertIn(policy, stderr.getvalue())
+                            self.assertNotIn("checks passed", stdout.getvalue())
+                        else:
+                            self.assertEqual("", stderr.getvalue())
+                            self.assertIn("checks passed", stdout.getvalue())
 
 
 class IntegrationTests(unittest.TestCase):
@@ -463,6 +510,36 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([], check.check(self.root))
         (self.root / "LICENSES/Apache-2.0.txt").write_text("tampered")
         self.assertTrue(any("SHA-256" in error for error in check.check(self.root)))
+
+    def test_stderr_policy_failure_preserves_parsed_paths_and_remaining_repository_gates(self) -> None:
+        self.git("init", "-q")
+        (self.root / "src/unreported.txt").write_text("unreported data\n", encoding="utf-8")
+        self.git("add", "--", "src/a.py", "src/unreported.txt")
+        tracked = self.git("ls-files", "-z")
+        (self.root / "LICENSE").write_text("tampered\n", encoding="utf-8")
+        self.source.write_text("print(1)\n", encoding="utf-8")
+        report = {
+            "lint_version": "1.0",
+            "reuse_spec_version": "3.3",
+            "reuse_tool_version": "6.3.0",
+            "summary": {"compliant": True},
+            "non_compliant": {name: [] for name in check.NON_COMPLIANT_CATEGORIES},
+            "files": [{"path": "src/a.py", "spdx_expressions": [{"value": "MIT", "is_valid": True}]}],
+        }
+        result = subprocess.CompletedProcess(["reuse"], 0, json.dumps(report).encode(), b"unknown diagnostic\n")
+        with patch.object(check.subprocess, "run", side_effect=[result, tracked]) as run:
+            errors = check.check(self.root)
+        self.assertEqual(2, run.call_count)  # One REUSE invocation, then the existing tracked-file scan.
+        for expected in (
+            "gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)",
+            "LICENSE: license text does not match approved SHA-256",
+            "LICENSES/MIT.txt: used MIT license must have an approved inventory entry",
+            "src/unreported.txt: tracked file omitted by REUSE",
+            "src/a.py: missing nonempty leading SPDX-FileCopyrightText",
+            "src/a.py: leading license must be Apache-2.0",
+            "src/a.py: effective REUSE license must be Apache-2.0",
+        ):
+            self.assertIn(expected, errors)
 
     def test_missing_metadata_diagnostic_names_both_categories_and_relative_file(self) -> None:
         (self.root / "unannotated.txt").write_text("payload must not be logged\n", encoding="utf-8")

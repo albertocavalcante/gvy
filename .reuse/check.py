@@ -418,7 +418,7 @@ def parse_report(value: object) -> tuple[bool, dict[Path, set[str]]]:
 
 
 def run_reuse(root: Path) -> tuple[dict[Path, set[str]] | None, list[str], list[str]]:
-    """Use exactly one invocation; keep failures separate from nonfatal stderr."""
+    """Use one invocation and enforce licensing plus diagnostic accountability."""
     env = os.environ.copy()
     env["REUSE_ENCODING_MODULE"] = "charset_normalizer"
     stderr: str | bytes | None = None
@@ -447,6 +447,13 @@ def run_reuse(root: Path) -> tuple[dict[Path, set[str]] | None, list[str], list[
             return paths, [f"REUSE check failed: exit/report mismatch{status}, compliant={compliant}", *details], []
         if not compliant:
             return paths, [f"REUSE lint failed{status}", *details], []
+        # A compliant report does not classify its stderr under gvy's policy.
+        if result.stderr != b"":
+            return (
+                paths,
+                ["gvy diagnostic policy failed: unclassified stderr from successful REUSE (exit 0)", *details],
+                [],
+            )
         return paths, [], details
     except subprocess.TimeoutExpired as exc:
         stderr = exc.stderr
