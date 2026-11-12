@@ -27,7 +27,11 @@ interface MockVscode {
     executeCommand: sinon.SinonStub;
   };
   Uri: {
-    file: (path: string) => { fsPath: string; toString: () => string };
+    file: (path: string) => {
+      scheme: string;
+      fsPath: string;
+      toString: () => string;
+    };
   };
   SymbolKind: {
     Class: number;
@@ -43,6 +47,10 @@ interface MockSpockGenerator {
 interface TestFeatureModule {
   registerTestFeature: (context: { subscriptions: unknown[] }) => void;
   TestFeature: new () => { dispose: () => void };
+  createNewSpecFile: (
+    uri: { scheme: string; fsPath: string },
+    contents: Uint8Array,
+  ) => Promise<boolean>;
 }
 
 describe("TestFeature", () => {
@@ -53,6 +61,7 @@ describe("TestFeature", () => {
   let fsStatStub: sinon.SinonStub;
   let fsCreateDirectoryStub: sinon.SinonStub;
   let fsWriteFileStub: sinon.SinonStub;
+  let exclusiveWriteFileStub: sinon.SinonStub;
   let executeCommandStub: sinon.SinonStub;
   let openTextDocumentStub: sinon.SinonStub;
   let showTextDocumentStub: sinon.SinonStub;
@@ -67,6 +76,7 @@ describe("TestFeature", () => {
     fsStatStub = sandbox.stub();
     fsCreateDirectoryStub = sandbox.stub().resolves();
     fsWriteFileStub = sandbox.stub().resolves();
+    exclusiveWriteFileStub = sandbox.stub().resolves();
     executeCommandStub = sandbox.stub();
     openTextDocumentStub = sandbox.stub();
     showTextDocumentStub = sandbox.stub().resolves();
@@ -110,7 +120,11 @@ describe("TestFeature", () => {
         executeCommand: executeCommandStub,
       },
       Uri: {
-        file: (path: string) => ({ fsPath: path, toString: () => path }),
+        file: (path: string) => ({
+          scheme: "file",
+          fsPath: path,
+          toString: () => path,
+        }),
       },
       SymbolKind: {
         Class: 4,
@@ -136,6 +150,7 @@ describe("TestFeature", () => {
       {
         vscode: mockVscode,
         "./SpockGenerator": mockSpockGenerator,
+        "node:fs/promises": { writeFile: exclusiveWriteFileStub },
       },
     ) as TestFeatureModule;
   });
@@ -145,6 +160,45 @@ describe("TestFeature", () => {
   });
 
   describe("generateTest command", () => {
+    it("preserves a destination created after the existence check", async () => {
+      const sourceUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
+      const userContent = "user content created while generation was pending";
+      let destinationContent: string | undefined;
+
+      fsStatStub.rejects(
+        new mockVscode.FileSystemError("File not found", "FileNotFound"),
+      );
+      fsCreateDirectoryStub.callsFake(async () => {
+        destinationContent = userContent;
+      });
+      fsWriteFileStub.callsFake(async (_uri: unknown, bytes: Uint8Array) => {
+        destinationContent = new TextDecoder().decode(bytes);
+      });
+      exclusiveWriteFileStub.callsFake(
+        async (
+          _file: string,
+          contents: Uint8Array,
+          options: { flag: string },
+        ) => {
+          if (destinationContent !== undefined && options.flag === "wx") {
+            throw Object.assign(new Error("File exists"), { code: "EEXIST" });
+          }
+          destinationContent = new TextDecoder().decode(contents);
+        },
+      );
+      openTextDocumentStub.withArgs(sourceUri).resolves({
+        getText: () => "class MyClass {}",
+      });
+      executeCommandStub.resolves([{ kind: 4, name: "MyClass", children: [] }]);
+      new TestFeatureModule.TestFeature();
+
+      await registerCommandStub.firstCall.args[1](sourceUri);
+
+      assert.strictEqual(destinationContent, userContent);
+      assert.strictEqual(showTextDocumentStub.called, false);
+      assert.strictEqual(openTextDocumentStub.calledOnce, true);
+    });
+
     it("should register the groovy.test.generate command", () => {
       new TestFeatureModule.TestFeature();
 
@@ -267,7 +321,7 @@ describe("TestFeature", () => {
       );
     });
 
-    it("should use async vscode.workspace.fs.writeFile to write test file", async () => {
+    it("creates the initial contents without permitting replacement", async () => {
       const mockUri = { fsPath: "/project/src/main/groovy/MyClass.groovy" };
       const mockDocument = {
         uri: mockUri,
@@ -308,24 +362,65 @@ describe("TestFeature", () => {
 
       await commandHandler(mockUri);
 
-      // Verify fs.writeFile was called
+      assert.strictEqual(fsWriteFileStub.called, false);
+      assert.strictEqual(exclusiveWriteFileStub.calledOnce, true);
       assert.strictEqual(
-        fsWriteFileStub.calledOnce,
-        true,
-        "fs.writeFile should be called once",
-      );
-      assert.strictEqual(
-        fsWriteFileStub.firstCall.args[0].fsPath,
+        exclusiveWriteFileStub.firstCall.args[0],
         "/project/src/test/groovy/MyClassSpec.groovy",
       );
-
-      // Verify content was encoded (should be Uint8Array or Buffer)
-      const writtenContent = fsWriteFileStub.firstCall.args[1];
-      assert.ok(
-        writtenContent instanceof Uint8Array ||
-          writtenContent instanceof Buffer,
-        "Content should be encoded as Uint8Array or Buffer",
+      assert.deepStrictEqual(exclusiveWriteFileStub.firstCall.args[2], {
+        flag: "wx",
+      });
+      assert.strictEqual(
+        new TextDecoder().decode(exclusiveWriteFileStub.firstCall.args[1]),
+        "// Generated Spock spec",
       );
+    });
+
+    for (const outcome of ["refused", "rejected"] as const) {
+      it(`does not open a generated document when creation is ${outcome}`, async () => {
+        const sourceUri = {
+          fsPath: "/project/src/main/groovy/MyClass.groovy",
+        };
+        fsStatStub.rejects(
+          new mockVscode.FileSystemError("File not found", "FileNotFound"),
+        );
+        openTextDocumentStub.withArgs(sourceUri).resolves({
+          getText: () => "class MyClass {}",
+        });
+        executeCommandStub.resolves([
+          { kind: 4, name: "MyClass", children: [] },
+        ]);
+        if (outcome === "refused") {
+          exclusiveWriteFileStub.rejects(
+            Object.assign(new Error("File exists"), { code: "EEXIST" }),
+          );
+        } else {
+          exclusiveWriteFileStub.rejects(new Error("Permission denied"));
+        }
+        new TestFeatureModule.TestFeature();
+
+        await registerCommandStub.firstCall.args[1](sourceUri);
+
+        assert.strictEqual(openTextDocumentStub.calledOnce, true);
+        assert.strictEqual(showTextDocumentStub.called, false);
+        assert.strictEqual(fsWriteFileStub.called, false);
+        assert.strictEqual(
+          showWarningMessageStub.called || showErrorMessageStub.called,
+          true,
+        );
+      });
+    }
+
+    it("rejects non-file resources before native file access", async () => {
+      await assert.rejects(
+        TestFeatureModule.createNewSpecFile(
+          { scheme: "memfs", fsPath: "/file" },
+          new Uint8Array(),
+        ),
+        /URI scheme: memfs/,
+      );
+      assert.strictEqual(exclusiveWriteFileStub.called, false);
     });
 
     it("should show warning when test file already exists", async () => {

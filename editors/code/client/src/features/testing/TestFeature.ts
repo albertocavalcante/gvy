@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import { SpockGenerator } from "./SpockGenerator";
 import * as path from "path";
+import { writeFile } from "node:fs/promises";
 
 export class TestFeature implements vscode.Disposable {
   private disposables: vscode.Disposable[] = [];
@@ -95,9 +96,14 @@ export class TestFeature implements vscode.Disposable {
       const dirUri = vscode.Uri.file(path.dirname(testUri.fsPath));
       await vscode.workspace.fs.createDirectory(dirUri);
 
-      // Write file using async API
       const contentBytes = new TextEncoder().encode(content);
-      await vscode.workspace.fs.writeFile(testUri, contentBytes);
+      if (!(await createNewSpecFile(testUri, contentBytes))) {
+        vscode.window.showWarningMessage(
+          `Could not create test file: ${path.basename(testUri.fsPath)}. ` +
+            "The destination may already exist or could not be written.",
+        );
+        return;
+      }
 
       // Open file
       const doc = await vscode.workspace.openTextDocument(testUri);
@@ -109,5 +115,33 @@ export class TestFeature implements vscode.Disposable {
 
   public dispose() {
     this.disposables.forEach((d) => d.dispose());
+  }
+}
+
+/** Creates native specification files without replacing an existing path. */
+export async function createNewSpecFile(
+  uri: vscode.Uri,
+  contents: Uint8Array,
+): Promise<boolean> {
+  if (uri.scheme !== "file") {
+    throw new Error(
+      `Cannot create a specification for URI scheme: ${uri.scheme}`,
+    );
+  }
+  try {
+    // TODO(#1781): Revisit when editor resource creation preserves exclusive semantics.
+    //   See: https://github.com/albertocavalcante/gvy/issues/1781
+    await writeFile(uri.fsPath, contents, { flag: "wx" });
+    return true;
+  } catch (error: unknown) {
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === "EEXIST"
+    ) {
+      return false;
+    }
+    throw error;
   }
 }
