@@ -13,6 +13,22 @@ assert SPEC and SPEC.loader
 check = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(check)
 
+BENCHMARK_FIXTURE_PATHS: tuple[str, ...] = (
+    "tools/perf/bench/corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy",
+    "tools/perf/bench/corpus/fixtures/upstream/spock-blocking-variables/BlockingVariables.groovy",
+    "tools/perf/bench/corpus/fixtures/upstream/groovy-grape-ivy/GrapeIvy.groovy",
+    "tools/perf/bench/corpus/fixtures/upstream/groovy-benchmark-driver/bench.groovy",
+    "tools/perf/bench/corpus/fixtures/upstream/ofbiz-filter-receipts/FilterOutReceipts.groovy",
+    "tools/perf/bench/corpus/fixtures/upstream/spock-gradle-build/build.gradle",
+    "tools/perf/bench/corpus/fixtures/upstream/geb-gradle-bootstrap/build.gradle",
+    "tools/perf/bench/corpus/fixtures/upstream/pipeline-parallel-list/parallelFromList.groovy",
+    "tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile",
+    "tools/perf/bench/corpus/fixtures/upstream/spock-feature-methods/FeatureMethods.groovy",
+    "tools/perf/bench/corpus/fixtures/upstream/geb-browser-spec/BrowserSpec.groovy",
+    "tools/perf/bench/native-contract/fixtures/valid.groovy",
+    "tools/perf/bench/native-contract/fixtures/malformed.groovy",
+)
+
 
 class HeaderTests(unittest.TestCase):
     def test_leading_header_required(self) -> None:
@@ -49,6 +65,33 @@ class HeaderTests(unittest.TestCase):
     def test_wrong_comment_syntax_does_not_count(self) -> None:
         data = b"# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n"
         self.assertTrue(check.header_errors(Path("a.kt"), data))
+
+    def test_exact_benchmark_fixture_paths_use_metadata_instead_of_source_headers(self) -> None:
+        self.assertEqual(13, len(BENCHMARK_FIXTURE_PATHS))
+        for name in BENCHMARK_FIXTURE_PATHS:
+            with self.subTest(path=name):
+                self.assertFalse(check.maintained(Path(name), b"println 'fixture data'\n"))
+
+    def test_metadata_fixture_inventory_is_exact(self) -> None:
+        self.assertEqual(frozenset(BENCHMARK_FIXTURE_PATHS), check.METADATA_SOURCE_PATHS)
+
+    def test_benchmark_neighbors_still_require_leading_source_headers(self) -> None:
+        data = b"println 'maintained source'\n"
+        for name in BENCHMARK_FIXTURE_PATHS:
+            path = Path(name)
+            neighbors = [path.with_name("neighbor.groovy"), path.with_name(path.name + ".groovy")]
+            if path.suffix in {".groovy", ".gradle"}:
+                neighbors.extend([Path("unlisted") / path, Path("Tools") / Path(*path.parts[1:])])
+            for neighbor in neighbors:
+                with self.subTest(path=neighbor.as_posix()):
+                    self.assertTrue(check.maintained(neighbor, data))
+                    self.assertTrue(check.header_errors(neighbor, data))
+
+    def test_unrecognized_jenkins_neighbors_keep_generic_shebang_classification(self) -> None:
+        path = Path("tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/JenkinsfileNeighbor")
+        self.assertFalse(check.maintained(path, b"pipeline {}\n"))
+        self.assertTrue(check.maintained(path, b"#!/usr/bin/env groovy\npipeline {}\n"))
+        self.assertFalse(check.maintained(path.with_suffix(".neighbor"), b"#!/usr/bin/env groovy\npipeline {}\n"))
 
 
 class IntegrationTests(unittest.TestCase):
@@ -93,6 +136,38 @@ class IntegrationTests(unittest.TestCase):
             'version = 1\n[[annotations]]\npath = "src/a.py"\nSPDX-FileCopyrightText = "Alice"\nSPDX-License-Identifier = "Apache-2.0"\n'
         )
         self.assertTrue(any("leading" in error for error in check.check(self.root)))
+
+    def test_exact_fixture_metadata_is_required_and_does_not_exempt_annotated_neighbors(self) -> None:
+        relative = Path("tools/perf/bench/native-contract/fixtures/valid.groovy")
+        fixture = self.root / relative
+        fixture.parent.mkdir(parents=True)
+        fixture.write_text("println 'synthetic fixture'\n", encoding="utf-8")
+        metadata = self.root / "REUSE.toml"
+        annotation = (
+            "version = 1\n[[annotations]]\n"
+            f'path = "{relative.as_posix()}"\n'
+            'SPDX-FileCopyrightText = "Synthetic fixture author"\n'
+            'SPDX-License-Identifier = "Apache-2.0"\n'
+        )
+        metadata.write_text(annotation, encoding="utf-8")
+        self.assertEqual([], check.check(self.root))
+
+        metadata.unlink()
+        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(self.root))
+
+        neighbor = relative.with_name("neighbor.groovy")
+        (self.root / neighbor).write_text("println 'synthetic source'\n", encoding="utf-8")
+        metadata.write_text(
+            annotation
+            + "[[annotations]]\n"
+            + f'path = "{neighbor.as_posix()}"\n'
+            + 'SPDX-FileCopyrightText = "Synthetic source author"\n'
+            + 'SPDX-License-Identifier = "Apache-2.0"\n',
+            encoding="utf-8",
+        )
+        errors = check.check(self.root)
+        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
+        self.assertTrue(any(error.startswith(f"{neighbor.as_posix()}:") and "leading" in error for error in errors))
 
     def test_reuse_ignored_tooling_is_checked(self) -> None:
         self.source.write_text("# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n")
