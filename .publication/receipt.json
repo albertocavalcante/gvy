@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "profile": "b04-hover-token-coordinates-red-v1",
+  "base": "16e3040c91453e4f9cd2cfb963406027b22fccc6",
+  "tree": "c2ada93a491027c24f7d0989bc2a6c1076ebda77",
+  "sourceDisposition": "new-file",
+  "sourcePath": "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/providers/hover/HoverTokenCoordinatesTest.kt",
+  "sourceBlob": "94056cb8dde602df53d47d9be481c852d9d00cd2",
+  "sourceSha256": "6afaddbdbe4d3918c84a428ebf6e4afb272602948820448560fe97860059b169",
+  "testClass": "com.github.albertocavalcante.gvy.gls.providers.hover.HoverTokenCoordinatesTest",
+  "expectedTestCount": 4,
+  "expectedTestNames": [
+    "code after a two emoji comment remains hoverable at its first character()",
+    "a comment after an emoji comment rejects hover at its first slash()",
+    "string whitespace after a two emoji comment remains a valid hover position()",
+    "native hover after a two emoji comment returns String content and its UTF16 range()"
+  ],
+  "gradleVersion": "9.8.2",
+  "gradleSha256": "21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607",
+  "gradleCacheKey": "8wepis63pzuhrlfaiy04bagwu",
+  "wrapperJarSha256": "3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98",
+  "patchBytes": 4400,
+  "patchSha256": "732e9fdb8754adc5d7903d659886c4f0999e4a1cb1d8dd896d438d608e45309b",
+  "payloadBytes": 1255,
+  "payloadSha256": "96c71ac636a53a14b22c54c9be2a92315c0d48e8af04242a9a42830ff1f6bd84"
+}

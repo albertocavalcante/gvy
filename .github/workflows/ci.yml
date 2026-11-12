@@ -1,876 +1,528 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
-name: CI
+# Temporary execution branch. Never merge this workflow into main.
+name: B04 hosted hover token coordinate RED
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      runner_label:
-        description: 'Runner label to use'
-        required: false
-        type: choice
-        options:
-          - 'self-hosted'
-          - 'magalu'
-          - 'local-macos'
-          - 'github-hosted'
-        default: 'github-hosted'
-      disable_scan:
-        description: Disable Gradle build scan
-        required: false
-        type: boolean
-        default: false
-      coverage:
-        description: Generate coverage reports (always on for pushes to main)
-        required: false
-        type: boolean
-        default: false
-      sonar:
-        description: Upload coverage and analysis to SonarCloud (needs coverage and the SONAR_TOKEN secret)
-        required: false
-        type: boolean
-        default: false
-      test_log_level:
-        description: 'Gradle log level for test tasks'
-        required: false
-        type: choice
-        options:
-          - 'default'
-          - 'info'
-          - 'debug'
-        default: 'default'
-env:
-  # Preferred OS for single-run checks (Verify JAR, Sonar, artifacts).
-  # Override via repo variable CI_PRIMARY_OS (e.g., macos-15).
-  # Default: ubuntu-24.04 (faster, cheaper than macOS)
-  PRIMARY_OS: >-
-    ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && 'local-macos' ||
-        (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && 'magalu' ||
-        (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
+permissions:
+  contents: read
 concurrency:
-  # PRs: group by head_ref (cancel outdated runs for same branch)
-  # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
-  # workflow_dispatch: group by run ID (never wait for other CI runs)
-  group: >-
-    ${{ github.workflow }}-${{
-      github.event_name == 'pull_request' && github.head_ref ||
-      github.event_name == 'workflow_dispatch' && github.run_id ||
-      github.sha
-    }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-# ============================================================================
-# RUNNER CONFIGURATION
-# ============================================================================
-# Priority: workflow_dispatch input > CI_RUNNER_LABEL repo variable > self-hosted
-#
-# Default: github-hosted runner (standard GitHub Actions runners)
-#
-# Runner options:
-#   - self-hosted: Local runner (fastest, no cost)
-#   - magalu: Magalu Cloud ephemeral runner (use runner-provision.yml first!)
-#   - github-hosted: GitHub-hosted runners (default, macos-15 for PRs, matrix for main)
-#
-# To switch runners permanently:
-#   Settings → Secrets and variables → Actions → Variables → New repository variable
-#   Name: CI_RUNNER_LABEL  Value: github-hosted (or magalu)
-#
-# To switch for a single run:
-#   Actions → CI → Run workflow → runner_label: <choice>
-#
-# Magalu Cloud runners:
-#   1. Run "Infra: Provision Magalu Runner" workflow first
-#   2. Then run CI with runner_label: magalu
-#   3. Run "Infra: Destroy Magalu Runner" when done (or wait for nightly cleanup)
-#
-# NOTE: Avoiding ubuntu-latest due to stability issues causing builds to hang.
-# See: https://github.com/actions/runner-images/issues/13182
-#
-# Available runner labels: https://github.com/actions/runner-images#available-images
-# ============================================================================
-
+  group: b04-hover-token-publication-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  check-paths:
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      run_main_ci: ${{ steps.filter.outputs.run_main_ci }}
-      run_bazel_ci: ${{ steps.filter.outputs.run_bazel_ci }}
-      run_zed_ci: ${{ steps.filter.outputs.run_zed_ci }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Self-test CI policy
-        run: node --test tools/ci/*.test.mjs
-      - name: Enforce temporary dependency accountability
-        run: node tools/ci/dependency-maintenance.mjs
-      - name: Classify exact revisions
-        id: filter
-        run: node tools/ci/ci-applicability.mjs "$RUNNER_TEMP/ci-applicability.json"
-      - name: Upload applicability evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ci-applicability
-          path: ${{ runner.temp }}/ci-applicability.json
-          if-no-files-found: error
-          retention-days: 14
-
-  bazel:
-    name: Bazel validation
-    needs: check-paths
-    if: needs.check-paths.outputs.run_bazel_ci == 'true'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci-bazel.yml
-
-  check-runner:
-    name: Check Runner Availability
+  candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 60
     permissions:
       contents: read
-    needs: check-paths
-    if: needs.check-paths.outputs.run_main_ci == 'true'
-    outputs:
-      provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
-    steps:
-      - name: Checkout (for local action)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          sparse-checkout: .github/actions
-          persist-credentials: false
-
-      - name: Determine Runner Label
-        id: mode
-        run: |
-          # Priority: Input > Variable > Default(github-hosted)
-          LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'github-hosted' }}"
-          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
-          echo "Checking availability for: $LABEL"
-
-      # --- Magalu Check ---
-      - name: Check Magalu runner
-        if: steps.mode.outputs.label == 'magalu'
-        id: check-magalu
-        uses: ./.github/actions/runner-status
-        with:
-          mode: check
-          label: magalu
-          github-token: ${{ secrets.GH_PAT_RUNNER }}
-
-      - name: Trigger provisioning (Magalu)
-        if: steps.mode.outputs.label == 'magalu' && steps.check-magalu.outputs.has-runners != 'true'
-        id: exit-early
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_RUNNER }}
-        run: |
-          echo "Triggering runner-provision.yml..."
-          gh workflow run runner-provision.yml --repo "${{ github.repository }}"
-          echo ""
-          echo "⏳ Provisioning triggered. Manual approval may be required."
-          echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
-          echo ""
-          echo "::notice::Provisioning requested. Required validation remains blocked; rerun this revision after the runner is available."
-          # Set output to signal downstream jobs to skip
-          echo "provisioning_triggered=true" >> "$GITHUB_OUTPUT"
-
-      # --- Local macOS Check ---
-      - name: Check Local macOS runner
-        if: steps.mode.outputs.label == 'local-macos'
-        id: check-local
-        uses: ./.github/actions/runner-status
-        with:
-          mode: check
-          label: local-macos
-          github-token: ${{ secrets.GH_PAT_RUNNER }}
-
-      - name: Verify Local macOS Availability
-        if: steps.mode.outputs.label == 'local-macos' && steps.check-local.outputs.has-runners != 'true'
-        run: |
-          echo "❌ No local macOS runner found online with label 'local-macos'."
-          echo ""
-          echo "To set up a runner on your Mac:"
-          echo "  ./tools/github/actions/setup-macos-runner.sh"
-          echo ""
-          echo "Ensure the runner service is active:"
-          echo "  cd ~/.gha-runners/groovy-lsp-*"
-          echo "  ./svc.sh status"
-          echo ""
-          exit 1
-
-      # --- Summary ---
-      - name: Runner Check Summary
-        if: always()
-        run: |
-          LABEL="${{ steps.mode.outputs.label }}"
-          echo "Runner label: $LABEL"
-
-          case "$LABEL" in
-            "magalu")
-              if [[ "${{ steps.check-magalu.outputs.has-runners }}" == "true" ]]; then
-                echo "✅ Magalu runner available"
-              else
-                echo "⏳ Magalu runner provisioning triggered"
-              fi
-              ;;
-            "local-macos")
-              if [[ "${{ steps.check-local.outputs.has-runners }}" == "true" ]]; then
-                echo "✅ Local macOS runner available"
-              else
-                echo "❌ Local macOS runner check failed (see above)"
-              fi
-              ;;
-            "github-hosted")
-              echo "✅ Using GitHub-hosted cloud runners (no check needed)"
-              ;;
-            *)
-              echo "✅ Runner check complete for: $LABEL"
-              ;;
-          esac
-
-  lint:
-    name: Lint
-    needs: [check-paths, check-runner]
-    # Run if paths require CI and no provisioning triggered
-    if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Run Lint
-        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer lint lint --parallel --max-workers=2 --build-cache --stacktrace
-
-      - name: Upload Gradle diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gradle-evidence-lint-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/gradle-evidence/
-          if-no-files-found: error
-          retention-days: 14
-
-
-  build:
-    name: Build and Test
-    needs: [check-paths, check-runner]
-    # Applicable code must run on an available runner for this revision.
-    if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
-    timeout-minutes: 45
-    # For self-hosted runners, we need label arrays; for cloud runners, use the matrix value directly
-    runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os == 'local-macos' && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || matrix.os }}
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        # Runner selection:
-        #   - magalu: Magalu Cloud ephemeral runner (provision first via runner-provision.yml)
-        #   - local-macos: Local macOS runner (setup with tools/github/actions/setup-macos-runner.sh)
-        #   - github-hosted: GitHub-hosted (Ubuntu is now the default for PRs and main, macOS remains as an additional check)
-        # NOTE: macOS is retained for compatibility, but Ubuntu is the more stable default
-        # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event_name == 'pull_request' && format('["{0}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04') || format('["{0}", "{1}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04', (vars.CI_PRIMARY_OS == 'macos-15') && 'ubuntu-24.04' || 'macos-15')) ) }}
-        java: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos' || github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
-        exclude:
-          - os: ubuntu-24.04
-            java: 21
     env:
-      # Coverage reports: every push to main, and on demand (Run workflow → coverage).
-      COVERAGE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.coverage == 'true' }}
-      # SonarCloud is opt-in: repository variable SONAR_ENABLED=true, or Run workflow → sonar.
-      SONAR: ${{ vars.SONAR_ENABLED == 'true' || github.event.inputs.sonar == 'true' }}
-      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
+      JDK_JAVA_OPTIONS: '-Xmx512m'
+      JAVA_TOOL_OPTIONS: '-Xmx512m'
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC"
+        -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false
+        -Dorg.gradle.deprecation.trace=true
+      NODE_OPTIONS: '--max-old-space-size=768'
     steps:
-      - name: Checkout code
+      - name: Checkout temporary support ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Shallow clone for PRs (faster), deep clone for main (SonarCloud needs history)
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
+          ref: ${{ github.sha }}
+          path: support
           persist-credentials: false
-
-      - name: Set up Node.js for profiling tools
+      - name: Set up Node
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 24
-
-      - name: Test profiling tools
-        run: node --test tools/perf/*.test.mjs
-
-      - name: Test release artifact pairing
-        run: node --test tools/ci/*-artifacts.test.mjs tools/ci/junit-report-presence.test.mjs
-
-      - name: 🖥️ Runner Specs
+          node-version: '24.22.2'
+          package-manager-cache: false
+      - name: Validate fixed reviewed payload
+        id: receipt
         shell: bash
         run: |
-          # Cross-platform CPU/RAM detection
-          # TODO: Add Windows support using: wmic cpu get NumberOfCores, systeminfo for RAM
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            CORES=$(sysctl -n hw.ncpu)
-            RAM=$(echo "scale=1; $(sysctl -n hw.memsize) / 1024 / 1024 / 1024" | bc)
-            RAM="${RAM} GB"
-          elif [[ "${{ runner.os }}" == "Windows" ]]; then
-            CORES="N/A (Windows not yet supported)"
-            RAM="N/A"
-          else
-            CORES=$(nproc)
-            RAM=$(free -h | awk '/Mem:/ {print $2}')
-          fi
-          DISK=$(df -h / | awk 'NR==2 {print $4 " free"}' 2>/dev/null || echo "N/A")
-          HOSTNAME=$(hostname)
-
-          # Print to console (visible immediately)
-          echo "╔════════════════════════════════════════╗"
-          echo "║        Runner Specifications           ║"
-          echo "╠════════════════════════════════════════╣"
-          echo "║ OS:         ${{ runner.os }} / ${{ runner.arch }}"
-          echo "║ CPU Cores:  $CORES"
-          echo "║ RAM:        $RAM"
-          echo "║ Disk:       $DISK"
-          echo "║ Hostname:   $HOSTNAME"
-          echo "╚════════════════════════════════════════╝"
-          echo ""
-
-          # Also write to summary (for post-job formatted view)
-          {
-            echo "## 🖥️ Runner: ${{ runner.name }}"
-            echo ""
-            echo "| Spec | Value |"
-            echo "|------|-------|"
-            echo "| **OS** | ${{ runner.os }} / ${{ runner.arch }} |"
-            echo "| **CPU Cores** | $CORES |"
-            echo "| **RAM** | $RAM |"
-            echo "| **Disk** | $DISK |"
-            echo "| **Hostname** | $HOSTNAME |"
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: ${{ matrix.java }}
-      - name: Verify daemon memory sampler with the real JDK
-        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
-        timeout-minutes: 2
-        env:
-          GVY_MEMORY_PROBE_NATIVE_TEST: 'true'
-        run: node --test tools/ci/gradle-memory-probe.test.mjs
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          # Allow writing to cache for main OR PRs from the same repository
-          # Read-only for forks to prevent cache poisoning
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          # Self-hosted runners may have pre-existing Gradle User Home - allow overwrite
-          cache-overwrite-existing: ${{ matrix.os == 'self-hosted' }}
-      - name: Set Gradle flags
-        shell: bash
-        run: |-
-          # Set scan flag
-          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
-            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
-          else
-            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
-          fi
-
-          # Set test log level flag
-          case "${{ github.event.inputs.test_log_level }}" in
-            "info")
-              echo "TEST_LOG_FLAG=--info" >> "$GITHUB_ENV"
-              ;;
-            "debug")
-              echo "TEST_LOG_FLAG=--debug" >> "$GITHUB_ENV"
-              ;;
-            *)
-              echo "TEST_LOG_FLAG=" >> "$GITHUB_ENV"
-              ;;
-          esac
-
-      # NOTE: --parallel and --build-cache are redundant with gradle.properties settings
-      # (org.gradle.parallel=true, org.gradle.caching=true) but kept explicit for:
-      # 1. Self-documentation - CI intent is clear without checking gradle.properties
-      # 2. Defense in depth - CI works even if gradle.properties changes
-
-      # Compile and unit tests in one invocation, so Gradle tests a module while still compiling the
-      # modules that depend on it (two steps put a full barrier in between). classes and testClasses
-      # keep compiling modules without tests. Lint runs in a separate parallel job; unit tests
-      # also feed the coverage reports below.
-      - name: Verify protobuf generation with bounded JVMs
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        run: >-
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer proto-generation
-          :schemas:generateProtos :indexer:scip:generateProtos --rerun-tasks --max-workers=2 --build-cache --stacktrace
-
-      - name: Compile and Run Unit Tests
-        timeout-minutes: 25
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        run: |
-          args=(classes testClasses test --parallel --max-workers=2 --build-cache --stacktrace)
-          if [[ -n "${TEST_LOG_FLAG}" ]]; then
-            args+=("${TEST_LOG_FLAG}")
-          fi
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer unit "${args[@]}"
-
-      # Required desktop verification reuses this job's unit-test execution data.
-      - name: Verify Desktop Coverage
-        id: desktop_coverage
-        timeout-minutes: 5
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        run: |
-          if [[ ! -s viz/desktop/build/kover/bin-reports/test.ic ]]; then
-            echo "::error::Desktop coverage data from the unit producer is missing."
-            exit 1
-          fi
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer desktop-coverage :viz:desktop:koverXmlReport :viz:desktop:koverVerify --no-parallel --max-workers=2 --build-cache --stacktrace
-
-      - name: Require Desktop Coverage Verification
-        if: ${{ !cancelled() }}
-        env:
-          DESKTOP_COVERAGE_OUTCOME: ${{ steps.desktop_coverage.outcome }}
-        run: |
-          if [[ "$DESKTOP_COVERAGE_OUTCOME" != success ]]; then
-            echo "::error::Required desktop coverage verification did not succeed."
-            exit 1
-          fi
-
-      - name: Upload Desktop Coverage Report
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: desktop-coverage-${{ matrix.os }}-java${{ matrix.java }}-${{ github.run_attempt }}
-          path: viz/desktop/build/reports/kover/report.xml
-          if-no-files-found: error
-          retention-days: 14
-
-      # Coverage reports (see COVERAGE above) come from this job's own test outputs: a separate job reran
-      # the whole build (282 tasks) to get them. Their own invocation avoids the Kover hang with --parallel
-      # (Kotlin/kotlinx-kover#509). SonarCloud only uploads when opted in (see SONAR above).
-      - name: Generate Coverage Reports
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer coverage koverXmlReport koverHtmlReport --parallel --max-workers=2 --build-cache --stacktrace
-
-      - name: Upload Coverage Reports
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-reports
-          path: '**/build/reports/kover/'
-          retention-days: 7
-
-      # SonarCloud is advisory: it must never fail CI (auth or otherwise). See PR description.
-      - name: SonarCloud Analysis
-        id: sonar
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.SONAR == 'true' && env.HAS_SONAR_TOKEN == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          set +e
-          args=(sonar --info -Dsonar.qualitygate.wait=false)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then args+=("${GRADLE_SCAN_FLAG}"); fi
-          ./gradlew "${args[@]}" 2>&1 | tee sonar.log
-          rc=${PIPESTATUS[0]}
-          set -e
-          if [[ $rc -eq 0 ]]; then
-            echo "### ✅ SonarCloud analysis uploaded" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if grep -qiE 'HTTP (401|403)|Unauthorized|Forbidden|sonar\.token|Not authorized' sonar.log; then
-            msg="SonarCloud AUTH failure (exit $rc): rotate SONAR_TOKEN or check sonar.projectKey. Analysis skipped; CI continues."
-          else
-            msg="SonarCloud analysis failed (exit $rc): non-blocking, see step log."
-          fi
-          echo "::warning title=SonarCloud::${msg}"
-          echo "### ⚠️ ${msg}" >> "$GITHUB_STEP_SUMMARY"
-          exit 0
-
-      - name: SonarCloud enabled without a token
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.SONAR == 'true' && env.HAS_SONAR_TOKEN != 'true'
-        run: |
-          echo "::warning title=SonarCloud::SonarCloud is enabled but the SONAR_TOKEN secret is not set; skipped."
-          echo "### ⚠️ SonarCloud enabled but SONAR_TOKEN is not set: skipped" >> "$GITHUB_STEP_SUMMARY"
-
-      # Build shadowJar for verification (E2E tests run in parallel job)
-      - name: Build Shadow JAR
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer shadow-jar :gls:shadowJar --parallel --max-workers=2 --build-cache --stacktrace
-
-      - name: Upload Gradle diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gradle-evidence-${{ matrix.os }}-java${{ matrix.java }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/gradle-evidence/
-          if-no-files-found: error
-          retention-days: 14
-
-      # Keep HTML/JUnit reports without granting test jobs check-publishing tokens.
-      - name: Require unit test reports
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          report=$(find . -type f -path '*/build/test-results/test/*.xml' -print -quit)
-          if [[ -z "$report" ]]; then
-            echo "::error::Unit test execution produced no JUnit reports."
-            exit 1
-          fi
-
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: test-results-${{ matrix.os }}-java${{ matrix.java }}
-          path: |-
-            **/build/test-results/
-            **/build/reports/tests/
-            **/build/reports/problems/
-            **/build/reports/kover/
-          retention-days: 7
-
-      # NEW: Upload JVM diagnostic logs for deadlock/hang analysis
-      # These files are generated by the test monitoring infrastructure in build.gradle.kts
-      # - test-jvm-*.log: per-process HotSpot XML, thread dumps and lock info
-      # - test-recording.jfr: Java Flight Recorder data (if Tier 2 enabled)
-      # Use fastThread.io or JDK Mission Control to analyze these files
-      - name: Upload Test Diagnostic Logs
-        if: always()  # Upload even if tests fail or timeout
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: test-diagnostics-${{ matrix.os }}-java${{ matrix.java }}
-          path: |-
-            **/build/test-jvm-*.log
-            **/build/test-recording.jfr
-          retention-days: 7
-          if-no-files-found: ignore  # Don't fail if files don't exist (e.g., tests passed quickly)
-
-      # Verify JAR (built in previous step)
-      - name: Resolve shadow JAR
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        id: resolve-jar
-        shell: bash
-        run: |-
           set -euo pipefail
-          shopt -s nullglob
-          jar_files=(gls/build/libs/gls-*-all.jar)
-          if [[ ${#jar_files[@]} -eq 0 ]]; then
-            echo "::error::Shadow JAR not found in gls/build/libs"
-            exit 1
-          fi
-          echo "jar_path=${jar_files[0]}" >> "$GITHUB_OUTPUT"
-
-      - name: Verify JAR
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        run: |-
-          echo "Testing JAR with --help flag..."
-          java -Xmx256m -jar "${{ steps.resolve-jar.outputs.jar_path }}" --help
-
-      - name: Upload JAR artifact
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
-          path: ${{ steps.resolve-jar.outputs.jar_path }}
-          retention-days: 7
-
-  # E2E tests run in parallel with the build
-  e2e-test:
-    name: E2E Tests (shard ${{ matrix.shard }})
-    # Runs alongside the build, not after it: this job builds what it needs itself (Gradle
-    # cache), and waiting on the build only added its duration to the critical path.
-    needs: [check-paths, check-runner]
-    if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        # Scenarios run one at a time in a single JVM; split them by a stable hash of their name.
-        shard: [0, 1, 2]
-    # Run on PRIMARY_OS only - E2E tests are platform-independent LSP protocol tests
-    # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
-    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
+          node --input-type=module <<'JS'
+          import { appendFileSync, copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
+          import { createHash } from 'node:crypto';
+          import { gunzipSync } from 'node:zlib';
+          import { readEvidenceBytes, readEvidenceText } from './support/tools/ci/read-evidence.mjs';
+          try {
+            const root = process.env.GITHUB_WORKSPACE + '/support/.publication/';
+            const r = JSON.parse(readEvidenceText(root + 'receipt.json', 4096));
+            const keys = [
+              "schemaVersion",
+              "profile",
+              "base",
+              "tree",
+              "sourceDisposition",
+              "sourcePath",
+              "sourceBlob",
+              "sourceSha256",
+              "testClass",
+              "expectedTestCount",
+              "expectedTestNames",
+              "gradleVersion",
+              "gradleSha256",
+              "gradleCacheKey",
+              "wrapperJarSha256",
+              "patchBytes",
+              "patchSha256",
+              "payloadBytes",
+              "payloadSha256",
+            ];
+            const valid = value => { if (!value) throw new Error(); };
+            valid(JSON.stringify(Object.keys(r).sort()) === JSON.stringify(keys.sort()));
+            valid(r.schemaVersion === 2);
+            valid(r.profile === "b04-hover-token-coordinates-red-v1");
+            valid(r.sourceDisposition === "new-file");
+            valid(r.sourcePath === "gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/providers/hover/HoverTokenCoordinatesTest.kt");
+            valid(r.base === "16e3040c91453e4f9cd2cfb963406027b22fccc6");
+            valid(r.tree === "c2ada93a491027c24f7d0989bc2a6c1076ebda77");
+            valid(r.sourceBlob === "94056cb8dde602df53d47d9be481c852d9d00cd2");
+            valid(r.sourceSha256 === "6afaddbdbe4d3918c84a428ebf6e4afb272602948820448560fe97860059b169");
+            valid(r.patchSha256 === "732e9fdb8754adc5d7903d659886c4f0999e4a1cb1d8dd896d438d608e45309b");
+            valid(r.patchBytes === 4400);
+            valid(r.payloadBytes === 1255);
+            valid(r.payloadSha256 === "96c71ac636a53a14b22c54c9be2a92315c0d48e8af04242a9a42830ff1f6bd84");
+            valid(r.testClass === "com.github.albertocavalcante.gvy.gls.providers.hover.HoverTokenCoordinatesTest");
+            valid(r.expectedTestCount === 4);
+            valid(JSON.stringify(r.expectedTestNames) === JSON.stringify([
+              "code after a two emoji comment remains hoverable at its first character()",
+              "a comment after an emoji comment rejects hover at its first slash()",
+              "string whitespace after a two emoji comment remains a valid hover position()",
+              "native hover after a two emoji comment returns String content and its UTF16 range()",
+            ]));
+            valid(r.gradleVersion === '9.8.2' && r.gradleCacheKey === '8wepis63pzuhrlfaiy04bagwu');
+            valid(r.gradleSha256 === '21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607');
+            valid(r.wrapperJarSha256 === '3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98');
+            for (const key of ['base', 'tree', 'sourceBlob']) valid(typeof r[key] === 'string' && /^[0-9a-f]{40}$/.test(r[key]));
+            valid(typeof r.payloadSha256 === 'string' && /^[0-9a-f]{64}$/.test(r.payloadSha256));
+            valid(Number.isSafeInteger(r.patchBytes) && r.patchBytes > 0 && r.patchBytes <= 65536);
+            valid(Number.isSafeInteger(r.payloadBytes) && r.payloadBytes > 0 && r.payloadBytes <= 16384);
+            const payload = readEvidenceBytes(root + 'payload.patch.gz', 16384);
+            const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+            valid(payload.length === r.payloadBytes && digest(payload) === r.payloadSha256);
+            const patch = gunzipSync(payload, { maxOutputLength: 65536 });
+            valid(patch.length === r.patchBytes && digest(patch) === r.patchSha256);
+            writeFileSync(process.env.RUNNER_TEMP + '/gvy-b04-hover-token-reviewed.patch', patch, { flag: 'wx' });
+            const proof = process.env.RUNNER_TEMP + '/gvy-b04-hover-token-publication-proof';
+            mkdirSync(proof);
+            copyFileSync(root + 'receipt.json', proof + '/input-receipt.json');
+            appendFileSync(process.env.GITHUB_OUTPUT, `base=${r.base}\ntree=${r.tree}\nsourceBlob=${r.sourceBlob}\nsourceSha256=${r.sourceSha256}\n`);
+          } catch {
+            console.error('B04_PAYLOAD_VALIDATION_FAILED');
+            process.exitCode = 1;
+          }
+          JS
+      - name: Checkout exact candidate base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.receipt.outputs.base }}
+          path: candidate
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Set up JDK 17
+      - name: Apply only the new reviewed hover token test
+        working-directory: candidate
+        shell: bash
+        env:
+          EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
+          EXPECTED_TREE: ${{ steps.receipt.outputs.tree }}
+          EXPECTED_BLOB: ${{ steps.receipt.outputs.sourceBlob }}
+          EXPECTED_SOURCE_SHA: ${{ steps.receipt.outputs.sourceSha256 }}
+        run: |
+          set -euo pipefail
+          source='gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/providers/hover/HoverTokenCoordinatesTest.kt'
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
+          base_entry=$(git ls-tree -r --name-only HEAD -- "$source")
+          [[ -z "$base_entry" ]]
+          [[ ! -e "$source" && ! -L "$source" ]]
+          status_before=$(git status --porcelain --untracked-files=all)
+          [[ -z "$status_before" ]]
+          git switch -c test/bench-hover-token-coordinates-hosted
+          git apply --check --index "$RUNNER_TEMP/gvy-b04-hover-token-reviewed.patch"
+          git apply --index "$RUNNER_TEMP/gvy-b04-hover-token-reviewed.patch"
+          changed_paths=$(git diff --cached --name-only "$EXPECTED_BASE")
+          mapfile -t changed <<<"$changed_paths"
+          [[ ${#changed[@]} == 1 && "${changed[0]}" == "$source" ]]
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" && "$(git rev-parse ":$source")" == "$EXPECTED_BLOB" ]]
+          printf '%s  %s\n' "$EXPECTED_SOURCE_SHA" "$source" | sha256sum -c -
+          git diff --quiet
+          git diff --cached --check
+      - name: Set up JDK for compilation and explicit test runtime
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+          java-version: '21.0.13+9'
+      - name: Set up Python for bounded JUnit inspection
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Set Gradle flags
+          python-version: '3.11.18'
+      - name: Provision checksum-pinned Gradle and normal hook runner
+        working-directory: candidate
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
-            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
+          set -euo pipefail
+          [[ -z "${GRADLE_USER_HOME:-}" ]]
+          properties=gradle/wrapper/gradle-wrapper.properties
+          for setting in 'distributionBase=GRADLE_USER_HOME' 'distributionPath=wrapper/dists' 'zipStoreBase=GRADLE_USER_HOME' 'zipStorePath=wrapper/dists' 'distributionUrl=https\://services.gradle.org/distributions/gradle-9.8.2-bin.zip' 'distributionSha256Sum=21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607'; do
+              grep -Fqx "$setting" "$properties"
+          done
+          [[ "$(grep -c '^distributionUrl=' "$properties")" == 1 ]]
+          [[ "$(grep -c '^distributionSha256Sum=' "$properties")" == 1 ]]
+          printf '%s  %s\n' 3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98 gradle/wrapper/gradle-wrapper.jar | sha256sum -c -
+          # Official PathAssembler URL key; SHA-256 below verifies the archive.
+          cache="$HOME/.gradle/wrapper/dists/gradle-9.8.2-bin/8wepis63pzuhrlfaiy04bagwu"
+          test ! -e "$cache" && test ! -L "$cache"
+          mkdir -p "$cache"
+          mkdir "$RUNNER_TEMP/b04-hover-token-gradle-download"
+          gh release download v9.8.2 --repo gradle/gradle-distributions --pattern gradle-9.8.2-bin.zip --dir "$RUNNER_TEMP/b04-hover-token-gradle-download"
+          archive="$RUNNER_TEMP/b04-hover-token-gradle-download/gradle-9.8.2-bin.zip"
+          [[ "$(stat -c %s "$archive")" == 151620138 ]]
+          printf '%s  %s\n' 21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607 "$archive" | sha256sum -c -
+          mv "$archive" "$cache/gradle-9.8.2-bin.zip"
+          jq -n '{version:"9.8.2",sha256:"21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607",bytes:151620138,checksumVerified:true,cacheLayout:"gradle-wrapper-default"}' >"$RUNNER_TEMP/gvy-b04-hover-token-publication-proof/gradle-bootstrap.json"
+          mkdir "$RUNNER_TEMP/b04-hover-token-hook-bin"
+          gh release download v2.2.2 --repo evilmartians/lefthook --pattern lefthook_2.2.2_Linux_x86_64 --dir "$RUNNER_TEMP/b04-hover-token-hook-bin"
+          printf '%s  %s\n' 4fbf89eb7748c6aed84d833ee1a29edac48fae614468ca9a82896ec32f2800b6 "$RUNNER_TEMP/b04-hover-token-hook-bin/lefthook_2.2.2_Linux_x86_64" | sha256sum -c -
+          mv "$RUNNER_TEMP/b04-hover-token-hook-bin/lefthook_2.2.2_Linux_x86_64" "$RUNNER_TEMP/b04-hover-token-hook-bin/lefthook"
+          chmod 755 "$RUNNER_TEMP/b04-hover-token-hook-bin/lefthook"
+          echo "$RUNNER_TEMP/b04-hover-token-hook-bin" >>"$GITHUB_PATH"
+      - name: Run normal formatter with canonical Gradle diagnostics
+        id: formatted
+        working-directory: candidate
+        shell: bash
+        env:
+          EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
+          EXPECTED_TREE: ${{ steps.receipt.outputs.tree }}
+        run: |
+          set -euo pipefail
+          proof="$RUNNER_TEMP/gvy-b04-hover-token-publication-proof"
+          source='gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/providers/hover/HoverTokenCoordinatesTest.kt'
+          head=$(git rev-parse HEAD)
+          [[ "$head" == "$EXPECTED_BASE" ]]
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          jq -n --arg source "$head" --arg support "$GITHUB_SHA" --arg tree "$EXPECTED_TREE" \
+              '{sourceHead:$source,supportHead:$support,inputTree:$tree,overlay:true}' >"$proof/format-input-context.json"
+          if GITHUB_SHA="$EXPECTED_BASE" timeout --signal=TERM --kill-after=30s 15m node tools/ci/run-gradle.mjs --report-root "$proof/gradle" --producer b04-format lintFix --no-daemon --no-parallel --max-workers=1 -PtestJavaVersion=21 --stacktrace; then
+              status=0
           else
-            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
+              status=$?
           fi
-
-          case "${{ github.event.inputs.test_log_level }}" in
-            "info")
-              echo "TEST_LOG_FLAG=--info" >> "$GITHUB_ENV"
-              ;;
-            "debug")
-              echo "TEST_LOG_FLAG=--debug" >> "$GITHUB_ENV"
-              ;;
-            *)
-              echo "TEST_LOG_FLAG=" >> "$GITHUB_ENV"
-              ;;
-          esac
-
-      # E2E Tests (automatically builds shadowJar via task dependency)
-      # Now runs with intelligent parallel forks (2-3 based on runner OS)
-      - name: Run E2E Tests
-        timeout-minutes: 15
+          jq -n --argjson exitCode "$status" '{exitCode:$exitCode,overlay:true}' >"$proof/format-status.json"
+          git diff --name-only >"$proof/formatter-changed-paths.txt"
+          git diff -- "$source" >"$proof/formatter-only.diff"
+          cp "$source" "$proof/formatted-HoverTokenCoordinatesTest.kt"
+          if [[ "$status" != 0 ]]; then
+              exit "$status"
+          fi
+          mapfile -t changed <"$proof/formatter-changed-paths.txt"
+          [[ ${#changed[@]} == 0 || (${#changed[@]} == 1 && "${changed[0]}" == "$source") ]]
+          git ls-files --others --exclude-standard -z >"$proof/formatter-untracked-paths.nul"
+          test ! -s "$proof/formatter-untracked-paths.nul"
+          git add "$source"
+          git diff --quiet
+          changed_paths=$(git diff --cached --name-only HEAD)
+          mapfile -t changed <<<"$changed_paths"
+          [[ ${#changed[@]} == 1 && "${changed[0]}" == "$source" ]]
+          tree=$(git write-tree)
+          blob=$(git rev-parse ":$source")
+          digest=$(sha256sum "$source" | cut -d' ' -f1)
+          printf 'tree=%s\nsourceBlob=%s\nsourceSha256=%s\n' "$tree" "$blob" "$digest" >>"$GITHUB_OUTPUT"
+          jq -n --arg inputTree "$EXPECTED_TREE" --arg tree "$tree" --arg blob "$blob" --arg digest "$digest" \
+              '{inputTree:$inputTree,tree:$tree,sourceBlob:$blob,sourceSha256:$digest,postBundleReview:"required"}' >"$proof/formatted-source.json"
+      - name: Commit through normal hooks and export exact source proof
+        working-directory: candidate
+        shell: bash
+        env:
+          EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
+          EXPECTED_TREE: ${{ steps.formatted.outputs.tree }}
+          INPUT_TREE: ${{ steps.receipt.outputs.tree }}
+          SOURCE_SHA: ${{ steps.formatted.outputs.sourceSha256 }}
+          SOURCE_BLOB: ${{ steps.formatted.outputs.sourceBlob }}
         run: |
-          args=(:tests:e2eTest --parallel --max-workers=2 --build-cache --stacktrace "-Dgroovy.lsp.e2e.shard=${{ matrix.shard }}/3")
-          if [[ -n "${TEST_LOG_FLAG}" ]]; then
-            args+=("${TEST_LOG_FLAG}")
+          set -euo pipefail
+          proof="$RUNNER_TEMP/gvy-b04-hover-token-publication-proof"
+          [[ -z "${LEFTHOOK:-}" && -z "${LEFTHOOK_EXCLUDE:-}" && -z "${LEFTHOOK_SKIP:-}" ]]
+          if git config --get core.hooksPath >/dev/null; then
+              printf '%s\n' 'B04_HOOKS_PATH_MUST_BE_UNSET' >&2
+              exit 1
+          else
+              hooks_query_status=$?
+              [[ "$hooks_query_status" == 1 ]] || exit "$hooks_query_status"
           fi
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
+          lefthook install
+          test -x .git/hooks/pre-commit && test -x .git/hooks/commit-msg
+          git config user.name 'gvy publication automation'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff --quiet
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          set +e
+          timeout --signal=TERM --kill-after=30s 15m git commit -m 'test(hover): cover UTF-16 token query coordinates' 2>&1 | (
+              ulimit -f 131072
+              exec tee "$proof/commit-hooks.log"
+          )
+          statuses=("${PIPESTATUS[@]}")
+          set -e
+          jq -n --argjson commandExitCode "${statuses[0]}" --argjson captureExitCode "${statuses[1]}" \
+              '{commandExitCode:$commandExitCode,captureExitCode:$captureExitCode}' >"$proof/hooks-status.json"
+          head_after_hooks=$(git rev-parse HEAD)
+          # The pure log classifier has no Git guard; retain its observed source binding separately.
+          jq -n --arg before "$EXPECTED_BASE" --arg after "$head_after_hooks" --arg tree "$EXPECTED_TREE" --arg support "$GITHUB_SHA" \
+              '{scope:"post-hook-source-binding",headBeforeHooks:$before,headAfterHooks:$after,sourceTreeDuringHooks:$tree,supportHead:$support}' >"$proof/hook-source-context.json"
+          if GITHUB_SHA="$head_after_hooks" node tools/ci/check-gradle-diagnostics.mjs --log "$proof/commit-hooks.log" --report "$proof/hook-diagnostics" --baseline tools/ci/gradle-diagnostics.json --producer b04-commit-hooks --root "$PWD" --exit-code "${statuses[0]}" --capture-exit-code "${statuses[1]}"; then
+              diagnostic=0
+          else
+              diagnostic=$?
           fi
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer e2e "${args[@]}"
+          [[ "${statuses[0]}" == 0 && "${statuses[1]}" == 0 && "$diagnostic" == 0 ]]
+          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" && "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
+          source='gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/providers/hover/HoverTokenCoordinatesTest.kt'
+          [[ "$(git rev-parse "HEAD:$source")" == "$SOURCE_BLOB" ]]
+          printf '%s  %s\n' "$SOURCE_SHA" "$source" | sha256sum -c -
+          git diff --quiet && git diff --cached --quiet
+          status_after_hooks=$(git status --porcelain --untracked-files=all)
+          [[ -z "$status_after_hooks" ]]
+          git bundle create "$RUNNER_TEMP/b04-hover-token-candidate.bundle" HEAD "^$EXPECTED_BASE"
+          git bundle verify "$RUNNER_TEMP/b04-hover-token-candidate.bundle"
+          mv "$RUNNER_TEMP/b04-hover-token-candidate.bundle" "$proof/candidate.bundle"
+          jq -n --arg base "$EXPECTED_BASE" --arg input "$INPUT_TREE" --arg tree "$EXPECTED_TREE" --arg sourceSha "$SOURCE_SHA" --arg sourceBlob "$SOURCE_BLOB" \
+              --arg head "$(git rev-parse HEAD)" --arg support "$GITHUB_SHA" \
+              '{base:$base,inputTree:$input,tree:$tree,sourceSha256:$sourceSha,sourceBlob:$sourceBlob,head:$head,supportHead:$support,testStatus:"not-run",postBundleReview:"required"}' >"$proof/prepared-commit.json"
+          (cd "$proof" && sha256sum candidate.bundle >bundle.sha256)
+      - name: Run four hover token coordinate tests on additional JDK 21 runtime
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof="$RUNNER_TEMP/gvy-b04-hover-token-publication-proof"
+          candidate=$(git rev-parse HEAD)
+          if GITHUB_SHA="$candidate" timeout --signal=TERM --kill-after=30s 15m node tools/ci/run-gradle.mjs --report-root "$proof/gradle" --producer b04-focused :gls:test --tests com.github.albertocavalcante.gvy.gls.providers.hover.HoverTokenCoordinatesTest -PtestJavaVersion=21 --no-daemon --no-parallel --max-workers=1 --rerun-tasks --stacktrace --info; then
+              status=0
+          else
+              status=$?
+          fi
+          clean=true
+          if status_after_tests=$(git status --porcelain --untracked-files=all); then
+              [[ -z "$status_after_tests" ]] || clean=false
+          else
+              clean=false
+          fi
+          if ! git diff --quiet || ! git diff --cached --quiet || [[ "$(git rev-parse HEAD)" != "$candidate" ]]; then
+              clean=false
+          fi
+          jq -n --arg head "$candidate" --arg support "$GITHUB_SHA" --argjson exitCode "$status" \
+              --argjson worktreeCleanAfter "$clean" \
+              '{candidateHead:$head,supportHead:$support,exitCode:$exitCode,worktreeCleanAfter:$worktreeCleanAfter,requestedClass:"com.github.albertocavalcante.gvy.gls.providers.hover.HoverTokenCoordinatesTest",requestedTests:4,requestedTestJavaVersion:21,minimumJava17Validated:false}' >"$proof/focused-status.json"
+          if python - <<'PY'
+          import hashlib
+          import json
+          import os
+          import re
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
 
-      - name: Upload Gradle diagnostic evidence
-        if: ${{ !cancelled() }}
+
+          def regular_bytes(path: Path, limit: int) -> bytes:
+              if path.is_symlink() or not path.is_file() or path.stat().st_size > limit:
+                  raise ValueError("missing or oversized evidence")
+              data = path.read_bytes()
+              if len(data) > limit:
+                  raise ValueError("evidence grew beyond its bound")
+              return data
+
+
+          def object_fields(value: object) -> dict[str, object]:
+              if not isinstance(value, dict):
+                  raise ValueError("expected evidence object")
+              return {str(key): item for key, item in value.items()}
+
+
+          def one_match(pattern: str, text: str) -> re.Match[str]:
+              matches = list(re.finditer(pattern, text, re.MULTILINE))
+              if len(matches) != 1:
+                  raise ValueError("incomplete execution frame")
+              return matches[0]
+
+
+          proof = Path(os.environ["RUNNER_TEMP"]) / "gvy-b04-hover-token-publication-proof"
+          report = Path(
+              "gls/build/test-results/test/TEST-com.github.albertocavalcante.gvy.gls.providers.hover.HoverTokenCoordinatesTest.xml"
+          )
+          observation: dict[str, object] = {
+              "complete": False,
+              "focusedGatePassed": False,
+              "requestedTests": 4,
+              "compileTestKotlin": "not-observed",
+              "testTask": "not-observed",
+              "scope": "junit-fresh-execution-and-source",
+          }
+          try:
+              data = regular_bytes(report, 2 * 1024 * 1024)
+              (proof / "junit.xml").write_bytes(data)
+              xml_text = data.decode("utf-8")
+              if re.search(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", xml_text) or "<!DOCTYPE" in xml_text or "<!ENTITY" in xml_text:
+                  raise ValueError("unsupported XML declarations or encoding")
+              encoding = re.search(r"""<\?xml\b[^?]*\bencoding\s*=\s*["']([^"']+)["']""", xml_text)
+              if encoding and encoding.group(1).lower() != "utf-8":
+                  raise ValueError("unsupported JUnit encoding")
+              suite = ET.fromstring(xml_text)
+              cases = suite.findall("testcase")
+              counts = {key: int(suite.attrib[key]) for key in ("tests", "failures", "errors", "skipped")}
+              classname = "com.github.albertocavalcante.gvy.gls.providers.hover.HoverTokenCoordinatesTest"
+              valid = suite.tag == "testsuite" and suite.get("name") == classname
+              valid = valid and all(0 <= value <= 4 for value in counts.values())
+              valid = valid and counts["tests"] == len(cases) == 4 and counts["skipped"] == 0
+              valid = valid and all(case.get("classname") == classname and bool(case.get("name", "").strip()) for case in cases)
+              expected_names = [
+                  "code after a two emoji comment remains hoverable at its first character()",
+                  "a comment after an emoji comment rejects hover at its first slash()",
+                  "string whitespace after a two emoji comment remains a valid hover position()",
+                  "native hover after a two emoji comment returns String content and its UTF16 range()",
+              ]
+              valid = valid and sorted(case.get("name", "") for case in cases) == sorted(expected_names)
+              valid = valid and counts["failures"] == sum(case.find("failure") is not None for case in cases)
+              valid = valid and counts["errors"] == sum(case.find("error") is not None for case in cases)
+              valid = valid and all(case.find("skipped") is None for case in cases)
+              valid = valid and all(sum(len(case.findall(tag)) for tag in ("failure", "error")) <= 1 for case in cases)
+              logs = list((proof / "gradle").glob("b04-focused-*/raw.log"))
+              if len(logs) != 1:
+                  raise ValueError("missing focused capture")
+              raw = regular_bytes(logs[0], 128 * 1024 * 1024)
+              text = raw.decode("utf-8")
+              diagnostic = object_fields(
+                  json.loads(regular_bytes(logs[0].with_name("diagnostics.json"), 2 * 1024 * 1024).decode("utf-8"))
+              )
+              context = object_fields(diagnostic.get("context"))
+              raw_identity = object_fields(diagnostic.get("log"))
+              prepared = object_fields(json.loads(regular_bytes(proof / "prepared-commit.json", 4096).decode("utf-8")))
+              focused = object_fields(json.loads(regular_bytes(proof / "focused-status.json", 4096).decode("utf-8")))
+              candidate = prepared.get("head")
+              if not isinstance(candidate, str) or not re.fullmatch(r"[0-9a-f]{40}", candidate):
+                  raise ValueError("invalid candidate identity")
+              native_exit = diagnostic.get("commandExitCode")
+              if type(native_exit) is not int or native_exit not in (0, 1):
+                  raise ValueError("unexpected native Gradle exit")
+              capture_exit = diagnostic.get("captureExitCode")
+              if type(capture_exit) is not int or not 0 <= capture_exit <= 255:
+                  raise ValueError("invalid capture exit")
+              diagnostic_ok = diagnostic.get("ok")
+              if not isinstance(diagnostic_ok, bool):
+                  raise ValueError("invalid diagnostic verdict")
+              unexpected = diagnostic.get("unexpected")
+              if not isinstance(unexpected, list) or not all(isinstance(item, str) and bool(item.strip()) for item in unexpected):
+                  raise ValueError("invalid unexpected diagnostic list")
+              wrapper_exit = focused.get("exitCode")
+              if type(wrapper_exit) is not int or not 0 <= wrapper_exit <= 255:
+                  raise ValueError("invalid wrapper exit")
+              expected_wrapper = native_exit if native_exit else (0 if diagnostic_ok else 1)
+              required = {"schemaVersion", "complete", "captureExitCode", "producer", "worktreeDirty", "commandSignal"}
+              valid = valid and required <= diagnostic.keys()
+              valid = valid and type(diagnostic.get("schemaVersion")) is int and diagnostic.get("schemaVersion") == 1
+              valid = valid and diagnostic.get("producer") == "b04-focused" and diagnostic.get("complete") is True
+              valid = valid and capture_exit == 0
+              valid = valid and diagnostic.get("commandSignal") is None and diagnostic.get("worktreeDirty") is False
+              valid = valid and type(context.get("schemaVersion")) is int and context.get("schemaVersion") == 1
+              valid = valid and context.get("command") == "gradle"
+              valid = valid and context.get("headSha") == context.get("testedSha") == focused.get("candidateHead") == candidate
+              valid = valid and focused.get("worktreeCleanAfter") is True and wrapper_exit == expected_wrapper
+              valid = valid and focused.get("requestedClass") == classname
+              valid = valid and type(focused.get("requestedTests")) is int and focused.get("requestedTests") == 4
+              valid = (
+                  valid and type(focused.get("requestedTestJavaVersion")) is int and focused.get("requestedTestJavaVersion") == 21
+              )
+              valid = valid and (native_exit == 0 or not diagnostic_ok)
+              valid = valid and (not diagnostic_ok or not unexpected)
+              valid = valid and type(raw_identity.get("bytes")) is int and raw_identity.get("bytes") == len(raw)
+              valid = valid and raw_identity.get("sha256") == hashlib.sha256(raw).hexdigest()
+              compile_headers = list(re.finditer(r"^> Task :gls:compileTestKotlin([ \t][^\n]*)?$", text, re.MULTILINE))
+              compile_states = [match.group(1) or "" for match in compile_headers]
+              test_headers = list(re.finditer(r"^> Task :gls:test([ \t][^\n]*)?$", text, re.MULTILINE))
+              test_states = [match.group(1) or "" for match in test_headers]
+              summary_matches = list(re.finditer(r"^\d+ tests completed\b[^\n]*$", text, re.MULTILINE))
+              summaries = [match.group() for match in summary_matches]
+              failed = counts["failures"] + counts["errors"] > 0
+              expected_summary = f"{counts['tests']} tests completed, {counts['failures'] + counts['errors']} failed"
+              # Gradle --info renders the task heading at the start and again after executor completion.
+              failed_profile = test_states == ["", " FAILED"] and summaries == [expected_summary]
+              success_profile = test_states == ["", ""] and not summaries
+              started = one_match(r"^Gradle Test Executor ([1-9][0-9]*) started executing tests\.$", text)
+              finished = one_match(r"^Gradle Test Executor ([1-9][0-9]*) finished executing tests\.$", text)
+              spawned = one_match(r"^Successfully started process 'Gradle Test Executor ([1-9][0-9]*)'$", text)
+              spawn = one_match(
+                  r"^Starting process 'Gradle Test Executor ([1-9][0-9]*)'\. Working directory: [^\n]+ Command: "
+                  r"[^\n]+worker\.org\.gradle\.process\.internal\.worker\.GradleWorkerMain 'Gradle Test Executor \1'$",
+                  text,
+              )
+              build = one_match(r"^BUILD (SUCCESSFUL|FAILED) in [^\n]+$", text)
+              executor_lines = re.findall(
+                  r"^(?:Gradle Test Executor|Starting process 'Gradle Test Executor|Successfully started process 'Gradle Test Executor)[^\n]*$",
+                  text,
+                  re.MULTILINE,
+              )
+              build_lines = re.findall(r"^BUILD\b[^\n]*$", text, re.MULTILINE)
+              frame_valid = (
+                  compile_states == [""] and len(test_headers) == 2 and len(executor_lines) == 4 and len(build_lines) == 1
+              )
+              if frame_valid:
+                  frame_valid = len({started.group(1), finished.group(1), spawn.group(1), spawned.group(1)}) == 1
+                  frame_valid = frame_valid and build.group(1) == ("FAILED" if failed else "SUCCESSFUL")
+                  frame_valid = frame_valid and (
+                      compile_headers[0].end()
+                      < test_headers[0].start()
+                      < spawn.start()
+                      < spawned.start()
+                      < finished.start()
+                      < test_headers[1].start()
+                      < build.start()
+                  )
+                  # The executor start marker may precede the first heading in the merged console stream.
+                  frame_valid = frame_valid and compile_headers[0].end() < started.start() < finished.start()
+                  if failed:
+                      frame_valid = (
+                          frame_valid
+                          and len(summary_matches) == 1
+                          and (test_headers[1].end() < summary_matches[0].start() < build.start())
+                      )
+              fresh_outcome = (failed_profile if failed else success_profile) and native_exit == (1 if failed else 0)
+              observation.update(counts)
+              observation["nativeCommandExitCode"] = native_exit
+              observation["captureExitCode"] = capture_exit
+              observation["toolDiagnosticsOk"] = diagnostic_ok
+              observation["unexpectedDiagnosticCount"] = len(unexpected)
+              observation["compileTestKotlin"] = "executed" if compile_states == [""] else "not-proved"
+              observation["executorLifecycle"] = "executed" if frame_valid else "not-proved"
+              if frame_valid and failed_profile:
+                  observation["testTask"] = "executed-failed"
+              elif frame_valid and success_profile:
+                  observation["testTask"] = "executed"
+              else:
+                  observation["testTask"] = "not-proved"
+              observation["complete"] = valid and frame_valid and fresh_outcome
+              observation["focusedGatePassed"] = observation["complete"] and not failed and diagnostic_ok and not unexpected
+          except (OSError, ValueError, KeyError, ET.ParseError):
+              observation["error"] = "B04_JUNIT_OBSERVATION_INCOMPLETE"
+          (proof / "junit-observation.json").write_text(json.dumps(observation, indent=2) + "\n", encoding="utf-8")
+          raise SystemExit(0 if observation["complete"] else 2)
+          PY
+          then
+              junit_status=0
+          else
+              junit_status=$?
+          fi
+          if [[ "$status" != 0 ]]; then
+              exit "$status"
+          fi
+          if [[ "$clean" != true ]]; then
+              exit 2
+          fi
+          exit "$junit_status"
+      - name: Upload prepared commit and available execution evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gradle-evidence-e2e-${{ matrix.shard }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/gradle-evidence/
+          name: gvy-b04-hover-token-publication-proof-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gvy-b04-hover-token-publication-proof/
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload E2E Test Results
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: e2e-test-results-shard-${{ matrix.shard }}
-          path: |-
-            **/build/test-results/e2eTest/
-            **/build/reports/tests/e2eTest/
           retention-days: 7
-
-      - name: Require E2E test reports
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          report=$(find . -type f -path '*/build/test-results/e2eTest/*.xml' -print -quit)
-          if [[ -z "$report" ]]; then
-            echo "::error::E2E execution produced no JUnit reports."
-            exit 1
-          fi
-
-  # Cross-platform smoke tests - verify JAR works on key platforms
-  # Lighter than the release matrix; validate the packaged JAR before merging too.
-  smoke-test:
-    name: Smoke Test (${{ matrix.os }})
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        # Key platforms for quick validation (full matrix in release.yml)
-        os: [ubuntu-24.04, macos-15, windows-2022]
-    steps:
-      - name: Download JAR artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          pattern: groovy-lsp-jar-*
-          merge-multiple: true
-          path: dist
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Verify Java version
-        run: java -Xmx64m -version
-
-      - name: Run smoke test
-        shell: bash
-        run: |
-          JAR_FILE=$(find dist -name "*.jar" -type f | head -1)
-          if [[ -z "$JAR_FILE" ]]; then
-            echo "::error::No JAR file found in dist/"
-            exit 1
-          fi
-          echo "Testing JAR: $JAR_FILE"
-          java -Xmx256m -jar "$JAR_FILE" --help
-          echo "✅ Smoke test passed on ${{ matrix.os }}!"
-
-  launcher:
-    name: Native launcher
-    needs: check-paths
-    if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci-launcher.yml
-
-  zed:
-    name: Zed adapter
-    needs: check-paths
-    if: needs.check-paths.outputs.run_zed_ci == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      CARGO_BUILD_JOBS: 2
-      CARGO_TERM_COLOR: never
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Provision pinned Rust toolchain and WASM target
-        working-directory: editors/zed
-        shell: bash
-        run: |
-          set -euo pipefail
-          (
-            set -e
-            rustup toolchain install --no-self-update
-            rustup show active-toolchain
-          ) 2>&1 | tee "$RUNNER_TEMP/zed-rustup.log"
-          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-rustup.log"
-      - name: Check Rust adapter
-        shell: bash
-        run: |
-          set -euo pipefail
-          make zed-check 2>&1 | tee "$RUNNER_TEMP/zed-check.log"
-          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-check.log"
-      - name: Build WASM adapter
-        shell: bash
-        run: |
-          set -euo pipefail
-          make zed-build 2>&1 | tee "$RUNNER_TEMP/zed-build.log"
-          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-build.log"
-
-  validate:
-    name: Validation Check
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
-      checks: read
-    needs: [lint, build, e2e-test, smoke-test, launcher, zed, bazel, check-runner, check-paths]
-    if: always()
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Require accounted Actions diagnostics
-        if: ${{ !cancelled() }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node tools/ci/check-runner-diagnostics.mjs --report "$RUNNER_TEMP/runner-diagnostics"
-      - name: Require complete current-run validation
-        if: ${{ !cancelled() }}
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-          SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: node tools/ci/check-readiness.mjs "$RUNNER_TEMP/ci-readiness.json" "$RUNNER_TEMP/runner-diagnostics/diagnostics.json"
-      - name: Upload required verdict
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ci-readiness
-          path: ${{ runner.temp }}/ci-readiness.json
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload Actions diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: runner-diagnostics-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/runner-diagnostics/
-          if-no-files-found: error
-          retention-days: 14
-  dependency-check:
-    name: Check Dependencies
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: 17
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      - name: Check for dependency updates
-        run: ./gradlew dependencyUpdates --refresh-dependencies || true
