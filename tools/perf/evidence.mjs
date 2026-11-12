@@ -70,17 +70,22 @@ const bounded = data => { if (data.length > MAX_BYTES) fail(); return data; };
  * Filesystem and validation errors intentionally expose only fixed error codes.
  */
 export async function writeRun(directory, run) {
-  let owned = false;
+  let owned;
   try {
     validate(run);
     if (typeof directory !== 'string' || Buffer.byteLength(directory) > 1024) fail();
     const files = { 'manifest.json': bounded(encode(run.manifest)), 'outcomes.jsonl': bounded(Buffer.from(run.outcomes.map(o => JSON.stringify(o)).join('\n') + '\n')), 'summary.json': bounded(encode(run.summary)) };
     const marker = encode(Object.fromEntries(Object.entries(files).map(([name, data]) => [name, hash(data)])));
-    await fs.mkdir(directory, { mode: 0o700 }); owned = true;
+    await fs.mkdir(directory, { mode: 0o700 }); owned = await fs.lstat(directory);
     for (const [name, data] of Object.entries(files)) await fs.writeFile(join(directory, name), data, { flag: 'wx', mode: 0o600 });
     await fs.writeFile(join(directory, 'complete.json'), marker, { flag: 'wx', mode: 0o600 });
   } catch {
-    if (owned) await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+    if (owned) {
+      const current = await fs.lstat(directory).catch(() => null);
+      if (current?.isDirectory() && current.dev === owned.dev && current.ino === owned.ino) {
+        await fs.rm(directory, { recursive: true, force: true }).catch(() => {});
+      }
+    }
     throw new Error('EVIDENCE_WRITE_FAILED');
   }
 }

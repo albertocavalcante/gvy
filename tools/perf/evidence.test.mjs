@@ -25,6 +25,7 @@ test('rejects canaries in fields and errors without exporting them', async () =>
   }
   const run = sample(); run.outcomes[0].operation = 'SECRET_CANARY';
   await assert.rejects(writeRun(join(dir, 'bad'), run), e => !String(e).includes('SECRET_CANARY'));
+  await assert.rejects(readRun(join(dir, 'SECRET_CANARY')), e => !String(e).includes('SECRET_CANARY'));
   await writeRun(join(dir, 'good'), sample());
   for (const name of await fs.readdir(join(dir, 'good'))) assert.ok(!(await fs.readFile(join(dir, 'good', name), 'utf8')).includes('SECRET_CANARY'));
 }));
