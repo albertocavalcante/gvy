@@ -3,10 +3,12 @@ package com.github.albertocavalcante.gvy.gls.testing.client
 import org.eclipse.lsp4j.TextEdit
 import java.net.URI
 import java.util.Collections
-import java.util.UUID
+
+/** In-process identity for one open lifecycle; not a serialized or replay identity. */
+internal class BufferIncarnation
 
 /** A caller-owned snapshot of an open editor buffer. Versions are observed, not advanced by planning. */
-internal data class EditorBufferSnapshot(val uri: URI, val version: Int, val text: String, val incarnation: UUID)
+internal data class EditorBufferSnapshot(val uri: URI, val version: Int, val text: String, val incarnation: BufferIncarnation)
 
 /** One simultaneous edit set against an open buffer; null version means no version constraint was supplied. */
 internal data class EditorDocumentChange(val uri: URI, val expectedVersion: Int?, val edits: List<TextEdit>)

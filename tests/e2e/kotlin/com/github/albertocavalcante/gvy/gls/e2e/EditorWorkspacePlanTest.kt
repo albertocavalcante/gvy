@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
+import com.github.albertocavalcante.gvy.gls.testing.client.BufferIncarnation
 import com.github.albertocavalcante.gvy.gls.testing.client.EditorBufferSnapshot
 import com.github.albertocavalcante.gvy.gls.testing.client.EditorDocumentChange
 import com.github.albertocavalcante.gvy.gls.testing.client.EditorPositionEncoding
@@ -12,13 +13,12 @@ import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.junit.jupiter.api.Test
 import java.net.URI
-import java.util.UUID
 
 class EditorWorkspacePlanTest {
     private val first = URI.create("file:///A.groovy")
     private val second = URI.create("file:///B.groovy")
-    private val firstIncarnation = UUID.randomUUID()
-    private val secondIncarnation = UUID.randomUUID()
+    private val firstIncarnation = BufferIncarnation()
+    private val secondIncarnation = BufferIncarnation()
 
     @Test
     fun `plans all documents from snapshots without mutating them`() {
@@ -31,7 +31,7 @@ class EditorWorkspacePlanTest {
 
         assertThat(plan.getValue(first)).isEqualTo(PlannedBufferEdit(buffers.getValue(first), "one!"))
         assertThat(plan.getValue(first).source)
-            .isNotEqualTo(buffers.getValue(first).copy(incarnation = UUID.randomUUID()))
+            .isNotEqualTo(buffers.getValue(first).copy(incarnation = BufferIncarnation()))
         assertThat(plan.getValue(second)).isEqualTo(PlannedBufferEdit(buffers.getValue(second), "two!"))
         assertThat(buffers.getValue(first).text).isEqualTo("one")
         assertThat(buffers.getValue(first).version).isEqualTo(3)
