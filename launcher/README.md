@@ -3,8 +3,8 @@
 This source-only preview gives the existing JVM application a native `gvy` entry point. Its first purpose is to dogfood
 Kotlin/Native in a small, replaceable production boundary. The JVM still provides every CLI operation and LSP feature.
 
-The initial targets are macOS Apple silicon and Linux x64 with glibc. Windows, Intel macOS, Linux Arm64, bundled Java,
-runtime minimization and single-file extraction remain follow-up work in
+The preview targets macOS Apple silicon, Linux x64 with glibc, and Windows x64 (Windows 10 / Server 2016 or newer).
+Intel macOS, Linux Arm64, bundled Java, runtime minimization and single-file extraction remain follow-up work in
 [#1741](https://github.com/albertocavalcante/gvy/issues/1741). Existing JAR, editor and Homebrew installations continue
 to use their current entry points. This preview has a Gradle build; it has no Bazel or Buck2 native target or release
 artifact yet.
@@ -30,9 +30,16 @@ On Linux x64:
 launcher/build/install/linuxX64/gvy version --json
 ```
 
-The staging task builds the current server JAR and places `gvy` and `gvy.jar` together. Add that directory to PATH or
-symlink `gvy` into your preferred bin directory. Keep `gvy.jar` beside the actual executable; symlinks are resolved
-before payload lookup. Starting `gvy` with no arguments starts the existing LSP over stdio.
+On Windows x64, from PowerShell with JDK 21 available for the build:
+
+```powershell
+.\gradlew.bat :launcher:stageMingwX64Launcher
+.\launcher\build\install\mingwX64\gvy.exe version --json
+```
+
+The staging task builds the current server JAR and places `gvy` (`gvy.exe` on Windows) and `gvy.jar` together. Add that
+directory to PATH or symlink `gvy` into your preferred bin directory. Keep `gvy.jar` beside the actual executable;
+symlinks are resolved before payload lookup. Starting `gvy` with no arguments starts the existing LSP over stdio.
 
 ## Runtime and payload selection
 
@@ -44,14 +51,28 @@ before payload lookup. Starting `gvy` with no arguments starts the existing LSP 
 | `PATH`          | Search for `java` when both Java-home variables are unset.                                                |
 
 Java 17 or newer is required by the JVM application. An explicitly empty or invalid override fails without falling back.
-The launcher passes `-Xmx2g -jar <payload>` followed by every original argument, without interpreting shell syntax or
-consuming flags such as `--help`. JVM options can use Java's existing `JDK_JAVA_OPTIONS` or `JAVA_TOOL_OPTIONS`; those
-variables and the rest of the application environment are inherited unchanged.
+On Windows, empty `PATH` entries are ignored; an explicit `.` opts into searching the current directory. The launcher
+passes `-Xmx2g -jar <payload>` followed by every original argument, without interpreting shell syntax or consuming flags
+such as `--help`. JVM options can use Java's existing `JDK_JAVA_OPTIONS` or `JAVA_TOOL_OPTIONS`; those variables and the
+rest of the application environment are inherited unchanged.
 
 The POSIX implementation replaces its process with Java. Stdin, stdout, stderr, working directory, PID, signals and the
 application's exit status therefore belong directly to Java. Launcher failures print only to stderr: status 1 for
 configuration/payload failures, 127 when Java cannot be found, and 126 for other execution failures. Java's own
 validation handles unsupported runtimes and invalid JAR contents.
+
+Windows uses a supervised Java process, with UTF-16 paths/environment and shell-free argument quoting. A private job is
+assigned during process creation; terminating the launcher closes that job and terminates Java and its newly created
+descendants. Existing processes outside that job remain outside its ownership. Fresh project-tool daemons started by the
+server can therefore end with the launcher. Standard streams are inherited directly, and the full Windows exit status is
+preserved. A shared console delivers Ctrl+C directly to Java; the supervisor waits for Java's actual exit. Windows does
+not promise POSIX PID replacement or POSIX signal names.
+
+**Windows runtime limitation:** the selected `java.exe` can still reject installation/JAR paths outside the Windows ANSI
+code page. This was reproduced with direct Zulu Java 21 on an ACP-1252 machine; a UTF-16 launcher alone does not fix
+Java's conversion. Use an installation path representable by that runtime (ASCII with spaces is tested). See
+[#1817](https://github.com/albertocavalcante/gvy/issues/1817) for the exact evidence and the candidate UTF-8 manifest
+approach for a future gvy-owned bundled runtime. The preview never modifies the user's JDK or machine locale.
 
 ## Validate the boundary
 
@@ -61,15 +82,25 @@ Run the host's native tests, release linker and quality checks, then the process
 ./gradlew :launcher:macosArm64Test :launcher:stageMacosArm64Launcher :launcher:lintFix :launcher:lint
 GVY_LAUNCHER="$PWD/launcher/build/install/macosArm64/gvy" \
   GVY_TEST_JAR="$PWD/launcher/build/install/macosArm64/gvy.jar" \
-  node --test launcher/test/launcher.test.cjs
+  node --test --test-concurrency=1 launcher/test/*.test.cjs
 ```
 
 Use `linuxX64Test`, `stageLinuxX64Launcher` and the `linuxX64` directory on Linux. The process tests check argument
 boundaries, empty/Unicode arguments, binary stdin, separate stderr, environment preservation, runtime precedence,
 symlink payload lookup, failure statuses, process replacement and SIGINT. With `GVY_TEST_JAR`, they compare version JSON
 against direct Java execution and perform a complete LSP initialize/shutdown/exit handshake using the shared editor
-smoke helper. Without it, that one integration case reports an explicit skip. Native CI requires it on both platforms.
-The root JVM `test` task does not include native tests; native CI runs them explicitly.
+smoke helper. Without it, that integration case reports an explicit skip. Native CI requires it on every platform. The
+root JVM `test` task does not include native tests; native CI runs them explicitly.
+
+On Windows use `mingwX64Test`, `stageMingwX64Launcher`, and `gvy.exe`. The process harness compiles a tiny native PE
+probe with GCC; install MinGW GCC and Node 24 to run it locally. Windows tests exercise wide arguments, binary pipes,
+full exit statuses, private process-tree cancellation, hidden launches, runtime lookup, junctions and extended paths.
+The actual-JAR Unicode-path test executes separately and reports a narrowly attributed TODO only when direct Java
+reproduces #1817; this is a visible unsupported runtime case, not passing Unicode-JAR support.
+
+The agent workload test parses success/error SARIF, checks formatting without overwriting the source, reads an exported
+LSIF index, and opens a document over the default LSP transport to request class symbols. See the
+[dogfood findings](../kb/LAUNCHER_DOGFOOD.md) for reproduced defects, scope and remaining distribution work.
 
 Build size, startup time, runtime trimming and long-term platform maintenance remain measurements to collect, not
 benefits established by selecting Kotlin/Native. The process interface above can be reimplemented without moving Groovy

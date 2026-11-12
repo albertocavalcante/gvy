@@ -99,9 +99,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            arch: x86_64
+            arch: x64
             target: linuxX64
             producer: launcher-linux-x64
+            executable: gvy.kexe
             test-task: linuxX64Test
             link-task: linkReleaseExecutableLinuxX64
           # macos-15 is the standard Arm64 runner; macos-15-intel is a separate image.
@@ -109,18 +110,21 @@ jobs:
             arch: arm64
             target: macosArm64
             producer: launcher-macos-arm64
+            executable: gvy.kexe
             test-task: macosArm64Test
             link-task: linkReleaseExecutableMacosArm64
+          - os: windows-2025
+            arch: x64
+            target: mingwX64
+            producer: launcher-windows-x64
+            executable: gvy.exe
+            test-task: mingwX64Test
+            link-task: linkReleaseExecutableMingwX64
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           persist-credentials: false
-
-      - name: Verify native runner architecture
-        env:
-          EXPECTED_ARCH: ${{ matrix.arch }}
-        run: test "$(uname -m)" = "$EXPECTED_ARCH"
 
       - name: Setup build Java
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
@@ -133,10 +137,75 @@ jobs:
         with:
           node-version: 24
 
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: node -e 'if (process.arch !== process.env.EXPECTED_ARCH) throw new Error("Unexpected native runner architecture")'
+
+      - name: Select Windows PE probe compiler
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # TODO(#1828): Recheck the pinned K/N compiler compatibility by 2026-12-11.
+          # See: https://github.com/albertocavalcante/gvy/issues/1828
+          # The runner image installs modern MinGW here. K/N's older GCC crashes on Server 2025.
+          $compiler = 'C:\mingw64\bin\gcc.exe'
+          if (!(Test-Path -LiteralPath $compiler -PathType Leaf)) {
+            throw 'The Windows runner must provide its documented MinGW x64 compiler'
+          }
+          $target = (& $compiler -dumpmachine).Trim()
+          if ($LASTEXITCODE -ne 0 -or $target -ne 'x86_64-w64-mingw32') {
+            throw 'The Windows probe compiler must target native MinGW x64'
+          }
+          $version = (& $compiler -dumpfullversion).Trim()
+          if ($LASTEXITCODE -ne 0 -or $version -notmatch '^([0-9]+)\.' -or [int]$Matches[1] -lt 15) {
+            throw 'The Windows probe requires GCC 15 or newer'
+          }
+          & $compiler --version
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot identify the Windows probe compiler' }
+          Write-Output "Probe compiler SHA-256: $((Get-FileHash $compiler -Algorithm SHA256).Hash)"
+          "GVY_PROBE_CC=$compiler" >> $env:GITHUB_ENV
+          Split-Path -Parent $compiler >> $env:GITHUB_PATH
+
+      - name: Build Windows evidence helpers
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $reader = Join-Path $env:RUNNER_TEMP 'gvy-windows-evidence-reader.exe'
+          & $env:GVY_PROBE_CC -std=c11 -O2 -static -Wall -Wextra -Werror tools/ci/windows-evidence-reader.c -o $reader
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot build the Windows evidence reader' }
+          Write-Output "Evidence reader SHA-256: $((Get-FileHash $reader -Algorithm SHA256).Hash)"
+          "GVY_CI_EVIDENCE_READER=$reader" >> $env:GITHUB_ENV
+          $rootHelper = Join-Path $env:RUNNER_TEMP 'gvy-windows-private-root.exe'
+          & $env:GVY_PROBE_CC -std=c11 -O2 -static -Wall -Wextra -Werror tools/ci/windows-private-root.c -ladvapi32 -o $rootHelper
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot build the Windows private-root helper' }
+          Write-Output "Private-root helper SHA-256: $((Get-FileHash $rootHelper -Algorithm SHA256).Hash)"
+          "GVY_CI_PRIVATE_ROOT_HELPER=$rootHelper" >> $env:GITHUB_ENV
+          "GVY_PRIVATE_ROOT_HELPER=$rootHelper" >> $env:GITHUB_ENV
+          "GVY_TEST_CC=$env:GVY_PROBE_CC" >> $env:GITHUB_ENV
+          "GVY_TEST_PWSH=$(Join-Path $PSHOME 'pwsh.exe')" >> $env:GITHUB_ENV
+
+      - name: Select Windows Gradle Bash
+        if: runner.os == 'Windows'
+        run: |
+          bash_path=$(cygpath -w "$BASH")
+          printf 'GVY_CI_GRADLE_BASH=%s\n' "$bash_path" >> "$GITHUB_ENV"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Verify Gradle capture and evidence reads
+        run: >-
+          node --test --test-concurrency=1 tools/ci/gradle-launch.test.mjs
+          tools/ci/read-evidence.test.mjs tools/ci/windows-evidence.test.mjs
+
+      - name: Verify Windows provisioning boundary
+        if: runner.os == 'Windows'
+        run: >-
+          node --test --test-concurrency=1 tools/ci/windows-private-root.test.mjs
+          tools/ci/native-provisioning.windows.test.mjs
 
       - name: Test and link native launcher
         env:
@@ -197,9 +266,9 @@ jobs:
 
       - name: Verify forwarding and actual server CLI/LSP
         env:
-          GVY_LAUNCHER: ${{ github.workspace }}/launcher/build/bin/${{ matrix.target }}/releaseExecutable/gvy.kexe
+          GVY_LAUNCHER: ${{ github.workspace }}/launcher/build/bin/${{ matrix.target }}/releaseExecutable/${{ matrix.executable }}
           GVY_TEST_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
         run: |
           test -x "$GVY_LAUNCHER"
           test -s "$GVY_TEST_JAR"
-          node --test launcher/test/launcher.test.cjs
+          node --test --test-concurrency=1 launcher/test/*.test.cjs

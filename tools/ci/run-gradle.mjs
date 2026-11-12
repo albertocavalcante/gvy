@@ -9,6 +9,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { checkGradleDiagnostics, loadNativeDiagnosticPolicy, renderSummary } from './check-gradle-diagnostics.mjs';
 import { prepareNativeProvisioning, verifyNativeProvisioning } from './native-provisioning.mjs';
 import { effectiveGradleJvmArgs, gradleMemoryPlan, gradleMemoryObservationProfile } from './gradle-memory-options.mjs';
+import { gradleLaunch } from './gradle-launch.mjs';
 import { startGradleMemoryProbe } from './gradle-memory-probe.mjs';
 import { readEvidenceBytes, readEvidenceText } from './read-evidence.mjs';
 
@@ -87,10 +88,11 @@ function memoryPrivateDirectory(reportRoot) {
 }
 
 async function capture(args, dir, childEnv = {}) {
+  const launch = gradleLaunch(args);
   let captureExitCode = 0;
   const streams = ['stdout.log', 'stderr.log', 'console.log'].map(name => createWriteStream(join(dir, name), { flags: 'wx' }));
   const settled = streams.map(stream => finished(stream).catch(() => { captureExitCode = 1; }));
-  const child = spawn('./gradlew', args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...childEnv } });
+  const child = spawn(launch.executable, launch.args, { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, ...childEnv } });
   // Multiple pipe sinks preserve backpressure without retaining output in memory.
   child.stdout.pipe(streams[0]);
   child.stdout.pipe(streams[2], { end: false });

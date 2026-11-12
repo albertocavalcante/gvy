@@ -48,7 +48,7 @@ See the [server usage guide](docs/lsp/usage.md) for LSP transports and editor co
 with your server changes.
 
 To try the native command entry point, see the [Kotlin/Native launcher preview](launcher/README.md). It builds the same
-JVM payload behind a native executable and currently targets macOS Apple silicon and Linux x64.
+JVM payload behind a native executable and currently targets macOS Apple silicon, Linux x64, and Windows x64.
 
 For a full build, including tests:
 

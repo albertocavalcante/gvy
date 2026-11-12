@@ -179,7 +179,7 @@ console.log('BUILD SUCCESSFUL in 1s');
   const report = f.summaries()[0];
   assert.equal(report.unexpected.length, 1);
   assert.equal(report.accepted.length, 0);
-  assert.equal(report.exceptions.filter(entry => entry.requiresProof).length, 2);
+  assert.equal(report.exceptions.filter(entry => entry.requiresProof).length, 3);
 });
 
 test('Native wrapper rejects malformed options before starting the child', t => {

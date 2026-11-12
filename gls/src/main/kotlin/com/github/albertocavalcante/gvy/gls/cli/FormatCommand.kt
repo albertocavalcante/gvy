@@ -2,11 +2,9 @@ package com.github.albertocavalcante.gvy.gls.cli
 
 import com.github.ajalt.clikt.core.CliktCommand
 import com.github.ajalt.clikt.core.Context
-import com.github.ajalt.clikt.core.requireObject
 import com.github.ajalt.clikt.parameters.arguments.argument
 import com.github.ajalt.clikt.parameters.arguments.multiple
 import com.github.ajalt.clikt.parameters.types.file
-import com.github.ajalt.mordant.terminal.Terminal
 import com.github.albertocavalcante.gvy.fmt.FormatOutcome
 import com.github.albertocavalcante.gvy.fmt.OpenRewriteFormatter
 import java.io.File
@@ -23,8 +21,6 @@ class FormatCommand internal constructor(private val formatSource: (String) -> F
     private val files by argument()
         .file(mustExist = true, canBeDir = false)
         .multiple(required = true)
-
-    private val terminal by requireObject<Terminal>()
 
     override fun run() {
         for (file in files) {
@@ -43,8 +39,7 @@ class FormatCommand internal constructor(private val formatSource: (String) -> F
             )
         }
         val formatted = outcome.text
-        terminal.print(formatted)
-        if (!formatted.endsWith("\n")) terminal.println()
+        writeUtf8Stdout(if (formatted.endsWith("\n")) formatted else formatted + System.lineSeparator())
     }
 
     companion object {

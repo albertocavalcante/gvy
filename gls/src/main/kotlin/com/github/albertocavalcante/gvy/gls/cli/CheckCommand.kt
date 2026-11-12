@@ -193,7 +193,7 @@ class CheckCommand : CliktCommand(name = "check") {
                 logger.info { "SARIF output written to ${outputFile.absolutePath}" }
             }
         } else {
-            println(json)
+            writeUtf8Stdout(json + System.lineSeparator())
         }
     }
 

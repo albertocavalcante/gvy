@@ -39,9 +39,11 @@ test('rejects missing, nonregular and over-limit files before reading unbounded 
   const folder = join(dir, 'folder');
   mkdirSync(folder);
   assert.throws(() => readEvidenceBytes(folder, 100), /regular file/);
-  const fifo = join(dir, 'fifo');
-  execFileSync('mkfifo', [fifo]);
-  assert.throws(() => readEvidenceBytes(fifo, 100), /regular file/);
+  if (process.platform !== 'win32') {
+    const fifo = join(dir, 'fifo');
+    execFileSync('mkfifo', [fifo]);
+    assert.throws(() => readEvidenceBytes(fifo, 100), /regular file/);
+  }
   const large = join(dir, 'large');
   writeFileSync(large, Buffer.alloc(128 * 1024));
   assert.throws(() => readEvidenceBytes(large, 64 * 1024), /exceeds/);

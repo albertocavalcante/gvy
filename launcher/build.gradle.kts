@@ -1,3 +1,5 @@
+@file:OptIn(org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi::class)
+
 import org.jetbrains.kotlin.gradle.plugin.mpp.NativeBuildType
 
 // TODO(#1603): Retire upstream Native bundle diagnostics before Gradle 10.
@@ -7,7 +9,17 @@ plugins {
 }
 
 kotlin {
-    listOf(macosArm64(), linuxX64()).forEach { target ->
+    applyDefaultHierarchyTemplate {
+        common {
+            group("native") {
+                group("posix") {
+                    withMacos()
+                    withLinux()
+                }
+            }
+        }
+    }
+    listOf(macosArm64(), linuxX64(), mingwX64()).forEach { target ->
         target.binaries.executable {
             baseName = "gvy"
             entryPoint = "com.github.albertocavalcante.gvy.launcher.main"
@@ -25,7 +37,7 @@ kotlin {
             group = "distribution"
             description = "Stage the ${target.name} launcher and current JVM payload for dogfooding."
             dependsOn(binary.linkTaskProvider, ":gls:stageEditorServer")
-            from(executable) { rename { "gvy" } }
+            from(executable) { rename { if (targetName == "mingwX64") "gvy.exe" else "gvy" } }
             from(payload) { rename { "gvy.jar" } }
             into(layout.buildDirectory.dir("install/${target.name}"))
             doFirst {

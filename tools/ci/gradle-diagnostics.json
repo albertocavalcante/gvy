@@ -457,5 +457,14 @@
     "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
     "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
     "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter kotlin-native bundle configuration] Declaring dependencies using multi-string notation has been deprecated. This will fail with an error in Gradle 10. Please use single-string notation (\"org.jetbrains.kotlin:kotlin-native-prebuilt:2.3.0:windows-x86_64@zip\") or DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#dependency_multi_string_notation [origin org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 creates the traced Windows x64 Native compiler dependency from map notation at KotlinNativeBundleArtifactFormat:79; Gradle 10 rejects it. Actual PR1825 Windows trace emits this message after the last :viz:desktop header, which does not establish owning-project identity. The inspected 7a803 parser attributes this exact source to the Native bundle emitter. Released 2.3.20 NativeCompilerDownloader source returns String instead, but Windows integration is not verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate on Windows x64 with Native toolchain resolution, configuration cache, unit/process tests and actual-JAR Java17 CLI/LSP parity, retaining Linux x64/macOS arm64 checks; review before Gradle10 or expiry.",
+    "acceptance": "The adopted plugin resolves the intended Windows Native compiler and preserves those behaviors without this exact windows-x86_64@zip notation diagnostic; remove only this exception after verification.",
+    "expires": "2026-12-11"
   }
 ]
