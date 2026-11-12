@@ -1,7 +1,11 @@
 package com.github.albertocavalcante.gvy.gls.providers.testing
 
 import com.github.albertocavalcante.reports.coverage.parsers.JacocoParser
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.boolean
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.eclipse.lsp4j.jsonrpc.messages.ResponseMessage
 import org.junit.jupiter.api.Test
@@ -16,7 +20,7 @@ class CoverageWireTest {
     fun `JaCoCo instruction counts are not serialized as execution counts`(@TempDir workspace: Path) {
         val source = workspace.resolve("src/main/groovy/example/Example.groovy").toFile()
         source.parentFile.mkdirs()
-        source.writeText("// source")
+        source.writeText("// covered\n// uncovered\n")
         val report = workspace.resolve("target/site/jacoco/jacoco.xml").toFile()
         report.parentFile.mkdirs()
         report.writeText(
@@ -31,14 +35,18 @@ class CoverageWireTest {
             id = "1"
             result = JacocoParser.parseWorkspace(workspace.toFile())
         }
-        val json = JsonParser.parseString(MessageJsonHandler(emptyMap()).serialize(response)).asJsonObject
-        val file = json["result"].asJsonObject["files"].asJsonArray[0].asJsonObject
-        assertEquals(source.toURI().toString(), file["uri"].asString)
-        val lines = file["lines"].asJsonArray
-        assertEquals(2, lines.size())
-        assertTrue(lines[0].asJsonObject["covered"].asBoolean)
-        assertFalse(lines[1].asJsonObject["covered"].asBoolean)
-        assertFalse(lines[0].asJsonObject.has("hitCount"))
-        assertFalse(lines[1].asJsonObject.has("hitCount"))
+        val json = Json.parseToJsonElement(MessageJsonHandler(emptyMap()).serialize(response)).jsonObject
+        val file = json.getValue("result").jsonObject.getValue("files").jsonArray.single().jsonObject
+        assertEquals(source.toURI().toString(), file.getValue("uri").jsonPrimitive.content)
+        val lines = file.getValue("lines").jsonArray
+        assertEquals(2, lines.size)
+        val covered = lines[0].jsonObject.getValue("covered").jsonPrimitive
+        val uncovered = lines[1].jsonObject.getValue("covered").jsonPrimitive
+        assertFalse(covered.isString)
+        assertFalse(uncovered.isString)
+        assertTrue(covered.boolean)
+        assertFalse(uncovered.boolean)
+        assertFalse("hitCount" in lines[0].jsonObject)
+        assertFalse("hitCount" in lines[1].jsonObject)
     }
 }
