@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { checkGradleDiagnostics, collectDiagnostics } from './check-gradle-diagnostics.mjs';
 import { prepareNativeProvisioning, readPinnedKotlinVersion, verifyNativeProvisioning } from './native-provisioning.mjs';
+import { readEvidenceBytes } from './read-evidence.mjs';
 
 const invocationId = '12345678-1234-4234-8234-123456789abc';
 const context = { schemaVersion: 1, headSha: 'a'.repeat(40), testedSha: 'b'.repeat(40), runId: '12345', runAttempt: 2, invocationId, command: 'gradle' };
@@ -78,7 +79,7 @@ for (const [platform, arch] of [['linux', 'x64'], ['darwin', 'arm64']]) {
     assert.equal(dirname(preflight.freshRoot.path), f.options.runnerTemp);
     assert.equal(dirname(plan.preflightPath), f.options.producerDir);
     assert.deepEqual(plan.gradleArgs, [`-Pkonan.data.dir=${plan.childEnv.KONAN_DATA_DIR}`]);
-    assert.equal(plan.preflightSha256, digest(readFileSync(plan.preflightPath)));
+    assert.equal(plan.preflightSha256, digest(readEvidenceBytes(plan.preflightPath, 16 * 1024)));
     assert.notEqual(plan.childEnv.KONAN_DATA_DIR, fixture(t, platform, arch).prepare().childEnv.KONAN_DATA_DIR);
     invalid(f.prepare);
   });
