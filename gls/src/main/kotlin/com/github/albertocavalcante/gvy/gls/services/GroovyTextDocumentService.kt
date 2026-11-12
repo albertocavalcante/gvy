@@ -464,7 +464,7 @@ class GroovyTextDocumentService(
             enabledByDefault = true,
         )
         val parserDiagnostics = if (parserEnabled) result.diagnostics else emptyList()
-        val collected = diagnosticsService.collectDiagnostics(uri, content)
+        val collected = diagnosticsService.collectDiagnostics(uri, content, result)
         return collected.copy(
             diagnostics = (parserDiagnostics + collected.diagnostics)
                 .take(configuration.maxNumberOfProblems.coerceAtLeast(0)),

@@ -21,10 +21,10 @@ class CheckFailureTest {
     fun `analysis failure fails mixed checks and identifies the failed file`(@TempDir dir: File) {
         val good = File(dir, "good.groovy").apply { writeText("class Good {}") }
         val bad = File(dir, "bad.groovy").apply { writeText("class Bad {}") }
-        val command = GlsCommand(FormatCommand(), CheckCommand { file, _ ->
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { file, _ ->
             if (file == bad) throw IOException("analysis unavailable")
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
-        })
+        }))
         val output = ByteArrayOutputStream()
         val previous = System.out
         System.setOut(PrintStream(output))
@@ -45,11 +45,11 @@ class CheckFailureTest {
     @Test
     fun `file read failure fails the command`(@TempDir dir: File) {
         val file = File(dir, "gone.groovy").apply { writeText("class Gone {}") }
-        val command = GlsCommand(FormatCommand(), CheckCommand { requested, _ ->
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { requested, _ ->
             requested.delete()
             requested.readText()
             DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
-        })
+        }))
         val result = assertFailsWith<ProgramResult> { command.parse(listOf("check", file.path)) }
         assertEquals(1, result.statusCode)
     }
@@ -58,7 +58,7 @@ class CheckFailureTest {
     fun `sarif marks failed analysis unsuccessful`(@TempDir dir: File) {
         val file = File(dir, "bad.groovy").apply { writeText("") }
         val outputFile = File(dir, "result.sarif")
-        val command = GlsCommand(FormatCommand(), CheckCommand { _, _ -> throw IOException("analysis unavailable") })
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ -> throw IOException("analysis unavailable") }))
         val result = assertFailsWith<ProgramResult> {
             command.parse(listOf("check", "--format", "sarif", "--output", outputFile.path, file.path))
         }
@@ -74,11 +74,11 @@ class CheckFailureTest {
             org.eclipse.lsp4j.Range(org.eclipse.lsp4j.Position(0, 0), org.eclipse.lsp4j.Position(0, 1)),
             "partial warning",
         )
-        val command = GlsCommand(FormatCommand(), CheckCommand { _, _ ->
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ ->
             DiagnosticsCollectionResult(
                 listOf(diagnostic), listOf("broken"), listOf(DiagnosticProviderFailure("broken", "IOException", "offline")),
             )
-        })
+        }))
         assertFailsWith<ProgramResult> {
             command.parse(listOf("check", "--format", "sarif", "--output", outputFile.path, file.path))
         }
@@ -89,16 +89,54 @@ class CheckFailureTest {
     }
 
     @Test
+    fun `workspace dependency failure makes text check incomplete`(@TempDir dir: File) {
+        val file = File(dir, "good.groovy").apply { writeText("class Good {}") }
+        val command = GlsCommand(FormatCommand(), CheckCommand(
+            analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
+            dependenciesReady = { false },
+        ))
+        val output = ByteArrayOutputStream()
+        val previous = System.out
+        System.setOut(PrintStream(output))
+        try {
+            val failure = assertFailsWith<ProgramResult> {
+                command.parse(listOf("--no-color", "check", "--workspace", dir.path, file.path))
+            }
+            assertEquals(1, failure.statusCode)
+        } finally {
+            System.setOut(previous)
+        }
+        assertTrue(output.toString().contains("Workspace dependency resolution failed"))
+        assertFalse(output.toString().contains("OK: ${file.path}"))
+    }
+
+    @Test
+    fun `workspace dependency failure makes sarif execution unsuccessful`(@TempDir dir: File) {
+        val file = File(dir, "good.groovy").apply { writeText("class Good {}") }
+        val output = File(dir, "workspace.sarif")
+        val command = GlsCommand(FormatCommand(), CheckCommand(
+            analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
+            dependenciesReady = { false },
+        ))
+        assertFailsWith<ProgramResult> {
+            command.parse(listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path))
+        }
+        val json = output.readText()
+        assertTrue(json.contains("executionSuccessful\": false"), json)
+        assertTrue(json.contains("Workspace dependency resolution failed"), json)
+    }
+
+    @Test
     fun `cancellation propagates`(@TempDir dir: File) {
         val file = File(dir, "cancel.groovy").apply { writeText("") }
-        val command = GlsCommand(FormatCommand(), CheckCommand { _, _ -> throw CancellationException("cancelled") })
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ -> throw CancellationException("cancelled") }))
         assertFailsWith<CancellationException> { command.parse(listOf("check", file.path)) }
     }
 
     @Test
     fun `fatal error propagates`(@TempDir dir: File) {
         val file = File(dir, "fatal.groovy").apply { writeText("") }
-        val command = GlsCommand(FormatCommand(), CheckCommand { _, _ -> throw LinkageError("fatal") })
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ -> throw LinkageError("fatal") }))
         assertFailsWith<LinkageError> { command.parse(listOf("check", file.path)) }
     }
 }

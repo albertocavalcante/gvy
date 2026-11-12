@@ -43,8 +43,9 @@ private val logger = KotlinLogging.logger {}
  */
 class CheckCommand internal constructor(
     private val analyze: suspend (File, GroovyTextDocumentService) -> DiagnosticsCollectionResult,
+    private val dependenciesReady: (GroovyLanguageServer) -> Boolean = { it.waitForDependencies() },
 ) : CliktCommand(name = "check") {
-    constructor() : this({ file, service -> service.diagnoseResult(file.toURI(), file.readText()) })
+    constructor() : this(analyze = { file, service -> service.diagnoseResult(file.toURI(), file.readText()) })
     override fun help(context: Context) = "Run diagnostics on specified files"
 
     private val workspace by option("-w", "--workspace")
@@ -66,15 +67,15 @@ class CheckCommand internal constructor(
     override fun run() {
         val server = GroovyLanguageServer()
         try {
-            initializeWorkspace(server)
-            checkFiles(server)
+            val workspaceReady = initializeWorkspace(server)
+            checkFiles(server, true)
         } finally {
             server.shutdown().get()
         }
     }
 
-    private fun initializeWorkspace(server: GroovyLanguageServer) {
-        val ws = workspace ?: return
+    private fun initializeWorkspace(server: GroovyLanguageServer): Boolean {
+        val ws = workspace ?: return true
 
         val params = InitializeParams().apply {
             workspaceFolders = listOf(WorkspaceFolder(ws.toURI().toString(), ws.name))
@@ -87,7 +88,8 @@ class CheckCommand internal constructor(
         // Only show progress messages for text output
         if (format == OutputFormat.TEXT) {
             terminal.println(cyan("Resolving dependencies for ${ws.absolutePath}..."))
-            if (server.waitForDependencies()) {
+            val ready = dependenciesReady(server)
+            if (ready) {
                 terminal.println(green("Dependencies resolved successfully."))
             } else {
                 terminal.println(
@@ -97,20 +99,26 @@ class CheckCommand internal constructor(
                     ),
                 )
             }
-        } else {
-            // Still wait for dependencies, just don't print
-            server.waitForDependencies()
+            return ready
         }
+        return dependenciesReady(server)
     }
 
-    private fun checkFiles(server: GroovyLanguageServer) {
+    private fun checkFiles(server: GroovyLanguageServer, workspaceReady: Boolean) {
         val service = server.getTextDocumentService() as? GroovyTextDocumentService
         if (service == null) {
             logger.error { "Failed to retrieve GroovyTextDocumentService" }
             throw ProgramResult(1)
         }
 
-        val outcomes = runBlocking { files.map { checkFile(it, service) } }
+        val outcomes = runBlocking {
+            files.map { file ->
+                val result = checkFile(file, service)
+                if (workspaceReady) result else result.copy(
+                    failures = result.failures + "Workspace dependency resolution failed or timed out",
+                )
+            }
+        }
 
         when (format) {
             OutputFormat.TEXT -> outputText(outcomes)
