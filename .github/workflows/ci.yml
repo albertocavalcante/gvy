@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution branch. Never merge this workflow into main.
-name: B04 hosted test commit and coordinate probe
+name: B04 hosted token coordinate fix and probe
 on:
   workflow_dispatch:
 permissions:
@@ -55,12 +55,17 @@ jobs:
             const valid = value => { if (!value) throw new Error(); };
             valid(JSON.stringify(Object.keys(r).sort()) === JSON.stringify(keys.sort()));
             valid(r.schemaVersion === 1 && r.expectedTestCount === 19);
-            valid(r.sourcePath === 'parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndexTest.kt');
-            valid(r.baseTestBlob === 'd005921624b20587171dbaeefb996ec81ba6988d');
+            valid(r.sourcePath === 'parser/native/src/main/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndex.kt');
+            valid(r.base === '056224e6cfabc6e46f070a3276979b82fa38e95d');
+            valid(r.tree === 'e3f94698ad5d874d658f269bddde64168ce08071');
+            valid(r.baseTestBlob === '2d0092dc6393a112e457f8095617a38b08c8ab2b');
             valid(r.baseProductionBlob === '9b39efe846ac3fde3b33de25ae400fc08321f5b3');
-            valid(r.sourceBase === 'ed9a4ae3e4881f477603e288986be143fd2cc4d3');
-            valid(r.sourceSha256 === '892ef2b50290a710b02228ca0f6849816a1ec600f822de72d313701e01c53175');
-            valid(r.patchSha256 === 'f44d0740511d09910e96b0c8790a8216f66d1598c62c8f23b0ede4b7d8af779c');
+            valid(r.sourceBase === '056224e6cfabc6e46f070a3276979b82fa38e95d');
+            valid(r.sourceBlob === '8e67323ea305f661f40161c0fd1aa8c032dcd6e9');
+            valid(r.sourceSha256 === '98eed4b47f7d00ef1b0ec61a8c1daf73bc85a8f3b8db9ddff944db8c67fcf6e3');
+            valid(r.patchSha256 === '2e1892aa1751bd6a9765bf1a00fcfaabaeeae33f2edf345f786e0c1da8c33484');
+            valid(r.patchBytes === 4622 && r.payloadBytes === 1371);
+            valid(r.payloadSha256 === '4dd4ffc8779450acb19274efe6311b0bb1b200f06e299af8b245928612d4593c');
             valid(r.gradleVersion === '9.8.2' && r.gradleCacheKey === '8wepis63pzuhrlfaiy04bagwu');
             valid(r.gradleSha256 === '21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607');
             valid(r.wrapperJarSha256 === '3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98');
@@ -90,7 +95,7 @@ jobs:
           path: candidate
           fetch-depth: 1
           persist-credentials: false
-      - name: Apply only the owned test source
+      - name: Apply only the owned production source
         working-directory: candidate
         shell: bash
         env:
@@ -100,12 +105,13 @@ jobs:
           EXPECTED_SOURCE_SHA: ${{ steps.receipt.outputs.sourceSha256 }}
         run: |
           set -euo pipefail
-          source='parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndexTest.kt'
+          source='parser/native/src/main/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndex.kt'
+          test_source='parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndexTest.kt'
           production='parser/native/src/main/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndex.kt'
           [[ "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
-          [[ "$(git rev-parse "HEAD:$source")" == d005921624b20587171dbaeefb996ec81ba6988d ]]
+          [[ "$(git rev-parse "HEAD:$test_source")" == 2d0092dc6393a112e457f8095617a38b08c8ab2b ]]
           [[ "$(git rev-parse "HEAD:$production")" == 9b39efe846ac3fde3b33de25ae400fc08321f5b3 ]]
-          git switch -c test/bench-token-coordinates-hosted
+          git switch -c fix/bench-token-utf16-hosted
           git apply --check --index "$RUNNER_TEMP/gvy-b04-reviewed.patch"
           git apply --index "$RUNNER_TEMP/gvy-b04-reviewed.patch"
           mapfile -t changed < <(git diff --cached --name-only "$EXPECTED_BASE")
@@ -164,7 +170,7 @@ jobs:
         run: |
           set -euo pipefail
           proof="$RUNNER_TEMP/gvy-b04-publication-proof"
-          source='parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndexTest.kt'
+          source='parser/native/src/main/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndex.kt'
           head=$(git rev-parse HEAD)
           [[ "$head" == "$EXPECTED_BASE" ]]
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
@@ -178,7 +184,7 @@ jobs:
           jq -n --argjson exitCode "$status" '{exitCode:$exitCode,overlay:true}' >"$proof/format-status.json"
           git diff --name-only >"$proof/formatter-changed-paths.txt"
           git diff -- "$source" >"$proof/formatter-only.diff"
-          cp "$source" "$proof/formatted-GroovyTokenIndexTest.kt"
+          cp "$source" "$proof/formatted-GroovyTokenIndex.kt"
           if [[ "$status" != 0 ]]; then
               exit "$status"
           fi
@@ -217,7 +223,7 @@ jobs:
           git diff --quiet
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           set +e
-          timeout --signal=TERM --kill-after=30s 15m git commit -m 'test(parser): expose token coordinate boundaries' 2>&1 | (
+          timeout --signal=TERM --kill-after=30s 15m git commit -m 'fix(parser): map token offsets to UTF-16 boundaries' 2>&1 | (
               ulimit -f 131072
               exec tee "$proof/commit-hooks.log"
           )
@@ -236,7 +242,7 @@ jobs:
           fi
           [[ "${statuses[0]}" == 0 && "${statuses[1]}" == 0 && "$diagnostic" == 0 ]]
           [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" && "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
-          source='parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndexTest.kt'
+          source='parser/native/src/main/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndex.kt'
           [[ "$(git rev-parse "HEAD:$source")" == "$SOURCE_BLOB" ]]
           printf '%s  %s\n' "$SOURCE_SHA" "$source" | sha256sum -c -
           git diff --quiet && git diff --cached --quiet
