@@ -7,10 +7,10 @@ import { readinessJobIds } from './check-readiness.mjs';
 
 const dependencyOutput = "      run_dependency_check: ${{ steps.filter.outputs.run_main_ci == 'true' && (github.ref == 'refs/heads/main' || (github.event_name == 'workflow_dispatch' && inputs.dependency_updates == true)) }}";
 
-// This reader deliberately supports only ci.yml's reviewed plain job keys,
-// immediate job fields and plain one-line needs values. It does not interpret
-// YAML, conditions, nested steps or reusable workflow bodies. Other shapes must
-// receive a deliberate contract update alongside normal Actions lint/review.
+// This reader supports ci.yml's reviewed plain job keys and immediate job fields.
+// The contract separately checks the terminal validate.needs one-line value and
+// dependency-check's exact applicability wiring. Other dependencies remain under
+// Actions lint/GitHub validation; this does not interpret YAML or conditions.
 export function readCiJobs(source) {
   if (typeof source !== 'string' || source.includes('\0') || source.includes('\r') || /^ *\t/m.test(source)) {
     throw new Error('Unsupported CI source encoding or indentation');

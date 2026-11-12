@@ -125,10 +125,12 @@ invocation identity, raw capture/hash and the local diagnostic verdict; the fail
 This producer explicitly disables the numeric daemon sampler. It supplies no numeric memory, total-RSS or Native
 provisioning evidence.
 
-The source graph contract requires every job in `ci.yml` to appear in the readiness policy and terminal `needs` list. It
-supports only the reviewed plain job keys, immediate fields and one-line `needs` syntax; unsupported declarations fail
-for deliberate review. Readiness rejects unknown needs and unfinished non-observer jobs. This makes producer uploads and
-post-job outcomes precede the final annotation snapshot, without waiting on the observer itself.
+The source graph contract requires every job in `ci.yml` to appear in the readiness policy and terminal `validate.needs`
+list. It supports reviewed plain job keys and immediate fields, checks the terminal one-line `needs` syntax and verifies
+the dependency-update job's exact applicability wiring. Unsupported declarations in those boundaries fail for deliberate
+review; other job dependencies remain under Actions lint and GitHub validation. Readiness rejects unknown needs and
+unfinished non-observer jobs. This makes producer uploads and post-job outcomes precede the final annotation snapshot,
+without waiting on the observer itself.
 
 The canonical wrapper validates evidence within the producer. The final observer checks job results and Actions
 annotations; it does not download and verify uploaded diagnostic artifacts. Artifact inspection remains a separate
