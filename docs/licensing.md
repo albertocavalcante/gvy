@@ -72,6 +72,13 @@ example; keep the actual file header outside that block.
 | `third_party/jvm/BUCK`           | Keep generator-owned contents; associate licensing with the exact path in `REUSE.toml`.                |
 | Groovy logo                      | Use the ASF-published asset and its adjacent provenance record.                                        |
 | Editor grammar                   | Preserve the original project grammar and its Apache-2.0 metadata.                                     |
+| SCIP protocol schema             | Credit the upstream SCIP contributors, retain Apache-2.0, and preserve the imported schema body.       |
+
+The [SCIP schema](https://github.com/scip-code/scip/blob/4a9a63dc95cd0e35f3bb4d7b43d5d65f747dada8/scip.proto) and its
+[upstream license](https://github.com/scip-code/scip/blob/4a9a63dc95cd0e35f3bb4d7b43d5d65f747dada8/LICENSE) establish
+the imported protocol's provenance and Apache-2.0 licensing. The local schema body differs from that version only by the
+existing documentation correction `preferrable` to `preferable`. Its header credits the upstream contributor collective;
+it does not infer a year or company from the upstream license's unfilled copyright template.
 
 The
 [Groovy logo source](https://github.com/apache/groovy-website/blob/ab35872f2b17751960bd3162ce9516bfc10bdb3d/site/src/site/assets/img/groovy-logo-colored.svg)
