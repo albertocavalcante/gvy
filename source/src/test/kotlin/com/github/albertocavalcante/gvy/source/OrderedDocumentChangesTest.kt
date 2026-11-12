@@ -157,7 +157,7 @@ class OrderedDocumentChangesTest {
                     val start = minOf(first, second)
                     val end = maxOf(first, second)
                     changes += DocumentChange.Replace(
-                        Utf16Range(oraclePosition(expected, start), oraclePosition(expected, end)),
+                        RawUtf16Range(oraclePosition(expected, start), oraclePosition(expected, end)),
                         replacement,
                     )
                     expected = expected.take(start) + replacement + expected.drop(end)
@@ -172,7 +172,7 @@ class OrderedDocumentChangesTest {
     }
 
     // The oracle derives coordinates by scanning the prefix, without using the production line index.
-    private fun oraclePosition(text: String, offset: Int): Utf16Position {
+    private fun oraclePosition(text: String, offset: Int): RawUtf16Position {
         var line = 0
         var character = 0
         var at = 0
@@ -191,7 +191,7 @@ class OrderedDocumentChangesTest {
             }
             at++
         }
-        return Utf16Position(line, character)
+        return RawUtf16Position(line, character)
     }
 
     private fun assertRejected(reason: DocumentChangeRejectionReason, initial: String, change: DocumentChange) {
@@ -203,5 +203,5 @@ class OrderedDocumentChangesTest {
     }
 
     private fun replace(sl: Int, sc: Int, el: Int, ec: Int, text: String): DocumentChange.Replace =
-        DocumentChange.Replace(Utf16Range(Utf16Position(sl, sc), Utf16Position(el, ec)), text)
+        DocumentChange.Replace(RawUtf16Range(RawUtf16Position(sl, sc), RawUtf16Position(el, ec)), text)
 }
