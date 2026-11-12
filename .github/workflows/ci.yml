@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: Diagnostics wire parameter controls
+name: Diagnostics exact wire parameter validation
 on:
   workflow_dispatch:
 permissions:
@@ -78,7 +78,7 @@ jobs:
           git apply --check --index "$RUNNER_TEMP/gvy-reviewed.patch"
           git apply --index "$RUNNER_TEMP/gvy-reviewed.patch"
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
-          git diff --quiet
+          git diff --exit-code
           git diff --cached --check
           cp "$GITHUB_WORKSPACE/support/.publication/paths.nul" "$RUNNER_TEMP/expected-paths.nul"
           [[ "$(sha256sum "$RUNNER_TEMP/expected-paths.nul" | cut -d' ' -f1)" == "$(jq -er '.pathsSha256' "$GITHUB_WORKSPACE/support/.publication/receipt.json")" ]]
@@ -172,7 +172,7 @@ jobs:
           test -x .git/hooks/pre-commit && test -x .git/hooks/commit-msg
           git config user.name 'Alberto Cavalcante'
           git config user.email 'alberto@cavalcante.uk'
-          git diff --quiet
+          git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           direnv allow
           direnv exec . java -version
@@ -181,7 +181,7 @@ jobs:
           editors/code/node_modules/.bin/prettier --check editors/code/client/src/test/integration/implementation.test.ts
           direnv exec . ./gradlew lintFix --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
-          git diff --quiet
+          git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           direnv exec . ./gradlew :gls:test \
               --tests '*.DiagnosticsRequestHandlerTest' \
@@ -191,7 +191,7 @@ jobs:
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
               2>&1 | tee "$RUNNER_TEMP/gvy-diagnostics-native.log"
-          git diff --quiet
+          git diff --exit-code
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/gvy-staged-paths"
           while IFS= read -r -d '' staged_file; do
@@ -211,7 +211,7 @@ jobs:
           git commit -m 'feat(lsp): expose version-bound diagnostics completion' 2>&1 | tee "$RUNNER_TEMP/gvy-commit-hooks.log"
           [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
-          git diff --quiet && git diff --cached --quiet
+          git diff --exit-code && git diff --cached --quiet
           test -z "$(git status --porcelain --untracked-files=all)"
           mkdir "$RUNNER_TEMP/gvy-publication-proof"
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
@@ -248,6 +248,11 @@ jobs:
             candidate/gls/build/test-results/test/*.xml
             candidate/tests/build/test-results/e2eTest/*.xml
             candidate/tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/DiagnosticsTerminalProtocolTest.kt
+            candidate/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/GroovyLanguageServer.kt
+            candidate/gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestHandler.kt
+            candidate/gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestHandlerTest.kt
+            candidate/gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/diagnostics/DiagnosticsRequestRegistrationTest.kt
+            candidate/tests/lsp-client/kotlin/com/github/albertocavalcante/gvy/gls/testing/api/GroovyLspApi.kt
             ${{ runner.temp }}/gvy-diagnostics-native.log
           if-no-files-found: warn
           retention-days: 7
