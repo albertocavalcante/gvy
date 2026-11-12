@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.jenkins.stubs
 
 import org.junit.jupiter.api.Test
@@ -242,8 +245,8 @@ class JenkinsStubSetsTest {
     fun `an eviction delete that fails partway leaves no partial set under its name`() {
         val keys = publishOldSets(JenkinsStubSets.MAX_SETS + 3)
         val halfDelete: (Path) -> Unit = { dir ->
-            Files.walk(dir).use { paths -> paths.filter { Files.isRegularFile(it) }.findFirst() }
-                .ifPresent { Files.delete(it) }
+            Files.delete(dir.resolve(JenkinsStubSets.COMPLETE_MARKER))
+            Files.setLastModifiedTime(dir, FileTime.from(now))
             throw java.nio.file.AccessDeniedException(dir.toString()) // a file held open on Windows
         }
 
@@ -253,7 +256,13 @@ class JenkinsStubSetsTest {
         assertEquals(JenkinsStubSets.MAX_SETS, remaining.size)
         assertTrue(remaining.all(::isComplete), "every set under a final name is complete: $remaining")
         assertFalse(Files.exists(setsRoot.resolve(keys[0])), "the evicted set left its final name first")
-        // Its half-deleted remains are a temporary directory, removed by a later eviction.
+        // Partial deletion refreshed the temporary directory's mtime, so its grace period starts again.
+        val recentTemporary = temporaryDirs().toSet()
+        assertTrue(recentTemporary.isNotEmpty(), "failed deletions leave temporary directories")
+        sets().evict(emptySet())
+        assertEquals(recentTemporary, temporaryDirs().toSet(), "recent temporary directories retain their grace period")
+
+        now = now.plus(JenkinsStubSets.GRACE).plusSeconds(1)
         sets().evict(emptySet())
         assertEquals(emptyList(), temporaryDirs())
     }
