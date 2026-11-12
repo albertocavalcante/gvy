@@ -69,12 +69,13 @@ describe("stderrRouter", () => {
     for (const line of text.split("\n")) route(line);
     route.flush();
 
-    const levels = entries.map(([level]) => level);
-    expect(entries.some(([, line]) => line.includes("OddSignal"))).to.equal(true);
-    expect(levels.filter((level) => level === "debug").length).to.be.greaterThan(1);
-    expect(levels.filter((level) => level === "warn").length).to.be.greaterThan(1);
-    expect(levels.every((level) => level === "debug" || level === "warn")).to.equal(true);
-    expect(levels.lastIndexOf("debug")).to.be.lessThan(levels.indexOf("warn"));
+    const warnIndex = entries.findIndex(([, line]) => /\] WARN\s/u.test(line));
+    expect(entries.length).to.equal(text.trimEnd().split("\n").length);
+    expect(entries.filter(([, line]) => line.includes("OddSignal")).length).to.be.greaterThan(1);
+    expect(warnIndex).to.be.greaterThan(1);
+    expect(entries.length - warnIndex).to.be.greaterThan(1);
+    expect(entries.slice(0, warnIndex).every(([level]) => level === "debug")).to.equal(true);
+    expect(entries.slice(warnIndex).every(([level]) => level === "warn")).to.equal(true);
   });
 
   it("does not label routine INFO output as an error", () => {
