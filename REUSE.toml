@@ -500,3 +500,9 @@ path = ["tools/perf/bench/corpus/README.md", "tools/perf/bench/corpus/manifest.j
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["tools/perf/bench/corpus/authored.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
