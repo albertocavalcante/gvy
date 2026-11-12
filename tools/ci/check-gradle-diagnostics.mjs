@@ -9,10 +9,10 @@ export const schemaVersion = 1;
 
 export function validateNativeDiagnosticPolicy(entries, now = new Date()) {
   evaluate([], entries, now);
-  const expected = ['linux-x86_64', 'macos-aarch64'].map(platform =>
+  const expected = ['linux-x86_64', 'macos-aarch64', 'windows-x86_64'].map(platform =>
     `[emitter kotlin-native bundle provisioning] Kotlin/Native bundle directory <konan>/kotlin-native-prebuilt-${platform}-2.3.0 is not empty. Native bundle files will be overwritten.`);
   const fields = ['diagnostic', 'owner', 'issue', 'reason', 'nextAction', 'acceptance', 'expires', 'requiresProof'];
-  if (entries.length !== 2 || entries.some(entry => entry.requiresProof !== 'native-provisioning-v1' ||
+  if (entries.length !== 3 || entries.some(entry => entry.requiresProof !== 'native-provisioning-v1' ||
       Object.keys(entry).some(key => !fields.includes(key))) ||
       !expected.every(diagnostic => entries.some(entry => entry.diagnostic === diagnostic))) {
     throw new Error('Invalid Native conditional diagnostic policy');

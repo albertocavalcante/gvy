@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
 @file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
 
 package com.github.albertocavalcante.gvy.launcher

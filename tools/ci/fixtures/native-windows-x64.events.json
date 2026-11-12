@@ -1,0 +1,388 @@
+{
+  "provenance": {
+    "packetSchemaVersion": 1,
+    "repository": "albertocavalcante/gvy",
+    "sourceHead": "67ff51dc47c7fdc328d6518dcd45a99e263ac8cd",
+    "testedMerge": "56a918f66c5e1fc7a5c93df6180d50f754b6a8b4",
+    "testedBase": "4969ad1b9af4632eccbc0101e28d4c81ac97b34b",
+    "runId": "43178483058",
+    "runAttempt": 1,
+    "jobId": "131050143456",
+    "jobUrl": "https://github.com/albertocavalcante/gvy/actions/runs/43178483058/job/131050143456",
+    "proposedProducerId": "launcher-windows-x64",
+    "originalJobName": "Native launcher / Launcher (mingwX64)",
+    "originalJobConclusion": "failure: C test-probe compilation ICE; Gradle Native tasks and real Java17 agent workload completed before that failure",
+    "host": {
+      "os": "Microsoft Windows Server 2025 Datacenter 10.0.26100",
+      "image": "windows-2025-vs2026",
+      "imageVersion": "20261103.298.1",
+      "runnerName": "GitHub Actions 1000111578",
+      "runnerGroup": "GitHub Actions"
+    },
+    "jar": {
+      "artifactId": "13925282239",
+      "bytes": 53733006,
+      "sha256": "2988f499c2958fcfa292544d842db2e5f4eccff4f29a20811fb3a0262351a1b2",
+      "producerJobId": "131048740478",
+      "producerConclusion": "success"
+    },
+    "originalLog": {
+      "path": "/Users/adsc/dev/md/2026-11-11-gvy-windows-dogfood-evidence/ci-windows-first.log",
+      "bytes": 354206,
+      "sha256": "6a82b977bb7f0c8f61202ddcc371ae7f0645ede1554e1779fa1e6373a931184d"
+    },
+    "ledgerReference": {
+      "head": "7a8039b1ed1034b1992664900fc4079112d775de",
+      "entries": 51,
+      "files": {
+        "check-gradle-diagnostics.mjs": {
+          "bytes": 13334,
+          "sha256": "0b0e76a597b34d3b6eb0b8fff3997ebddf642a184343b44ef86c8c081ec1cf76"
+        },
+        "gradle-diagnostics.json": {
+          "bytes": 67156,
+          "sha256": "e464ddd34b71d32590ec1b06b29b6cf7199d9467d96315ba8ecefabed1a5ca89"
+        },
+        "check-gradle-diagnostics.schema.json": {
+          "bytes": 3926,
+          "sha256": "e59284d9c88a8810cfa9753dd6437105a22f47140f37de11d8d9415bff516c86"
+        }
+      }
+    },
+    "eventCounts": {
+      "nativeDeprecations": 13,
+      "nativeBundleOverwrite": 1,
+      "ownNativeCompilerWarning": 1
+    },
+    "limits": [
+      "Historical failed job evidence, not a fresh wrapper run or successful final Windows process suite.",
+      "Observed Gradle project/task headers are preserved; emitter contexts come only from the inspected parser policy.",
+      "No invocationId/memory samples were generated: original workflow predates the pending run-gradle wrapper composition.",
+      "Only the exact Windows dependency-notation exception is proposed. No waiver for own compiler warning or bundle overwrite."
+    ],
+    "primarySources": [
+      {
+        "file": "NativeVersionValueSource-2.3.0.kt",
+        "revision": "f95cb2f7693a15966fd8fd9b1d78d440545e7b66",
+        "sha256": "19dab2f14ebef9af93636d2e1fda2dcbafc36ffa9019f3fda9c2ed6e2c977327",
+        "path": "libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/targets/native/toolchain/NativeVersionValueSource.kt",
+        "url": "https://github.com/JetBrains/kotlin/blob/f95cb2f7693a15966fd8fd9b1d78d440545e7b66/libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/targets/native/toolchain/NativeVersionValueSource.kt"
+      },
+      {
+        "file": "NativeDistributionCommonizerLock-2.3.0.kt",
+        "revision": "f95cb2f7693a15966fd8fd9b1d78d440545e7b66",
+        "sha256": "cfd57bc75028d3d3ae61060ce2a3bf70a26c503012691732cf509566a5802915",
+        "path": "libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/targets/native/internal/NativeDistributionCommonizerLock.kt",
+        "url": "https://github.com/JetBrains/kotlin/blob/f95cb2f7693a15966fd8fd9b1d78d440545e7b66/libraries/tools/kotlin-gradle-plugin/src/common/kotlin/org/jetbrains/kotlin/gradle/targets/native/internal/NativeDistributionCommonizerLock.kt"
+      }
+    ]
+  },
+  "events": [
+    {
+      "eventId": "windows-x64-01",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2194,
+      "rawLogEndLine": 2197,
+      "timestamp": "2026-11-12T07:59:54.3123324Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property",
+      "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)",
+      "stack": [
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)",
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)",
+        "\tat org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:54.3123324Z The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property\n2026-11-12T07:59:54.3126536Z \tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n2026-11-12T07:59:54.3128250Z \tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)\n2026-11-12T07:59:54.3131012Z \tat org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)\n"
+    },
+    {
+      "eventId": "windows-x64-02",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2198,
+      "rawLogEndLine": 2201,
+      "timestamp": "2026-11-12T07:59:54.3135457Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property",
+      "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)",
+      "stack": [
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)",
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)",
+        "\tat org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:54.3135457Z The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property\n2026-11-12T07:59:54.3137996Z \tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n2026-11-12T07:59:54.3139665Z \tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)\n2026-11-12T07:59:54.3141652Z \tat org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)\n"
+    },
+    {
+      "eventId": "windows-x64-03",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2202,
+      "rawLogEndLine": 2205,
+      "timestamp": "2026-11-12T07:59:54.3144791Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property",
+      "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)",
+      "stack": [
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)",
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)",
+        "\tat org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:54.3144791Z The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property\n2026-11-12T07:59:54.3147825Z \tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n2026-11-12T07:59:54.3149568Z \tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)\n2026-11-12T07:59:54.3152144Z \tat org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)\n"
+    },
+    {
+      "eventId": "windows-x64-04",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2206,
+      "rawLogEndLine": 2209,
+      "timestamp": "2026-11-12T07:59:54.8076590Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property",
+      "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:182)",
+      "stack": [
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)",
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)",
+        "\tat org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:182)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:54.8076590Z The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property\n2026-11-12T07:59:54.8079642Z \tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n2026-11-12T07:59:54.8081588Z \tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)\n2026-11-12T07:59:54.8084776Z \tat org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:182)\n"
+    },
+    {
+      "eventId": "windows-x64-05",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2210,
+      "rawLogEndLine": 2213,
+      "timestamp": "2026-11-12T07:59:54.8088997Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property",
+      "origin": "org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)",
+      "stack": [
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)",
+        "\tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)",
+        "\tat org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:54.8088997Z The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property\n2026-11-12T07:59:54.8092062Z \tat org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)\n2026-11-12T07:59:54.8093991Z \tat org.gradle.api.internal.artifacts.configurations.DefaultLegacyConfiguration_Decorated.setVisible(Unknown Source)\n2026-11-12T07:59:54.8096372Z \tat org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)\n"
+    },
+    {
+      "eventId": "windows-x64-06",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2214,
+      "rawLogEndLine": 2222,
+      "timestamp": "2026-11-12T07:59:55.2083661Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration",
+      "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinNativeHostSpecificMetadataArtifactKt$KotlinNativeHostSpecificMetadataArtifact$1.createArtifact(KotlinNativeHostSpecificMetadataArtifact.kt:76)",
+      "stack": [
+        "\tat org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)",
+        "\tat org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)",
+        "\tat org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)",
+        "\tat org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)",
+        "\tat org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)",
+        "\tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)",
+        "\tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:70)",
+        "\tat org.jetbrains.kotlin.gradle.artifacts.KotlinNativeHostSpecificMetadataArtifactKt$KotlinNativeHostSpecificMetadataArtifact$1.createArtifact(KotlinNativeHostSpecificMetadataArtifact.kt:76)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:55.2083661Z The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration\n2026-11-12T07:59:55.2088316Z \tat org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)\n2026-11-12T07:59:55.2089818Z \tat org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)\n2026-11-12T07:59:55.2091515Z \tat org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)\n2026-11-12T07:59:55.2093194Z \tat org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)\n2026-11-12T07:59:55.2094585Z \tat org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)\n2026-11-12T07:59:55.2095621Z \tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)\n2026-11-12T07:59:55.2097070Z \tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:70)\n2026-11-12T07:59:55.2098325Z \tat org.jetbrains.kotlin.gradle.artifacts.KotlinNativeHostSpecificMetadataArtifactKt$KotlinNativeHostSpecificMetadataArtifact$1.createArtifact(KotlinNativeHostSpecificMetadataArtifact.kt:76)\n"
+    },
+    {
+      "eventId": "windows-x64-07",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2223,
+      "rawLogEndLine": 2226,
+      "timestamp": "2026-11-12T07:59:55.3252439Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum",
+      "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)",
+      "stack": [
+        "\tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)",
+        "\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)",
+        "\tat org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:55.3252439Z Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum\n2026-11-12T07:59:55.3263395Z \tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)\n2026-11-12T07:59:55.3264888Z \tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n2026-11-12T07:59:55.3266735Z \tat org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)\n"
+    },
+    {
+      "eventId": "windows-x64-08",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2227,
+      "rawLogEndLine": 2235,
+      "timestamp": "2026-11-12T07:59:55.3274570Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration",
+      "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)",
+      "stack": [
+        "\tat org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)",
+        "\tat org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)",
+        "\tat org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)",
+        "\tat org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)",
+        "\tat org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)",
+        "\tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)",
+        "\tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:65)",
+        "\tat org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:55.3274570Z The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration\n2026-11-12T07:59:55.3290173Z \tat org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)\n2026-11-12T07:59:55.3308384Z \tat org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)\n2026-11-12T07:59:55.3342938Z \tat org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)\n2026-11-12T07:59:55.3353379Z \tat org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)\n2026-11-12T07:59:55.3355585Z \tat org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)\n2026-11-12T07:59:55.3358842Z \tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)\n2026-11-12T07:59:55.3360371Z \tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:65)\n2026-11-12T07:59:55.3361969Z \tat org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)\n"
+    },
+    {
+      "eventId": "windows-x64-09",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2236,
+      "rawLogEndLine": 2244,
+      "timestamp": "2026-11-12T07:59:55.3378170Z",
+      "observedGradleHeader": "> Configure project :launcher",
+      "message": "The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration",
+      "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)",
+      "stack": [
+        "\tat org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)",
+        "\tat org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)",
+        "\tat org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)",
+        "\tat org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)",
+        "\tat org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)",
+        "\tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)",
+        "\tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:65)",
+        "\tat org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)"
+      ],
+      "exactRawBlock": "2026-11-12T07:59:55.3378170Z The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration\n2026-11-12T07:59:55.3383474Z \tat org.gradle.api.plugins.BasePlugin.lambda$configureConfigurations$1(BasePlugin.java:106)\n2026-11-12T07:59:55.3384708Z \tat org.gradle.internal.ImmutableActionSet$SetWithFewActions.execute(ImmutableActionSet.java:288)\n2026-11-12T07:59:55.3386104Z \tat org.gradle.api.internal.DefaultDomainObjectCollection.assertCanMutate(DefaultDomainObjectCollection.java:472)\n2026-11-12T07:59:55.3387551Z \tat org.gradle.api.internal.DefaultDomainObjectCollection.add(DefaultDomainObjectCollection.java:281)\n2026-11-12T07:59:55.3388800Z \tat org.gradle.api.internal.DelegatingDomainObjectSet.add(DelegatingDomainObjectSet.java:140)\n2026-11-12T07:59:55.3390180Z \tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.pushArtifact(DefaultArtifactHandler.java:58)\n2026-11-12T07:59:55.3391567Z \tat org.gradle.api.internal.artifacts.dsl.DefaultArtifactHandler.add(DefaultArtifactHandler.java:65)\n2026-11-12T07:59:55.3393028Z \tat org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)\n"
+    },
+    {
+      "eventId": "windows-x64-10",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2283,
+      "rawLogEndLine": 2294,
+      "timestamp": "2026-11-12T08:00:27.4159874Z",
+      "observedGradleHeader": "> Configure project :viz:desktop",
+      "message": "Declaring dependencies using multi-string notation has been deprecated. This will fail with an error in Gradle 10. Please use single-string notation (\"org.jetbrains.kotlin:kotlin-native-prebuilt:2.3.0:windows-x86_64@zip\") or DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#dependency_multi_string_notation",
+      "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)",
+      "stack": [
+        "\tat org.gradle.api.internal.notations.DependencyMapNotationConverter.parseMap(DependencyMapNotationConverter.java:72)",
+        "\tat org.gradle.internal.typeconversion.MapNotationConverter.parseType(MapNotationConverter.java:94)",
+        "\tat org.gradle.internal.typeconversion.MapNotationConverter.parseType(MapNotationConverter.java:41)",
+        "\tat org.gradle.internal.typeconversion.TypedNotationConverter.convert(TypedNotationConverter.java:43)",
+        "\tat org.gradle.internal.typeconversion.CompositeNotationConverter.convert(CompositeNotationConverter.java:34)",
+        "\tat org.gradle.internal.typeconversion.NotationConverterToNotationParserAdapter.parseNotation(NotationConverterToNotationParserAdapter.java:31)",
+        "\tat org.gradle.internal.typeconversion.ErrorHandlingNotationParser.parseNotation(ErrorHandlingNotationParser.java:48)",
+        "\tat org.gradle.api.internal.artifacts.DefaultDependencyFactory.createDependency(DefaultDependencyFactory.java:77)",
+        "\tat org.gradle.api.internal.artifacts.dsl.dependencies.DefaultDependencyHandler.create(DefaultDependencyHandler.java:166)",
+        "\tat org.gradle.api.internal.artifacts.dsl.dependencies.DefaultDependencyHandler.create(DefaultDependencyHandler.java:160)",
+        "\tat org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)"
+      ],
+      "exactRawBlock": "2026-11-12T08:00:27.4159874Z Declaring dependencies using multi-string notation has been deprecated. This will fail with an error in Gradle 10. Please use single-string notation (\"org.jetbrains.kotlin:kotlin-native-prebuilt:2.3.0:windows-x86_64@zip\") or DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#dependency_multi_string_notation\n2026-11-12T08:00:27.4162635Z \tat org.gradle.api.internal.notations.DependencyMapNotationConverter.parseMap(DependencyMapNotationConverter.java:72)\n2026-11-12T08:00:27.4163865Z \tat org.gradle.internal.typeconversion.MapNotationConverter.parseType(MapNotationConverter.java:94)\n2026-11-12T08:00:27.4164984Z \tat org.gradle.internal.typeconversion.MapNotationConverter.parseType(MapNotationConverter.java:41)\n2026-11-12T08:00:27.4166090Z \tat org.gradle.internal.typeconversion.TypedNotationConverter.convert(TypedNotationConverter.java:43)\n2026-11-12T08:00:27.4167269Z \tat org.gradle.internal.typeconversion.CompositeNotationConverter.convert(CompositeNotationConverter.java:34)\n2026-11-12T08:00:27.4168744Z \tat org.gradle.internal.typeconversion.NotationConverterToNotationParserAdapter.parseNotation(NotationConverterToNotationParserAdapter.java:31)\n2026-11-12T08:00:27.4170253Z \tat org.gradle.internal.typeconversion.ErrorHandlingNotationParser.parseNotation(ErrorHandlingNotationParser.java:48)\n2026-11-12T08:00:27.4171905Z \tat org.gradle.api.internal.artifacts.DefaultDependencyFactory.createDependency(DefaultDependencyFactory.java:77)\n2026-11-12T08:00:27.4172917Z \tat org.gradle.api.internal.artifacts.dsl.dependencies.DefaultDependencyHandler.create(DefaultDependencyHandler.java:166)\n2026-11-12T08:00:27.4174096Z \tat org.gradle.api.internal.artifacts.dsl.dependencies.DefaultDependencyHandler.create(DefaultDependencyHandler.java:160)\n2026-11-12T08:00:27.4175609Z \tat org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)\n"
+    },
+    {
+      "eventId": "windows-x64-11",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2295,
+      "rawLogEndLine": 2307,
+      "timestamp": "2026-11-12T08:00:30.2116731Z",
+      "observedGradleHeader": "> Configure project :viz:desktop",
+      "message": "Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum",
+      "origin": "org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)",
+      "stack": [
+        "\tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)",
+        "\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttribute(AttributeContainerCodecs.kt:127)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttributesUsing(AttributeContainerCodecs.kt:86)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.access$readAttributesUsing(AttributeContainerCodecs.kt:1)",
+        "\tat org.gradle.internal.serialize.codecs.dm.ImmutableAttributesCodec.decode(AttributeContainerCodecs.kt:64)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec$decode$1.invokeSuspend(CalculateArtifactsCodec.kt)",
+        "\tat kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)"
+      ],
+      "exactRawBlock": "2026-11-12T08:00:30.2116731Z Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum\n2026-11-12T08:00:30.2128711Z \tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)\n2026-11-12T08:00:30.2129818Z \tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n2026-11-12T08:00:30.2132186Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttribute(AttributeContainerCodecs.kt:127)\n2026-11-12T08:00:30.2140245Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttributesUsing(AttributeContainerCodecs.kt:86)\n2026-11-12T08:00:30.2144216Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.access$readAttributesUsing(AttributeContainerCodecs.kt:1)\n2026-11-12T08:00:30.2147809Z \tat org.gradle.internal.serialize.codecs.dm.ImmutableAttributesCodec.decode(AttributeContainerCodecs.kt:64)\n2026-11-12T08:00:30.2151577Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2156086Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2157904Z \tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)\n2026-11-12T08:00:30.2160506Z \tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)\n2026-11-12T08:00:30.2162817Z \tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec$decode$1.invokeSuspend(CalculateArtifactsCodec.kt)\n2026-11-12T08:00:30.2169328Z \tat kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)\n"
+    },
+    {
+      "eventId": "windows-x64-12",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2308,
+      "rawLogEndLine": 2332,
+      "timestamp": "2026-11-12T08:00:30.2181345Z",
+      "observedGradleHeader": "> Configure project :viz:desktop",
+      "message": "Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum",
+      "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)",
+      "stack": [
+        "\tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)",
+        "\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttribute(AttributeContainerCodecs.kt:127)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttributesUsing(AttributeContainerCodecs.kt:86)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.access$readAttributesUsing(AttributeContainerCodecs.kt:1)",
+        "\tat org.gradle.internal.serialize.codecs.dm.ImmutableAttributesCodec.decode(AttributeContainerCodecs.kt:64)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepCodec.decode(TransformStepCodec.kt:49)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepSpecCodec.decode(Transforms.kt:66)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CombinatorsKt.readList(Combinators.kt:175)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:75)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec$decode$1.invokeSuspend(CalculateArtifactsCodec.kt)",
+        "\tat kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)"
+      ],
+      "exactRawBlock": "2026-11-12T08:00:30.2181345Z Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum\n2026-11-12T08:00:30.2185416Z \tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)\n2026-11-12T08:00:30.2186423Z \tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n2026-11-12T08:00:30.2187724Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttribute(AttributeContainerCodecs.kt:127)\n2026-11-12T08:00:30.2189712Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttributesUsing(AttributeContainerCodecs.kt:86)\n2026-11-12T08:00:30.2191859Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.access$readAttributesUsing(AttributeContainerCodecs.kt:1)\n2026-11-12T08:00:30.2197114Z \tat org.gradle.internal.serialize.codecs.dm.ImmutableAttributesCodec.decode(AttributeContainerCodecs.kt:64)\n2026-11-12T08:00:30.2202294Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2204243Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2205988Z \tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)\n2026-11-12T08:00:30.2212018Z \tat org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)\n2026-11-12T08:00:30.2214613Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2216183Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2222307Z \tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)\n2026-11-12T08:00:30.2225055Z \tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepCodec.decode(TransformStepCodec.kt:49)\n2026-11-12T08:00:30.2228111Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2230469Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2232600Z \tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)\n2026-11-12T08:00:30.2235710Z \tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepSpecCodec.decode(Transforms.kt:66)\n2026-11-12T08:00:30.2239217Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2241128Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2242982Z \tat org.gradle.internal.serialize.graph.CombinatorsKt.readList(Combinators.kt:175)\n2026-11-12T08:00:30.2244922Z \tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:75)\n2026-11-12T08:00:30.2253049Z \tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec$decode$1.invokeSuspend(CalculateArtifactsCodec.kt)\n2026-11-12T08:00:30.2255451Z \tat kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)\n"
+    },
+    {
+      "eventId": "windows-x64-13",
+      "kind": "native-deprecation",
+      "rawLogStartLine": 2333,
+      "rawLogEndLine": 2357,
+      "timestamp": "2026-11-12T08:00:30.2261381Z",
+      "observedGradleHeader": "> Configure project :viz:desktop",
+      "message": "Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum",
+      "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)",
+      "stack": [
+        "\tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)",
+        "\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttribute(AttributeContainerCodecs.kt:127)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttributesUsing(AttributeContainerCodecs.kt:86)",
+        "\tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.access$readAttributesUsing(AttributeContainerCodecs.kt:1)",
+        "\tat org.gradle.internal.serialize.codecs.dm.ImmutableAttributesCodec.decode(AttributeContainerCodecs.kt:64)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepCodec.decode(TransformStepCodec.kt:49)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepSpecCodec.decode(Transforms.kt:66)",
+        "\tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)",
+        "\tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)",
+        "\tat org.gradle.internal.serialize.graph.CombinatorsKt.readList(Combinators.kt:175)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:75)",
+        "\tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec$decode$1.invokeSuspend(CalculateArtifactsCodec.kt)",
+        "\tat kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)"
+      ],
+      "exactRawBlock": "2026-11-12T08:00:30.2261381Z Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum\n2026-11-12T08:00:30.2266388Z \tat org.gradle.api.attributes.Attribute.validateSupportedType(Attribute.java:70)\n2026-11-12T08:00:30.2267238Z \tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n2026-11-12T08:00:30.2268216Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttribute(AttributeContainerCodecs.kt:127)\n2026-11-12T08:00:30.2269746Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.readAttributesUsing(AttributeContainerCodecs.kt:86)\n2026-11-12T08:00:30.2271089Z \tat org.gradle.internal.serialize.codecs.dm.AttributeContainerCodecsKt.access$readAttributesUsing(AttributeContainerCodecs.kt:1)\n2026-11-12T08:00:30.2272330Z \tat org.gradle.internal.serialize.codecs.dm.ImmutableAttributesCodec.decode(AttributeContainerCodecs.kt:64)\n2026-11-12T08:00:30.2273918Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2285972Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2286838Z \tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)\n2026-11-12T08:00:30.2288275Z \tat org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)\n2026-11-12T08:00:30.2289602Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2290542Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2291772Z \tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)\n2026-11-12T08:00:30.2292768Z \tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepCodec.decode(TransformStepCodec.kt:49)\n2026-11-12T08:00:30.2294585Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2296083Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2298803Z \tat org.gradle.internal.serialize.graph.CodecKt.readNonNull(Codec.kt:160)\n2026-11-12T08:00:30.2300760Z \tat org.gradle.internal.serialize.codecs.dm.transform.TransformStepSpecCodec.decode(Transforms.kt:66)\n2026-11-12T08:00:30.2302702Z \tat org.gradle.internal.serialize.graph.codecs.BindingsBackedCodec.decode(BindingsBackedCodec.kt:92)\n2026-11-12T08:00:30.2304050Z \tat org.gradle.internal.serialize.graph.DefaultReadContext.read(Contexts.kt:292)\n2026-11-12T08:00:30.2305539Z \tat org.gradle.internal.serialize.graph.CombinatorsKt.readList(Combinators.kt:175)\n2026-11-12T08:00:30.2307735Z \tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:75)\n2026-11-12T08:00:30.2309821Z \tat org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec$decode$1.invokeSuspend(CalculateArtifactsCodec.kt)\n2026-11-12T08:00:30.2311464Z \tat kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:34)\n"
+    },
+    {
+      "eventId": "windows-x64-14",
+      "kind": "native-bundle-overwrite",
+      "rawLogStartLine": 2364,
+      "rawLogEndLine": 2364,
+      "timestamp": "2026-11-12T08:00:52.0156853Z",
+      "observedGradleHeader": "> Task :launcher:downloadKotlinNativeDistribution",
+      "message": "Kotlin/Native bundle directory C:\\Users\\runneradmin\\.konan\\kotlin-native-prebuilt-windows-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.",
+      "origin": null,
+      "stack": [],
+      "exactRawBlock": "2026-11-12T08:00:52.0156853Z Kotlin/Native bundle directory C:\\Users\\runneradmin\\.konan\\kotlin-native-prebuilt-windows-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.\n"
+    },
+    {
+      "eventId": "windows-x64-15",
+      "kind": "own-native-compiler-warning",
+      "rawLogStartLine": 2384,
+      "rawLogEndLine": 2384,
+      "timestamp": "2026-11-12T08:02:14.9093549Z",
+      "observedGradleHeader": "> Task :launcher:compileKotlinMingwX64",
+      "message": "w: file:///D:/a/gvy/gvy/launcher/src/mingwX64Main/kotlin/com/github/albertocavalcante/gvy/launcher/WindowsPaths.kt:95:22 Redundant call of conversion method.",
+      "origin": null,
+      "stack": [],
+      "exactRawBlock": "2026-11-12T08:02:14.9093549Z w: file:///D:/a/gvy/gvy/launcher/src/mingwX64Main/kotlin/com/github/albertocavalcante/gvy/launcher/WindowsPaths.kt:95:22 Redundant call of conversion method.\n"
+    }
+  ]
+}

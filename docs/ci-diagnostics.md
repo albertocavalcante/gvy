@@ -97,27 +97,41 @@ observations and the same diagnostic gate. Their daemon lifetimes are isolated b
 metaspace and two-worker limits remain unchanged. Both jobs must succeed before the publishing job can run. Diagnostic
 evidence stays separate from the verified JAR/VSIX pair.
 
-Native launcher payload and Linux/macOS Native builds also use this wrapper, with separate stable producers and failure
-artifacts. Their JDK 21/native-compiler processes are outside the Linux/JDK 17 numeric sampler contract; tool
+Native launcher payload and Linux/macOS/Windows Native builds also use this wrapper, with separate stable producers and
+failure artifacts. Their JDK 21/native-compiler processes are outside the Linux/JDK 17 numeric sampler contract; tool
 diagnostics and original command/capture status remain required. The caller requires the reusable workflow to succeed.
 
 The opt-in Native provisioning guard uses a fresh job-owned directory and records preflight, unapproved diagnostics,
-verification and a final verdict. Its two exact Kotlin 2.3.0 overwrite warnings remain unexpected unless the matching
-proof succeeds; their owned, expiring conditional debt remains visible even when absent. The isolated directory contains
-provisioning writes but does not prove that only the installer's lock existed at the warning boundary or establish full
-compiler integrity. Actual Native and packaged-payload tests remain required. See
+verification and a final verdict. Its three host-specific Kotlin 2.3.0 overwrite warnings remain unexpected unless the
+matching proof succeeds; their owned, expiring conditional debt remains visible even when absent. The isolated directory
+contains provisioning writes but does not prove that only the installer's lock existed at the warning boundary or
+establish full compiler integrity. Actual Native and packaged-payload tests remain required. See
 [#1603](https://github.com/albertocavalcante/gvy/issues/1603).
+
+Windows capture uses the explicit Git Bash path in `GVY_CI_GRADLE_BASH`. Before any evidence read, the
+[launcher workflow](../.github/workflows/ci-launcher.yml) builds two small C helpers with native MinGW GCC 15 or newer
+and sets `GVY_CI_EVIDENCE_READER` and `GVY_CI_PRIVATE_ROOT_HELPER` to their absolute paths. The reader checks the opened
+Windows handle's type, attributes and byte limit; unavailable helpers fail closed. These variables configure the CI
+capture tools.
+
+The Windows guard creates a protected SID-only SDK root, checks known SDK directories/files for unsafe ACLs, reparse
+points and hardlinks, and binds its full file identity across verification. Raw SIDs and file IDs stay in the held plan;
+public receipts contain an identity digest. The same plan must survive preparation through final verification. Existing
+workspace/temp/report directories are trusted CI inputs, and the guard does not protect against the same SID or
+privileged actors. Synthetic controls and a local fresh-SDK experiment supplement the required integrated CI run.
 
 First-party deprecated Kotlin DSL delegates and the old test-listener closure are migrated. Plugin deprecations have
 exact source-attributed exceptions in `tools/ci/gradle-diagnostics.json`; inspected upstream versions, adoption
 candidates and removal criteria remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). These
 exceptions are debt, not proof that newer plugin releases have the same limitation.
 
-Native integration adds fourteen exact upstream fingerprints from thirteen observed events per host. Three Native enum
+Linux/macOS Native integration adds fourteen exact upstream fingerprints from thirteen observed events per host. Windows
+adds one exact bundle-notation fingerprint; its remaining plugin traces reuse existing entries. Three Native enum
 consumer stacks retain distinct configuration-cache codec origins; Native download advice retains its verified bundle
 emitter. These out-of-band messages must not inherit an unrelated project's last header. Unknown types, messages and
-origins remain unexpected. Inspected KGP 2.3.20 source fixes nine of these events, while the Native enum limitation
-remains in inspected 2.3.20 and 2.4.21; source findings alone are not adoption or integration proof.
+origins remain unexpected. For the originally inspected Linux/macOS traces, KGP 2.3.20 source fixes nine events, while
+the Native enum limitation remains in inspected 2.3.20 and 2.4.21; source findings alone are not adoption or integration
+proof.
 
 Spotless 8.11.0 guards its obsolete configuration-visibility call on Gradle 9. Cold formatter checks retain pinned
 ktlint 1.7.1 and existing output. The retired Spotless exception is removed; its original trace remains a negative

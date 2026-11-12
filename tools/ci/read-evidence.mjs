@@ -1,9 +1,11 @@
 import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { isUtf8 } from 'node:buffer';
+import { readWindowsEvidenceBytes } from './windows-evidence.mjs';
 
 /** Open once, inspect that descriptor and read at most the stated byte budget. */
 export function readEvidenceBytes(path, maxBytes) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1 || maxBytes > 512 * 1024 * 1024) throw new Error('Invalid evidence byte limit');
+  if (process.platform === 'win32') return readWindowsEvidenceBytes(path, maxBytes);
   if (!Number.isInteger(constants.O_NOFOLLOW) || constants.O_NOFOLLOW === 0) throw new Error('No-follow evidence reads are unavailable on this platform');
   // Nonblocking open also prevents an unexpected FIFO from hanging the reader.
   const descriptor = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);

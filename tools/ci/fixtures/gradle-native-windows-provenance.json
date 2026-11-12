@@ -1,0 +1,120 @@
+{
+  "kind": "historical-selective-native-deprecation-traces",
+  "sourceHead": "67ff51dc47c7fdc328d6518dcd45a99e263ac8cd",
+  "testedSha": "56a918f66c5e1fc7a5c93df6180d50f754b6a8b4",
+  "testedBase": "4969ad1b9af4632eccbc0101e28d4c81ac97b34b",
+  "runId": "43178483058",
+  "runAttempt": 1,
+  "limits": [
+    "Historical failed job evidence, not a fresh wrapper run or successful final Windows process suite.",
+    "Observed Gradle project/task headers are preserved; emitter contexts come only from the inspected parser policy.",
+    "No invocationId/memory samples were generated: original workflow predates the pending run-gradle wrapper composition.",
+    "Only the exact Windows dependency-notation exception is proposed. No waiver for own compiler warning or bundle overwrite."
+  ],
+  "fixtures": [
+    {
+      "file": "gradle-native-windows-x64.txt",
+      "sha256": "86044953c92b64cdf2a5bad89b90b08c23ec463b2a67b76d695e583699b5417f",
+      "producer": "launcher-windows-x64",
+      "jobUrl": "https://github.com/albertocavalcante/gvy/actions/runs/43178483058/job/131050143456",
+      "jobConclusion": "failure",
+      "image": "windows-2025-vs2026",
+      "runnerName": "GitHub Actions 1000111578",
+      "rawLogBytes": 354206,
+      "rawLogSha256": "6a82b977bb7f0c8f61202ddcc371ae7f0645ede1554e1779fa1e6373a931184d",
+      "events": [
+        {
+          "eventId": "windows-x64-01",
+          "rawLogStartLine": 2194,
+          "rawLogEndLine": 2197,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)"
+        },
+        {
+          "eventId": "windows-x64-02",
+          "rawLogStartLine": 2198,
+          "rawLogEndLine": 2201,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)"
+        },
+        {
+          "eventId": "windows-x64-03",
+          "rawLogStartLine": 2202,
+          "rawLogEndLine": 2205,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)"
+        },
+        {
+          "eventId": "windows-x64-04",
+          "rawLogStartLine": 2206,
+          "rawLogEndLine": 2209,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:182)"
+        },
+        {
+          "eventId": "windows-x64-05",
+          "rawLogStartLine": 2210,
+          "rawLogEndLine": 2213,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)"
+        },
+        {
+          "eventId": "windows-x64-06",
+          "rawLogStartLine": 2214,
+          "rawLogEndLine": 2222,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinNativeHostSpecificMetadataArtifactKt$KotlinNativeHostSpecificMetadataArtifact$1.createArtifact(KotlinNativeHostSpecificMetadataArtifact.kt:76)"
+        },
+        {
+          "eventId": "windows-x64-07",
+          "rawLogStartLine": 2223,
+          "rawLogEndLine": 2226,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)"
+        },
+        {
+          "eventId": "windows-x64-08",
+          "rawLogStartLine": 2227,
+          "rawLogEndLine": 2235,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)"
+        },
+        {
+          "eventId": "windows-x64-09",
+          "rawLogStartLine": 2236,
+          "rawLogEndLine": 2244,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)"
+        },
+        {
+          "eventId": "windows-x64-10",
+          "rawLogStartLine": 2283,
+          "rawLogEndLine": 2294,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)"
+        },
+        {
+          "eventId": "windows-x64-11",
+          "rawLogStartLine": 2295,
+          "rawLogEndLine": 2307,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)"
+        },
+        {
+          "eventId": "windows-x64-12",
+          "rawLogStartLine": 2308,
+          "rawLogEndLine": 2332,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)"
+        },
+        {
+          "eventId": "windows-x64-13",
+          "rawLogStartLine": 2333,
+          "rawLogEndLine": 2357,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)"
+        }
+      ]
+    }
+  ]
+}

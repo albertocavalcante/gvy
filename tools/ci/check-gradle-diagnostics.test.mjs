@@ -483,8 +483,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 46);
-  assert.equal(exceptions.length, 51);
+  assert.equal(plugins.length, 47);
+  assert.equal(exceptions.length, 52);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {

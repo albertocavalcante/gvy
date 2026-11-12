@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
 package com.github.albertocavalcante.gvy.gls.cli
 
 import org.assertj.core.api.Assertions.assertThat
