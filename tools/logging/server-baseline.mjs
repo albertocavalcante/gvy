@@ -49,9 +49,16 @@ function completionKind(value) {
   return { kind: items.length ? 'items-present' : 'empty-list', count: items.length };
 }
 /** Write sensitive local launch provenance once without exposing it in the receipt. */
-export function writePrivateProfile(file, javaExecutable, javaVersion) {
-  writeFileSync(file, JSON.stringify({ javaExecutable, javaVersion }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
+export function writePrivateProfile(file, javaExecutable, javaVersion, javaBanner) {
+  writeFileSync(file, JSON.stringify({ javaExecutable, javaVersion, javaBanner }, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
 }
+/** Return only an allowlisted vendor and bounded version token. */
+export function parseJavaVersion(banner) {
+  const match = /^(openjdk|java) version "([0-9][A-Za-z0-9._+\-]{0,63})"/m.exec(banner);
+  if (!match) throw new Error('Java version unrecognized');
+  return { vendor: match[1], version: match[2] };
+}
+
 function resolveJava() {
   const name = process.platform === 'win32' ? 'java.exe' : 'java';
   for (const directory of (process.env.PATH ?? '').split(path.delimiter)) {
@@ -84,6 +91,7 @@ export async function runSession(child, { uri, text, level, warmups, samples, ro
   peer = new RpcPeer(child.stdin, {
     deadlineMs,
     configuration,
+    onFatal(error) { failStream(error); },
     onNotification(message) {
       if (message.method !== 'textDocument/publishDiagnostics') return;
       const params = message.params;
@@ -93,8 +101,8 @@ export async function runSession(child, { uri, text, level, warmups, samples, ro
     },
   });
   const parser = new FrameParser((message) => peer.receive(message));
-  const failStream = () => { streamError = true; peer.close(new Error('stream failure')); };
-  child.stdout.on('data', (chunk) => { try { parser.write(chunk); } catch { failStream(); } });
+  const failStream = (error) => { streamError = true; peer.close(error?.kind === 'output-saturated' ? error : new Error('stream failure')); };
+  child.stdout.on('data', (chunk) => { if (streamError) return; try { parser.write(chunk); } catch (error) { failStream(error); } });
   child.stdout.on('end', () => { stdoutEnded = true; try { parser.end(); } catch { failStream(); } peer.close(new Error('stdout EOF')); });
   child.stdout.on('close', () => { if (!stdoutEnded) failStream(); });
   child.stdout.on('error', failStream);
@@ -171,6 +179,7 @@ export async function runSession(child, { uri, text, level, warmups, samples, ro
   } catch (error) {
     // Keep only an allowlisted class and numeric protocol code, never error text.
     if (Number.isInteger(error?.code)) { failureClass = 'json-rpc-error'; failureCode = [-32601, -32602, -32801].includes(error.code) ? error.code : null; }
+    else if (error?.kind === 'output-saturated') failureClass = 'output-saturated';
     else if (typeof error?.message === 'string' && error.message.endsWith(' timed out')) failureClass = 'timeout';
     else if (error?.message === 'stdout EOF' || error?.message === 'child closed') failureClass = 'eof';
     else if (error?.message === 'invalid shutdown') failureClass = 'unexpected-shutdown-result';
@@ -213,6 +222,24 @@ async function fileSha256(file) {
   return digest.digest('hex');
 }
 
+/** Resolve the exact verified file before launching from another working directory. */
+export async function resolveVerifiedJar(file, provenance) {
+  const resolved = realpathSync(path.resolve(file));
+  const jarHash = await fileSha256(resolved);
+  if (typeof provenance.jarSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(provenance.jarSha256) || jarHash !== provenance.jarSha256 || statSync(resolved).size !== provenance.jarBytes) throw new Error('JAR provenance mismatch');
+  return { path: resolved, sha256: jarHash };
+}
+
+/** Recheck without letting a disappearing file erase a censored receipt. */
+export async function recheckJar(file, expected) {
+  try {
+    const sha256 = await fileSha256(file);
+    return { sha256, matches: sha256 === expected };
+  } catch {
+    return { sha256: null, matches: false };
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const keys = ['--jar', '--provenance', '--launch-profile', '--level', '--size', '--warmups', '--samples'];
@@ -224,8 +251,9 @@ async function main() {
   const samples = Number(opts['--samples'] ?? 5);
   if (![warmups, samples].every(Number.isSafeInteger) || warmups < 0 || samples < 1 || warmups + samples > 100) throw new Error('Invalid iteration counts');
   const provenance = JSON.parse(readFileSync(opts['--provenance'], 'utf8'));
-  const jarHash = await fileSha256(opts['--jar']);
-  if (typeof provenance.jarSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(provenance.jarSha256) || jarHash !== provenance.jarSha256 || statSync(opts['--jar']).size !== provenance.jarBytes || typeof provenance.source?.sha !== 'string' || !/^[a-f0-9]{40}$/.test(provenance.source.sha) || (provenance.source.tree !== undefined && (typeof provenance.source.tree !== 'string' || !/^[a-f0-9]{40}$/.test(provenance.source.tree)))) throw new Error('JAR provenance mismatch');
+  const verifiedJar = await resolveVerifiedJar(opts['--jar'], provenance);
+  const jarHash = verifiedJar.sha256;
+  if (typeof provenance.source?.sha !== 'string' || !/^[a-f0-9]{40}$/.test(provenance.source.sha) || (provenance.source.tree !== undefined && (typeof provenance.source.tree !== 'string' || !/^[a-f0-9]{40}$/.test(provenance.source.tree)))) throw new Error('Source provenance mismatch');
   const ignoredJavaEnvironment = ['JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS', '_JAVA_OPTIONS', 'CLASSPATH'];
   const ignoredJavaEnvironmentPresent = Object.fromEntries(ignoredJavaEnvironment.map((key) => [key, process.env[key] !== undefined]));
   const javaEnvironment = { ...process.env };
@@ -233,9 +261,9 @@ async function main() {
   const javaExecutable = resolveJava();
   const version = spawnSync(javaExecutable, ['-Xmx64m', '-XX:MaxMetaspaceSize=128m', '-version'], { encoding: 'utf8', maxBuffer: 16384, timeout: 10000, env: javaEnvironment });
   if (version.status !== 0) throw new Error('Java version unavailable');
-  const javaVersion = (version.stderr + version.stdout).split('\n').find((line) => /^(?:openjdk|java) version /.test(line));
-  if (!javaVersion) throw new Error('Java version unrecognized');
-  writePrivateProfile(opts['--launch-profile'], javaExecutable, javaVersion);
+  const javaBanner = version.stderr + version.stdout;
+  const java = parseJavaVersion(javaBanner);
+  writePrivateProfile(opts['--launch-profile'], javaExecutable, java.version, javaBanner);
   const fixtureSize = opts['--size'] ?? 'small';
   const text = sourceFixture('groovy', fixtureSize);
   const workspace = mkdtempSync(path.join(os.tmpdir(), 'gvy-logging-baseline-'));
@@ -244,15 +272,16 @@ async function main() {
     const file = path.join(workspace, 'Sample.groovy');
     writeFileSync(file, text);
     const rootUri = pathToFileURL(`${workspace}${path.sep}`).href;
-    const javaArgs = ['-Xmx512m', '-XX:MaxMetaspaceSize=256m', '-jar', opts['--jar']];
+    const javaArgs = ['-Xmx512m', '-XX:MaxMetaspaceSize=256m', '-jar', verifiedJar.path];
     const exactConfiguration = { initialization: initializeParams(rootUri, opts['--level']), workspaceConfiguration: workspaceConfiguration(opts['--level']), javaExecutable, javaArgs, warmups, samples, deadlineMs: 15000, ignoredJavaEnvironmentPresent };
     const spawnStartMs = performance.now();
     const child = spawn(javaExecutable, javaArgs, { cwd: workspace, env: javaEnvironment, stdio: ['pipe', 'pipe', 'pipe'] });
     const result = await runSession(child, { uri: pathToFileURL(file).href, rootUri, text, level: opts['--level'], warmups, samples, spawnStartMs });
     removeWorkspace = result.childReaped;
-    const jarHashAfter = await fileSha256(opts['--jar']);
-    if (jarHashAfter !== jarHash) { result.status = 'incomplete'; result.failureStage = 'jar-changed'; }
-    console.log(JSON.stringify({ schema: 'gvy-logging-baseline-v1', jarSha256: jarHash, jarSha256After: jarHashAfter, declaredSourceSha: provenance.source.sha, declaredSourceTree: provenance.source.tree ?? null, driverSha256: await fileSha256(fileURLToPath(import.meta.url)), protocolSha256: await fileSha256(fileURLToPath(new URL('./lsp-protocol.mjs', import.meta.url))), fixtureSize, fixtureSha256: hash(text), configurationSha256: hash(JSON.stringify(exactConfiguration)), configurationHashScope: 'initialization, workspace configuration, JVM arguments, iteration counts, deadline and removed variable names; remaining environment inherited', plannedWarmups: warmups, plannedSamples: samples, deadlineMs: 15000, ignoredJavaEnvironmentPresent, workspaceRetained: !result.childReaped, requestedLevel: opts['--level'], effectiveLevel: 'unknown', javaVersion, nodeVersion: process.version, os: { platform: os.platform(), release: os.release(), arch: os.arch() }, ...result }, null, 2));
+    const checkedJar = await recheckJar(verifiedJar.path, jarHash);
+    const jarHashAfter = checkedJar.sha256;
+    if (!checkedJar.matches) { result.status = 'incomplete'; result.failureStage = 'jar-changed-or-unavailable'; }
+    console.log(JSON.stringify({ schema: 'gvy-logging-baseline-v1', jarSha256: jarHash, jarSha256After: jarHashAfter, declaredSourceSha: provenance.source.sha, declaredSourceTree: provenance.source.tree ?? null, driverSha256: await fileSha256(fileURLToPath(import.meta.url)), protocolSha256: await fileSha256(fileURLToPath(new URL('./lsp-protocol.mjs', import.meta.url))), fixtureSize, fixtureSha256: hash(text), configurationSha256: hash(JSON.stringify(exactConfiguration)), configurationHashScope: 'initialization, workspace configuration, JVM arguments, iteration counts, deadline and removed variable names; remaining environment inherited', plannedWarmups: warmups, plannedSamples: samples, deadlineMs: 15000, ignoredJavaEnvironmentPresent, workspaceRetained: !result.childReaped, requestedLevel: opts['--level'], effectiveLevel: 'unknown', javaVendor: java.vendor, javaVersion: java.version, nodeVersion: process.version, os: { platform: os.platform(), release: os.release(), arch: os.arch() }, ...result }, null, 2));
     if (result.status !== 'complete') process.exitCode = 1;
   } finally { if (removeWorkspace) rmSync(workspace, { recursive: true, force: true }); }
 }

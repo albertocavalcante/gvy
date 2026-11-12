@@ -242,9 +242,67 @@ test('private launch profile is exclusive and does not expose Java path in recei
   const dir = mkdtempSync(path.join(os.tmpdir(), 'gvy-profile-test-'));
   try {
     const file = path.join(dir, 'profile.json');
-    writePrivateProfile(file, '/private/java', 'openjdk version "21"');
-    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { javaExecutable: '/private/java', javaVersion: 'openjdk version "21"' });
+    writePrivateProfile(file, '/private/java', '21', 'openjdk version "21"');
+    assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { javaExecutable: '/private/java', javaVersion: '21', javaBanner: 'openjdk version "21"' });
     if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o077, 0);
     assert.throws(() => writePrivateProfile(file, '/other/java', 'other'), /EEXIST/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('censors and reaps a server flooding requests while stdin is stalled', async () => {
+  const { runSession } = await import('./server-baseline.mjs');
+  const { EventEmitter } = await import('node:events');
+  const signals = [];
+  const child = Object.assign(new EventEmitter(), { stdin: new PassThrough({ highWaterMark: 64 }), stdout: new PassThrough(), stderr: new PassThrough(), kill: (signal) => { signals.push(signal); child.stdout.end(); child.stderr.end(); setImmediate(() => child.emit('close', null, signal)); } });
+  const done = runSession(child, { uri: 'file:///synthetic/a.groovy', text: 'class A {}', level: 'info', warmups: 0, samples: 1, deadlineMs: 1000 });
+  for (let i = 0; i < 8000; i++) child.stdout.write(frame({ jsonrpc: '2.0', id: i + 100, method: 'workspace/configuration', params: { items: [{ section: 'groovy.server.logLevel' }] } }));
+  const result = await done;
+  assert.equal(result.status, 'incomplete');
+  assert.equal(result.failureClass, 'output-saturated');
+  assert.ok(child.stdin.writableLength <= 256 * 1024);
+  assert.deepEqual(signals, ['SIGTERM']);
+  assert.equal(result.childReaped, true);
+});
+
+test('extracts only a safe Java version token from an untrusted banner', async () => {
+  const { parseJavaVersion } = await import('./server-baseline.mjs');
+  assert.deepEqual(parseJavaVersion('openjdk version "21.0.13.0.3" 2026-10-24 /private/path token=secret\n'), { vendor: 'openjdk', version: '21.0.13.0.3' });
+  assert.throws(() => parseJavaVersion('openjdk version "21/secret"\n'), /version/i);
+});
+
+test('a verified relative JAR path works after child cwd changes', async () => {
+  const { resolveVerifiedJar } = await import('./server-baseline.mjs');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { spawnSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'gvy-relative-jar-'));
+  try {
+    const file = path.join(dir, 'fake.jar');
+    const data = Buffer.from('synthetic jar bytes');
+    writeFileSync(file, data);
+    const input = path.relative(process.cwd(), file);
+    const verified = await resolveVerifiedJar(input, { jarBytes: data.length, jarSha256: createHash('sha256').update(data).digest('hex') });
+    assert.ok(path.isAbsolute(verified.path));
+    const child = spawnSync(process.execPath, ['-e', 'process.stdout.write(require("node:fs").readFileSync(process.argv[1]))', verified.path], { cwd: os.tmpdir() });
+    assert.equal(child.status, 0);
+    assert.deepEqual(child.stdout, data);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('a missing or modified JAR after launch produces a failed recheck', async () => {
+  const { recheckJar } = await import('./server-baseline.mjs');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'gvy-recheck-'));
+  try {
+    const file = path.join(dir, 'jar');
+    writeFileSync(file, 'new bytes');
+    const changed = await recheckJar(file, '0'.repeat(64));
+    assert.equal(changed.matches, false);
+    assert.match(changed.sha256, /^[a-f0-9]{64}$/);
+    rmSync(file);
+    assert.deepEqual(await recheckJar(file, '0'.repeat(64)), { sha256: null, matches: false });
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

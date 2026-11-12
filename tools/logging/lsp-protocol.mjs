@@ -67,10 +67,13 @@ export class PhysicalLineCounter {
 }
 
 export class RpcPeer {
-  constructor(output, { deadlineMs = 15000, maxPending = 4, configuration = {}, onNotification = () => {} } = {}) {
+  constructor(output, { deadlineMs = 15000, maxPending = 4, maxQueuedBytes = 256 * 1024, configuration = {}, onNotification = () => {}, onFatal = () => {} } = {}) {
     this.output = output;
     this.deadlineMs = deadlineMs;
     this.maxPending = maxPending;
+    this.maxQueuedBytes = maxQueuedBytes;
+    this.queuedBytes = 0;
+    this.onFatal = onFatal;
     this.configuration = configuration;
     this.onNotification = onNotification;
     this.pending = new Map();
@@ -78,8 +81,29 @@ export class RpcPeer {
     this.failure = undefined;
   }
   send(message, onWrite) {
-    const body = Buffer.from(JSON.stringify(message));
-    this.output.write(Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`), body]), onWrite);
+    if (this.failure) throw this.failure;
+    const json = JSON.stringify(message);
+    const length = Buffer.byteLength(json);
+    const header = Buffer.from(`Content-Length: ${length}\r\n\r\n`);
+    const bytes = header.length + length;
+    if (bytes > this.maxQueuedBytes - this.queuedBytes) {
+      const error = new Error('LSP outbound queue limit exceeded');
+      error.kind = 'output-saturated';
+      this.close(error);
+      this.onFatal(error);
+      throw error;
+    }
+    const frame = Buffer.concat([header, Buffer.from(json)]);
+    this.queuedBytes += bytes;
+    let finished = false;
+    const done = (error) => {
+      if (finished) return;
+      finished = true;
+      this.queuedBytes -= bytes;
+      if (error) { this.close(error); this.onFatal(error); }
+      else if (onWrite) onWrite();
+    };
+    try { this.output.write(frame, done); } catch (error) { done(error); throw error; }
   }
   notify(method, params) { this.send({ jsonrpc: '2.0', method, params }); }
   request(method, params, timing) {

@@ -70,11 +70,12 @@ node tools/logging/server-baseline.mjs --jar /path/to/baseline.jar --provenance 
 ```
 
 The provenance input must contain `jarSha256`, `jarBytes`, and `source.sha`. The driver checks the JAR hash and size
-before launching and the hash again afterward. The source SHA and optional tree are **declared by provenance**, not
-inferred from the JAR. The receipt hashes the driver, protocol module, synthetic source and exact initialization/JVM
-arguments; the configuration hash includes the synthetic temporary URI, process ID and JAR path, so it intentionally
-changes between runs. The exclusive, mode-0600 launch profile holds the resolved Java executable and version; keep it
-private. The receipt reports the requested level, not an effective backend threshold. It removes `JAVA_TOOL_OPTIONS`,
+before launching and the hash again afterward. Relative JAR paths are resolved to the verified absolute file before the
+child changes working directory. The source SHA and optional tree are **declared by provenance**, not inferred from the
+JAR. The receipt hashes the driver, protocol module, synthetic source and exact initialization/JVM arguments; the
+configuration hash includes the synthetic temporary URI, process ID and JAR path, so it intentionally changes between
+runs. The exclusive, mode-0600 launch profile holds the resolved Java executable and version; keep it private. The
+receipt reports the requested level, not an effective backend threshold. It removes `JAVA_TOOL_OPTIONS`,
 `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS` and `CLASSPATH` from the Java child environment and inherits other environment
 variables. The server JVM gets `-Xmx512m -XX:MaxMetaspaceSize=256m`.
 
@@ -88,10 +89,12 @@ typing latency.
 
 The driver counts and hashes raw stderr bytes and physical LF-delimited lines; a final unterminated line counts once.
 Bytes are not guaranteed valid UTF-8, lines are not log events, and Java writes, Java flushes and operating-system
-syscalls are unobserved (`null`). Protocol headers, bodies, pending requests and stage waits are bounded. Failure,
-timeout or early EOF censors the run, and the driver attempts TERM then KILL only on its own child. A nonstandard empty
-object returned for shutdown is recorded as a protocol deviation, not a successful standard shutdown; exit is still sent
-so cleanup is observed. Raw server messages, diagnostic text and source paths are excluded from the receipt.
+syscalls are unobserved (`null`). Protocol headers, bodies, pending requests and stage waits are bounded. At 256 KiB of
+outstanding outbound writes the driver censors the run and reaps the child; it does not queue an unlimited number of
+server-request responses. Failure, timeout or early EOF censors the run, and the driver attempts TERM then KILL only on
+its own child. A nonstandard empty object returned for shutdown is recorded as a protocol deviation, not a successful
+standard shutdown; exit is still sent so cleanup is observed. Raw server messages, diagnostic text and source paths are
+excluded from the receipt.
 
 The version-matched first `publishDiagnostics` is only the first publication, not completion. The separate
 `groovy/awaitDiagnostics` contract is proposed in #1754 and is not assumed available: method-not-found is unavailable,
