@@ -119,7 +119,7 @@ class ScenarioExecutor internal constructor(
         recorder: NamedObservationRecorder? = null,
     ) {
         execution.checkActive()
-        val (workspace, inlineMarkers) = prepareWorkspace(definition)
+        val (workspace, inlineMarkers) = recordPrimary(recorder) { prepareWorkspace(definition) }
         val scenario = definition.scenario
 
         AutoCloseable {
@@ -129,6 +129,7 @@ class ScenarioExecutor internal constructor(
             AutoCloseable {
                 if (recorder == null) session.close() else recorder.closeSession { session.close() }
             }.use {
+                recordPrimary(recorder) {
                 val context = ScenarioContext(
                     definition = definition,
                     sessionAccess = ScenarioSessionAccess(session::get, execution::checkActive),
@@ -156,6 +157,7 @@ class ScenarioExecutor internal constructor(
                     executeStep(step, context, nextStep)
                 }
                 execution.checkActive()
+                }
             }
         }
     }
@@ -184,6 +186,13 @@ class ScenarioExecutor internal constructor(
         val markers = writeInlineFilesOrCleanUp(root, definition.scenario.name, config?.files.orEmpty())
         return ScenarioWorkspace(root) to markers
     }
+}
+
+private inline fun <T> recordPrimary(recorder: NamedObservationRecorder?, block: () -> T): T = try {
+    block()
+} catch (failure: Throwable) {
+    recorder?.primaryFailure(failure)
+    throw failure
 }
 
 private const val DEFAULT_SCENARIO_TIMEOUT_MS = 300_000L

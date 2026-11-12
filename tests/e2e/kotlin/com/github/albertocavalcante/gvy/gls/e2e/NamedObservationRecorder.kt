@@ -11,10 +11,15 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
     private var workerFinished = false
     private var executorClosed = false
     private val cleanupFailures = mutableListOf<Throwable>()
+    private var primaryFailure: Throwable? = null
     private var executing = false
 
     @Synchronized fun executionStarted() {
         if (!sealed) executing = true
+    }
+
+    @Synchronized fun primaryFailure(failure: Throwable) {
+        if (!sealed && primaryFailure == null) primaryFailure = failure
     }
 
     @Synchronized fun workerFinished() {
@@ -76,6 +81,7 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
         }
         val phase = if (executing) ScenarioFailurePhase.Execution else ScenarioFailurePhase.Setup
         val executionFailure = failure?.takeUnless { candidate -> cleanupFailures.any { it === candidate } }
+            ?: primaryFailure
         val completion = when (executionFailure) {
             null -> ScenarioCompletion.Completed
             is InterruptedException, is CancellationException -> ScenarioCompletion.Cancelled(

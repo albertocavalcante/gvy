@@ -37,6 +37,25 @@ class NamedObservationRecorderTest {
     }
 
     @Test
+    fun `same throwable from execution and cleanup retains both origins`() {
+        val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
+        val shared = AssertionError("shared failure")
+        recorder.executionStarted()
+        recorder.primaryFailure(shared)
+        assertThrows<AssertionError> { recorder.closeSession { throw shared } }
+        recorder.closeWorkspace { }
+        recorder.workerFinished()
+        recorder.executorClosed(null)
+
+        val outcome = recorder.finish(shared)
+
+        val completion = outcome.completion as ScenarioCompletion.Failed
+        assertThat(completion.kind).isEqualTo(ScenarioFailureKind.Product)
+        assertThat(completion.detail).contains("shared failure")
+        assertThat(outcome.cleanup).isInstanceOf(CleanupOutcome.Failed::class.java)
+    }
+
+    @Test
     fun `unclassified failure retains its nested cause`() {
         val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
         val failure = IllegalStateException("outer", IOException("nested cause"))
