@@ -80,6 +80,10 @@ the step. Missing, empty, truncated or contradictory completion evidence and cap
 retains the original exit status, raw log/hash, exact diagnostics, owned exceptions and source/run context in a unique
 evidence directory. CI uploads that directory even after failure.
 
+The paired nightly server build uses the same diagnostic gate before artifact verification. A diagnostic failure fails
+the read-only build dependency and prevents the separate publishing job from running. Diagnostic evidence stays separate
+from the verified JAR/VSIX pair.
+
 First-party deprecated Kotlin DSL delegates and the old test-listener closure are migrated. Plugin deprecations have
 exact source-attributed exceptions in `tools/ci/gradle-diagnostics.json`; inspected upstream versions, adoption
 candidates and removal criteria remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). These
