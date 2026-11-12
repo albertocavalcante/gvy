@@ -3,11 +3,9 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>ComplexCondition:SymbolResolverTest.kt$SymbolResolverTest$current is MethodNode || current is ConstructorNode || current is ClosureExpression || current is BlockStatement || current is ClassNode</ID>
-    <ID>CyclomaticComplexMethod:AstPositionQuery.kt$AstPositionQuery$fun getNodeAt(uri: URI, lspLine: Int, lspCharacter: Int): ASTNode?</ID>
     <ID>CyclomaticComplexMethod:AstPositionQuery.kt$AstPositionQuery$private fun ASTNode.tokenLengthHint(): Int?</ID>
     <ID>FunctionOnlyReturningConstant:DefinitionResolver.kt$DefinitionResolver$private fun resolveVariableDefinition(@Suppress("UNUSED_PARAMETER") variable: VariableExpression): ASTNode?</ID>
     <ID>LargeClass:AstPositionQueryTest.kt$AstPositionQueryTest</ID>
-    <ID>LongMethod:AstPositionQuery.kt$AstPositionQuery$fun getNodeAt(uri: URI, lspLine: Int, lspCharacter: Int): ASTNode?</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$20</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$3</ID>
     <ID>MagicNumber:AstPositionQuery.kt$AstPositionQuery$32</ID>
