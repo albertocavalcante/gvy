@@ -173,10 +173,13 @@ class NamedObservationExecutionTest {
                 },
             )
         }
-        val scenario = Scenario(name = "late worker", steps = listOf(
-            ScenarioStep.Initialized,
-            ScenarioStep.Assert("workspace", listOf(JsonCheck("$.uri", JsonExpectation(), id = "later"))),
-        ))
+        val scenario = Scenario(
+            name = "late worker",
+            steps = listOf(
+                ScenarioStep.Initialized,
+                ScenarioStep.Assert("workspace", listOf(JsonCheck("$.uri", JsonExpectation(), id = "later"))),
+            ),
+        )
         try {
             val outcome = executor.executeWithOutcome(ScenarioDefinition(scenario))
             assertThat(outcome.blocked).containsExactly("later")
