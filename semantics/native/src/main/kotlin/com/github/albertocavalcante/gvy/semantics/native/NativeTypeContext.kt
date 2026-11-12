@@ -58,6 +58,8 @@ class NativeTypeContext(
 
     internal fun lookupDeclaration(variable: VariableExpression): SemanticType? = scope.lookupDeclaration(variable)
 
+    internal fun lookupUnbound(name: String): SemanticType? = scope.lookupUnbound(name)
+
     override fun getMethodReturnType(
         receiverType: SemanticType,
         methodName: String,

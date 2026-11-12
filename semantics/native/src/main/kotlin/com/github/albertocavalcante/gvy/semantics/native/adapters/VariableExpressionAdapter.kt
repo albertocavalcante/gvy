@@ -7,6 +7,8 @@ import com.github.albertocavalcante.gvy.semantics.native.NativeCalculators
 import com.github.albertocavalcante.gvy.semantics.native.NativeTypeContext
 import org.codehaus.groovy.ast.DynamicVariable
 import org.codehaus.groovy.ast.expr.VariableExpression
+import java.util.Collections
+import java.util.IdentityHashMap
 import kotlin.reflect.KClass
 
 /**
@@ -19,16 +21,27 @@ object VariableExpressionAdapter : TypeCalculator<VariableExpression> {
     override val priority: Int = NativeCalculators.SCOPE_AWARE_PRIORITY // Higher than reflection-based fallback
 
     override fun calculate(node: VariableExpression, context: TypeContext): SemanticType? {
-        val accessed = node.accessedVariable
-        if (accessed is VariableExpression) {
-            (context as? NativeTypeContext)?.lookupDeclaration(accessed)?.let { return it }
-            if (accessed !== node) return context.calculateType(accessed)
-        } else if (accessed != null && accessed !is DynamicVariable) {
-            return context.calculateType(accessed)
+        val seen = Collections.newSetFromMap(IdentityHashMap<VariableExpression, Boolean>())
+        var current = node
+        while (seen.add(current)) {
+            val accessed = current.accessedVariable
+            if (accessed is VariableExpression) {
+                (context as? NativeTypeContext)?.lookupDeclaration(accessed)?.let { return it }
+                current = accessed
+            } else if (accessed != null && accessed !is DynamicVariable) {
+                return context.calculateType(accessed)
+            } else {
+                if (accessed == null) {
+                    val fallback = if (context is NativeTypeContext) {
+                        context.lookupUnbound(current.name)
+                    } else {
+                        context.lookupSymbol(current.name)
+                    }
+                    if (fallback != null) return fallback
+                }
+                return SemanticType.Dynamic("unresolved variable: ${current.name}")
+            }
         }
-
-        // Unbound expressions may be supplied with an explicit scope by API callers.
-        if (accessed == null) context.lookupSymbol(node.name)?.let { return it }
-        return SemanticType.Dynamic("unresolved variable: ${node.name}")
+        return SemanticType.Dynamic("cyclic variable binding: ${node.name}")
     }
 }

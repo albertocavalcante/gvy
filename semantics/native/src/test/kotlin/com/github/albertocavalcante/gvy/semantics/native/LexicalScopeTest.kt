@@ -9,10 +9,12 @@ import com.github.albertocavalcante.gvy.semantics.TypeConstants
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
+import org.codehaus.groovy.ast.expr.VariableExpression
 import org.codehaus.groovy.ast.stmt.BlockStatement
 import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.net.URI
 
@@ -84,6 +86,65 @@ class LexicalScopeTest {
         val semantics = GroovySemantics(solver)
         assertEquals(TypeConstants.INT, semantics.resolveType(probe(0).rightExpression, module))
         assertEquals(TypeConstants.STRING, semantics.resolveType(probe(1).rightExpression, module))
+    }
+
+    @Test
+    fun `name lookup retains unique declarations and rejects ambiguous names`() {
+        val module = parse("""
+            class Sample {
+                String uniqueField
+                def a(Integer uniqueParameter) { def uniqueLocal = 1; def x = 'a' }
+                def b(String x) { def other = x }
+            }
+        """.trimIndent())
+        val context = checkNotNull(GroovySemantics(solver).getContext(module))
+        assertEquals(TypeConstants.STRING, context.lookupSymbol("uniqueField"))
+        assertEquals(SemanticType.Known("java.lang.Integer"), context.lookupSymbol("uniqueParameter"))
+        assertEquals(TypeConstants.INT, context.lookupSymbol("uniqueLocal"))
+        assertEquals(null, context.lookupSymbol("x"))
+    }
+
+    @Test
+    fun `constructor and field closure declarations retain their own bindings`() {
+        val module = parse("""
+            class Sample {
+                def field = { def x = 's'; def probe = x }
+                Sample() { def x = 1; def probe = x }
+            }
+        """.trimIndent())
+        val cls = module.classes.first { it.name == "Sample" }
+        val fieldClosure = cls.getField("field").initialExpression as ClosureExpression
+        val fieldBody = fieldClosure.code as BlockStatement
+        val constructorBody = cls.declaredConstructors.first().code as BlockStatement
+        fun rhs(body: BlockStatement) = body.statements.filterIsInstance<ExpressionStatement>()
+            .mapNotNull { it.expression as? DeclarationExpression }
+            .first { it.variableExpression.name == "probe" }.rightExpression
+        val semantics = GroovySemantics(solver)
+        assertEquals(TypeConstants.STRING, semantics.resolveType(rhs(fieldBody), module))
+        assertEquals(TypeConstants.INT, semantics.resolveType(rhs(constructorBody), module))
+    }
+
+    @Test
+    fun `script captured local is inferred without duplicate ambiguity`() {
+        val module = parse("def x = 1; def closure = { def probe = x }")
+        val statements = module.statementBlock.statements
+        val declaration = (statements[1] as ExpressionStatement).expression as DeclarationExpression
+        val body = (declaration.rightExpression as ClosureExpression).code as BlockStatement
+        val probe = (body.statements.first() as ExpressionStatement).expression as DeclarationExpression
+        val semantics = GroovySemantics(solver)
+        assertEquals(TypeConstants.INT, semantics.resolveType(probe.rightExpression, module))
+        assertEquals(TypeConstants.INT, semantics.getContext(module)?.lookupSymbol("x"))
+    }
+
+    @Test
+    fun `cyclic variable bindings terminate without consulting unrelated names`() {
+        val module = parse("def x = 1")
+        val a = VariableExpression("a")
+        val b = VariableExpression("b")
+        a.accessedVariable = b
+        b.accessedVariable = a
+        val result = GroovySemantics(solver).resolveType(a, module)
+        assertTrue(result is SemanticType.Dynamic && result.hint?.contains("cyclic") == true)
     }
 
     @Test

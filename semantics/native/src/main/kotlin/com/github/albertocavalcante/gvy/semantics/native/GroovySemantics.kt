@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.CodeVisitorSupport
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.expr.ClosureExpression
 import org.codehaus.groovy.ast.expr.DeclarationExpression
 import org.codehaus.groovy.ast.expr.Expression
 import java.lang.ref.WeakReference
@@ -106,9 +107,23 @@ class GroovySemantics(
                 }
                 super.visitDeclarationExpression(expression)
             }
+
+            override fun visitClosureExpression(expression: ClosureExpression) {
+                expression.parameters?.forEach { scope.defineDeclaration(it, NativeTypeContext.fromClassNode(it.type)) }
+                super.visitClosureExpression(expression)
+            }
         }
         module.statementBlock?.visit(visitor)
-        module.classes.forEach { cls -> cls.methods.forEach { it.code?.visit(visitor) } }
+        module.classes.forEach { cls ->
+            cls.fields.forEach { field ->
+                scope.defineDeclaration(field, NativeTypeContext.fromClassNode(field.type))
+                field.initialExpression?.visit(visitor)
+            }
+            (cls.methods + cls.declaredConstructors).forEach { method ->
+                method.parameters.forEach { scope.defineDeclaration(it, NativeTypeContext.fromClassNode(it.type)) }
+                method.code?.visit(visitor)
+            }
+        }
     }
 
     /**
