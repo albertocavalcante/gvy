@@ -3,6 +3,12 @@
 Install the released extension for VS Code, Cursor, or VSCodium. To build your current checkout instead, use the
 [contributor instructions](../editors/code/CONTRIBUTING.md#build-and-install-this-checkout).
 
+| Choose               | What you get                                              | Install                                 |
+| -------------------- | --------------------------------------------------------- | --------------------------------------- |
+| Stable (recommended) | A tagged release, without local builds                    | Homebrew or the released VSIX below     |
+| Nightly              | A prebuilt, tested snapshot of `main`                     | [Nightly VSIX](#nightly-download)       |
+| Latest green `main`  | The newest commit with passing required CI, built locally | [`make ext-latest`](#latest-green-main) |
+
 Use VS Code 1.144 or newer, or an editor compatible with that VS Code API. Homebrew installs the Java runtime; it does
 not install the editor. Cursor and VSCodium have separate product version numbers. Some builds use an older VS Code API
 and cannot install this release. The installer preserves the editor's compatibility error; it never forces an
@@ -77,9 +83,54 @@ you already use a different project JDK. The installer does not change your Java
 The server is bundled in the VSIX. For checksum or attestation verification and Java settings, see the
 [editor guide](../editors/code/README.md#setup).
 
+## Development builds
+
+### Nightly download
+
+Use a nightly to try changes from `main` without installing a build toolchain:
+
+1. Open [GitHub Releases](https://github.com/albertocavalcante/gvy/releases) and select the newest **Nightly**
+   prerelease that includes **gvy-nightly.vsix** and **nightly.json**.
+2. Download **gvy-nightly.vsix**, then run **Extensions: Install from VSIX…** in your editor and select it.
+3. Reload the editor window. Keep the downloaded file if you want to return to this build later.
+
+The daily workflow is scheduled for 03:00 UTC and publishes only after server tests, editor tests, packaging, and an LSP
+startup and shutdown check pass. A failed run publishes nothing; check the release date and commit when choosing a
+build. Both the extension and its bundled server come from that commit. **nightly.json** records the source commit,
+actual server version, editor API requirement, and hashes; **checksums.txt** provides SHA-256 digests.
+
+Java 17+ and a compatible editor are still required. The standalone **gls-nightly.jar** is available in the same release
+for other LSP clients. Nightlies use separate dated tags and do not replace the latest stable release.
+
+To update a nightly, install the newer nightly VSIX. For a downgrade to stable or an older nightly, first uninstall gvy
+from the editor's Extensions view, then use **Extensions: Install from VSIX…** with the chosen file. Homebrew users can
+select the stable `libexec/gvy.vsix` under `brew --prefix gvy` instead of downloading it again. The command-line helper
+does not request downgrades. Installing a nightly VSIX replaces gvy in that editor; it does not change the Homebrew
+server.
+
+Homebrew's `gvy` formula tracks stable releases. There is no `gvy-nightly` formula or `brew install --HEAD` support yet.
+Nightly downloads are manual installs; the extension does not automatically follow the nightly channel. Automatic
+updates and rollback are tracked in [#1736](https://github.com/albertocavalcante/gvy/issues/1736).
+
+### Latest green main
+
+A nightly is a daily snapshot. For the newest `origin/main` commit whose required CI passed, use an existing gvy
+checkout with the [JVM build setup](../CONTRIBUTING.md#set-up-the-jvm-build) and green-main prerequisites below
+installed:
+
+```bash
+make ext-latest DRY_RUN=1
+make ext-latest
+```
+
+This builds both components from the selected commit and keeps previous VSIX files for `make ext-rollback`. It needs
+authenticated `gh`, `jq`, Java, `pnpm`, and `unzip`. See the
+[green-main contributor guide](../editors/code/CONTRIBUTING.md#run-the-latest-green-main) for editor selection,
+provenance, rollback, and build-directory controls.
+
 ## Update
 
-For Homebrew installations:
+For stable Homebrew installations:
 
 ```bash
 brew update

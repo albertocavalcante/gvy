@@ -379,8 +379,11 @@ installed one is never pruned; pruning happens after a verified install). Requir
 
 `make ext-rollback` steps back one build from what is installed: the next older kept VSIX in build order (run it again
 to go further back; `ROLLBACK_SHA` picks a specific one). Run `make ext-latest` to return to the newest. Running this
-periodically (launchd, cron, a login item) is up to you; the repository ships no scheduler. A nightly pre-release VSIX
-and an update channel in the extension are tracked separately in #1576.
+periodically (launchd, cron, a login item) is up to you; the repository ships no scheduler. For a prebuilt daily
+snapshot, use the
+[nightly download instructions](https://github.com/albertocavalcante/gvy/blob/main/docs/installation.md#nightly-download).
+An automatic nightly update channel in the extension remains follow-up work in
+[#1736](https://github.com/albertocavalcante/gvy/issues/1736).
 
 ## Build and install this checkout
 
