@@ -17,25 +17,22 @@ export class LMToolProvider implements vscode.Disposable {
 
   private registerTools() {
     TOOL_DEFINITIONS.forEach((tool) => {
-      if (this.registry.isToolEnabled(tool.name)) {
-        this.disposables.push(
-          vscode.lm.registerTool(tool.name, {
-            invoke: async (
-              options: vscode.LanguageModelToolInvocationOptions<
-                Record<string, unknown>
-              >,
-            ) => {
-              const params = options.input;
-              const result = await tool.handler(this.lspService, params);
-              return new vscode.LanguageModelToolResult([
-                new vscode.LanguageModelTextPart(
-                  JSON.stringify(result, null, 2),
-                ),
-              ]);
-            },
-          }),
-        );
-      }
+      this.disposables.push(
+        vscode.lm.registerTool(tool.name, {
+          invoke: async (
+            options: vscode.LanguageModelToolInvocationOptions<
+              Record<string, unknown>
+            >,
+          ) => {
+            this.registry.assertToolEnabled(tool.name);
+            const params = options.input;
+            const result = await tool.handler(this.lspService, params);
+            return new vscode.LanguageModelToolResult([
+              new vscode.LanguageModelTextPart(JSON.stringify(result, null, 2)),
+            ]);
+          },
+        }),
+      );
     });
   }
 
