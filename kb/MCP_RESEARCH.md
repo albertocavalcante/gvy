@@ -6,10 +6,15 @@ Evaluation and the go/no-go decision are tracked in [#1727](https://github.com/a
 
 ## Answer and scope
 
-gvy has a credible use for MCP: expose a small set of semantic queries with explicit analysis readiness, source
-versions, and completeness. Start by testing representative agent workflows through an existing Groovy-capable LSP
-bridge. If the experiment demonstrates value, implement a native MCP adapter over shared workspace services, beginning
-with headless stdio and later adding editor-attached access.
+The owner prefers CLI workflows. Make semantic tasks useful through a direct, machine-readable CLI over shared analysis
+services, with LSP and optional MCP as other adapters. An editor session or MCP server must not be a prerequisite for a
+useful agent CLI. The [CLI and runtime study](CLI_DISTRIBUTION_RESEARCH.md), tracked in
+[#1741](https://github.com/albertocavalcante/gvy/issues/1741), covers launchers, bundled Java and BYO-runtime packaging.
+
+gvy has a credible use for MCP: expose semantic queries with explicit analysis readiness, source versions and
+completeness. Evaluate its value against the CLI contract; an existing Groovy-capable LSP bridge is one bounded
+experiment. If it demonstrates additional value, implement a native MCP adapter over the same workspace services,
+beginning with headless stdio and later considering editor-attached access.
 
 gopls and Metals are verified examples of native MCP support. Dart and Flutter offer a broader SDK/tooling MCP surface.
 Serena and cclsp demonstrate external LSP adaptation. These are different architectures; support through a bridge does
