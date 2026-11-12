@@ -31,6 +31,11 @@ pins, performs a release build with one job, runs the probe and emits one JSON r
 benchmark result. Failed source, command, query, output or correctness checks exit nonzero. Run heavy builds only within
 the host's coordinated resource allowance; this command does not acquire a host-wide measurement window.
 
+Release-build failures and native-probe failures have separate fixed categories. A probe's known fixed error line can
+identify the failed control; unknown, extra or secret-bearing stderr yields only `NATIVE_PROBE_FAILED`. Raw stderr and
+its hashes are never exported. Timeout, output-limit and cleanup-uncertainty categories take precedence over a probe
+diagnostic. A failure category does not certify completed work.
+
 ## Inputs and identity
 
 `source-lock.json` pins the grammar commits, all generated/parser/scanner/header/query/Rust-binding inputs, licenses,

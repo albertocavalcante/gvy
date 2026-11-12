@@ -32,6 +32,13 @@ test('an unavailable command fails without a live process group', { skip: !suppo
   await assert.rejects(runCommand(`gvy-native-missing-command-${process.pid}`, []), /NATIVE_COMMAND_FAILED/);
 });
 
+test('native failures expose only a known fixed diagnostic and never raw stderr', { skip: !supported }, async () => {
+  await assert.rejects(runCommand(process.execPath, ['-e', 'process.stderr.write("NATIVE_CONTRACT_FAILED:PREDICATE_ORACLE_FAILED\\n");process.exitCode=1'], { nativeProbe: true }), /NATIVE_PROBE_PREDICATE_ORACLE_FAILED/);
+  const canary = 'PRIVATE_CANARY_7821';
+  await assert.rejects(runCommand(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(`${canary}\nNATIVE_CONTRACT_FAILED:INPUT_INVALID\n`)});process.exitCode=1`], { nativeProbe: true }), error => error.message === 'NATIVE_PROBE_FAILED' && !error.message.includes(canary));
+  await assert.rejects(runCommand(process.execPath, ['-e', 'process.stderr.write("NATIVE_CONTRACT_FAILED:INPUT_INVALID\\n");process.exitCode=1']), /NATIVE_COMMAND_FAILED/);
+});
+
 test('output overflow and timeout reject rather than return partial success', { skip: !supported }, async () => {
   await assert.rejects(runCommand(process.execPath, ['-e', 'process.stdout.write("x".repeat(4096))'], { outputLimit: 128 }), /NATIVE_COMMAND_OUTPUT_LIMIT/);
   await assert.rejects(runCommand(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { timeoutMs: 100 }), /NATIVE_COMMAND_TIMEOUT/);

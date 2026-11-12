@@ -8,8 +8,8 @@ const fail = code => { throw new Error(code); };
 const controller = new AbortController();
 const cancel = () => controller.abort();
 process.once('SIGINT', cancel); process.once('SIGTERM', cancel);
-const command = (executable, args, input, timeoutMs = 300000) => runCommand(executable, args, {
-  cwd: root, timeoutMs, environment: { ...process.env, CARGO_BUILD_JOBS: '1' }, input, signal: controller.signal,
+const command = (executable, args, input, timeoutMs = 300000, nativeProbe = false) => runCommand(executable, args, {
+  cwd: root, timeoutMs, environment: { ...process.env, CARGO_BUILD_JOBS: '1' }, input, signal: controller.signal, nativeProbe,
 });
 
 try {
@@ -49,11 +49,15 @@ try {
     console.log(JSON.stringify({ schemaVersion: 1, scope: 'source-pin-verification-only', engine, files, runtime, queryDigests }));
   } else {
     const fixtureBytes = Object.fromEntries(['valid', 'malformed'].map(name => [name, readRegularBytes(path.join(root, 'fixtures', `${name}.groovy`), 1024)]));
-    await command('cargo', ['build', '--release', '--locked', '--manifest-path', manifest]);
+    try { await command('cargo', ['build', '--release', '--locked', '--manifest-path', manifest]); }
+    catch (error) {
+      if (error instanceof Error && error.message === 'NATIVE_COMMAND_FAILED') fail('NATIVE_RELEASE_BUILD_FAILED');
+      throw error;
+    }
     const packageName = metadata.packages.find(candidate => candidate.id === metadata.resolve.root).name;
     const binary = path.join(metadata.target_directory, 'release', `${packageName}${process.platform === 'win32' ? '.exe' : ''}`);
     const binarySha256 = sha256(readRegularBytes(binary, 64 * 1024 * 1024));
-    const native = JSON.parse(await command(binary, [], input, 10000));
+    const native = JSON.parse(await command(binary, [], input, 10000, true));
     if (native.schemaVersion !== 1 || native.scope !== 'native-feasibility-only' || native.engine !== engine || native.runtimeVersion !== pin.runtimeVersion || native.controlCount !== 6) fail('NATIVE_RESULT_IDENTITY_MISMATCH');
     verifyFixtureBytes(native.fixtureBytes, fixtureBytes);
     delete native.fixtureBytes;

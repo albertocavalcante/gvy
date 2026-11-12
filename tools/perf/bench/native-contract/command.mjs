@@ -1,10 +1,11 @@
 import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
+import { classifyNativeFailure } from './diagnostics.mjs';
 
 /** Own one POSIX process group; detached sessions and blocked OS calls remain outside containment. */
-export function runCommand(executable, args, { cwd, input, environment = process.env, timeoutMs = 300000, outputLimit = 4 * 1024 * 1024, signal } = {}) {
+export function runCommand(executable, args, { cwd, input, environment = process.env, timeoutMs = 300000, outputLimit = 4 * 1024 * 1024, signal, nativeProbe = false } = {}) {
   if (!['darwin', 'linux'].includes(process.platform)) return Promise.reject(new Error('NATIVE_COMMAND_PLATFORM_UNSUPPORTED'));
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 300000 || !Number.isSafeInteger(outputLimit) || outputLimit <= 0 || outputLimit > 4 * 1024 * 1024 || (input !== undefined && Buffer.byteLength(input) > 64 * 1024)) return Promise.reject(new Error('NATIVE_COMMAND_OPTIONS_INVALID'));
+  if (typeof nativeProbe !== 'boolean' || !Number.isSafeInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > 300000 || !Number.isSafeInteger(outputLimit) || outputLimit <= 0 || outputLimit > 4 * 1024 * 1024 || (input !== undefined && Buffer.byteLength(input) > 64 * 1024)) return Promise.reject(new Error('NATIVE_COMMAND_OPTIONS_INVALID'));
   if (signal?.aborted) return Promise.reject(new Error('NATIVE_COMMAND_ABORTED'));
   return new Promise((resolve, reject) => {
     let child;
@@ -17,6 +18,7 @@ export function runCommand(executable, args, { cwd, input, environment = process
     let cleanupDeadline;
     let terminationRequested = false;
     const stdout = [];
+    const stderr = [];
     const group = () => {
       if (child?.pid === undefined) return 'gone';
       try { process.kill(-child.pid, 0); return 'alive'; } catch (error) { return error.code === 'ESRCH' ? 'gone' : 'unknown'; }
@@ -28,7 +30,10 @@ export function runCommand(executable, args, { cwd, input, environment = process
       clearTimeout(cleanupTimer);
       signal?.removeEventListener('abort', abort);
       child?.stdin?.destroy(); child?.stdout?.destroy(); child?.stderr?.destroy();
-      if (code) reject(new Error(code)); else resolve(Buffer.concat(stdout).toString('utf8'));
+      if (code) {
+        const safeCode = nativeProbe && code === 'NATIVE_COMMAND_FAILED' ? classifyNativeFailure(Buffer.concat(stderr).toString('utf8')) : code;
+        reject(new Error(safeCode));
+      } else resolve(Buffer.concat(stdout).toString('utf8'));
     };
     const reconcile = () => {
       if (finished) return;
@@ -54,10 +59,11 @@ export function runCommand(executable, args, { cwd, input, environment = process
     signal?.addEventListener('abort', abort, { once: true });
     if (signal?.aborted) abort();
     const consume = (chunk, keep) => {
-      if (finished || failure) return;
+      if (finished || (failure && failure !== 'NATIVE_COMMAND_FAILED')) return;
       size += chunk.length;
-      if (size > outputLimit) { stop('NATIVE_COMMAND_OUTPUT_LIMIT'); return; }
+      if (size > outputLimit) { failure = 'NATIVE_COMMAND_OUTPUT_LIMIT'; stop(failure); return; }
       if (keep) stdout.push(chunk);
+      else if (nativeProbe) stderr.push(chunk);
     };
     child.stdout.on('data', chunk => consume(chunk, true));
     child.stderr.on('data', chunk => consume(chunk, false));
