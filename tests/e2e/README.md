@@ -48,10 +48,10 @@ tests/e2e/
 
 ## Server Launch Modes
 
-| Mode        | Description                 | Performance                | Use Case                      |
-| ----------- | --------------------------- | -------------------------- | ----------------------------- |
-| `stdio`     | Spawns separate JVM process | Slow (~2-5s startup)       | Realistic integration testing |
-| `inProcess` | Runs in same JVM as tests   | Fast (no startup overhead) | Development, CI optimization  |
+| Mode        | Description                            | Boundary exercised                         |
+| ----------- | -------------------------------------- | ------------------------------------------ |
+| `stdio`     | Starts a separate server JVM           | Subprocess transport and process lifecycle |
+| `inProcess` | Creates the server inside the test JVM | In-memory transport and shared JVM state   |
 
 For `stdio`, `server.args` follows the `stdio` command and `server.env` overrides inherited environment values. An
 explicit `GRADLE_USER_HOME` also overrides the isolated runtime home; otherwise the harness must prepare an isolated
@@ -63,20 +63,16 @@ default). Closing a session releases its resources independently, so failed scen
 a successful protocol exit. The YAML `exit` step expects code zero; nonzero expectations currently use the Kotlin
 session API.
 
-### Future: In-Process by Default
-
-> **Planned Migration**: All scenarios will be migrated to `mode: inProcess` by default to significantly reduce E2E test
-> suite execution time.
->
-> The `stdio` mode will remain available for testing actual subprocess communication and for debugging scenarios that
-> behave differently across process boundaries.
-
-To opt into in-process mode today, update your scenario:
+`stdio` remains the default. Select `inProcess` for scenarios intended to share the test JVM:
 
 ```yaml
 server:
-  mode: inProcess  # Eliminates JVM startup overhead
+  mode: inProcess
 ```
+
+Server initialization still runs in either mode. Keep subprocess transport and lifecycle controls in `stdio`; an
+in-process pass does not verify those boundaries. Measure the selected scenario set before changing its mode or fork
+count.
 
 ## Scenario Format
 
@@ -119,22 +115,28 @@ steps:
 
 ## Available Step Types
 
-| Step               | Description                                                         |
-| ------------------ | ------------------------------------------------------------------- |
-| `initialize`       | Sends `initialize` request with optional `initializationOptions`    |
-| `initialized`      | Sends `initialized` notification                                    |
-| `shutdown`         | Sends `shutdown` request                                            |
-| `exit`             | Sends `exit` notification                                           |
-| `openDocument`     | Opens a document via `textDocument/didOpen`                         |
-| `changeDocument`   | Modifies a document via `textDocument/didChange`                    |
-| `saveDocument`     | Saves a document via `textDocument/didSave`                         |
-| `closeDocument`    | Closes a document via `textDocument/didClose`                       |
-| `request`          | Sends any LSP request and captures response                         |
-| `notification`     | Sends any LSP notification                                          |
-| `waitNotification` | Waits for a notification from the server                            |
-| `assert`           | Asserts conditions on saved results                                 |
-| `completion`       | Sends `textDocument/completion` at `position` or `line`/`character` |
-| `rename`           | Sends `textDocument/rename` at `position` or `line`/`character`     |
+| Step               | Description                                                                     |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `initialize`       | Sends `initialize` request with optional `initializationOptions`                |
+| `initialized`      | Sends `initialized` notification                                                |
+| `shutdown`         | Sends `shutdown` request                                                        |
+| `exit`             | Sends `exit` notification                                                       |
+| `openDocument`     | Opens a document via `textDocument/didOpen`                                     |
+| `changeDocument`   | Modifies a document via `textDocument/didChange`                                |
+| `saveDocument`     | Saves a document via `textDocument/didSave`                                     |
+| `closeDocument`    | Closes a document via `textDocument/didClose`                                   |
+| `request`          | Sends a request through the configured protocol route and captures its response |
+| `notification`     | Sends any LSP notification                                                      |
+| `waitNotification` | Waits for a notification from the server                                        |
+| `assert`           | Asserts conditions on saved results                                             |
+| `completion`       | Sends `textDocument/completion` at `position` or `line`/`character`             |
+| `rename`           | Sends `textDocument/rename` at `position` or `line`/`character`                 |
+| `codeAction`       | Sends `textDocument/codeAction` with a range and response checks                |
+| `formatting`       | Sends `textDocument/formatting` with formatting options and response checks     |
+| `wait`             | Pauses for the configured duration in milliseconds                              |
+| `downloadPlugin`   | Downloads a Jenkins plugin and stores its path                                  |
+| `goldenAssert`     | Compares an output file with a checked-in golden file                           |
+| `cli`              | Runs a command with captured stdout, stderr and exit status                     |
 
 Cursor markers (`|^|`, `|^name|`) in `openDocument.text`, full-text `changeDocument.text` and `workspace.files` are
 stripped before the server sees the text. There is no escape syntax, so text such as `~/(a|^b|c)/` is read as a marker.
@@ -190,8 +192,10 @@ checks:
     message: Shown when the check fails # belongs to the check, not to `expect`
 ```
 
-`expect` takes `type` (one of the `ExpectationType` values in `Scenario.kt`), `value` and `values`. Other keys under
-`expect` are currently ignored, so `expect: { contains: "x" }` only checks that the path exists.
+`expect` accepts `type` (an `ExpectationType` from `Scenario.kt`), `value` and `values`, or a standalone `snapshot`
+path. Unknown fields are rejected, so `expect: { contains: "x" }` fails during scenario loading. Equality requires a
+`value`; `value: null` represents JSON null. An empty `expect: {}` checks existence. See the
+[scenario schema notes](resources/scenarios/README.md) for validation details.
 
 ## Variable Interpolation
 
@@ -211,8 +215,32 @@ Built-in variables:
 
 A string that is exactly one placeholder keeps the value's JSON type: `position: "{{cursor.name}}"` sends an object.
 
+## Execution limits
+
+Each scenario has a 300000 ms deadline, starting before workspace preparation and covering server startup and all steps.
+Set `-Dgroovy.lsp.e2e.scenarioTimeoutMs=<milliseconds>` to change it. The value must be a positive integer; explicit
+blank or invalid values fail before setup.
+
+Expiration interrupts the scenario worker; interrupted request waits cancel their unfinished RPC futures. The harness
+allows a 30-second worker-cleanup grace. If an owned worker does not exit, the failure reports cleanup as unconfirmed.
+This infrastructure failure cannot satisfy `xfail`.
+
+The language server starts on first use, so CLI-only scenarios avoid an unused LSP session. CLI steps own their direct
+child process and streams on success and failure. Direct-process exit confirmation retries interruption within a
+five-second budget and restores the signal after cleanup. Capture-reader shutdown has a separate five-second budget; a
+shared CLI cleanup budget is still part of [#1670](https://github.com/albertocavalcante/gvy/issues/1670). CLI steps
+capture stdout and stderr concurrently, with a default 1048576-byte limit per stream. Set
+`-Dgroovy.lsp.e2e.cliOutputLimitBytes=<bytes>` to an ASCII decimal integer from 1 through 16777216; explicit blank or
+invalid values fail before launch. Within the budget, the complete output strings remain available for assertions.
+Overflow fails as a harness error before assertions, with the stream name, limit, observed-byte lower bound and a sample
+of at most 256 captured bytes. Cleanup reports direct-process and reader termination as confirmed or unconfirmed;
+descendant containment remains open in [#1670](https://github.com/albertocavalcante/gvy/issues/1670).
+
 ## Performance Considerations
 
-1. **Memory**: Each stdio-mode test spawns a JVM (~512MB-2GB). Tests run sequentially by default.
-2. **Parallelism**: Use `-Pe2eParallelForks=N` only with `inProcess` mode or ample memory.
-3. **Timeouts**: Default 5-minute timeout per test. Override via system property.
+1. **Memory**: Budget for the test JVM and each active server JVM. The `stdio` server defaults to a 1 GiB maximum heap;
+   other JVM allocations also use memory.
+2. **Parallelism**: Local `e2eTest` runs default to one worker. GitHub Actions defaults to two workers on macOS/Windows
+   and three on Linux. `-Pe2eParallelForks=N` overrides that count; include all workers and active server JVMs in the
+   memory budget for either mode. The focused `harnessTest` task always uses one worker.
+3. **Timeouts**: The whole-scenario deadline and bounded cleanup grace apply as described above.
