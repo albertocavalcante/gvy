@@ -87,9 +87,35 @@ class CheckFailureTest {
         val run = Json.parseToJsonElement(output.readText()).jsonObject.getValue("runs").jsonArray.single().jsonObject
         val checks = run.getValue("properties").jsonObject.getValue("gvyFileChecks").jsonArray.map { entry ->
             val record = entry.jsonObject
-            record.getValue("uri").jsonPrimitive.content to record.getValue("status").jsonPrimitive.content
+            Triple(
+                record.getValue("uri").jsonPrimitive.content,
+                record.getValue("status").jsonPrimitive.content,
+                record.getValue("failureIds").jsonArray.map { it.jsonPrimitive.content },
+            )
         }
-        assertEquals(listOf(clean.invariantSeparatorsPath to "complete", failed.invariantSeparatorsPath to "incomplete"), checks)
+        assertEquals(
+            listOf(
+                Triple(clean.invariantSeparatorsPath, "complete", emptyList()),
+                Triple(failed.invariantSeparatorsPath, "incomplete", listOf("analysis")),
+            ),
+            checks,
+        )
+        assertTrue(run.getValue("results").jsonArray.isEmpty())
+    }
+
+    @Test
+    fun `sarif records a clean file when there are no findings`(@TempDir dir: File) {
+        val file = File(dir, "clean.groovy").apply { writeText("") }
+        val output = File(dir, "clean.sarif")
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ ->
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
+        }))
+        command.parse(listOf("check", "--format", "sarif", "--output", output.path, file.path))
+        val run = Json.parseToJsonElement(output.readText()).jsonObject.getValue("runs").jsonArray.single().jsonObject
+        val check = run.getValue("properties").jsonObject.getValue("gvyFileChecks").jsonArray.single().jsonObject
+        assertEquals(file.invariantSeparatorsPath, check.getValue("uri").jsonPrimitive.content)
+        assertEquals("complete", check.getValue("status").jsonPrimitive.content)
+        assertTrue(check.getValue("failureIds").jsonArray.isEmpty())
         assertTrue(run.getValue("results").jsonArray.isEmpty())
     }
 
@@ -112,7 +138,7 @@ class CheckFailureTest {
         val json = outputFile.readText()
         assertTrue(json.contains("partial warning"), json)
         assertTrue(json.contains("executionSuccessful\": false"), json)
-        assertTrue(json.contains("broken") && json.contains("offline") && json.contains(file.name), json)
+        assertTrue(json.contains("provider:broken") && json.contains("offline") && json.contains(file.name), json)
     }
 
     @Test
@@ -185,6 +211,7 @@ class CheckFailureTest {
         val json = output.readText()
         assertTrue(json.contains("executionSuccessful\": false"), json)
         assertTrue(json.contains("ZERO_DEPENDENCIES") && json.contains("declared dependencies unavailable"), json)
+        assertTrue(json.contains("workspace"), json)
     }
 
     @Test

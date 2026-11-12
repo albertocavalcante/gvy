@@ -52,6 +52,25 @@ class SarifWriterTest {
     }
 
     @Test
+    fun `file completion is represented in the SARIF run property bag`() {
+        val writer = SarifWriter()
+        writer.addFileCheck("clean.groovy", emptyList())
+        writer.addFileCheck("failed.groovy", listOf("provider:codenarc"))
+
+        val output = writer.build()
+        val properties = assertNotNull(output.runs.single().properties)
+        assertEquals(
+            listOf(
+                SarifFileCheck("clean.groovy", "complete", emptyList()),
+                SarifFileCheck("failed.groovy", "incomplete", listOf("provider:codenarc")),
+            ),
+            properties.gvyFileChecks,
+        )
+        assertTrue(output.runs.single().results.isEmpty())
+        assertTrue(writer.toJson(false).contains("\"gvyFileChecks\""))
+    }
+
+    @Test
     fun `execution failures are notifications rather than source diagnostics`() {
         val writer = SarifWriter()
         writer.addExecutionFailure("bad.groovy", "provider unavailable")

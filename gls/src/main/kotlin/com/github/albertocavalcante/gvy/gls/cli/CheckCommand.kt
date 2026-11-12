@@ -128,7 +128,9 @@ class CheckCommand internal constructor(
         val outcomes = runBlocking {
             files.map { file ->
                 val result = checkFile(file, service)
-                if (workspaceFailure == null) result else result.copy(failures = result.failures + workspaceFailure)
+                if (workspaceFailure == null) result else result.copy(
+                    failures = result.failures + FileFailure("workspace", workspaceFailure),
+                )
             }
         }
 
@@ -145,18 +147,23 @@ class CheckCommand internal constructor(
         }
     }
 
-    private data class FileOutcome(val file: File, val diagnostics: List<Diagnostic>, val failures: List<String>)
+    private data class FileFailure(val id: String, val message: String)
+
+    private data class FileOutcome(val file: File, val diagnostics: List<Diagnostic>, val failures: List<FileFailure>)
 
     private suspend fun checkFile(file: File, service: GroovyTextDocumentService): FileOutcome = try {
         val result = analyze(file, service)
         FileOutcome(file, result.diagnostics, result.failures.map { failure ->
-            "Provider ${failure.providerId} failed (${failure.exceptionType}): ${failure.message ?: "no details"}"
+            FileFailure(
+                "provider:${failure.providerId}",
+                "Provider ${failure.providerId} failed (${failure.exceptionType}): ${failure.message ?: "no details"}",
+            )
         })
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
         logger.error(e) { "Error checking file ${file.path}" }
-        FileOutcome(file, emptyList(), listOf("${e.javaClass.name}: ${e.message ?: "no details"}"))
+        FileOutcome(file, emptyList(), listOf(FileFailure("analysis", "${e.javaClass.name}: ${e.message ?: "no details"}")))
     }
 
     private fun outputText(outcomes: List<FileOutcome>) {
@@ -168,7 +175,7 @@ class CheckCommand internal constructor(
                 terminal.println(formatDiagnosticLine(outcome.file, diagnostic))
             }
             outcome.failures.forEach { failure ->
-                terminal.println(brightRed("FAILED: ${outcome.file.path}: $failure"))
+                terminal.println(brightRed("FAILED: ${outcome.file.path}: ${failure.message}"))
             }
         }
     }
@@ -180,8 +187,9 @@ class CheckCommand internal constructor(
             val relativePath = workspace?.let { ws ->
                 outcome.file.relativeToOrSelf(ws).invariantSeparatorsPath
             } ?: outcome.file.invariantSeparatorsPath
+            writer.addFileCheck(relativePath, outcome.failures.map { it.id })
             writer.addDiagnostics(relativePath, outcome.diagnostics)
-            outcome.failures.forEach { writer.addExecutionFailure(relativePath, it) }
+            outcome.failures.forEach { writer.addExecutionFailure(relativePath, it.message) }
         }
 
         val json = writer.toJson(prettyPrint = true)
