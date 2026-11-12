@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: CodeNarc hosted preparation
+name: CodeNarc current-main preparation
 on:
   workflow_dispatch:
 permissions:
@@ -58,14 +58,14 @@ jobs:
           [[ "$(stat -c %s "$RUNNER_TEMP/gvy-reviewed.patch")" == "$(jq -er '.patchBytes' "$receipt")" ]]
           printf '%s  %s\n' "$digest" "$RUNNER_TEMP/gvy-reviewed.patch" | sha256sum -c -
           printf 'base=%s\ntree=%s\npatch=%s\n' "$base" "$tree" "$digest" >>"$GITHUB_OUTPUT"
-      - name: Checkout exact approved base
+      - name: Checkout exact pinned base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.receipt.outputs.base }}
           path: candidate
           fetch-depth: 1
           persist-credentials: false
-      - name: Apply reviewed patch and prove tree
+      - name: Apply pinned candidate patch and prove tree
         working-directory: candidate
         shell: bash
         env:
@@ -181,6 +181,8 @@ jobs:
           editors/code/node_modules/.bin/prettier --check editors/code/client/src/test/integration/implementation.test.ts
           direnv exec . ./gradlew lintFix --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          git diff --quiet
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           direnv exec . ./gradlew :diagnostics:codenarc:test \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
@@ -231,4 +233,15 @@ jobs:
           name: gvy-e2e-codenarc-publication-proof
           path: ${{ runner.temp }}/gvy-publication-proof/
           if-no-files-found: error
+          retention-days: 7
+      - name: Upload failed validation evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: gvy-e2e-codenarc-failure-proof
+          path: |
+            support/.publication/receipt.json
+            candidate/diagnostics/codenarc/build/test-results/test/*.xml
+            ${{ runner.temp }}/gvy-codenarc-native.log
+          if-no-files-found: warn
           retention-days: 7
