@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import * as sinon from "sinon";
 import { assert } from "chai";
 import * as proxyquire from "proxyquire";
@@ -837,6 +840,70 @@ describe("Java Commands", () => {
     });
 
     describe("Plugin insertion", () => {
+      const pluginId = "org.gradle.toolchains.foojay-resolver-convention";
+      const pluginCases = [
+        [
+          "Groovy single quotes",
+          "gradle",
+          `plugins { id '${pluginId}' }`,
+          true,
+        ],
+        [
+          "Groovy double quotes",
+          "gradle",
+          `plugins { id "${pluginId}" }`,
+          true,
+        ],
+        ["Kotlin call", "gradle.kts", `plugins { id("${pluginId}") }`, true],
+        [
+          "Kotlin whitespace and single quotes",
+          "gradle.kts",
+          `plugins\n{\n id ( '${pluginId}' )\n}`,
+          true,
+        ],
+        [
+          "Groovy dot lookalikes",
+          "gradle",
+          `plugins { id '${pluginId.replaceAll(".", "x")}' }`,
+          false,
+        ],
+        [
+          "Kotlin dot lookalikes",
+          "gradle.kts",
+          `plugins { id("${pluginId.replaceAll(".", "x")}") }`,
+          false,
+        ],
+        ["plugin ID prefix", "gradle", `plugins { id 'x${pluginId}' }`, false],
+        [
+          "plugin ID suffix",
+          "gradle.kts",
+          `plugins { id("${pluginId}.other") }`,
+          false,
+        ],
+        ["declaration outside plugins", "gradle", `id '${pluginId}'`, false],
+      ] as const;
+
+      for (const [label, extension, content, configured] of pluginCases) {
+        it(`matches the exact Foojay plugin declaration: ${label}`, async () => {
+          mockVscode.workspace.findFiles.resolves([
+            { path: `/workspace/settings.${extension}` },
+          ]);
+          mockVscode.workspace.openTextDocument.resolves({
+            getText: () => content,
+            positionAt: () => ({ line: 0, char: 0 }),
+          });
+
+          assert.isTrue(await commandsModule.addFoojayResolver());
+          assert.equal(mockVscode.workspace.applyEdit.calledOnce, !configured);
+          if (configured) {
+            assert.include(
+              mockVscode.window.showInformationMessage.firstCall.args[0],
+              "already configured",
+            );
+          }
+        });
+      }
+
       it("should add plugin to existing plugins block (Groovy syntax)", async () => {
         mockVscode.workspace.findFiles.resolves([
           { path: "/workspace/settings.gradle" },

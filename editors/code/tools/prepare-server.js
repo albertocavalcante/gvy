@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Prepares the Groovy Language Server JAR
  * Priority order:
@@ -478,9 +481,14 @@ function downloadTempPath() {
 }
 
 /**
- * Validates and verifies `sourcePath`, then atomically replaces `destPath`.
- * On any failure the previous JAR stays in place and the source is removed,
+ * Copies `sourcePath` into a private snapshot, verifies and validates that
+ * snapshot, then atomically replaces `destPath` with it.
+ * Aliases, including hardlinks, and metadata lookup errors leave both paths
+ * untouched. A missing destination is allowed. After this precondition check,
+ * failures preserve the previous JAR and remove the source,
  * so an interrupted or tampered download can never become server/gls.jar.
+ * The destination directory and private staging directory are trusted; the
+ * caller's source pathname may be replaced at any point during validation.
  */
 async function installVerifiedJar(
   sourcePath,
@@ -488,12 +496,41 @@ async function installVerifiedJar(
   expectedChecksum,
   validate = validateJarFile,
 ) {
+  const sourceStat = fs.statSync(sourcePath, { bigint: true });
+  let destinationStat;
   try {
-    await verifyChecksum(sourcePath, expectedChecksum);
-    validate(sourcePath);
-    fs.renameSync(sourcePath, destPath);
-  } finally {
+    destinationStat = fs.statSync(destPath, { bigint: true });
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (
+    destinationStat &&
+    sourceStat.dev === destinationStat.dev &&
+    sourceStat.ino === destinationStat.ino
+  ) {
+    throw new Error("Staged JAR source must be distinct from destination");
+  }
+
+  let snapshotDir;
+  let sourceRemoved = false;
+  try {
+    expectedChecksum = requireChecksum(expectedChecksum, sourcePath);
+    snapshotDir = fs.mkdtempSync(
+      path.join(path.dirname(destPath), ".gls-verified-"),
+    );
+    const snapshot = path.join(snapshotDir, path.basename(sourcePath));
+    fs.copyFileSync(sourcePath, snapshot, fs.constants.COPYFILE_EXCL);
+    await verifyChecksum(snapshot, expectedChecksum);
+    validate(snapshot);
     fs.rmSync(sourcePath, { force: true });
+    sourceRemoved = true;
+    fs.renameSync(snapshot, destPath);
+  } finally {
+    try {
+      if (!sourceRemoved) fs.rmSync(sourcePath, { force: true });
+    } finally {
+      if (snapshotDir) fs.rmSync(snapshotDir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -524,7 +561,7 @@ async function downloadFromUrl(url, expectedChecksum) {
         "Token must have permission to read Actions artifacts for the repository.",
       ].join(" "),
     );
-  } else if (!authToken && downloadUrl.includes("api.github.com")) {
+  } else if (!authToken && new URL(downloadUrl).hostname === "api.github.com") {
     console.warn(
       "⚠️  No GitHub token found. GitHub API downloads may be rate-limited.",
     );
@@ -1212,6 +1249,7 @@ Token resolution (for GitHub API requests):
 
 module.exports = {
   PINNED_RELEASE_TAG,
+  downloadFromUrl,
   deriveSelection,
   hasExplicitVersionSelection,
   installVerifiedJar,
