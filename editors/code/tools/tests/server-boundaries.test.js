@@ -352,19 +352,51 @@ test("validates the opened JAR when its path is replaced after opening", (t) => 
   const { dir, jar } = jarFixture(t);
   const replacement = path.join(dir, "replacement.jar");
   fs.writeFileSync(replacement, "replacement is not a ZIP");
+  const originalHash = crypto
+    .createHash("sha256")
+    .update(fs.readFileSync(jar))
+    .digest("hex");
   const open = fs.openSync;
-  let replaced = false;
+  let attempted = false;
+  let denied = false;
+  let opened;
   t.mock.method(fs, "openSync", (...args) => {
     const fd = open(...args);
-    if (args[0] === jar && !replaced) {
-      replaced = true;
-      fs.renameSync(replacement, jar);
+    if (args[0] === jar && !attempted) {
+      attempted = true;
+      opened = fd;
+      try {
+        fs.renameSync(replacement, jar);
+      } catch (error) {
+        if (process.platform === "win32" && error.code === "EPERM") {
+          denied = true;
+        } else {
+          fs.closeSync(fd);
+          throw error;
+        }
+      }
     }
     return fd;
   });
   assert.doesNotThrow(() => validateJarFile(jar));
-  assert.equal(replaced, true);
-  assert.equal(fs.readFileSync(jar, "utf8"), "replacement is not a ZIP");
+  assert.equal(attempted, true);
+  assert.throws(() => fs.fstatSync(opened), { code: "EBADF" });
+  if (denied) {
+    t.diagnostic(
+      "Windows denied replacement of the open JAR with EPERM; the validator closed its descriptor",
+    );
+    assert.equal(
+      crypto.createHash("sha256").update(fs.readFileSync(jar)).digest("hex"),
+      originalHash,
+    );
+    assert.equal(
+      fs.readFileSync(replacement, "utf8"),
+      "replacement is not a ZIP",
+    );
+  } else {
+    assert.equal(fs.existsSync(replacement), false);
+    assert.equal(fs.readFileSync(jar, "utf8"), "replacement is not a ZIP");
+  }
 });
 
 test("checks the size of the file actually opened after a path replacement", (t) => {
