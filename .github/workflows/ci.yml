@@ -52,7 +52,7 @@ jobs:
           gh release download v2.2.2 --repo evilmartians/lefthook --pattern lefthook_2.2.2_Linux_x86_64 --dir "$RUNNER_TEMP/download"
           printf '%s  %s\n' 4fbf89eb7748c6aed84d833ee1a29edac48fae614468ca9a82896ec32f2800b6 "$RUNNER_TEMP/download/lefthook_2.2.2_Linux_x86_64" | sha256sum -c -
           install -m 755 "$RUNNER_TEMP/download/lefthook_2.2.2_Linux_x86_64" "$RUNNER_TEMP/bin/lefthook"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/bin" >>"$GITHUB_PATH"
       - name: Validate and commit
         shell: bash
         run: |
@@ -62,7 +62,7 @@ jobs:
           candidate=470ae74a029f2ab0833d4e96581a9a60983d2b21
           cp .publication/l05b.init.gradle "$RUNNER_TEMP/l05b.init.gradle"
           printf '%s  %s\n' cc0742e076410f51f5824988f3a8f9921b372624ee84e634ceb8b3cf39d08efb "$RUNNER_TEMP/l05b.init.gradle" | sha256sum -c -
-          git diff --binary "$base" "$candidate" -- gls > "$proof/source.patch"
+          git diff --binary "$base" "$candidate" -- gls >"$proof/source.patch"
           git switch --detach "$base"
           git switch -c fix/bounded-logback-publication
           git apply --check --index "$proof/source.patch"
@@ -70,8 +70,8 @@ jobs:
           [[ "$(git write-tree)" == dd7641d233d0420327fcd787ad437c0c54416fff ]]
           git diff --quiet
           git diff --cached --check
-          printf '%s\0' gls/BUILD.bazel gls/build.gradle.kts gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackEncoder.kt gls/src/main/resources/logback.xml gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackRenderingTest.kt > "$RUNNER_TEMP/expected-paths"
-          git diff --cached --name-only -z > "$RUNNER_TEMP/paths"
+          printf '%s\0' gls/BUILD.bazel gls/build.gradle.kts gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackEncoder.kt gls/src/main/resources/logback.xml gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackRenderingTest.kt >"$RUNNER_TEMP/expected-paths"
+          git diff --cached --name-only -z >"$RUNNER_TEMP/paths"
           cmp "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/paths"
           [[ -z "${LEFTHOOK:-}" && -z "${LEFTHOOK_EXCLUDE:-}" && -z "${LEFTHOOK_SKIP:-}" ]]
           [[ -z "$(git config --get core.hooksPath || true)" ]]
@@ -81,13 +81,13 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
           uv sync --project .reuse --locked --no-dev
-          echo "$PWD/.reuse/.venv/bin" >> "$GITHUB_PATH"
+          echo "$PWD/.reuse/.venv/bin" >>"$GITHUB_PATH"
           export PATH="$PWD/.reuse/.venv/bin:$PATH"
           direnv allow
           export GRADLE_OPTS="-Dorg.gradle.jvmargs=\"-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC\" -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false -Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
           run_pipeline() {
-              set +e
-              "$@" 2>&1 | python3 -c '
+            set +e
+            "$@" 2>&1 | python3 -c '
           import sys
           remaining = 8 * 1024 * 1024
           overflow = False
@@ -97,32 +97,32 @@ jobs:
               remaining -= len(keep)
               overflow = overflow or len(keep) != len(chunk)
           sys.exit(75 if overflow else 0)
-          ' > "$proof/$label.log"
-              local status=("${PIPESTATUS[@]}")
-              printf '%s %s\n' "${status[0]}" "${status[1]}" > "$proof/$label.status"
+          ' >"$proof/$label.log"
+            local status=("${PIPESTATUS[@]}")
+            printf '%s %s\n' "${status[0]}" "${status[1]}" >"$proof/$label.status"
           }
           export -f run_pipeline
           export proof
           guarded() {
-              export label="$1"
-              shift
-              set +e
-              timeout --kill-after=10s 1800s bash -c 'run_pipeline "$@"' _ "$@"
-              local timeout_status=$?
-              set -e
-              printf '%s\n' "$timeout_status" > "$proof/$label.timeout"
-              [[ "$timeout_status" == 0 && -s "$proof/$label.status" ]]
-              local producer capture
-              read -r producer capture < "$proof/$label.status"
-              [[ "$producer" == 0 && "$capture" == 0 ]]
+            export label="$1"
+            shift
+            set +e
+            timeout --kill-after=10s 1800s bash -c 'run_pipeline "$@"' _ "$@"
+            local timeout_status=$?
+            set -e
+            printf '%s\n' "$timeout_status" >"$proof/$label.timeout"
+            [[ "$timeout_status" == 0 && -s "$proof/$label.status" ]]
+            local producer capture
+            read -r producer capture <"$proof/$label.status"
+            [[ "$producer" == 0 && "$capture" == 0 ]]
           }
           guarded license uv run --offline --locked --no-dev --project .reuse python .reuse/check.py --root .
           guarded lintFix direnv exec . ./gradlew lintFix --no-daemon --no-parallel --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
-          git diff > "$proof/formatter.patch"
+          git diff >"$proof/formatter.patch"
           git add gls/BUILD.bazel gls/build.gradle.kts gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackEncoder.kt gls/src/main/resources/logback.xml gls/src/test/kotlin/com/github/albertocavalcante/gvy/gls/config/BoundedLogbackRenderingTest.kt
           git diff --quiet
           git diff --cached --check
-          git diff --cached --name-only -z > "$RUNNER_TEMP/paths"
+          git diff --cached --name-only -z >"$RUNNER_TEMP/paths"
           cmp "$RUNNER_TEMP/expected-paths" "$RUNNER_TEMP/paths"
           final_tree=$(git write-tree)
           guarded scoped-lint direnv exec . ./gradlew :gls:lint --no-daemon --no-parallel --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64"
@@ -152,8 +152,8 @@ jobs:
           git diff --quiet && git diff --cached --quiet && test -z "$(git status --porcelain --untracked-files=all)"
           git bundle create "$proof/candidate.bundle" HEAD "^$base"
           git bundle verify "$proof/candidate.bundle"
-          printf 'base=%s\nreviewed=%s\ninitial_tree=%s\nfinal_tree=%s\nhead=%s\nsupport=%s\n' "$base" "$candidate" dd7641d233d0420327fcd787ad437c0c54416fff "$final_tree" "$(git rev-parse HEAD)" "$GITHUB_SHA" > "$proof/receipt.txt"
-          (cd "$proof" && sha256sum candidate.bundle source.patch encoder.xml > evidence.sha256)
+          printf 'base=%s\nreviewed=%s\ninitial_tree=%s\nfinal_tree=%s\nhead=%s\nsupport=%s\n' "$base" "$candidate" dd7641d233d0420327fcd787ad437c0c54416fff "$final_tree" "$(git rev-parse HEAD)" "$GITHUB_SHA" >"$proof/receipt.txt"
+          (cd "$proof" && sha256sum candidate.bundle source.patch encoder.xml >evidence.sha256)
       - name: Upload proof
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
