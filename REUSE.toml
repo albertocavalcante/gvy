@@ -139,6 +139,8 @@ path = [
   "editors/zed/Cargo.lock",
   "editors/zed/README.md",
   "editors/zed/fixtures/README.md",
+  "editors/zed/fixtures/basic/Greeter.groovy",
+  "editors/zed/fixtures/basic/Main.groovy",
   "ext/README.md",
   "gls/detekt-baseline.xml",
   "gls/src/main/resources/logback.xml",

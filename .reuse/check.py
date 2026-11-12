@@ -40,6 +40,25 @@ BYTE_SENSITIVE_FIXTURE_PATHS: frozenset[str] = frozenset(
         "tools/perf/bench/native-contract/fixtures/malformed.groovy",
     }
 )
+# Editor test inputs retain original source positions; exact REUSE metadata is still required.
+EDITOR_FIXTURE_PATHS: frozenset[str] = frozenset(
+    {
+        "editors/code/client/src/test/fixtures/CodeNarcRanges.groovy",
+        "editors/code/client/src/test/fixtures/FoldingRanges.groovy",
+        "editors/code/client/src/test/fixtures/Implementation.groovy",
+        "editors/code/client/src/test/fixtures/ImportedAliases.groovy",
+        "editors/code/client/src/test/fixtures/PrepareRename.groovy",
+        "editors/code/client/src/test/fixtures/RenameDefaults.groovy",
+        "editors/code/client/src/test/fixtures/RenameMemoized.groovy",
+        "editors/code/client/src/test/fixtures/RenameParameter.groovy",
+        "editors/code/client/src/test/fixtures/ScriptClassLiterals.groovy",
+        "editors/code/client/src/test/fixtures/SelectionRanges.groovy",
+        "editors/code/client/src/test/fixtures/SemanticTokens.groovy",
+        "editors/code/client/src/test/fixtures/codenarc.groovy",
+        "editors/zed/fixtures/basic/Greeter.groovy",
+        "editors/zed/fixtures/basic/Main.groovy",
+    }
+)
 SUFFIXES = {
     ".kt",
     ".kts",
@@ -95,7 +114,7 @@ TAG = re.compile(r"^SPDX-(FileCopyrightText|License-Identifier):\s*(.*?)\s*$")
 
 def maintained(path: Path, data: bytes) -> bool:
     """Classify original maintained source; REUSE still covers all other files."""
-    if path.as_posix() in METADATA_SOURCE_PATHS or path.as_posix() in BYTE_SENSITIVE_FIXTURE_PATHS:
+    if path.as_posix() in METADATA_SOURCE_PATHS | BYTE_SENSITIVE_FIXTURE_PATHS | EDITOR_FIXTURE_PATHS:
         return False
     if any(part in EXCLUDED_PARTS for part in path.parts):
         return False
