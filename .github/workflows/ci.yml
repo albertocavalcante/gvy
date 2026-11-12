@@ -1,16 +1,18 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
 # Temporary execution support only. Never merge into main or the product PR.
-name: Packaged launch hosted proof
+name: Verified packaged launch hosted publication
 on:
   workflow_dispatch:
 permissions:
   contents: read
 concurrency:
-  group: packaged-launch-proof-${{ github.sha }}
+  group: verified-packaged-launch-publication-${{ github.sha }}
   cancel-in-progress: false
 jobs:
   candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    timeout-minutes: 160
     permissions:
       contents: read
     env:
@@ -23,6 +25,10 @@ jobs:
       NODE_OPTIONS: '--max-old-space-size=768'
       SKIP_PREPARE_SERVER: 'true'
     steps:
+      - name: Initialize evidence directory
+        timeout-minutes: 1
+        shell: bash
+        run: mkdir -p "$RUNNER_TEMP/gvy-publication-proof"
       - name: Checkout temporary support ref
         timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,14 +37,12 @@ jobs:
           path: support
           persist-credentials: false
       - name: Validate support receipt
-        timeout-minutes: 5
+        timeout-minutes: 2
         id: receipt
         shell: bash
         run: |
           set -euo pipefail
           receipt="$GITHUB_WORKSPACE/support/.publication/receipt.json"
-          mkdir -p "$RUNNER_TEMP/gvy-pr03a-proof"
-          cp "$receipt" "$RUNNER_TEMP/gvy-pr03a-proof/support-receipt.json"
           base=$(jq -er '.base' "$receipt")
           tree=$(jq -er '.tree' "$receipt")
           digest=$(jq -er '.patchSha256' "$receipt")
@@ -58,7 +62,7 @@ jobs:
           PYBOUND
           [[ "$(stat -c %s "$RUNNER_TEMP/gvy-reviewed.patch")" == "$(jq -er '.patchBytes' "$receipt")" ]]
           printf '%s  %s\n' "$digest" "$RUNNER_TEMP/gvy-reviewed.patch" | sha256sum -c -
-          printf 'base=%s\ntree=%s\npatch=%s\n' "$base" "$tree" "$digest" >> "$GITHUB_OUTPUT"
+          printf 'base=%s\ntree=%s\npatch=%s\n' "$base" "$tree" "$digest" >>"$GITHUB_OUTPUT"
       - name: Checkout exact approved base
         timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -68,7 +72,7 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
       - name: Apply reviewed patch and prove tree
-        timeout-minutes: 5
+        timeout-minutes: 2
         working-directory: candidate
         shell: bash
         env:
@@ -77,14 +81,21 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
-          git switch -c feat/verified-packaged-launch
+          git switch -c feat/verified-packaged-launch-publication
           git apply --check --index "$RUNNER_TEMP/gvy-reviewed.patch"
           git apply --index "$RUNNER_TEMP/gvy-reviewed.patch"
           [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
           git diff --quiet
           git diff --cached --check
-          printf '%s\0' tests/BUILD.bazel tests/build.gradle.kts tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSession.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunch.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt > "$RUNNER_TEMP/expected-paths.nul"
-          git diff --cached --name-only --diff-filter=ACMRT -z > "$RUNNER_TEMP/actual-paths.nul"
+          printf '%s\0' \
+              'tests/BUILD.bazel' \
+              'tests/build.gradle.kts' \
+              'tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSession.kt' \
+              'tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt' \
+              'tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunch.kt' \
+              'tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt' \
+              'tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt' >"$RUNNER_TEMP/expected-paths.nul"
+          git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/actual-paths.nul"
           cmp "$RUNNER_TEMP/expected-paths.nul" "$RUNNER_TEMP/actual-paths.nul"
           test -z "$(git ls-files --others --exclude-standard)"
       - name: Set up Python
@@ -92,13 +103,13 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.11'
-      - name: Set up minimum test JDK
+      - name: Set up JDK 17 for test workers
         timeout-minutes: 5
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: '17'
-      - name: Set up JDK
+      - name: Set up JDK 21 for Gradle
         timeout-minutes: 5
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
@@ -115,14 +126,14 @@ jobs:
         with:
           version: 12.14.0
       - name: Install locked project tools
-        timeout-minutes: 10
+        timeout-minutes: 20
         working-directory: candidate
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
           uv sync --project .reuse --locked
-          echo "$PWD/.reuse/.venv/bin" >> "$GITHUB_PATH"
+          echo "$PWD/.reuse/.venv/bin" >>"$GITHUB_PATH"
           pnpm --dir editors/code install --frozen-lockfile
           rustup toolchain install --no-self-update --profile minimal 1.96.1
           rustup component add --toolchain 1.96.1 clippy rustfmt
@@ -138,9 +149,9 @@ jobs:
           download="$RUNNER_TEMP/spdx-hook-download"
           mkdir -p "$bins" "$download"
           fetch() {
-            local repo="$1" version="$2" asset="$3" digest="$4"
-            gh release download "$version" --repo "$repo" --pattern "$asset" --dir "$download"
-            printf '%s  %s\n' "$digest" "$download/$asset" | sha256sum -c -
+              local repo="$1" version="$2" asset="$3" digest="$4"
+              gh release download "$version" --repo "$repo" --pattern "$asset" --dir "$download"
+              printf '%s  %s\n' "$digest" "$download/$asset" | sha256sum -c -
           }
           fetch direnv/direnv v2.38.2 direnv.linux-amd64 148820a187930d36ca6a204504e5cdb30d8396cd1a97e64c3b3f10d793c11247
           install -m 755 "$download/direnv.linux-amd64" "$bins/direnv"
@@ -157,42 +168,142 @@ jobs:
           fetch mvdan/sh v3.12.0 shfmt_v3.12.0_linux_amd64 d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea
           install -m 755 "$download/shfmt_v3.12.0_linux_amd64" "$bins/shfmt"
           fetch astral-sh/ruff 0.17.4 ruff-x86_64-unknown-linux-gnu.tar.gz 3ab2b34aeacdbc1ea5c529cdbda3e05792633d587228123fd09f3b5a0facb27a
-          mkdir "$download/ruff"; tar -xzf "$download/ruff-x86_64-unknown-linux-gnu.tar.gz" -C "$download/ruff"
+          mkdir "$download/ruff"
+          tar -xzf "$download/ruff-x86_64-unknown-linux-gnu.tar.gz" -C "$download/ruff"
           install -m 755 "$download/ruff/ruff-x86_64-unknown-linux-gnu/ruff" "$bins/ruff"
           fetch rhysd/actionlint v1.7.9 actionlint_1.7.9_linux_amd64.tar.gz 233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4
-          mkdir "$download/actionlint"; tar -xzf "$download/actionlint_1.7.9_linux_amd64.tar.gz" -C "$download/actionlint"
+          mkdir "$download/actionlint"
+          tar -xzf "$download/actionlint_1.7.9_linux_amd64.tar.gz" -C "$download/actionlint"
           install -m 755 "$download/actionlint/actionlint" "$bins/actionlint"
           fetch suzuki-shunsuke/ghalint v1.5.4 ghalint_1.5.4_linux_amd64.tar.gz 977555b7142cc057aad4663679772510a9ed3f1687f26f2359d18bb6b67314fe
-          mkdir "$download/ghalint"; tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
+          mkdir "$download/ghalint"
+          tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
           install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
-          echo "$bins" >> "$GITHUB_PATH"
-      - name: Validate proof support and run RED GREEN controls
-        timeout-minutes: 40
+          echo "$bins" >>"$GITHUB_PATH"
+      - name: Run normal hooks and create candidate commit
+        timeout-minutes: 75
         working-directory: candidate
         shell: bash
         env:
           EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
           EXPECTED_TREE: ${{ steps.receipt.outputs.tree }}
+          PATCH_SHA: ${{ steps.receipt.outputs.patch }}
         run: |
           set -euo pipefail
-          proof="$GITHUB_WORKSPACE/support/.publication"
-          for pair in 'proofScriptSha256 prove.sh' 'checkerSha256 check-results.mjs' 'fixSha256 alias-socket.patch'; do
-            read -r key file <<< "$pair"
-            digest=$(jq -er --arg key "$key" '.[$key]' "$proof/receipt.json")
-            [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
-            printf '%s  %s\n' "$digest" "$proof/$file" | sha256sum -c -
+          [[ -z "${LEFTHOOK:-}" && -z "${LEFTHOOK_EXCLUDE:-}" && -z "${LEFTHOOK_SKIP:-}" ]]
+          [[ -z "$(git config --get core.hooksPath || true)" ]]
+          command -v shellcheck
+          command -v shfmt
+          command -v dprint
+          command -v yq
+          command -v ruff
+          lefthook install
+          test -x .git/hooks/pre-commit && test -x .git/hooks/commit-msg
+          git config user.name 'gvy publication automation'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff --quiet
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          direnv allow
+          direnv exec . java -version
+          proof="$RUNNER_TEMP/gvy-publication-proof"
+          capture() {
+              local label=$1
+              shift
+              set +e
+              "$@" 2>&1 | tee "$proof/$label.log"
+              local statuses=("${PIPESTATUS[@]}")
+              set -e
+              printf '{"commandExit":%d,"captureExit":%d}\n' "${statuses[0]}" "${statuses[1]}" >"$proof/$label.json"
+              [[ "${statuses[0]}" == 0 && "${statuses[1]}" == 0 ]]
+          }
+          copy_reports() {
+              local report
+              for report in PackagedLaunchTest PackagedSessionFactoryTest; do
+                  local xml="tests/build/test-results/harnessTest/TEST-com.github.albertocavalcante.gvy.gls.e2e.${report}.xml"
+                  if [[ -f "$xml" ]]; then cp "$xml" "$proof/"; fi
+              done
+          }
+          trap copy_reports EXIT
+          for report in PackagedLaunchTest PackagedSessionFactoryTest; do
+              rm -f "tests/build/test-results/harnessTest/TEST-com.github.albertocavalcante.gvy.gls.e2e.${report}.xml"
           done
-          shellcheck "$proof/prove.sh"
-          shfmt -i 4 -ci -d "$proof/prove.sh"
-          bash -n "$proof/prove.sh"
-          node --check "$proof/check-results.mjs"
-          bash "$proof/prove.sh"
-      - name: Upload source delta and evidence on success or failure
+          capture lintFix direnv exec . ./gradlew lintFix --no-daemon --no-parallel --max-workers=1 \
+              --console=plain --warning-mode=all --no-scan --info -Dorg.gradle.deprecation.trace=true \
+              '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' -PtestJavaVersion=17
+          git diff --quiet
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          capture tests direnv exec . ./gradlew :tests:harnessTest --rerun \
+              --tests '*.PackagedLaunchTest' --tests '*.PackagedSessionFactoryTest' \
+              --no-daemon --no-parallel --max-workers=1 --console=plain --warning-mode=all --no-scan --info \
+              -Dorg.gradle.deprecation.trace=true \
+              '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' -PtestJavaVersion=17
+          copy_reports
+          python3 - "$proof" <<'PYRESULT'
+          import pathlib, sys, xml.etree.ElementTree as ET
+          proof = pathlib.Path(sys.argv[1])
+          total = 0
+          for name in ('PackagedLaunchTest', 'PackagedSessionFactoryTest'):
+              report = proof / f'TEST-com.github.albertocavalcante.gvy.gls.e2e.{name}.xml'
+              suite = ET.parse(report).getroot()
+              if any(int(suite.get(key, '-1')) for key in ('failures', 'errors', 'skipped')):
+                  raise SystemExit('focused test report is not fully successful')
+              total += int(suite.get('tests', '-1'))
+          if total != 40:
+              raise SystemExit('focused test report count is not 40')
+          PYRESULT
+          capture lint direnv exec . ./gradlew lint --no-daemon --no-parallel --max-workers=1 \
+              --console=plain --warning-mode=all --no-scan --info -Dorg.gradle.deprecation.trace=true \
+              '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' -PtestJavaVersion=17
+          for label in lintFix tests lint; do
+              case "$label" in
+                  lintFix) producer=publication-lintfix ;;
+                  tests) producer=publication-tests ;;
+                  lint) producer=publication-lint ;;
+              esac
+              node tools/ci/check-gradle-diagnostics.mjs \
+                  --log "$proof/$label.log" --exit-code 0 --capture-exit-code 0 --producer "$producer" \
+                  --baseline tools/ci/gradle-diagnostics.json --report "$proof/diagnostics-$producer" --root "$PWD"
+          done
+          git diff --quiet
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          git diff --cached --name-only --diff-filter=ACMRT -z >"$RUNNER_TEMP/gvy-staged-paths"
+          while IFS= read -r -d '' staged_file; do
+              [[ -f "$staged_file" ]] || continue
+              first_line=''
+              IFS= read -r first_line <"$staged_file" || true
+              case "$staged_file:$first_line" in
+                  *.zsh:*) zsh -n "$staged_file" ;;
+                  *.sh:* | .envrc:* | *:'#!'*bash* | *:'#!'*'/sh'*)
+                      shellcheck --rcfile tools/lint/shellcheckrc "$staged_file"
+                      shfmt -i 4 -ci -d "$staged_file"
+                      bash -n "$staged_file"
+                      ;;
+                  *) ;;
+              esac
+          done <"$RUNNER_TEMP/gvy-staged-paths"
+          cmp "$RUNNER_TEMP/expected-paths.nul" "$RUNNER_TEMP/gvy-staged-paths"
+          git diff --cached --check
+          test -z "$(git ls-files --others --exclude-standard)"
+          [[ "$(git branch --show-current)" == feat/verified-packaged-launch-publication ]]
+          capture commit git commit -m 'feat(test): verify explicit packaged server launches'
+          [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" ]]
+          [[ "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
+          git diff --quiet && git diff --cached --quiet
+          test -z "$(git status --porcelain --untracked-files=all)"
+          git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
+          git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
+          cp "$RUNNER_TEMP/gvy-staged-paths" "$RUNNER_TEMP/gvy-publication-proof/staged-paths.nul"
+          jq -n --arg base "$EXPECTED_BASE" --arg tree "$EXPECTED_TREE" --arg patch "$PATCH_SHA" \
+              --arg head "$(git rev-parse HEAD)" --arg support "$GITHUB_SHA" \
+              '{base:$base,tree:$tree,patchSha256:$patch,head:$head,supportHead:$support}' \
+              >"$RUNNER_TEMP/gvy-publication-proof/receipt.json"
+          (cd "$RUNNER_TEMP/gvy-publication-proof" && sha256sum candidate.bundle >bundle.sha256)
+      - name: Upload candidate and evidence
         timeout-minutes: 5
-        if: ${{ always() }}
+        if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gvy-pr03a-control-proof
-          path: ${{ runner.temp }}/gvy-pr03a-proof/
-          if-no-files-found: warn
+          name: gvy-packaged-launch-publication-proof
+          path: ${{ runner.temp }}/gvy-publication-proof/
+          if-no-files-found: error
           retention-days: 7
