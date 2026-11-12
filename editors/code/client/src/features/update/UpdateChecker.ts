@@ -145,8 +145,10 @@ export class UpdateChecker {
     currentVersion: string,
     latestVersion: string,
   ): "up-to-date" | "update-available" | "unknown" {
-    // Check if current version is valid
-    if (!this.versionChecker.isValidVersion(currentVersion)) {
+    if (
+      !this.versionChecker.isValidVersion(currentVersion) ||
+      !this.versionChecker.isValidVersion(latestVersion)
+    ) {
       return "unknown";
     }
 
