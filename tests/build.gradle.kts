@@ -228,6 +228,7 @@ val harnessTest =
             "ScenarioExecutionTest",
             "ScenarioDeadlineTest",
             "EditorTextEditsTest",
+            "EditorWorkspacePlanTest",
             "ScenarioContextTest",
             "ScenarioOutcomeTest",
             "NamedObservationExecutionTest",
