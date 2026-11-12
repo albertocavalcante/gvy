@@ -51,9 +51,11 @@ test('real autocrlf checkout preserves frozen bytes without changing neighboring
     sha256: 'b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5' });
   pinned.push({ path: prefix + 'manifest.json', bytes: manifestBytes,
     sha256: 'cf83cf5b600d73517332d4b45ac206b1f40158c0ccbb7109daaddb1115a63d07' });
-  const neighbors = ['LICENSES/Neighbor.txt', 'LICENSES/unlisted/MIT.txt', prefix + 'neighbor.json', prefix + 'unlisted/manifest.json', ...imported.map(entry =>
+  pinned.push({ path: prefix + 'authored.json', bytes: await fs.readFile(new URL('./authored.json', import.meta.url)),
+    sha256: '09f22c2816bb9fe629942782b14c0a3572225f529fd1b9eb4a9c0c9b50fe07cd' });
+  const neighbors = ['LICENSES/Neighbor.txt', 'LICENSES/unlisted/MIT.txt', prefix + 'neighbor.json', prefix + 'unlisted/manifest.json', prefix + 'unlisted/authored.json', ...imported.map(entry =>
     prefix + posix.join(posix.dirname(entry.path), 'unlisted', posix.basename(entry.path)))];
-  assert.equal(new Set(neighbors).size, 25);
+  assert.equal(new Set(neighbors).size, 26);
   const ordinary = Buffer.from('ordinary text\nsecond line\n');
   const attributes = await fs.readFile(new URL('../../../../.gitattributes', import.meta.url));
   await fs.writeFile(join(directory, '.gitattributes'), attributes);
@@ -68,7 +70,7 @@ test('real autocrlf checkout preserves frozen bytes without changing neighboring
   git(['update-index', '--index-info'], Buffer.from(entries.map(entry => indexEntry(entry.path, entry.bytes)).join('')));
   git(['checkout-index', '--all', '--force']);
 
-  await t.test('all 21 imports, canonical MIT and the manifest retain their frozen hashes', async () => {
+  await t.test('imports, canonical MIT, manifest and authored oracles retain their frozen hashes', async () => {
     const mismatches = [];
     for (const entry of pinned) {
       const actual = sha256(await fs.readFile(join(directory, entry.path)));
