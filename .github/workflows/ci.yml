@@ -1,841 +1,198 @@
-name: CI
+# Temporary execution support only. Never merge into main or the product PR.
+name: Packaged launch hosted proof
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      runner_label:
-        description: 'Runner label to use'
-        required: false
-        type: choice
-        options:
-          - 'self-hosted'
-          - 'magalu'
-          - 'local-macos'
-          - 'github-hosted'
-        default: 'github-hosted'
-      disable_scan:
-        description: Disable Gradle build scan
-        required: false
-        type: boolean
-        default: false
-      coverage:
-        description: Generate coverage reports (always on for pushes to main)
-        required: false
-        type: boolean
-        default: false
-      sonar:
-        description: Upload coverage and analysis to SonarCloud (needs coverage and the SONAR_TOKEN secret)
-        required: false
-        type: boolean
-        default: false
-      test_log_level:
-        description: 'Gradle log level for test tasks'
-        required: false
-        type: choice
-        options:
-          - 'default'
-          - 'info'
-          - 'debug'
-        default: 'default'
-env:
-  # Preferred OS for single-run checks (Verify JAR, Sonar, artifacts).
-  # Override via repo variable CI_PRIMARY_OS (e.g., macos-15).
-  # Default: ubuntu-24.04 (faster, cheaper than macOS)
-  PRIMARY_OS: >-
-    ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && 'local-macos' ||
-        (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && 'magalu' ||
-        (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
+permissions:
+  contents: read
 concurrency:
-  # PRs: group by head_ref (cancel outdated runs for same branch)
-  # Main pushes: group by SHA (allows parallel runs per commit for fast regression detection)
-  # workflow_dispatch: group by run ID (never wait for other CI runs)
-  group: >-
-    ${{ github.workflow }}-${{
-      github.event_name == 'pull_request' && github.head_ref ||
-      github.event_name == 'workflow_dispatch' && github.run_id ||
-      github.sha
-    }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
-# ============================================================================
-# RUNNER CONFIGURATION
-# ============================================================================
-# Priority: workflow_dispatch input > CI_RUNNER_LABEL repo variable > self-hosted
-#
-# Default: github-hosted runner (standard GitHub Actions runners)
-#
-# Runner options:
-#   - self-hosted: Local runner (fastest, no cost)
-#   - magalu: Magalu Cloud ephemeral runner (use runner-provision.yml first!)
-#   - github-hosted: GitHub-hosted runners (default, macos-15 for PRs, matrix for main)
-#
-# To switch runners permanently:
-#   Settings → Secrets and variables → Actions → Variables → New repository variable
-#   Name: CI_RUNNER_LABEL  Value: github-hosted (or magalu)
-#
-# To switch for a single run:
-#   Actions → CI → Run workflow → runner_label: <choice>
-#
-# Magalu Cloud runners:
-#   1. Run "Infra: Provision Magalu Runner" workflow first
-#   2. Then run CI with runner_label: magalu
-#   3. Run "Infra: Destroy Magalu Runner" when done (or wait for nightly cleanup)
-#
-# NOTE: Avoiding ubuntu-latest due to stability issues causing builds to hang.
-# See: https://github.com/actions/runner-images/issues/13182
-#
-# Available runner labels: https://github.com/actions/runner-images#available-images
-# ============================================================================
-
+  group: packaged-launch-proof-${{ github.sha }}
+  cancel-in-progress: false
 jobs:
-  check-paths:
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    outputs:
-      run_main_ci: ${{ steps.filter.outputs.run_main_ci }}
-      run_bazel_ci: ${{ steps.filter.outputs.run_bazel_ci }}
-      run_zed_ci: ${{ steps.filter.outputs.run_zed_ci }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Self-test CI policy
-        run: node --test tools/ci/*.test.mjs
-      - name: Enforce temporary dependency accountability
-        run: node tools/ci/dependency-maintenance.mjs
-      - name: Classify exact revisions
-        id: filter
-        run: node tools/ci/ci-applicability.mjs "$RUNNER_TEMP/ci-applicability.json"
-      - name: Upload applicability evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: ci-applicability
-          path: ${{ runner.temp }}/ci-applicability.json
-          if-no-files-found: error
-          retention-days: 14
-
-  bazel:
-    name: Bazel validation
-    needs: check-paths
-    if: needs.check-paths.outputs.run_bazel_ci == 'true'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci-bazel.yml
-
-  check-runner:
-    name: Check Runner Availability
+  candidate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 120
     permissions:
       contents: read
-    needs: check-paths
-    if: needs.check-paths.outputs.run_main_ci == 'true'
-    outputs:
-      provisioning_triggered: ${{ steps.exit-early.outputs.provisioning_triggered }}
+    env:
+      CARGO_BUILD_JOBS: 1
+      JDK_JAVA_OPTIONS: '-Xmx512m'
+      JAVA_TOOL_OPTIONS: '-Xmx512m'
+      GRADLE_OPTS: >-
+        -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC"
+        -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false
+      NODE_OPTIONS: '--max-old-space-size=768'
+      SKIP_PREPARE_SERVER: 'true'
     steps:
-      - name: Checkout (for local action)
+      - name: Checkout temporary support ref
+        timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: .github/actions
+          ref: ${{ github.sha }}
+          path: support
           persist-credentials: false
-
-      - name: Determine Runner Label
-        id: mode
+      - name: Validate support receipt
+        timeout-minutes: 5
+        id: receipt
+        shell: bash
         run: |
-          # Priority: Input > Variable > Default(github-hosted)
-          LABEL="${{ github.event.inputs.runner_label || vars.CI_RUNNER_LABEL || 'github-hosted' }}"
-          echo "label=$LABEL" >> "$GITHUB_OUTPUT"
-          echo "Checking availability for: $LABEL"
-
-      # --- Magalu Check ---
-      - name: Check Magalu runner
-        if: steps.mode.outputs.label == 'magalu'
-        id: check-magalu
-        uses: ./.github/actions/runner-status
-        with:
-          mode: check
-          label: magalu
-          github-token: ${{ secrets.GH_PAT_RUNNER }}
-
-      - name: Trigger provisioning (Magalu)
-        if: steps.mode.outputs.label == 'magalu' && steps.check-magalu.outputs.has-runners != 'true'
-        id: exit-early
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_RUNNER }}
-        run: |
-          echo "Triggering runner-provision.yml..."
-          gh workflow run runner-provision.yml --repo "${{ github.repository }}"
-          echo ""
-          echo "⏳ Provisioning triggered. Manual approval may be required."
-          echo "👉 Go to: https://github.com/${{ github.repository }}/actions/workflows/runner-provision.yml"
-          echo ""
-          echo "::notice::Provisioning requested. Required validation remains blocked; rerun this revision after the runner is available."
-          # Set output to signal downstream jobs to skip
-          echo "provisioning_triggered=true" >> "$GITHUB_OUTPUT"
-
-      # --- Local macOS Check ---
-      - name: Check Local macOS runner
-        if: steps.mode.outputs.label == 'local-macos'
-        id: check-local
-        uses: ./.github/actions/runner-status
-        with:
-          mode: check
-          label: local-macos
-          github-token: ${{ secrets.GH_PAT_RUNNER }}
-
-      - name: Verify Local macOS Availability
-        if: steps.mode.outputs.label == 'local-macos' && steps.check-local.outputs.has-runners != 'true'
-        run: |
-          echo "❌ No local macOS runner found online with label 'local-macos'."
-          echo ""
-          echo "To set up a runner on your Mac:"
-          echo "  ./tools/github/actions/setup-macos-runner.sh"
-          echo ""
-          echo "Ensure the runner service is active:"
-          echo "  cd ~/.gha-runners/groovy-lsp-*"
-          echo "  ./svc.sh status"
-          echo ""
-          exit 1
-
-      # --- Summary ---
-      - name: Runner Check Summary
-        if: always()
-        run: |
-          LABEL="${{ steps.mode.outputs.label }}"
-          echo "Runner label: $LABEL"
-
-          case "$LABEL" in
-            "magalu")
-              if [[ "${{ steps.check-magalu.outputs.has-runners }}" == "true" ]]; then
-                echo "✅ Magalu runner available"
-              else
-                echo "⏳ Magalu runner provisioning triggered"
-              fi
-              ;;
-            "local-macos")
-              if [[ "${{ steps.check-local.outputs.has-runners }}" == "true" ]]; then
-                echo "✅ Local macOS runner available"
-              else
-                echo "❌ Local macOS runner check failed (see above)"
-              fi
-              ;;
-            "github-hosted")
-              echo "✅ Using GitHub-hosted cloud runners (no check needed)"
-              ;;
-            *)
-              echo "✅ Runner check complete for: $LABEL"
-              ;;
-          esac
-
-  lint:
-    name: Lint
-    needs: [check-paths, check-runner]
-    # Run if paths require CI and no provisioning triggered
-    if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
+          set -euo pipefail
+          receipt="$GITHUB_WORKSPACE/support/.publication/receipt.json"
+          mkdir -p "$RUNNER_TEMP/gvy-pr03a-proof"
+          cp "$receipt" "$RUNNER_TEMP/gvy-pr03a-proof/support-receipt.json"
+          base=$(jq -er '.base' "$receipt")
+          tree=$(jq -er '.tree' "$receipt")
+          digest=$(jq -er '.patchSha256' "$receipt")
+          compressed=$(jq -er '.payloadSha256' "$receipt")
+          [[ "$base" =~ ^[0-9a-f]{40}$ && "$tree" =~ ^[0-9a-f]{40}$ && "$digest" =~ ^[0-9a-f]{64}$ && "$compressed" =~ ^[0-9a-f]{64}$ ]]
+          printf '%s  %s\n' "$compressed" "$GITHUB_WORKSPACE/support/.publication/payload.patch.gz" | sha256sum -c -
+          [[ "$(stat -c %s "$GITHUB_WORKSPACE/support/.publication/payload.patch.gz")" == "$(jq -er '.payloadBytes' "$receipt")" ]]
+          [[ "$(jq -er '.payloadBytes' "$receipt")" -le 65536 ]]
+          [[ "$(jq -er '.patchBytes' "$receipt")" -le 131072 ]]
+          python3 - "$GITHUB_WORKSPACE/support/.publication/payload.patch.gz" "$RUNNER_TEMP/gvy-reviewed.patch" <<'PYBOUND'
+          import gzip, pathlib, sys
+          with gzip.open(sys.argv[1], 'rb') as stream:
+              data = stream.read(131073)
+          if len(data) > 131072:
+              raise SystemExit('patch exceeds 128 KiB')
+          pathlib.Path(sys.argv[2]).write_bytes(data)
+          PYBOUND
+          [[ "$(stat -c %s "$RUNNER_TEMP/gvy-reviewed.patch")" == "$(jq -er '.patchBytes' "$receipt")" ]]
+          printf '%s  %s\n' "$digest" "$RUNNER_TEMP/gvy-reviewed.patch" | sha256sum -c -
+          printf 'base=%s\ntree=%s\npatch=%s\n' "$base" "$tree" "$digest" >> "$GITHUB_OUTPUT"
+      - name: Checkout exact approved base
+        timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ steps.receipt.outputs.base }}
+          path: candidate
           fetch-depth: 1
           persist-credentials: false
-
-      - name: Set up JDK 17
+      - name: Apply reviewed patch and prove tree
+        timeout-minutes: 5
+        working-directory: candidate
+        shell: bash
+        env:
+          EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
+          EXPECTED_TREE: ${{ steps.receipt.outputs.tree }}
+        run: |
+          set -euo pipefail
+          [[ "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
+          git switch -c feat/verified-packaged-launch
+          git apply --check --index "$RUNNER_TEMP/gvy-reviewed.patch"
+          git apply --index "$RUNNER_TEMP/gvy-reviewed.patch"
+          [[ "$(git write-tree)" == "$EXPECTED_TREE" ]]
+          git diff --quiet
+          git diff --cached --check
+          printf '%s\0' tests/BUILD.bazel tests/build.gradle.kts tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSession.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunch.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt > "$RUNNER_TEMP/expected-paths.nul"
+          git diff --cached --name-only --diff-filter=ACMRT -z > "$RUNNER_TEMP/actual-paths.nul"
+          cmp "$RUNNER_TEMP/expected-paths.nul" "$RUNNER_TEMP/actual-paths.nul"
+          test -z "$(git ls-files --others --exclude-standard)"
+      - name: Set up Python
+        timeout-minutes: 5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.11'
+      - name: Set up minimum test JDK
+        timeout-minutes: 5
         uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
+          java-version: '17'
+      - name: Set up JDK
+        timeout-minutes: 5
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Run Lint
-        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer lint lint --parallel --max-workers=2 --build-cache --stacktrace
-
-      - name: Upload Gradle diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gradle-evidence-lint-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/gradle-evidence/
-          if-no-files-found: error
-          retention-days: 14
-
-
-  build:
-    name: Build and Test
-    needs: [check-paths, check-runner]
-    # Applicable code must run on an available runner for this revision.
-    if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
-    timeout-minutes: 45
-    # For self-hosted runners, we need label arrays; for cloud runners, use the matrix value directly
-    runs-on: ${{ matrix.os == 'magalu' && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || matrix.os == 'local-macos' && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || matrix.os }}
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        # Runner selection:
-        #   - magalu: Magalu Cloud ephemeral runner (provision first via runner-provision.yml)
-        #   - local-macos: Local macOS runner (setup with tools/github/actions/setup-macos-runner.sh)
-        #   - github-hosted: GitHub-hosted (Ubuntu is now the default for PRs and main, macOS remains as an additional check)
-        # NOTE: macOS is retained for compatibility, but Ubuntu is the more stable default
-        # See: https://github.com/actions/runner-images/issues/13182
-        os: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && '["local-macos"]' || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '["magalu"]' || (github.event_name == 'pull_request' && format('["{0}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04') || format('["{0}", "{1}"]', vars.CI_PRIMARY_OS || 'ubuntu-24.04', (vars.CI_PRIMARY_OS == 'macos-15') && 'ubuntu-24.04' || 'macos-15')) ) }}
-        java: ${{ fromJSON( (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos' || github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && '[17]' || (github.event_name == 'pull_request' && '[17]' || '[17, 21]') ) }}
-        exclude:
-          - os: ubuntu-24.04
-            java: 21
-    env:
-      # Coverage reports: every push to main, and on demand (Run workflow → coverage).
-      COVERAGE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event.inputs.coverage == 'true' }}
-      # SonarCloud is opt-in: repository variable SONAR_ENABLED=true, or Run workflow → sonar.
-      SONAR: ${{ vars.SONAR_ENABLED == 'true' || github.event.inputs.sonar == 'true' }}
-      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Shallow clone for PRs (faster), deep clone for main (SonarCloud needs history)
-          fetch-depth: ${{ github.event_name == 'pull_request' && 1 || 0 }}
-          persist-credentials: false
-
-      - name: Set up Node.js for profiling tools
+          distribution: temurin
+          java-version: '21'
+      - name: Set up Node
+        timeout-minutes: 5
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
-          node-version: 24
-
-      - name: Test profiling tools
-        run: node --test tools/perf/*.test.mjs
-
-      - name: Test release artifact pairing
-        run: node --test tools/ci/*-artifacts.test.mjs tools/ci/junit-report-presence.test.mjs
-
-      - name: 🖥️ Runner Specs
-        shell: bash
-        run: |
-          # Cross-platform CPU/RAM detection
-          # TODO: Add Windows support using: wmic cpu get NumberOfCores, systeminfo for RAM
-          if [[ "${{ runner.os }}" == "macOS" ]]; then
-            CORES=$(sysctl -n hw.ncpu)
-            RAM=$(echo "scale=1; $(sysctl -n hw.memsize) / 1024 / 1024 / 1024" | bc)
-            RAM="${RAM} GB"
-          elif [[ "${{ runner.os }}" == "Windows" ]]; then
-            CORES="N/A (Windows not yet supported)"
-            RAM="N/A"
-          else
-            CORES=$(nproc)
-            RAM=$(free -h | awk '/Mem:/ {print $2}')
-          fi
-          DISK=$(df -h / | awk 'NR==2 {print $4 " free"}' 2>/dev/null || echo "N/A")
-          HOSTNAME=$(hostname)
-
-          # Print to console (visible immediately)
-          echo "╔════════════════════════════════════════╗"
-          echo "║        Runner Specifications           ║"
-          echo "╠════════════════════════════════════════╣"
-          echo "║ OS:         ${{ runner.os }} / ${{ runner.arch }}"
-          echo "║ CPU Cores:  $CORES"
-          echo "║ RAM:        $RAM"
-          echo "║ Disk:       $DISK"
-          echo "║ Hostname:   $HOSTNAME"
-          echo "╚════════════════════════════════════════╝"
-          echo ""
-
-          # Also write to summary (for post-job formatted view)
-          {
-            echo "## 🖥️ Runner: ${{ runner.name }}"
-            echo ""
-            echo "| Spec | Value |"
-            echo "|------|-------|"
-            echo "| **OS** | ${{ runner.os }} / ${{ runner.arch }} |"
-            echo "| **CPU Cores** | $CORES |"
-            echo "| **RAM** | $RAM |"
-            echo "| **Disk** | $DISK |"
-            echo "| **Hostname** | $HOSTNAME |"
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: Set up JDK ${{ matrix.java }}
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+          node-version: '24'
+      - name: Set up pnpm
+        timeout-minutes: 5
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
-          distribution: temurin
-          java-version: ${{ matrix.java }}
-      - name: Verify daemon memory sampler with the real JDK
-        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
-        timeout-minutes: 2
-        env:
-          GVY_MEMORY_PROBE_NATIVE_TEST: 'true'
-        run: node --test tools/ci/gradle-memory-probe.test.mjs
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          # Allow writing to cache for main OR PRs from the same repository
-          # Read-only for forks to prevent cache poisoning
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-          # Self-hosted runners may have pre-existing Gradle User Home - allow overwrite
-          cache-overwrite-existing: ${{ matrix.os == 'self-hosted' }}
-      - name: Set Gradle flags
-        shell: bash
-        run: |-
-          # Set scan flag
-          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
-            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
-          else
-            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
-          fi
-
-          # Set test log level flag
-          case "${{ github.event.inputs.test_log_level }}" in
-            "info")
-              echo "TEST_LOG_FLAG=--info" >> "$GITHUB_ENV"
-              ;;
-            "debug")
-              echo "TEST_LOG_FLAG=--debug" >> "$GITHUB_ENV"
-              ;;
-            *)
-              echo "TEST_LOG_FLAG=" >> "$GITHUB_ENV"
-              ;;
-          esac
-
-      # NOTE: --parallel and --build-cache are redundant with gradle.properties settings
-      # (org.gradle.parallel=true, org.gradle.caching=true) but kept explicit for:
-      # 1. Self-documentation - CI intent is clear without checking gradle.properties
-      # 2. Defense in depth - CI works even if gradle.properties changes
-
-      # Compile and unit tests in one invocation, so Gradle tests a module while still compiling the
-      # modules that depend on it (two steps put a full barrier in between). classes and testClasses
-      # keep compiling modules without tests. Lint runs in a separate parallel job; unit tests
-      # also feed the coverage reports below.
-      - name: Verify protobuf generation with bounded JVMs
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        run: >-
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer proto-generation
-          :schemas:generateProtos :indexer:scip:generateProtos --rerun-tasks --max-workers=2 --build-cache --stacktrace
-
-      - name: Compile and Run Unit Tests
-        timeout-minutes: 25
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        run: |
-          args=(classes testClasses test --parallel --max-workers=2 --build-cache --stacktrace)
-          if [[ -n "${TEST_LOG_FLAG}" ]]; then
-            args+=("${TEST_LOG_FLAG}")
-          fi
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer unit "${args[@]}"
-
-      # Coverage reports (see COVERAGE above) come from this job's own test outputs: a separate job reran
-      # the whole build (282 tasks) to get them. Their own invocation avoids the Kover hang with --parallel
-      # (Kotlin/kotlinx-kover#509). SonarCloud only uploads when opted in (see SONAR above).
-      - name: Generate Coverage Reports
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer coverage koverXmlReport koverHtmlReport --parallel --max-workers=2 --build-cache --stacktrace
-
-      - name: Upload Coverage Reports
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: coverage-reports
-          path: '**/build/reports/kover/'
-          retention-days: 7
-
-      # SonarCloud is advisory: it must never fail CI (auth or otherwise). See PR description.
-      - name: SonarCloud Analysis
-        id: sonar
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.SONAR == 'true' && env.HAS_SONAR_TOKEN == 'true'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          set +e
-          args=(sonar --info -Dsonar.qualitygate.wait=false)
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then args+=("${GRADLE_SCAN_FLAG}"); fi
-          ./gradlew "${args[@]}" 2>&1 | tee sonar.log
-          rc=${PIPESTATUS[0]}
-          set -e
-          if [[ $rc -eq 0 ]]; then
-            echo "### ✅ SonarCloud analysis uploaded" >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-          if grep -qiE 'HTTP (401|403)|Unauthorized|Forbidden|sonar\.token|Not authorized' sonar.log; then
-            msg="SonarCloud AUTH failure (exit $rc): rotate SONAR_TOKEN or check sonar.projectKey. Analysis skipped; CI continues."
-          else
-            msg="SonarCloud analysis failed (exit $rc): non-blocking, see step log."
-          fi
-          echo "::warning title=SonarCloud::${msg}"
-          echo "### ⚠️ ${msg}" >> "$GITHUB_STEP_SUMMARY"
-          exit 0
-
-      - name: SonarCloud enabled without a token
-        if: env.COVERAGE == 'true' && matrix.os == env.PRIMARY_OS && matrix.java == 17 && env.SONAR == 'true' && env.HAS_SONAR_TOKEN != 'true'
-        run: |
-          echo "::warning title=SonarCloud::SonarCloud is enabled but the SONAR_TOKEN secret is not set; skipped."
-          echo "### ⚠️ SonarCloud enabled but SONAR_TOKEN is not set: skipped" >> "$GITHUB_STEP_SUMMARY"
-
-      # Build shadowJar for verification (E2E tests run in parallel job)
-      - name: Build Shadow JAR
-        env:
-          GVY_GRADLE_MEMORY_PROBE: ${{ runner.os == 'Linux' && runner.environment == 'github-hosted' && 'true' || 'false' }}
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        run: node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer shadow-jar :gls:shadowJar --parallel --max-workers=2 --build-cache --stacktrace
-
-      - name: Upload Gradle diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gradle-evidence-${{ matrix.os }}-java${{ matrix.java }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/gradle-evidence/
-          if-no-files-found: error
-          retention-days: 14
-
-      # Keep HTML/JUnit reports without granting test jobs check-publishing tokens.
-      - name: Require unit test reports
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          report=$(find . -type f -path '*/build/test-results/test/*.xml' -print -quit)
-          if [[ -z "$report" ]]; then
-            echo "::error::Unit test execution produced no JUnit reports."
-            exit 1
-          fi
-
-      - name: Upload Test Results
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: test-results-${{ matrix.os }}-java${{ matrix.java }}
-          path: |-
-            **/build/test-results/
-            **/build/reports/tests/
-            **/build/reports/problems/
-            **/build/reports/kover/
-          retention-days: 7
-
-      # NEW: Upload JVM diagnostic logs for deadlock/hang analysis
-      # These files are generated by the test monitoring infrastructure in build.gradle.kts
-      # - test-jvm-*.log: per-process HotSpot XML, thread dumps and lock info
-      # - test-recording.jfr: Java Flight Recorder data (if Tier 2 enabled)
-      # Use fastThread.io or JDK Mission Control to analyze these files
-      - name: Upload Test Diagnostic Logs
-        if: always()  # Upload even if tests fail or timeout
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: test-diagnostics-${{ matrix.os }}-java${{ matrix.java }}
-          path: |-
-            **/build/test-jvm-*.log
-            **/build/test-recording.jfr
-          retention-days: 7
-          if-no-files-found: ignore  # Don't fail if files don't exist (e.g., tests passed quickly)
-
-      # Verify JAR (built in previous step)
-      - name: Resolve shadow JAR
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        id: resolve-jar
-        shell: bash
-        run: |-
-          set -euo pipefail
-          shopt -s nullglob
-          jar_files=(gls/build/libs/gls-*-all.jar)
-          if [[ ${#jar_files[@]} -eq 0 ]]; then
-            echo "::error::Shadow JAR not found in gls/build/libs"
-            exit 1
-          fi
-          echo "jar_path=${jar_files[0]}" >> "$GITHUB_OUTPUT"
-
-      - name: Verify JAR
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        run: |-
-          echo "Testing JAR with --help flag..."
-          java -Xmx256m -jar "${{ steps.resolve-jar.outputs.jar_path }}" --help
-
-      - name: Upload JAR artifact
-        if: matrix.os == env.PRIMARY_OS && matrix.java == 17
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: groovy-lsp-jar-${{ matrix.os }}-java${{ matrix.java }}
-          path: ${{ steps.resolve-jar.outputs.jar_path }}
-          retention-days: 7
-
-  # E2E tests run in parallel with the build
-  e2e-test:
-    name: E2E Tests (shard ${{ matrix.shard }})
-    # Runs alongside the build, not after it: this job builds what it needs itself (Gradle
-    # cache), and waiting on the build only added its duration to the critical path.
-    needs: [check-paths, check-runner]
-    if: |
-      !cancelled() && needs.check-paths.outputs.run_main_ci == 'true' &&
-      needs.check-runner.result == 'success' && needs.check-runner.outputs.provisioning_triggered != 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        # Scenarios run one at a time in a single JVM; split them by a stable hash of their name.
-        shard: [0, 1, 2]
-    # Run on PRIMARY_OS only - E2E tests are platform-independent LSP protocol tests
-    # Use same runner selection logic as PRIMARY_OS to respect workflow_dispatch
-    runs-on: ${{ (github.event.inputs.runner_label == 'local-macos' || vars.CI_RUNNER_LABEL == 'local-macos') && fromJSON('["self-hosted", "local-macos", "groovy-lsp"]') || (github.event.inputs.runner_label == 'magalu' || vars.CI_RUNNER_LABEL == 'magalu') && fromJSON('["self-hosted", "magalu", "groovy-lsp"]') || (vars.CI_PRIMARY_OS || 'ubuntu-24.04') }}
-    timeout-minutes: 20
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
-
-      - name: Set Gradle flags
-        shell: bash
-        run: |
-          if [[ "${{ github.event.inputs.disable_scan }}" == "true" ]]; then
-            echo "GRADLE_SCAN_FLAG=-Dorg.gradle.scan=false" >> "$GITHUB_ENV"
-          else
-            echo "GRADLE_SCAN_FLAG=" >> "$GITHUB_ENV"
-          fi
-
-          case "${{ github.event.inputs.test_log_level }}" in
-            "info")
-              echo "TEST_LOG_FLAG=--info" >> "$GITHUB_ENV"
-              ;;
-            "debug")
-              echo "TEST_LOG_FLAG=--debug" >> "$GITHUB_ENV"
-              ;;
-            *)
-              echo "TEST_LOG_FLAG=" >> "$GITHUB_ENV"
-              ;;
-          esac
-
-      # E2E Tests (automatically builds shadowJar via task dependency)
-      # Now runs with intelligent parallel forks (2-3 based on runner OS)
-      - name: Run E2E Tests
-        timeout-minutes: 15
-        run: |
-          args=(:tests:e2eTest --parallel --max-workers=2 --build-cache --stacktrace "-Dgroovy.lsp.e2e.shard=${{ matrix.shard }}/3")
-          if [[ -n "${TEST_LOG_FLAG}" ]]; then
-            args+=("${TEST_LOG_FLAG}")
-          fi
-          if [[ -n "${GRADLE_SCAN_FLAG}" ]]; then
-            args+=("${GRADLE_SCAN_FLAG}")
-          fi
-          node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/gradle-evidence" --producer e2e "${args[@]}"
-
-      - name: Upload Gradle diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: gradle-evidence-e2e-${{ matrix.shard }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/gradle-evidence/
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload E2E Test Results
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: e2e-test-results-shard-${{ matrix.shard }}
-          path: |-
-            **/build/test-results/e2eTest/
-            **/build/reports/tests/e2eTest/
-          retention-days: 7
-
-      - name: Require E2E test reports
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          report=$(find . -type f -path '*/build/test-results/e2eTest/*.xml' -print -quit)
-          if [[ -z "$report" ]]; then
-            echo "::error::E2E execution produced no JUnit reports."
-            exit 1
-          fi
-
-  # Cross-platform smoke tests - verify JAR works on key platforms
-  # Lighter than the release matrix; validate the packaged JAR before merging too.
-  smoke-test:
-    name: Smoke Test (${{ matrix.os }})
-    needs: build
-    if: ${{ !cancelled() && needs.build.result == 'success' }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        # Key platforms for quick validation (full matrix in release.yml)
-        os: [ubuntu-24.04, macos-15, windows-2022]
-    steps:
-      - name: Download JAR artifact
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
-        with:
-          pattern: groovy-lsp-jar-*
-          merge-multiple: true
-          path: dist
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Verify Java version
-        run: java -Xmx64m -version
-
-      - name: Run smoke test
-        shell: bash
-        run: |
-          JAR_FILE=$(find dist -name "*.jar" -type f | head -1)
-          if [[ -z "$JAR_FILE" ]]; then
-            echo "::error::No JAR file found in dist/"
-            exit 1
-          fi
-          echo "Testing JAR: $JAR_FILE"
-          java -Xmx256m -jar "$JAR_FILE" --help
-          echo "✅ Smoke test passed on ${{ matrix.os }}!"
-
-  launcher:
-    name: Native launcher
-    needs: check-paths
-    if: needs.check-paths.outputs.run_main_ci == 'true' || github.event_name == 'workflow_dispatch'
-    permissions:
-      contents: read
-    uses: ./.github/workflows/ci-launcher.yml
-
-  zed:
-    name: Zed adapter
-    needs: check-paths
-    if: needs.check-paths.outputs.run_zed_ci == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    env:
-      CARGO_BUILD_JOBS: 2
-      CARGO_TERM_COLOR: never
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Provision pinned Rust toolchain and WASM target
-        working-directory: editors/zed
+          version: 12.14.0
+      - name: Install locked project tools
+        timeout-minutes: 10
+        working-directory: candidate
         shell: bash
         run: |
           set -euo pipefail
-          (
-            set -e
-            rustup toolchain install --no-self-update
-            rustup show active-toolchain
-          ) 2>&1 | tee "$RUNNER_TEMP/zed-rustup.log"
-          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-rustup.log"
-      - name: Check Rust adapter
+          python -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt
+          uv sync --project .reuse --locked
+          echo "$PWD/.reuse/.venv/bin" >> "$GITHUB_PATH"
+          pnpm --dir editors/code install --frozen-lockfile
+          rustup toolchain install --no-self-update --profile minimal 1.96.1
+          rustup component add --toolchain 1.96.1 clippy rustfmt
+          rustup target add --toolchain 1.96.1 wasm32-wasip2
+      - name: Fetch checksum-pinned hook tools
+        timeout-minutes: 10
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          make zed-check 2>&1 | tee "$RUNNER_TEMP/zed-check.log"
-          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-check.log"
-      - name: Build WASM adapter
+          bins="$RUNNER_TEMP/spdx-hook-bin"
+          download="$RUNNER_TEMP/spdx-hook-download"
+          mkdir -p "$bins" "$download"
+          fetch() {
+            local repo="$1" version="$2" asset="$3" digest="$4"
+            gh release download "$version" --repo "$repo" --pattern "$asset" --dir "$download"
+            printf '%s  %s\n' "$digest" "$download/$asset" | sha256sum -c -
+          }
+          fetch direnv/direnv v2.38.2 direnv.linux-amd64 148820a187930d36ca6a204504e5cdb30d8396cd1a97e64c3b3f10d793c11247
+          install -m 755 "$download/direnv.linux-amd64" "$bins/direnv"
+          fetch evilmartians/lefthook v2.2.2 lefthook_2.2.2_Linux_x86_64 4fbf89eb7748c6aed84d833ee1a29edac48fae614468ca9a82896ec32f2800b6
+          install -m 755 "$download/lefthook_2.2.2_Linux_x86_64" "$bins/lefthook"
+          fetch dprint/dprint 0.64.3 dprint-x86_64-unknown-linux-gnu.zip f71cb7e22d6776439eba168d5cb296092d6413fea7148fe4d70684a2702a4fee
+          unzip -q "$download/dprint-x86_64-unknown-linux-gnu.zip" -d "$download/dprint"
+          install -m 755 "$download/dprint/dprint" "$bins/dprint"
+          fetch mikefarah/yq v4.52.4 yq_linux_amd64 0c4d965ea944b64b8fddaf7f27779ee3034e5693263786506ccd1c120f184e8c
+          install -m 755 "$download/yq_linux_amd64" "$bins/yq"
+          fetch koalaman/shellcheck v0.11.0 shellcheck-v0.11.0.linux.x86_64.tar.xz 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
+          tar -xJf "$download/shellcheck-v0.11.0.linux.x86_64.tar.xz" -C "$download"
+          install -m 755 "$download/shellcheck-v0.11.0/shellcheck" "$bins/shellcheck"
+          fetch mvdan/sh v3.12.0 shfmt_v3.12.0_linux_amd64 d9fbb2a9c33d13f47e7618cf362a914d029d02a6df124064fff04fd688a745ea
+          install -m 755 "$download/shfmt_v3.12.0_linux_amd64" "$bins/shfmt"
+          fetch astral-sh/ruff 0.17.4 ruff-x86_64-unknown-linux-gnu.tar.gz 3ab2b34aeacdbc1ea5c529cdbda3e05792633d587228123fd09f3b5a0facb27a
+          mkdir "$download/ruff"; tar -xzf "$download/ruff-x86_64-unknown-linux-gnu.tar.gz" -C "$download/ruff"
+          install -m 755 "$download/ruff/ruff-x86_64-unknown-linux-gnu/ruff" "$bins/ruff"
+          fetch rhysd/actionlint v1.7.9 actionlint_1.7.9_linux_amd64.tar.gz 233b280d05e100837f4af1433c7b40a5dcb306e3aa68fb4f17f8a7f45a7df7b4
+          mkdir "$download/actionlint"; tar -xzf "$download/actionlint_1.7.9_linux_amd64.tar.gz" -C "$download/actionlint"
+          install -m 755 "$download/actionlint/actionlint" "$bins/actionlint"
+          fetch suzuki-shunsuke/ghalint v1.5.4 ghalint_1.5.4_linux_amd64.tar.gz 977555b7142cc057aad4663679772510a9ed3f1687f26f2359d18bb6b67314fe
+          mkdir "$download/ghalint"; tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
+          install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
+          echo "$bins" >> "$GITHUB_PATH"
+      - name: Validate proof support and run RED GREEN controls
+        timeout-minutes: 40
+        working-directory: candidate
         shell: bash
+        env:
+          EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
+          EXPECTED_TREE: ${{ steps.receipt.outputs.tree }}
         run: |
           set -euo pipefail
-          make zed-build 2>&1 | tee "$RUNNER_TEMP/zed-build.log"
-          node "$GITHUB_WORKSPACE/tools/ci/check-rust-diagnostics.mjs" "$RUNNER_TEMP/zed-build.log"
-
-  validate:
-    name: Validation Check
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      actions: read
-      checks: read
-    needs: [lint, build, e2e-test, smoke-test, launcher, zed, bazel, check-runner, check-paths]
-    if: always()
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Require accounted Actions diagnostics
-        if: ${{ !cancelled() }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: node tools/ci/check-runner-diagnostics.mjs --report "$RUNNER_TEMP/runner-diagnostics"
-      - name: Require complete current-run validation
-        if: ${{ !cancelled() }}
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-          SOURCE_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-        run: node tools/ci/check-readiness.mjs "$RUNNER_TEMP/ci-readiness.json" "$RUNNER_TEMP/runner-diagnostics/diagnostics.json"
-      - name: Upload required verdict
-        if: ${{ !cancelled() }}
+          proof="$GITHUB_WORKSPACE/support/.publication"
+          for pair in 'proofScriptSha256 prove.sh' 'checkerSha256 check-results.mjs' 'fixSha256 alias-socket.patch'; do
+            read -r key file <<< "$pair"
+            digest=$(jq -er --arg key "$key" '.[$key]' "$proof/receipt.json")
+            [[ "$digest" =~ ^[0-9a-f]{64}$ ]]
+            printf '%s  %s\n' "$digest" "$proof/$file" | sha256sum -c -
+          done
+          shellcheck "$proof/prove.sh"
+          shfmt -i 4 -ci -d "$proof/prove.sh"
+          bash -n "$proof/prove.sh"
+          node --check "$proof/check-results.mjs"
+          bash "$proof/prove.sh"
+      - name: Upload source delta and evidence on success or failure
+        timeout-minutes: 5
+        if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ci-readiness
-          path: ${{ runner.temp }}/ci-readiness.json
-          if-no-files-found: error
-          retention-days: 14
-      - name: Upload Actions diagnostic evidence
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: runner-diagnostics-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/runner-diagnostics/
-          if-no-files-found: error
-          retention-days: 14
-  dependency-check:
-    name: Check Dependencies
-    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Set up JDK 17
-        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
-        with:
-          distribution: temurin
-          java-version: 17
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
-        with:
-          cache-encryption-key: ${{ secrets.GRADLE_ENCRYPTION_KEY }}
-      - name: Check for dependency updates
-        run: ./gradlew dependencyUpdates --refresh-dependencies || true
+          name: gvy-pr03a-control-proof
+          path: ${{ runner.temp }}/gvy-pr03a-proof/
+          if-no-files-found: warn
+          retention-days: 7
