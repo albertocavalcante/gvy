@@ -32,6 +32,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.FileSystemNotFoundException
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
@@ -188,6 +189,28 @@ class StepExecutorsTest {
         OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "new.groovy", text = ""), context)
 
         verify(exactly = 1) { session.server.textDocumentService.didOpen(match { it.textDocument.text == "" }) }
+    }
+
+    @Test
+    fun `explicit text supports non-file document URIs`() {
+        OpenDocumentStepExecutor().execute(
+            ScenarioStep.OpenDocument(uri = "untitled:New.groovy", text = "println 42"),
+            context,
+        )
+
+        verify(exactly = 1) {
+            session.server.textDocumentService.didOpen(
+                match { it.textDocument.uri == "untitled:New.groovy" && it.textDocument.text == "println 42" },
+            )
+        }
+    }
+
+    @Test
+    fun `non-file document URI without text fails before didOpen`() {
+        assertThatThrownBy {
+            OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(uri = "untitled:New.groovy"), context)
+        }.isInstanceOf(FileSystemNotFoundException::class.java)
+        verify(exactly = 0) { session.server.textDocumentService.didOpen(any()) }
     }
 
     @Test
