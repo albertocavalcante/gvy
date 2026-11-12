@@ -21,10 +21,10 @@ class EngineConfigurationTest {
     }
 
     @Test
-    fun `EngineType fromString parses core case-insensitively`() {
-        assertEquals(EngineType.Core, EngineType.fromString("core"))
-        assertEquals(EngineType.Core, EngineType.fromString("CORE"))
-        assertEquals(EngineType.Core, EngineType.fromString("Core"))
+    fun `EngineType fromString maps the legacy core alias case-insensitively`() {
+        assertEquals(EngineType.Native, EngineType.fromString("core"))
+        assertEquals(EngineType.Native, EngineType.fromString("CORE"))
+        assertEquals(EngineType.Native, EngineType.fromString("Core"))
     }
 
     @Test
@@ -49,16 +49,14 @@ class EngineConfigurationTest {
     @Test
     fun `EngineType entries contains all types`() {
         val entries = EngineType.entries
-        assertEquals(3, entries.size)
+        assertEquals(2, entries.size)
         assertTrue(entries.contains(EngineType.Native))
-        assertTrue(entries.contains(EngineType.Core))
         assertTrue(entries.contains(EngineType.OpenRewrite))
     }
 
     @Test
     fun `EngineType id returns correct identifier`() {
         assertEquals("native", EngineType.Native.id)
-        assertEquals("core", EngineType.Core.id)
         assertEquals("openrewrite", EngineType.OpenRewrite.id)
     }
 
@@ -68,11 +66,9 @@ class EngineConfigurationTest {
         // If a new EngineType is added without updating this function, it won't compile.
         fun describe(type: EngineType): String = when (type) {
             EngineType.Native -> "native engine using Groovy compiler AST"
-            EngineType.Core -> "core engine using groovyparser-core AST"
             EngineType.OpenRewrite -> "openrewrite engine using LST"
         }
         assertEquals("native engine using Groovy compiler AST", describe(EngineType.Native))
-        assertEquals("core engine using groovyparser-core AST", describe(EngineType.Core))
         assertEquals("openrewrite engine using LST", describe(EngineType.OpenRewrite))
     }
 
@@ -87,8 +83,8 @@ class EngineConfigurationTest {
     @Test
     fun `EngineConfiguration can be created with custom values`() {
         val features = EngineFeatures(typeInference = false, flowAnalysis = true)
-        val config = EngineConfiguration(type = EngineType.Core, features = features)
-        assertEquals(EngineType.Core, config.type)
+        val config = EngineConfiguration(type = EngineType.OpenRewrite, features = features)
+        assertEquals(EngineType.OpenRewrite, config.type)
         assertFalse(config.features.typeInference)
         assertTrue(config.features.flowAnalysis)
     }

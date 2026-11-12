@@ -22,14 +22,6 @@ sealed interface EngineType {
     }
 
     /**
-     * Core engine using groovyparser-core's custom AST.
-     * Available as an explicit alternative to the default compiler-backed engine.
-     */
-    data object Core : EngineType {
-        override val id: String = "core"
-    }
-
-    /**
      * OpenRewrite engine using OpenRewrite's LST (Lossless Semantic Trees).
      * Future implementation for refactoring-focused analysis.
      */
@@ -42,17 +34,19 @@ sealed interface EngineType {
          * Parse engine type from string, defaulting to [Native].
          *
          * @param value Engine type string (case-insensitive), e.g. "native", "core"
+         * The legacy `core` setting aliases Native through 0.5.5 and is removed in 0.5.6.
+         * Parsing stays pure; configuration intake owns the per-server migration warning.
+         *
          * @return Corresponding [EngineType], or [Native] for unknown/null values
          */
         fun fromString(value: String?): EngineType = when (value?.lowercase()) {
-            "native" -> Native
-            "core" -> Core
+            "native", "core" -> Native
             "openrewrite" -> OpenRewrite
             else -> Native
         }
 
         /** All available engine types. */
-        val entries: List<EngineType> = listOf(Native, Core, OpenRewrite)
+        val entries: List<EngineType> = listOf(Native, OpenRewrite)
     }
 }
 

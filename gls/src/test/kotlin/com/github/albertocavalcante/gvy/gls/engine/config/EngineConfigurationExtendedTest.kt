@@ -31,16 +31,16 @@ class EngineConfigurationExtendedTest {
     @Test
     fun `EngineType fromString handles mixed case variations`() {
         assertEquals(EngineType.Native, EngineType.fromString("nAtIvE"))
-        assertEquals(EngineType.Core, EngineType.fromString("cOrE"))
+        assertEquals(EngineType.Native, EngineType.fromString("cOrE"))
         assertEquals(EngineType.OpenRewrite, EngineType.fromString("oPeNrEwRiTe"))
     }
 
     @Test
-    fun `EngineType entries order is Native, Core, OpenRewrite`() {
+    fun `EngineType entries order is Native then OpenRewrite`() {
         val entries = EngineType.entries
         assertEquals(EngineType.Native, entries[0])
-        assertEquals(EngineType.Core, entries[1])
-        assertEquals(EngineType.OpenRewrite, entries[2])
+        assertEquals(EngineType.OpenRewrite, entries[1])
+        assertEquals(2, entries.size)
     }
 
     @Test
@@ -53,21 +53,20 @@ class EngineConfigurationExtendedTest {
     @Test
     fun `EngineType toString includes type name`() {
         assertTrue(EngineType.Native.toString().contains("Native"))
-        assertTrue(EngineType.Core.toString().contains("Core"))
         assertTrue(EngineType.OpenRewrite.toString().contains("OpenRewrite"))
     }
 
     @Test
     fun `EngineType equality works correctly`() {
         assertEquals(EngineType.Native, EngineType.Native)
-        assertEquals(EngineType.Core, EngineType.Core)
-        assertNotEquals<EngineType>(EngineType.Native, EngineType.Core)
+        assertEquals(EngineType.OpenRewrite, EngineType.OpenRewrite)
+        assertNotEquals<EngineType>(EngineType.Native, EngineType.OpenRewrite)
     }
 
     @Test
     fun `EngineType hashCode is consistent`() {
         assertEquals(EngineType.Native.hashCode(), EngineType.Native.hashCode())
-        assertEquals(EngineType.Core.hashCode(), EngineType.Core.hashCode())
+        assertEquals(EngineType.OpenRewrite.hashCode(), EngineType.OpenRewrite.hashCode())
     }
 
     // =========================================================================
@@ -76,8 +75,8 @@ class EngineConfigurationExtendedTest {
 
     @Test
     fun `EngineConfiguration equality based on properties`() {
-        val config1 = EngineConfiguration(type = EngineType.Core)
-        val config2 = EngineConfiguration(type = EngineType.Core)
+        val config1 = EngineConfiguration(type = EngineType.OpenRewrite)
+        val config2 = EngineConfiguration(type = EngineType.OpenRewrite)
         val config3 = EngineConfiguration(type = EngineType.Native)
 
         assertEquals(config1, config2)
@@ -87,10 +86,10 @@ class EngineConfigurationExtendedTest {
     @Test
     fun `EngineConfiguration copy works correctly`() {
         val original = EngineConfiguration(type = EngineType.Native)
-        val copied = original.copy(type = EngineType.Core)
+        val copied = original.copy(type = EngineType.OpenRewrite)
 
         assertEquals(EngineType.Native, original.type)
-        assertEquals(EngineType.Core, copied.type)
+        assertEquals(EngineType.OpenRewrite, copied.type)
     }
 
     @Test
@@ -104,30 +103,30 @@ class EngineConfigurationExtendedTest {
     }
 
     @Test
-    fun `EngineConfiguration with all Core features`() {
+    fun `EngineConfiguration with all OpenRewrite features`() {
         val features = EngineFeatures(typeInference = true, flowAnalysis = true)
-        val config = EngineConfiguration(type = EngineType.Core, features = features)
+        val config = EngineConfiguration(type = EngineType.OpenRewrite, features = features)
 
-        assertEquals(EngineType.Core, config.type)
+        assertEquals(EngineType.OpenRewrite, config.type)
         assertTrue(config.features.typeInference)
         assertTrue(config.features.flowAnalysis)
     }
 
     @Test
     fun `EngineConfiguration hashCode is consistent`() {
-        val config1 = EngineConfiguration(type = EngineType.Core)
-        val config2 = EngineConfiguration(type = EngineType.Core)
+        val config1 = EngineConfiguration(type = EngineType.OpenRewrite)
+        val config2 = EngineConfiguration(type = EngineType.OpenRewrite)
 
         assertEquals(config1.hashCode(), config2.hashCode())
     }
 
     @Test
     fun `EngineConfiguration toString includes type`() {
-        val config = EngineConfiguration(type = EngineType.Core)
+        val config = EngineConfiguration(type = EngineType.OpenRewrite)
         val str = config.toString()
 
         assertTrue(str.contains("EngineConfiguration"))
-        assertTrue(str.contains("Core"))
+        assertTrue(str.contains("OpenRewrite"))
     }
 
     @Test

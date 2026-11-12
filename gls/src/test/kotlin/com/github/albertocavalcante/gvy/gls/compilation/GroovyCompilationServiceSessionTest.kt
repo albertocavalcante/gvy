@@ -3,73 +3,71 @@
 
 package com.github.albertocavalcante.gvy.gls.compilation
 
-import com.github.albertocavalcante.gvy.gls.engine.impl.core.CoreLanguageEngine
+import com.github.albertocavalcante.groovyparser.GroovyParserFacade
+import com.github.albertocavalcante.gvy.gls.engine.EngineFactory
+import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
+import com.github.albertocavalcante.gvy.gls.engine.config.EngineType
+import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import kotlinx.coroutines.runBlocking
 import org.eclipse.lsp4j.HoverParams
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.TextDocumentIdentifier
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import java.net.URI
+import kotlin.test.assertContains
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
-/**
- * Tests for [CoreLanguageEngine] session creation and hover functionality.
- *
- * These tests verify that CoreLanguageEngine.createSession() works correctly.
- */
+/** The saved Core setting retains the public session API through the Native engine. */
 class GroovyCompilationServiceSessionTest {
+    private val documents = DocumentProvider()
+    private val compilation = GroovyCompilationService(documentProvider = documents)
+    private val engine = EngineFactory.create(
+        config = EngineConfiguration(EngineType.fromString("core")),
+        parser = GroovyParserFacade(),
+        compilationService = compilation,
+        documentProvider = documents,
+        sourceNavigator = null,
+    )
+    private val uri = URI.create("file:///Calculator.groovy")
+    private val content = """
+        class Calculator {
+            int add(int a, int b) { return a + b }
+        }
+    """.trimIndent()
 
-    @Test
-    fun `getSession returns non-null session for Core engine`(): Unit = runBlocking {
-        // This test verifies that getSession works with CoreLanguageEngine
-        val engine = CoreLanguageEngine()
-        val uri = URI.create("file:///test.groovy")
-        val content = """
-            class Calculator {
-                int add(int a, int b) { return a + b }
-            }
-        """.trimIndent()
-
-        // Create session directly from engine
-        val session = engine.createSession(ParseRequest(uri, content))
-
-        assertNotNull(session, "Session should not be null for Core engine")
-        assertNotNull(session.features.hoverProvider, "Hover provider should be available")
+    @AfterEach
+    fun closeCompilation() {
+        compilation.shutdown()
     }
 
     @Test
-    fun `Core engine session provides hover`(): Unit = runBlocking {
-        val engine = CoreLanguageEngine()
-        val uri = URI.create("file:///test.groovy")
-        val content = """
-            class Calculator {
-                int add(int a, int b) { return a + b }
-            }
-        """.trimIndent()
-
+    fun `legacy core alias creates a session with hover support`() {
         val session = engine.createSession(ParseRequest(uri, content))
-        val hoverParams = HoverParams(
-            TextDocumentIdentifier(uri.toString()),
-            Position(1, 8), // Position on "add" method
-        )
 
-        val hover = session.features.hoverProvider.getHover(hoverParams)
-
-        assertNotNull(hover, "Hover should not be null")
+        assertTrue(session.result.isSuccess)
+        assertNotNull(session.features.hoverProvider)
     }
 
     @Test
-    fun `LanguageEngine createSession with URI and content works for Core`() {
-        val engine = CoreLanguageEngine()
-        val uri = URI.create("file:///test.groovy")
-        val content = "class Test { void foo() {} }"
+    fun `legacy core alias session provides Native method hover`(): Unit = runBlocking {
+        documents.put(uri, content, 1)
+        assertTrue(compilation.compile(uri, content).isSuccess)
+        val session = engine.createSession(ParseRequest(uri, content))
+        val params = HoverParams(TextDocumentIdentifier(uri.toString()), Position(1, 8))
 
-        // This tests the unified interface method we're adding
+        val hover = session.features.hoverProvider.getHover(params)
+
+        assertContains(hover.contents.right.value, "int add(int a, int b)")
+    }
+
+    @Test
+    fun `legacy core alias supports session creation from URI and content`() {
         val session = engine.createSession(uri, content)
 
-        assertNotNull(session, "Session created from URI and content should not be null")
-        assertTrue(session.result.isSuccess, "Parse should succeed for valid code")
+        assertTrue(session.result.isSuccess)
+        assertNotNull(session.features.documentSymbolProvider)
     }
 }

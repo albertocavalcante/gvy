@@ -64,11 +64,10 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
 ## Architecture
 
 - `gls/`: the LSP server. `semantics/`: type inference and the semantic model. `fmt/`: the formatter.
-- Two parser engines. Native (`parser/native/`, compiler-driven, on Groovy's own AST) serves every feature except hover.
-  Hover goes through the engine layer and defaults to Native, reusing the captured compiler snapshot. Core remains
-  available when explicitly configured (`parserEngine` in
-  `gls/src/main/kotlin/com/github/albertocavalcante/gvy/gls/config/ServerConfiguration.kt`). Check which engine a change
-  reaches; engine retirement remains #1276.
+- Native (`parser/native/`, compiler-driven, on Groovy's own AST) serves language features. Hover goes through the
+  engine layer and defaults to Native, reusing the captured compiler snapshot. OpenRewrite remains an explicit
+  alternative. The separate Core hover engine is retired; `core` aliases Native through 0.5.5 and is removed in 0.5.6.
+  Keep `parser/core`: its type solvers, Groovydoc and Core AST visualization consumers remain in use.
 - Module map: `docs/overview.md`; design: `kb/ARCHITECTURE.md`.
 
 ## Testing
