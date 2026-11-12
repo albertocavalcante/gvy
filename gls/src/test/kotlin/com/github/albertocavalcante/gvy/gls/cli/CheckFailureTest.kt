@@ -6,6 +6,10 @@ import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticProviderFailure
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import kotlinx.coroutines.CancellationException
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -66,6 +70,27 @@ class CheckFailureTest {
         }
         assertEquals(1, result.statusCode)
         assertTrue(outputFile.readText().contains("\"executionSuccessful\": false"))
+    }
+
+    @Test
+    fun `sarif accounts for each clean and incomplete file`(@TempDir dir: File) {
+        val clean = File(dir, "clean.groovy").apply { writeText("") }
+        val failed = File(dir, "failed.groovy").apply { writeText("") }
+        val output = File(dir, "results.sarif")
+        val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { file, _ ->
+            if (file == failed) throw IOException("unavailable")
+            DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList())
+        }))
+        assertFailsWith<ProgramResult> {
+            command.parse(listOf("check", "--format", "sarif", "--output", output.path, clean.path, failed.path))
+        }
+        val run = Json.parseToJsonElement(output.readText()).jsonObject.getValue("runs").jsonArray.single().jsonObject
+        val checks = run.getValue("properties").jsonObject.getValue("gvyFileChecks").jsonArray.map { entry ->
+            val record = entry.jsonObject
+            record.getValue("uri").jsonPrimitive.content to record.getValue("status").jsonPrimitive.content
+        }
+        assertEquals(listOf(clean.invariantSeparatorsPath to "complete", failed.invariantSeparatorsPath to "incomplete"), checks)
+        assertTrue(run.getValue("results").jsonArray.isEmpty())
     }
 
     @Test
