@@ -1,0 +1,5 @@
+SPDX-FileCopyrightText: The Apache Software Foundation
+SPDX-License-Identifier: Apache-2.0
+
+Source: https://github.com/apache/groovy-website/blob/ab35872f2b17751960bd3162ce9516bfc10bdb3d/site/src/site/assets/img/groovy-logo-colored.svg
+The Jupyter installer scales and pads the artwork when generating PNG variants.

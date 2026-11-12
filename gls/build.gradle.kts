@@ -533,12 +533,12 @@ object DependencyNoticeStaging {
                                 it.equals("licenses", ignoreCase = true) || it.equals("license", ignoreCase = true)
                             })
                     if (!notice) continue
-                    require(parts.none { it.isEmpty() || it == "." || it == ".." || '\\' in it || ':' in it }) {
-                        "Unsafe notice path in ${archive.name}: ${entry.name}"
-                    }
+                    require(
+                        parts.none { it.isEmpty() || it == "." || it == ".." || '\\' in it || ':' in it },
+                    ) { "Unsafe notice path in ${archive.name}: ${entry.name}" }
                     check(seen.add(entry.name.lowercase(Locale.ROOT))) {
-                    "Duplicate notice path in ${archive.name}: ${entry.name}"
-                }
+                        "Duplicate notice path in ${archive.name}: ${entry.name}"
+                    }
                     val destination = output.resolve("$artifact/$hash/${entry.name}")
                     check(destination.parentFile.mkdirs() || destination.parentFile.isDirectory)
                     zip.getInputStream(entry).use { input -> destination.outputStream().use { input.copyTo(it) } }
