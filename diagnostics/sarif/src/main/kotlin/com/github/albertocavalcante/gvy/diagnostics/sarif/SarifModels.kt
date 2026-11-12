@@ -33,6 +33,8 @@ data class SarifRun(
     val tool: SarifTool,
     val results: List<SarifResult> = emptyList(),
     val invocations: List<SarifInvocation>? = null,
+    /** Unit for columns in text regions, when the producing tool specifies one. */
+    val columnKind: String? = null,
 )
 
 /**
