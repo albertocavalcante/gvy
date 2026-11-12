@@ -41,12 +41,12 @@
       {
         "class": "PackagedLaunchTest",
         "name": "preparation preserves fatal failure and removes owned stage()",
-        "type": "java.lang.AssertionError"
+        "type": "org.opentest4j.AssertionFailedError"
       },
       {
         "class": "PackagedSessionFactoryTest",
         "name": "default session reports stderr observation as unavailable()",
-        "type": "java.lang.AssertionError"
+        "type": "org.opentest4j.AssertionFailedError"
       },
       {
         "class": "PackagedSessionFactoryTest",
@@ -91,7 +91,7 @@
       {
         "class": "PackagedSessionFactoryTest",
         "name": "private cleanup retains interruption flag even when fatal error takes priority()",
-        "type": "java.lang.AssertionError"
+        "type": "org.opentest4j.AssertionFailedError"
       }
     ]
   },
