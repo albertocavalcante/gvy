@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Temporary execution support only. Never merge into main or the product PR.
-name: CodeNarc combined-main preparation
+name: CodeNarc SPDX-main preparation
 on:
   workflow_dispatch:
 permissions:
@@ -152,6 +152,26 @@ jobs:
           tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
           install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
           echo "$bins" >>"$GITHUB_PATH"
+      - name: Run canonical license checks and retain statuses
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof="${RUNNER_TEMP:?}/gvy-license-evidence"
+          mkdir "${proof}"
+          failed=0
+          for target in license-check license-test; do
+              set +e
+              make "${target}" 2>&1 | tee "${proof}/${target}.log"
+              statuses=("${PIPESTATUS[@]}")
+              set -e
+              printf '{"commandExitCode":%s,"captureExitCode":%s}\n' "${statuses[0]}" "${statuses[1]}" >"${proof}/${target}.status.json"
+              if [[ "${statuses[0]}" -ne 0 || "${statuses[1]}" -ne 0 ]]; then
+                  failed=1
+              fi
+          done
+          sha256sum "${proof}"/*.log "${proof}"/*.status.json >"${proof}/files.sha256"
+          exit "${failed}"
       - name: Run normal hooks and create candidate commit
         working-directory: candidate
         shell: bash
@@ -190,7 +210,7 @@ jobs:
           GITHUB_SHA="$candidate_sha" direnv exec . node tools/ci/run-gradle.mjs \
               --report-root "$gradle_evidence" --producer preparation-codenarc-native \
               :diagnostics:codenarc:test \
-              --no-build-cache --rerun-tasks \
+              --no-build-cache --rerun-tasks --info \
               --no-daemon --no-parallel --max-workers=1 \
               '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           native_reports=("$gradle_evidence"/preparation-codenarc-native-*/console.log)
@@ -224,6 +244,7 @@ jobs:
           test -z "$(git status --porcelain --untracked-files=all)"
           mkdir "$RUNNER_TEMP/gvy-publication-proof"
           cp -R "$gradle_evidence" "$RUNNER_TEMP/gvy-publication-proof/gradle-evidence"
+          cp -R "$RUNNER_TEMP/gvy-license-evidence" "$RUNNER_TEMP/gvy-publication-proof/license-evidence"
           cp -R "$RUNNER_TEMP/gvy-hook-diagnostics" "$RUNNER_TEMP/gvy-publication-proof/hook-diagnostics"
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
@@ -266,5 +287,6 @@ jobs:
             ${{ runner.temp }}/gvy-preparation-gradle-evidence/
             ${{ runner.temp }}/gvy-hook-diagnostics/
             ${{ runner.temp }}/gvy-commit-hooks.log
+            ${{ runner.temp }}/gvy-license-evidence/
           if-no-files-found: warn
           retention-days: 7
