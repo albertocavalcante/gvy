@@ -118,6 +118,9 @@ class GroovySemanticDBTest {
         val maxVersion = db.version
         val tooLarge = SemanticType.Known("Many", List(16384) { TypeConstants.INT })
         assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(tooLarge)) }
+        var shared: SemanticType = TypeConstants.INT
+        repeat(14) { shared = SemanticType.Known("Pair", listOf(shared, shared)) }
+        assertThrows<IllegalArgumentException> { db.updateDocument(testUri1, document(shared)) }
         assertEquals(maxVersion, db.version)
         assertEquals(maxSize, db.getDocument(testUri1)!!.symbols.single().type)
     }
