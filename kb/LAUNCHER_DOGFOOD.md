@@ -17,7 +17,7 @@ in [the CLI/runtime study](CLI_DISTRIBUTION_RESEARCH.md) and
 | Short extended Java-home paths and hidden launch behavior were suspected risks | Dedicated native probes passed against the initial Windows binary. They are retained as regressions; these were not reproduced production bugs. Windows separators and long-path handling are explicit for portability.                                                    | Platform coverage is measured on actual hosts and CI, rather than inferred from source alone.                                                                                              |
 | A Unicode JAR installation failed on Windows                                   | Reproduced with direct Zulu 21.0.12.1 as well as the native launcher, OS build 10.0.26320, system ACP 1252. ASCII paths with spaces work. A UTF-8 argument file did not fix startup.                                                                                       | [#1817](https://github.com/albertocavalcante/gvy/issues/1817) owns runtime investigation and a future bundled-runtime fix. Other JDK candidates and minimum Java 17 are separate evidence. |
 
-On the native Windows x64 host, the final sequential process/workload run had 16 tests: 15 passed, zero failed/skipped,
+On the native Windows x64 host, the final sequential process/workload run had 17 tests: 16 passed, zero failed/skipped,
 and one executed TODO for the exact #1817 Java-runtime condition. Four native unit tests, release linking and module
 lint also passed. This local run used Zulu Java 21; Java 17 and the other native platforms remain explicit CI checks.
 
@@ -40,6 +40,27 @@ investigation and the 2026-12-11 review; no first fixed GCC release is claimed.
 Bazel's default unit-test logger also writes ordinary diagnostics to stdout. The component regression checks that the
 CodeNarc summary stays off stdout and appears on stderr; the packaged CLI tests independently require the complete SARIF
 stdout stream to parse as JSON. A redundant native conversion warning found by hosted Windows compilation was removed.
+
+Hosted Windows also exposed short-path aliases in the tests: `RUNNER~1` and `runneradmin` named the same directory. The
+assertions now use the native Windows canonical path, including before comparing direct-Java and launcher errors. This
+preserves exact argument and error-byte checks; it does not weaken the runtime compatibility condition.
+
+Further dogfooding found that empty Windows `PATH` segments selected `java.exe` from the current directory. A valid
+executable reproduced the unexpected status 37 instead of 127. Empty and quoted-empty entries are now ignored; an
+explicit `.` remains supported. Tests identify the selected executable for leading, trailing and interior empty entries,
+and cover absent and empty `PATH`. An existing empty environment value also needed its own size-query case: the Windows
+API reports one character for its null terminator. Explicitly empty Java-home overrides now receive the intended error.
+
+A stronger formatting assertion exposed Unicode loss: `hello 世界 😀` became `hello ?? ?` on the Windows JVM's stdout.
+Portable tests reproduced this with a Windows-1252 `PrintStream`. Formatted source, SARIF stdout and version JSON now
+write UTF-8 bytes explicitly, preserving existing newline behavior and process-stream identities. Failed stdout writes
+raise a command error. Nine focused tests and module lint pass; the rebuilt JAR also passes the real Windows workload,
+including exact Unicode formatting, source preservation, SARIF, LSIF and an opened-document LSP response.
+
+The native Windows executable imports only `KERNEL32.dll`, `msvcrt.dll` and `SHELL32.dll`; no additional Kotlin or GCC
+runtime DLL import was observed. A separate fresh Kotlin/Native 2.3.0 installation executed all six actionable Gradle
+tasks and passed four Native tests. Its actual extracted SDK satisfied the proposed private-root/child permission
+checks. These local experiments are not a substitute for review and CI on the final integrated workflow.
 
 ## What this means for the bundled runtime
 
