@@ -8,7 +8,12 @@ import java.util.Collections
 internal class BufferIncarnation
 
 /** A caller-owned snapshot of an open editor buffer. Versions are observed, not advanced by planning. */
-internal data class EditorBufferSnapshot(val uri: URI, val version: Int, val text: String, val incarnation: BufferIncarnation)
+internal data class EditorBufferSnapshot(
+    val uri: URI,
+    val version: Int,
+    val text: String,
+    val incarnation: BufferIncarnation,
+)
 
 /** One simultaneous edit set against an open buffer; null version means no version constraint was supplied. */
 internal data class EditorDocumentChange(val uri: URI, val expectedVersion: Int?, val edits: List<TextEdit>)
