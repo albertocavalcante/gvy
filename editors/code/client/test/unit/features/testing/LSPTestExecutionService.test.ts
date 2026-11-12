@@ -280,6 +280,7 @@ describe("LSPTestExecutionService", () => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const proc = {
+        pid: 123,
         stdout,
         stderr,
         on: sandbox
@@ -611,6 +612,7 @@ describe("LSPTestExecutionService", () => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const proc = {
+        pid: 123,
         stdout,
         stderr,
         on: sandbox
@@ -1214,6 +1216,7 @@ describe("LSPTestExecutionService", () => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const proc = {
+        pid: 123,
         stdout,
         stderr,
         on: sandbox
@@ -1280,6 +1283,7 @@ describe("LSPTestExecutionService", () => {
       const stdout = new PassThrough();
       const stderr = new PassThrough();
       const proc = {
+        pid: 123,
         stdout,
         stderr,
         on: sandbox
@@ -1351,6 +1355,7 @@ describe("LSPTestExecutionService", () => {
         items: { forEach: () => {} },
       };
       const proc = Object.assign(new EventEmitter(), {
+        pid: 123 as number | undefined,
         stdout: new PassThrough(),
         stderr: new PassThrough(),
         kill: sandbox.stub(),
@@ -1434,6 +1439,7 @@ describe("LSPTestExecutionService", () => {
         items: { forEach: () => {} },
       };
       const proc = Object.assign(new EventEmitter(), {
+        pid: 123 as number | undefined,
         stdout: new PassThrough(),
         stderr: new PassThrough(),
         kill: sandbox.stub(),
@@ -1499,6 +1505,7 @@ describe("LSPTestExecutionService", () => {
         children: { forEach: () => {} },
       };
       const proc = Object.assign(new EventEmitter(), {
+        pid: 123 as number | undefined,
         stdout: new PassThrough(),
         stderr: new PassThrough(),
         kill: sandbox.stub(),
@@ -1534,7 +1541,7 @@ describe("LSPTestExecutionService", () => {
       assert.ok(vscodeMock.window.showErrorMessage.calledOnce);
       assert.ok(loggerMock.appendLine.calledWith("[STDERR] café 🧪"));
       assert.ok(loggerMock.appendLine.calledWith("[STDERR] last"));
-      assert.ok(!run.errored.called);
+      assert.ok(run.errored.calledWith(item));
     });
 
     it("does not parse a valid-looking final fragment after stdout fails", async () => {
@@ -1561,7 +1568,7 @@ describe("LSPTestExecutionService", () => {
       assert.ok(run.errored.calledWith(item));
     });
 
-    it("preserves Maven report results after a lost stdout record", async () => {
+    it("does not trust Maven report results after a lost stdout record", async () => {
       const { token, run, controller, item, proc } = setup("/w/mvnw");
       testServiceMock.getTestResults.resolves({
         results: [
@@ -1579,14 +1586,15 @@ describe("LSPTestExecutionService", () => {
       ]);
       proc.emit("close", 0);
       await done;
-      assert.ok(run.passed.calledWith(item));
-      assert.ok(!run.errored.calledWith(item));
+      assert.ok(!run.passed.calledWith(item));
+      assert.ok(run.errored.calledWith(item));
     });
 
     it("marks an unfinished test after a process error and settles once", async () => {
       const { token, run, controller, item, proc } = setup("/w/gradlew");
       const done = service.runTests({ include: [item] }, token, controller);
       await new Promise((resolve) => setImmediate(resolve));
+      proc.pid = undefined;
       proc.emit("error", new Error("spawn failed"));
       proc.stdout.end();
       proc.stderr.end();
@@ -1599,6 +1607,129 @@ describe("LSPTestExecutionService", () => {
       await done;
       assert.ok(run.errored.calledOnceWith(item));
       assert.ok(run.end.calledOnce);
+    });
+
+    it("does not use stale Maven reports after a spawn error", async () => {
+      const { token, run, controller, item, proc } = setup("/w/mvnw");
+      testServiceMock.getTestResults.resolves({
+        results: [
+          { testId: item.id, name: "test", status: "SUCCESS", durationMs: 3 },
+        ],
+      });
+      const done = service.runTests({ include: [item] }, token, controller);
+      await new Promise((resolve) => setImmediate(resolve));
+      proc.pid = undefined;
+      proc.emit("error", new Error("spawn failed"));
+      proc.stdout.end();
+      proc.stderr.end();
+      await Promise.all([
+        new Promise((resolve) => proc.stdout.on("close", resolve)),
+        new Promise((resolve) => proc.stderr.on("close", resolve)),
+      ]);
+      proc.emit("close", null);
+      await done;
+      assert.ok(!run.passed.calledWith(item));
+      assert.ok(run.errored.calledWith(item));
+    });
+
+    it("does not use stale Maven reports after a started command fails early", async () => {
+      const { token, run, controller, item, proc } = setup("/w/mvnw");
+      testServiceMock.getTestResults.resolves({
+        results: [
+          { testId: item.id, name: "test", status: "SUCCESS", durationMs: 3 },
+        ],
+      });
+      const done = service.runTests({ include: [item] }, token, controller);
+      await new Promise((resolve) => setImmediate(resolve));
+      proc.stdout.end();
+      proc.stderr.end();
+      await Promise.all([
+        new Promise((resolve) => proc.stdout.on("close", resolve)),
+        new Promise((resolve) => proc.stderr.on("close", resolve)),
+      ]);
+      proc.emit("close", 1);
+      await done;
+      assert.ok(!run.passed.calledWith(item));
+      assert.ok(run.errored.calledWith(item));
+    });
+
+    it("does not apply a successful Maven report to an unrelated failed Gradle selection", async () => {
+      const {
+        token,
+        run,
+        controller,
+        item: gradle,
+        proc: first,
+      } = setup("/w/gradlew");
+      const maven = {
+        id: "suite.maven",
+        label: "maven",
+        uri: { toString: () => "file:///w/maven" },
+        children: { forEach: () => {} },
+      };
+      const second = Object.assign(new EventEmitter(), {
+        pid: 456,
+        stdout: new PassThrough(),
+        stderr: new PassThrough(),
+        kill: sandbox.stub(),
+      });
+      cpMock.spawn.onFirstCall().returns(first);
+      cpMock.spawn.onSecondCall().returns(second);
+      testServiceMock.getTestCommand.onFirstCall().resolves({
+        executable: "/w/gradlew",
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      testServiceMock.getTestCommand.onSecondCall().resolves({
+        executable: "/w/mvnw",
+        args: ["test"],
+        cwd: "/w",
+        env: {},
+      });
+      testServiceMock.getTestResults.resolves({
+        results: [
+          {
+            testId: gradle.id,
+            name: gradle.label,
+            status: "SUCCESS",
+            durationMs: 3,
+          },
+          {
+            testId: maven.id,
+            name: maven.label,
+            status: "SUCCESS",
+            durationMs: 3,
+          },
+        ],
+      });
+      const done = service.runTests(
+        { include: [gradle, maven] },
+        token,
+        controller,
+      );
+      await new Promise((resolve) => setImmediate(resolve));
+      first.pid = undefined;
+      first.emit("error", new Error("spawn failed"));
+      first.stdout.end();
+      first.stderr.end();
+      await Promise.all([
+        new Promise((resolve) => first.stdout.on("close", resolve)),
+        new Promise((resolve) => first.stderr.on("close", resolve)),
+      ]);
+      first.emit("close", null);
+      await new Promise((resolve) => setImmediate(resolve));
+      second.stdout.end();
+      second.stderr.end();
+      await Promise.all([
+        new Promise((resolve) => second.stdout.on("close", resolve)),
+        new Promise((resolve) => second.stderr.on("close", resolve)),
+      ]);
+      second.emit("close", 0);
+      await done;
+      assert.ok(!run.passed.calledWith(gradle));
+      assert.ok(run.errored.calledWith(gradle));
+      assert.ok(run.passed.calledWith(maven));
     });
 
     it("does not mark cancelled runs as errors after output loss", async () => {

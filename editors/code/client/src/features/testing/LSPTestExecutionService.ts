@@ -164,7 +164,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
       const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
       const workspaceUri = workspaceFolder?.uri.toString() || "";
 
-      let isMavenExecution = false;
+      const healthyMavenItems: vscode.TestItem[] = [];
       const affectedByLoss = new Set<vscode.TestItem>();
 
       for (const item of testsToRun) {
@@ -220,18 +220,18 @@ export class LSPTestExecutionService implements ITestExecutionService {
         }
 
         try {
-          const incomplete = await this.executeCommand(
+          const outcome = await this.executeCommand(
             { ...command, args: coverageArgs },
             consumer,
             tokens,
           );
-          if (incomplete) {
+          if (outcome.incomplete) {
             for (const affected of this.collectAllTestItems([item]))
               affectedByLoss.add(affected);
           }
-          // Only builds that ran leave Surefire reports for this run.
-          if (isMaven) {
-            isMavenExecution = true;
+          // Reports lack current-run provenance; do not apply them to failed or incomplete executions.
+          if (isMaven && outcome.spawned && !outcome.incomplete) {
+            healthyMavenItems.push(item);
           }
         } catch (error) {
           if (!(error instanceof UnrunnableCommandError)) throw error;
@@ -242,8 +242,14 @@ export class LSPTestExecutionService implements ITestExecutionService {
       }
 
       // For Maven, fetch and apply Surefire results from LSP (once after all tests complete)
-      if (isMavenExecution && !isCancelled()) {
-        await this.applyTestResults(workspaceUri, run, testsToRun, consumer);
+      if (healthyMavenItems.length > 0 && !isCancelled()) {
+        await this.applyTestResults(
+          workspaceUri,
+          run,
+          healthyMavenItems,
+          consumer,
+          affectedByLoss,
+        );
       }
 
       if (!isCancelled()) {
@@ -261,7 +267,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
             run.errored(
               item,
               new vscode.TestMessage(
-                "Test output was incomplete; the result could not be determined.",
+                "Test execution or output was incomplete; the result could not be determined.",
               ),
             );
           }
@@ -311,6 +317,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     run: vscode.TestRun,
     testsToRun: readonly vscode.TestItem[],
     consumer: TestEventConsumer,
+    affectedByLoss: ReadonlySet<vscode.TestItem>,
   ): Promise<void> {
     try {
       const results = await this.testService.getTestResults(workspaceUri);
@@ -389,7 +396,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
           result = resultMap.get(methodName);
         }
 
-        if (result) {
+        if (result && !affectedByLoss.has(item) && !consumer.isTerminal(item)) {
           this.applyResultToItem(run, item, result);
           consumer.markTerminal(item);
         }
@@ -542,7 +549,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
     cmd: TestCommand,
     consumer: TestEventConsumer,
     tokens: readonly vscode.CancellationToken[],
-  ): Promise<boolean> {
+  ): Promise<{ spawned: boolean; incomplete: boolean }> {
     const { executable, args, cwd, env } = cmd;
     this.logger.appendLine(
       `[LSP] Executing: ${executable} ${args.join(" ")} (in ${cwd})`,
@@ -624,6 +631,10 @@ export class LSPTestExecutionService implements ITestExecutionService {
       };
 
       let incomplete = false;
+      let spawned = proc.pid !== undefined;
+      proc.on("spawn", () => {
+        spawned = true;
+      });
       let foundHttpBlocker = false;
       const onBlocker = () => {
         foundHttpBlocker = true;
@@ -723,7 +734,7 @@ export class LSPTestExecutionService implements ITestExecutionService {
             `Test execution process exited with code ${code}`,
           );
         }
-        resolve(incomplete);
+        resolve({ spawned, incomplete: incomplete || (isMaven && code !== 0) });
       });
 
       proc.on("error", (err) => {
