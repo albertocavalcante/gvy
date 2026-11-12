@@ -71,6 +71,7 @@ run_gradle() {
     set +e
     timeout --signal=TERM --kill-after=10s "${remaining}s" direnv exec . ./gradlew \
         --no-daemon --no-parallel --max-workers=1 --console=plain --warning-mode=all --no-scan --info \
+        -Dorg.gradle.deprecation.trace=true \
         '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
         -PtestJavaVersion=17 "$@" 2>&1 | tee "${output}/${label}.log"
     local statuses=("${PIPESTATUS[@]}")

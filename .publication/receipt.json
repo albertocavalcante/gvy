@@ -1,10 +1,10 @@
 {
   "base": "f5acb2645d81bf146ef575f249164c6f0053d5e1",
-  "tree": "1493263afab5d9da7239910dcfedc9e092dd0292",
-  "patchSha256": "2cf7ee46b66dc599f0e0c3bd93b0ca5b591934a2ac03e5ea46a2f55ced2bdeda",
-  "payloadSha256": "71d45e1c4ea4183c3874701ad420edc7407cf950ad70231425cf86b413c716cb",
-  "patchBytes": 78628,
-  "payloadBytes": 14229,
+  "tree": "723dc26257397a36d8a5148f98874ee838d28b31",
+  "patchSha256": "6b6f316c489f2a4ffec8ef889413e27d8494596afa5dd08d4634bba550e5338d",
+  "payloadSha256": "c84a8e2d340ed8554362d676f8bc1700fbf8ccad0e0bce41aa467d0d555efb08",
+  "patchBytes": 78777,
+  "payloadBytes": 14226,
   "allowedPaths": [
     "tests/BUILD.bazel",
     "tests/build.gradle.kts",
@@ -15,10 +15,13 @@
     "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt"
   ],
   "fixSha256": "780f0887e4b6951eed3f91ebc62106fca8bfb1f633ba6550f5edd3fe80137908",
-  "proofScriptSha256": "56655efc902f795a0aec8df9908a2d86d2f0c416c309073c53f03ce250f59ee3",
+  "proofScriptSha256": "09cdc7ff9fe5de5b4187f4c7eaa2755c2f00db0170ebc275c73f91cf072459d5",
   "checkerSha256": "82267a7d949b4651c407eb0ed72175b46c7fa0075fb335b1752279c10177d1be",
   "purpose": "proof only: formatter delta, exact 40/4 RED, reviewed fix, 40/0 GREEN, lint; no commit or push",
-  "greenTree": "9423d407635cdf47eb0d04216ca9d7335473f515",
+  "greenTree": "76fa9cae52d3028e488aaf4639a0190e25142877",
   "formattingPolicy": "Any formatter change outside either pre-reviewed tree stops before that phase tests; capture delta for independent review and a revised payload.",
-  "timeoutPolicy": "35-minute proof-script deadline, 40-minute proof step; setup steps individually capped. 120-minute job exceeds sum of step timeouts. Forced cancellation may still omit artifacts; missing evidence never passes."
+  "timeoutPolicy": "35-minute proof-script deadline, 40-minute proof step; setup steps individually capped. 120-minute job exceeds sum of step timeouts. Forced cancellation may still omit artifacts; missing evidence never passes.",
+  "priorRun": 43242187576,
+  "priorResult": "lintFix successful, reviewed formatting-only delta, stopped before tests/patch",
+  "deprecationOriginPolicy": "Request same deprecation trace flag as canonical Gradle wrapper; post-run exact ledger audit required"
 }
