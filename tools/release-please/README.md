@@ -58,6 +58,27 @@ This produces titles like:
 - With component: `chore: release vscode-groovy v0.4.8`
 - With scope: `chore(api): release v0.4.8`
 
+## Validate release packages
+
+Run the packaging regression controls without building the JVM project:
+
+```bash
+node --test tools/ci/release-artifacts.test.mjs
+```
+
+The tagged-release builder runs `test` and `:gls:stageEditorServer` before packaging the extension. It passes the exact
+staged JAR through pnpm preparation and VSCE prepublish, with pinned fallback disabled. The verifier checks the source
+commit, clean server provenance, extension version, and byte equality between the standalone and embedded JARs.
+`dist/release.json` records the verified pair's provenance and SHA-256 digests.
+
+Use a clean checkout whose base version matches the requested release. `tools/release.sh build --version vX.Y.Z`
+produces the verified artifacts; `--dry-run` creates placeholders without invoking Gradle or pnpm. The builder restores
+the original `package.json` after either successful packaging or an error.
+
+Published v0.5.4 still contains the mismatched server tracked in
+[#1751](https://github.com/albertocavalcante/gvy/issues/1751). A source fix does not replace that release; publish and
+test a corrected tagged release before updating the Homebrew and direct-download pins.
+
 ## Reference
 
 - [Release Please Config Options](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md#configuration)

@@ -37,8 +37,8 @@ the downloaded file. The extension includes the server; a separate Groovy instal
 The extension is distributed through GitHub Releases. Marketplace and Open VSX publishing are not enabled yet. See the
 [installation guide](docs/installation.md) for editor commands, Java setup, updates, and troubleshooting.
 
-For fixes before the next release, choose a
-[prebuilt nightly or the latest green main](docs/installation.md#development-builds).
+The stable v0.5.4 extension has a [known server limitation](docs/installation.md#stable-release-limitation). For newer
+server fixes, choose a [paired nightly or the latest green main](docs/installation.md#development-builds).
 
 ### Other LSP editors
 

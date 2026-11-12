@@ -378,6 +378,9 @@ jobs:
       - name: Test profiling tools
         run: node --test tools/perf/*.test.mjs
 
+      - name: Test tagged-release packaging
+        run: node --test tools/ci/release-artifacts.test.mjs
+
       - name: 🖥️ Runner Specs
         shell: bash
         run: |
