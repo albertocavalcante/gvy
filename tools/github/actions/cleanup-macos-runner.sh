@@ -91,10 +91,12 @@ echo ""
 
 # Find runner directories using glob expansion
 shopt -s nullglob dotglob
-RUNNER_DIRS=()
-while IFS= read -r runner_dir; do
-    RUNNER_DIRS+=("${runner_dir}")
-done < <(compgen -G "${SEARCH_PATTERN}" || true)
+saved_ifs=${IFS}
+IFS=''
+# Expand the requested glob with splitting disabled so all filename bytes survive.
+# shellcheck disable=SC2206
+RUNNER_DIRS=(${SEARCH_PATTERN})
+IFS=${saved_ifs}
 shopt -u nullglob dotglob
 
 if [[ ${#RUNNER_DIRS[@]} -eq 0 ]]; then
