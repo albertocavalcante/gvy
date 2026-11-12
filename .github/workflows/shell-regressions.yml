@@ -1,0 +1,146 @@
+name: Shell regressions
+
+on:
+  pull_request:
+    paths:
+      - '.devcontainer/post-create.sh'
+      - '.envrc'
+      - '.github/actions/runner-status/runner-status.sh'
+      - '.github/actions/runner-status/runner-status_test.sh'
+      - '.github/workflows/shell-regressions.yml'
+      - 'infra/copybara/rewrite-codenarc/validate-standalone.sh'
+      - 'tools/ci/check-conflict-markers.sh'
+      - 'tools/ci/check-conflict-markers_test.sh'
+      - 'tools/ci/check-large-files.sh'
+      - 'tools/ci/check-large-files_test.sh'
+      - 'tools/codex/sync.sh'
+      - 'tools/devcontainer/build.sh'
+      - 'tools/devcontainer/check-updates.sh'
+      - 'tools/devcontainer/check-updates_test.sh'
+      - 'tools/devcontainer/clean.sh'
+      - 'tools/devcontainer/clean_test.sh'
+      - 'tools/devcontainer/download-vsix.sh'
+      - 'tools/devcontainer/download-vsix_test.sh'
+      - 'tools/docker/factory-reset-docker-macos.sh'
+      - 'tools/docker/factory-reset-docker-macos_test.sh'
+      - 'tools/docker/prune-docker.sh'
+      - 'tools/docker/restart-macos.sh'
+      - 'tools/editor/install-kotlin-lsp'
+      - 'tools/editor/install-kotlin-lsp_test.sh'
+      - 'tools/ext-latest.sh'
+      - 'tools/ext-latest_test.sh'
+      - 'tools/github-issues/generate-xml-prompt.sh'
+      - 'tools/github-issues/generate-xml-prompt_test.sh'
+      - 'tools/github-issues/setup-labels.sh'
+      - 'tools/github-issues/setup-labels_test.sh'
+      - 'tools/github/actions/cleanup-macos-runner.sh'
+      - 'tools/github/actions/cleanup-macos-runner_test.sh'
+      - 'tools/github/actions/pin.sh'
+      - 'tools/github/actions/setup-macos-runner.sh'
+      - 'tools/github/actions/setup-macos-runner_test.sh'
+      - 'tools/jenkins-extractor/extract.sh'
+      - 'tools/jupyter/install-jupyter.sh'
+      - 'tools/jupyter/install-kernel.sh'
+      - 'tools/macos/setup.sh'
+      - 'tools/release.sh'
+      - 'tools/repin'
+      - 'viz/desktop/install-app.sh'
+      - 'viz/desktop/tests/install-app-test.sh'
+  push:
+    branches: [main]
+    paths:
+      - '.devcontainer/post-create.sh'
+      - '.envrc'
+      - '.github/actions/runner-status/runner-status.sh'
+      - '.github/actions/runner-status/runner-status_test.sh'
+      - '.github/workflows/shell-regressions.yml'
+      - 'infra/copybara/rewrite-codenarc/validate-standalone.sh'
+      - 'tools/ci/check-conflict-markers.sh'
+      - 'tools/ci/check-conflict-markers_test.sh'
+      - 'tools/ci/check-large-files.sh'
+      - 'tools/ci/check-large-files_test.sh'
+      - 'tools/codex/sync.sh'
+      - 'tools/devcontainer/build.sh'
+      - 'tools/devcontainer/check-updates.sh'
+      - 'tools/devcontainer/check-updates_test.sh'
+      - 'tools/devcontainer/clean.sh'
+      - 'tools/devcontainer/clean_test.sh'
+      - 'tools/devcontainer/download-vsix.sh'
+      - 'tools/devcontainer/download-vsix_test.sh'
+      - 'tools/docker/factory-reset-docker-macos.sh'
+      - 'tools/docker/factory-reset-docker-macos_test.sh'
+      - 'tools/docker/prune-docker.sh'
+      - 'tools/docker/restart-macos.sh'
+      - 'tools/editor/install-kotlin-lsp'
+      - 'tools/editor/install-kotlin-lsp_test.sh'
+      - 'tools/ext-latest.sh'
+      - 'tools/ext-latest_test.sh'
+      - 'tools/github-issues/generate-xml-prompt.sh'
+      - 'tools/github-issues/generate-xml-prompt_test.sh'
+      - 'tools/github-issues/setup-labels.sh'
+      - 'tools/github-issues/setup-labels_test.sh'
+      - 'tools/github/actions/cleanup-macos-runner.sh'
+      - 'tools/github/actions/cleanup-macos-runner_test.sh'
+      - 'tools/github/actions/pin.sh'
+      - 'tools/github/actions/setup-macos-runner.sh'
+      - 'tools/github/actions/setup-macos-runner_test.sh'
+      - 'tools/jenkins-extractor/extract.sh'
+      - 'tools/jupyter/install-jupyter.sh'
+      - 'tools/jupyter/install-kernel.sh'
+      - 'tools/macos/setup.sh'
+      - 'tools/release.sh'
+      - 'tools/repin'
+      - 'viz/desktop/install-app.sh'
+      - 'viz/desktop/tests/install-app-test.sh'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.head_ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  regression:
+    name: Shell regressions (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Run shell regression suites
+        shell: /bin/bash {0}
+        run: |
+          set -euo pipefail
+          suites=(
+            tools/github-issues/generate-xml-prompt_test.sh
+            tools/docker/factory-reset-docker-macos_test.sh
+            tools/devcontainer/clean_test.sh
+            tools/github/actions/cleanup-macos-runner_test.sh
+            .github/actions/runner-status/runner-status_test.sh
+            tools/devcontainer/download-vsix_test.sh
+            tools/editor/install-kotlin-lsp_test.sh
+            tools/github-issues/setup-labels_test.sh
+            tools/devcontainer/check-updates_test.sh
+            tools/github/actions/setup-macos-runner_test.sh
+            tools/ci/check-conflict-markers_test.sh
+            tools/ci/check-large-files_test.sh
+            tools/ext-latest_test.sh
+            viz/desktop/tests/install-app-test.sh
+          )
+          for suite in "${suites[@]}"; do
+            if [[ "${suite}" == 'viz/desktop/tests/install-app-test.sh' ]] && [[ "${{ runner.os }}" != 'macOS' ]]; then
+              echo "Skipping ${suite}: native macOS exclusive-rename API"
+              continue
+            fi
+            echo "Running ${suite}"
+            /bin/bash "${suite}"
+          done
