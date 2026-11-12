@@ -10,6 +10,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.io.Closeable
 import java.io.IOException
 import java.nio.file.ClosedWatchServiceException
 import java.nio.file.FileSystems
@@ -20,6 +21,7 @@ import java.nio.file.WatchKey
 import java.nio.file.WatchService
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.io.path.exists
 import kotlin.io.path.name
 
@@ -54,14 +56,29 @@ internal class DefaultBuildFileWatcher(
     @Volatile
     private var session: WatchSession? = null
 
-    private class WatchSession(
+    internal class WatchSession(
         val service: WatchService,
         val scope: CoroutineScope,
         val changes: BuildFileChangeDebouncer,
         val keys: ConcurrentHashMap<WatchKey, Path>,
-    ) {
+    ) : Closeable {
+        private val cleanupStarted = AtomicBoolean(false)
+
         @Volatile
         var job: Job? = null
+
+        override fun close() {
+            // Claim cleanup before cancellation can reenter close() through job completion.
+            val ownsCleanup = cleanupStarted.compareAndSet(false, true)
+
+            // The parent owns callbacks even before launch() returns their Job to the coordinator.
+            scope.cancel()
+            if (!ownsCleanup) return
+
+            keys.keys.forEach { it.cancel() }
+            keys.clear()
+            service.close()
+        }
     }
 
     private sealed class PollResult {
@@ -122,14 +139,10 @@ internal class DefaultBuildFileWatcher(
     }
 
     private fun closeSession(stopping: WatchSession) {
-        // The parent owns callbacks even before launch() returns their Job to the coordinator.
-        stopping.scope.cancel()
-        stopping.keys.keys.forEach { it.cancel() }
-        stopping.keys.clear()
-        closeService(stopping.service)
+        closeService(stopping)
     }
 
-    private fun closeService(service: WatchService) {
+    private fun closeService(service: Closeable) {
         try {
             service.close()
         } catch (e: IOException) {

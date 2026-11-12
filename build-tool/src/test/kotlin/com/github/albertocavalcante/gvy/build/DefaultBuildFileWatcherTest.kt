@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.gvy.build
 
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -8,6 +11,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestCoroutineScheduler
@@ -18,7 +22,12 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.nio.file.ClosedWatchServiceException
 import java.nio.file.Path
+import java.nio.file.WatchKey
+import java.nio.file.WatchService
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -232,6 +241,107 @@ class DefaultBuildFileWatcherTest {
         watcher?.startWatching(tempDir)
         assertFalse(watcher?.isWatching() == true)
     }
+
+    @Test
+    fun `session cancellation can reenter cleanup without cancelling a closed service key`() {
+        val service = mockk<WatchService>()
+        val key = mockk<WatchKey>()
+        val closed = AtomicBoolean(false)
+        every { service.close() } answers { closed.set(true) }
+        every { key.cancel() } answers {
+            if (closed.get()) throw ClosedWatchServiceException()
+        }
+        val session = watchSession(service, key)
+        checkNotNull(session.scope.coroutineContext[Job]).invokeOnCompletion { session.close() }
+
+        session.close()
+
+        assertFalse(session.scope.isActive)
+        assertTrue(session.keys.isEmpty())
+        verify(exactly = 1) { key.cancel() }
+        verify(exactly = 1) { service.close() }
+    }
+
+    @Test
+    fun `concurrent session cleanup has one owner for key cancellation and service closure`() {
+        val service = mockk<WatchService>()
+        val key = mockk<WatchKey>()
+        val closed = AtomicBoolean(false)
+        val firstCancellation = AtomicBoolean(true)
+        val cancelling = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        every { service.close() } answers { closed.set(true) }
+        every { key.cancel() } answers {
+            if (firstCancellation.compareAndSet(true, false)) {
+                cancelling.countDown()
+                check(release.await(10, TimeUnit.SECONDS)) { "Key cancellation was not released" }
+            }
+            if (closed.get()) throw ClosedWatchServiceException()
+        }
+        val session = watchSession(service, key)
+        val closing = CompletableFuture.runAsync { session.close() }
+        try {
+            assertTrue(cancelling.await(10, TimeUnit.SECONDS), "Expected cleanup to begin cancelling its key")
+
+            session.close()
+        } finally {
+            release.countDown()
+            closing.get(10, TimeUnit.SECONDS)
+        }
+
+        assertFalse(session.scope.isActive)
+        assertTrue(session.keys.isEmpty())
+        verify(exactly = 1) { key.cancel() }
+        verify(exactly = 1) { service.close() }
+    }
+
+    @Test
+    fun `a competing close cancels callbacks even while the cleanup owner is paused`() {
+        val service = mockk<WatchService>(relaxed = true)
+        val key = mockk<WatchKey>(relaxed = true)
+        val job = SupervisorJob(testScope.coroutineContext[Job])
+        val firstAccess = AtomicBoolean(true)
+        val cancelling = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val scope = object : CoroutineScope {
+            override val coroutineContext: CoroutineContext
+                get() {
+                    if (firstAccess.compareAndSet(true, false)) {
+                        cancelling.countDown()
+                        check(release.await(10, TimeUnit.SECONDS)) { "Scope cancellation was not released" }
+                    }
+                    return job
+                }
+        }
+        val session = watchSession(service, key, scope)
+        val closing = CompletableFuture.runAsync { session.close() }
+        try {
+            assertTrue(cancelling.await(10, TimeUnit.SECONDS), "Expected the owner to begin scope cancellation")
+
+            session.close()
+
+            assertFalse(job.isActive, "Every close must cancel callbacks before returning")
+        } finally {
+            release.countDown()
+            closing.get(10, TimeUnit.SECONDS)
+        }
+
+        verify(exactly = 1) { key.cancel() }
+        verify(exactly = 1) { service.close() }
+    }
+
+    private fun watchSession(
+        service: WatchService,
+        key: WatchKey,
+        scope: CoroutineScope = CoroutineScope(
+            testScope.coroutineContext + SupervisorJob(testScope.coroutineContext[Job]),
+        ),
+    ): DefaultBuildFileWatcher.WatchSession = DefaultBuildFileWatcher.WatchSession(
+        service,
+        scope,
+        BuildFileChangeDebouncer(scope, Dispatchers.IO, 0) { _, _ -> },
+        ConcurrentHashMap(mapOf(key to tempDir)),
+    )
 
     @Test
     fun `a callback can stop its own watcher without waiting on itself`() {
