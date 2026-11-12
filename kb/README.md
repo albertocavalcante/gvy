@@ -15,6 +15,7 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 - Roadmap: `../docs/quality-bar.md` (the Quality Bar; `roadmap/README.md` points there)
 - Technical specs: `specs/INDEX.md`
 - Extension docs: `extension/`
+- Zed adapter: [local feasibility observations and remaining gates](ZED_FEASIBILITY.md)
 - Testing harness notes: `testing/e2e-harness.md`
 - Troubleshooting: `TROUBLESHOOTING.md`
 - Plans and audits: `MODERNIZATION_AUDIT_2026-11.md` (debt inventory, Kotlin idiom plan, RFCs, phased PR plan)

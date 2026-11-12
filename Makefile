@@ -7,10 +7,13 @@ export CARGO_BUILD_JOBS ?= 2
 
 # macOS: Check for JAVA_HOME, trust environment (direnv/sdkman)
 ifeq ($(shell uname),Darwin)
+    # Rust-only adapter checks and the default help do not require Java.
+    ifneq ($(strip $(filter-out zed-check zed-test zed-build zed-format,$(MAKECMDGOALS))),)
     ifndef JAVA_HOME
         $(warning JAVA_HOME is not set!)
         $(warning Run 'sdk env' or 'direnv allow' to activate the environment.)
         $(warning If you haven't set up the tools yet, run: ./tools/macos/setup.sh)
+    endif
     endif
 endif
 

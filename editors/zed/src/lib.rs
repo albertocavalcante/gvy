@@ -31,9 +31,12 @@ fn parse_settings(value: Value) -> Result<Settings, String> {
     if server.keys().any(|key| !key.starts_with("groovy.")) {
         return Err("lsp.gvy.settings.server keys must start with groovy.".into());
     }
-    validate_path("jar_path", &settings.launch.jar_path)?;
+    validate_path(
+        "lsp.gvy.settings.launch.jar_path",
+        &settings.launch.jar_path,
+    )?;
     if let Some(path) = &settings.launch.java_path {
-        validate_path("java_path", path)?;
+        validate_path("lsp.gvy.settings.launch.java_path", path)?;
     }
     if settings
         .launch
@@ -48,25 +51,31 @@ fn parse_settings(value: Value) -> Result<Settings, String> {
 fn validate_path(name: &str, path: &str) -> Result<(), String> {
     // The initial experiment targets macOS; WASM cannot inspect arbitrary host paths.
     if !path.starts_with('/') || path.contains('\0') {
-        return Err(format!(
-            "lsp.gvy.settings.launch.{name} must be an absolute host path without NUL"
-        ));
+        return Err(format!("{name} must be an absolute host path without NUL"));
     }
     Ok(())
 }
 fn launch_command(
     launch: &Launch,
     java_home: Option<&str>,
-    path_java: Option<&str>,
+    which: impl Fn(&str) -> Option<String>,
 ) -> Result<(String, Vec<String>), String> {
-    let java = if let Some(path) = &launch.java_path {
-        path.clone()
+    let (candidate, source) = if let Some(path) = &launch.java_path {
+        (path.clone(), "lsp.gvy.settings.launch.java_path")
     } else if let Some(home) = java_home.filter(|home| !home.is_empty()) {
         validate_path("JAVA_HOME", home)?;
-        format!("{}/bin/java", home.trim_end_matches('/'))
+        (
+            format!("{}/bin/java", home.trim_end_matches('/')),
+            "JAVA_HOME/bin/java",
+        )
     } else {
-        path_java.ok_or("Java not found: set lsp.gvy.settings.launch.java_path or JAVA_HOME, or add Java to the worktree PATH")?.to_owned()
+        ("java".to_owned(), "java on the worktree PATH")
     };
+    let java = which(&candidate).ok_or_else(|| {
+        format!(
+            "Cannot find an executable at {source}; configure Java 17 or newer for this worktree"
+        )
+    })?;
     let mut args = launch
         .jvm_args
         .clone()
@@ -106,8 +115,9 @@ impl Extension for Gvy {
             .iter()
             .find(|(key, _)| key == "JAVA_HOME")
             .map(|(_, value)| value.as_str());
-        let path_java = worktree.which("java");
-        let (command, args) = launch_command(&settings.launch, java_home, path_java.as_deref())?;
+        let (command, args) = launch_command(&settings.launch, java_home, |candidate| {
+            worktree.which(candidate)
+        })?;
         Ok(zed::Command {
             command,
             args,
