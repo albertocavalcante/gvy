@@ -8,6 +8,7 @@ import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.junit.jupiter.api.Test
 import org.opentest4j.AssertionFailedError
 import org.opentest4j.TestAbortedException
+import java.io.IOException
 import java.util.concurrent.CancellationException
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeoutException
@@ -74,6 +75,21 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `matching a cyclic cause chain terminates`() {
+        var causeReads = 0
+        val failure = object : AssertionError("product failed") {
+            override val cause: Throwable?
+                get() {
+                    check(++causeReads <= 3) { "cause chain was not bounded" }
+                    return this
+                }
+        }
+
+        assertThat(classify(xfail.copy(match = "product failed"), failure))
+            .isInstanceOf(XfailDecision.Expected::class.java)
+    }
+
+    @Test
     fun `passing scenario is reported as fixed`() {
         assertThat(classify(failure = null))
             .isEqualTo(XfailDecision.Fixed("gvy#42 appears fixed: remove xfail from demo.yaml"))
@@ -128,6 +144,32 @@ class XfailOutcomeTest {
             assertThatThrownBy { XfailOutcome.run(declaration, file) { throw failure } }
                 .isSameAs(failure)
         }
+    }
+
+    @Test
+    fun `matching assertion with failed cleanup remains a failure`() {
+        val assertion = AssertionFailedError("product failed")
+        val cleanup = IOException("cleanup failed")
+
+        assertThatThrownBy {
+            XfailOutcome.run(xfail.copy(match = "product failed"), file) {
+                AutoCloseable { throw cleanup }.use { throw assertion }
+            }
+        }.isSameAs(assertion)
+        assertThat(assertion.suppressed).containsExactly(cleanup)
+    }
+
+    @Test
+    fun `matching response error with suppressed failure on its cause remains a failure`() {
+        val response = ResponseErrorException(ResponseError(ResponseErrorCode.InternalError, "product failed", null))
+        val cleanup = IOException("cleanup failed")
+        response.addSuppressed(cleanup)
+        val failure = ExecutionException(response)
+
+        assertThatThrownBy {
+            XfailOutcome.run(xfail.copy(match = "product failed"), file) { throw failure }
+        }.isSameAs(failure)
+        assertThat(response.suppressed).containsExactly(cleanup)
     }
 
     @Test
