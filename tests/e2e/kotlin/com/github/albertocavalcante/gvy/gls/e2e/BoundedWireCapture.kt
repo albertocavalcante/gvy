@@ -31,10 +31,7 @@ class WireStreamEvidence internal constructor(
     val losslessSoFar: Boolean get() = gaps.isEmpty() && transferredBytes == retainedBytes.toLong()
 }
 
-class WireEvidenceSnapshot internal constructor(
-    val received: WireStreamEvidence,
-    val transmitted: WireStreamEvidence,
-)
+class WireEvidenceSnapshot internal constructor(val received: WireStreamEvidence, val transmitted: WireStreamEvidence)
 
 /**
  * Passive client-boundary capture. The SDK retains sole responsibility for framing and decoding.
