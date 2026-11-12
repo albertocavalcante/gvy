@@ -1,7 +1,10 @@
 package com.github.groovylsp.bsp.maven.launcher
 
-import com.google.gson.Gson
-import com.google.gson.JsonObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
@@ -21,8 +24,6 @@ class MavenBspConnectionJsonTest {
     @TempDir
     lateinit var tempDir: Path
 
-    private val gson = Gson()
-
     @Nested
     inner class JsonGeneration {
 
@@ -36,7 +37,7 @@ class MavenBspConnectionJsonTest {
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
 
             // Then: Should be valid JSON
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
             assertThat(parsed).isNotNull
         }
 
@@ -48,10 +49,10 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            assertThat(parsed.get("name").asString).isEqualTo("Maven BSP")
+            assertThat(parsed.getValue("name").jsonPrimitive.content).isEqualTo("Maven BSP")
         }
 
         @Test
@@ -62,11 +63,11 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            assertThat(parsed.has("version")).isTrue()
-            assertThat(parsed.get("version").asString).isNotBlank()
+            assertThat(parsed.containsKey("version")).isTrue()
+            assertThat(parsed.getValue("version").jsonPrimitive.contentOrNull).isNotBlank()
         }
 
         @Test
@@ -77,10 +78,10 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            assertThat(parsed.get("bspVersion").asString).isEqualTo("2.1.0")
+            assertThat(parsed.getValue("bspVersion").jsonPrimitive.content).isEqualTo("2.1.0")
         }
 
         @Test
@@ -91,10 +92,10 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            val languages = parsed.getAsJsonArray("languages").map { it.asString }
+            val languages = parsed.getValue("languages").jsonArray.map { it.jsonPrimitive.content }
             assertThat(languages).containsExactlyInAnyOrder("java", "groovy", "kotlin")
         }
     }
@@ -110,10 +111,10 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            val argv = parsed.getAsJsonArray("argv").map { it.asString }
+            val argv = parsed.getValue("argv").jsonArray.map { requireNotNull(it.jsonPrimitive.contentOrNull) }
             assertThat(argv.first()).isEqualTo("java")
         }
 
@@ -125,10 +126,10 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            val argv = parsed.getAsJsonArray("argv").map { it.asString }
+            val argv = parsed.getValue("argv").jsonArray.map { requireNotNull(it.jsonPrimitive.contentOrNull) }
             assertThat(argv).contains("-jar")
             assertThat(argv).contains(serverJarPath.toString())
         }
@@ -141,10 +142,10 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            val argv = parsed.getAsJsonArray("argv").map { it.asString }
+            val argv = parsed.getValue("argv").jsonArray.map { requireNotNull(it.jsonPrimitive.contentOrNull) }
             assertThat(argv.last()).isEqualTo(workspaceRoot.toString())
         }
 
@@ -156,10 +157,10 @@ class MavenBspConnectionJsonTest {
 
             // When
             val json = MavenBspConnectionJson.generate(workspaceRoot, serverJarPath)
-            val parsed = gson.fromJson(json, JsonObject::class.java)
+            val parsed = Json.parseToJsonElement(json).jsonObject
 
             // Then
-            val argv = parsed.getAsJsonArray("argv").map { it.asString }
+            val argv = parsed.getValue("argv").jsonArray.map { requireNotNull(it.jsonPrimitive.contentOrNull) }
             assertThat(argv).anyMatch { it.startsWith("/") || it.matches(Regex("[A-Z]:.*")) }
         }
     }
