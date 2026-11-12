@@ -65,14 +65,20 @@ example; keep the actual file header outside that block.
 
 ## Imported and generated material
 
-| Material                         | Attribution and treatment                                                                              |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| Gradle launchers and wrapper JAR | Retain upstream bytes and notices; adjacent `.license` files record the Gradle authors and Apache-2.0. |
-| `third_party/patches/*.patch`    | Apache-2.0 metadata records upstream Bazel authors and project modifications.                          |
-| `third_party/jvm/BUCK`           | Keep generator-owned contents; associate licensing with the exact path in `REUSE.toml`.                |
-| Groovy logo                      | Use the ASF-published asset and its adjacent provenance record.                                        |
-| Editor grammar                   | Preserve the original project grammar and its Apache-2.0 metadata.                                     |
-| SCIP protocol schema             | Credit the upstream SCIP contributors, retain Apache-2.0, and preserve the imported schema body.       |
+| Material                                                  | Attribution and treatment                                                                                       |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| Gradle launchers and wrapper JAR                          | Retain upstream bytes and notices; adjacent `.license` files record the Gradle authors and Apache-2.0.          |
+| `third_party/patches/*.patch`                             | Apache-2.0 metadata records upstream Bazel authors and project modifications.                                   |
+| `editors/code/patches/@vscode__test-electron@3.1.0.patch` | MIT metadata credits Microsoft and the gvy modifications; the SDK's original runtime source remains attributed. |
+| `third_party/jvm/BUCK`                                    | Keep generator-owned contents; associate licensing with the exact path in `REUSE.toml`.                         |
+| Groovy logo                                               | Use the ASF-published asset and its adjacent provenance record.                                                 |
+| Editor grammar                                            | Preserve the original project grammar and its Apache-2.0 metadata.                                              |
+| SCIP protocol schema                                      | Credit the upstream SCIP contributors, retain Apache-2.0, and preserve the imported schema body.                |
+
+The SDK patch derives from the pinned `@vscode/test-electron` 3.1.0 runtime and preserves its
+[Microsoft MIT license](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/LICENSE).
+Its neighboring `.license` file also credits the project modifications. The approved MIT text remains in the license
+inventory; the patch does not relabel the dependency as project-owned Apache code.
 
 The [SCIP schema](https://github.com/scip-code/scip/blob/4a9a63dc95cd0e35f3bb4d7b43d5d65f747dada8/scip.proto) and its
 [upstream license](https://github.com/scip-code/scip/blob/4a9a63dc95cd0e35f3bb4d7b43d5d65f747dada8/LICENSE) establish

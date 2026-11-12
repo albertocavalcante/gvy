@@ -1,3 +1,6 @@
+<!-- SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors -->
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
 # CI diagnostic accountability
 
 A successful command is insufficient when it emits actionable diagnostics. Agents own the complete CI result for the
@@ -107,6 +110,121 @@ state machine and Git-diff classifier have failure and negative-control tests.
 The Zed gate covers pinned Rust formatting, host tests, host/WASM Clippy and the WASM build. Editor runtime, Java/JAR
 launch, platform and lifecycle validation remain tracked in
 [#1175](https://github.com/albertocavalcante/gvy/issues/1175).
+
+## VS Code provisioning
+
+Extension CI's Linux/macOS/Windows integration and packaged-extension jobs, plus Nightly's Linux integration job, use
+`tools/ci/provision-vscode.mjs`. Provisioning, test-runner invocation and the post-test evidence audit are separate
+steps. The wrapper invokes the existing pinned test CLI once, after unit tests and harness compilation; the packaged
+lane preserves its implementation-navigation selection. An integration-runner marker records that exact invocation,
+including a failed spawn, rather than claiming the editor launched or an assertion executed. The marker is claimed
+atomically before profile preparation and updated through its held descriptor. A preparation failure remains explicitly
+unexecuted, authorizes no editor-log upload and fails readiness; an existing claim stops before profile side effects.
+
+The supported contract is `@vscode/test-electron` 3.1.0 with the declared pnpm patch, `@vscode/test-cli` 0.0.15, its
+SDK-declared `https-proxy-agent` 7.0.6 and VS Code 1.144.0. The shared configuration verifies the manifest floor and
+guards both repository and packaged manifests against extension dependencies, installation options and CLI argument
+drift. The runner passes the exact guarded `.vscode-test.mjs` with the
+[supported `--config` option](https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/args.mts#L16-L21),
+so another discovered configuration cannot replace it. This matters because the
+[CLI dependency-install branch downloads again even with an installed path](https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/platform/desktop.mts#L128-L164).
+Tool or configuration changes must update these controls through review.
+
+The declared SDK patch changes only cold exact stable-version validation from the broad release list to the official
+exact-version/platform/stable endpoint. It retains literal version 1.144.0, the SDK's stable archive URL, reporter,
+archive retry loop and independent transfer checksum. Stable/latest aliases, unreleased and Insiders resolution keep
+their original behavior. A commit selector is unsuitable because the pinned SDK routes it to Insiders. The new request
+uses the SDK's private proxy routing and inherited CA configuration, requires a complete 200 response, and bounds raw
+bytes to 64 KiB with strict UTF-8/JSON and release-identity fields. Its independent absolute deadline cannot be extended
+by incoming data; that deadline, malformed metadata and teardown failures do not qualify for the idle-timeout retry. The
+worker verifies the actual installed SDK source hash before any provisioning network request; the public result
+identifies the normalized pnpm patch hash. Post-install controls exercise the actual patched package on all native
+platforms and Nightly. Both pnpm and Bazel locks require generated, reviewed consistency evidence; the supported
+rules_js 3.1.0 / rules_ts 3.8.3 / rules_nodejs 6.7.3 graph handles pnpm's declared patch format without a second
+compatibility patch.
+
+Only the pinned SDK's exact `TimeoutError` constructor/message before its first `resolvedVersion` event qualifies for
+one outer retry. The
+[fixed-version metadata request precedes that event and the SDK's archive retry loop](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/download.ts#L461-L579).
+DNS, unknown errors/phases, archive/checksum failures, verification errors, incomplete evidence and assertion failures
+never qualify. SDK archive attempts remain inside their original loop and are not retried by this controller.
+
+The provisioning orchestration has a shared 180-second monotonic deadline, covering worker startup, metadata, archive
+attempts, verification, one five-second backoff and owned-child-tree cleanup. Each worker receives at most 80 seconds,
+with at most ten seconds of its remaining budget shared by exact-release metadata and the CLI probe, and two seconds
+reserved for termination. Accepted cold hosted provisioning previously took about 10–20 seconds; these ceilings allow
+headroom while bounding slow or dripping responses. The SDK's 15-second idle timeout remains unchanged and
+[resets on incoming data](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/request.ts#L21-L84).
+Neither that timeout nor Mocha's existing 30-second assertion timeout is raised. POSIX termination addresses only the
+new owned process group and probes its disappearance even after an unexpected worker exit. An unproven cleanup fails.
+Windows uses the live owned worker PID's tree with bounded `taskkill /T /F`. If that worker exits unexpectedly first,
+the controller cannot prove descendant cleanup: it reports `cleanup-incomplete`, forbids retry and blocks integration.
+The same uncertainty applies when a failed synchronous Windows probe loses its intermediate command wrapper:
+[Node can terminate that child on timeout or buffer overflow](https://nodejs.org/docs/latest-v24.x/api/child_process.html#child_processspawnsynccommand-args-options),
+and
+[Windows parent termination does not terminate its children](https://learn.microsoft.com/en-us/windows/win32/procthread/terminating-a-process).
+A separate worker scope proof remains false and cannot be upgraded by successful parent `taskkill`; a runtime-probe
+phase without a valid final proof also fails closed. Capture completeness is a separate field. The adapter does not
+claim Windows job-object containment. These limits remain owned in #1882 and have native wrapper/grandchild controls.
+
+Every attempt has a fresh owned cache; an unexpected cache hit fails. Expected build identity comes from the fixed
+official exact-version/platform/stable metadata endpoint. The
+[official VS Code CLI maps that response's `version` to `Release.commit`](https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/cli/src/update_service.rs#L75-L109).
+The metadata projection requires matching `name` and `productVersion`, a commit and advertised archive SHA-256. The
+installed CLI must report that exact version, commit and host architecture;
+[its output uses `product.version` and `product.commit`](https://github.com/microsoft/vscode/blob/2c33b50b16c472efe58357d1d2a8a5414bc23fbf/src/vs/code/node/cli.ts#L104-L106).
+The
+[supported executable-to-CLI resolver](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/util.ts#L332-L394)
+handles platform layout; the verifier does not guess macOS executable names or Windows product directories. This
+verifies runtime identity against official release metadata. The SDK's separate transfer validation does not expose its
+actual checksum through its public reporter, so the advertised metadata digest is not proof of equality to this SDK
+transfer or an independent build-integrity attestation.
+
+The SDK's `newInstallComplete.commitHash` instead reads the
+[`x-source-commit` response header](https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/download.ts#L335-L341).
+It remains informational and cannot approve runtime identity. Candidate `0cbad583` failed verification before
+integration in [Extension Validate](https://github.com/albertocavalcante/gvy/actions/runs/43265880210/job/131349988335)
+and [Nightly](https://github.com/albertocavalcante/gvy/actions/runs/43265879993/job/131349349730). That candidate did
+not retain the compared commit/architecture values; later API observations cannot reconstruct them. Future reports
+retain safe typed expected/observed identities separately from approved delivery. Candidate `33dc06444` subsequently
+exhausted both allowed idle timeouts before resolution in Extension Validate while its independent Nightly job resolved
+in 134 ms, provisioned in 8.052 seconds without retry and passed integration. These are distinct retained outcomes;
+neither a global outage nor universal availability is established.
+
+The extra metadata request has a 64 KiB raw-body bound, strict UTF-8/JSON projection, fixed origin and no redirects or
+vendor-provided URL fetch. Its deadline includes DNS/proxy/body activity, including dripping responses, within the
+shared verification budget. Metadata errors have a distinct safe class and never qualify for the SDK retry. Private
+`npm_config_https_proxy` overrides `npm_config_proxy`, matching the SDK; the adapter resolves and verifies the SDK's
+declared public proxy-agent dependency. Invalid or unavailable configured routing fails before a direct request.
+`NODE_EXTRA_CA_CERTS` remains inherited at worker startup, with no TLS CA override. Requests, responses and owned agents
+are destroyed on every terminal path; proxy credentials, raw URLs and arbitrary response fields are never projected.
+
+The public artifact contains one audited allowlisted JSON projection: source/tested SHA, repository/workflow/job/run and
+attempt/matrix identity, invocation UUID, exact tool/editor identity, phases, numeric timing, outcomes, cleanup and
+capture completeness, and private stream/error byte counts and SHA-256 hashes. Compact report JSON is limited to 32 KiB.
+Unknown fields, stale identity, noncanonical receipts, malformed phases, links and unexpected publication files block
+upload. Windows uses the existing compiled no-follow evidence reader before provisioning controls and the post-test
+audit. Its native link/replacement negative controls run on the hosted Windows lane.
+
+Raw SDK errors and probe output stay outside the artifact directory, with at most 128 KiB combined per attempt. Capture
+overflow stops the worker and fails explicitly; unreported output, including unknown warnings, also fails. The original
+bytes and each recorded error hash remain available in private job captures; they are never substituted for the audited
+artifact. Ordinary SDK errors and integration output still stream to GitHub console logs under runner masking, which
+does not make arbitrary output safe. Never dump environment variables or place credentials in process arguments.
+Artifact projection does not suppress runtime diagnostics.
+
+A failed preflight records integration as unexecuted; editor logs are not expected in that phase. Once the integration
+runner is invoked, the audit requires editor log files even when assertions fail. Immediately before invocation, a
+bounded no-link inventory quarantines any previous log directory into the invocation-private root without copying its
+bytes, then creates a fresh empty log directory. Rename, permission and cross-volume failures stop before invocation.
+The context-bound marker and public result record that preparation and the prior-file count, so probe or earlier logs
+cannot satisfy the current invocation. The post-test audit again requires a canonical directory and parent, rejecting
+regular-file or linked replacements without reading their bytes. Extension CI's existing failed-editor log upload also
+requires the audit's positive nonempty inventory flag; a rejected replacement cannot select a raw upload path. Missing
+required logs still fail the audit. The audit fails closed on missing or stale invocation evidence and never changes an
+original integration failure into success. All three native platforms, the packaged test lane and Nightly remain
+required applicable hosted checks. Original timeout failures and ownership remain in
+[#1882](https://github.com/albertocavalcante/gvy/issues/1882); successful recovery does not retire the debt.
 
 ## Bazel gate and build observability
 

@@ -1,0 +1,120 @@
+diff --git a/out/download.js b/out/download.js
+index 37dd93082..d673d3f46 100644
+--- a/out/download.js
++++ b/out/download.js
+@@ -43,6 +43,8 @@ exports.download = download;
+ exports.downloadAndUnzipVSCode = downloadAndUnzipVSCode;
+ const cp = __importStar(require("child_process"));
+ const fs = __importStar(require("fs"));
++const https = __importStar(require("https"));
++const { performance } = require("perf_hooks");
+ const os_1 = require("os");
+ const path = __importStar(require("path"));
+ const semver = __importStar(require("semver"));
+@@ -139,11 +141,96 @@ async function fallbackToLocalEntries(cachePath, platform, fromError) {
+     }
+     throw fromError;
+ }
+-async function isValidVersion(version, timeout) {
++// #1882: Validate a fixed stable release without consulting the global list.
++// The SDK's stable archive URL, reporter and checksum path remain unchanged.
++async function isValidExactStableVersion(version, platform, timeout) {
++    const platforms = new Set(['darwin', 'darwin-arm64', 'win32-x64-archive', 'win32-arm64-archive', 'linux-x64', 'linux-arm64', 'linux-armhf']);
++    if (!/^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}$/.test(version) || !platforms.has(platform) || !Number.isSafeInteger(timeout) || timeout < 1) {
++        return false;
++    }
++    const api = `https://update.code.visualstudio.com/api/versions/${version}/${platform}/stable`;
++    const deadline = performance.now() + timeout;
++    const value = await new Promise((resolve, reject) => {
++        const ctrl = new request.TimeoutController(timeout);
++        let outgoing, incoming, deadlineTimer, settled = false, size = 0;
++        let chunks = [];
++        const finish = (error, value) => {
++            if (settled) return;
++            settled = true;
++            ctrl.dispose();
++            clearTimeout(deadlineTimer);
++            ctrl.signal.removeEventListener('abort', idleTimeout);
++            const cleanupErrors = [];
++            for (const stream of [incoming, outgoing]) {
++                try { stream?.destroy(); } catch (failure) { cleanupErrors.push(failure); }
++            }
++            chunks = [];
++            if (cleanupErrors.length) {
++                const errors = [error, ...cleanupErrors].filter(Boolean);
++                const failure = new AggregateError(errors, 'VS Code exact stable metadata cleanup failed');
++                failure.stack += '\n' + errors.map(error => error instanceof Error ? error.stack : String(error)).join('\n');
++                reject(failure);
++            }
++            else if (error) reject(error);
++            else resolve(value);
++        };
++        const failure = message => new Error(`VS Code exact stable metadata ${message}`);
++        const remaining = () => {
++            if (performance.now() < deadline) return true;
++            finish(failure('deadline exceeded'));
++            return false;
++        };
++        const idleTimeout = () => finish(new request.TimeoutError(timeout));
++        ctrl.signal.addEventListener('abort', idleTimeout, { once: true });
++        deadlineTimer = setTimeout(() => finish(failure('deadline exceeded')), timeout);
++        try {
++            outgoing = https.request(api, { ...(0, util_2.urlToOptions)(api), method: 'GET', maxHeaderSize: 16 * 1024 }, response => {
++                response.on('error', error => finish(error));
++                if (settled) { response.destroy(); return; }
++                incoming = response;
++                if (!remaining()) return;
++                if (response.statusCode !== 200) { finish(failure('response status')); return; }
++                response.on('aborted', () => finish(failure('response aborted')));
++                response.on('close', () => { if (!settled) finish(failure('response incomplete')); });
++                response.on('data', chunk => {
++                    if (settled || !remaining()) return;
++                    ctrl.touch();
++                    if (!(chunk instanceof Uint8Array)) { finish(failure('invalid bytes')); return; }
++                    size += chunk.byteLength;
++                    if (size > 64 * 1024) { finish(failure('body too large')); return; }
++                    chunks.push(Buffer.from(chunk));
++                });
++                response.on('end', () => {
++                    if (settled || !remaining()) return;
++                    if (response.complete !== true) { finish(failure('response incomplete')); return; }
++                    try {
++                        const text = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(Buffer.concat(chunks, size));
++                        const metadata = JSON.parse(text);
++                        if (remaining()) finish(null, metadata);
++                    } catch (error) { finish(error); }
++                });
++            });
++            outgoing.on('error', error => finish(error));
++            if (!settled && remaining()) outgoing.end();
++            else outgoing.destroy();
++        } catch (error) { finish(error); }
++    });
++    return value !== null && typeof value === 'object' && !Array.isArray(value) &&
++        ['name', 'productVersion', 'version', 'sha256hash'].every(key => Object.hasOwn(value, key)) &&
++        value.name === version && value.productVersion === version &&
++        typeof value.version === 'string' && /^[a-f0-9]{40}$/.test(value.version) &&
++        typeof value.sha256hash === 'string' && /^[a-f0-9]{64}$/.test(value.sha256hash);
++}
++
++
++async function isValidVersion(version, timeout, platform) {
+     if (version.id === 'insiders' || version.id === 'stable' || version.isCommit) {
+         return true;
+     }
+     if (version.isStable) {
++        if (version.isReleased) {
++            return isValidExactStableVersion(version.id, platform, timeout);
++        }
+         const stableVersionNumbers = await (0, exports.fetchStableVersions)(version.isReleased, timeout);
+         if (stableVersionNumbers.includes(version.id)) {
+             return true;
+@@ -340,7 +427,7 @@ async function download(options = {}) {
+          * Only validate version against server when no local download that matches version exists
+          */
+         if (!fs.existsSync(path.resolve(cachePath, makeDownloadDirName(platform, inputVersion)))) {
+-            if (!(await isValidVersion(inputVersion, timeout))) {
++            if (!(await isValidVersion(inputVersion, timeout, platform))) {
+                 throw Error(`Invalid version ${inputVersion.id}`);
+             }
+         }

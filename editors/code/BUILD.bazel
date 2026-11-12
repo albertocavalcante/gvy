@@ -15,7 +15,9 @@ npm_link_all_packages(name = "node_modules")
 # Export configuration files for reference by other targets
 exports_files([
     "package.json",
+    "patches/@vscode__test-electron@3.1.0.patch",
     "pnpm-lock.yaml",
+    "pnpm-workspace.yaml",
     "eslint.config.mjs",
     "tsconfig.json",
     "language-configuration.json",
