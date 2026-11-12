@@ -468,7 +468,7 @@ class GroovySemanticsTest {
         }
         val registry = TypeCalculatorRegistry.builder().register(calculator).build()
         val semantics = GroovySemantics(stubSolver, registry, lookup)
-        val module = parse("def x = 1")
+        val module = parse("class Holder { def run() { def x = 1 } }")
         assertThrows(IllegalStateException::class.java) { semantics.getContext(module) }
         assertEquals(3L, version.get())
     }
