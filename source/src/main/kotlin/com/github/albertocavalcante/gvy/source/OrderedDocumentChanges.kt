@@ -1,14 +1,14 @@
 package com.github.albertocavalcante.gvy.source
 
-/** Zero-based line and UTF-16 code-unit position in a document. */
-public data class Utf16Position(val line: Int, val character: Int)
+/** Raw zero-based line and UTF-16 code-unit coordinates; invalid values are reported at batch application. */
+public data class RawUtf16Position(val line: Int, val character: Int)
 
 /** A half-open range whose positions refer to the same document state. */
-public data class Utf16Range(val start: Utf16Position, val end: Utf16Position)
+public data class RawUtf16Range(val start: RawUtf16Position, val endExclusive: RawUtf16Position)
 
 /** One incoming change; each range addresses the result of the preceding change. */
 public sealed interface DocumentChange {
-    public data class Replace(val range: Utf16Range, val text: String) : DocumentChange
+    public data class Replace(val range: RawUtf16Range, val text: String) : DocumentChange
     public data class ReplaceAll(val text: String) : DocumentChange
 }
 
@@ -57,12 +57,12 @@ private fun applyReplacement(text: String, change: DocumentChange.Replace, index
 
     val lines = Utf16LineIndex(text)
     val startLength = lines.lineLength(range.start.line)
-    val endLength = lines.lineLength(range.end.line)
+    val endLength = lines.lineLength(range.endExclusive.line)
     if (startLength == null || endLength == null) {
         return DocumentChangeResult.Rejected(index, DocumentChangeRejectionReason.LINE_OUT_OF_BOUNDS)
     }
     val start = lines.lineStart(range.start.line) + minOf(range.start.character, startLength)
-    val end = lines.lineStart(range.end.line) + minOf(range.end.character, endLength)
+    val end = lines.lineStart(range.endExclusive.line) + minOf(range.endExclusive.character, endLength)
     val length = checkedDocumentChangeLength(text.length, end - start, change.text.length)
     return if (length == null) {
         DocumentChangeResult.Rejected(index, DocumentChangeRejectionReason.OUTPUT_TOO_LARGE)
@@ -77,11 +77,12 @@ private fun applyReplacement(text: String, change: DocumentChange.Replace, index
     }
 }
 
-private fun invalidRangeReason(range: Utf16Range): DocumentChangeRejectionReason? = when {
-    range.start.line < 0 || range.start.character < 0 || range.end.line < 0 || range.end.character < 0 ->
+private fun invalidRangeReason(range: RawUtf16Range): DocumentChangeRejectionReason? = when {
+    range.start.line < 0 || range.start.character < 0 ||
+        range.endExclusive.line < 0 || range.endExclusive.character < 0 ->
         DocumentChangeRejectionReason.NEGATIVE_POSITION
-    range.start.line > range.end.line ||
-        (range.start.line == range.end.line && range.start.character > range.end.character) ->
+    range.start.line > range.endExclusive.line ||
+        (range.start.line == range.endExclusive.line && range.start.character > range.endExclusive.character) ->
         DocumentChangeRejectionReason.REVERSED_RANGE
     else -> null
 }
