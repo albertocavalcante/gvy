@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { createHash } from 'node:crypto';
 
 const CONTEXT_LIMIT = 32 * 1024;
