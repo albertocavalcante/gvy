@@ -14,7 +14,9 @@ import java.util.Locale
 import java.util.jar.Attributes
 import java.util.jar.JarFile
 import java.util.jar.Manifest
+import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
+import java.util.zip.ZipOutputStream
 import javax.inject.Inject
 
 plugins {
@@ -490,21 +492,15 @@ listOf(tasks.jar, tasks.shadowJar).forEach { archive ->
 }
 
 // Keep dependency notices separate: Shadow otherwise drops repeated META-INF/LICENSE paths.
-abstract class StageDependencyNotices : DefaultTask() {
-    @get:InputFiles
-    @get:PathSensitive(PathSensitivity.NAME_ONLY)
-    abstract val archives: ConfigurableFileCollection
-
-    @get:OutputDirectory
-    abstract val outputDirectory: DirectoryProperty
-
-    @TaskAction
-    fun stage() {
-        val output = outputDirectory.get().asFile
+object DependencyNoticeStaging {
+    fun stage(
+        archives: Collection<File>,
+        output: File,
+    ) {
         check(!output.exists() || output.deleteRecursively()) { "Cannot clear notice directory: $output" }
         check(output.mkdirs() || output.isDirectory) { "Cannot create notice directory: $output" }
         val index = sortedSetOf<String>()
-        for (archive in archives.files.sortedBy { it.name }) {
+        for (archive in archives.sortedBy { it.name }) {
             require(archive.isFile && archive.name.endsWith(".jar", ignoreCase = true)) {
                 "Unsupported runtime artifact for notice preservation: $archive"
             }
@@ -540,7 +536,9 @@ abstract class StageDependencyNotices : DefaultTask() {
                     require(parts.none { it.isEmpty() || it == "." || it == ".." || '\\' in it || ':' in it }) {
                         "Unsafe notice path in ${archive.name}: ${entry.name}"
                     }
-                    check(seen.add(entry.name.lowercase(Locale.ROOT))) { "Duplicate notice path in ${archive.name}: ${entry.name}" }
+                    check(seen.add(entry.name.lowercase(Locale.ROOT))) {
+                    "Duplicate notice path in ${archive.name}: ${entry.name}"
+                }
                     val destination = output.resolve("$artifact/$hash/${entry.name}")
                     check(destination.parentFile.mkdirs() || destination.parentFile.isDirectory)
                     zip.getInputStream(entry).use { input -> destination.outputStream().use { input.copyTo(it) } }
@@ -551,9 +549,146 @@ abstract class StageDependencyNotices : DefaultTask() {
     }
 }
 
+abstract class StageDependencyNotices : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val archives: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun stage() {
+        DependencyNoticeStaging.stage(archives.files, outputDirectory.get().asFile)
+    }
+}
+
 val stageDependencyNotices = tasks.register<StageDependencyNotices>("stageDependencyNotices") {
     archives.from(configurations.named("runtimeClasspath"))
     outputDirectory.set(layout.buildDirectory.dir("generated/dependency-notices"))
+}
+
+abstract class VerifyDependencyNotices : DefaultTask() {
+    @TaskAction
+    fun verify() {
+        val root = temporaryDir.resolve("fixtures")
+        check(!root.exists() || root.deleteRecursively())
+        check(root.mkdirs())
+        fun jar(
+            directory: String,
+            entries: List<Pair<String, String>>,
+        ): File {
+            val file = root.resolve("$directory/dependency.jar")
+            check(file.parentFile.mkdirs() || file.parentFile.isDirectory)
+            ZipOutputStream(file.outputStream()).use { zip ->
+                for ((name, contents) in entries) {
+                    zip.putNextEntry(ZipEntry(name).apply { time = 0L })
+                    zip.write(contents.toByteArray(Charsets.UTF_8))
+                    zip.closeEntry()
+                }
+            }
+            return file
+        }
+        fun files(directory: File): Map<String, List<Byte>> =
+            directory.walkTopDown().filter { it.isFile }.associate {
+                it.relativeTo(directory).invariantSeparatorsPath to it.readBytes().toList()
+            }.toSortedMap()
+        fun expectFailure(
+            archive: File,
+            message: String,
+        ) {
+            val failure =
+                runCatching { DependencyNoticeStaging.stage(listOf(archive), root.resolve("rejected")) }.exceptionOrNull()
+            check(failure != null && failure.message.orEmpty().contains(message, ignoreCase = true)) {
+                "Expected $message failure for ${archive.name}, got $failure"
+            }
+        }
+
+        val first =
+            jar(
+                "first",
+                listOf("META-INF/LICENSE" to "first", "org/example/NOTICE" to "nested", "LICENSE.class" to "bytecode"),
+            )
+        val second = jar("second", listOf("META-INF/LICENSE" to "second", "about_files/LICENSE-2.0.txt" to "about"))
+        val output = root.resolve("output")
+        DependencyNoticeStaging.stage(listOf(first, second), output)
+        val snapshot = files(output)
+        val licenses =
+            snapshot.filterKeys { it.endsWith("/META-INF/LICENSE") }.values
+                .map { it.toByteArray().toString(Charsets.UTF_8) }
+                .toSet()
+        check(licenses == setOf("first", "second")) { "Matching names must preserve both archives" }
+        check(snapshot.keys.any { it.endsWith("/org/example/NOTICE") })
+        check(snapshot.keys.any { it.endsWith("/about_files/LICENSE-2.0.txt") })
+        check(snapshot.keys.none { it.endsWith("LICENSE.class") })
+        val index = output.resolve("INDEX.txt").readLines()
+        check(index.size == 2 && index.toSet().size == 2)
+        check(index.all { line ->
+            val fields = line.split('\t')
+            fields.size == 3 && fields[1] == "dependency.jar" &&
+                fields[2].startsWith("SHA-256:") && output.resolve(fields[0]).isDirectory
+        }) { "The index must identify both namespaced archives" }
+        output.resolve("stale").writeText("stale")
+        DependencyNoticeStaging.stage(listOf(second, first), output)
+        check(snapshot == files(output)) { "Staging must be deterministic and remove stale files" }
+
+        expectFailure(jar("traversal", listOf("../LICENSE" to "unsafe")), "unsafe notice path")
+        expectFailure(
+            jar("duplicate", listOf("META-INF/LICENSE" to "one", "META-INF/license" to "two")),
+            "duplicate notice path",
+        )
+        val corrupt = root.resolve("corrupt.jar").apply { writeText("not a zip") }
+        val failure =
+            runCatching { DependencyNoticeStaging.stage(listOf(corrupt), root.resolve("rejected")) }.exceptionOrNull()
+        check(failure is java.util.zip.ZipException) { "Corrupt archives must fail: $failure" }
+    }
+}
+
+abstract class VerifyShadowDependencyNotices : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.NAME_ONLY)
+    abstract val archives: ConfigurableFileCollection
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val shadowJar: RegularFileProperty
+
+    @get:InputFile
+    @get:PathSensitive(PathSensitivity.NONE)
+    abstract val projectLicense: RegularFileProperty
+
+    @TaskAction
+    fun verify() {
+        val expected = temporaryDir.resolve("expected-notices")
+        DependencyNoticeStaging.stage(archives.files, expected)
+        val expectedFiles = expected.walkTopDown().filter { it.isFile }.associate {
+            "META-INF/third-party/" + it.relativeTo(expected).invariantSeparatorsPath to it
+        }
+        ZipFile(shadowJar.get().asFile).use { zip ->
+            val entries = zip.entries().toList().filterNot { it.isDirectory }
+            val notices = entries.filter { it.name.startsWith("META-INF/third-party/") }
+            check(notices.map { it.name }.toSet().size == notices.size) { "Duplicate shaded notice entries" }
+            check(notices.map { it.name }.toSet() == expectedFiles.keys) { "Shaded notice paths differ from runtime inputs" }
+            for (entry in notices) {
+                val bytes = zip.getInputStream(entry).use { it.readBytes() }
+                check(bytes.contentEquals(expectedFiles.getValue(entry.name).readBytes())) {
+                    "Shaded notice differs: ${entry.name}"
+                }
+            }
+            val projectEntry = zip.getEntry("META-INF/gvy/LICENSE") ?: error("Project license missing from shaded JAR")
+            check(zip.getInputStream(projectEntry).use { it.readBytes() }.contentEquals(projectLicense.get().asFile.readBytes()))
+        }
+    }
+}
+
+val verifyDependencyNotices = tasks.register<VerifyDependencyNotices>("verifyDependencyNotices")
+val verifyShadowDependencyNotices = tasks.register<VerifyShadowDependencyNotices>("verifyShadowDependencyNotices") {
+    archives.from(configurations.named("runtimeClasspath"))
+    shadowJar.set(tasks.shadowJar.flatMap { it.archiveFile })
+    projectLicense.set(rootProject.layout.projectDirectory.file("LICENSE"))
+}
+tasks.named("check") {
+    dependsOn(verifyDependencyNotices, verifyShadowDependencyNotices)
 }
 
 tasks.shadowJar {
