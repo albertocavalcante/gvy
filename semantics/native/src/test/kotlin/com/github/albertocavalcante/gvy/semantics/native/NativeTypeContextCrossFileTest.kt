@@ -496,9 +496,6 @@ class NativeTypeContextCrossFileTest {
 
     private fun getTypeContext(module: ModuleNode, semantics: GroovySemantics): NativeTypeContext =
         checkNotNull(semantics.getContext(module))
- catch (e: NoSuchFieldException) {
-        throw IllegalStateException("Could not access contextCache field", e)
-    }
 
     // Helper function to create a context with workspace lookup
     private fun getTypeContextWithWorkspace(
