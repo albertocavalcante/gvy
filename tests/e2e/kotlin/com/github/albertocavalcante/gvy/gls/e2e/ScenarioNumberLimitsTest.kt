@@ -14,7 +14,8 @@ class ScenarioNumberLimitsTest {
     @TestFactory
     fun `unsupported numeric comparison scales fail explicitly rather than silently mismatch`(): List<DynamicTest> =
         listOf(ExpectationType.GTE, ExpectationType.LTE).flatMap { type ->
-            listOf("1e2147483648" to "1e2147483648", "1e2147483648" to "1", "1" to "1e2147483648")
+            // JDK 21 accepts exponent 2147483648 at Int.MIN_VALUE scale; 2147483649 is outside both JDK domains.
+            listOf("1e2147483649" to "1e2147483649", "1e2147483649" to "1", "1" to "1e2147483649")
                 .map { (actual, expected) ->
                     dynamicTest("$actual $type $expected") {
                         assertThatThrownBy { matches(actual, expected, type) }
@@ -28,7 +29,7 @@ class ScenarioNumberLimitsTest {
     fun `nonnumeric operands reject the comparison before checking the other operand scale`(): List<DynamicTest> =
         listOf(ExpectationType.GTE, ExpectationType.LTE).flatMap { type ->
             listOf("\"7\"", "true", "null").flatMap { nonnumeric ->
-                listOf(nonnumeric to "1e2147483648", "1e2147483648" to nonnumeric).map { (actual, expected) ->
+                listOf(nonnumeric to "1e2147483649", "1e2147483649" to nonnumeric).map { (actual, expected) ->
                     dynamicTest("$actual $type $expected") { assertThat(matches(actual, expected, type)).isFalse() }
                 }
             }
@@ -52,7 +53,7 @@ class ScenarioNumberLimitsTest {
     fun `YAML decimals outside the supported scale range fail parsing without rounding`() {
         assertThatThrownBy {
             JacksonScenarioParser().parseScenarioDefinition(
-                "name: huge-exponent\nsteps:\n  - request: {method: test/numeric, params: 1e2147483648}",
+                "name: huge-exponent\nsteps:\n  - request: {method: test/numeric, params: 1e2147483649}",
             )
         }.hasMessageContaining("Failed to parse").hasStackTraceContaining("BigDecimal")
     }

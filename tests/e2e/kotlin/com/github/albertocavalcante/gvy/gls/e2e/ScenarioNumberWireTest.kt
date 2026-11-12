@@ -13,6 +13,7 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.eclipse.lsp4j.jsonrpc.Endpoint
 import org.eclipse.lsp4j.jsonrpc.MessageConsumer
 import org.eclipse.lsp4j.jsonrpc.RemoteEndpoint
@@ -92,8 +93,8 @@ class ScenarioNumberWireTest {
 
     @Test
     fun `raw huge exponent numbers remain available to wire structural equality and field extraction`() {
-        val value = Json.parseToJsonElement("1e2147483648")
-        val params = Json.parseToJsonElement("""{"command":"echo","arguments":[{"number":1e2147483648}]}""")
+        val value = Json.parseToJsonElement("1e2147483649")
+        val params = Json.parseToJsonElement("""{"command":"echo","arguments":[{"number":1e2147483649}]}""")
         val wire = NumericWireCapture(root, ScenarioDefinition(Scenario(name = "huge-exponent", steps = emptyList())))
 
         SendRequestStepExecutor().execute(ScenarioStep.SendRequest("workspace/executeCommand", params), wire.context)
@@ -104,6 +105,25 @@ class ScenarioNumberWireTest {
         assertThat(wire.context.evaluateCheck(response, equality)).isTrue()
         wire.context.setVariable("echo", response)
         assertThat(wire.context.interpolateNode(JsonPrimitive("{{echo.number}}"))).isEqualTo(value)
+    }
+
+    @TestFactory
+    fun `numeric assertion failures render exact values without floating point encoding`(): List<DynamicTest> = listOf(
+        "123456789012345678901234567890" to "123456789012345678901234567890",
+        "0.123456789012345678901234567890" to "0.123456789012345678901234567890",
+        "1e400" to "1E+400",
+        "1e2147483649" to "1e2147483649",
+    ).map { (literal, rendered) ->
+        dynamicTest(literal) {
+            val wire =
+                NumericWireCapture(root, ScenarioDefinition(Scenario(name = "numeric-mismatch", steps = emptyList())))
+            val response = Json.parseToJsonElement("""{"number":$literal}""")
+            val mismatch = JsonCheck("$.number", JsonExpectation(ExpectationType.EQUALS, JsonPrimitive(0)))
+
+            assertThatThrownBy { wire.context.evaluateCheck(response, mismatch) }
+                .isInstanceOf(AssertionError::class.java)
+                .hasMessageContaining("Actual: $rendered")
+        }
     }
 }
 

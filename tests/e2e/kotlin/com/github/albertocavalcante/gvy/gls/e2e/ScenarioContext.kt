@@ -280,7 +280,7 @@ class ScenarioContext internal constructor(
                 val actualDescription = if (!pathExists) {
                     "path not found"
                 } else {
-                    json.encodeToString(JsonElement.serializer(), actualNode)
+                    actualNode.toString()
                 }
                 throw AssertionError("$messagePrefix. Actual: $actualDescription")
             }
