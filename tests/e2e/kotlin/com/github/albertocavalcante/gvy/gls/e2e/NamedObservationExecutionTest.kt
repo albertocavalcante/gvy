@@ -44,10 +44,14 @@ class NamedObservationExecutionTest {
         )
         val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(checks))
 
-        assertThat(outcome.observed).containsExactly(
-            ObservationResult("known", ObservationStatus.KnownFailure(42)),
-            ObservationResult("later", ObservationStatus.Passed),
-        )
+        assertThat(outcome.observed.map { it.id }).containsExactly("known", "later")
+        val known = outcome.observed.first().status as ObservationStatus.KnownFailure
+        assertThat(known.issue).isEqualTo(42)
+        assertThat(known.reason).isEqualTo("known")
+        assertThat(known.match).isEqualTo("missing")
+        assertThat(known.kind).isEqualTo(ScenarioFailureKind.Product)
+        assertThat(known.evidence?.text).contains("missing")
+        assertThat(outcome.observed.last().status).isEqualTo(ObservationStatus.Passed)
         assertThat(outcome.blocked).isEmpty()
         assertThat(outcome.cleanup).isEqualTo(CleanupOutcome.Succeeded)
     }
@@ -224,7 +228,8 @@ class NamedObservationExecutionTest {
 
         val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(checks))
 
-        assertThat(outcome.observed).containsExactly(ObservationResult("known", ObservationStatus.KnownFailure(42)))
+        assertThat(outcome.observed.map { it.id }).containsExactly("known")
+        assertThat((outcome.observed.single().status as ObservationStatus.KnownFailure).issue).isEqualTo(42)
         assertThat(outcome.cleanup).isInstanceOf(CleanupOutcome.Failed::class.java)
         assertThat((outcome.cleanup as CleanupOutcome.Failed).confirmed).isTrue()
         assertThat(outcome.isSuccessful).isFalse()

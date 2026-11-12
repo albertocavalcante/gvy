@@ -36,6 +36,7 @@ spock = "2.5-groovy-4.0"
 jackson = "2.20.1"
 jqwik = "1.9.3"
 jsonPath = "2.10.0"
+re2j = "1.8"
 classgraph = "4.8.200"
 asm = "9.9.1"
 dependencyAnalysis = "3.5.1"
@@ -53,6 +54,7 @@ clikt = "5.1.0"
 mordant = "3.0.2"
 
 [libraries]
+re2j = { module = "com.google.re2j:re2j", version.ref = "re2j" }
 # Plugins (libraries for plugins block)
 detekt-formatting = { module = "io.gitlab.arturbosch.detekt:detekt-formatting", version.ref = "detekt" }
 

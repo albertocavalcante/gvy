@@ -45,7 +45,12 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
             check.xfail == null && failure == null -> ObservationStatus.Passed
             check.xfail == null -> ObservationStatus.Failed(BoundedFailureEvidence.capture(failure!!).text)
             else -> when (val decision = XfailOutcome.classify(check.xfail, source, failure)) {
-                is XfailDecision.Expected -> ObservationStatus.KnownFailure(check.xfail.issue)
+                is XfailDecision.Expected -> ObservationStatus.KnownFailure(
+                    issue = check.xfail.issue,
+                    reason = check.xfail.reason,
+                    match = check.xfail.match,
+                    evidence = BoundedFailureEvidence.capture(requireNotNull(failure)),
+                )
                 is XfailDecision.Fixed -> ObservationStatus.UnexpectedPass(check.xfail.issue)
                 is XfailDecision.Unexpected -> ObservationStatus.Failed(
                     BoundedFailureEvidence.capture(decision.failure).text,

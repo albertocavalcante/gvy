@@ -113,6 +113,42 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `incomplete inspection preserves the original failure as cause`() {
+        val failure = AssertionError("known " + "x".repeat(100_000))
+        val decision = classify(xfail.copy(match = "known"), failure) as XfailDecision.Unexpected
+        assertThat(decision.failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(decision.failure.message).contains("classification incomplete")
+        assertThat(decision.failure.cause).isSameAs(failure)
+    }
+
+    @Test
+    fun `hostile failure accessors cannot produce a known failure`() {
+        val failure = object : AssertionError() {
+            override val message: String get() = throw IllegalStateException("cannot inspect")
+        }
+        val decision = classify(xfail.copy(match = "anything"), failure) as XfailDecision.Unexpected
+        assertThat(decision.failure.message).contains("unavailable")
+        assertThat(decision.failure.cause).isSameAs(failure)
+    }
+
+    @Test
+    fun `classifier preserves fatal and cancellation thrown during inspection`() {
+        listOf(CancellationException("cancel"), LinkageError("fatal")).forEach { thrown ->
+            val failure = object : AssertionError() {
+                override val message: String get() = throw thrown
+            }
+            assertThatThrownBy { classify(xfail.copy(match = "anything"), failure) }.isSameAs(thrown)
+        }
+    }
+
+    @Test
+    fun `ambiguous repetition uses bounded linear matcher`() {
+        val failure = AssertionError("a".repeat(8_000) + "b")
+        assertThat(classify(xfail.copy(match = "(a+)+$"), failure))
+            .isEqualTo(XfailDecision.Unexpected(failure))
+    }
+
+    @Test
     fun `passing scenario is reported as fixed`() {
         assertThat(classify(failure = null))
             .isEqualTo(XfailDecision.Fixed("gvy#42 appears fixed: remove xfail from demo.yaml"))

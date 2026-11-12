@@ -96,11 +96,7 @@ class JacksonScenarioParser : ScenarioParser {
         require(root.isObject) { "Scenario YAML must be an object" }
         requireWellFormedSnapshotExpectations(root)
         val scenario = objectMapper.readValue(yaml, Scenario::class.java)
-        scenario.xfail?.let { xfail ->
-            require(xfail.issue > 0) { "xfail.issue must be a gvy issue number" }
-            require(xfail.reason.isNotBlank()) { "xfail.reason must say what is wrong" }
-            xfail.match?.let { Regex(it) } // an invalid regex is a parse error, not a runtime surprise
-        }
+        scenario.xfail?.let(XfailOutcome::validateDeclaration)
         ScenarioDefinition(scenario = scenario)
     } catch (e: JsonProcessingException) {
         throw ScenarioParseException("Failed to parse scenario YAML", e)

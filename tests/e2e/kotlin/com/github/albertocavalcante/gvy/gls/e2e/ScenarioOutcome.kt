@@ -5,7 +5,13 @@ import java.util.Collections
 /** The terminal result of one named observation that was actually reached. */
 sealed interface ObservationStatus {
     data object Passed : ObservationStatus
-    data class KnownFailure(val issue: Int) : ObservationStatus {
+    data class KnownFailure(
+        val issue: Int,
+        val reason: String? = null,
+        val match: String? = null,
+        val evidence: FailureEvidence? = null,
+        val kind: ScenarioFailureKind = ScenarioFailureKind.Product,
+    ) : ObservationStatus {
         init {
             require(issue > 0) { "An expected failure requires a positive issue number" }
         }
