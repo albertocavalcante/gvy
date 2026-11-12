@@ -13,14 +13,14 @@ repositories {
 // Ensure gls is evaluated so we can access its tasks
 evaluationDependsOn(":gls")
 
-// Exclude e2eTest from Kover instrumentation and coverage collection.
-// This prevents root koverHtmlReport/koverXmlReport from triggering e2eTest.
-// E2E tests are slow integration tests that don't contribute to unit test coverage.
+// Keep harness and protocol checks outside production coverage collection.
+// Root coverage reports must not trigger either task.
 // Reference: https://kotlin.github.io/kotlinx-kover/gradle-plugin/#exclusion-of-test-tasks
 kover {
     currentProject {
         instrumentation {
             disabledForTestTasks.add("e2eTest")
+            disabledForTestTasks.add("harnessTest")
         }
     }
 }
@@ -206,5 +206,52 @@ testing {
                 }
             }
         }
+    }
+}
+
+val harnessSuite = testing.suites.named<JvmTestSuite>("e2eTest")
+
+val harnessTest =
+    tasks.register<Test>("harnessTest") {
+        description = "Runs focused harness controls without assembling the fat server JAR or distribution."
+        group = "verification"
+        testClassesDirs = files(harnessSuite.map { it.sources.output.classesDirs })
+        classpath = files(harnessSuite.map { it.sources.runtimeClasspath })
+        useJUnitPlatform()
+        systemProperty("junit.jupiter.execution.timeout.default", "300s")
+
+        // This allowlist keeps new artifact-dependent tests in the full suite until explicitly inspected.
+        listOf(
+            "XfailOutcomeTest",
+            "ScenarioExecutorResourcesTest",
+            "ScenarioExecutionTest",
+            "ScenarioContextTest",
+            "ScenarioDslTest",
+            "ScenarioParserTest",
+            "ScenarioSchemaTest",
+            "ScenarioCatalogTest",
+        ).forEach { filter.includeTestsMatching("*.$it") }
+
+        jvmArgumentProviders.add(
+            object : CommandLineArgumentProvider {
+                @get:InputDirectory
+                @get:PathSensitive(PathSensitivity.RELATIVE)
+                val scenarios = layout.projectDirectory.dir("e2e/resources/scenarios")
+
+                override fun asArguments() = listOf("-Dgroovy.lsp.e2e.scenarioDir=${scenarios.asFile.absolutePath}")
+            },
+        )
+        testLogging {
+            events("passed", "skipped", "failed")
+            exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+        }
+    }
+
+// Apply the focused-task limits after the root project's general test defaults.
+afterEvaluate {
+    harnessTest.configure {
+        minHeapSize = "128m"
+        maxHeapSize = "1g"
+        maxParallelForks = 1
     }
 }

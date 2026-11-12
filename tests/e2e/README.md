@@ -5,6 +5,9 @@ End-to-end tests for the Groovy Language Server that verify complete LSP request
 ## Quick Start
 
 ```bash
+# Focused harness controls, without assembling the fat server JAR or distribution
+./gradlew :tests:harnessTest
+
 # Run all E2E tests
 ./gradlew :tests:e2eTest
 
@@ -14,6 +17,15 @@ End-to-end tests for the Groovy Language Server that verify complete LSP request
 # Run with parallel forks (memory permitting)
 ./gradlew :tests:e2eTest -Pe2eParallelForks=4
 ```
+
+`harnessTest` runs an inspected allowlist of parser, schema, assertion, scenario execution/resource and known-failure
+controls. It reuses the E2E test sources and resources, but does not depend on `shadowJar` or `installDist`. Normal
+compilation and thin library JAR dependencies still run as needed. It does not prove actual server transport or editor
+behavior. `e2eTest` continues to run the full suite, including these controls and the artifact-dependent tests. Use
+`make harness-test` for the same focused command.
+
+The Make targets inherit the outer build's Gradle user home, preserving shared caches and daemons. Server processes
+still use the harness's isolated runtime Gradle home unless a scenario explicitly configures one.
 
 ## Architecture
 
