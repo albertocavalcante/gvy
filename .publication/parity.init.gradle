@@ -1,0 +1,14 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
+gradle.projectsEvaluated {
+    allprojects {
+        tasks.withType(org.gradle.api.tasks.testing.Test).configureEach {
+            minHeapSize = '64m'
+            maxHeapSize = '512m'
+            maxParallelForks = 1
+            forkEvery = 0
+            jvmArgs '-XX:MaxMetaspaceSize=512m'
+        }
+    }
+}
