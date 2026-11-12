@@ -39,7 +39,7 @@ class DependencyManagerTest {
         try {
             manager.startAsyncResolution(testWorkspaceRoot, onComplete = {}, enableFileWatching = false)
             withTimeout(5_000) { while (!manager.isDependenciesReady()) yield() }
-            assertEquals(warning, manager.getPublishedStatus())
+            assertEquals(warning, manager.publishedStatus)
         } finally {
             manager.cancel()
         }

@@ -583,7 +583,7 @@ class ProjectStartupManager(
             val manager = dependencyManager ?: return null
 
             if (manager.getState() in setOf(DependencyManager.State.COMPLETED, DependencyManager.State.FAILED)) {
-                return manager.getPublishedStatus()
+                return manager.publishedStatus
             }
 
             if (sleepAndCheckInterruption(POLLING_INTERVAL_MS)) {

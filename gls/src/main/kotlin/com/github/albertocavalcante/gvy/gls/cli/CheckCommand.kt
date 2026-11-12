@@ -74,19 +74,13 @@ class CheckCommand internal constructor(
     override fun run() {
         val server = GroovyLanguageServer()
         AutoCloseable { stopServer(server) }.use {
-            val workspaceFailure = try {
-                initializeWorkspace(server)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: InterruptedException) {
-                throw e
-            } catch (e: Exception) {
-                val cause = if (e is ExecutionException) e.cause ?: e else e
+            val workspaceFailure = runCatching { initializeWorkspace(server) }.getOrElse { failure ->
+                val cause = (failure as? ExecutionException)?.cause ?: failure
                 when (cause) {
                     is CancellationException -> throw cause
                     is InterruptedException -> throw cause
-                    is Error -> throw cause
-                    else -> "Workspace initialization failed: ${cause.message ?: cause.javaClass.name}"
+                    is Exception -> "Workspace initialization failed: ${cause.message ?: cause.javaClass.name}"
+                    else -> throw cause
                 }
             }
             checkFiles(server, workspaceFailure)
@@ -151,20 +145,31 @@ class CheckCommand internal constructor(
 
     private data class FileOutcome(val file: File, val diagnostics: List<Diagnostic>, val failures: List<FileFailure>)
 
-    private suspend fun checkFile(file: File, service: GroovyTextDocumentService): FileOutcome = try {
-        val result = analyze(file, service)
-        FileOutcome(file, result.diagnostics, result.failures.map { failure ->
-            FileFailure(
-                "provider:${failure.providerId}",
-                "Provider ${failure.providerId} failed (${failure.exceptionType}): ${failure.message ?: "no details"}",
-            )
-        })
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        logger.error(e) { "Error checking file ${file.path}" }
-        FileOutcome(file, emptyList(), listOf(FileFailure("analysis", "${e.javaClass.name}: ${e.message ?: "no details"}")))
-    }
+    private suspend fun checkFile(file: File, service: GroovyTextDocumentService): FileOutcome =
+        runCatching { analyze(file, service) }.fold(
+            onSuccess = { result ->
+                FileOutcome(file, result.diagnostics, result.failures.map { failure ->
+                    FileFailure(
+                        "provider:${failure.providerId}",
+                        "Provider ${failure.providerId} failed (${failure.exceptionType}): ${failure.message ?: "no details"}",
+                    )
+                })
+            },
+            onFailure = { failure ->
+                when (failure) {
+                    is CancellationException -> throw failure
+                    is Exception -> {
+                        logger.error(failure) { "Error checking file ${file.path}" }
+                        FileOutcome(
+                            file,
+                            emptyList(),
+                            listOf(FileFailure("analysis", "${failure.javaClass.name}: ${failure.message ?: "no details"}")),
+                        )
+                    }
+                    else -> throw failure
+                }
+            },
+        )
 
     private fun outputText(outcomes: List<FileOutcome>) {
         for (outcome in outcomes) {
