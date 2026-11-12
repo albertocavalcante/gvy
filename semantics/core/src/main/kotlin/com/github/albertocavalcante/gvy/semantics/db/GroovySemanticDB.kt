@@ -64,7 +64,11 @@ class GroovySemanticDB {
      */
     fun updateDocument(uri: URI, doc: SemanticDocument) = updateDocument(uri, doc, sourceText = null)
 
-    /** Stores source text with the document so readers never combine ranges and text from different versions. */
+    /**
+     * Stores a detached document and source text so readers do not combine facts from different versions.
+     * Callers must not mutate the supplied document or nested collections during this call. After it returns,
+     * later caller mutations cannot affect the published data.
+     */
     fun updateDocument(uri: URI, doc: SemanticDocument, sourceText: String?) =
         updateDocument(uri, doc, sourceText, ImplementationFacts.Snapshot())
 
@@ -76,8 +80,9 @@ class GroovySemanticDB {
         implementations: ImplementationFacts.Snapshot,
     ) {
         val snapshot = doc.copy(
-            symbols = Collections.unmodifiableList(doc.symbols.toList()),
+            symbols = Collections.unmodifiableList(doc.symbols.map(::freezeSymbol)),
             occurrences = Collections.unmodifiableList(doc.occurrences.toList()),
+            unresolvedNames = Collections.unmodifiableSet(doc.unresolvedNames.toSet()),
         )
         val facts = ImplementationFacts.freeze(implementations)
         lock.write {

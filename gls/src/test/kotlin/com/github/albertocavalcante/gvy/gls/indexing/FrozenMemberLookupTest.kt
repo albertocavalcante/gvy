@@ -78,7 +78,34 @@ class FrozenMemberLookupTest {
         val captured = index.captureMembers(emptySet())
         val type = captured.findField("C", "value")?.type as SemanticType.Known
         assertEquals(listOf(TypeConstants.STRING), type.typeArgs)
-        assertThrows<UnsupportedOperationException> { (type.typeArgs as MutableList).clear() }
+        assertThrows<UnsupportedOperationException> { (type.typeArgs as MutableList<SemanticType>).clear() }
+    }
+
+    @Test
+    fun `captures remain stable while caller mutates its old type arguments`() {
+        val arguments = mutableListOf<SemanticType>(TypeConstants.STRING)
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        index.updateDocument(uri, document(SemanticType.Known("List", arguments)))
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val writer = executor.submit {
+                started.countDown()
+                check(release.await(30, TimeUnit.SECONDS))
+                repeat(100) { arguments[0] = if (it % 2 == 0) TypeConstants.INT else TypeConstants.STRING }
+            }
+            assertTrue(started.await(30, TimeUnit.SECONDS))
+            release.countDown()
+            repeat(100) {
+                val type = index.captureMembers(emptySet()).findField("C", "value")?.type as SemanticType.Known
+                assertEquals(listOf(TypeConstants.STRING), type.typeArgs)
+            }
+            writer.get(30, TimeUnit.SECONDS)
+        } finally {
+            release.countDown()
+            executor.shutdownNow()
+        }
     }
 
     private fun capture(index: WorkspaceSymbolIndex): MemberLookup = index.captureMembers(emptySet())

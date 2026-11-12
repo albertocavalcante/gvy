@@ -1,5 +1,8 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.semantics.SemanticType
+import com.github.albertocavalcante.gvy.semantics.TypeConstants
+
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
@@ -24,6 +27,24 @@ class GroovySemanticDBTest {
     @BeforeEach
     fun setup() {
         db = GroovySemanticDB()
+    }
+
+    @Test
+    fun `publication detaches nested type arguments and unresolved names from the caller`() {
+        val arguments = mutableListOf<SemanticType>(TypeConstants.STRING)
+        val unresolved = mutableSetOf("first")
+        val symbol = SymbolInfo("C#value.", SymbolKind.FIELD, Range(0, 0, 0, 1), "value", "C#", SemanticType.Known("List", arguments))
+        db.updateDocument(testUri1, SemanticDocument(testUri1, listOf(symbol), emptyList(), unresolved))
+        val version = db.version
+        arguments[0] = TypeConstants.INT
+        unresolved.add("later")
+        val stored = checkNotNull(db.getDocument(testUri1))
+        val type = stored.symbols.single().type as SemanticType.Known
+        assertEquals(listOf(TypeConstants.STRING), type.typeArgs)
+        assertEquals(setOf("first"), stored.unresolvedNames)
+        assertEquals(version, db.version)
+        assertThrows<UnsupportedOperationException> { (type.typeArgs as MutableList<SemanticType>).clear() }
+        assertThrows<UnsupportedOperationException> { (stored.unresolvedNames as MutableSet<String>).clear() }
     }
 
     @Nested
