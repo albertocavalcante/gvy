@@ -421,21 +421,15 @@ class GroovySemanticsTest {
     fun `concurrent access to cache is thread-safe`() {
         val semantics = GroovySemantics(stubSolver)
         val modules = listOf(parse("def x = 'string'"), parse("def y = 42"))
-        val executor = Executors.newFixedThreadPool(modules.size)
-        try {
-            val tasks = modules.map { module ->
-                executor.submit {
-                    @Suppress("MagicNumber")
-                    repeat(100) {
-                        semantics.inject(module)
-                        assertTrue(semantics.getContext(module) != null)
-                    }
+        runWorkers(modules.map { module ->
+            {
+                @Suppress("MagicNumber")
+                repeat(100) {
+                    semantics.inject(module)
+                    assertTrue(semantics.getContext(module) != null)
                 }
             }
-            tasks.forEach { it.get(30, TimeUnit.SECONDS) }
-        } finally {
-            executor.shutdownNow()
-        }
+        })
         val decl1 = findNode<DeclarationExpression>(modules[0])!!
         assertEquals(TypeConstants.STRING, semantics.resolveType(decl1.rightExpression, modules[0]))
         val decl2 = findNode<DeclarationExpression>(modules[1])!!
@@ -444,11 +438,17 @@ class GroovySemanticsTest {
 
     @Test
     fun `worker assertion failures reach the test thread`() {
-        val executor = Executors.newSingleThreadExecutor()
+        val failure = assertThrows(ExecutionException::class.java) {
+            runWorkers(listOf({ assertEquals("expected", "actual") }))
+        }
+        assertTrue(failure.cause is AssertionError)
+    }
+
+    private fun runWorkers(tasks: List<() -> Unit>) {
+        val executor = Executors.newFixedThreadPool(tasks.size)
         try {
-            val task = executor.submit { assertEquals("expected", "actual") }
-            val failure = assertThrows(ExecutionException::class.java) { task.get(30, TimeUnit.SECONDS) }
-            assertTrue(failure.cause is AssertionError)
+            val futures = tasks.map { task -> executor.submit { task() } }
+            futures.forEach { it.get(30, TimeUnit.SECONDS) }
         } finally {
             executor.shutdownNow()
         }
