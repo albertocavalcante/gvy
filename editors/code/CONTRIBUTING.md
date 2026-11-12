@@ -382,7 +382,8 @@ to go further back; `ROLLBACK_SHA` picks a specific one). Run `make ext-latest` 
 periodically (launchd, cron, a login item) is up to you; the repository ships no scheduler. For a prebuilt daily
 snapshot, use the
 [nightly download instructions](https://github.com/albertocavalcante/gvy/blob/main/docs/installation.md#nightly-download).
-An automatic nightly update channel in the extension remains follow-up work under #1576.
+An automatic nightly update channel in the extension remains follow-up work in
+[#1736](https://github.com/albertocavalcante/gvy/issues/1736).
 
 ## Build and install this checkout
 

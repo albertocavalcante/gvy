@@ -94,7 +94,7 @@ Use a nightly to try changes from `main` without installing a build toolchain:
 2. Download **gvy-nightly.vsix**, then run **Extensions: Install from VSIX…** in your editor and select it.
 3. Reload the editor window. Keep the downloaded file if you want to return to this build later.
 
-The daily workflow starts at 03:00 UTC and publishes only after server tests, editor tests, packaging, and an LSP
+The daily workflow is scheduled for 03:00 UTC and publishes only after server tests, editor tests, packaging, and an LSP
 startup and shutdown check pass. A failed run publishes nothing; check the release date and commit when choosing a
 build. Both the extension and its bundled server come from that commit. **nightly.json** records the source commit,
 actual server version, editor API requirement, and hashes; **checksums.txt** provides SHA-256 digests.
@@ -102,12 +102,15 @@ actual server version, editor API requirement, and hashes; **checksums.txt** pro
 Java 17+ and a compatible editor are still required. The standalone **gls-nightly.jar** is available in the same release
 for other LSP clients. Nightlies use separate dated tags and do not replace the latest stable release.
 
-To update a nightly, install the newer nightly VSIX. To return to stable, install the stable VSIX using the instructions
-above, or run `gvy-install-extension` if you use Homebrew. Your editor may ask for confirmation when installing an older
-version. Installing a nightly VSIX replaces gvy in that editor; it does not change the Homebrew server.
+To update a nightly, install the newer nightly VSIX. For a downgrade to stable or an older nightly, first uninstall gvy
+from the editor's Extensions view, then use **Extensions: Install from VSIX…** with the chosen file. Homebrew users can
+select the stable `libexec/gvy.vsix` under `brew --prefix gvy` instead of downloading it again. The command-line helper
+does not request downgrades. Installing a nightly VSIX replaces gvy in that editor; it does not change the Homebrew
+server.
 
 Homebrew's `gvy` formula tracks stable releases. There is no `gvy-nightly` formula or `brew install --HEAD` support yet.
-Nightly downloads are manual installs; the extension does not automatically follow the nightly channel.
+Nightly downloads are manual installs; the extension does not automatically follow the nightly channel. Automatic
+updates and rollback are tracked in [#1736](https://github.com/albertocavalcante/gvy/issues/1736).
 
 ### Latest green main
 

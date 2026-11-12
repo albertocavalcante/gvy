@@ -1,5 +1,7 @@
 // Verify the distributable pair before a nightly can be published. No downloads
 // or editor installation happen here; the build supplies both archives.
+// TODO(#1736): Reuse this paired-artifact contract for explicit nightly updates.
+//   See: https://github.com/albertocavalcante/gvy/issues/1736
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -44,7 +46,7 @@ writeFileSync(join(directory, 'release-notes.md'), `Built and tested from main c
 - Requires Java 17+ and VS Code API \`${vscodeApi}\` (including compatible Cursor/VSCodium builds).
 - The VSIX bundles the exact server published as **gls-nightly.jar**.
 - **checksums.txt** provides SHA-256 digests for both downloads and **nightly.json**.
-- Nightlies are manual installs. Install a newer VSIX to update; keep an older one for rollback.
+- Nightlies are manual installs. Install a newer VSIX to update. To downgrade, uninstall gvy in the editor, then install the older VSIX.
 - [Build and test evidence](${runUrl}); **nightly.json** records provenance and both hashes.
 
 This is a prerelease. The stable Homebrew formula and latest stable release remain on the stable channel.

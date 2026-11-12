@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: nightly-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -148,7 +148,7 @@ jobs:
         run: |
           cd dist
           sha256sum -c checksums.txt
-          tag="nightly-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          tag="nightly-${NIGHTLY_VERSION}"
           gh release create "$tag" gls-nightly.jar gvy-nightly.vsix nightly.json checksums.txt \
             --draft --prerelease --latest=false --target "$GITHUB_SHA" \
             --title "Nightly $NIGHTLY_VERSION" --notes-file release-notes.md
