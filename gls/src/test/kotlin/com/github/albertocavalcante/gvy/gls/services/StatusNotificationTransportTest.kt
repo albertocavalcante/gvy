@@ -1,7 +1,9 @@
 package com.github.albertocavalcante.gvy.gls.services
 
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.registerStatusNotificationAdapter
-import com.google.gson.JsonParser
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.eclipse.lsp4j.ApplyWorkspaceEditParams
 import org.eclipse.lsp4j.ApplyWorkspaceEditResponse
 import org.eclipse.lsp4j.MessageActionItem
@@ -54,9 +56,9 @@ class StatusNotificationTransportTest {
             val end = headers.getOrNull(index + 1)?.range?.first ?: wire.length
             val body = wire.substring(header.range.last + 1, end)
             assertEquals(header.groupValues[1].toInt(), body.toByteArray(Charsets.UTF_8).size)
-            val message = JsonParser.parseString(body).asJsonObject
-            assertEquals("groovy/status", message["method"].asString)
-            assertEquals(JsonParser.parseString(expected[index]), message["params"])
+            val message = Json.parseToJsonElement(body).jsonObject
+            assertEquals("groovy/status", message.getValue("method").jsonPrimitive.content)
+            assertEquals(Json.parseToJsonElement(expected[index]), message["params"])
         }
     }
 
