@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # JVM Dependencies Configuration
 #
 # This file declares Maven dependencies for the project.

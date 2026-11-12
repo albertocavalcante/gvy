@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // @ts-check
 
 // Characters cmd.exe interprets even inside double quotes, or that end

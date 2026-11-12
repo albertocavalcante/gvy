@@ -126,6 +126,22 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  license:
+    name: License compliance
+    runs-on: ${{ vars.CI_FAST_RUNNER || 'ubuntu-24.04' }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+      - name: Check license metadata
+        run: uv run --offline --locked --no-dev --project .reuse python .reuse/check.py --root .
+
   bazel:
     name: Bazel validation
     needs: check-paths
@@ -263,6 +279,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
@@ -387,6 +406,9 @@ jobs:
         env:
           GVY_MEMORY_PROBE_NATIVE_TEST: 'true'
         run: node --test tools/ci/gradle-memory-probe.test.mjs
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
@@ -648,6 +670,9 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:
@@ -818,7 +843,7 @@ jobs:
       contents: read
       actions: read
       checks: read
-    needs: [lint, build, e2e-test, smoke-test, launcher, zed, bazel, check-runner, check-paths]
+    needs: [license, lint, build, e2e-test, smoke-test, launcher, zed, bazel, check-runner, check-paths]
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -868,6 +893,9 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c # v5.0.2
         with:

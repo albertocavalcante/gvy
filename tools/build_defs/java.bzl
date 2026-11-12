@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Java build macros for Groovy LSP."""
 
 load("@rules_java//java:defs.bzl", _java_library = "java_library", _java_test = "java_test")

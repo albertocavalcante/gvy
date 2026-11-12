@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // @ts-check
 const { spawn } = require("node:child_process");
 const path = require("node:path");

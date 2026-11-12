@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Quick QA verification scoped to current PR changes"
 prompt = """
 You are executing a strict, deterministic QA workflow.

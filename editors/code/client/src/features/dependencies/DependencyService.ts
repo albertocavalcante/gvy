@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { ClientProvider, requireClient } from "../../server/clientProvider";
 import { RequestType } from "vscode-languageserver-protocol";
 

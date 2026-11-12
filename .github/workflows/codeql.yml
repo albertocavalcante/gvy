@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # CodeQL scans this repo for security/code quality issues in Kotlin/Java and JS/TS.
 # Runs on PRs and main to catch regressions early, plus a weekly scheduled scan.
 name: CodeQL

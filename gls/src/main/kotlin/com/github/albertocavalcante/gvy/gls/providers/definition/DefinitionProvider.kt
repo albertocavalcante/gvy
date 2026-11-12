@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress("SwallowedException") // CancellationException is expected client behavior, logged at debug level
 
 package com.github.albertocavalcante.gvy.gls.providers.definition

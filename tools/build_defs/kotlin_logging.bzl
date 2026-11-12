@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Module extension to download kotlin-logging jar directly.
 
 Historical GMM resolution selected sources instead of classes. The direct

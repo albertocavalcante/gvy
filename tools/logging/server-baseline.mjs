@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /** Real-server measurement. This tool never records source, raw logs or LSP error text. */
 import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';

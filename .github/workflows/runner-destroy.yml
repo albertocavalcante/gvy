@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 name: "Infra: Destroy Magalu Runner"
 
 # This workflow tears down ephemeral self-hosted runners on Magalu Cloud.

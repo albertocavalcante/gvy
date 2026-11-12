@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Fail if added lines contain leftover merge/rebase conflict markers, including
 # the diff3 base marker (`|||||||`). Unlike `git diff --check` it does not flag
 # whitespace, and it tolerates `=======` heading underlines in documentation.

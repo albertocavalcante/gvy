@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Linting tools for the Groovy Language Server project."""
 
 # NOTE: The aspect_rules_lint API has changed and these symbols are no longer available.

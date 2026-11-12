@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Comprehensive quality assurance workflow for verifying LSP functionality and release readiness"
 prompt = """
 You are executing a strict pre-release QA protocol.

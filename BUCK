@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Root BUCK file for Groovy LSP
 #
 # Buck2 build configuration for Kotlin/JVM builds.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 export { VersionChecker } from "./VersionChecker";
 export type { ReleaseInfo, GitHubReleaseResponse } from "./VersionChecker";
 export { VersionCache } from "./VersionCache";

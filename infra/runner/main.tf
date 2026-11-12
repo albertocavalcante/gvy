@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Main Infrastructure Configuration
 # Magalu Cloud Self-Hosted GitHub Actions Runner
 

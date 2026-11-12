@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /** Count pipe bytes and newline-delimited records without retaining records. */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';

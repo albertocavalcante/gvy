@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Fix the first failing lint gate via small verified loops"
 prompt = """
 You are executing a strict lint fixing protocol.

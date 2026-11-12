@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Proactive bug discovery through systematic codebase analysis"
 prompt = """
 You are executing a strict bug hunting protocol.

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use serde::Deserialize;
 use serde_json::{json, Value};
 use zed_extension_api::{

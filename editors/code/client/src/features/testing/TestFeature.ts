@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import * as vscode from "vscode";
 import { SpockGenerator } from "./SpockGenerator";
 import * as path from "path";

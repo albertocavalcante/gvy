@@ -36,6 +36,23 @@ BENCHMARK_FIXTURE_PATHS: tuple[str, ...] = (
     "tools/perf/bench/native-contract/fixtures/malformed.groovy",
 )
 
+EDITOR_INPUT_FIXTURES: tuple[str, ...] = (
+    "editors/code/client/src/test/fixtures/CodeNarcRanges.groovy",
+    "editors/code/client/src/test/fixtures/FoldingRanges.groovy",
+    "editors/code/client/src/test/fixtures/Implementation.groovy",
+    "editors/code/client/src/test/fixtures/ImportedAliases.groovy",
+    "editors/code/client/src/test/fixtures/PrepareRename.groovy",
+    "editors/code/client/src/test/fixtures/RenameDefaults.groovy",
+    "editors/code/client/src/test/fixtures/RenameMemoized.groovy",
+    "editors/code/client/src/test/fixtures/RenameParameter.groovy",
+    "editors/code/client/src/test/fixtures/ScriptClassLiterals.groovy",
+    "editors/code/client/src/test/fixtures/SelectionRanges.groovy",
+    "editors/code/client/src/test/fixtures/SemanticTokens.groovy",
+    "editors/code/client/src/test/fixtures/codenarc.groovy",
+    "editors/zed/fixtures/basic/Greeter.groovy",
+    "editors/zed/fixtures/basic/Main.groovy",
+)
+
 
 class HeaderTests(unittest.TestCase):
     def test_leading_header_required(self) -> None:
@@ -69,6 +86,25 @@ class HeaderTests(unittest.TestCase):
         self.assertTrue(check.maintained(Path("tools/run"), b"#!/bin/sh\n"))
         self.assertFalse(check.maintained(Path("src/test/resources/fixture.kt"), b""))
 
+    def test_native_helper_sources_require_c_comments(self) -> None:
+        valid = (
+            b"// SPDX-FileCopyrightText: Alice\n// SPDX-License-Identifier: Apache-2.0\nint main(void) { return 0; }\n"
+        )
+        wrong = b"# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n"
+        for suffix in (".c", ".h"):
+            path = Path(f"tools/ci/helper{suffix}")
+            with self.subTest(suffix=suffix):
+                self.assertTrue(check.maintained(path, b""))
+                self.assertEqual([], check.header_errors(path, valid))
+                self.assertTrue(check.header_errors(path, wrong))
+
+    def test_runtime_sources_and_explicit_imports_have_distinct_policies(self) -> None:
+        self.assertTrue(check.maintained(Path("build-tool/src/main/kotlin/gvy/build/Build.kt"), b""))
+        self.assertTrue(check.maintained(Path("build-tool/src/main/resources/runtime.gradle"), b""))
+        self.assertTrue(check.maintained(Path(".devcontainer/Dockerfile"), b""))
+        self.assertFalse(check.maintained(Path("gradlew"), b"#!/bin/sh\n"))
+        self.assertFalse(check.maintained(Path("third_party/jvm/BUCK"), b"# DO NOT EDIT\n"))
+
     def test_wrong_comment_syntax_does_not_count(self) -> None:
         data = b"# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n"
         self.assertTrue(check.header_errors(Path("a.kt"), data))
@@ -78,6 +114,17 @@ class HeaderTests(unittest.TestCase):
         for name in BENCHMARK_FIXTURE_PATHS:
             with self.subTest(path=name):
                 self.assertFalse(check.maintained(Path(name), b"println 'fixture data'\n"))
+
+    def test_editor_input_fixtures_keep_payload_bytes_and_exact_metadata(self) -> None:
+        self.assertEqual(14, len(EDITOR_INPUT_FIXTURES))
+        self.assertEqual(frozenset(EDITOR_INPUT_FIXTURES), check.EDITOR_FIXTURE_PATHS)
+        for name in EDITOR_INPUT_FIXTURES:
+            with self.subTest(path=name):
+                path = Path(name)
+                self.assertFalse(check.maintained(path, b"import java.util.List\n"))
+                neighbor = path.with_name("new-maintained-source.groovy")
+                self.assertTrue(check.maintained(neighbor, b"println 'source'\n"))
+                self.assertTrue(check.header_errors(neighbor, b"println 'source'\n"))
 
     def test_metadata_fixture_inventory_is_exact(self) -> None:
         self.assertEqual(frozenset(BENCHMARK_FIXTURE_PATHS), check.BYTE_SENSITIVE_FIXTURE_PATHS)
@@ -380,6 +427,13 @@ class IntegrationTests(unittest.TestCase):
         )
         self.assertTrue(any("leading" in error for error in check.check(self.root)))
 
+    def test_native_helper_metadata_cannot_mask_missing_header(self) -> None:
+        (self.root / "src/helper.c").write_text("int main(void) { return 0; }\n")
+        (self.root / "src/helper.c.license").write_text(
+            "SPDX-FileCopyrightText: Alice\nSPDX-License-Identifier: Apache-2.0\n"
+        )
+        self.assertTrue(any("src/helper.c: missing" in error for error in check.check(self.root)))
+
     def test_unknown_license_and_missing_text_fail(self) -> None:
         self.source.write_text("# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: NotARealLicense\n")
         self.assertTrue(any("REUSE lint failed" in error for error in check.check(self.root)))
@@ -419,6 +473,38 @@ class IntegrationTests(unittest.TestCase):
             + f'path = "{neighbor.as_posix()}"\n'
             + 'SPDX-FileCopyrightText = "Synthetic source author"\n'
             + 'SPDX-License-Identifier = "Apache-2.0"\n',
+            encoding="utf-8",
+        )
+        errors = check.check(self.root)
+        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
+        self.assertTrue(any(error.startswith(f"{neighbor.as_posix()}:") and "leading" in error for error in errors))
+
+    def test_editor_fixture_needs_metadata_and_cannot_exempt_annotated_neighbors(self) -> None:
+        relative = Path("editors/code/client/src/test/fixtures/FoldingRanges.groovy")
+        fixture = self.root / relative
+        fixture.parent.mkdir(parents=True)
+        payload = b"import java.util.List\nimport java.util.Map\n"
+        fixture.write_bytes(payload)
+        metadata = self.root / "REUSE.toml"
+        annotation = (
+            "version = 1\n[[annotations]]\n"
+            f'path = "{relative.as_posix()}"\n'
+            'SPDX-FileCopyrightText = "Synthetic fixture author"\n'
+            'SPDX-License-Identifier = "Apache-2.0"\n'
+        )
+        metadata.write_text(annotation, encoding="utf-8")
+        self.assertEqual([], check.check(self.root))
+        self.assertEqual(payload, fixture.read_bytes())
+        metadata.unlink()
+        self.assertIn("REUSE lint failed; run reuse --root . lint for details", check.check(self.root))
+        neighbor = relative.with_name("neighbor.groovy")
+        (self.root / neighbor).write_bytes(b"println 'maintained source'\n")
+        metadata.write_text(
+            annotation
+            + "[[annotations]]\n"
+            + f'path = "{neighbor.as_posix()}"\n'
+            + 'SPDX-FileCopyrightText = "Synthetic source author"\n'
+            'SPDX-License-Identifier = "Apache-2.0"\n',
             encoding="utf-8",
         )
         errors = check.check(self.root)

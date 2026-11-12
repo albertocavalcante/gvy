@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.engine.api
 
 import com.github.albertocavalcante.gvy.gls.engine.adapters.ParseUnit

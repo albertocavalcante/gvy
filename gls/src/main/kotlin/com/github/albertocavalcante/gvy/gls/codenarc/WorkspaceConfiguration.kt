@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.codenarc
 
 import com.github.albertocavalcante.gvy.diagnostics.api.DiagnosticConfiguration

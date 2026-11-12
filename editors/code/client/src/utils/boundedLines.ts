@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Readable } from "stream";
 
 /** Maximum UTF-8 payload bytes retained per diagnostic line. */

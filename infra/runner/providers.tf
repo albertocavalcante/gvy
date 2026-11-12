@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Terraform and Provider Configuration
 # Magalu Cloud Self-Hosted Runner Infrastructure
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Self-test for check-large-files.sh: proves the gate can fail, and that it
 # reports a non-zero examined count so a silent no-op run is visible.
 set -euo pipefail

@@ -255,9 +255,9 @@ test('notice evidence cannot turn stale source or attempt identities into a comp
 });
 
 test('readiness accepts observed informational notices and rejects incomplete or warning-bearing evidence', async () => {
-  const f = fixture([job(1, 'check-paths')]);
+  const f = fixture([job(1, 'check-paths'), job(2, 'License compliance')]);
   const endpoint = `${base}/check-runs/1001/annotations?per_page=100&page=1`;
-  const graph = { schemaVersion: 1, ok: true, errors: [] };
+  const graph = { schemaVersion: 1, ok: true, errors: [], jobs: { license: { result: 'success' } } };
   f.responses.set(`${base}/check-runs/1001`, check(1, 1));
   f.responses.set(endpoint, [notice]);
   const complete = await observeRunnerDiagnostics(context, f.request, []);
@@ -412,9 +412,9 @@ if (!(endpoint in data)) process.exit(2); console.log(JSON.stringify(data[endpoi
   const publish = () => execute({ GITHUB_STEP_SUMMARY: summaryFile });
   const captured = () => JSON.parse(readFileSync(join(report, 'diagnostics.json'), 'utf8'));
   const readSummary = () => readFileSync(join(report, 'summary.md'), 'utf8');
-  const graph = { schemaVersion: 1, ok: true, errors: [] };
+  const graph = { schemaVersion: 1, ok: true, errors: [], jobs: { license: { result: 'success' } } };
   const summaryLimit = 512 * 1024;
-  const budgetFixture = fixture([job(1, 'check-paths')]);
+  const budgetFixture = fixture([job(1, 'check-paths'), job(2, 'License compliance')]);
   const setNotices = values => {
     budgetFixture.responses.set(`${base}/check-runs/1001`, check(1, values.length));
     budgetFixture.responses.set(`${base}/check-runs/1001/annotations?per_page=100&page=1`, values);

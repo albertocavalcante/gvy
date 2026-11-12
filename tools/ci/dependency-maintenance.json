@@ -298,7 +298,7 @@
         },
         {
           "id": "tools/build_defs/kotlin_logging.bzl:direct-download",
-          "sha256": "9ab821d6b337e803b93e51d66395e5f814b71ce9a9e07c48c0ad346cae1a51a1"
+          "sha256": "6b3accdaaae5123bd056e6a80dd4acdf06fec723ca87b436297358e258ba544a"
         }
       ]
     },
@@ -357,7 +357,7 @@
         },
         {
           "id": "tools/build_defs/junit.bzl:direct-download",
-          "sha256": "606ca03fa757791d344a9d14347392eca47ce3a3bd1204a01b0cab7df42f831c"
+          "sha256": "03228bce1c24c9594ed3e9783a310abc68d249879f78f70f0356efef58c56945"
         }
       ]
     },
@@ -383,7 +383,7 @@
       "sources": [
         {
           "id": "tools/build_defs/wire_compiler.bzl:direct-download",
-          "sha256": "a84ea0ff3204eb085865dd2b4507e88cae2a65b167ec2f7e0fe57253ea5b53be"
+          "sha256": "c01443e270829a592b58b3957176a042ec62d57e0ec82c4db1cb51cc60e82c2f"
         }
       ]
     },
@@ -409,11 +409,11 @@
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
+          "sha256": "c26f2b82a354267da63fe9f2043a36c9155973e4a4f985bd085e98bca5c5a795"
         },
         {
           "id": "manual:openrewrite-declarations",
-          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
+          "sha256": "c26f2b82a354267da63fe9f2043a36c9155973e4a4f985bd085e98bca5c5a795"
         }
       ]
     },
@@ -438,7 +438,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
+          "sha256": "c26f2b82a354267da63fe9f2043a36c9155973e4a4f985bd085e98bca5c5a795"
         }
       ]
     },
@@ -465,7 +465,7 @@
       "sources": [
         {
           "id": "manual:openrewrite-literals",
-          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
+          "sha256": "c26f2b82a354267da63fe9f2043a36c9155973e4a4f985bd085e98bca5c5a795"
         }
       ]
     },
@@ -490,11 +490,11 @@
       "sources": [
         {
           "id": "manual:copybara-action-runtime",
-          "sha256": "c818bd99e6c19467c8f012102abbb35e00e545f897c6845722f3927acedb4557"
+          "sha256": "07234cd14e430f81a63296c2d38dde94f94ecb5b0245dc88a4c67d20851be2d6"
         },
         {
           "id": "manual:copybara-codenarc-runtime",
-          "sha256": "e70380ed6d914f98ab7aba6a86e9a3681ffb59616ceced8635a3843b41d030ce"
+          "sha256": "70daf4ef3a71f86cf6ba30a5320c47259cccecb190b3a9e55c2f99d13e455aee"
         }
       ]
     },
@@ -524,11 +524,11 @@
       "sources": [
         {
           "id": "manual:release-nightly-channel",
-          "sha256": "39d5f3c026261d440075f51a1dbe24cac934da2d767117fd894f62e5cfb59312"
+          "sha256": "d3c0eb7c3ec37bdfb4ff7ec5644e0f63752f06be367e02a47d10e148db6c0af5"
         },
         {
           "id": "manual:release-nightly-discovery",
-          "sha256": "dadd8b6b1ab14fb9c7c8f528189a76fa8379d6b20dcabf9bc2e11a8c42bca1bf"
+          "sha256": "eeeb534b76a0987dcc72dc329e11828f18c0684425da7557e6895c9e42f2c916"
         },
         {
           "id": "manual:release-nightly-packages",

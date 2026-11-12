@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress(
     "TooGenericExceptionCaught", // JAR/ClassGraph scanning uses catch-all for resilience
     "NestedBlockDepth", // JAR extraction has inherent nesting

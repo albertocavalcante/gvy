@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress("TooGenericExceptionCaught", "SwallowedException")
 
 package com.github.albertocavalcante.gvy.viz.desktop.state

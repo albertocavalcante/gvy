@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.jenkins
 
 import groovy.grape.Grape
@@ -281,6 +284,7 @@ class LibraryParserEdgeCasesTest {
 
     @Test
     fun shouldParseLibraryWithMultilineCommentPrefix() {
+        // REUSE-IgnoreStart
         val jenkinsfile = """
             /*
              * Multi-line comment
@@ -292,6 +296,7 @@ class LibraryParserEdgeCasesTest {
                 agent any
             }
         """.trimIndent()
+        // REUSE-IgnoreEnd
 
         val parser = LibraryParser()
         val libraries = parser.parseLibraries(jenkinsfile)

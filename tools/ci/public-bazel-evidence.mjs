@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // Bazel may serialize client environment into BEP. The parent derives invocation
 // context first; the child receives only these platform/tool paths and identity.
 // Credential variables, Java option injection and GitHub context never inherit.

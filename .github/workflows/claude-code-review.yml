@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # NOTE: This workflow intentionally does NOT use _claude-base.yml because it requires
 # read-only permissions (contents: read) for security. The base workflow grants
 # contents: write which would be inappropriate for automated code reviews.
@@ -37,14 +40,17 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 1
           persist-credentials: false
 
+      - name: Setup licensing tools
+        uses: ./.github/actions/setup-licensing
+
       - name: Run Claude Code Review
         id: claude-review
-        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1
+        uses: anthropics/claude-code-action@4fa93a88de49bbef68b10eb15aabedf28ca0e1ed # v1.0.271
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
@@ -92,7 +98,7 @@ jobs:
       # See: https://github.com/anthropics/claude-code-action
       - name: Upload Claude execution log
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: claude-review-log-pr-${{ github.event.pull_request.number }}
           path: /home/runner/work/_temp/claude-execution-output.json

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { spawn } from 'node:child_process';
 import { closeSync, constants, lstatSync, openSync, opendirSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';

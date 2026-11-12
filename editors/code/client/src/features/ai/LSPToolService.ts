@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import type * as vscodeType from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
 import { AISymbolInfo, AILocation, ILSPToolService } from "./types";

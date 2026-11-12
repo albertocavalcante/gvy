@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Command ID constants for the Groovy Language Server extension.
  * These are kept in a separate file to avoid importing vscode at module load time,

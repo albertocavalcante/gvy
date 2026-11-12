@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 const https = require("node:https");
 const fs = require("node:fs");
 const { URL } = require("node:url");

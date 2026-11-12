@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Defer work to GitHub issue and track with TODO comments"
 prompt = """
 Execute the following workflow:

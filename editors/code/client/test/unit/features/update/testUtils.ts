@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import type { Memento } from "vscode";
 import type { ReleaseInfo } from "../../../../src/features/update/VersionChecker";
 import type { ReleaseProvider } from "../../../../src/features/update/ReleaseProvider";

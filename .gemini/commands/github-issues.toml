@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "GitHub issue creation patterns and label conventions"
 prompt = """
 Execute the following workflow:

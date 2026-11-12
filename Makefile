@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Groovy LSP Makefile
 # Quick development commands for common tasks
 
@@ -307,7 +310,7 @@ ext-doctor:
 # Standalone licensing checks; dependencies are installed separately with uv sync.
 .PHONY: license-check license-test
 license-check:
-	uv run --offline --project .reuse --locked python .reuse/check.py --root .
+	uv run --offline --project .reuse --locked --no-dev python .reuse/check.py --root .
 
 license-test:
 	uv run --offline --project .reuse --locked python -m unittest discover -s .reuse/tests

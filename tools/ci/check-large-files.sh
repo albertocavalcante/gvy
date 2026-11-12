@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Fail if a PR adds or modifies a file larger than a size threshold.
 #
 # Usage: check-large-files.sh <base-ref> [max-bytes]

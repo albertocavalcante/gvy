@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readEvidenceText } from './read-evidence.mjs';

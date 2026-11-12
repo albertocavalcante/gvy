@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { expect } from "chai";
 import * as sinon from "sinon";
 import proxyquire from "proxyquire";

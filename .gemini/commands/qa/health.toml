@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Periodic codebase health check for proactive quality maintenance"
 prompt = """
 You are executing a strict, deterministic health check workflow.

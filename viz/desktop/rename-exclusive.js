@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 // macOS supplies osascript's Objective-C bridge; no compiler is needed at install time.
 ObjC.import('Foundation');
 ObjC.bindFunction('renamex_np', ['int', ['char *', 'char *', 'unsigned int']]);

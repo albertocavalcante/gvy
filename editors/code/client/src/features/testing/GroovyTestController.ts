@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import * as vscode from "vscode";
 import { ITestExecutionService } from "./ITestExecutionService";
 import { TestService, TestSuite, Test } from "./TestService";

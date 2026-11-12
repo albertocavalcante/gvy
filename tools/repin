@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Repin Maven dependencies
 #
 # NOTE: Lock file is currently DISABLED due to GMM checksum inconsistency.

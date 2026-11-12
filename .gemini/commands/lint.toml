@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 description = "Deterministic repo quality gate with auto-fix loop or read-only check mode"
 prompt = """
 You are executing a strict quality gate workflow.

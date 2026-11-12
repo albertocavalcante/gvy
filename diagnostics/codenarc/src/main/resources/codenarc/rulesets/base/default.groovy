@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Default CodeNarc ruleset for plain Groovy projects.
  * This provides a sensible baseline of rules for code quality.

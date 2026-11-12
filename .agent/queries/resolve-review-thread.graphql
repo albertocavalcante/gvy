@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Marks a PR review thread as resolved.
 # Usage: gh api graphql -F threadId="<THREAD_NODE_ID>" -f query="$(cat .agent/queries/resolve-review-thread.graphql)"
 # Get threadId from: jq '.data.repository.pullRequest.reviewThreads.nodes[].id' /tmp/pr-<N>-threads.json

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Custom Kotlin toolchain for Buck2
 #
 # This allows using a user-provided Kotlin version instead of

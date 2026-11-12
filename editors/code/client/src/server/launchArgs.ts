@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Default JVM options for the language server. Final command line is these
  * followed by the user's `groovy.server.vmargs`, so the user wins: HotSpot

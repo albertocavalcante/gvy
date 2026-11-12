@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 @file:Suppress("ReturnCount") // Early returns are clearer for multi-stage resolution logic
 
 package com.github.albertocavalcante.gvy.gls.providers.definition.resolution

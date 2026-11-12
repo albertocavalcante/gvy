@@ -1,4 +1,7 @@
 #!/bin/bash
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # ANSI Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'

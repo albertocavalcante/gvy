@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Octo STS trust policy: lets the Release Please workflow on main mint a short-lived token for this
 # repository, so no long-lived PAT is stored. Octo STS reads this file from the default branch only.
 # https://github.com/octo-sts/app

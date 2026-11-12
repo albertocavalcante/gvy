@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """Runtime regression for the patched Maven dependency graph."""
 
 load("@rules_java//java:defs.bzl", "java_test")

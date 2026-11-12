@@ -1,3 +1,8 @@
+// SPDX-FileCopyrightText: Contributors to the SCIP project <https://github.com/scip-code/scip>
+// SPDX-License-Identifier: Apache-2.0
+// Imported from https://github.com/scip-code/scip/blob/4a9a63dc95cd0e35f3bb4d7b43d5d65f747dada8/scip.proto
+// Local modification: correct "preferrable" to "preferable" in a documentation comment.
+
 // An index contains one or more pieces of information about a given piece of
 // source code or software artifact. Complementary information can be merged
 // together from multiple sources to provide a unified code intelligence

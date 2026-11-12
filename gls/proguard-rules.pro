@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # ProGuard rules for shrinking the shaded groovy-lsp uber jar.
 # Conservative defaults: shrink only (no obfuscation/optimization) to reduce risk.
 

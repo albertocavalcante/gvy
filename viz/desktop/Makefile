@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Makefile for Groovy AST Visualizer Desktop App
 
 GRADLE_ARGS ?=

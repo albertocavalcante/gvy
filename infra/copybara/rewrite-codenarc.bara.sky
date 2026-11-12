@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Copybara configuration for syncing refactor/openrewrite/rewrite-codenarc/ to rewrite-codenarc
 #
 # This workflow supports BIDIRECTIONAL sync between the gvy monorepo and the
@@ -52,6 +55,8 @@ core.workflow(
             # Gradle wrapper (from monorepo root)
             "gradlew",
             "gradlew.bat",
+            "gradlew.license",
+            "gradlew.bat.license",
             "gradle/wrapper/**",
             # License from monorepo root
             "LICENSE",
@@ -126,6 +131,8 @@ core.workflow(
             "gradle/libs.versions.toml",
             "gradlew",
             "gradlew.bat",
+            "gradlew.license",
+            "gradlew.bat.license",
             "gradle/wrapper/**",
             # License (maintained in monorepo)
             "LICENSE",

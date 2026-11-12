@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Dependency Review blocks PRs that introduce known vulnerable dependencies.
 name: Dependency Review
 

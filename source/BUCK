@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 # Buck2 currently builds individual Kotlin libraries; the server has no Buck2 target.
 kotlin_library(
     name = "source",
