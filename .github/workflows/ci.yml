@@ -152,6 +152,26 @@ jobs:
           tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
           install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
           echo "$bins" >>"$GITHUB_PATH"
+      - name: Run canonical license checks and retain statuses
+        working-directory: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          proof="${RUNNER_TEMP:?}/gvy-license-evidence"
+          mkdir "${proof}"
+          failed=0
+          for target in license-check license-test; do
+              set +e
+              make "${target}" 2>&1 | tee "${proof}/${target}.log"
+              statuses=("${PIPESTATUS[@]}")
+              set -e
+              printf '{"commandExitCode":%s,"captureExitCode":%s}\n' "${statuses[0]}" "${statuses[1]}" >"${proof}/${target}.status.json"
+              if [[ "${statuses[0]}" -ne 0 || "${statuses[1]}" -ne 0 ]]; then
+                  failed=1
+              fi
+          done
+          sha256sum "${proof}"/*.log "${proof}"/*.status.json >"${proof}/files.sha256"
+          exit "${failed}"
       - name: Run normal hooks and create candidate commit
         working-directory: candidate
         shell: bash
@@ -212,7 +232,8 @@ jobs:
           data = pathlib.Path(sys.argv[2]).read_bytes()
           lines = data.decode().splitlines()
           task = '> Task :diagnostics:codenarc:test'
-          assert [line for line in lines if line == task or line.startswith(task + ' ')] == [task]
+          task_headers = [line for line in lines if line == task or line.startswith(task + ' ')]
+          assert task_headers and all(line == task for line in task_headers)
           launchers = [line for line in lines if 'Starting process' in line and 'Gradle Test Executor' in line and 'Command:' in line]
           assert launchers, 'missing actual executor command'
           pathlib.Path(sys.argv[3]).write_text(json.dumps(dict(totals=totals, uniqueIdentities=14,
@@ -248,6 +269,7 @@ jobs:
           mkdir "$RUNNER_TEMP/gvy-publication-proof"
           cp "$RUNNER_TEMP/gvy-case-identities.json" "$RUNNER_TEMP/gvy-publication-proof/case-identities.json"
           cp -R "$gradle_evidence" "$RUNNER_TEMP/gvy-publication-proof/gradle-evidence"
+          cp -R "$RUNNER_TEMP/gvy-license-evidence" "$RUNNER_TEMP/gvy-publication-proof/license-evidence"
           cp -R "$RUNNER_TEMP/gvy-hook-diagnostics" "$RUNNER_TEMP/gvy-publication-proof/hook-diagnostics"
           git bundle create "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/gvy-publication-proof/candidate.bundle"
@@ -287,5 +309,6 @@ jobs:
             ${{ runner.temp }}/gvy-preparation-gradle-evidence/
             ${{ runner.temp }}/gvy-hook-diagnostics/
             ${{ runner.temp }}/gvy-commit-hooks.log
+            ${{ runner.temp }}/gvy-license-evidence/
           if-no-files-found: warn
           retention-days: 7
