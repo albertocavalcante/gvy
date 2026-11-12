@@ -1,55 +1,58 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeRun, readRun, compareRuns } from './evidence.mjs';
+import { execFileSync } from 'node:child_process';
+import { writeRun, readRun } from './evidence.mjs';
 
 const digest = 'a'.repeat(64);
 const sample = () => ({
-  manifest: { schemaVersion: 1, source: { commit: 'b'.repeat(40), dirty: false }, artifact: { sha256: digest }, workload: { id: 'editing', version: '1', corpusSha256: digest, scenarioSha256: digest }, runtime: { os: 'darwin', arch: 'arm64', vendor: 'jdk', version: '21', heapBytes: 1024, gc: 'g1' }, cacheState: 'cold', instrumentation: 'none', launch: { redactions: true, reproducible: false } },
+  manifest: { schemaVersion: 1, source: { commit: 'b'.repeat(40), dirty: false }, artifact: { sha256: digest }, workload: { id: 'startup', version: 1, corpusSha256: digest, scenarioSha256: digest }, runtime: { os: 'macos', arch: 'arm64', vendor: 'other', majorVersion: 21, heapBytes: 1024, gc: 'g1' }, cacheState: 'cold', instrumentation: 'none', launch: { redactions: true, reproducible: false } },
   outcomes: [{ sequence: 0, operation: 'initialize', plannedNs: 0, sendNs: 1, finishNs: 2, status: 'success', correctness: 'pass' }],
-  summary: { validity: 'valid', completed: true, expectedOutcomes: 1 },
+  summary: { completed: true, expectedOutcomes: 1 },
 });
-async function withDir(fn) { const dir = await mkdtemp(join(tmpdir(), 'gvy-evidence-')); try { await fn(dir); } finally { await rm(dir, { recursive: true, force: true }); } }
+async function withDir(fn) { const dir = await fs.mkdtemp(join(tmpdir(), 'gvy-evidence-')); try { await fn(dir); } finally { await fs.rm(dir, { recursive: true, force: true }); } }
 
-test('round trips complete evidence and compares compatible runs', async () => withDir(async dir => {
-  await writeRun(join(dir, 'a'), sample()); await writeRun(join(dir, 'b'), sample());
-  assert.deepEqual(await readRun(join(dir, 'a')), sample());
-  assert.doesNotThrow(() => compareRuns(sample(), sample()));
+test('round trips structurally valid evidence without certifying correctness', async () => withDir(async dir => {
+  const run = sample(); run.outcomes[0].status = 'failed'; run.outcomes[0].correctness = 'fail';
+  await writeRun(join(dir, 'run'), run); assert.deepEqual(await readRun(join(dir, 'run')), run);
 }));
-test('rejects unknown launch inputs and secret canaries without writing them', async () => withDir(async dir => {
-  for (const key of ['argv', 'env', 'property']) {
+test('rejects canaries in fields and errors without exporting them', async () => withDir(async dir => {
+  for (const key of ['argv', 'env', 'property', 'SECRET_CANARY']) {
     const run = sample(); run.manifest.launch[key] = 'SECRET_CANARY';
-    await assert.rejects(writeRun(join(dir, key), run));
+    await assert.rejects(writeRun(join(dir, 'bad'), run), e => !String(e).includes('SECRET_CANARY'));
+  }
+  const run = sample(); run.outcomes[0].operation = 'SECRET_CANARY';
+  await assert.rejects(writeRun(join(dir, 'bad'), run), e => !String(e).includes('SECRET_CANARY'));
+  await writeRun(join(dir, 'good'), sample());
+  for (const name of await fs.readdir(join(dir, 'good'))) assert.ok(!(await fs.readFile(join(dir, 'good', name), 'utf8')).includes('SECRET_CANARY'));
+}));
+test('rejects unsupported schema, incomplete or empty runs and invalid counts', async () => withDir(async dir => {
+  for (const change of [r => r.manifest.schemaVersion++, r => r.summary.completed = false, r => { r.outcomes = []; r.summary.expectedOutcomes = 0; }, r => r.summary.expectedOutcomes++]) {
+    const run = sample(); change(run); await assert.rejects(writeRun(join(dir, 'bad'), run));
   }
 }));
-test('rejects incompatible identities and schema', () => {
-  for (const change of [r => r.manifest.schemaVersion++, r => r.manifest.artifact.sha256 = 'c'.repeat(64), r => r.manifest.workload.scenarioSha256 = 'c'.repeat(64)]) {
-    const other = sample(); change(other); assert.throws(() => compareRuns(sample(), other));
+test('rejects nonfinite, oversized and duplicate outcomes and unsupported supersession', async () => withDir(async dir => {
+  for (const change of [r => r.outcomes[0].finishNs = Infinity, r => r.outcomes[0].operation = 'x'.repeat(300), r => { r.outcomes.push({ ...r.outcomes[0] }); r.summary.expectedOutcomes++; }, r => { r.outcomes[0].status = 'coalesced'; r.outcomes[0].supersededBy = 1; }]) {
+    const run = sample(); change(run); await assert.rejects(writeRun(join(dir, 'bad'), run));
   }
-});
-test('rejects incomplete, truncated, nonfinite and oversized evidence', async () => withDir(async dir => {
-  const run = sample(); run.outcomes[0].finishNs = Infinity; await assert.rejects(writeRun(join(dir, 'bad'), run));
-  const incomplete = sample(); incomplete.summary.completed = false; assert.throws(() => compareRuns(sample(), incomplete));
-  const tooLarge = sample(); tooLarge.outcomes[0].operation = 'x'.repeat(300); await assert.rejects(writeRun(join(dir, 'large'), tooLarge));
-  await writeRun(join(dir, 'truncated'), sample()); await writeFile(join(dir, 'truncated', 'outcomes.jsonl'), '{');
-  await assert.rejects(readRun(join(dir, 'truncated')));
-  await assert.rejects(readRun(join(dir, 'missing')));
+  const run = sample(); run.outcomes[0].status = 'coalesced'; run.outcomes[0].supersededBy = 1; run.outcomes.push({ ...sample().outcomes[0], sequence: 1 }); run.summary.expectedOutcomes = 2;
+  await writeRun(join(dir, 'good'), run); assert.deepEqual(await readRun(join(dir, 'good')), run);
 }));
-test('rejects duplicate sequences, failed correctness and unsupported coalescing', () => {
-  const duplicate = sample(); duplicate.outcomes.push({ ...duplicate.outcomes[0] }); duplicate.summary.expectedOutcomes = 2;
-  assert.throws(() => compareRuns(duplicate, sample()));
-  const failed = sample(); failed.outcomes[0].correctness = 'fail'; assert.throws(() => compareRuns(failed, sample()));
-  const coalesced = sample(); coalesced.outcomes[0].status = 'coalesced'; coalesced.summary.validity = 'invalid'; assert.throws(() => compareRuns(coalesced, sample()));
-});
-test('requires explicit cross-runtime comparison and rejects long paths', async () => withDir(async dir => {
-  const other = sample(); other.manifest.runtime.version = '22';
-  assert.throws(() => compareRuns(sample(), other));
-  assert.equal(compareRuns(sample(), other, { crossRuntime: true }), true);
-  await assert.rejects(writeRun(join(dir, 'x'.repeat(1100)), sample()));
+test('rejects truncated, symlink and FIFO evidence without blocking', async () => withDir(async dir => {
+  for (const kind of ['truncated', 'symlink', 'fifo']) {
+    const path = join(dir, kind); await writeRun(path, sample()); const target = join(path, 'outcomes.jsonl'); await fs.rm(target);
+    if (kind === 'truncated') await fs.writeFile(target, '{');
+    if (kind === 'symlink') await fs.symlink(join(path, 'manifest.json'), target);
+    if (kind === 'fifo') execFileSync('mkfifo', [target]);
+    await assert.rejects(readRun(path));
+  }
 }));
-test('does not overwrite an existing run', async () => withDir(async dir => {
-  const path = join(dir, 'run'); await writeRun(path, sample());
+test('cleans failed publication and permits retry, without overwriting existing runs', async () => withDir(async dir => {
+  const path = join(dir, 'run'); const original = fs.writeFile; let calls = 0;
+  const mock = test.mock.method(fs, 'writeFile', async (...args) => { if (++calls === 2) throw new Error('SECRET_CANARY'); return original(...args); });
+  try { await assert.rejects(writeRun(path, sample()), e => !String(e).includes('SECRET_CANARY')); } finally { mock.mock.restore(); }
+  await assert.rejects(fs.stat(path)); await writeRun(path, sample());
   await assert.rejects(writeRun(path, sample())); assert.deepEqual(await readRun(path), sample());
 }));
