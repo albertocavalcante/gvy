@@ -87,7 +87,11 @@ jobs:
           bazel_version=$(bazel --version)
           [[ "${bazel_version}" == 'bazel 9.0.0' ]]
           bazel --batch --output_user_root="${RUNNER_TEMP}/gvy-bazel" \
-              --host_jvm_args=-Xmx1536m mod deps --lockfile_mode=update
+              --output_base="${RUNNER_TEMP}/gvy-bazel-output" \
+              --host_jvm_args=-Xmx1536m fetch --lockfile_mode=update \
+              --repo=@junit_jupiter_api_jar \
+              --repo=@kotlin_logging_jar \
+              --repo=@wire_compiler_jar
           changed=$(git diff --name-only)
           untracked=$(git ls-files --others --exclude-standard)
           [[ "${changed}" == 'MODULE.bazel.lock' && -z "${untracked}" ]]
@@ -186,7 +190,9 @@ jobs:
               '{source:$source,parent:$parent,head:$head,tree:$tree,lockBeforeSha256:$before,
                 lockAfterSha256:$after,workflowSha:$workflow,workflowRef:$workflowRef,runId:$run,
                 runAttempt:$attempt,changedPaths:["MODULE.bazel.lock"],bazelVersion:"9.0.0",
-                operation:"bazel mod deps --lockfile_mode=update",hooks:"normal git commit with Lefthook 2.2.2"}' \
+                operation:"bazel fetch --lockfile_mode=update",
+                repositories:["@junit_jupiter_api_jar","@kotlin_logging_jar","@wire_compiler_jar"],
+                hooks:"normal git commit with Lefthook 2.2.2"}' \
               >"${proof}/receipt.json"
           (cd "${proof}" && sha256sum candidate.bundle MODULE.bazel.lock lockfile.patch receipt.json >SHA256SUMS)
 
