@@ -65,6 +65,28 @@ class LexicalScopeTest {
     }
 
     @Test
+    fun `sibling closure local declarations retain their own inferred types`() {
+        val module = parse("""
+            class Sample {
+                def m() {
+                    def one = { def x = 1; def probe = x }
+                    def two = { def x = 's'; def probe = x }
+                }
+            }
+        """.trimIndent())
+        val method = module.classes.first { it.name == "Sample" }.methods.first { it.name == "m" }
+        val statements = (method.code as BlockStatement).statements
+        fun probe(index: Int): DeclarationExpression {
+            val outer = (statements[index] as ExpressionStatement).expression as DeclarationExpression
+            val body = (outer.rightExpression as ClosureExpression).code as BlockStatement
+            return (body.statements[1] as ExpressionStatement).expression as DeclarationExpression
+        }
+        val semantics = GroovySemantics(solver)
+        assertEquals(TypeConstants.INT, semantics.resolveType(probe(0).rightExpression, module))
+        assertEquals(TypeConstants.STRING, semantics.resolveType(probe(1).rightExpression, module))
+    }
+
+    @Test
     fun `symbol extraction uses the matching method parameter`() {
         val module = parse("class Sample { def a(Integer x) { def result = x }; def b(String x) { def result = x } }")
         val semantics = GroovySemantics(solver)
