@@ -83,8 +83,6 @@ class GroovyFormattingService(
 
         currentCoroutineContext().ensureActive()
 
-        // TODO(#1686): Lower formatter stages can still hide failures before this callback boundary.
-        //   See: https://github.com/albertocavalcante/gvy/issues/1686
         val formattedResult = runCatching { formatter.formatChecked(currentContent) }
         val durationMs = (System.nanoTime() - startNanos) / NANOS_PER_MILLISECOND
 

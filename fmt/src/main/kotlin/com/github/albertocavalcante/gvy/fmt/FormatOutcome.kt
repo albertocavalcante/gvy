@@ -4,7 +4,7 @@ package com.github.albertocavalcante.gvy.fmt
 sealed interface FormatOutcome {
     val text: String
 
-    /** Formatting changed nothing, or the formatter could not handle the input. */
+    /** Formatting completed successfully without changing the input. */
     data class Unchanged(override val text: String) : FormatOutcome
 
     /** Formatting changed only layout; [text] is the new document. */
@@ -12,8 +12,8 @@ sealed interface FormatOutcome {
 
     /**
      * Formatting would have changed more than layout, so the result was dropped and [text] is
-     * the original. [reason] is a one-line description for logs, [cause] set when the check
-     * itself failed.
+     * the original. Recognized source parse and roundtrip failures are also refused. [reason] describes
+     * the refusal; [cause] can identify an expected source refusal. Unknown engine failures propagate.
      */
     data class Refused(override val text: String, val reason: String, val cause: Throwable? = null) : FormatOutcome
 }

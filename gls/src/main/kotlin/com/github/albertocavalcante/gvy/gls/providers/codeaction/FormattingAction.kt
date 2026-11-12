@@ -9,6 +9,7 @@ import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
 import org.eclipse.lsp4j.WorkspaceEdit
+import java.util.concurrent.CancellationException
 import kotlin.math.max
 
 /**
@@ -25,13 +26,9 @@ class FormattingAction(private val formatter: Formatter) {
     fun createFormattingAction(uriString: String, content: String): CodeAction? {
         logger.debug { "Checking if formatting action is needed for $uriString" }
 
-        val outcome = try {
-            formatter.formatChecked(content)
-        } catch (e: IllegalStateException) {
-            logger.debug(e) { "Formatter failed, not offering formatting action" }
-            return null
-        } catch (e: IllegalArgumentException) {
-            logger.debug(e) { "Formatter failed, not offering formatting action" }
+        val outcome = runCatching { formatter.formatChecked(content) }.getOrElse { failure ->
+            if (failure is CancellationException || failure !is Exception) throw failure
+            logger.debug(failure) { "Formatter failed, not offering formatting action" }
             return null
         }
 
