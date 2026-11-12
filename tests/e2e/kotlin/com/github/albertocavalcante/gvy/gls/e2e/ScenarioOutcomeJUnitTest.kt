@@ -68,7 +68,7 @@ class ScenarioOutcomeJUnitTest {
             cleanup = CleanupOutcome.Failed("close failed", confirmed = false),
             completion = ScenarioCompletion.Cancelled("interrupted"),
         )
-        val failure = catchThrowable { ScenarioOutcomeJUnit.report(report) }
+        val failure = checkNotNull(catchThrowable { ScenarioOutcomeJUnit.report(report) })
         assertThat(failure).isInstanceOf(CancellationException::class.java)
         assertThat(failure.suppressed).singleElement().hasMessageContaining("close failed")
     }
