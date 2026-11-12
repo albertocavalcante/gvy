@@ -8,7 +8,7 @@ internal enum class EditorPositionEncoding { UTF8, UTF16, UTF32 }
 
 /** Applies a single document's simultaneous LSP edits to a new string; no client or filesystem state is changed. */
 internal object EditorTextEdits {
-    fun apply(text: String, edits: List<TextEdit>, encoding: EditorPositionEncoding): String {
+    fun apply(text: CharSequence, edits: List<TextEdit>, encoding: EditorPositionEncoding): String {
         val lines = lines(text)
         val resolved = edits.mapIndexed { index, edit ->
             val range = requireNotNull(edit.range) { "Text edit requires a range" }
@@ -30,7 +30,7 @@ internal object EditorTextEdits {
         return result.toString()
     }
 
-    private fun lines(text: String): List<Line> {
+    private fun lines(text: CharSequence): List<Line> {
         val result = mutableListOf<Line>()
         var start = 0
         var at = 0
@@ -46,7 +46,7 @@ internal object EditorTextEdits {
         return result
     }
 
-    private fun offset(text: String, lines: List<Line>, position: Position, encoding: EditorPositionEncoding): Int {
+    private fun offset(text: CharSequence, lines: List<Line>, position: Position, encoding: EditorPositionEncoding): Int {
         require(position.line >= 0 && position.line < lines.size) { "Text edit line is out of range" }
         require(position.character >= 0) { "Text edit character is negative" }
         val line = lines[position.line]

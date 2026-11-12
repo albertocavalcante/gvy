@@ -63,6 +63,27 @@ class EditorTextEditsTest {
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
+    @Test
+    fun `many edits on one line scan source a bounded number of times`() {
+        val text = CountingText("a".repeat(4096))
+        val edits = List(1000) { edit(0, 2048, 0, 2048, "x") }
+
+        val result = EditorTextEdits.apply(text, edits, EditorPositionEncoding.UTF16)
+
+        assertThat(result.length).isEqualTo(5096)
+        assertThat(text.reads).isLessThan(8 * text.length + 10 * edits.size)
+    }
+
+    private class CountingText(private val value: String) : CharSequence {
+        var reads = 0
+        override val length: Int get() = value.length
+        override fun get(index: Int): Char {
+            reads++
+            return value[index]
+        }
+        override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = value.subSequence(startIndex, endIndex)
+    }
+
     private fun edit(sl: Int, sc: Int, el: Int, ec: Int, text: String) =
         TextEdit(Range(Position(sl, sc), Position(el, ec)), text)
 }
