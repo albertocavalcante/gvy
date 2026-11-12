@@ -52,7 +52,11 @@ class GroovySemantics(
      * Inject semantics into a parsed module.
      * After injection, semantic operations are available.
      */
-    fun inject(module: ModuleNode): NativeTypeContext {
+    fun inject(module: ModuleNode) {
+        acquireContext(module)
+    }
+
+    private fun acquireContext(module: ModuleNode): NativeTypeContext {
         val workspaceVersion = workspaceMemberLookup?.version ?: 0L
         synchronized(contextCache) {
             val cached = contextCache[module]?.get()
@@ -134,7 +138,7 @@ class GroovySemantics(
     fun resolveType(node: ASTNode, module: ModuleNode): SemanticType {
         currentModule.set(module)
         try {
-            val context = inject(module)
+            val context = acquireContext(module)
             return calculatorRegistry.calculate(node, context)
         } finally {
             currentModule.remove()
@@ -196,7 +200,7 @@ class GroovySemantics(
     fun resolveTypeResult(node: ASTNode, module: ModuleNode): TypeResult {
         currentModule.set(module)
         try {
-            val context = inject(module)
+            val context = acquireContext(module)
             return calculatorRegistry.calculateResult(node, context)
         } finally {
             currentModule.remove()
@@ -254,7 +258,8 @@ class GroovySemantics(
         // Find which module this node belongs to
         // TODO: Walk up using parent logic if we had it.
         // For now, we assume single module injection and return the first one.
-        return synchronized(contextCache) { contextCache.values.firstNotNullOfOrNull { it.get() } }
+        val module = synchronized(contextCache) { contextCache.keys.firstOrNull() } ?: return null
+        return acquireContext(module)
     }
 
     /**
@@ -265,6 +270,6 @@ class GroovySemantics(
      * @return The NativeTypeContext, or null if injection failed
      */
     fun getContext(module: ModuleNode): NativeTypeContext? {
-        return inject(module)
+        return acquireContext(module)
     }
 }

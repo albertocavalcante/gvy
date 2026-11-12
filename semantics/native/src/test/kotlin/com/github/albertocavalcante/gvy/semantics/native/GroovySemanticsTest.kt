@@ -382,7 +382,7 @@ class GroovySemanticsTest {
     fun `retired module and context are collectible while resolver stays alive`() {
         val semantics = GroovySemantics(stubSolver)
         val liveModule = parse("def live = 1")
-        val liveContext = semantics.inject(liveModule)
+        val liveContext = checkNotNull(semantics.getContext(liveModule))
         val (retiredModule, retiredContext) = retiredReferences(semantics)
 
         awaitCollection(retiredModule)
@@ -393,6 +393,21 @@ class GroovySemanticsTest {
         Reference.reachabilityFence(liveModule)
         Reference.reachabilityFence(liveContext)
         Reference.reachabilityFence(semantics)
+    }
+
+    @Test
+    fun `deprecated lookup rebuilds a collected context for a live injected module`() {
+        val semantics = GroovySemantics(stubSolver)
+        val module = parse("def x = 'value'")
+        semantics.inject(module)
+        val field = GroovySemantics::class.java.getDeclaredField("contextCache")
+        field.isAccessible = true
+        val cache = field.get(semantics) as Map<*, *>
+        (cache[module] as WeakReference<*>).clear()
+        val expression = findNode<DeclarationExpression>(module)!!.rightExpression
+        @Suppress("DEPRECATION")
+        assertEquals(TypeConstants.STRING, semantics.resolveType(expression))
+        Reference.reachabilityFence(module)
     }
 
     @Test
@@ -413,7 +428,7 @@ class GroovySemanticsTest {
 
     private fun retainedContext(semantics: GroovySemantics): Pair<WeakReference<ModuleNode>, NativeTypeContext> {
         val module = parse("class Retired { String name; String label() { name } }")
-        return WeakReference(module) to semantics.inject(module)
+        return WeakReference(module) to checkNotNull(semantics.getContext(module))
     }
 
     private fun retiredReferences(
