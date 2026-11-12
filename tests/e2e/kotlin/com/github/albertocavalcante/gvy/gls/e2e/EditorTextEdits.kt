@@ -15,8 +15,12 @@ internal object EditorTextEdits {
         val lines = lines(text)
         val authored = edits.mapIndexed { index, edit ->
             val range = requireNotNull(edit.range) { "Text edit requires a range" }
-            AuthoredEdit(key(requireNotNull(range.start)), key(requireNotNull(range.end)),
-                requireNotNull(edit.newText) { "Text edit requires newText" }, index)
+            AuthoredEdit(
+                key(requireNotNull(range.start)),
+                key(requireNotNull(range.end)),
+                requireNotNull(edit.newText) { "Text edit requires newText" },
+                index,
+            )
         }
         val offsets = mutableMapOf<PositionKey, Int>()
         val byLine = authored.flatMap { listOf(it.start, it.end) }.groupBy { it.line }
@@ -102,7 +106,9 @@ internal object EditorTextEdits {
                 EditorPositionEncoding.UTF16 -> width
                 EditorPositionEncoding.UTF32 -> 1
             }
-            require(targets[targetIndex].character.toLong() >= units + count) { "Text edit splits an encoded character" }
+            require(targets[targetIndex].character.toLong() >= units + count) {
+                "Text edit splits an encoded character"
+            }
             units += count
             at += width
         }
