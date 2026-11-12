@@ -130,33 +130,33 @@ class ScenarioExecutor internal constructor(
                 if (recorder == null) session.close() else recorder.closeSession { session.close() }
             }.use {
                 recordPrimary(recorder) {
-                val context = ScenarioContext(
-                    definition = definition,
-                    sessionAccess = ScenarioSessionAccess(session::get, execution::checkActive),
-                    workspace = workspace,
-                    json = json,
-                    jsonPathConfig = jsonPathConfig,
-                    timeoutCapMs = scenario.xfail?.let { XfailOutcome.STEP_TIMEOUT_CAP_MS },
-                )
-                context.registerBuiltInVariables()
-                context.namedAssertion = recorder?.let { it::observe }
-                inlineMarkers.forEach { (path, markers) ->
-                    context.registerCursors(workspace.resolveUri(path), markers)
-                }
-
-                recorder?.executionStarted()
-                scenario.steps.forEachIndexed { index, step ->
-                    execution.checkActive()
-                    logger.info {
-                        "Running step ${index + 1} (${step::class.simpleName}) for scenario '${scenario.name}'"
+                    val context = ScenarioContext(
+                        definition = definition,
+                        sessionAccess = ScenarioSessionAccess(session::get, execution::checkActive),
+                        workspace = workspace,
+                        json = json,
+                        jsonPathConfig = jsonPathConfig,
+                        timeoutCapMs = scenario.xfail?.let { XfailOutcome.STEP_TIMEOUT_CAP_MS },
+                    )
+                    context.registerBuiltInVariables()
+                    context.namedAssertion = recorder?.let { it::observe }
+                    inlineMarkers.forEach { (path, markers) ->
+                        context.registerCursors(workspace.resolveUri(path), markers)
                     }
-                    context.currentStepIndex = index
-                    context.totalSteps = scenario.steps.size
-                    val nextStep = scenario.steps.getOrNull(index + 1)
 
-                    executeStep(step, context, nextStep)
-                }
-                execution.checkActive()
+                    recorder?.executionStarted()
+                    scenario.steps.forEachIndexed { index, step ->
+                        execution.checkActive()
+                        logger.info {
+                            "Running step ${index + 1} (${step::class.simpleName}) for scenario '${scenario.name}'"
+                        }
+                        context.currentStepIndex = index
+                        context.totalSteps = scenario.steps.size
+                        val nextStep = scenario.steps.getOrNull(index + 1)
+
+                        executeStep(step, context, nextStep)
+                    }
+                    execution.checkActive()
                 }
             }
         }
