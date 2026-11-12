@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls
 
 import com.github.albertocavalcante.gvy.build.BuildTool
@@ -39,6 +42,8 @@ import com.github.albertocavalcante.gvy.gls.services.ProjectStartupManager
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
 import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
+import com.github.albertocavalcante.gvy.gls.verification.observeRuntime
+import com.github.albertocavalcante.gvy.gls.verification.runtimeFacts
 import com.github.albertocavalcante.gvy.junit.JUnit5TestDetector
 import com.github.albertocavalcante.gvy.junit4.JUnit4TestDetector
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
@@ -47,6 +52,8 @@ import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
 import com.github.albertocavalcante.reports.results.model.TestResultsResponse
+import com.google.gson.Gson
+import com.google.gson.JsonElement
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -61,6 +68,9 @@ import org.eclipse.lsp4j.InitializeResult
 import org.eclipse.lsp4j.InitializedParams
 import org.eclipse.lsp4j.MessageParams
 import org.eclipse.lsp4j.MessageType
+import org.eclipse.lsp4j.jsonrpc.ResponseErrorException
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseError
+import org.eclipse.lsp4j.jsonrpc.messages.ResponseErrorCode
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageClient
 import org.eclipse.lsp4j.services.LanguageClientAware
@@ -185,6 +195,8 @@ class GroovyLanguageServer(
     )
 
     // State
+    @Volatile
+    private var runtimeFactsReady = false
     private var savedInitParams: InitializeParams? = null
     private var clientCapabilities: ClientCapabilities? = null
     private var savedInitOptionsMap: Map<String, Any>? = null
@@ -229,6 +241,7 @@ class GroovyLanguageServer(
     }
 
     override fun initialize(params: InitializeParams): CompletableFuture<InitializeResult> {
+        runtimeFactsReady = false
         logger.info { "Initializing Groovy Language Server..." }
         logger.info { Version.info.startupLine() }
         logger.info { "Client: ${params.clientInfo?.name ?: "Unknown"}" }
@@ -252,6 +265,7 @@ class GroovyLanguageServer(
             prepareRenameSupport = params.capabilities?.textDocument?.rename?.prepareSupport == true,
         )
 
+        runtimeFactsReady = true
         logger.info { "LSP initialized - ready for requests" }
         return CompletableFuture.completedFuture(initializeResult)
     }
@@ -347,6 +361,26 @@ class GroovyLanguageServer(
     // ============================================================================
     // CUSTOM LSP METHODS
     // ============================================================================
+
+    /**
+     * Versioned server runtime and current hover-engine facts. The engine is observed at request time and is not
+     * an attribution to any earlier hover. Optional values are omitted unless their state is known.
+     */
+    @JsonRequest("groovy/runtimeFacts")
+    fun runtimeFacts(): CompletableFuture<JsonElement> {
+        val error = when {
+            shutdownRequested -> ResponseErrorCode.InvalidRequest to "Server is shutting down"
+            !runtimeFactsReady -> ResponseErrorCode.ServerNotInitialized to "Server is not initialized"
+            else -> null
+        }
+        if (error != null) {
+            return CompletableFuture.failedFuture(
+                ResponseErrorException(ResponseError(error.first, error.second, null)),
+            )
+        }
+        val facts = runtimeFacts(Version.info, observeRuntime(), compilationService.observeHoverEngine())
+        return CompletableFuture.completedFuture(Gson().toJsonTree(facts))
+    }
 
     @JsonRequest("groovy/discoverTests")
     fun discoverTests(params: DiscoverTestsParams): CompletableFuture<List<TestSuite>> =

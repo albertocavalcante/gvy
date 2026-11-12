@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
@@ -7,6 +10,7 @@ import com.github.albertocavalcante.gvy.gls.engine.config.EngineConfiguration
 import com.github.albertocavalcante.gvy.gls.services.DocumentProvider
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigator
 import com.github.albertocavalcante.gvy.gls.utils.rethrowIfCancellationOrError
+import com.github.albertocavalcante.gvy.gls.verification.HoverEngineObservation
 import com.github.albertocavalcante.gvy.gls.version.GroovyVersionInfo
 import com.github.albertocavalcante.gvy.gls.worker.WorkerDescriptor
 import io.github.oshai.kotlinlogging.KotlinLogging
@@ -52,6 +56,18 @@ class LanguageEngineManager(
         get() = synchronized(activeEngineLock) {
             activeEngineInstance ?: createEngine().also { activeEngineInstance = it }
         }
+
+    /** Reads the configured and already-created hover engine under the owner lock without creating one. */
+    internal fun observeHoverEngine(): HoverEngineObservation = synchronized(activeEngineLock) {
+        val instance = activeEngineInstance
+        val actual = instance?.id?.takeIf { it == "native" || it == "core" || it == "rewrite" }
+        val state = when {
+            instance == null -> "not_instantiated"
+            actual == null -> "unknown"
+            else -> "known"
+        }
+        HoverEngineObservation(engineConfig.type.id, state, actual)
+    }
 
     fun updateEngineConfiguration(newConfig: EngineConfiguration) {
         synchronized(activeEngineLock) {

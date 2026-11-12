@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.compilation
 
 import com.github.albertocavalcante.groovyparser.GroovyParserFacade
@@ -177,6 +180,9 @@ class GroovyCompilationService internal constructor(
     // ==========================================================================
 
     fun updateEngineConfiguration(newConfig: EngineConfiguration) = engineManager.updateEngineConfiguration(newConfig)
+
+    /** Current configured and instantiated hover engine without creating an engine. */
+    internal fun observeHoverEngine() = engineManager.observeHoverEngine()
 
     fun getSession(uri: URI): LanguageSession? {
         val cached =

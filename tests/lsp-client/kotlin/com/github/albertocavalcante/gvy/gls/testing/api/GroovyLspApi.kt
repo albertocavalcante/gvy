@@ -1,5 +1,9 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.testing.api
 
+import com.google.gson.JsonElement
 import org.eclipse.lsp4j.jsonrpc.services.JsonRequest
 import org.eclipse.lsp4j.services.LanguageServer
 import java.util.concurrent.CompletableFuture
@@ -25,6 +29,10 @@ import java.util.concurrent.CompletableFuture
  * @see <a href="https://github.com/eclipse-lsp4j/lsp4j#extending-the-protocol">LSP4J Extending the Protocol</a>
  */
 interface GroovyLanguageServerProtocol : LanguageServer {
+
+    /** Optional on older servers; absence is reported by JSON-RPC MethodNotFound. */
+    @JsonRequest("groovy/runtimeFacts")
+    fun runtimeFacts(): CompletableFuture<JsonElement>
 
     /**
      * Discovers all test suites (Spock specifications) in the workspace.
