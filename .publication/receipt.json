@@ -1,0 +1,15 @@
+{
+  "base": "8b5a8dadad8e14a8447807a307b0ef805b8ffc52",
+  "tree": "79c614e16f08cc495e06f2338f5c1b3c8d06a403",
+  "patchSha256": "f78bd66bd8aaea2d6ac21bad10196587dd98b5f4d095ec67654e255d06c36aab",
+  "payloadSha256": "2e2dc7a740c6d8ae7da157ceb16431c257243caceed20a4e4517ff67b9dbf1b6",
+  "patchBytes": 8098,
+  "payloadBytes": 3348,
+  "allowedPaths": [
+    ".agent/workflows/github-actions.md",
+    ".agent/workflows/github-cli.md",
+    ".agent/workflows/qa.md",
+    "docs/ci-diagnostics.md"
+  ],
+  "commitMessage": "docs(ci): preserve historical job log identity"
+}
