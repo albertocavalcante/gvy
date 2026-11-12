@@ -73,8 +73,9 @@ class FrozenMemberLookupTest {
         val arguments = mutableListOf<SemanticType>(TypeConstants.STRING)
         val index = WorkspaceSymbolIndex(GroovySemanticDB())
         index.updateDocument(uri, document(SemanticType.Known("List", arguments)))
-        val captured = index.captureMembers(emptySet())
+        // Published data must no longer alias the caller before a session captures it.
         arguments[0] = TypeConstants.INT
+        val captured = index.captureMembers(emptySet())
         val type = captured.findField("C", "value")?.type as SemanticType.Known
         assertEquals(listOf(TypeConstants.STRING), type.typeArgs)
         assertThrows<UnsupportedOperationException> { (type.typeArgs as MutableList).clear() }
