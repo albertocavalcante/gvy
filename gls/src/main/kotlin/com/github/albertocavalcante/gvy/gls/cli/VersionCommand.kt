@@ -21,7 +21,7 @@ class VersionCommand : CliktCommand(name = "version") {
 
     override fun run() {
         if (json) {
-            echo(Version.info.toJson().toString())
+            writeUtf8Stdout(Version.info.toJson().toString() + System.lineSeparator())
             return
         }
         // First line stays `gls version <token>`: tooling parses it.
