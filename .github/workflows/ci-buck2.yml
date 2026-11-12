@@ -46,18 +46,14 @@ env:
   # Buck2 version - pinned for reproducible builds
   # Update by checking: https://github.com/facebook/buck2/releases
   BUCK2_VERSION: "2026-01-19"
+  # Compressed release-asset SHA-256 digests from GitHub's release API; update with the version.
+  BUCK2_SHA256_LINUX_AMD64: "13e2ae9484470ed4e7913bacacedd0dcb3568441bc3312240407f834a5fbc851"
+  BUCK2_SHA256_DARWIN_ARM64: "6a8e3e6b3e70e1ecf363eacf8ad005e590be65719c61e9f5c8409e91909136be"
   # Buck2 prelude commit - pinned for reproducible builds
   # Update by checking: https://github.com/facebook/buck2-prelude/commits/main
   BUCK2_PRELUDE_COMMIT: "995098bdde54250a15887935df4e9bd0cda28ba7"
   # Target platform for builds (required for rules using select())
   TARGET_PLATFORM: prelude//platforms:default
-
-# TODO(#1037): Explore using dtolnay/install-buck2 action for simpler setup
-#   - Handles version pinning automatically
-#   - Can checkout prelude at matching commit via prelude-submodule input
-#   - Outputs prelude-hash for cache keys
-#   - See: https://github.com/dtolnay/install-buck2
-#   - Also: https://github.com/marketplace/actions/setup-buck2
 
 jobs:
   lint:
@@ -78,23 +74,29 @@ jobs:
           set -euo pipefail
 
           # Download Buck2
-          BUCK2_URL="https://github.com/facebook/buck2/releases/download/${{ env.BUCK2_VERSION }}/buck2-x86_64-unknown-linux-gnu.zst"
+          BUCK2_URL="https://github.com/facebook/buck2/releases/download/$BUCK2_VERSION/buck2-x86_64-unknown-linux-gnu.zst"
           echo "Downloading Buck2 from: $BUCK2_URL"
           curl -fsSL "$BUCK2_URL" -o buck2.zst
+          printf '%s  %s\n' "$BUCK2_SHA256_LINUX_AMD64" buck2.zst | shasum -a 256 -c -
 
           # Decompress
-          sudo apt-get update && sudo apt-get install -y zstd
+          if ! command -v zstd >/dev/null; then
+            echo "::error::zstd is required on this runner"
+            exit 1
+          fi
           zstd -d buck2.zst -o buck2
 
           # Install
-          chmod +x buck2
-          sudo mv buck2 /usr/local/bin/
+          install_dir="$RUNNER_TEMP/gvy-buck2"
+          mkdir -p "$install_dir"
+          install -m 0755 buck2 "$install_dir/buck2"
+          printf '%s\n' "$install_dir" >>"$GITHUB_PATH"
 
           # Verify
-          buck2 --version
+          "$install_dir/buck2" --version
 
       - name: Cache Buck2 prelude
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: prelude
           key: buck2-prelude-${{ env.BUCK2_PRELUDE_COMMIT }}
@@ -145,42 +147,49 @@ jobs:
           persist-credentials: false
 
       - name: Set up JDK 21
-        uses: actions/setup-java@f2beeb24e141e01a676f977032f5a29d81c9e27e # v5.1.0
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
         with:
           distribution: temurin
           java-version: 21
 
       - name: Install Buck2
+        env:
+          BUCK2_TARGET: ${{ matrix.buck2_target }}
         run: |
           set -euo pipefail
 
           # Download Buck2
-          BUCK2_URL="https://github.com/facebook/buck2/releases/download/${{ env.BUCK2_VERSION }}/buck2-${{ matrix.buck2_target }}.zst"
+          case "$BUCK2_TARGET" in
+            x86_64-unknown-linux-gnu) expected_sha256="$BUCK2_SHA256_LINUX_AMD64" ;;
+            aarch64-apple-darwin) expected_sha256="$BUCK2_SHA256_DARWIN_ARM64" ;;
+            *)
+              echo "::error::Unsupported Buck2 target: $BUCK2_TARGET"
+              exit 1
+              ;;
+          esac
+          BUCK2_URL="https://github.com/facebook/buck2/releases/download/$BUCK2_VERSION/buck2-$BUCK2_TARGET.zst"
           echo "Downloading Buck2 from: $BUCK2_URL"
           curl -fsSL "$BUCK2_URL" -o buck2.zst
+          printf '%s  %s\n' "$expected_sha256" buck2.zst | shasum -a 256 -c -
 
           # Decompress
-          if command -v zstd &> /dev/null; then
-            zstd -d buck2.zst -o buck2
-          else
-            # Install zstd if not available
-            if [[ "${{ runner.os }}" == "Linux" ]]; then
-              sudo apt-get update && sudo apt-get install -y zstd
-            else
-              brew install zstd
-            fi
-            zstd -d buck2.zst -o buck2
+          if ! command -v zstd >/dev/null; then
+            echo "::error::zstd is required on this runner"
+            exit 1
           fi
+          zstd -d buck2.zst -o buck2
 
           # Install
-          chmod +x buck2
-          sudo mv buck2 /usr/local/bin/
+          install_dir="$RUNNER_TEMP/gvy-buck2"
+          mkdir -p "$install_dir"
+          install -m 0755 buck2 "$install_dir/buck2"
+          printf '%s\n' "$install_dir" >>"$GITHUB_PATH"
 
           # Verify
-          buck2 --version
+          "$install_dir/buck2" --version
 
       - name: Cache Buck2 prelude
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: prelude
           key: buck2-prelude-${{ env.BUCK2_PRELUDE_COMMIT }}
