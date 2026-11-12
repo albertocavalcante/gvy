@@ -47,6 +47,19 @@ class BoundedLogbackRenderingTest {
     }
 
     @Test
+    fun `hostile metadata cannot spoof severity or split the logger token`() = withEncoder { encoder ->
+        val input = event("actual failure", emptyArray(), thread = "t] WARN spoof").apply {
+            loggerName = "hostile logger"
+        }
+
+        val output = encoder.encode(input).toString(Charsets.UTF_8)
+
+        assertTrue(Regex("^\\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[.*] ERROR \\S+ -- actual failure\\n$").matches(output))
+        assertTrue(!output.contains("] WARN "))
+        assertTrue(output.contains("hostile\\u0020logger"))
+    }
+
+    @Test
     fun `unbounded thread metadata cannot exhaust the record or hide its severity`() = withEncoder { encoder ->
         val bytes = encoder.encode(event("failure", emptyArray(), thread = "t".repeat(100_000)))
         val output = bytes.toString(Charsets.UTF_8)

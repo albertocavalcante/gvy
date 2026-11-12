@@ -23,17 +23,21 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         val record = RecordBuffer()
         record.append(CLOCK.format(Instant.ofEpochMilli(event.timeStamp)))
         record.append(" [")
-        record.append(safe(event.threadName ?: "", METADATA_BYTES))
+        record.append(prefixField(event.threadName ?: "", logger = false))
         record.append("] ")
         record.append(level(event.level))
         record.append(" ")
-        record.append(safe(event.loggerName ?: "", METADATA_BYTES).takeLast(LOGGER_CHARS))
+        record.append(prefixField(event.loggerName ?: "", logger = true).takeLast(LOGGER_CHARS))
         record.append(" -- ")
         val message = formatMessage(event.message ?: "", event.argumentArray)
         val rendered = SafeLogging.localText(message.text, MESSAGE_BYTES)
         record.append(rendered.text)
         if (message.truncated || rendered.truncated) record.markTruncated()
-        event.throwableProxy?.let { renderThrowable(record, it, ThrowableState(), "", 0) }
+        if (record.full) {
+            record.markTruncated()
+        } else {
+            event.throwableProxy?.let { renderThrowable(record, it, ThrowableState(), "", 0) }
+        }
         return record.finish()
     }
 
@@ -44,7 +48,7 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         label: String,
         depth: Int,
     ) {
-        if (depth >= MAX_DEPTH || state.nodes >= MAX_NODES || state.visited.containsKey(proxy)) {
+        if (record.full || depth >= MAX_DEPTH || state.nodes >= MAX_NODES || state.visited.containsKey(proxy)) {
             record.markTruncated()
             return
         }
@@ -78,6 +82,10 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
             }
             record.append(")")
         }
+        if (record.full) {
+            record.markTruncated()
+            return
+        }
         val suppressed = proxy.suppressed ?: emptyArray()
         for (index in 0 until minOf(suppressed.size, MAX_SUPPRESSED)) {
             if (record.full) {
@@ -87,7 +95,23 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
             renderThrowable(record, suppressed[index], state, "Suppressed: ", depth + 1)
         }
         if (suppressed.size > MAX_SUPPRESSED) record.markTruncated()
+        if (record.full) {
+            record.markTruncated()
+            return
+        }
         proxy.cause?.let { renderThrowable(record, it, state, "Caused by: ", depth + 1) }
+    }
+
+    private fun prefixField(value: String, logger: Boolean): String = buildString {
+        for (character in safe(value, METADATA_BYTES)) {
+            when {
+                character == '[' -> append("\\u005b")
+                character == ']' -> append("\\u005d")
+                logger && (character.isWhitespace() || Character.isSpaceChar(character)) ->
+                    append("\\u").append(character.code.toString(16).padStart(4, '0'))
+                else -> append(character)
+            }
+        }
     }
 
     private fun safe(value: String, bytes: Int): String = SafeLogging.localText(value, bytes).text
