@@ -6,6 +6,9 @@ import org.junit.jupiter.api.Assertions.assertNotSame
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Test
 import java.net.URI
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class CachedDeclarationViewTest {
     private val uri = URI.create("file:///C.groovy")
@@ -32,6 +35,31 @@ class CachedDeclarationViewTest {
         assertEquals(listOf("b", "a"), after.findMembers("C#").map { it.second.name })
         assertEquals(1, before.findMembers("C#").first().second.range.startLine)
         assertEquals(3, after.findMembers("C#").first().second.range.startLine)
+    }
+
+    @Test
+    fun `concurrent captures publish one coherent cached view`() {
+        val db = GroovySemanticDB()
+        db.updateDocument(uri, document(1))
+        val pool = Executors.newFixedThreadPool(8)
+        val start = CountDownLatch(1)
+        try {
+            val readers = (1..8).map {
+                pool.submit<DeclarationIndexSnapshot> {
+                    check(start.await(10, TimeUnit.SECONDS))
+                    db.snapshotDeclarations()
+                }
+            }
+            start.countDown()
+            val views = readers.map { it.get(10, TimeUnit.SECONDS) }
+            views.forEach { view ->
+                assertSame(views.first(), view)
+                assertEquals(listOf("a", "b"), view.findMembers("C#").map { it.second.name })
+            }
+        } finally {
+            start.countDown()
+            pool.shutdownNow()
+        }
     }
 
     @Test
