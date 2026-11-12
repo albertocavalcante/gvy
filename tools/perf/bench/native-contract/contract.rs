@@ -7,7 +7,7 @@ const VALID: &str = include_str!("fixtures/valid.groovy");
 const MALFORMED: &str = include_str!("fixtures/malformed.groovy");
 const MAX_INPUT_BYTES: usize = 64 * 1024;
 const MAX_EVENTS: usize = 8192;
-type Result<T> = std::result::Result<T, &'static str>;
+type Result<T> = std::result::Result<T, String>;
 type Events = fn(
     &mut Highlighter,
     &HighlightConfiguration,
@@ -27,7 +27,7 @@ fn validate_events(
     names: &[String],
 ) -> Result<Vec<Span>> {
     if events.len() > MAX_EVENTS {
-        return Err("EVENT_LIMIT");
+        return Err("EVENT_LIMIT".into());
     }
     let mut end = 0;
     let mut stack = Vec::new();
@@ -35,9 +35,9 @@ fn validate_events(
     for event in events {
         match event {
             HighlightEvent::HighlightStart(index) if index.0 < names.len() => stack.push(index.0),
-            HighlightEvent::HighlightStart(_) => return Err("HIGHLIGHT_INDEX"),
+            HighlightEvent::HighlightStart(_) => return Err("HIGHLIGHT_INDEX".into()),
             HighlightEvent::HighlightEnd if stack.pop().is_none() => {
-                return Err("HIGHLIGHT_BALANCE");
+                return Err("HIGHLIGHT_BALANCE".into());
             }
             HighlightEvent::HighlightEnd => {}
             HighlightEvent::Source { start, end: next } => {
@@ -47,7 +47,7 @@ fn validate_events(
                     || !source.is_char_boundary(start)
                     || !source.is_char_boundary(next)
                 {
-                    return Err("SOURCE_COVERAGE");
+                    return Err("SOURCE_COVERAGE".into());
                 }
                 spans.push(Span {
                     start,
@@ -59,7 +59,7 @@ fn validate_events(
         }
     }
     if end != source.len() || !stack.is_empty() {
-        return Err("INCOMPLETE_HIGHLIGHTS");
+        return Err("INCOMPLETE_HIGHLIGHTS".into());
     }
     Ok(spans)
 }
@@ -67,7 +67,7 @@ fn validate_events(
 fn query(language: &Language, source: &str) -> Result<Query> {
     let query = Query::new(language, source).map_err(|_| "QUERY_INVALID")?;
     if query.pattern_count() > 512 {
-        return Err("QUERY_LIMIT");
+        return Err("QUERY_LIMIT".into());
     }
     for index in 0..query.pattern_count() {
         if !query.general_predicates(index).is_empty()
@@ -87,7 +87,7 @@ fn query(language: &Language, source: &str) -> Result<Query> {
                 )
             })
         {
-            return Err("QUERY_SEMANTICS_UNSUPPORTED");
+            return Err("QUERY_SEMANTICS_UNSUPPORTED".into());
         }
     }
     Ok(query)
@@ -108,14 +108,63 @@ fn issues(node: Node<'_>, result: &mut Vec<Value>) {
 
 fn expect_category(spans: &[Span], names: &[String], word: &str, expected: &str) -> Result<()> {
     let start = VALID.find(word).ok_or("ORACLE_INVALID")?;
-    if !spans.iter().any(|span| {
+    if spans.iter().any(|span| {
         span.start == start
             && span.end == start + word.len()
             && span.category.map(|index| names[index].as_str()) == Some(expected)
     }) {
-        return Err("PREDICATE_ORACLE_FAILED");
+        return Ok(());
     }
-    Ok(())
+    let expectation = match (word, expected) {
+        ("int", "type.builtin") => "PRIMARY_BUILTIN",
+        ("String", "type") => "PRIMARY_TYPE",
+        ("MAX_VALUE", "constant") => "SECONDARY_CONSTANT",
+        ("Max_Value", "variable") => "SECONDARY_VARIABLE",
+        _ => return Err("ORACLE_INVALID".into()),
+    };
+    let class = |category| match category {
+        Some("constant") => "CONSTANT",
+        Some("constant.builtin") => "CONSTANT_BUILTIN",
+        Some("variable") => "VARIABLE",
+        Some("variable.parameter") => "VARIABLE_PARAMETER",
+        Some("variable.member") => "VARIABLE_MEMBER",
+        Some("type") => "TYPE",
+        Some("type.builtin") => "TYPE_BUILTIN",
+        Some("function") => "FUNCTION",
+        Some(_) => "OTHER",
+        None => "UNCOLORED",
+    };
+    let exact = spans
+        .iter()
+        .find(|span| span.start == start && span.end == start + word.len());
+    let observation = if let Some(span) = exact {
+        format!(
+            "EXACT_{}",
+            class(span.category.map(|index| names[index].as_str()))
+        )
+    } else {
+        let overlapping: Vec<_> = spans
+            .iter()
+            .filter(|span| span.start < start + word.len() && span.end > start)
+            .collect();
+        match overlapping.first() {
+            None => "MISSING".to_owned(),
+            Some(first)
+                if overlapping
+                    .iter()
+                    .all(|span| span.category == first.category) =>
+            {
+                format!(
+                    "INEXACT_{}",
+                    class(first.category.map(|index| names[index].as_str()))
+                )
+            }
+            Some(_) => "INEXACT_MIXED".to_owned(),
+        }
+    };
+    Err(format!(
+        "PREDICATE_ORACLE_FAILED:{expectation}:{observation}"
+    ))
 }
 
 fn run(
@@ -131,7 +180,7 @@ fn run(
             .keys()
             .any(|key| !["highlights", "locals", "injections"].contains(&key.as_str()))
     {
-        return Err("INPUT_INVALID");
+        return Err("INPUT_INVALID".into());
     }
     let highlights = fields["highlights"].as_str().ok_or("INPUT_INVALID")?;
     let locals = fields["locals"].as_str().ok_or("INPUT_INVALID")?;
@@ -150,9 +199,10 @@ fn run(
         "((identifier) @variable (#gvy-unsupported? @variable))",
     )
     .err()
+    .as_deref()
         != Some("QUERY_SEMANTICS_UNSUPPORTED")
     {
-        return Err("PREDICATE_REJECTION_FAILED");
+        return Err("PREDICATE_REJECTION_FAILED".into());
     }
     let mut parser = Parser::new();
     parser
@@ -160,7 +210,7 @@ fn run(
         .map_err(|_| "GRAMMAR_ABI_UNSUPPORTED")?;
     let valid = parser.parse(VALID, None).ok_or("PARSE_FAILED")?;
     if valid.root_node().has_error() {
-        return Err("VALID_PARSE_FAILED");
+        return Err("VALID_PARSE_FAILED".into());
     }
     let malformed = parser.parse(MALFORMED, None).ok_or("PARSE_FAILED")?;
     let mut parse_issues = Vec::new();
@@ -175,7 +225,7 @@ fn run(
                 || (start == MALFORMED.len() && end == start)
         })
     {
-        return Err("MALFORMED_LOCATION_FAILED");
+        return Err("MALFORMED_LOCATION_FAILED".into());
     }
     let names: Vec<String> = highlight_query
         .capture_names()
@@ -191,7 +241,7 @@ fn run(
     let (valid_events, injection_requested) =
         events(&mut highlighter, &config, VALID.as_bytes()).map_err(|_| "HIGHLIGHT_FAILED")?;
     if injection_requested {
-        return Err("UNSUPPORTED_INJECTION");
+        return Err("UNSUPPORTED_INJECTION".into());
     }
     let spans = validate_events(VALID, valid_events, &names)?;
     match engine {
@@ -203,13 +253,13 @@ fn run(
             expect_category(&spans, &names, "MAX_VALUE", "constant")?;
             expect_category(&spans, &names, "Max_Value", "variable")?;
         }
-        _ => return Err("ENGINE_INVALID"),
+        _ => return Err("ENGINE_INVALID".into()),
     }
     let (recovered_events, injection_requested) =
         events(&mut highlighter, &config, MALFORMED.as_bytes())
             .map_err(|_| "RECOVERED_HIGHLIGHT_FAILED")?;
     if injection_requested {
-        return Err("UNSUPPORTED_INJECTION");
+        return Err("UNSUPPORTED_INJECTION".into());
     }
     validate_events(MALFORMED, recovered_events, &names)?;
     let injection_source = if engine == "primary" {
@@ -222,7 +272,7 @@ fn run(
             .map_err(|_| "INJECTION_CONTROL_FAILED")?;
     validate_events(injection_source, injection_events, &names)?;
     if !requested {
-        return Err("INJECTION_REJECTION_FAILED");
+        return Err("INJECTION_REJECTION_FAILED".into());
     }
     let rendered: Vec<_> = spans
         .iter()
@@ -258,7 +308,7 @@ pub fn main(engine: &str, runtime: &str, language: Language, events: Events) {
             .read_to_end(&mut bytes)
             .map_err(|_| "INPUT_INVALID")?;
         if bytes.len() > MAX_INPUT_BYTES {
-            return Err("INPUT_LIMIT");
+            return Err("INPUT_LIMIT".into());
         }
         let input: Value = serde_json::from_slice(&bytes).map_err(|_| "INPUT_INVALID")?;
         run(engine, runtime, language, events, &input)
@@ -282,11 +332,11 @@ mod tests {
         let names = vec!["variable".to_owned()];
         assert_eq!(
             validate_events("x", vec![], &names),
-            Err("INCOMPLETE_HIGHLIGHTS")
+            Err("INCOMPLETE_HIGHLIGHTS".into())
         );
         assert_eq!(
             validate_events("x", vec![HighlightEvent::HighlightEnd], &names),
-            Err("HIGHLIGHT_BALANCE")
+            Err("HIGHLIGHT_BALANCE".into())
         );
         assert_eq!(
             validate_events(
@@ -294,7 +344,7 @@ mod tests {
                 vec![HighlightEvent::HighlightStart(Highlight(1))],
                 &names
             ),
-            Err("HIGHLIGHT_INDEX")
+            Err("HIGHLIGHT_INDEX".into())
         );
         assert_eq!(
             validate_events(
@@ -302,7 +352,7 @@ mod tests {
                 vec![HighlightEvent::Source { start: 0, end: 1 }],
                 &names
             ),
-            Err("SOURCE_COVERAGE")
+            Err("SOURCE_COVERAGE".into())
         );
         assert_eq!(
             validate_events(
@@ -310,7 +360,7 @@ mod tests {
                 vec![HighlightEvent::Source { start: 1, end: 2 }],
                 &names
             ),
-            Err("SOURCE_COVERAGE")
+            Err("SOURCE_COVERAGE".into())
         );
     }
 
@@ -342,8 +392,53 @@ mod tests {
                 &crate::language(),
                 "((identifier) @variable (#gvy-unsupported? @variable))"
             )
-            .err(),
+            .err()
+            .as_deref(),
             Some("QUERY_SEMANTICS_UNSUPPORTED")
+        );
+    }
+
+    #[test]
+    fn predicate_diagnostics_keep_category_and_range_failures_rejected() {
+        let start = VALID.find("MAX_VALUE").unwrap();
+        assert_eq!(
+            expect_category(
+                &[Span {
+                    start,
+                    end: start + 9,
+                    category: Some(0)
+                }],
+                &["variable".to_owned()],
+                "MAX_VALUE",
+                "constant"
+            ),
+            Err("PREDICATE_ORACLE_FAILED:SECONDARY_CONSTANT:EXACT_VARIABLE".into()),
+        );
+        assert_eq!(
+            expect_category(
+                &[Span {
+                    start: start - 1,
+                    end: start + 10,
+                    category: Some(0)
+                }],
+                &["constant".to_owned()],
+                "MAX_VALUE",
+                "constant"
+            ),
+            Err("PREDICATE_ORACLE_FAILED:SECONDARY_CONSTANT:INEXACT_CONSTANT".into()),
+        );
+        assert_eq!(
+            expect_category(
+                &[Span {
+                    start,
+                    end: start + 9,
+                    category: Some(0)
+                }],
+                &["PRIVATE_CANARY".to_owned()],
+                "MAX_VALUE",
+                "constant"
+            ),
+            Err("PREDICATE_ORACLE_FAILED:SECONDARY_CONSTANT:EXACT_OTHER".into()),
         );
     }
 }

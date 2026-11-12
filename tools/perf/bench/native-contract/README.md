@@ -36,6 +36,9 @@ identify the failed control; unknown, extra or secret-bearing stderr yields only
 its hashes are never exported. Timeout, output-limit and cleanup-uncertainty categories take precedence over a probe
 diagnostic. A failure category does not certify completed work.
 
+Predicate failures additionally distinguish a closed expected case from the observed category class and exact/inexact
+span presence. These diagnostics preserve the failing assertion; they do not change its expected range or category.
+
 ## Inputs and identity
 
 `source-lock.json` pins the grammar commits, all generated/parser/scanner/header/query/Rust-binding inputs, licenses,
