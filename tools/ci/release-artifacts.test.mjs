@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -76,6 +76,7 @@ function fixture(t, options = {}) {
   cpSync(join(repository, 'editors/code/tools'), join(editor, 'tools'), { recursive: true });
   const originalPackage = '{ "name": "gvy", "publisher": "fixture", "version": "0.1.0" }\n';
   writeFileSync(join(editor, 'package.json'), originalPackage);
+  chmodSync(join(editor, 'package.json'), 0o644);
   writeFileSync(join(root, 'fresh.jar'), server(options.serverVersion ?? version, options.commit ?? commit, options.dirty ?? false));
   writeFileSync(join(root, 'pinned.jar'), server('0.4.8-SNAPSHOT'));
   writeFileSync(join(root, 'fixture-zip.cjs'), `${crc32.toString()}\n${zip.toString()}\nmodule.exports = zip;\n`);
@@ -213,4 +214,59 @@ test('malformed versions fail before touching existing artifacts', t => {
   assert.notEqual(result.status, 0);
   assert.equal(readFileSync(join(f.root, 'dist/previous-artifact'), 'utf8'), 'keep');
   assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+});
+
+for (const mode of ['', 'package-failure']) {
+  test(`package.json permissions survive ${mode || 'successful packaging'}`, t => {
+    const f = fixture(t, { mode });
+    const result = f.run();
+    assert.equal(result.status, mode ? 31 : 0, result.stdout + result.stderr);
+    assert.equal(statSync(join(f.editor, 'package.json')).mode & 0o777, 0o644);
+    assert.equal(readFileSync(join(f.editor, 'package.json'), 'utf8'), f.originalPackage);
+  });
+}
+
+test('a prerelease extension can truthfully bundle its clean base-version server', t => {
+  const f = fixture(t);
+  const result = f.run('--version', 'v0.5.4-rc.1');
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const receipt = JSON.parse(readFileSync(join(f.root, 'dist/release.json'), 'utf8'));
+  assert.equal(receipt.version, '0.5.4-rc.1');
+  assert.equal(receipt.server.version, '0.5.4');
+  const vsix = join(f.root, 'dist/gvy-0.5.4-rc.1.vsix');
+  const extension = JSON.parse(readZipEntry(vsix, 'extension/package.json').toString('utf8'));
+  assert.equal(extension.version, '0.5.4-rc.1');
+  assert.ok(readZipEntry(vsix, 'extension/server/gls.jar').equals(readFileSync(join(f.root, 'dist/gls-0.5.4-rc.1.jar'))));
+});
+
+test('checksum regeneration never hashes its own manifest or temporary output', t => {
+  const f = fixture(t);
+  const dist = join(f.root, 'dist');
+  mkdirSync(dist);
+  writeFileSync(join(dist, 'gls.jar'), 'server');
+  writeFileSync(join(dist, '.checksums.abandoned'), 'incomplete old output');
+  const run = () => spawnSync('bash', ['tools/release.sh', 'checksums'], { cwd: f.root, encoding: 'utf8' });
+  assert.equal(run().status, 0);
+  const first = readFileSync(join(dist, 'checksums.txt'), 'utf8');
+  assert.equal(run().status, 0);
+  assert.equal(readFileSync(join(dist, 'checksums.txt'), 'utf8'), first);
+  const verification = spawnSync('shasum', ['-a', '256', '-c', 'checksums.txt'], { cwd: dist, encoding: 'utf8' });
+  assert.equal(verification.status, 0, verification.stdout + verification.stderr);
+  assert.match(first, /gls.jar/);
+  assert.doesNotMatch(first, /checksums/);
+});
+
+test('a failed checksum command preserves the last manifest and its nonzero exit', t => {
+  const f = fixture(t);
+  const dist = join(f.root, 'dist');
+  mkdirSync(dist);
+  writeFileSync(join(dist, 'gls.jar'), 'server');
+  writeFileSync(join(dist, 'checksums.txt'), 'previous verified manifest\n');
+  writeFileSync(join(f.root, 'bin/shasum'), '#!/bin/bash\nprintf "partial output\\n"\nexit 7\n', { mode: 0o755 });
+  const result = spawnSync('bash', ['tools/release.sh', 'checksums'], {
+    cwd: f.root, encoding: 'utf8', env: { ...process.env, PATH: `${f.root}/bin:${process.env.PATH}` },
+  });
+  assert.equal(result.status, 7);
+  assert.equal(readFileSync(join(dist, 'checksums.txt'), 'utf8'), 'previous verified manifest\n');
+  assert.doesNotMatch(result.stdout, /Checksums generated/);
 });

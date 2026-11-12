@@ -120,7 +120,7 @@ cmd_build() {
 
   release_package_json="${root_dir}/${EXTENSION_DIR}/package.json"
   release_package_backup="$(mktemp "${release_package_json}.release.XXXXXX")"
-  cp "${release_package_json}" "${release_package_backup}"
+  cp -p "${release_package_json}" "${release_package_backup}"
   trap cleanup_package_json EXIT
   trap 'exit 130' INT
   trap 'exit 143' TERM
@@ -170,13 +170,37 @@ cmd_checksums() {
 
   log_info "Generating checksums..."
   pushd "${DIST_DIR}" >/dev/null || exit 1
-  if ls ./* >/dev/null 2>&1; then
-    shasum -a 256 ./* >checksums.txt
-    log_success "Checksums generated in ${DIST_DIR}/checksums.txt"
-    cat checksums.txt
-  else
-    log_warn "No files in ${DIST_DIR} to checksum"
+  local file checksum_temp checksum_status=0 file_count=0
+  local files=()
+  for file in ./*; do
+    case "${file}" in
+    ./checksums.txt | ./.checksums.*) continue ;;
+    *) ;;
+    esac
+    if [[ -f "${file}" ]]; then
+      files+=("${file}")
+      file_count=$((file_count + 1))
+    fi
+  done
+  if [[ "${file_count}" -eq 0 ]]; then
+    log_error "No artifact files in ${DIST_DIR} to checksum"
+    popd >/dev/null || exit 1
+    return 1
   fi
+
+  # Keep a previous complete manifest if hashing fails. Dot-prefixed temporary
+  # output is excluded from artifact globs, including after an interrupted run.
+  checksum_temp="$(mktemp '.checksums.XXXXXX')"
+  shasum -a 256 "${files[@]}" >"${checksum_temp}" || checksum_status=$?
+  if [[ "${checksum_status}" -ne 0 ]]; then
+    rm "${checksum_temp}"
+    log_error "Checksum generation failed (exit ${checksum_status})"
+    popd >/dev/null || exit 1
+    return "${checksum_status}"
+  fi
+  mv "${checksum_temp}" checksums.txt
+  log_success "Checksums generated in ${DIST_DIR}/checksums.txt"
+  cat checksums.txt
   popd >/dev/null || exit 1
 }
 

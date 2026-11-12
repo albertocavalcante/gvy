@@ -71,9 +71,14 @@ staged JAR through pnpm preparation and VSCE prepublish, with pinned fallback di
 commit, clean server provenance, extension version, and byte equality between the standalone and embedded JARs.
 `dist/release.json` records the verified pair's provenance and SHA-256 digests.
 
+For a prerelease such as `v0.5.4-rc.1`, Gradle can report the server's source base version as `0.5.4`. Verification
+accepts that base version while requiring the extension's full prerelease version and the same clean source commit. The
+receipt retains the server's actual version. `tools/release.sh checksums` can regenerate the checksum manifest; it
+excludes its own output and replaces the previous manifest only after hashing succeeds.
+
 Use a clean checkout whose base version matches the requested release. `tools/release.sh build --version vX.Y.Z`
 produces the verified artifacts; `--dry-run` creates placeholders without invoking Gradle or pnpm. The builder restores
-the original `package.json` after either successful packaging or an error.
+the original `package.json` contents and permissions after either successful packaging or an error.
 
 Published v0.5.4 still contains the mismatched server tracked in
 [#1751](https://github.com/albertocavalcante/gvy/issues/1751). A source fix does not replace that release; publish and

@@ -17,7 +17,11 @@ const server = readJarProvenance(jar);
 if (server?.gitSha !== commit || server.dirty !== false) {
   throw new Error('Release server must come from the expected clean source commit');
 }
-if (server.version !== version) throw new Error('Release server version does not match the requested version');
+// Gradle's release provenance uses the source base version for RC tags too.
+// Retain that actual server version in the receipt instead of rewriting it.
+if (server.version !== version && server.version !== version.split('-')[0]) {
+  throw new Error('Release server version does not match the requested base version');
+}
 const jarBytes = readFileSync(jar);
 if (!readZipEntry(vsix, 'extension/server/gls.jar').equals(jarBytes)) {
   throw new Error('Release VSIX bundles a different server from the standalone JAR');
