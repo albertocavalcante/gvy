@@ -71,7 +71,7 @@ class ScenarioOutcomeJUnitTest {
         )
         val failure = checkNotNull(catchThrowable { ScenarioOutcomeJUnit.report(report) })
         assertThat(failure).isInstanceOf(CancellationException::class.java)
-        assertThat(failure.suppressed).singleElement().hasMessageContaining("close failed")
+        assertThat(failure.suppressed.single().message).contains("close failed")
     }
 
     @Test
