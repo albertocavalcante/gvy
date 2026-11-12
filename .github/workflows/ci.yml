@@ -18,7 +18,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 1
       JDK_JAVA_OPTIONS: '-Xmx512m'
-      JAVA_TOOL_OPTIONS: '-Xmx512m'
+      JAVA_TOOL_OPTIONS: '-Xmx512m -Dorg.gradle.deprecation.trace=true'
       GRADLE_OPTS: >-
         -Dorg.gradle.jvmargs="-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC"
         -Dorg.gradle.workers.max=1 -Dorg.gradle.parallel=false -Dorg.gradle.daemon=false
@@ -286,6 +286,10 @@ jobs:
           test -z "$(git ls-files --others --exclude-standard)"
           [[ "$(git branch --show-current)" == feat/verified-packaged-launch-publication ]]
           capture commit git commit -m 'feat(test): verify explicit packaged server launches'
+          node tools/ci/check-gradle-diagnostics.mjs \
+              --log "$proof/commit.log" --exit-code 0 --capture-exit-code 0 \
+              --producer publication-hooks --baseline tools/ci/gradle-diagnostics.json \
+              --report "$proof/diagnostics-publication-hooks" --root "$PWD"
           [[ "$(git rev-parse HEAD^)" == "$EXPECTED_BASE" ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$EXPECTED_TREE" ]]
           git diff --quiet && git diff --cached --quiet

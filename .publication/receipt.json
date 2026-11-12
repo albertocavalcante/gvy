@@ -27,5 +27,11 @@
   "provenGreenRun": 43243639625,
   "diagnosticCorrection": "2fb106a37c410eb94f390a490119ee94a6f08251",
   "composition": "all seven reviewed GREEN file bytes unchanged; no fresh-main overlap; preserve current helpers/runtime facts/JSON projections",
-  "sourceReview": "Terra final GREEN review; fresh composed head still requires independent review"
+  "sourceReview": "Terra final GREEN review; fresh composed head still requires independent review",
+  "previousPublicationAttempt": {
+    "runId": 43258337035,
+    "candidateHead": "f7f6b979efcc232b6cadea4a9cc70d7cf182e1a5",
+    "verdict": "not ready: normal hook lacked origin trace; all40/lint and direct producer diagnostic gates passed"
+  },
+  "hookDiagnosticPolicy": "JAVA_TOOL_OPTIONS sets deprecation trace for every forked JVM; canonical post-commit log gate required before bundle"
 }
