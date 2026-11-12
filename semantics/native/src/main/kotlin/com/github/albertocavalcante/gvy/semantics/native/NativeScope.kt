@@ -4,6 +4,10 @@ import com.github.albertocavalcante.gvy.semantics.SemanticType
 import org.codehaus.groovy.ast.ClassNode
 import org.codehaus.groovy.ast.MethodNode
 import org.codehaus.groovy.ast.ModuleNode
+import org.codehaus.groovy.ast.Variable
+import org.codehaus.groovy.ast.expr.VariableExpression
+import java.util.Collections.synchronizedMap
+import java.util.WeakHashMap
 
 /**
  * Scope tracking for variable resolution in native Groovy AST.
@@ -16,7 +20,27 @@ class NativeScope private constructor(
     private val parent: NativeScope?,
     private val variables: MutableMap<String, SemanticType> = mutableMapOf(),
     val currentModule: ModuleNode? = null,
+    private val declarations: MutableMap<Variable, SemanticType> = synchronizedMap(WeakHashMap()),
+    private val ambiguousNames: MutableSet<String> = mutableSetOf(),
 ) {
+
+    internal fun lookupDeclaration(variable: VariableExpression): SemanticType? =
+        declarations[variable] ?: parent?.lookupDeclaration(variable)
+
+    internal fun defineDeclaration(variable: Variable, type: SemanticType) {
+        if (!declarations.containsKey(variable)) {
+            val name = variable.name
+            if (name in variables || name in ambiguousNames) {
+                variables.remove(name)
+                ambiguousNames.add(name)
+            } else {
+                variables[name] = type
+            }
+        }
+        declarations[variable] = type
+    }
+
+    internal fun lookupUnbound(name: String): SemanticType? = if (currentModule == null) lookupVariable(name) else null
 
     /**
      * Look up a variable by name in this scope or parent scopes.
