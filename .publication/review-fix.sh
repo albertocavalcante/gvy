@@ -106,25 +106,13 @@ run_tests() {
 observed=$(git rev-parse HEAD)
 [[ "${observed}" == "${base}" ]]
 observed=$(git branch --show-current)
-[[ "${observed}" == feat/verified-packaged-launch-review-fix ]]
-phase_check red
+[[ "${observed}" == feat/verified-packaged-launch-rebased-publication ]]
+phase_check green
 direnv allow
 git config user.name 'gvy publication automation'
 git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
 lefthook install
 test -x .git/hooks/pre-commit && test -x .git/hooks/commit-msg
-phase=red-format
-gradle red-format lintFix
-require_success red-format
-phase_check red
-diagnostic red-format review-fix-red-format
-phase=red-tests
-run_tests red
-diagnostic red review-fix-red
-phase=green-apply
-git apply --check --index "${RUNNER_TEMP}/green.patch"
-git apply --index "${RUNNER_TEMP}/green.patch"
-phase_check green
 phase=green-format
 gradle lintFix lintFix
 require_success lintFix
@@ -140,8 +128,8 @@ phase_check green
 diagnostic lint review-fix-lint
 phase=commit
 observed=$(git branch --show-current)
-[[ "${observed}" == feat/verified-packaged-launch-review-fix ]]
-capture commit git commit -m 'fix(test): harden verified packaged launch cleanup'
+[[ "${observed}" == feat/verified-packaged-launch-rebased-publication ]]
+capture commit git commit -m 'feat(test): verify explicit packaged server launches'
 require_success commit
 diagnostic commit review-fix-hooks
 observed=$(git rev-parse HEAD^)

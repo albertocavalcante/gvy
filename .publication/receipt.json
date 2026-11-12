@@ -1,119 +1,15 @@
 {
-  "base": "b0e39c60e2210d8e5e65818025f2e42f004d06b3",
-  "red": {
-    "tree": "f43c4d0ab86394bc114f1d91ba5e1df9500d982d",
-    "patch": {
-      "sha256": "9987e247f46fab9cf66614344e6792d48fc8276da457867253d21251172851b9",
-      "compressedSha256": "785c643ebd0247fb755b3471df29c28d780d2a39cba008fbc461e085e88952f8",
-      "bytes": 22756,
-      "compressedBytes": 4207
-    },
-    "paths": [
-      "tests/build.gradle.kts",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedLaunchTest.kt",
-      "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/PackagedSessionFactoryTest.kt"
-    ],
-    "classes": [
-      {
-        "name": "PackagedLaunchTest",
-        "count": 31
-      },
-      {
-        "name": "PackagedSessionFactoryTest",
-        "count": 26
-      },
-      {
-        "name": "SessionResourcesTest",
-        "count": 3
-      }
-    ],
-    "failures": [
-      {
-        "class": "PackagedLaunchTest",
-        "name": "preparation preserves cancellation and removes the owned stage()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedLaunchTest",
-        "name": "preparation preserves interruption and restores its flag after cleanup()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedLaunchTest",
-        "name": "preparation preserves fatal failure and removes owned stage()",
-        "type": "org.opentest4j.AssertionFailedError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "default session reports stderr observation as unavailable()",
-        "type": "org.opentest4j.AssertionFailedError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private launch propagates cancellation and cleans its staging()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private launch preserves interruption and restores flag after staging cleanup()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private launch preserves closed by interrupt and restores flag()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "packaged launch forwards the isolated Jenkins cache root before the jar()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private cleanup promotes suppressed cancellation after closing every resource()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private cleanup promotes suppressed interruption and restores interrupt()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private cleanup preserves primary cancellation when later cleanup fails()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private cleanup promotes suppressed fatal failure and closes all resources()",
-        "type": "java.lang.AssertionError"
-      },
-      {
-        "class": "PackagedSessionFactoryTest",
-        "name": "private cleanup retains interruption flag even when fatal error takes priority()",
-        "type": "org.opentest4j.AssertionFailedError"
-      },
-      {
-        "class": "PackagedLaunchTest",
-        "name": "dirty expected source does not retain arbitrary hash content()",
-        "type": "org.opentest4j.AssertionFailedError"
-      },
-      {
-        "class": "PackagedLaunchTest",
-        "name": "dirty embedded source does not retain arbitrary hash content()",
-        "type": "org.opentest4j.AssertionFailedError"
-      }
-    ]
-  },
+  "base": "7dd46513b7c6efe6688f234505f548b276e3cfda",
   "green": {
-    "tree": "97fb100b6dad0cf7f0c6bf623376039f0ad0946c",
+    "tree": "804e1226101cc9fd2681fd9d6689ae8c3ce28ba6",
     "patch": {
-      "sha256": "ea5e8fd48b565bd07620a13160a5cf1ed39ec03855ced2f26e43292692764360",
-      "compressedSha256": "ccfb1021b428a0462ed27cd80a32da5551056edf13d82a82b7c83bedbb6d7def",
-      "bytes": 25375,
-      "compressedBytes": 5478
+      "sha256": "b12fd023655f57eba5c11ee1625b94a4186b417119cf8df68ab506c0ed5ffe6f",
+      "compressedSha256": "78ddba00d88ffb65c4c7d2f4274b1977a37a78b163adaab2309f82132846d2e8",
+      "bytes": 98604,
+      "compressedBytes": 17399
     },
     "paths": [
+      "tests/BUILD.bazel",
       "tests/build.gradle.kts",
       "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSession.kt",
       "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/LanguageServerSessionFactory.kt",
@@ -138,11 +34,11 @@
     "failures": []
   },
   "helpers": {
-    "worker": "2fbb80f647b16cd05062794a67b0e26052b6dc18baf32857cfac48071fb24691",
     "phase": "d8be5aad1666ed2809192cf44b834ea30ea95a4d62d78b596e4039d62bcd3b3e",
     "results": "9228defcb90c477fda9ac34fc47d795a385833786584a3121a1cfec9437b7424",
+    "worker": "d4772e56ce401a4253db6138ffd1160964fb1c623c578e0e1b67a51db77f105d",
     "capture": "e369b217ddf780fb09744ee23071d4c5818e4fabe4bd137ae8ad2f9dd1ea6b8b",
-    "copy": "5d74adc6764c1a0ac0f6e8096471e539ae4192ec68615acf07e8179c63574e00",
-    "budget": "8fed9039bb2955e2fc2df95f993e50a7e80428113afad4022c1c11f090463ba6"
+    "budget": "8fed9039bb2955e2fc2df95f993e50a7e80428113afad4022c1c11f090463ba6",
+    "copy": "5d74adc6764c1a0ac0f6e8096471e539ae4192ec68615acf07e8179c63574e00"
   }
 }

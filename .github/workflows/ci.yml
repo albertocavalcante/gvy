@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 # Temporary execution support only. Never merge into main or the product PR.
-name: Verified packaged launch review proof
+name: Verified packaged launch rebased publication
 on:
   workflow_dispatch:
 permissions:
@@ -40,9 +40,9 @@ jobs:
           path: support
           persist-credentials: false
       # PLACEHOLDERS MUST BE REPLACED AND INDEPENDENTLY REVIEWED BEFORE DISPATCH.
-      # The exact b0 base, RED/GREEN trees, paths, patches, tests and expected
-      # failures belong in a reviewed closed receipt, never in user inputs.
-      - name: Validate bounded RED and GREEN payloads
+      # The exact 7dd base, GREEN tree, paths, patch and tests
+      # belong in a reviewed closed receipt, never in user inputs.
+      - name: Validate bounded GREEN payload
         timeout-minutes: 5
         id: receipt
         shell: bash
@@ -53,14 +53,14 @@ jobs:
           # This helper must fail closed on unknown/missing fields; verify the
           # fixed PR head, both compressed and decompressed sizes/SHA-256,
           # helper hashes, exact trees, paths, test names/counts and assertions.
-          printf '%s  %s\n' "fe1eb5ef8f092d55924b63c594f4549279857e9a17e1dc0990fbcfa0fc605ce3" "$proof/validate-receipt.mjs" | sha256sum -c -
-          node "$proof/validate-receipt.mjs" "$receipt" "2807261bd5c1ac786aed103fc4430ba4473f785e22510e1311515f6b9dd6f05c"
+          printf '%s  %s\n' "d583009040c1e85c80895a48a44f28933e1bf33a3c9c631bcd7ee4aa3122da34" "$proof/validate-receipt.mjs" | sha256sum -c -
+          node "$proof/validate-receipt.mjs" "$receipt" "486e6c02e2e7baa234fca1f5761ed9952afb33841ede0f5bc301d0703811f2ba"
           for pair in 'phase validate-phase.mjs' 'results check-red.mjs' 'worker review-fix.sh' 'capture bounded-capture.mjs' 'budget evidence-budget.mjs' 'copy bounded-file.mjs'; do
               read -r key file <<< "$pair"
               expected=$(jq -er --arg key "$key" '.helpers[$key]' "$receipt")
               printf '%s  %s\n' "$expected" "$proof/$file" | sha256sum -c -
           done
-          for phase in red green; do
+          for phase in green; do
               expected=$(jq -er --arg phase "$phase" '.[$phase].patch.compressedSha256' "$receipt")
               printf '%s  %s\n' "$expected" "$proof/$phase.patch.gz" | sha256sum -c -
               expected_bytes=$(jq -er --arg phase "$phase" '.[$phase].patch.compressedBytes' "$receipt")
@@ -79,7 +79,7 @@ jobs:
               printf '%s  %s\n' "$expected" "$RUNNER_TEMP/$phase.patch" | sha256sum -c -
           done
           printf 'base=%s\n' "$(jq -er '.base' "$receipt")" >>"$GITHUB_OUTPUT"
-      - name: Checkout reviewed b0 base
+      - name: Checkout reviewed 7dd base
         timeout-minutes: 5
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,7 +87,7 @@ jobs:
           path: candidate
           fetch-depth: 1
           persist-credentials: false
-      - name: Apply tests-only RED and validate scope
+      - name: Apply reviewed GREEN and validate scope
         timeout-minutes: 5
         working-directory: candidate
         shell: bash
@@ -95,11 +95,11 @@ jobs:
           EXPECTED_BASE: ${{ steps.receipt.outputs.base }}
         run: |
           set -euo pipefail
-          [[ "$EXPECTED_BASE" == "b0e39c60e2210d8e5e65818025f2e42f004d06b3" && "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
-          git switch -c feat/verified-packaged-launch-review-fix
-          git apply --check --index "$RUNNER_TEMP/red.patch"
-          git apply --index "$RUNNER_TEMP/red.patch"
-          node "$GITHUB_WORKSPACE/support/.publication/validate-phase.mjs" red "$GITHUB_WORKSPACE/support/.publication/receipt.json"
+          [[ "$EXPECTED_BASE" == "7dd46513b7c6efe6688f234505f548b276e3cfda" && "$(git rev-parse HEAD)" == "$EXPECTED_BASE" ]]
+          git switch -c feat/verified-packaged-launch-rebased-publication
+          git apply --check --index "$RUNNER_TEMP/green.patch"
+          git apply --index "$RUNNER_TEMP/green.patch"
+          node "$GITHUB_WORKSPACE/support/.publication/validate-phase.mjs" green "$GITHUB_WORKSPACE/support/.publication/receipt.json"
           git diff --quiet
           git diff --cached --check
           test -z "$(git ls-files --others --exclude-standard)"
@@ -185,7 +185,7 @@ jobs:
           tar -xzf "$download/ghalint_1.5.4_linux_amd64.tar.gz" -C "$download/ghalint"
           install -m 755 "$download/ghalint/ghalint" "$bins/ghalint"
           echo "$bins" >>"$GITHUB_PATH"
-      - name: Validate RED, GREEN and create candidate commit
+      - name: Validate GREEN and create candidate commit
         timeout-minutes: 75
         working-directory: candidate
         shell: bash
@@ -199,18 +199,16 @@ jobs:
           [[ -z "$(git config --get core.hooksPath || true)" ]]
           # Required helpers are separately hashed in the reviewed receipt.
           # They must retain original command/capture status and raw logs, use
-          # the repository's existing unmodified diagnostic ledger, and reject
-          # infrastructure/compile failure as RED. No helper may publish.
+          # the repository's existing unmodified diagnostic ledger. No helper
+          # may publish.
           shellcheck --rcfile tools/lint/shellcheckrc "$support/review-fix.sh"
           shfmt -i 4 -ci -d "$support/review-fix.sh"
           bash -n "$support/review-fix.sh"
           node --check "$support/validate-phase.mjs"
           node --check "$support/check-red.mjs"
           bash "$support/review-fix.sh"
-          # Helper must run RED before applying the GREEN patch, require exact
-          # failed assertions + no errors/skips and source stability, then
-          # GREEN, lintFix/lint and all four successful diagnostic gates plus
-          # an honest RED-aware gate. It must verify the branch/parent/tree,
+          # Helper must require exact GREEN tests, lintFix/lint and all four
+          # successful diagnostic gates. Historical RED remains separate. It must verify the branch/parent/tree,
           # paths, hooks and post-commit diagnostics before creating a bundle.
           test -s "$proof/candidate.bundle"
           test -s "$proof/receipt.json"
