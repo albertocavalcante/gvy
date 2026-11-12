@@ -5,6 +5,7 @@ package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.github.albertocavalcante.gvy.gls.BuildInfo
 import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
@@ -343,14 +344,39 @@ internal data class PreparationLimits(
 
 /** The source directory must be trusted against concurrent path replacement. */
 private fun validateManifestAttributes(bytes: ByteArray) {
-    val names = mutableSetOf<String>()
-    val text = bytes.toString(Charsets.UTF_8)
-    for (line in text.split("\n")) {
-        val current = line.removeSuffix("\r")
-        if (current.isEmpty()) break
-        if (current.startsWith(" ")) continue
-        val separator = current.indexOf(':')
-        if (separator <= 0 || !names.add(current.substring(0, separator).lowercase())) throw InvalidMetadata()
+    val sections = mutableListOf<MutableList<ByteArrayOutputStream>>(mutableListOf())
+    var start = 0
+    for (end in 0..bytes.size) {
+        if (end < bytes.size && bytes[end] != '\n'.code.toByte()) continue
+        val lineEnd = if (end > start && bytes[end - 1] == '\r'.code.toByte()) end - 1 else end
+        val current = bytes.copyOfRange(start, lineEnd)
+        start = end + 1
+        when {
+            current.isEmpty() -> sections.add(mutableListOf())
+            current[0] == ' '.code.toByte() -> {
+                val section = sections.last()
+                if (section.isEmpty()) throw InvalidMetadata()
+                section.last().write(current, 1, current.size - 1)
+            }
+            else -> sections.last().add(ByteArrayOutputStream().apply { write(current) })
+        }
+    }
+    val entryNames = mutableMapOf<String, MutableSet<Attributes.Name>>()
+    sections.forEachIndexed { index, section ->
+        if (index > 0 && section.isEmpty()) return@forEachIndexed
+        val names: MutableSet<Attributes.Name> = if (index == 0) {
+            mutableSetOf()
+        } else {
+            val header = section.first().toByteArray().toString(Charsets.UTF_8)
+            if (!header.startsWith("Name: ", ignoreCase = true)) throw InvalidMetadata()
+            entryNames.getOrPut(header.substring(6)) { mutableSetOf() }
+        }
+        val attributes = if (index == 0) section else section.drop(1)
+        for (attribute in attributes) {
+            val text = attribute.toByteArray().toString(Charsets.UTF_8)
+            val separator = text.indexOf(':')
+            if (separator <= 0 || !names.add(Attributes.Name(text.substring(0, separator)))) throw InvalidMetadata()
+        }
     }
 }
 

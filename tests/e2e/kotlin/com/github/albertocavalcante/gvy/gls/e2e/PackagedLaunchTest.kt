@@ -17,6 +17,9 @@ import java.util.jar.Attributes
 import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 import java.util.jar.Manifest
+import java.util.logging.Handler
+import java.util.logging.LogRecord
+import java.util.logging.Logger
 
 class PackagedLaunchTest {
     @TempDir
@@ -251,6 +254,105 @@ class PackagedLaunchTest {
     }
 
     @Test
+    fun `duplicate attributes in a named manifest section are rejected without logging their name`() {
+        val canary = "secret-canary"
+        val manifest = "Manifest-Version: 1.0\r\n\r\nName: first.class\r\n" +
+            "$canary: one\r\n$canary: two\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "section-duplicate", rawManifest = manifest)
+        val records = mutableListOf<LogRecord>()
+        val logger = Logger.getLogger("java.util.jar")
+        val handler = object : Handler() {
+            override fun publish(record: LogRecord) {
+                records.add(record)
+            }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        logger.addHandler(handler)
+        try {
+            val failure = failedPreparation(launch(artifact, digest(artifact)), "section-duplicate")
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.toString()).doesNotContain(canary)
+            assertThat(records.joinToString { "${it.message} ${it.parameters?.toList()}" }).doesNotContain(canary)
+        } finally {
+            logger.removeHandler(handler)
+        }
+    }
+
+    @Test
+    fun `empty main and repeated named section duplicate are rejected without logging name`() {
+        val canary = "secret-canary"
+        val manifest = "\r\nName: same.class\r\n$canary: first\r\n\r\n" +
+            "Name: same.class\r\n$canary: second\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "empty-main", rawManifest = manifest)
+        val records = mutableListOf<LogRecord>()
+        val logger = Logger.getLogger("java.util.jar")
+        val handler = object : Handler() {
+            override fun publish(record: LogRecord) {
+                records.add(record)
+            }
+            override fun flush() = Unit
+            override fun close() = Unit
+        }
+        logger.addHandler(handler)
+        try {
+            val failure = failedPreparation(launch(artifact, digest(artifact)), "empty-main")
+            assertThat(failure.reason).isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+            assertThat(failure.toString()).doesNotContain(canary)
+            assertThat(records.joinToString { "${it.message} ${it.parameters?.toList()}" }).doesNotContain(canary)
+        } finally {
+            logger.removeHandler(handler)
+        }
+    }
+
+    @Test
+    fun `same digest attribute in distinct named manifest sections is accepted`() {
+        val manifest = "Manifest-Version: 1.0\r\n\r\nName: first.class\r\n" +
+            "SHA-256-Digest: first\r\n\r\nName: second.class\r\nSHA-256-Digest: second\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "distinct-sections", rawManifest = manifest)
+        launch(artifact, digest(artifact)).prepare().use { prepared ->
+            assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+        }
+    }
+
+    @Test
+    fun `duplicate attribute in split same name sections is rejected`() {
+        val manifest = "Manifest-Version: 1.0\r\n\r\nName: same.class\r\nSecret-Canary: first\r\n\r\n" +
+            "Name: same.class\r\nsecret-canary: second\r\n\r\n"
+        val artifact = jar(cleanProperties(), suffix = "same-name", rawManifest = manifest)
+        assertThat(failedPreparation(launch(artifact, digest(artifact)), "same-name").reason)
+            .isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `folded multibyte entry name detects duplicate across sections`() {
+        val manifest = "Manifest-Version: 1.0\n\nName: caf".toByteArray() + byteArrayOf(0xc3.toByte()) +
+            "\n ".toByteArray() + byteArrayOf(0xa9.toByte()) +
+            ".class\nSecret-Canary: first\n\nName: café.class\nsecret-canary: second\n\n".toByteArray()
+        val artifact = jar(cleanProperties(), suffix = "folded-name", rawManifestBytes = manifest)
+        assertThat(failedPreparation(launch(artifact, digest(artifact)), "folded-name").reason)
+            .isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
+    fun `same named sections with disjoint attributes and folded values are accepted`() {
+        val manifest = "Manifest-Version: 1.0\n\nName: same.class\nFirst: long\n value\n\n" +
+            "Name: same.class\nSecond: value\n\n"
+        val artifact = jar(cleanProperties(), suffix = "disjoint", rawManifest = manifest)
+        launch(artifact, digest(artifact)).prepare().use { prepared ->
+            assertThat(prepared.verification.source).isEqualTo(VerificationState.Verified)
+        }
+    }
+
+    @Test
+    fun `manifest continuation without preceding attribute is rejected`() {
+        val manifest = "Manifest-Version: 1.0\r\n\r\n orphan\r\n"
+        val artifact = jar(cleanProperties(), suffix = "orphan", rawManifest = manifest)
+        assertThat(failedPreparation(launch(artifact, digest(artifact)), "orphan").reason)
+            .isEqualTo(PackagedLaunchFailure.InvalidMetadata)
+    }
+
+    @Test
     fun `duplicate manifest classpath attributes cannot erase an external dependency`() {
         val artifact = jar(
             cleanProperties(),
@@ -478,6 +580,7 @@ class PackagedLaunchTest {
         duplicate: Boolean = false,
         includeProperties: Boolean = true,
         rawManifest: String? = null,
+        rawManifestBytes: ByteArray? = null,
         duplicateManifest: Boolean = false,
         extraEntries: Int = 0,
     ): Path {
@@ -488,7 +591,13 @@ class PackagedLaunchTest {
         }
         JarOutputStream(Files.newOutputStream(path)).use { jar ->
             jar.putNextEntry(JarEntry("META-INF/MANIFEST.MF"))
-            if (rawManifest != null) jar.write(rawManifest.toByteArray()) else manifest.write(jar)
+            if (rawManifestBytes != null) {
+                jar.write(rawManifestBytes)
+            } else if (rawManifest != null) {
+                jar.write(rawManifest.toByteArray())
+            } else {
+                manifest.write(jar)
+            }
             jar.closeEntry()
             if (duplicateManifest) {
                 jar.putNextEntry(JarEntry("META-INF/MANIFEST.MG"))
