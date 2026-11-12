@@ -69,6 +69,18 @@ editors/code/
 - `pnpm run package` - Build and package VSIX
 - `pnpm run prepare-server` - Download/prepare Groovy Language Server
 
+### Promise handling
+
+The AI adapter (`client/src/features/ai/`) enforces type-aware floating/misused-promise rules. These include VS Code's
+`Thenable` results: await or return work needed by the caller, and attach rejection handling to intentional background
+work. `void` alone does not handle rejection. Avoid awaiting a non-modal notification just to satisfy lint; that can
+delay its caller until the user dismisses it.
+
+`pnpm run lint` checks the production code. The normal `pnpm test` suite also exercises the actual configured rules with
+typed Promise and VS Code Thenable fixtures, including negative cases and awaited/returned/handled controls. Weakening
+or removing either rule must fail these tests. Other source modules retain their existing policy while their effects are
+classified under [#1801](https://github.com/albertocavalcante/gvy/issues/1801); this is not project-wide enforcement.
+
 ### Updating the Pinned LSP Version
 
 When a new stable LSP version is released:

@@ -21,6 +21,21 @@ export default tseslint.config(
     },
   },
   {
+    // TODO(#1801): Extend after classifying the remaining adapters' effects.
+    //   See: https://github.com/albertocavalcante/gvy/issues/1801
+    files: ["client/src/features/ai/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-floating-promises": [
+        "error",
+        { checkThenables: true, ignoreVoid: false },
+      ],
+      "@typescript-eslint/no-misused-promises": [
+        "error",
+        { checksVoidReturn: true },
+      ],
+    },
+  },
+  {
     files: ["client/test/**/*.ts"],
     rules: {
       "@typescript-eslint/no-unused-vars": [
