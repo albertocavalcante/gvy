@@ -103,12 +103,23 @@ test('probe deadline settles even if a descendant retains output pipes', async (
   const root = await mkdtemp(join(tmpdir(), 'perf-doctor-pipe-'));
   try {
     const program = join(root, 'java');
-    await writeFile(program, '#!/bin/sh\n/bin/sleep 2 &\nexit 0\n');
+    const pidFile = join(root, 'descendant.pid');
+    await writeFile(program, `#!/bin/sh\n/bin/sleep 10 &\nprintf '%s' "$!" > '${pidFile}'\nexit 0\n`);
     await chmod(program, 0o700);
     const start = Date.now();
-    const result = await probeTool('java', { executable: program, timeoutMs: 100 });
+    const result = await probeTool('java', { executable: program, timeoutMs: 300, environment: { PATH: '/bin' } });
     assert.equal(result.status, 'unknown');
     assert.ok(Date.now() - start < 1500);
+    const { readFile } = await import('node:fs/promises');
+    const pid = Number(await readFile(pidFile, 'utf8'));
+    assert.ok(pid > 1);
+    let alive = true;
+    for (let attempt = 0; attempt < 50 && alive; attempt++) {
+      try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') alive = false; else throw error; }
+      if (alive) await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    if (alive) process.kill(pid, 'SIGKILL'); // Test owns this exact PID.
+    assert.equal(alive, false, 'owned descendant survived the probe timeout');
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

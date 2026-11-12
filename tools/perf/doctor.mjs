@@ -9,12 +9,12 @@ const PROBE_TIMEOUT_MS = 5000;
 const PROBE_OUTPUT_LIMIT = 64 * 1024;
 
 /**
- * Probe fixed commands from trusted tool installations that do not spawn descendants.
- * Output is discarded. On timeout the direct child is killed and owned pipes are
- * closed; this does not guarantee cleanup of descendants that inherited those pipes.
- * A supported status means only that the fixed command exited successfully.
+ * Run a fixed command in an owned POSIX process group, discarding its output.
+ * A supported status means only that the fixed command exited successfully;
+ * processes that deliberately detach from the group cannot be contained here.
  */
 export function probeTool(tool, { executable = tool, timeoutMs = PROBE_TIMEOUT_MS, environment = process.env } = {}) {
+  if (!['darwin', 'linux'].includes(process.platform)) return Promise.resolve({ status: 'unknown' });
   const injectedOptions = ['JAVA_TOOL_OPTIONS', 'JDK_JAVA_OPTIONS', '_JAVA_OPTIONS'];
   if (injectedOptions.some((name) => environment[name])) {
     return Promise.resolve({ status: 'unknown', reason: 'inherited_jvm_options' });
@@ -26,9 +26,16 @@ export function probeTool(tool, { executable = tool, timeoutMs = PROBE_TIMEOUT_M
   const args = tool === 'java' ? ['-Xmx64m', '-version'] : ['-J-Xmx64m', '--help'];
   return new Promise((resolve) => {
     let child;
-    try { child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'], env }); } catch { resolve({ status: 'unknown' }); return; }
+    try { child = spawn(executable, args, { stdio: ['ignore', 'pipe', 'pipe'], env, detached: true }); } catch { resolve({ status: 'unknown' }); return; }
     let size = 0;
     let finished = false;
+    const terminateGroup = () => {
+      if (child.pid === undefined) return;
+      try { process.kill(-child.pid, 'SIGKILL'); } catch (error) {
+        if (error.code !== 'ESRCH') return false;
+      }
+      return true;
+    };
     const finish = (status) => {
       if (finished) return;
       finished = true;
@@ -37,15 +44,15 @@ export function probeTool(tool, { executable = tool, timeoutMs = PROBE_TIMEOUT_M
       child.stderr.destroy();
       resolve({ status });
     };
-    const timer = setTimeout(() => { child.kill('SIGKILL'); finish('unknown'); }, timeoutMs);
+    const timer = setTimeout(() => { terminateGroup(); finish('unknown'); }, timeoutMs);
     const consume = (chunk) => {
       size += chunk.length;
-      if (size > PROBE_OUTPUT_LIMIT) { child.kill('SIGKILL'); finish('unknown'); }
+      if (size > PROBE_OUTPUT_LIMIT) { terminateGroup(); finish('unknown'); }
     };
     child.stdout.on('data', consume);
     child.stderr.on('data', consume);
     child.on('error', (error) => finish(error.code === 'ENOENT' ? 'unavailable' : 'unknown'));
-    child.on('close', (code) => finish(code === 0 ? 'supported' : 'unknown'));
+    child.on('close', (code) => finish(terminateGroup() !== false && code === 0 ? 'supported' : 'unknown'));
   });
 }
 
