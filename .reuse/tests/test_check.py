@@ -249,7 +249,7 @@ class IntegrationTests(unittest.TestCase):
         (self.root / "REUSE.toml").write_text("\n\n".join(blocks), encoding="utf-8")
         excluded = ("tools/other.py", "tools/perf/other.py", "tools/perf/bench/driver.py")
         for name in excluded:
-            (self.root / name).write_bytes(b"not part of the distributed corpus\n")
+            (self.root / name).write_text("not part of the distributed corpus\n", encoding="utf-8")
         tracked = [
             ".gitattributes",
             "REUSE.toml",
