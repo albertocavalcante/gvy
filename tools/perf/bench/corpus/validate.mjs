@@ -12,6 +12,14 @@ const REQUIRED_FIXTURES = [
   'ofbiz-filter-receipts', 'spock-gradle-build', 'geb-gradle-bootstrap', 'pipeline-parallel-list',
   'jenkins-docker-pipeline', 'spock-feature-methods', 'geb-browser-spec',
 ].sort();
+const REQUIRED_SOURCES = new Map([
+  ['groovy4', { repository: 'apache/groovy', spdx: 'Apache-2.0', files: ['LICENSE', 'NOTICE'] }],
+  ['spock', { repository: 'spockframework/spock', spdx: 'Apache-2.0', files: ['LICENSE', 'NOTICE'] }],
+  ['geb', { repository: 'geb/geb', spdx: 'Apache-2.0', files: ['LICENSE', 'NOTICE'] }],
+  ['ofbiz', { repository: 'apache/ofbiz-framework', spdx: 'Apache-2.0', files: ['LICENSE', 'NOTICE'] }],
+  ['pipeline-examples', { repository: 'jenkinsci/pipeline-examples', spdx: 'MIT', files: ['LICENSE.txt'] }],
+  ['jenkins-docker', { repository: 'jenkinsci/docker', spdx: 'MIT', files: ['LICENSE.txt'] }],
+]);
 
 class CorpusError extends Error {}
 const fail = code => { throw new CorpusError(code); };
@@ -63,7 +71,7 @@ export function validateManifest(manifest) {
   object(profile, ['id', 'phase', 'externalClasspath', 'semanticAvailability', 'executeSource']);
   if (profile.id !== PROFILE || profile.phase !== 'CONVERSION' || !equal(profile.externalClasspath, [])
     || profile.semanticAvailability !== 'not-declared' || profile.executeSource !== false) invalid();
-  if (!Array.isArray(manifest.sources) || manifest.sources.length !== 6
+  if (!Array.isArray(manifest.sources) || manifest.sources.length !== REQUIRED_SOURCES.size
     || !Array.isArray(manifest.fixtures) || manifest.fixtures.length !== REQUIRED_FIXTURES.length) invalid();
   for (const fixture of manifest.fixtures) {
     if (!fixture || typeof fixture !== 'object' || Array.isArray(fixture)) invalid();
@@ -74,17 +82,20 @@ export function validateManifest(manifest) {
   for (const source of manifest.sources) {
     object(source, ['id', 'repository', 'revision', 'license']);
     identifier(source.id);
+    const requiredSource = REQUIRED_SOURCES.get(source.id);
+    if (!requiredSource || source.repository !== requiredSource.repository) invalid();
     if (sources.has(source.id) || typeof source.repository !== 'string' || source.repository.length > 128
       || !/^[a-zA-Z0-9_.-]+\/[a-zA-Z0-9_.-]+$/.test(source.repository)) invalid();
     digest(source.revision, 40);
     object(source.license, ['spdx', 'files']);
-    if (!['Apache-2.0', 'MIT'].includes(source.license.spdx) || !Array.isArray(source.license.files)
+    if (source.license.spdx !== requiredSource.spdx || !Array.isArray(source.license.files)
       || source.license.files.length < 1 || source.license.files.length > 3) invalid();
     for (const license of source.license.files) {
       fileRecord(license, `licenses/${source.id}/`);
       if (paths.has(license.path)) invalid();
       paths.add(license.path);
     }
+    if (!equal(source.license.files.map(file => file.upstreamPath).sort(), [...requiredSource.files].sort())) invalid();
     sources.set(source.id, source);
   }
   if (!equal(manifest.fixtures.map(fixture => fixture.id).sort(), REQUIRED_FIXTURES)) invalid();

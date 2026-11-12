@@ -72,6 +72,33 @@ test('missing license evidence fails even when all source fixtures exist', async
   await assert.rejects(validateCorpus(directory), { message: 'CORPUS_MISSING_FILE' });
 });
 
+for (const upstreamPath of ['LICENSE', 'NOTICE']) {
+  test(`the required ${upstreamPath} declaration cannot disappear with its file`, async t => {
+    const directory = await copyCorpus(t);
+    const manifest = JSON.parse(await fs.readFile(join(directory, 'manifest.json'), 'utf8'));
+    const source = manifest.sources.find(value => value.id === 'groovy4');
+    const evidence = source.license.files.find(value => value.upstreamPath === upstreamPath);
+    await fs.unlink(join(directory, evidence.path));
+    await changeManifest(directory, value => {
+      const entry = value.sources.find(item => item.id === 'groovy4');
+      entry.license.files = entry.license.files.filter(item => item.upstreamPath !== upstreamPath);
+    });
+    await assert.rejects(validateCorpus(directory), { message: 'CORPUS_INVALID_MANIFEST' });
+  });
+}
+
+test('version-one source and license identities cannot be relabeled', async t => {
+  const directory = await copyCorpus(t);
+  await changeManifest(directory, manifest => { manifest.sources[0].repository = 'example/replacement'; });
+  await assert.rejects(validateCorpus(directory), { message: 'CORPUS_INVALID_MANIFEST' });
+  await fs.cp(join(sourceRoot, 'manifest.json'), join(directory, 'manifest.json'));
+  await changeManifest(directory, manifest => { manifest.sources[0].license.spdx = 'MIT'; });
+  await assert.rejects(validateCorpus(directory), { message: 'CORPUS_INVALID_MANIFEST' });
+  await fs.cp(join(sourceRoot, 'manifest.json'), join(directory, 'manifest.json'));
+  await changeManifest(directory, manifest => { manifest.sources[0].license.files[1].upstreamPath = 'OTHER-NOTICE'; });
+  await assert.rejects(validateCorpus(directory), { message: 'CORPUS_INVALID_MANIFEST' });
+});
+
 test('mutated license evidence fails its recorded identity', async t => {
   const directory = await copyCorpus(t);
   const manifest = JSON.parse(await fs.readFile(join(directory, 'manifest.json'), 'utf8'));

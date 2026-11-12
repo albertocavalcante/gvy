@@ -43,6 +43,10 @@ Each fixture records its exact repository commit, upstream path, Git blob SHA-1,
 line count. Byte content, line endings, comments and source notices are preserved. Source license/NOTICE bytes have
 their own paths and digests in `licenses/`; keep them with redistributed fixtures.
 
+The version-one source IDs, repositories, SPDX labels and required upstream LICENSE/NOTICE path sets are also fixed in
+the validator. Removing a notice declaration together with its file still fails; the manifest cannot silently reduce its
+own required licensing evidence.
+
 | Source                                                                                                                    | Pinned revision            | Selected-source license evidence                       |
 | ------------------------------------------------------------------------------------------------------------------------- | -------------------------- | ------------------------------------------------------ |
 | [Apache Groovy](https://github.com/apache/groovy/tree/24e5e8c8b8b4a62aa919d8bd5ce29474bbac19ad)                           | Groovy 4.0.33 / `24e5e8c8` | Apache-2.0 headers, LICENSE and NOTICE                 |
