@@ -32,7 +32,7 @@ jobs:
       - name: Checkout candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: 71457e7338d4016f19821273557ea179dcc702f1
+          ref: f21c1454b0138b76974416ec8b58a2abf7540abe
           path: candidate
           fetch-depth: 0
           persist-credentials: false
@@ -74,13 +74,13 @@ jobs:
         run: |
           set -euo pipefail
           proof="$RUNNER_TEMP/parity-proof"
-          [[ "$(git rev-parse HEAD)" == 71457e7338d4016f19821273557ea179dcc702f1 ]]
-          [[ "$(git rev-parse 'HEAD^{tree}')" == 36717e1f75617789e41e92492b6069a0589c7774 ]]
+          [[ "$(git rev-parse HEAD)" == f21c1454b0138b76974416ec8b58a2abf7540abe ]]
+          [[ "$(git rev-parse 'HEAD^{tree}')" == ba9abcb95a0cdf725ccf125908b39f4d082ae9fe ]]
           git merge-base --is-ancestor 7dd46513b7c6efe6688f234505f548b276e3cfda HEAD
           printf '%s  %s\n' 7ed933ec81e68c3b98066f2b3273f475ad9a82cdcb19258ce7f835dd56797f5f "$GITHUB_WORKSPACE/support/.publication/parity.init.gradle" | sha256sum -c -
           git switch -c test/logging-backend-parity
           git reset --soft 7dd46513b7c6efe6688f234505f548b276e3cfda
-          [[ "$(git write-tree)" == 36717e1f75617789e41e92492b6069a0589c7774 ]]
+          [[ "$(git write-tree)" == ba9abcb95a0cdf725ccf125908b39f4d082ae9fe ]]
           git diff --quiet
           printf '%s\n' build-tool/BUILD.bazel build-tool/build.gradle.kts build-tool/src/test/kotlin/com/github/albertocavalcante/gvy/build/LoggingProviderTest.kt jenkins/BUILD.bazel jenkins/build.gradle.kts jenkins/src/test/kotlin/com/github/albertocavalcante/gvy/jenkins/LoggingProviderTest.kt tools/test-logging/BUILD.bazel tools/test-logging/src/test/resources/logback-test.xml >"$RUNNER_TEMP/expected-paths"
           git diff --cached --name-only >"$RUNNER_TEMP/input-paths"
@@ -115,6 +115,10 @@ jobs:
           python3 -m venv "$bootstrap"
           "$bootstrap/bin/python" -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-bootstrap.log"
           export PATH="$bootstrap/bin:$PATH"
+          [[ "$(command -v uv)" == "$bootstrap/bin/uv" ]]
+          [[ "$(uv --version)" == "uv 0.13.7" ]]
+          sha256sum "$bootstrap/bin/uv" >"$RUNNER_TEMP/parity-proof/uv.sha256"
+          echo "$bootstrap/bin" >>"$GITHUB_PATH"
           uv sync --project .reuse --locked 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-sync.log"
           make license-check 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-check.log"
           make license-test 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-test.log"
@@ -130,13 +134,14 @@ jobs:
           cp "$config" "$RUNNER_TEMP/parity-canonical.xml"
           result=0
           trap 'result=$?; trap - EXIT; if ! cp "$RUNNER_TEMP/parity-canonical.xml" "$config"; then result=1; fi; exit "$result"' EXIT
-          for mode in missing wrong-target duplicate missing-level; do
+          for mode in missing wrong-target duplicate missing-level deny-filter; do
           	cp "$RUNNER_TEMP/parity-canonical.xml" "$config"
           	case "$mode" in
           	missing) rm "$config" ;;
           	wrong-target) perl -0777 -i -pe 's/<target>System.err<\/target>/<target>System.out<\/target>/' "$config" ;;
           	duplicate) perl -0777 -i -pe 's/<root level="WARN">/<appender name="DUPLICATE" class="ch.qos.logback.core.ConsoleAppender"><target>System.err<\/target><encoder><pattern>%msg%n<\/pattern><\/encoder><\/appender>\n    <root level="WARN">/; s/<appender-ref ref="STDERR" \/>/<appender-ref ref="STDERR" \/>\n        <appender-ref ref="DUPLICATE" \/>/' "$config" ;;
           	missing-level) perl -0777 -i -pe 's/%-5level/LEVEL/' "$config" ;;
+          	deny-filter) perl -0777 -i -pe 's/<encoder>/<filter class="ch.qos.logback.classic.filter.ThresholdFilter"><level>OFF<\/level><\/filter>\n        <encoder>/' "$config" ;;
           	esac
           	rm -f build-tool/build/test-results/test/TEST-com.github.albertocavalcante.gvy.build.LoggingProviderTest.xml jenkins/build/test-results/test/TEST-com.github.albertocavalcante.gvy.jenkins.LoggingProviderTest.xml
           	set +e
@@ -208,10 +213,10 @@ jobs:
           case, failure = failed[0]
           text = (failure.get("message") or "") + (failure.text or "")
           expected = {"missing": ("actual value is null", "expected: not <null>"), "wrong-target": ("System.err", "System.out"),
-                      "duplicate": ("<1>", "<2>"), "missing-level": ("Unexpected rendered log record",)}
+                      "duplicate": ("<1>", "<2>"), "missing-level": ("Unexpected rendered log record",), "deny-filter": ("<3>", "<0>")}
           if case.get("classname") != f"com.github.albertocavalcante.gvy.{package}.LoggingProviderTest" or "quiet test policy" not in case.get("name", "") or "AssertionFailedError" not in failure.get("type", ""):
               raise SystemExit("wrong failing class, case or failure type")
-          marker = {"missing": "val resource = assertNotNull(", "wrong-target": 'assertEquals("System.err", console.target)', "duplicate": "assertEquals(1, appenders.size)", "missing-level": "Unexpected rendered log record:"}[mode]
+          marker = {"missing": "val resource = assertNotNull(", "wrong-target": 'assertEquals("System.err", console.target)', "duplicate": "assertEquals(1, appenders.size)", "missing-level": "Unexpected rendered log record:", "deny-filter": "assertEquals(expected.size, records.size)"}[mode]
           with open(source, encoding="utf-8") as stream:
               matching = [number for number, line in enumerate(stream, 1) if marker in line]
           if len(matching) != 1 or f"LoggingProviderTest.kt:{matching[0]}" not in text:
@@ -347,6 +352,9 @@ jobs:
           git config user.name 'gvy publication automation'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git diff --quiet && [[ "$(git write-tree)" == "$(cat "$proof/formatted-tree")" ]]
+          [[ "$(direnv exec . bash -c 'command -v uv' 2>/dev/null)" == "$RUNNER_TEMP/license-bootstrap/bin/uv" ]]
+          [[ "$(direnv exec . uv --version 2>/dev/null)" == "uv 0.13.7" ]]
+          sha256sum -c "$proof/uv.sha256"
           direnv exec . git commit -m 'test(logging): align test backend behavior' 2>&1 | tee "$proof/hooks.log"
           [[ "$(git rev-parse HEAD^)" == 7dd46513b7c6efe6688f234505f548b276e3cfda ]]
           [[ "$(git rev-parse 'HEAD^{tree}')" == "$(cat "$proof/formatted-tree")" ]]
