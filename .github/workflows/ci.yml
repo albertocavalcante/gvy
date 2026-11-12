@@ -62,15 +62,35 @@ jobs:
           [[ -n "${JAVA_HOME_17_X64:-}" && -n "${JAVA_HOME_21_X64:-}" ]]
           direnv allow
           test ! -e gls/build/test-results/test
+          run_red_pipeline() {
+              set +e
+              direnv exec . ./gradlew :gls:test --tests '*BoundedLogbackRenderingTest' --no-daemon --no-parallel --max-workers=1 --no-build-cache --rerun-tasks --info \
+                  -I "$RUNNER_TEMP/red.init.gradle" \
+                  '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
+                  "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64" 2>&1 | python3 -c '
+          import sys
+          remaining = 8 * 1024 * 1024
+          overflow = False
+          while chunk := sys.stdin.buffer.read(65536):
+              keep = chunk[:remaining]
+              sys.stdout.buffer.write(keep)
+              remaining -= len(keep)
+              overflow = overflow or len(keep) != len(chunk)
+          sys.exit(75 if overflow else 0)
+          ' >"$proof/gradle.log"
+              local status=("${PIPESTATUS[@]}")
+              printf '%s %s\n' "${status[0]}" "${status[1]}" >"$proof/command-status.txt"
+          }
+          export -f run_red_pipeline
+          export proof
           set +e
-          direnv exec . ./gradlew :gls:test --tests '*BoundedLogbackRenderingTest' --no-daemon --no-parallel --max-workers=1 --no-build-cache --rerun-tasks --info \
-              -I "$RUNNER_TEMP/red.init.gradle" \
-              '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
-              "-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64" 2>&1 | tee "$proof/gradle.log"
-          status=${PIPESTATUS[0]}
+          timeout --kill-after=10s 1800s bash -c run_red_pipeline
+          pipeline_status=$?
           set -e
-          printf '%s\n' "$status" >"$proof/gradle-status.txt"
-          [[ "$status" -ne 0 ]]
+          printf 'pipeline=%s\n' "$pipeline_status" >"$proof/pipeline-status.txt"
+          [[ "$pipeline_status" == 0 && -s "$proof/command-status.txt" ]]
+          read -r gradle_status capture_status <"$proof/command-status.txt"
+          [[ "$gradle_status" == 1 && "$capture_status" == 0 ]]
           xml=gls/build/test-results/test/TEST-com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest.xml
           test -f "$xml"
           cp "$xml" "$proof/encoder-red.xml"
@@ -81,11 +101,17 @@ jobs:
           cases = root.findall('testcase')
           if root.get('name') != 'com.github.albertocavalcante.gvy.gls.config.BoundedLogbackRenderingTest' or len(cases) != 9 or root.get('errors') != '0' or root.get('skipped') != '0':
               raise SystemExit('expected nine executed encoder controls')
-          required = ('configured stderr encoder bounds the complete message and throwable', 'configured stderr encoder never invokes arbitrary argument toString')
-          for name in required:
-              matches = [case for case in cases if case.get('name', '').startswith(name)]
-              if len(matches) != 1 or matches[0].find('failure') is None or 'AssertionFailedError' not in ''.join(matches[0].find('failure').itertext()):
-                  raise SystemExit('expected encoder assertion failure missing: ' + name)
+          required = {
+              'configured stderr encoder bounds the complete message and throwable': 28,
+              'configured stderr encoder never invokes arbitrary argument toString': 84,
+          }
+          for name, line in required.items():
+              matches = [case for case in cases if case.get('name', '').removesuffix('()') == name]
+              if len(matches) != 1 or matches[0].get('classname') != root.get('name'):
+                  raise SystemExit('expected encoder case missing: ' + name)
+              failure = matches[0].find('failure')
+              if failure is None or 'AssertionFailedError' not in failure.get('type', '') or f'BoundedLogbackRenderingTest.kt:{line}' not in ''.join(failure.itertext()):
+                  raise SystemExit('expected assertion location missing: ' + name)
           print('verified real size and hostile-argument assertion failures')
           PYXML
           python3 - "$proof/gradle.log" "$proof" <<'PYWORKER'
@@ -112,6 +138,7 @@ jobs:
           grep -Eq '^[[:space:]]*java\.specification\.version[[:space:]]*=[[:space:]]*17[[:space:]]*$' "$proof/test-java-version.log"
           test -z "$(git status --porcelain --untracked-files=all)"
           printf '%s\n' 'candidate=2e5352cf833d2d74c5c86a112336a97aeed1102f' 'tree=7c7d23c8daf49ca5341d513a0e80d347a93e80e3' 'base=eb9d0251900a1a51894c13634db0e88a4cd846ff' >"$proof/receipt.txt"
+          sha256sum "$proof/encoder-red.xml" "$proof/gradle.log" "$proof/command-status.txt" "$proof/pipeline-status.txt" "$proof/test-java-version.log" >"$proof/evidence.sha256"
       - name: Upload all available evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
