@@ -9,7 +9,7 @@ negative_patch=${2:?}
 negative_spec=${3:?}
 proof_dir=${4:?}
 printf '%s  %s\n' 'cbb784d585e9718b72a929aa23ac0d51bc6375402f01d2d028725b04da930094' "${negative_patch}" | sha256sum -c -
-printf '%s  %s\n' '603b6d97f7698d274d28bb99fd2ad37dab8344c947b70b5802cd1884f12fe5f3' "${negative_spec}" | sha256sum -c -
+printf '%s  %s\n' '21a638cc3144561297a40fa92dcc7fcb38d99b5f8dcf7590d0315eabad665b93' "${negative_spec}" | sha256sum -c -
 negative_bytes=$(stat -c %s "${negative_patch}")
 [[ ${negative_bytes} -le 8192 ]]
 spec_tree=$(jq -er '.greenTree' "${negative_spec}")
