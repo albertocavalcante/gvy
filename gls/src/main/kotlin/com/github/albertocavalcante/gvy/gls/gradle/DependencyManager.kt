@@ -245,6 +245,7 @@ class DependencyManager(
     fun getCurrentDependencies(): List<Path> = dependencies.get()
     fun getCurrentSourceDirectories(): List<Path> = sourceDirs.get()
     fun getState(): State = state.get()
+
     /** Terminal attempt status; success is visible only after workspace publication. */
     val publishedStatus: ResolutionStatus?
         get() = publishedStatusRef.get()

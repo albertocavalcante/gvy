@@ -63,7 +63,8 @@ class DiagnoseResultTest {
         val error = Diagnostic(Range(Position(0, 0), Position(0, 1)), "error").apply {
             severity = DiagnosticSeverity.Error
         }
-        val compilation = compilation(CompilationResult(true, null, listOf(warning, warning, warning, error), source, true))
+        val compilation =
+            compilation(CompilationResult(true, null, listOf(warning, warning, warning, error), source, true))
         val config = ServerConfiguration().let {
             it.copy(
                 maxNumberOfProblems = 1,
@@ -73,7 +74,9 @@ class DiagnoseResultTest {
             )
         }
         val service = GroovyTextDocumentService(
-            CoroutineScope(currentCoroutineContext()), compilation, GroovyTextDocumentServiceOptions(serverConfiguration = config),
+            CoroutineScope(currentCoroutineContext()),
+            compilation,
+            GroovyTextDocumentServiceOptions(serverConfiguration = config),
         )
 
         assertEquals(listOf(warning, warning, warning, error), service.diagnoseResult(uri, source).diagnostics)
@@ -88,17 +91,22 @@ class DiagnoseResultTest {
         compilation,
         GroovyTextDocumentServiceOptions(
             serverConfiguration = ServerConfiguration().let {
-                it.copy(diagnosticConfig = it.diagnosticConfig.copy(disabledProviders = setOf("custom-rules", "unused-imports")))
+                it.copy(
+                    diagnosticConfig = it.diagnosticConfig.copy(
+                        disabledProviders = setOf("custom-rules", "unused-imports"),
+                    ),
+                )
             },
             codeNarcRulesetResolverFactory = { resolver },
         ),
     )
 
-    private fun compilation(result: CompilationResult): GroovyCompilationService = mockk<GroovyCompilationService>().also {
-        every { it.updateServerConfiguration(any()) } just Runs
-        every { it.workspaceManager } returns mockk {
-            every { getWorkspaceRoot() } returns null
+    private fun compilation(result: CompilationResult): GroovyCompilationService =
+        mockk<GroovyCompilationService>().also {
+            every { it.updateServerConfiguration(any()) } just Runs
+            every { it.workspaceManager } returns mockk {
+                every { getWorkspaceRoot() } returns null
+            }
+            coEvery { it.compile(uri, source) } returns result
         }
-        coEvery { it.compile(uri, source) } returns result
-    }
 }

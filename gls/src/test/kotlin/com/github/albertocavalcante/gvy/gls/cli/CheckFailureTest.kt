@@ -189,7 +189,9 @@ class CheckFailureTest {
             dependencyStatus = { null },
         ))
         assertFailsWith<ProgramResult> {
-            command.parse(listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path))
+            command.parse(
+                listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path),
+            )
         }
         val json = output.readText()
         assertTrue(json.contains("executionSuccessful\": false"), json)
@@ -206,7 +208,9 @@ class CheckFailureTest {
             startWorkspace = { _, _ -> },
         ))
         assertFailsWith<ProgramResult> {
-            command.parse(listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path))
+            command.parse(
+                listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path),
+            )
         }
         val json = output.readText()
         assertTrue(json.contains("executionSuccessful\": false"), json)
@@ -223,7 +227,9 @@ class CheckFailureTest {
             startWorkspace = { _, _ -> throw ExecutionException(IOException("startup unavailable")) },
         ))
         val result = assertFailsWith<ProgramResult> {
-            command.parse(listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path))
+            command.parse(
+                listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path),
+            )
         }
         assertEquals(1, result.statusCode)
         val json = output.readText()

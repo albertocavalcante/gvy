@@ -102,7 +102,8 @@ class CheckCommand internal constructor(
         }
         val failure = when (val status = dependencyStatus(server)) {
             ResolutionStatus.Success -> null
-            is ResolutionStatus.Warning -> "Workspace dependency resolution incomplete (${status.code}): ${status.message}"
+            is ResolutionStatus.Warning ->
+                "Workspace dependency resolution incomplete (${status.code}): ${status.message}"
             is ResolutionStatus.Failed -> "Workspace dependency resolution failed (${status.code}): ${status.message}"
             null -> "Workspace dependency resolution failed or timed out"
         }
@@ -151,7 +152,8 @@ class CheckCommand internal constructor(
                 FileOutcome(file, result.diagnostics, result.failures.map { failure ->
                     FileFailure(
                         "provider:${failure.providerId}",
-                        "Provider ${failure.providerId} failed (${failure.exceptionType}): ${failure.message ?: "no details"}",
+                        "Provider ${failure.providerId} failed (${failure.exceptionType}): " +
+                            (failure.message ?: "no details"),
                     )
                 })
             },
@@ -164,7 +166,9 @@ class CheckCommand internal constructor(
                         FileOutcome(
                             file,
                             emptyList(),
-                            listOf(FileFailure("analysis", "${failure.javaClass.name}: ${failure.message ?: "no details"}")),
+                            listOf(
+                                FileFailure("analysis", "${failure.javaClass.name}: ${failure.message ?: "no details"}"),
+                            ),
                         )
                     }
                     else -> throw failure

@@ -73,5 +73,4 @@ class DependencyPublicationTest {
             manager.cancel()
         }
     }
-
 }
