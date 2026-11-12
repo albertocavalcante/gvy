@@ -8,10 +8,8 @@ import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder
 import ch.qos.logback.classic.joran.JoranConfigurator
-import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.util.LogbackMDCAdapter
 import ch.qos.logback.core.ConsoleAppender
-import ch.qos.logback.core.OutputStreamAppender
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 import org.junit.jupiter.api.Test
@@ -49,21 +47,16 @@ class LoggingProviderTest {
             configurator.context = isolated
             configurator.doConfigure(resource)
             val console = assertQuietPolicy(isolated)
-            val encoder = assertIs<PatternLayoutEncoder>(console.encoder)
+            assertIs<PatternLayoutEncoder>(console.encoder)
             val logger = isolated.getLogger("com.github.albertocavalcante.gvy.jenkins.LoggingParityProbe")
-            val capture = ByteArrayOutputStream()
-            val appender = OutputStreamAppender<ILoggingEvent>()
-            appender.context = isolated
-            appender.encoder = encoder
-            appender.outputStream = capture
-            appender.start()
+            val capture = boundedCapture()
+            val originalPrivateStream = assertNotNull(console.outputStream)
             try {
-                logger.isAdditive = false
-                logger.addAppender(appender)
+                console.outputStream = capture
+                assertTrue(logger.isAdditive)
                 assertRenderedRecords(logger, capture)
             } finally {
-                logger.detachAppender(appender)
-                appender.stop()
+                console.outputStream = originalPrivateStream
             }
         } finally {
             isolated.stop()
@@ -71,6 +64,18 @@ class LoggingProviderTest {
         assertSame(originalSystemErr, System.err)
         assertSame(originalConsoleStream, actualConsole.outputStream)
         assertSame(originalMdcAdapter, actual.mdcAdapter)
+    }
+
+    private fun boundedCapture(): ByteArrayOutputStream = object : ByteArrayOutputStream() {
+        override fun write(value: Int) {
+            check(size() < 8192) { "Test log capture exceeded its bound" }
+            super.write(value)
+        }
+
+        override fun write(bytes: ByteArray, offset: Int, length: Int) {
+            check(length <= 8192 - size()) { "Test log capture exceeded its bound" }
+            super.write(bytes, offset, length)
+        }
     }
 
     private fun assertRenderedRecords(logger: Logger, capture: ByteArrayOutputStream) {
