@@ -170,6 +170,7 @@ class StepExecutorsTest {
         assertThatThrownBy {
             OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "fixture.groovy"), context)
         }.isInstanceOf(IOException::class.java).hasMessageContaining("fixture.groovy")
+            .hasCauseInstanceOf(IOException::class.java)
         verify(exactly = 0) { session.server.textDocumentService.didOpen(any()) }
     }
 
@@ -178,6 +179,7 @@ class StepExecutorsTest {
         assertThatThrownBy {
             OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "missing.groovy"), context)
         }.isInstanceOf(IOException::class.java).hasMessageContaining("missing.groovy")
+            .hasCauseInstanceOf(IOException::class.java)
         verify(exactly = 0) { session.server.textDocumentService.didOpen(any()) }
     }
 

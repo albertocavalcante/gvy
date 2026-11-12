@@ -73,6 +73,10 @@ steps:
           expect: { type: EQUALS, value: "{{cursor.decl.line}}" }
 ```
 
+When `openDocument.text` is omitted, the document must be a readable file; a missing or unreadable fixture fails the
+step before the notification is sent. To open a new empty buffer, set `text: ""` explicitly. The Kotlin DSL follows the
+same contract: use `openDocument("New.groovy", text = "")` for an empty buffer.
+
 Markers:
 
 - Are recognized in `workspace.files`, `openDocument.text` and full-text `changeDocument.text`. They are stripped before
