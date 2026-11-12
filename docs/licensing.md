@@ -91,5 +91,9 @@ sidecars with it; metadata must not refer outside the destination. Validate a fr
 REUSE's ignored-file behavior differs once a source archive has no Git metadata, so a generated build tree is not a
 substitute for that source-export check.
 
+Forward Copybara jobs check the checkout, then generate a private configuration whose origin is pinned to that exact
+commit. The binding helper rejects a dirty checkout or mismatched revision. The reverse CodeNarc import retains its
+standalone repository origin; its resulting pull request receives the normal repository checks.
+
 These checks validate declared licensing and preserve notices. Dependency-license compatibility analysis and a full
 software bill of materials are separate work.

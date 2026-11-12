@@ -50,10 +50,10 @@ jobs:
       - name: Run tests
         run: uv run --offline --locked --project .reuse python -m unittest discover -s .reuse/tests
       - name: Check formatting
-        run: uv run --offline --locked --project .reuse ruff format --check .reuse/check.py .reuse/tests/test_check.py
+        run: uv run --offline --locked --project .reuse ruff format --check .reuse/check.py .reuse/pin_export.py .reuse/tests/test_check.py .reuse/tests/test_pin_export.py
       - name: Lint
-        run: uv run --offline --locked --project .reuse ruff check .reuse/check.py .reuse/tests/test_check.py
+        run: uv run --offline --locked --project .reuse ruff check .reuse/check.py .reuse/pin_export.py .reuse/tests/test_check.py .reuse/tests/test_pin_export.py
       - name: Check types with BasedPyright
-        run: uv run --offline --locked --project .reuse basedpyright .reuse/check.py .reuse/tests/test_check.py
+        run: uv run --offline --locked --project .reuse basedpyright .reuse/check.py .reuse/pin_export.py .reuse/tests/test_check.py .reuse/tests/test_pin_export.py
       - name: Check types with ty
-        run: uv run --offline --locked --project .reuse ty check .reuse/check.py .reuse/tests/test_check.py
+        run: uv run --offline --locked --project .reuse ty check .reuse/check.py .reuse/pin_export.py .reuse/tests/test_check.py .reuse/tests/test_pin_export.py

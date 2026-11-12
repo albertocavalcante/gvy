@@ -24,6 +24,14 @@ set -euo pipefail
 
 # ---------------------------------------------------------------- pure helpers
 
+print_usage() {
+    awk '
+        /^# ext-latest:/ { in_usage = 1 }
+        in_usage && /^# Pure helpers/ { exit }
+        in_usage { sub(/^# ?/, ""); print }
+    ' "${BASH_SOURCE[0]}"
+}
+
 # sha7 <sha>: first 7 characters.
 sha7() { printf '%s' "${1:0:7}"; }
 
@@ -676,7 +684,7 @@ main() {
         latest) cmd_latest ;;
         rollback) cmd_rollback "${2:-}" ;;
         -h | --help)
-            sed -n '2,9p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            print_usage
             ;;
         *) die "unknown command '$1' (latest | rollback [sha])" ;;
     esac

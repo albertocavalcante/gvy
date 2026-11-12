@@ -108,6 +108,21 @@ expect "choose force: green head" "green 0" "$(choose force "$(printf 'green\nre
 
 # --------------------------------------------------------------- small helpers
 
+help_output=$(EXT_LATEST_REPO_URL=https://github.com/albertocavalcante/gvy.git bash "${script}" --help)
+case ${help_output} in *SPDX*) r=no ;; *) r=yes ;; esac
+expect "help does not expose licensing metadata" yes "${r}"
+case ${help_output} in *"Configuration is environment-only"*) r=yes ;; *) r=no ;; esac
+expect "help retains configuration guidance" yes "${r}"
+case ${help_output} in *"editors/code/README.md"*) r=yes ;; *) r=no ;; esac
+expect "help includes the documented contributor reference" yes "${r}"
+{
+    head -n 1 "${script}"
+    printf '# Extra leading comment for the help regression test.\n'
+    tail -n +2 "${script}"
+} >"${work}/shifted-help.sh"
+shifted_help=$(EXT_LATEST_REPO_URL=https://github.com/albertocavalcante/gvy.git bash "${work}/shifted-help.sh" --help)
+expect "leading comment count cannot change help" "${help_output}" "${shifted_help}"
+
 full=0123456789abcdef0123456789abcdef01234567
 expect "sha7" 0123456 "$(sha7 "${full}")"
 expect "same_sha prefix" yes "$(yes_no same_sha 0123456 "${full}")"

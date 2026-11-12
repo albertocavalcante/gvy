@@ -133,10 +133,35 @@ test('source export workflows check licensing before invoking Copybara', () => {
     const body = job(read(`.github/workflows/${file}`), name);
     requireBefore(body, setup, check);
     requireBefore(body, check, 'uses: olivr/copybara-action@');
-    const guard = body.slice(body.indexOf('- name: Check license metadata'), body.indexOf('- name: Run Copybara'));
+    const guard = body.slice(body.indexOf('- name: Check license metadata'), body.indexOf('- name: Bind the validated source revision'));
     assert.doesNotMatch(guard, /continue-on-error:|^\s+if:/m);
     assert.throws(() => requireBefore(body.replace(setup, ''), setup, check));
     assert.throws(() => requireBefore(body.replace(check, ''), setup, check));
+  }
+});
+
+test('forward Copybara exports use a private config bound to the checked-out SHA', () => {
+  for (const [file, name, workflow] of [
+    ['mirror-vscode-groovy.yml', 'mirror', 'push-to-vscode-groovy'],
+    ['sync-rewrite-codenarc.yml', 'sync', 'push-to-rewrite-codenarc'],
+  ]) {
+    const body = job(read(`.github/workflows/${file}`), name);
+    const bind = '.reuse/pin_export.py';
+    requireBefore(body, check, bind);
+    requireBefore(body, bind, 'uses: olivr/copybara-action@');
+    const step = body.slice(body.indexOf('- name: Bind the validated source revision'), body.indexOf('- name: Run Copybara'));
+    assert.match(step, /id: source_config/);
+    assert.ok(step.includes(`--workflow ${workflow} --revision "$GITHUB_SHA"`));
+    assert.match(step, /--output "\$RUNNER_TEMP\/gvy-[^"\n]+\.sky"/);
+    assert.ok(step.includes("printf 'path=%s\\n' \"$config\" >> \"$GITHUB_OUTPUT\""));
+    assert.match(body, /custom_config:.*steps\.source_config\.outputs\.path/);
+    if (name === 'sync') {
+      assert.match(step, /if: inputs\.direction != 'pull-from-rewrite-codenarc'/);
+      assert.ok(body.includes("inputs.direction == 'pull-from-rewrite-codenarc' && 'infra/copybara/rewrite-codenarc.bara.sky' || steps.source_config.outputs.path"));
+    } else {
+      assert.doesNotMatch(step, /^\s+if:/m);
+    }
+    assert.throws(() => requireBefore(body.replace(bind, ''), check, bind));
   }
 });
 

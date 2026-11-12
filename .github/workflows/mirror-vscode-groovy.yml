@@ -49,6 +49,14 @@ jobs:
       - name: Check license metadata
         run: uv run --offline --locked --no-dev --project .reuse python .reuse/check.py --root .
 
+      - name: Bind the validated source revision
+        id: source_config
+        run: |
+          config=$(uv run --offline --locked --no-dev --project .reuse python .reuse/pin_export.py \
+            --workflow push-to-vscode-groovy --revision "$GITHUB_SHA" \
+            --output "$RUNNER_TEMP/gvy-vscode-copy.bara.sky")
+          printf 'path=%s\n' "$config" >> "$GITHUB_OUTPUT"
+
       - name: Run Copybara
         uses: olivr/copybara-action@042b4395839f3a374a6455b541e29e40c949d717 # v1.2.5
         with:
@@ -56,4 +64,4 @@ jobs:
           ssh_key: ${{ secrets.COPYBARA_SSH_KEY }}
           workflow: push-to-vscode-groovy
           copybara_options: ${{ inputs.force_sync && '--force' || '' }} ${{ inputs.dry_run && '--dry-run' || '' }}
-          custom_config: infra/copybara/vscode-groovy.bara.sky
+          custom_config: ${{ steps.source_config.outputs.path }}

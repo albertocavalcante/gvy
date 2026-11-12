@@ -490,11 +490,11 @@
       "sources": [
         {
           "id": "manual:copybara-action-runtime",
-          "sha256": "23e086c4aa45a68afb1f6a2eafb707a72579df59432c8831fd16667133185a92"
+          "sha256": "07234cd14e430f81a63296c2d38dde94f94ecb5b0245dc88a4c67d20851be2d6"
         },
         {
           "id": "manual:copybara-codenarc-runtime",
-          "sha256": "c401758a52befe8fc62d56447f0e6c07c11eef8f0da876ae336597f8dd723fe3"
+          "sha256": "70daf4ef3a71f86cf6ba30a5320c47259cccecb190b3a9e55c2f99d13e455aee"
         }
       ]
     },
