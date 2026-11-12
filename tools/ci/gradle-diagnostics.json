@@ -252,15 +252,6 @@
     "expires": "2026-12-11"
   },
   {
-    "diagnostic": "[project :viz:desktop] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin com.diffplug.gradle.spotless.GradleProvisioner.lambda$forConfigurationContainer$1(GradleProvisioner.java:124)]",
-    "owner": "gvy build and CI maintainers",
-    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
-    "reason": "Spotless 8.1.0 mutates obsolete visibility while provisioning formatting dependencies on Gradle 9.8.2; Gradle 11 removes this API. Inspected released 8.11.0 source guards the call to Gradle versions below 9, but gvy formatter/plugin integration has not been evaluated.",
-    "nextAction": "Formatting/build maintainers must evaluate the released fixed Spotless candidate with gvy formatter target checks, pinned ktlint behavior and existing formatting outputs before adoption.",
-    "acceptance": "Lint and lintFix retain target coverage and formatting behavior without this exact provisioning warning; remove the exception.",
-    "expires": "2026-12-11"
-  },
-  {
     "diagnostic": "[project :viz:desktop] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin kotlinx.kover.gradle.plugin.appliers.artifacts.AbstractVariantArtifacts$2.execute(AbstractVariantArtifacts.kt:52)]",
     "owner": "gvy build and CI maintainers",
     "issue": "https://github.com/albertocavalcante/gvy/issues/1603",

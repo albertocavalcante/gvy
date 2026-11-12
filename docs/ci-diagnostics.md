@@ -8,10 +8,10 @@ PR and completion message. Independent review must cover changes to diagnostic p
 ## Required readiness
 
 The required `Validation Check` evaluates the current workflow's dependency results. Applicable Gradle lint, unit/E2E
-jobs, packaged-JAR smoke checks on Linux/macOS/Windows and the reusable Bazel workflow must succeed. Missing
-applicability output, a failed path check, an unexpected skip, a cancellation, a failed runner check or pending runner
-provisioning fails readiness. Provisioning does not validate the original revision: rerun that revision when the runner
-is available.
+jobs, packaged-JAR smoke checks on Linux/macOS/Windows, the Native launcher workflow and the reusable Bazel workflow
+must succeed. Missing applicability output, a failed path check, an unexpected skip, a cancellation, a failed runner
+check or pending runner provisioning fails readiness. Provisioning does not validate the original revision: rerun that
+revision when the runner is available.
 
 The applicability job also enforces temporary dependency ownership and expiry on every invocation, including
 documentation-only changes. A dependency-maintenance failure therefore fails required readiness and is included in the
@@ -30,6 +30,12 @@ fail natively. The wrapper preserves original command/capture failures and rejec
 and test get unique invocation IDs, local BEP files, JSON profiles and receipts bound to the source SHA, tested
 checkout, run ID and attempt. Remote upload stays disabled. Configuration, resource bounds and artifact contracts are
 documented in [build observability](build-observability.md).
+
+CI bootstraps the pinned executable with exactly `bazel --version`. Bazel 9 handles this in its native client before
+reading rc files or starting a JVM; Bazelisk still resolves and caches the executable. Actual build/test commands then
+run through the captured minimal environment. The pinned launcher's deprecated `-Xverify:none` server option remains
+upstream retirement debt in [#1603](https://github.com/albertocavalcante/gvy/issues/1603); avoiding an unnecessary batch
+JVM does not remove that underlying option.
 
 A target reported as `SKIPPED` fails the evidence gate even if Bazel exits zero. The report retains its skip count and
 stream completeness; an intentional platform incompatibility requires a reviewed disposition.
@@ -84,10 +90,24 @@ The paired nightly server build uses the same diagnostic gate before artifact ve
 the read-only build dependency and prevents the separate publishing job from running. Diagnostic evidence stays separate
 from the verified JAR/VSIX pair.
 
+Native launcher payload and Linux/macOS Native builds also use this wrapper, with separate stable producers and failure
+artifacts. Their JDK 21/native-compiler processes are outside the Linux/JDK 17 numeric sampler contract; tool
+diagnostics and original command/capture status remain required. The caller requires the reusable workflow to succeed.
+
 First-party deprecated Kotlin DSL delegates and the old test-listener closure are migrated. Plugin deprecations have
 exact source-attributed exceptions in `tools/ci/gradle-diagnostics.json`; inspected upstream versions, adoption
 candidates and removal criteria remain tracked in [#1603](https://github.com/albertocavalcante/gvy/issues/1603). These
 exceptions are debt, not proof that newer plugin releases have the same limitation.
+
+Native integration adds fourteen exact upstream fingerprints from thirteen observed events per host. Three Native enum
+consumer stacks retain distinct configuration-cache codec origins; Native download advice retains its verified bundle
+emitter. These out-of-band messages must not inherit an unrelated project's last header. Unknown types, messages and
+origins remain unexpected. Inspected KGP 2.3.20 source fixes nine of these events, while the Native enum limitation
+remains in inspected 2.3.20 and 2.4.21; source findings alone are not adoption or integration proof.
+
+Spotless 8.11.0 guards its obsolete configuration-visibility call on Gradle 9. Cold formatter checks retain pinned
+ktlint 1.7.1 and existing output. The retired Spotless exception is removed; its original trace remains a negative
+regression fixture.
 
 Five exact generated SCIP compiler warnings also remain tracked in
 [#1599](https://github.com/albertocavalcante/gvy/issues/1599). Gradle uses Wire 5.5.1, while Bazel's generator uses
@@ -186,6 +206,10 @@ must be fixed or recorded with the same ownership and acceptance criteria.
 Inspect complete job logs with binary-safe readers, such as `rg --text`, because legitimate NUL-delimited Git output can
 make a default text search omit later warnings. Preserve the original bytes and hash. The Gradle producer separately
 rejects NUL-containing captures as incomplete evidence; stripping those bytes does not repair a failed capture.
+
+Optional HotSpot test diagnostics use per-process `test-jvm-%p.log` files. Parallel forks must not share one truncating
+log path. These secondary XML logs are separate from the required plain Gradle captures and numeric reports; retain
+malformed bytes for investigation rather than stripping NULs or claiming the file is complete.
 
 Bazel module-lock drift fails CI. Full Maven resolution reproducibility remains tracked in
 [#1029](https://github.com/albertocavalcante/gvy/issues/1029): the Maven lock remains disabled after historical GMM

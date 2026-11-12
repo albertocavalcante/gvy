@@ -31,6 +31,7 @@ export function evaluateReadiness(needs) {
     'check-runner': applicability.run_main_ci,
     lint: applicability.run_main_ci,
     build: applicability.run_main_ci,
+    launcher: applicability.run_main_ci,
     'e2e-test': applicability.run_main_ci,
     'smoke-test': applicability.run_main_ci,
     bazel: applicability.run_bazel_ci,

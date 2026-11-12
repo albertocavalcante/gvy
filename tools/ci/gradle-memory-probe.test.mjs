@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, chmodSync, symlinkSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
+import childProcess, { spawn, spawnSync } from 'node:child_process';
+import { syncBuiltinESMExports } from 'node:module';
 import test from 'node:test';
 import { identifyOwnedGradleDaemon, parseProcStat, parseGcSample, parseClassSample, startGradleMemoryProbe } from './gradle-memory-probe.mjs';
 
@@ -332,19 +333,39 @@ test('real tool stderr, output overflow, nonzero exit and timeout fail without r
   for (const [kind, source] of [
     ['stderr', "process.stderr.write('CANARY'); setInterval(() => {}, 1000);"],
     ['output_limit', "process.stdout.write('C'.repeat(32769)); setInterval(() => {}, 1000);"],
-    ['exit', 'process.exit(7);'],
+    ['exit', 'setTimeout(() => process.exit(7), 1700);'],
     ['timeout', 'setInterval(() => {}, 1000);'],
   ]) {
     const f = fixture(t); const executable = join(f.dir, 'fake-jstat');
     writeFileSync(executable, `#!${process.execPath} --max-old-space-size=64\n${source}\n`); chmodSync(executable, 0o755);
     const io = { ...f.io, jstatPath: executable }; delete io.runTool;
-    const probe = startGradleMemoryProbe({ ...f.options, toolTimeoutMs: 1000 }, io);
-    await sleep(1400, new AbortController().signal);
-    const result = await probe.stop();
-    assert.equal(result.complete, false); assert.equal(result.tools.failures, 1);
-    assert.ok(result.reasonCodes.includes(`jstat_${kind}`));
-    assert.ok(!readFileSync(f.options.reportPath, 'utf8').includes('CANARY'));
-    assert.equal(readFileSync(join(f.procRoot, '42/stat'), 'utf8'), stat());
+    const closed = deferred(); const realSpawn = childProcess.spawn;
+    childProcess.spawn = (...args) => {
+      const child = realSpawn(...args);
+      child.once('close', (code, signal) => closed.resolve({ code, signal }));
+      return child;
+    };
+    syncBuiltinESMExports();
+    let probe, watchdog;
+    try {
+      // Wait for the actual owned tool, not a wall-clock guess about process startup/exit.
+      probe = startGradleMemoryProbe({ ...f.options, toolTimeoutMs: kind === 'timeout' ? 1000 : 5000 }, io);
+      const exit = await Promise.race([closed.promise, new Promise((_, reject) => {
+        watchdog = setTimeout(() => reject(new Error(`Tool fixture did not close: ${kind}`)), 8000);
+      })]);
+      await settled(); // Let the probe consume close and finish its failure path.
+      const result = await probe.stop();
+      const details = JSON.stringify({ kind, reasons: result.reasonCodes });
+      assert.equal(result.complete, false); assert.equal(result.tools.failures, 1, details);
+      assert.ok(result.reasonCodes.includes(`jstat_${kind}`), details);
+      if (kind === 'exit') assert.deepEqual(exit, { code: 7, signal: null });
+      assert.ok(!readFileSync(f.options.reportPath, 'utf8').includes('CANARY'));
+      assert.equal(readFileSync(join(f.procRoot, '42/stat'), 'utf8'), stat());
+    } finally {
+      clearTimeout(watchdog);
+      try { await probe?.stop(); }
+      finally { childProcess.spawn = realSpawn; syncBuiltinESMExports(); }
+    }
   }
 });
 

@@ -8,6 +8,7 @@ function successful(main = true, bazel = true) {
     'check-runner': { result: main ? 'success' : 'skipped', outputs: { provisioning_triggered: '' } },
     lint: { result: main ? 'success' : 'skipped' },
     build: { result: main ? 'success' : 'skipped' },
+    launcher: { result: main ? 'success' : 'skipped' },
     'e2e-test': { result: main ? 'success' : 'skipped' },
     'smoke-test': { result: main ? 'success' : 'skipped' },
     bazel: { result: bazel ? 'success' : 'skipped' },
@@ -36,7 +37,7 @@ test('missing, failed, cancelled and skipped applicability never mean docs only'
 });
 
 test('every applicable producer must succeed, including Bazel and the runner check', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'bazel']) {
+  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel']) {
     for (const result of [undefined, 'failure', 'cancelled', 'skipped', 'unknown']) {
       const jobs = successful();
       jobs[name].result = result;
@@ -58,7 +59,7 @@ test('provisioning pending cannot satisfy required readiness', () => {
 });
 
 test('excluded jobs must be skipped; failures remain visible', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'bazel']) {
+  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel']) {
     for (const result of ['success', 'failure', 'cancelled', undefined]) {
       const jobs = successful(false, false);
       jobs[name].result = result;

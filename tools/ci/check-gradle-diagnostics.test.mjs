@@ -268,13 +268,24 @@ test('a new warning fails even when all previous diagnostics are excepted', () =
   assert.deepEqual(result.unexpected, ['[task :gls:test] ⚠️ SLOW TEST: Suite.test took 61000ms']);
 });
 
+test('retired Spotless provisioning warnings fail in project and formatter task contexts', () => {
+  const fixture = readFileSync(new URL('./fixtures/gradle-spotless-retired.txt', import.meta.url), 'utf8');
+  const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url), 'utf8'));
+  for (const log of [fixture, fixture.replace('> Configure project :viz:desktop', '> Task :gls:spotlessKotlinGradle')]) {
+    const result = check(log + 'BUILD SUCCESSFUL in 1s\n', { exceptions });
+    assert.equal(result.ok, false);
+    assert.equal(result.unexpected.length, 1);
+    assert.match(result.unexpected[0], /GradleProvisioner\.java:124/);
+  }
+});
+
 test('the inspected pinned-plugin trace matches only its exact reviewed debt ledger', () => {
   const log = readFileSync(new URL('./fixtures/gradle-plugin-origins.txt', import.meta.url), 'utf8');
   const exceptions = JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
   const result = check(log, { exceptions });
   assert.equal(result.ok, true);
-  assert.equal(result.diagnostics.length, 33);
-  assert.equal(result.accepted.length, 33);
+  assert.equal(result.diagnostics.length, 32);
+  assert.equal(result.accepted.length, 32);
   assert.equal(check(log.replaceAll('DetektPlugin.kt:28', 'DetektPlugin.kt:29'), { exceptions }).ok, false);
   assert.equal(check(log.replace('> Configure project :viz:desktop', '> Configure project :other'), { exceptions }).ok, false);
   assert.equal(check('BUILD SUCCESSFUL in 1s\n', { exceptions, now: new Date('2026-12-12T00:00:00Z') }).ok, false);
@@ -407,8 +418,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 47);
-  assert.equal(exceptions.length, 52);
+  assert.equal(plugins.length, 46);
+  assert.equal(exceptions.length, 51);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {
