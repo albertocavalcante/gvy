@@ -1,0 +1,25 @@
+{
+  "base": "1b22b95eb919fc4f59b547ab861b5758835e84cf",
+  "tree": "e9924674b5013232fe2500af0c7d07c9e979f26b",
+  "patchSha256": "8bc486bc8527809e1f5b3907289377aaf1da1c44c35ee03dbc950fb08eaa0a18",
+  "payloadSha256": "6734e47e7b54e1d7192f3aa2e3454df7a31947a36e1cfe899ddf2bc634e0b610",
+  "patchBytes": 18236,
+  "payloadBytes": 4297,
+  "allowedPaths": [
+    "tests/build.gradle.kts",
+    "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/BoundedFailureEvidence.kt",
+    "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/BoundedFailureEvidenceTest.kt",
+    "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/NamedObservationRecorder.kt",
+    "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/NamedObservationRecorderTest.kt"
+  ],
+  "commitMessage": "fix(e2e): bound retained failure evidence",
+  "reviewedPriorHead": "ff1da961b172f7bf91fb8a07a761abf82e9d2935",
+  "priorDiffSha256": "371970324c82a7409255729d0343f44b3d599edff6a7c5509d50290d082ef5ee",
+  "priorPatchByteIdentical": false,
+  "fileContentsDifferFromPriorHead": [
+    "tests/build.gradle.kts",
+    "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/BoundedFailureEvidence.kt",
+    "tests/e2e/kotlin/com/github/albertocavalcante/gvy/gls/e2e/BoundedFailureEvidenceTest.kt"
+  ],
+  "scope": "Bounded retained rendering; getter-thrown interruption propagates, SocketTimeout propagates without creating interrupt. Throwable getters may allocate; XFAIL classification and original-failure-input classification remain #1719/#1714."
+}
