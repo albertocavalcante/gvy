@@ -36,7 +36,7 @@ class GroovySemantics(
     private val calculatorRegistry: TypeCalculatorRegistry = NativeCalculators.createRegistry(),
     private val workspaceMemberLookup: MemberLookup? = null,
 ) {
-    // Thread-safe cache of contexts per module (weak references allow GC when ModuleNode is discarded)
+    // Contexts hold only member signatures and a weak module reference, so weak keys can be retired.
     private val contextCache = synchronizedMap(WeakHashMap<ModuleNode, NativeTypeContext>())
 
     // The workspace version each cached context was built at; guarded by the contextCache lock. Locals typed from

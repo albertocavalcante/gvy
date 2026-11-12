@@ -13,8 +13,6 @@ import com.github.albertocavalcante.gvy.semantics.toIndexClassName
 import com.github.albertocavalcante.gvy.semantics.toSemanticType
 import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.codehaus.groovy.ast.ClassNode
-import org.codehaus.groovy.ast.FieldNode
-import org.codehaus.groovy.ast.MethodNode
 
 /**
  * TypeContext implementation for native Groovy AST.
@@ -65,7 +63,7 @@ class NativeTypeContext(
         workspaceDirect = { workspace, fqn ->
             workspace.agreedMethodType(fqn, methodName, argumentTypes.size)
         },
-        converter = { fromClassNode(it.returnType) },
+        converter = { it },
         notFoundMessage = { "Method $methodName not found on $it" },
     )
 
@@ -78,17 +76,7 @@ class NativeTypeContext(
         classFqn: String,
         methodName: String,
         argumentTypes: List<SemanticType>,
-    ): MethodNode? {
-        val candidates = scope.currentModule?.classes
-            ?.find { it.name == classFqn }
-            ?.methods
-            ?.filter { it.name == methodName && it.parameters.size == argumentTypes.size }
-            .orEmpty()
-        // Overloads of one arity may differ in return type; take one only when they all agree.
-        return candidates.firstOrNull()?.takeIf { first ->
-            candidates.all { fromClassNode(it.returnType) == fromClassNode(first.returnType) }
-        }
-    }
+    ): SemanticType? = scope.findMethodType(classFqn, methodName, argumentTypes.size)
 
     override fun getFieldType(receiverType: SemanticType, fieldName: String): SemanticType? = when (receiverType) {
         is SemanticType.Array -> {
@@ -102,7 +90,7 @@ class NativeTypeContext(
             workspaceDirect = { workspace, fqn ->
                 workspace.findField(fqn, fieldName)?.type
             },
-            converter = { fromClassNode(it.type) },
+            converter = { it },
             notFoundMessage = { "Field $fieldName not found on $it" },
         )
     }
@@ -111,10 +99,8 @@ class NativeTypeContext(
      * Find a field in the current module by class and field name.
      * Returns null if not found.
      */
-    private fun findFieldInModule(classFqn: String, fieldName: String): FieldNode? = scope.currentModule?.classes
-        ?.find { it.name == classFqn }
-        ?.fields
-        ?.find { it.name == fieldName }
+    private fun findFieldInModule(classFqn: String, fieldName: String): SemanticType? =
+        scope.findFieldType(classFqn, fieldName)
 
     /**
      * Generic member resolution helper for nullable return.
@@ -229,7 +215,7 @@ class NativeTypeContext(
         workspaceDirect = { workspace, fqn ->
             workspace.agreedMethodType(fqn, methodName, argumentTypes.size)
         },
-        converter = { fromClassNode(it.returnType) },
+        converter = { it },
         errorFactory = { TypeInferenceError.MethodNotFound(it, methodName, argumentTypes) },
     )
 
@@ -249,7 +235,7 @@ class NativeTypeContext(
             workspaceDirect = { workspace, fqn ->
                 workspace.findField(fqn, fieldName)?.type
             },
-            converter = { fromClassNode(it.type) },
+            converter = { it },
             errorFactory = { TypeInferenceError.FieldNotFound(it, fieldName) },
         )
     }
