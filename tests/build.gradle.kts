@@ -61,6 +61,7 @@ testing {
                 implementation(libs.jackson.databind)
                 implementation(libs.jackson.module.kotlin)
                 implementation(libs.json.path)
+                implementation(libs.re2j)
                 implementation(libs.kotlin.coroutines.core)
                 implementation(libs.kotlin.logging)
                 implementation(libs.logback.classic)

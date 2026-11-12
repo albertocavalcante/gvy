@@ -75,6 +75,13 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `null cause messages do not change anchored matches`() {
+        val failure = AssertionError().apply { initCause(IOException("inner")) }
+        assertThat(classify(xfail.copy(match = "^inner$"), failure))
+            .isInstanceOf(XfailDecision.Expected::class.java)
+    }
+
+    @Test
     fun `matching a cyclic cause chain terminates`() {
         var causeReads = 0
         val failure = object : AssertionError("product failed") {
@@ -87,6 +94,100 @@ class XfailOutcomeTest {
 
         assertThat(classify(xfail.copy(match = "product failed"), failure))
             .isInstanceOf(XfailDecision.Expected::class.java)
+    }
+
+    @Test
+    fun `oversized matched or unmatched failures are not known failures`() {
+        val failure = AssertionError("known " + "x".repeat(100_000))
+        listOf(xfail, xfail.copy(match = "known")).forEach { declaration ->
+            assertThat(classify(declaration, failure)).isInstanceOf(XfailDecision.Unexpected::class.java)
+        }
+    }
+
+    @Test
+    fun `uninspected deep cause is not classified as known`() {
+        val failure = AssertionError("known")
+        var tail: Throwable = failure
+        repeat(100) { index -> IOException("cause-$index").also { tail.initCause(it); tail = it } }
+        assertThat(classify(xfail.copy(match = "known"), failure))
+            .isInstanceOf(XfailDecision.Unexpected::class.java)
+    }
+
+    @Test
+    fun `cause node budget accepts exact limit and rejects one extra`() {
+        fun chain(additional: Int): AssertionError {
+            val root = AssertionError("known")
+            var tail: Throwable = root
+            repeat(additional) { index -> IOException("cause-$index").also { tail.initCause(it); tail = it } }
+            return root
+        }
+        assertThat(classify(xfail, chain(31))).isInstanceOf(XfailDecision.Expected::class.java)
+        assertThat(classify(xfail, chain(32))).isInstanceOf(XfailDecision.Unexpected::class.java)
+    }
+
+    @Test
+    fun `unsupported lookbehind fails before classification`() {
+        assertThatThrownBy { classify(xfail.copy(match = "(?<=a)b"), AssertionError("ab")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
+    fun `incomplete inspection preserves the original failure as cause`() {
+        val failure = AssertionError("known " + "x".repeat(100_000))
+        val decision = classify(xfail.copy(match = "known"), failure) as XfailDecision.Unexpected
+        assertThat(decision.failure).isInstanceOf(IllegalStateException::class.java)
+        assertThat(decision.failure.message).contains("classification incomplete")
+        assertThat(decision.failure.cause).isSameAs(failure)
+    }
+
+    @Test
+    fun `hostile failure accessors cannot produce a known failure`() {
+        val failure = object : AssertionError() {
+            override val message: String get() = throw IllegalStateException("cannot inspect")
+        }
+        val decision = classify(xfail.copy(match = "anything"), failure) as XfailDecision.Unexpected
+        assertThat(decision.failure.message).contains("unavailable")
+        assertThat(decision.failure.cause).isSameAs(failure)
+    }
+
+    @Test
+    fun `classifier preserves fatal and cancellation thrown during inspection`() {
+        listOf(CancellationException("cancel"), LinkageError("fatal")).forEach { thrown ->
+            val failure = object : AssertionError() {
+                override val message: String get() = throw thrown
+            }
+            assertThatThrownBy { classify(xfail.copy(match = "anything"), failure) }.isSameAs(thrown)
+        }
+    }
+
+    @Test
+    fun `interruption during classification propagates and restores the interrupt flag`() {
+        val interrupted = InterruptedException("stop")
+        val failure = object : AssertionError() {
+            override val message: String get() = throw interrupted
+        }
+        try {
+            assertThatThrownBy { classify(xfail.copy(match = "anything"), failure) }.isSameAs(interrupted)
+            assertThat(Thread.currentThread().isInterrupted).isTrue()
+        } finally {
+            Thread.interrupted()
+        }
+    }
+
+    @Test
+    fun `ambiguous repetition uses bounded linear matcher`() {
+        val failure = AssertionError("a".repeat(8_000) + "b")
+        assertThat(classify(xfail.copy(match = "(a+)+$"), failure))
+            .isEqualTo(XfailDecision.Unexpected(failure))
+    }
+
+    @Test
+    fun `matcher and reason size limits are enforced at preflight`() {
+        XfailOutcome.validateDeclaration(xfail.copy(match = "a".repeat(256), reason = "r".repeat(512)))
+        assertThatThrownBy { XfailOutcome.validateDeclaration(xfail.copy(match = "a".repeat(257))) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        assertThatThrownBy { XfailOutcome.validateDeclaration(xfail.copy(reason = "r".repeat(513))) }
+            .isInstanceOf(IllegalArgumentException::class.java)
     }
 
     @Test

@@ -72,11 +72,10 @@ class ScenarioExecutor internal constructor(
             require(step is ScenarioStep.Assert || (check.id == null && check.xfail == null)) {
                 "Named checks are currently supported only in assert steps"
             }
-            check.id?.let { require(it.isNotBlank()) { "A check ID must not be blank" } }
-            check.xfail?.let {
-                require(it.issue > 0 && it.reason.isNotBlank()) { "A check xfail needs an issue and reason" }
-                it.match?.let(::Regex)
+            check.id?.let {
+                require(it.length <= 256 && it.isNotBlank()) { "A check ID must be nonblank and at most 256 characters" }
             }
+            check.xfail?.let(XfailOutcome::validateDeclaration)
         }
         val planned = authored.mapNotNull { it.second.id }
         require(planned.distinct().size == planned.size) { "Check IDs must be unique" }

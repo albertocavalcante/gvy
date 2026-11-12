@@ -51,6 +51,7 @@ kt_test(
         "@maven//:com_fasterxml_jackson_module_jackson_module_kotlin",
         "@maven//:com_google_code_gson_gson",
         "@maven//:com_jayway_jsonpath_json_path",
+        "@maven//:com_google_re2j_re2j",
         "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:net_java_dev_jna_jna",

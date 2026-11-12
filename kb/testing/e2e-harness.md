@@ -85,7 +85,12 @@ Details and examples are in [`tests/e2e/README.md`](../../tests/e2e/README.md).
   `-Dgroovy.lsp.e2e.updateSnapshots=true` rewrites them locally (refused on CI and under Bazel).
 - **Known failures**: `xfail: { issue, reason, match? }` keeps a scenario for an open bug in the suite. It aborts with
   the reason while it fails and fails with "appears fixed" once it passes, so the marker cannot go stale. `_`-prefixed
-  files are skipped but must parse and carry a `# disabled:` header.
+  files are skipped but must parse and carry a `# disabled:` header. `match` uses [RE2/J](https://github.com/google/re2j)
+  syntax, not Java backtracking regex; unsupported constructs such as lookbehind and backreferences are rejected before
+  execution. Patterns are limited to 256 UTF-16 code units, reasons to 512, and classification inspects at most 32 cause
+  nodes and 8,192 message code units. If inspection is incomplete, the test fails instead of reporting a known failure.
+  Named check IDs are limited to 256 code units; known named outcomes retain the check ID, issue, reason, matcher and
+  bounded failure evidence for receipt integration.
 
 ## Next Steps
 

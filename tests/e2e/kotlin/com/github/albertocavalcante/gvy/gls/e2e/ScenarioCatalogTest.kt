@@ -17,6 +17,31 @@ class ScenarioCatalogTest {
     }
 
     @Test
+    fun `all authored xfail matchers compile under RE2`() {
+        val scenarios = loader.loadEvery(Path.of(resolveScenarioDir()))
+        val patterns = scenarios.flatMap { definition ->
+            val scenario = definition.scenario
+            val top = listOfNotNull(scenario.xfail?.match)
+            val nested = scenario.steps.flatMap { step ->
+                val checks = when (step) {
+                    is ScenarioStep.Assert -> step.checks
+                    is ScenarioStep.WaitNotification -> step.checks
+                    is ScenarioStep.Completion -> step.checks
+                    is ScenarioStep.CodeAction -> step.checks
+                    is ScenarioStep.Formatting -> step.checks
+                    is ScenarioStep.Rename -> step.checks
+                    is ScenarioStep.CliCommand -> step.checks
+                    else -> emptyList()
+                }
+                checks.mapNotNull { it.xfail?.match }
+            }
+            top + nested
+        }
+        assertThat(patterns).isNotEmpty()
+        patterns.forEach(XfailOutcome::compileMatch)
+    }
+
+    @Test
     fun `disabled scenarios state why in a disabled header`() {
         val dir = Path.of(resolveScenarioDir())
         val problems = loader.scenarioFiles(dir)
