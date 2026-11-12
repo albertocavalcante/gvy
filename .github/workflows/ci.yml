@@ -46,6 +46,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
+      - name: Verify test Java version
+        shell: bash
+        run: |
+          set -euo pipefail
+          env JDK_JAVA_OPTIONS= JAVA_TOOL_OPTIONS= "$JAVA_HOME_17_X64/bin/java" -Xmx64m -XX:MaxMetaspaceSize=128m -XshowSettings:properties -version >"$RUNNER_TEMP/parity-proof/test-java-version.log" 2>&1
+          grep -Eq '^[[:space:]]*java\.specification\.version[[:space:]]*=[[:space:]]*17[[:space:]]*$' "$RUNNER_TEMP/parity-proof/test-java-version.log"
       - name: Fetch checksum-pinned hook tools
         env:
           GH_TOKEN: ${{ github.token }}
@@ -108,6 +114,8 @@ jobs:
           proof="$RUNNER_TEMP/parity-proof"
           config=tools/test-logging/src/test/resources/logback-test.xml
           cp "$config" "$RUNNER_TEMP/parity-canonical.xml"
+          result=0
+          trap 'result=$?; trap - EXIT; if ! cp "$RUNNER_TEMP/parity-canonical.xml" "$config"; then result=1; fi; exit "$result"' EXIT
           for mode in missing wrong-target duplicate missing-level; do
           	cp "$RUNNER_TEMP/parity-canonical.xml" "$config"
           	case "$mode" in
@@ -125,7 +133,23 @@ jobs:
           		"-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64" >"$proof/$mode.log" 2>&1
           	status=$?
           	set -e
+          	printf '%s\n' "$status" >"$proof/$mode.status"
           	[[ "$status" != 0 ]]
+          	python3 - "$proof/$mode.log" "$JAVA_HOME_17_X64/bin/java" <<'PYJVM'
+          import shlex
+          import sys
+          log, java = sys.argv[1:]
+          with open(log, encoding="utf-8", errors="replace") as stream:
+              lines = [line.strip() for line in stream if "Starting process 'Gradle Test Executor " in line]
+          if len(lines) != 2:
+              raise SystemExit(f"expected two actual test executor launches, observed {len(lines)}")
+          for line in lines:
+              if " Command: " not in line:
+                  raise SystemExit("missing executor command")
+              args = shlex.split(line.split(" Command: ", 1)[1])
+              if not args or args[0] != java or "-Xmx512m" not in args or "-XX:MaxMetaspaceSize=512m" not in args:
+                  raise SystemExit("executor Java or memory flags differ")
+          PYJVM
           	for module in build-tool jenkins; do
           		if [[ "$module" == build-tool ]]; then package=build; else package=jenkins; fi
           		xml="$module/build/test-results/test/TEST-com.github.albertocavalcante.gvy.$package.LoggingProviderTest.xml"
@@ -136,7 +160,7 @@ jobs:
           root = ET.parse(path).getroot()
           cases = root.findall("testcase")
           failed = [(case, case.find("failure")) for case in cases if case.find("failure") is not None]
-          if root.get("tests") != "2" or root.get("errors") != "0" or root.get("skipped") != "0" or len(failed) != 1:
+          if root.get("tests") != "2" or root.get("failures") != "1" or root.get("errors") != "0" or root.get("skipped") != "0" or len(failed) != 1:
               raise SystemExit("mutation did not produce the intended single assertion failure")
           case, failure = failed[0]
           text = (failure.get("message") or "") + (failure.text or "")
@@ -151,6 +175,8 @@ jobs:
           	done
           done
           cp "$RUNNER_TEMP/parity-canonical.xml" "$config"
+          cmp "$RUNNER_TEMP/parity-canonical.xml" "$config"
+          trap - EXIT
           git diff --quiet
           [[ "$(git write-tree)" == "$(cat "$proof/formatted-tree")" ]]
       - name: Restored tests and scoped lint
@@ -165,7 +191,21 @@ jobs:
           	-I "$GITHUB_WORKSPACE/support/.publication/parity.init.gradle" \
           	'-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC' \
           	"-Dorg.gradle.java.installations.paths=$JAVA_HOME_17_X64,$JAVA_HOME_21_X64" 2>&1 | tee "$proof/positive.log"
-          grep -F "$JAVA_HOME_17_X64/bin/java" "$proof/positive.log" | grep -F 'Gradle Test Executor' | grep -F -- '-Xmx512m' | grep -F -- '-XX:MaxMetaspaceSize=512m' >"$proof/actual-test-java.txt"
+          python3 - "$proof/positive.log" "$JAVA_HOME_17_X64/bin/java" <<'PYJVM'
+          import shlex
+          import sys
+          log, java = sys.argv[1:]
+          with open(log, encoding="utf-8", errors="replace") as stream:
+              lines = [line.strip() for line in stream if "Starting process 'Gradle Test Executor " in line]
+          if len(lines) != 2:
+              raise SystemExit(f"expected two actual test executor launches, observed {len(lines)}")
+          for line in lines:
+              if " Command: " not in line:
+                  raise SystemExit("missing executor command")
+              args = shlex.split(line.split(" Command: ", 1)[1])
+              if not args or args[0] != java or "-Xmx512m" not in args or "-XX:MaxMetaspaceSize=512m" not in args:
+                  raise SystemExit("executor Java or memory flags differ")
+          PYJVM
           for module in build-tool jenkins; do
           	if [[ "$module" == build-tool ]]; then package=build; else package=jenkins; fi
           	xml="$module/build/test-results/test/TEST-com.github.albertocavalcante.gvy.$package.LoggingProviderTest.xml"
