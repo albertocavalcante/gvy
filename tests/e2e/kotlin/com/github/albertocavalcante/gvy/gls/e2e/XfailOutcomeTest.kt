@@ -75,6 +75,21 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `matching a cyclic cause chain terminates`() {
+        var causeReads = 0
+        val failure = object : AssertionError("product failed") {
+            override val cause: Throwable?
+                get() {
+                    check(++causeReads <= 3) { "cause chain was not bounded" }
+                    return this
+                }
+        }
+
+        assertThat(classify(xfail.copy(match = "product failed"), failure))
+            .isInstanceOf(XfailDecision.Expected::class.java)
+    }
+
+    @Test
     fun `passing scenario is reported as fixed`() {
         assertThat(classify(failure = null))
             .isEqualTo(XfailDecision.Fixed("gvy#42 appears fixed: remove xfail from demo.yaml"))
