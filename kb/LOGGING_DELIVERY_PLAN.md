@@ -707,10 +707,12 @@ failures. Neither passing those runs nor documenting their debt closes those iss
 
 ### Findings added during implementation
 
-- **L01b remains a gate:** the preserved generated-JAR #1409 repro also fails at INFO in semantic hierarchy/model
-  construction. The logging implementation owner must test narrow classpath-error recovery, explicit unknown/degraded
-  outcomes, a clean later parse and a conservative Spock table action before L03 enables DEBUG more broadly. The
-  complete three-state caller audit remains part of the issue's own acceptance.
+- **L01b remains a gate:** the preserved generated-JAR case and a separate missing third-party superclass case reach the
+  existing compilation-failure fallback at INFO, DEBUG and TRACE on the tested revision. The third-party case withholds
+  a Spock table edit while its complete-classpath control offers one; the preserved case permits a later clean parse.
+  These results do not establish that every lazy hierarchy access is safe: investigate the separate
+  `compiledChainStatus` concern and unknown/degraded semantics before L03 enables DEBUG more broadly. The complete
+  three-state caller audit remains part of #1409's acceptance.
 - **Test-runtime parity needs a separate PR:** CI found Gradle test JVMs in build-tool and Jenkins modules emitting
   SLF4J's no-provider/NOP advisory, while Bazel supplies a backend. Missing logs undermine diagnostic assertions. The
   logging owner will inventory test classpaths, coordinate shared build declarations with the CI owner, and add a
