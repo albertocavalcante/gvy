@@ -223,6 +223,46 @@ describe("TestEventConsumer", () => {
   });
 
   describe("processLine", () => {
+    it("keeps failure and suite summary while avoiding per-test transition chatter", () => {
+      consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
+      const item = { id: "Suite.test", label: "test" };
+      consumer.registerTestItem(item.id, item);
+      consumer.processLine(
+        JSON.stringify({ event: "suiteStarted", id: "Suite", name: "Suite" }),
+      );
+      for (let i = 0; i < 10; i++) {
+        consumer.processLine(
+          JSON.stringify({ event: "testStarted", id: item.id, name: "test" }),
+        );
+        consumer.processLine(
+          JSON.stringify({
+            event: "testFinished",
+            id: item.id,
+            name: "test",
+            result: i === 9 ? "FAILURE" : "SUCCESS",
+          }),
+        );
+      }
+      consumer.processLine(
+        JSON.stringify({
+          event: "suiteFinished",
+          id: "Suite",
+          testCount: 10,
+          successfulCount: 9,
+          failedCount: 1,
+          skippedCount: 0,
+        }),
+      );
+      consumer.processLine("User requested raw output");
+      assert.strictEqual(runMock.started.callCount, 10);
+      assert.strictEqual(runMock.passed.callCount, 9);
+      assert.strictEqual(runMock.failed.callCount, 1);
+      assert.ok(loggerMock.appendLine.calledWith(sinon.match(/FAILURE/)));
+      assert.ok(loggerMock.appendLine.calledWith(sinon.match(/10.*9.*1.*0/)));
+      assert.ok(loggerMock.appendLine.calledWith("User requested raw output"));
+      assert.strictEqual(loggerMock.appendLine.callCount, 3);
+    });
+
     it("should return false for non-JSON lines", () => {
       consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
 
@@ -230,6 +270,20 @@ describe("TestEventConsumer", () => {
 
       assert.strictEqual(result, false);
       assert.ok(loggerMock.appendLine.calledWith("Some regular output line"));
+    });
+
+    it("preserves ordinary JSON and malformed event-shaped output", () => {
+      consumer = new TestEventConsumer(runMock, loggerMock, testControllerMock);
+      for (const line of [
+        '{"message":"user output"}',
+        '{"event":"user event","id":"x"}',
+        '{"event":"testStarted","id":42,"name":"x"}',
+        '{"event":"testStarted","id":"x"}',
+      ]) {
+        assert.strictEqual(consumer.processLine(line), false);
+        assert.ok(loggerMock.appendLine.calledWith(line));
+      }
+      assert.ok(runMock.started.notCalled);
     });
 
     it("should return false for invalid JSON", () => {
@@ -342,7 +396,7 @@ describe("TestEventConsumer", () => {
         }),
       );
 
-      assert.ok(loggerMock.appendLine.calledWith("[SUITE] Started: Suite"));
+      assert.ok(!loggerMock.appendLine.calledWith("[SUITE] Started: Suite"));
     });
 
     it("should handle suiteFinished event", () => {
