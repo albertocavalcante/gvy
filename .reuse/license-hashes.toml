@@ -20,3 +20,8 @@ source = "Project license copied into the Zed extension"
 path = "LICENSES/Apache-2.0.txt"
 sha256 = "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
 source = "https://spdx.org/licenses/Apache-2.0.txt"
+
+[[license]]
+path = "LICENSES/MIT.txt"
+sha256 = "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5"
+source = "https://github.com/spdx/license-list-data/blob/31846481de7ea17d92f2f46fad76abe58b2e9bb0/text/MIT.txt"
