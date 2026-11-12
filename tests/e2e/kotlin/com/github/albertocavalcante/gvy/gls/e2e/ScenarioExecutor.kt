@@ -51,7 +51,7 @@ class ScenarioExecutor internal constructor(
     )
 
     fun execute(definition: ScenarioDefinition) {
-        require(checks(definition).none { (_, check) -> check.id != null || check.xfail != null }) {
+        require(!hasNamedCheckMetadata(definition)) {
             "Named checks require executeWithOutcome"
         }
         val execution = execution()
@@ -194,6 +194,9 @@ private inline fun <T> recordPrimary(recorder: NamedObservationRecorder?, block:
 }
 
 private const val DEFAULT_SCENARIO_TIMEOUT_MS = 300_000L
+
+internal fun hasNamedCheckMetadata(definition: ScenarioDefinition): Boolean =
+    checks(definition).any { (_, check) -> check.id != null || check.xfail != null }
 
 private fun checks(definition: ScenarioDefinition): List<Pair<ScenarioStep, JsonCheck>> =
     definition.scenario.steps.flatMap { step ->
