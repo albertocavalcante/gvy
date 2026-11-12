@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 [package]
 name = "gvy-native-secondary-contract"
 version = "0.0.0"

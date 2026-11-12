@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 use serde_json::{Value, json};
 use std::io::{self, Read};
 use tree_sitter::{Language, Node, Parser, Query};

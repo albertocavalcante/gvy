@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { fileURLToPath } from 'node:url';
 
 /** Fixed trusted read targets, never paths obtained from a receipt or dependency metadata. */

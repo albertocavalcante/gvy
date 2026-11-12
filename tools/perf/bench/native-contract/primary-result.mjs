@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { sha256 } from './source-files.mjs';
 
 const fail = () => { throw new Error('FEASIBILITY_PRIMARY_RESULT_INVALID'); };

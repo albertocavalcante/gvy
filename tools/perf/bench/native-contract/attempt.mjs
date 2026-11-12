@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { classifyNativeFailure } from './diagnostics.mjs';
 import { verifyFixtureBytes } from './source-files.mjs';
 

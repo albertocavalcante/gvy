@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import { spawn } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { TextDecoder } from 'node:util';

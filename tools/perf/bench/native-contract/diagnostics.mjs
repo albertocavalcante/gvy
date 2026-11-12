@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 const nativeCodes = new Set([
   'ENGINE_INVALID', 'EVENT_LIMIT', 'GRAMMAR_ABI_UNSUPPORTED', 'HIGHLIGHT_BALANCE',
   'HIGHLIGHT_CONFIG_FAILED', 'HIGHLIGHT_FAILED', 'HIGHLIGHT_INDEX', 'INCOMPLETE_HIGHLIGHTS',

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validateFeasibility } from './feasibility-policy.mjs';
