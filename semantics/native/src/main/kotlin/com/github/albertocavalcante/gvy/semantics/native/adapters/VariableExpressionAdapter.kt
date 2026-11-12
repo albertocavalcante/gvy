@@ -6,6 +6,7 @@ import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
 import com.github.albertocavalcante.gvy.semantics.native.NativeCalculators
 import com.github.albertocavalcante.gvy.semantics.native.NativeTypeContext
 import org.codehaus.groovy.ast.DynamicVariable
+import org.codehaus.groovy.ast.Variable
 import org.codehaus.groovy.ast.expr.VariableExpression
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -25,23 +26,24 @@ object VariableExpressionAdapter : TypeCalculator<VariableExpression> {
         var current = node
         while (seen.add(current)) {
             val accessed = current.accessedVariable
-            if (accessed is VariableExpression) {
-                (context as? NativeTypeContext)?.lookupDeclaration(accessed)?.let { return it }
-                current = accessed
-            } else if (accessed != null && accessed !is DynamicVariable) {
-                return context.calculateType(accessed)
-            } else {
-                if (accessed == null) {
-                    val fallback = if (context is NativeTypeContext) {
-                        context.lookupUnbound(current.name)
-                    } else {
-                        context.lookupSymbol(current.name)
-                    }
-                    if (fallback != null) return fallback
-                }
-                return SemanticType.Dynamic("unresolved variable: ${current.name}")
-            }
+            if (accessed !is VariableExpression) return resolveTerminal(current, accessed, context)
+            val resolved = (context as? NativeTypeContext)?.lookupDeclaration(accessed)
+            if (resolved != null) return resolved
+            current = accessed
         }
         return SemanticType.Dynamic("cyclic variable binding: ${node.name}")
     }
+
+    private fun resolveTerminal(node: VariableExpression, accessed: Variable?, context: TypeContext): SemanticType {
+        if (accessed != null && accessed !is DynamicVariable) return context.calculateType(accessed)
+        val fallback = if (accessed != null) {
+            null
+        } else if (context is NativeTypeContext) {
+            context.lookupUnbound(node.name)
+        } else {
+            context.lookupSymbol(node.name)
+        }
+        return fallback ?: SemanticType.Dynamic("unresolved variable: ${node.name}")
+    }
+
 }

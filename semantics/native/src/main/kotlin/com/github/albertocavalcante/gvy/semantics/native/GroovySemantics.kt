@@ -103,7 +103,10 @@ class GroovySemantics(
         val visitor = object : CodeVisitorSupport() {
             override fun visitDeclarationExpression(expression: DeclarationExpression) {
                 if (!expression.isMultipleAssignmentDeclaration) {
-                    scope.defineDeclaration(expression.variableExpression, calculatorRegistry.calculate(expression, context))
+                    scope.defineDeclaration(
+                        expression.variableExpression,
+                        calculatorRegistry.calculate(expression, context),
+                    )
                 }
                 super.visitDeclarationExpression(expression)
             }

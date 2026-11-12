@@ -40,8 +40,7 @@ class NativeScope private constructor(
         declarations[variable] = type
     }
 
-    internal fun lookupUnbound(name: String): SemanticType? =
-        if (currentModule == null) lookupVariable(name) else null
+    internal fun lookupUnbound(name: String): SemanticType? = if (currentModule == null) lookupVariable(name) else null
 
     /**
      * Look up a variable by name in this scope or parent scopes.

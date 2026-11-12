@@ -429,7 +429,9 @@ class GroovySemanticsTest {
         val registry = TypeCalculatorRegistry.builder().register(calculator).build()
         val semantics = GroovySemantics(stubSolver, registry, lookup)
         val module = parse("class Holder { def run() { def x = 1 } }")
-        val body = module.classes.first { it.name == "Holder" }.methods.first { it.name == "run" }.code as BlockStatement
+        val body = module.classes.first {
+            it.name == "Holder"
+        }.methods.first { it.name == "run" }.code as BlockStatement
         val declaration = (body.statements.first() as ExpressionStatement).expression as DeclarationExpression
         val executor = Executors.newSingleThreadExecutor()
         try {
@@ -443,8 +445,14 @@ class GroovySemanticsTest {
             val cache = field.get(semantics) as Map<*, *>
             (cache[module] as WeakReference<*>).clear()
             resume.countDown()
-            assertEquals(SemanticType.Known("version.2"), old.get(30, TimeUnit.SECONDS).lookupDeclaration(declaration.variableExpression))
-            assertEquals(SemanticType.Known("version.2"), semantics.getContext(module)?.lookupDeclaration(declaration.variableExpression))
+            assertEquals(
+                SemanticType.Known("version.2"),
+                old.get(30, TimeUnit.SECONDS).lookupDeclaration(declaration.variableExpression),
+            )
+            assertEquals(
+                SemanticType.Known("version.2"),
+                semantics.getContext(module)?.lookupDeclaration(declaration.variableExpression),
+            )
             Reference.reachabilityFence(newer)
         } finally {
             resume.countDown()

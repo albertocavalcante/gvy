@@ -34,7 +34,8 @@ class LexicalScopeTest {
             val cls = module.classes.first { it.name == "Sample" }
             val a = cls.methods.first { it.name == "a" }.code as BlockStatement
             val b = cls.methods.first { it.name == "b" }.code as BlockStatement
-            fun rhs(body: BlockStatement) = ((body.statements.first() as ExpressionStatement).expression as DeclarationExpression).rightExpression
+            fun rhs(body: BlockStatement) =
+                ((body.statements.first() as ExpressionStatement).expression as DeclarationExpression).rightExpression
             assertEquals(SemanticType.Known("java.lang.Integer"), semantics.resolveType(rhs(a), module))
             assertEquals(TypeConstants.STRING, semantics.resolveType(rhs(b), module))
         }
@@ -42,11 +43,14 @@ class LexicalScopeTest {
 
     @Test
     fun `same name inferred locals remain distinct across methods`() {
-        val module = parse("class Sample { def a() { def x = 42; def probe = x }; def b() { def x = 's'; def probe = x } }")
+        val module =
+            parse("class Sample { def a() { def x = 42; def probe = x }; def b() { def x = 's'; def probe = x } }")
         val semantics = GroovySemantics(solver)
         val cls = module.classes.first { it.name == "Sample" }
-        fun probe(method: String) = ((cls.methods.first { it.name == method }.code as BlockStatement)
-            .statements[1] as ExpressionStatement).expression as DeclarationExpression
+        fun probe(method: String) = (
+            (cls.methods.first { it.name == method }.code as BlockStatement)
+                .statements[1] as ExpressionStatement
+            ).expression as DeclarationExpression
         assertEquals(TypeConstants.INT, semantics.resolveType(probe("a").rightExpression, module))
         assertEquals(TypeConstants.STRING, semantics.resolveType(probe("b").rightExpression, module))
     }
@@ -68,14 +72,17 @@ class LexicalScopeTest {
 
     @Test
     fun `sibling closure local declarations retain their own inferred types`() {
-        val module = parse("""
+        val module =
+            parse(
+                """
             class Sample {
                 def m() {
                     def one = { def x = 1; def probe = x }
                     def two = { def x = 's'; def probe = x }
                 }
             }
-        """.trimIndent())
+                """.trimIndent(),
+            )
         val method = module.classes.first { it.name == "Sample" }.methods.first { it.name == "m" }
         val statements = (method.code as BlockStatement).statements
         fun probe(index: Int): DeclarationExpression {
@@ -90,13 +97,16 @@ class LexicalScopeTest {
 
     @Test
     fun `name lookup retains unique declarations and rejects ambiguous names`() {
-        val module = parse("""
+        val module =
+            parse(
+                """
             class Sample {
                 String uniqueField
                 def a(Integer uniqueParameter) { def uniqueLocal = 1; def x = 'a' }
                 def b(String x) { def other = x }
             }
-        """.trimIndent())
+                """.trimIndent(),
+            )
         val context = checkNotNull(GroovySemantics(solver).getContext(module))
         assertEquals(TypeConstants.STRING, context.lookupSymbol("uniqueField"))
         assertEquals(SemanticType.Known("java.lang.Integer"), context.lookupSymbol("uniqueParameter"))
@@ -106,12 +116,15 @@ class LexicalScopeTest {
 
     @Test
     fun `constructor and field closure declarations retain their own bindings`() {
-        val module = parse("""
+        val module =
+            parse(
+                """
             class Sample {
                 def field = { def x = 's'; def probe = x }
                 Sample() { def x = 1; def probe = x }
             }
-        """.trimIndent())
+                """.trimIndent(),
+            )
         val cls = module.classes.first { it.name == "Sample" }
         val fieldClosure = cls.getField("field").initialExpression as ClosureExpression
         val fieldBody = fieldClosure.code as BlockStatement
@@ -159,27 +172,39 @@ class LexicalScopeTest {
 
     @Test
     fun `field and closure parameter remain distinct from unrelated parameters`() {
-        val module = parse("""
+        val module =
+            parse(
+                """
             class Sample {
                 String x
                 def fieldProbe() { def probe = x }
                 def closureProbe() { def c = { Integer x -> def probe = x } }
                 def other(Boolean x) { def probe = x }
             }
-        """.trimIndent())
+                """.trimIndent(),
+            )
         val semantics = GroovySemantics(solver)
         val cls = module.classes.first { it.name == "Sample" }
-        fun firstDeclaration(method: String): DeclarationExpression =
-            ((cls.methods.first { it.name == method }.code as BlockStatement)
-                .statements.first() as ExpressionStatement).expression as DeclarationExpression
+        fun firstDeclaration(method: String): DeclarationExpression = (
+            (cls.methods.first { it.name == method }.code as BlockStatement)
+                .statements.first() as ExpressionStatement
+            ).expression as DeclarationExpression
         val closure = firstDeclaration("closureProbe").rightExpression as ClosureExpression
         val closureProbe = ((closure.code as BlockStatement).statements.first() as ExpressionStatement)
             .expression as DeclarationExpression
-        assertEquals(TypeConstants.STRING, semantics.resolveType(firstDeclaration("fieldProbe").rightExpression, module))
-        assertEquals(SemanticType.Known("java.lang.Integer"), semantics.resolveType(closureProbe.rightExpression, module))
+        assertEquals(
+            TypeConstants.STRING,
+            semantics.resolveType(firstDeclaration("fieldProbe").rightExpression, module),
+        )
+        assertEquals(
+            SemanticType.Known("java.lang.Integer"),
+            semantics.resolveType(closureProbe.rightExpression, module),
+        )
     }
 
     private fun parse(code: String) = checkNotNull(
-        GroovyParserFacade().parse(ParseRequest(URI.create("file:///Sample.groovy"), code, compilePhase = Phases.CANONICALIZATION)).ast,
+        GroovyParserFacade().parse(
+            ParseRequest(URI.create("file:///Sample.groovy"), code, compilePhase = Phases.CANONICALIZATION),
+        ).ast,
     )
 }
