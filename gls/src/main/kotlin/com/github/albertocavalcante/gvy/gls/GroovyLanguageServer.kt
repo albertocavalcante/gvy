@@ -38,6 +38,7 @@ import com.github.albertocavalcante.gvy.gls.services.IndexExportService
 import com.github.albertocavalcante.gvy.gls.services.ProjectStartupManager
 import com.github.albertocavalcante.gvy.gls.services.StatusNotification
 import com.github.albertocavalcante.gvy.gls.sources.SourceNavigationService
+import com.github.albertocavalcante.gvy.gls.transport.lsp4j.configurationPayload
 import com.github.albertocavalcante.gvy.junit.JUnit5TestDetector
 import com.github.albertocavalcante.gvy.junit4.JUnit4TestDetector
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
@@ -46,8 +47,6 @@ import com.github.albertocavalcante.gvy.viz.converters.CoreAstConverter
 import com.github.albertocavalcante.gvy.viz.converters.NativeAstConverter
 import com.github.albertocavalcante.reports.coverage.model.CoverageResponse
 import com.github.albertocavalcante.reports.results.model.TestResultsResponse
-import com.google.gson.Gson
-import com.google.gson.JsonObject
 import io.github.oshai.kotlinlogging.KotlinLogging
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -264,22 +263,10 @@ class GroovyLanguageServer(
 
     private fun parseInitOptions(options: Any?): Map<String, Any> {
         if (options == null) return emptyMap()
-        if (options is Map<*, *>) {
-            @Suppress("UNCHECKED_CAST")
-            return options as Map<String, Any>
+        return configurationPayload(options) ?: run {
+            logger.warn { "Invalid initialization options type or content: ${options.javaClass.name}" }
+            emptyMap()
         }
-        if (options is JsonObject) {
-            // TODO(#704): Migrate from Gson to kotlinx.serialization for better type safety
-            //   See: https://github.com/albertocavalcante/gvy/issues/704
-            return runCatching {
-                @Suppress("UNCHECKED_CAST")
-                Gson().fromJson(options, Map::class.java) as Map<String, Any>
-            }.onFailure {
-                logger.warn(it) { "Failed to parse JsonObject initialization options" }
-            }.getOrDefault(emptyMap())
-        }
-        logger.warn { "Unknown initialization options type: ${options.javaClass.name}" }
-        return emptyMap()
     }
 
     override fun initialized(params: InitializedParams) {
