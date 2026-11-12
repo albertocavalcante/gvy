@@ -24,7 +24,8 @@ dependencies {
     testImplementation(libs.jqwik)
     testRuntimeOnly(libs.junit.platform.launcher)
     // kotlin-logging needs SLF4J impl at test runtime
-    testRuntimeOnly(libs.logback.classic)
+    testImplementation(libs.logback.classic)
+    testImplementation(libs.slf4j.api)
 }
 
 jmh {

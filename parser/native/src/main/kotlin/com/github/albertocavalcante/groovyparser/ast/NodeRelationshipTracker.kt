@@ -145,7 +145,7 @@ class NodeRelationshipTracker {
             logger.debug { "[getAllClassNodes] Found ${result.size} classes:" }
             result.forEach { cls ->
                 logger.debug {
-                    "- ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}, isScript=${cls.isScriptSafe()}"
+                    "- ${cls.name} @ Line ${cls.lineNumber}:${cls.columnNumber}"
                 }
             }
         }
