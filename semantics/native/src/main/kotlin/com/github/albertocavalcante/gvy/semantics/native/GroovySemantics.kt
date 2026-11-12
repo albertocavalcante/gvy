@@ -57,32 +57,39 @@ class GroovySemantics(
     }
 
     private fun acquireContext(module: ModuleNode): NativeTypeContext {
-        val workspaceVersion = workspaceMemberLookup?.version ?: 0L
-        synchronized(contextCache) {
-            val cached = contextCache[module]?.get()
-            if (cached != null && contextVersions[module] == workspaceVersion) return cached
-        }
-        // Built outside the lock: typing the locals can take long and must not block other modules' lookups.
-        // Two threads may build the same module; both results are valid for this version.
-        val scope = buildRootScope(module)
-        val context = NativeTypeContext(
-            typeSolver = typeSolver,
-            calculatorRegistry = calculatorRegistry,
-            scope = scope,
-            isStaticCompilation = hasCompileStatic(module),
-            workspaceMemberLookup = workspaceMemberLookup,
-        )
+        while (true) {
+            val workspaceVersion = workspaceMemberLookup?.version ?: 0L
+            synchronized(contextCache) {
+                val cached = contextCache[module]?.get()
+                if (cached != null && contextVersions[module] == workspaceVersion) return cached
+            }
+            // Build outside the lock; unrelated modules must not wait for local type inference.
+            val scope = buildRootScope(module)
+            val context = NativeTypeContext(
+                typeSolver = typeSolver,
+                calculatorRegistry = calculatorRegistry,
+                scope = scope,
+                isStaticCompilation = hasCompileStatic(module),
+                workspaceMemberLookup = workspaceMemberLookup,
+            )
+            populateScriptVariables(module, scope, context)
+            populateClassMethodVariables(module, scope, context)
 
-        populateScriptVariables(module, scope, context)
-        populateClassMethodVariables(module, scope, context)
-
-        synchronized(contextCache) {
-            val cachedVersion = contextVersions[module]
-            val cached = contextCache[module]?.get()
-            if (cached != null && cachedVersion != null && cachedVersion >= workspaceVersion) return cached
-            contextCache[module] = WeakReference(context)
-            contextVersions[module] = workspaceVersion
-            return context
+            val published = synchronized(contextCache) {
+                if ((workspaceMemberLookup?.version ?: 0L) != workspaceVersion) {
+                    null
+                } else {
+                    val cached = contextCache[module]?.get()
+                    if (cached != null && contextVersions[module] == workspaceVersion) {
+                        cached
+                    } else {
+                        contextCache[module] = WeakReference(context)
+                        contextVersions[module] = workspaceVersion
+                        context
+                    }
+                }
+            }
+            if (published != null) return published
         }
     }
 

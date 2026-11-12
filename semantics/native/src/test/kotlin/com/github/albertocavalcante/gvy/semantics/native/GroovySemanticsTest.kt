@@ -6,6 +6,11 @@ import com.github.albertocavalcante.groovyparser.resolution.declarations.Resolve
 import com.github.albertocavalcante.groovyparser.resolution.model.SymbolReference
 import com.github.albertocavalcante.gvy.semantics.SemanticType
 import com.github.albertocavalcante.gvy.semantics.TypeConstants
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculator
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeCalculatorRegistry
+import com.github.albertocavalcante.gvy.semantics.calculator.TypeContext
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberInfo
+import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import com.github.albertocavalcante.nativeapi.ParseRequest
 import org.codehaus.groovy.ast.ASTNode
 import org.codehaus.groovy.ast.ClassHelper
@@ -24,9 +29,12 @@ import org.junit.jupiter.api.Test
 import java.lang.ref.Reference
 import java.lang.ref.WeakReference
 import java.net.URI
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 class GroovySemanticsTest {
 
@@ -393,6 +401,53 @@ class GroovySemanticsTest {
         Reference.reachabilityFence(liveModule)
         Reference.reachabilityFence(liveContext)
         Reference.reachabilityFence(semantics)
+    }
+
+    @Test
+    fun `older context build cannot replace a newer collected context`() {
+        val version = AtomicLong(1)
+        val entered = CountDownLatch(1)
+        val resume = CountDownLatch(1)
+        val first = AtomicBoolean(true)
+        val lookup = object : MemberLookup {
+            override val version: Long get() = version.get()
+            override fun findField(classFqn: String, fieldName: String): MemberInfo? = null
+            override fun findMethod(classFqn: String, methodName: String, arity: Int?): MemberInfo? = null
+            override fun getAllMembers(classFqn: String, includeInherited: Boolean): List<MemberInfo> = emptyList()
+        }
+        val calculator = object : TypeCalculator<DeclarationExpression> {
+            override val nodeType = DeclarationExpression::class
+            override fun calculate(node: DeclarationExpression, context: TypeContext): SemanticType {
+                val observed = version.get()
+                if (first.compareAndSet(true, false)) {
+                    entered.countDown()
+                    check(resume.await(30, TimeUnit.SECONDS))
+                }
+                return SemanticType.Known("version.$observed")
+            }
+        }
+        val registry = TypeCalculatorRegistry.builder().register(calculator).build()
+        val semantics = GroovySemantics(stubSolver, registry, lookup)
+        val module = parse("def x = 1")
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val old = executor.submit<NativeTypeContext> { checkNotNull(semantics.getContext(module)) }
+            assertTrue(entered.await(30, TimeUnit.SECONDS))
+            version.set(2)
+            val newer = checkNotNull(semantics.getContext(module))
+            assertEquals(SemanticType.Known("version.2"), newer.lookupSymbol("x"))
+            val field = GroovySemantics::class.java.getDeclaredField("contextCache")
+            field.isAccessible = true
+            val cache = field.get(semantics) as Map<*, *>
+            (cache[module] as WeakReference<*>).clear()
+            resume.countDown()
+            assertEquals(SemanticType.Known("version.2"), old.get(30, TimeUnit.SECONDS).lookupSymbol("x"))
+            assertEquals(SemanticType.Known("version.2"), semantics.getContext(module)?.lookupSymbol("x"))
+            Reference.reachabilityFence(newer)
+        } finally {
+            resume.countDown()
+            executor.shutdownNow()
+        }
     }
 
     @Test
