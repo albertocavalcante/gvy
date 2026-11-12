@@ -455,7 +455,14 @@ export class StatusBarManager implements vscode.Disposable {
    */
   private computeTooltip(): vscode.MarkdownString {
     const md = new vscode.MarkdownString("", true);
-    md.isTrusted = true;
+    md.isTrusted = {
+      enabledCommands: [
+        "groovy.openLogs",
+        "groovy.gradle.refresh",
+        "groovy.restartServer",
+        "groovy.stopServer",
+      ],
+    };
     md.supportThemeIcons = true;
 
     // Header
@@ -468,13 +475,19 @@ export class StatusBarManager implements vscode.Disposable {
 
     // Progress message if any
     if (this.currentProgressMessage) {
-      md.appendMarkdown(`**Activity:** ${this.currentProgressMessage}\n\n`);
+      md.appendMarkdown("**Activity:** ");
+      md.appendText(this.currentProgressMessage);
+      md.appendMarkdown("\n\n");
     }
 
     // Version info
     md.appendMarkdown(`---\n\n`);
-    md.appendMarkdown(`**Extension:** v${this.extensionVersion}\n\n`);
-    md.appendMarkdown(`**Server:** v${this.serverVersion}\n\n`);
+    md.appendMarkdown("**Extension:** v");
+    md.appendText(this.extensionVersion);
+    md.appendMarkdown("\n\n");
+    md.appendMarkdown("**Server:** v");
+    md.appendText(this.serverVersion);
+    md.appendMarkdown("\n\n");
 
     // Action links
     md.appendMarkdown(`---\n\n`);
