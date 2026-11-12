@@ -21,7 +21,7 @@ EXCLUDED_PARTS = {"node_modules", ".venv"}
 # Exact byte-sensitive source data, not a directory-wide header exemption.
 # The fixture-owning PRs add exact REUSE.toml records with audited holders and
 # licenses. REUSE coverage and tracked-file omission checks still apply.
-METADATA_SOURCE_PATHS: frozenset[str] = frozenset(
+BYTE_SENSITIVE_FIXTURE_PATHS: frozenset[str] = frozenset(
     {
         "tools/perf/bench/corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy",
         "tools/perf/bench/corpus/fixtures/upstream/spock-blocking-variables/BlockingVariables.groovy",
@@ -74,6 +74,7 @@ SUFFIXES = {
 }
 NAMES = {
     "Makefile",
+    "Jenkinsfile",
     "BUCK",
     "BUILD",
     "WORKSPACE",
@@ -89,7 +90,7 @@ TAG = re.compile(r"^SPDX-(FileCopyrightText|License-Identifier):\s*(.*?)\s*$")
 
 def maintained(path: Path, data: bytes) -> bool:
     """Classify original maintained source; REUSE still covers all other files."""
-    if path.as_posix() in METADATA_SOURCE_PATHS:
+    if path.as_posix() in BYTE_SENSITIVE_FIXTURE_PATHS:
         return False
     if any(part in EXCLUDED_PARTS for part in path.parts):
         return False
@@ -110,7 +111,7 @@ def header_errors(path: Path, data: bytes) -> list[str]:
     lines = text.splitlines()
     tags: dict[str, list[str]] = {"FileCopyrightText": [], "License-Identifier": []}
     block = False
-    hash_comments = (
+    hash_comments = path.name != "Jenkinsfile" and (
         path.suffix
         in {
             ".py",
@@ -133,7 +134,7 @@ def header_errors(path: Path, data: bytes) -> list[str]:
         or path.name in NAMES
         or (not path.suffix and data.startswith(b"#!"))
     )
-    slash_comments = path.suffix in {
+    slash_comments = path.name == "Jenkinsfile" or path.suffix in {
         ".kt",
         ".kts",
         ".java",

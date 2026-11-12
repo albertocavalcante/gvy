@@ -73,7 +73,7 @@ class HeaderTests(unittest.TestCase):
                 self.assertFalse(check.maintained(Path(name), b"println 'fixture data'\n"))
 
     def test_metadata_fixture_inventory_is_exact(self) -> None:
-        self.assertEqual(frozenset(BENCHMARK_FIXTURE_PATHS), check.METADATA_SOURCE_PATHS)
+        self.assertEqual(frozenset(BENCHMARK_FIXTURE_PATHS), check.BYTE_SENSITIVE_FIXTURE_PATHS)
 
     def test_benchmark_neighbors_still_require_leading_source_headers(self) -> None:
         data = b"println 'maintained source'\n"
@@ -92,6 +92,28 @@ class HeaderTests(unittest.TestCase):
         self.assertFalse(check.maintained(path, b"pipeline {}\n"))
         self.assertTrue(check.maintained(path, b"#!/usr/bin/env groovy\npipeline {}\n"))
         self.assertFalse(check.maintained(path.with_suffix(".neighbor"), b"#!/usr/bin/env groovy\npipeline {}\n"))
+
+    def test_unlisted_jenkinsfile_is_maintained_source(self) -> None:
+        for path in (
+            Path("Jenkinsfile"),
+            Path("tools/pipeline/Jenkinsfile"),
+            Path("tools/perf/bench/corpus/fixtures/upstream/new/Jenkinsfile"),
+        ):
+            with self.subTest(path=path.as_posix()):
+                self.assertTrue(check.maintained(path, b"pipeline {}\n"))
+
+    def test_jenkinsfile_uses_groovy_comment_headers_even_after_a_shebang(self) -> None:
+        path = Path("upstream/new/Jenkinsfile")
+        valid_headers = (
+            b"// SPDX-FileCopyrightText: Alice\n// SPDX-License-Identifier: Apache-2.0\n",
+            b"/*\n * SPDX-FileCopyrightText: Alice\n * SPDX-License-Identifier: Apache-2.0\n */\n",
+        )
+        for shebang in (b"", b"#!/usr/bin/env groovy\n"):
+            for header in valid_headers:
+                with self.subTest(shebang=shebang, header=header):
+                    self.assertEqual([], check.header_errors(path, shebang + header + b"pipeline {}\n"))
+            hash_header = b"# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n"
+            self.assertTrue(check.header_errors(path, shebang + hash_header + b"pipeline {}\n"))
 
 
 class IntegrationTests(unittest.TestCase):
@@ -168,6 +190,28 @@ class IntegrationTests(unittest.TestCase):
         errors = check.check(self.root)
         self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
         self.assertTrue(any(error.startswith(f"{neighbor.as_posix()}:") and "leading" in error for error in errors))
+
+    def test_metadata_cannot_mask_an_unlisted_jenkinsfile_header(self) -> None:
+        relative = Path("tools/perf/bench/corpus/fixtures/upstream/new/Jenkinsfile")
+        source = self.root / relative
+        source.parent.mkdir(parents=True)
+        source.write_text("pipeline {}\n", encoding="utf-8")
+        (self.root / "REUSE.toml").write_text(
+            "version = 1\n[[annotations]]\n"
+            f'path = "{relative.as_posix()}"\n'
+            'SPDX-FileCopyrightText = "Synthetic source author"\n'
+            'SPDX-License-Identifier = "Apache-2.0"\n',
+            encoding="utf-8",
+        )
+        errors = check.check(self.root)
+        self.assertNotIn("REUSE lint failed; run reuse --root . lint for details", errors)
+        self.assertTrue(any(error.startswith(f"{relative.as_posix()}:") and "leading" in error for error in errors))
+
+        source.write_text(
+            "// SPDX-FileCopyrightText: Synthetic source author\n// SPDX-License-Identifier: Apache-2.0\npipeline {}\n",
+            encoding="utf-8",
+        )
+        self.assertEqual([], check.check(self.root))
 
     def test_reuse_ignored_tooling_is_checked(self) -> None:
         self.source.write_text("# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n")
