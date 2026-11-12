@@ -241,6 +241,7 @@ class ScenarioContext internal constructor(
     }
 
     fun evaluateCheck(node: JsonElement, check: JsonCheck, quiet: Boolean = false): Boolean {
+        ScenarioCheckValidation.validate(check, this)
         val javaObject = node.toJavaObject()
         // Scenarios write variables such as {{workspace.uri}} inside filters, e.g. `$[?(@.uri == '…')]`.
         val jsonPath = interpolateString(check.jsonPath)

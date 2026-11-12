@@ -54,6 +54,7 @@ class ScenarioExecutor internal constructor(
     )
 
     fun execute(definition: ScenarioDefinition) {
+        ScenarioCheckValidation.validateStatic(definition.scenario)
         require(!hasNamedCheckMetadata(definition)) {
             "Named checks require executeWithOutcome"
         }
@@ -68,6 +69,7 @@ class ScenarioExecutor internal constructor(
      * An empty observation plan records no product verification. Unconfirmed cleanup may still be running.
      */
     fun executeWithOutcome(definition: ScenarioDefinition): ScenarioOutcome {
+        ScenarioCheckValidation.validateStatic(definition.scenario)
         val authored = checks(definition)
         require(definition.scenario.xfail == null) { "Scenario-level xfail cannot be combined with named outcomes" }
         authored.forEach { (step, check) ->
