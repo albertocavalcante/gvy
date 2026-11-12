@@ -58,3 +58,45 @@ startup and warmed typing/hover/completion/diagnostics with candidate and JAR ha
 shutdown evidence, editor presentation and request p50/p95. No result here establishes those measurements, a budget, or
 an improvement. Keep private raw output outside Git. This receipt is separate from the profiling evidence schema; any
 integration with that schema requires a reviewed adapter.
+
+## Real server probe
+
+`server-baseline.mjs` drives an explicitly supplied, previously verified JAR. Its Node-only protocol and lifecycle tests
+run in the existing sanity job; the JAR and Java are not needed for those tests:
+
+```sh
+node --test tools/logging/fixtures.test.mjs tools/logging/server-baseline.test.mjs
+node tools/logging/server-baseline.mjs --jar /path/to/baseline.jar --provenance /path/to/provenance.json --launch-profile /private/path/launch.json --level info --warmups 2 --samples 5 > receipt.json
+```
+
+The provenance input must contain `jarSha256`, `jarBytes`, and `source.sha`. The driver checks the JAR hash and size
+before launching and the hash again afterward. The source SHA and optional tree are **declared by provenance**, not
+inferred from the JAR. The receipt hashes the driver, protocol module, synthetic source and exact initialization/JVM
+arguments; the configuration hash includes the synthetic temporary URI, process ID and JAR path, so it intentionally
+changes between runs. The exclusive, mode-0600 launch profile holds the resolved Java executable and version; keep it
+private. The receipt reports the requested level, not an effective backend threshold. It removes `JAVA_TOOL_OPTIONS`,
+`JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS` and `CLASSPATH` from the Java child environment and inherits other environment
+variables. The server JVM gets `-Xmx512m -XX:MaxMetaspaceSize=256m`.
+
+One server process receives initialize, initialized, didOpen, versioned full-text changes and fixed-position hover and
+completion requests, followed by shutdown, exit and child/stream close. A warmup is an iteration on this same JVM whose
+sample is discarded; a fresh JVM is not a cold operating-system cache. Request timestamps are monotonic milliseconds;
+the span is response minus pre-write enqueue. Write-completion callbacks are recorded separately and can occur after a
+response. Quantiles use nearest rank with the displayed sample count, grouped by allowlisted response kind; null or
+empty responses are not evidence of useful language answers. DidChange timing is enqueue time, not a measured server
+typing latency.
+
+The driver counts and hashes raw stderr bytes and physical LF-delimited lines; a final unterminated line counts once.
+Bytes are not guaranteed valid UTF-8, lines are not log events, and Java writes, Java flushes and operating-system
+syscalls are unobserved (`null`). Protocol headers, bodies, pending requests and stage waits are bounded. Failure,
+timeout or early EOF censors the run, and the driver attempts TERM then KILL only on its own child. A nonstandard empty
+object returned for shutdown is recorded as a protocol deviation, not a successful standard shutdown; exit is still sent
+so cleanup is observed. Raw server messages, diagnostic text and source paths are excluded from the receipt.
+
+The version-matched first `publishDiagnostics` is only the first publication, not completion. The separate
+`groovy/awaitDiagnostics` contract is proposed in #1754 and is not assumed available: method-not-found is unavailable,
+content-modified is obsolete, invalid parameters are a driver failure, and a terminal response with provider failures is
+not successful. No quiet period or log message is used as a completion barrier. If the child cannot be reaped after
+bounded termination attempts, the owned temporary workspace is retained and the receipt reports that fact. Keep raw
+receipts private and do not infer a stable latency budget or improvement from a busy host. This driver does not replace
+packaged-editor proof.
