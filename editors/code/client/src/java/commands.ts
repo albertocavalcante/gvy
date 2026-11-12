@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Java-related VS Code commands for the Groovy extension.
  *
@@ -24,13 +27,10 @@ const FOOJAY_PLUGIN_ID = "org.gradle.toolchains.foojay-resolver-convention";
 const FOOJAY_PLUGIN_VERSION = "1.0.0";
 
 // Pre-compiled regex patterns for detecting foojay plugin in settings files
-const FOOJAY_PLUGIN_ID_ESCAPED = FOOJAY_PLUGIN_ID.replace(/\./g, "\\.");
-const GROOVY_PLUGIN_PATTERN = new RegExp(
-  `plugins\\s*\\{[\\s\\S]*?id\\s+['"]${FOOJAY_PLUGIN_ID_ESCAPED}['"]`,
-);
-const KOTLIN_PLUGIN_PATTERN = new RegExp(
-  `plugins\\s*\\{[\\s\\S]*?id\\s*\\(\\s*["']${FOOJAY_PLUGIN_ID_ESCAPED}["']\\s*\\)`,
-);
+const GROOVY_PLUGIN_PATTERN =
+  /plugins\s*\{[\s\S]*?id\s+['"]org\.gradle\.toolchains\.foojay-resolver-convention['"]/;
+const KOTLIN_PLUGIN_PATTERN =
+  /plugins\s*\{[\s\S]*?id\s*\(\s*["']org\.gradle\.toolchains\.foojay-resolver-convention["']\s*\)/;
 
 /**
  * Command: groovy.configureJava

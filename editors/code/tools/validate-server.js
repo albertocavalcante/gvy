@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
 
 /**
  * Validates the Groovy Language Server JAR file
@@ -21,26 +23,36 @@ const JAR_PATH = path.join(SERVER_DIR, "gls.jar");
  * @throws {Error} if the file is not a valid JAR
  */
 function validateJarFile(filePath) {
-  // Check file exists
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`JAR file not found: ${filePath}`);
-  }
-
-  // Check it's a regular file (not directory)
-  const stat = fs.statSync(filePath);
-  if (!stat.isFile()) {
-    throw new Error(`Path is not a regular file: ${filePath}`);
-  }
-
-  // Check .jar extension
-  if (!filePath.endsWith(".jar")) {
-    throw new Error(`File does not have .jar extension: ${filePath}`);
-  }
-
-  // Validate ZIP structure (JAR is a ZIP file)
-  // Read the first 4 bytes to check for ZIP magic number (PK\x03\x04)
-  const fd = fs.openSync(filePath, "r");
+  let fd;
   try {
+    // Nonblocking mode lets us reject special files such as FIFOs without waiting.
+    fd = fs.openSync(filePath, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ENOTDIR") {
+      throw new Error(`JAR file not found: ${filePath}`, { cause: error });
+    }
+    if (error.code === "EISDIR") {
+      throw new Error(`Path is not a regular file: ${filePath}`, {
+        cause: error,
+      });
+    }
+    throw error;
+  }
+
+  try {
+    // Bind metadata and all content checks to the same opened file.
+    const stat = fs.fstatSync(fd);
+    if (!stat.isFile()) {
+      throw new Error(`Path is not a regular file: ${filePath}`);
+    }
+
+    // Check .jar extension
+    if (!filePath.endsWith(".jar")) {
+      throw new Error(`File does not have .jar extension: ${filePath}`);
+    }
+
+    // Validate ZIP structure (JAR is a ZIP file)
+    // Read the first 4 bytes to check for ZIP magic number (PK\x03\x04)
     const buffer = Buffer.alloc(4);
     fs.readSync(fd, buffer, 0, 4, 0);
     const magicNumber = buffer.toString("hex");
@@ -91,7 +103,7 @@ function validateJarFile(filePath) {
     // validate content (check for existence of key classes)
     // Using listZipEntries from zip.js (avoiding extra deps)
     try {
-      const entries = listZipEntries(filePath);
+      const entries = listZipEntries(fd);
       // Check for a core groovy dependency that should be in the fat jar
       // org.codehaus.groovy.ast.ClassNode is a good candidate as it comes from groovy-core
       const hasGroovy = entries.some(

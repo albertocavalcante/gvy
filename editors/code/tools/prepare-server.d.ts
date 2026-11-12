@@ -1,4 +1,12 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 export declare const PINNED_RELEASE_TAG: string;
+
+export declare function downloadFromUrl(
+  url: string,
+  expectedChecksum: string,
+): Promise<void>;
 
 export declare function deriveSelection(options: {
   tag?: string | null;

@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * ZIP extraction utilities for handling GitHub Actions artifacts
  * and other ZIP-based downloads.
@@ -133,7 +136,7 @@ function extractEntry(buffer, entry) {
 
 /**
  * Lists all entries in a ZIP file.
- * @param {string} zipPath - Path to ZIP file
+ * @param {string | number} zipPath - Path or open file descriptor for the ZIP file
  * @returns {Array<{name: string, compressedSize: number, uncompressedSize: number}>}
  */
 function listZipEntries(zipPath) {

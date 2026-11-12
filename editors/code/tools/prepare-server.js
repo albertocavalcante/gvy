@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 /**
  * Prepares the Groovy Language Server JAR
  * Priority order:
@@ -524,7 +527,7 @@ async function downloadFromUrl(url, expectedChecksum) {
         "Token must have permission to read Actions artifacts for the repository.",
       ].join(" "),
     );
-  } else if (!authToken && downloadUrl.includes("api.github.com")) {
+  } else if (!authToken && new URL(downloadUrl).hostname === "api.github.com") {
     console.warn(
       "⚠️  No GitHub token found. GitHub API downloads may be rate-limited.",
     );
@@ -1212,6 +1215,7 @@ Token resolution (for GitHub API requests):
 
 module.exports = {
   PINNED_RELEASE_TAG,
+  downloadFromUrl,
   deriveSelection,
   hasExplicitVersionSelection,
   installVerifiedJar,
