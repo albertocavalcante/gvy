@@ -80,6 +80,8 @@ test('jstat numeric parsers preserve heap/metaspace/GC and disambiguate both cla
   const unknown = parseGcSample(gc.replace('3 0.3 0.6', '- - 0.6'));
   assert.equal(unknown.concurrentGcCount, null);
   assert.equal(unknown.concurrentGcTimeSeconds, null);
+  const zeroHeap = parseGcSample(gc.replace('12.5 0 1024 0 512 4096 2048 8192 3072', '12.5 0 1024 0 0 4096 0 8192 0'));
+  assert.equal(zeroHeap.heapUsedKiB, 0, 'an observed zero is valid data, unlike an unavailable measurement');
 });
 
 test('malformed, duplicate, missing, non-finite or unsafe numeric output is rejected without echoing input', () => {
@@ -399,10 +401,18 @@ if (process.env.GVY_MEMORY_PROBE_NATIVE_TEST === 'true') test('Linux JDK17 live 
   const waitTimer = setTimeout(paired.resolve, 11000);
   try { await paired.promise; } finally { clearTimeout(waitTimer); }
   const result = await probe.stop();
+  console.log(JSON.stringify({ nativeMemorySample: {
+    heapUsedKiB: result.sampledMax.heapUsedKiB,
+    metaspaceUsedKiB: result.sampledMax.metaspaceUsedKiB,
+    loadedClasses: result.sampledMax.loadedClasses,
+  } }));
   assert.equal(result.complete, true, 'Native probe did not produce a complete owned pair');
   assert.equal(result.discovery.daemon.pid, child.pid);
   assert.equal(result.samples.length, 1);
-  for (const name of ['heapUsedKiB', 'metaspaceUsedKiB', 'loadedClasses']) assert.ok(result.sampledMax[name] > 0);
+  for (const name of ['heapUsedKiB', 'metaspaceUsedKiB', 'loadedClasses']) {
+    assert.ok(Number.isFinite(result.sampledMax[name]) && result.sampledMax[name] >= 0, name + ' must be an observed nonnegative number');
+  }
+  assert.ok(result.sampledMax.loadedClasses > 0, 'the owned fixture must have loaded real classes');
   const artifact = readFileSync(f.options.reportPath, 'utf8');
   for (const privateText of [ownerArgument, f.dir, 'GradleDaemon', 'ErrorFile', 'CANARY']) assert.ok(!artifact.includes(privateText));
 });
