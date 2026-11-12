@@ -29,6 +29,21 @@
       "id": "copybara-codenarc-runtime",
       "path": ".github/workflows/sync-rewrite-codenarc.yml",
       "anchor": "uses: olivr/copybara-action@042b4395839f3a374a6455b541e29e40c949d717"
+    },
+    {
+      "id": "release-nightly-channel",
+      "path": ".github/workflows/nightly.yml",
+      "anchor": "tag=\"nightly-${NIGHTLY_VERSION}-publish.${GITHUB_RUN_ATTEMPT}\""
+    },
+    {
+      "id": "release-nightly-discovery",
+      "path": ".github/workflows/release-please.yml",
+      "anchor": "googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7"
+    },
+    {
+      "id": "release-nightly-packages",
+      "path": "tools/release-please/config.json",
+      "anchor": "\"release-type\": \"simple\""
     }
   ],
   "records": [
@@ -475,6 +490,44 @@
         {
           "id": "manual:copybara-codenarc-runtime",
           "sha256": "e70380ed6d914f98ab7aba6a86e9a3681ffb59616ceced8635a3843b41d030ce"
+        }
+      ]
+    },
+    {
+      "id": "release-nightly-discovery",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+      "responsibleScope": "gvy release and CI maintainers",
+      "lastVerified": "2026-11-12",
+      "reviewDue": "2026-11-19",
+      "reason": "Release Please scans an immutable paired-nightly release and warns about its unconfigured parsed component. Preserve legitimate published history and the single stable package while investigating supported channel interoperability.",
+      "upstreamStatus": "Official action v5.0.0 bundles release-please 17.6.0. Its manifest release discovery warns before skipping an unconfigured component; the inspected 17.11.2 source retains this branch and the same greedy tag parser. No supported release-list exclusion was found in the 17.6.0 configuration schema. This is a source observation, not a tested replacement or a claim that stable releases are blocked.",
+      "upstreamTrigger": "A supported release-discovery/channel policy handles the existing immutable nightly tag without an extra manifest package or diagnostic suppression; evaluate an official action release when it adopts such behavior.",
+      "verification": "Successful main run 43219347338 / job 131186578235 at 2714b9273401711f428a1ef23e4cc46804721366 emitted exactly: Found release tag with component 'nightly-0.5.4-nightly', but not configured in manifest. The public prerelease tag is nightly-0.5.4-nightly.20261112112348.43205148552.1-publish.1 and targets 99ee759adaa337e8bc1427218adf7861763f7057. Release discovery then found v0.5.4 and continued. This record covers that exact advisory and source combination only; it neither suppresses logs nor validates future publishing. Latest action v5.0.0 and engine v17.11.2 release metadata, pinned engine strategy/parser/manifest and schema, and current engine parser/manifest were inspected. No candidate engine was installed or executed.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/actions/runs/43219347338/job/131186578235",
+        "https://github.com/albertocavalcante/gvy/releases/tag/nightly-0.5.4-nightly.20261112112348.43205148552.1-publish.1",
+        "https://github.com/googleapis/release-please-action/blob/45996ed1f6d02564a971a2fa1b5860e934307cf7/package-lock.json",
+        "https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/src/manifest.ts#L553-L567",
+        "https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/src/util/tag-name.ts",
+        "https://github.com/googleapis/release-please/blob/712fcf01effd08d7b0e7b1fd3861f2cb388bc8d1/schemas/config.json",
+        "https://github.com/googleapis/release-please/blob/v17.11.2/src/manifest.ts#L553-L567",
+        "https://github.com/googleapis/release-please/blob/v17.11.2/src/util/tag-name.ts",
+        "https://github.com/albertocavalcante/gvy/issues/1603"
+      ],
+      "nextAction": "Evaluate supported stable/nightly interoperability with complete release-list and tag-parser controls, then fresh action evidence. Preserve stable v* triggers, the single root package, paired artifact provenance and immutable historical targets/bytes; account for old tags as well as future tag naming. Prepare any upstream report or patch locally for human review.",
+      "removalCriteria": "Fresh exact-source action validation updates the unified release correctly while a controlled release list includes the historical nightly, with this exact advisory absent through supported behavior, no warning filtering, no fabricated package and no deletion/retagging of published history. Verify nightly and stable trigger boundaries and paired artifact provenance before removing the record.",
+      "sources": [
+        {
+          "id": "manual:release-nightly-channel",
+          "sha256": "39d5f3c026261d440075f51a1dbe24cac934da2d767117fd894f62e5cfb59312"
+        },
+        {
+          "id": "manual:release-nightly-discovery",
+          "sha256": "dadd8b6b1ab14fb9c7c8f528189a76fa8379d6b20dcabf9bc2e11a8c42bca1bf"
+        },
+        {
+          "id": "manual:release-nightly-packages",
+          "sha256": "ad1fc50cd2168e8e713e17ec7d97ebcbb83aa3a72f0e1b7ca4ae98a717b53ec3"
         }
       ]
     }

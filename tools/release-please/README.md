@@ -7,6 +7,8 @@ that automates CHANGELOG generation, semantic versioning/tagging, and release cr
 
 - **`config.json`**: Defines the release rules (versioning strategy, tag formats, etc.).
 - **`manifest.json`**: Tracks the current version of each component.
+- **[`version.txt`](../../version.txt)**: The root `simple` strategy's plain version state. Release Please requires the
+  file to exist and updates it alongside the manifest, Gradle base version and extension package version.
 
 ## Unified Release Model
 
@@ -17,20 +19,41 @@ VS Code Extension).
 
 #### `include-component-in-tag: false`
 
-In `config.json`, this setting is crucial for the VS Code extension (`editors/code`).
+In `config.json`, the root package owns the release and updates both distribution versions through `extra-files`:
 
 ```json
-"editors/code": {
-    "component": "vscode-groovy",
-    "include-component-in-tag": false
+".": {
+    "release-type": "simple",
+    "include-component-in-tag": false,
+    "extra-files": ["build.gradle.kts", "editors/code/package.json"]
 }
 ```
 
 - **`true` (Default)**: Generates tags like `vscode-groovy-v1.2.3`.
 - **`false`**: Generates tags like `v1.2.3` (using the version from the manifest).
 
-By setting this to `false` (and managing versions in lockstep via the manifest), we ensure `release-please` supports our
-unified `v*` tagging strategy.
+Setting this to `false` preserves the unified `v*` tagging strategy. `version.txt` contains only the manifest version
+and a final newline; keep its license metadata in the adjacent `.license` file because the updater replaces its
+contents.
+
+Validate the checked-in release state without a JVM build:
+
+```bash
+node --test tools/ci/release-state.test.mjs
+```
+
+CI's policy self-test runs this control on every PR. It checks the version file selected by the actual root
+configuration, the extra-file declarations and agreement with the manifest, Gradle and extension versions.
+
+### Nightly release discovery
+
+The stable release and paired-nightly channels share this repository. Release Please 17.6.0 scans GitHub releases and
+warns about the component parsed from the already published
+[`nightly-0.5.4-nightly.20261112112348.43205148552.1-publish.1`](https://github.com/albertocavalcante/gvy/releases/tag/nightly-0.5.4-nightly.20261112112348.43205148552.1-publish.1)
+tag before finding the stable release. The exact advisory and supported channel interoperability follow-up are owned
+under [#1603](https://github.com/albertocavalcante/gvy/issues/1603), with a review due on 2026-11-19 and exact source
+fingerprints in the dependency-maintenance ledger. Published history remains immutable. This disposition does not
+suppress warnings or establish that future nightlies or stable releases work; fresh action evidence remains required.
 
 ### PR Title Pattern
 
