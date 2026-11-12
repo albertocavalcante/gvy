@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "base": "0d3fe94c1fb38265d5bc3f9afe2f3e9aeea57648",
+  "tree": "20679b5a2aafe86db9fcfc42b598085bd537b965",
+  "sourcePath": "parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/tokens/GroovyTokenIndexTest.kt",
+  "baseTestBlob": "d005921624b20587171dbaeefb996ec81ba6988d",
+  "baseProductionBlob": "9b39efe846ac3fde3b33de25ae400fc08321f5b3",
+  "sourceBlob": "2d0092dc6393a112e457f8095617a38b08c8ab2b",
+  "sourceSha256": "892ef2b50290a710b02228ca0f6849816a1ec600f822de72d313701e01c53175",
+  "sourceBase": "ed9a4ae3e4881f477603e288986be143fd2cc4d3",
+  "patchSha256": "f44d0740511d09910e96b0c8790a8216f66d1598c62c8f23b0ede4b7d8af779c",
+  "patchBytes": 5647,
+  "payloadSha256": "35caf907cf4e1ad5a3e7843dcdd51fb611341075e8875171a2f331baa806696a",
+  "payloadBytes": 1470,
+  "expectedTestCount": 19,
+  "gradleVersion": "9.8.2",
+  "gradleSha256": "21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607",
+  "gradleCacheKey": "8wepis63pzuhrlfaiy04bagwu",
+  "wrapperJarSha256": "3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98"
+}
