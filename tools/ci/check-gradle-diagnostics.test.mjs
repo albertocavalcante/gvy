@@ -32,6 +32,35 @@ test('a warning from an otherwise successful command fails', () => {
   assert.deepEqual(result.unexpected, [diagnostic]);
 });
 
+test('actual unprefixed Native bundle overwrite warnings fail with a stable emitter identity', () => {
+  const fixture = readFileSync(new URL('./fixtures/gradle-native-provisioning.txt', import.meta.url), 'utf8');
+  const result = check(`${fixture}\nBUILD SUCCESSFUL in 1s\n`);
+  assert.equal(result.complete, true);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.unexpected, [
+    '[emitter kotlin-native bundle provisioning] Kotlin/Native bundle directory <konan>/kotlin-native-prebuilt-linux-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.',
+    '[emitter kotlin-native bundle provisioning] Kotlin/Native bundle directory <konan>/kotlin-native-prebuilt-macos-aarch64-2.3.0 is not empty. Native bundle files will be overwritten.',
+  ]);
+  for (const header of ['> Task :launcher:downloadKotlinNativeDistribution', '> Configure project :viz:desktop']) {
+    const warning = 'Kotlin/Native bundle directory C:\\Users\\runneradmin\\.konan\\kotlin-native-prebuilt-windows-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.';
+    const variant = check(`${header}\n${warning}\nBUILD SUCCESSFUL in 1s\n`);
+    assert.equal(variant.ok, false);
+    assert.deepEqual(variant.unexpected, [
+      '[emitter kotlin-native bundle provisioning] Kotlin/Native bundle directory <konan>/kotlin-native-prebuilt-windows-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.',
+    ]);
+  }
+});
+
+test('Native bundle warnings preserve unknown paths and versions and do not borrow another diagnostic', () => {
+  for (const path of ['/private/custom/bundle', '/home/runner/.konan/kotlin-native-prebuilt-linux-x86_64-2.4.0']) {
+    const result = check(`> Task :launcher:downloadKotlinNativeDistribution\nKotlin/Native bundle directory ${path} is not empty. Native bundle files will be overwritten.\nwarning: a separate compiler diagnostic\nBUILD SUCCESSFUL in 1s\n`);
+    assert.equal(result.ok, false);
+    assert.equal(result.unexpected.length, 2);
+    assert.ok(result.unexpected.some(line => line.startsWith('[emitter kotlin-native bundle provisioning]')));
+    assert.ok(result.unexpected.includes('[task :launcher:downloadKotlinNativeDistribution] warning: a separate compiler diagnostic'));
+  }
+});
+
 // Gradle 9.8.2 HealthExpirationStrategy advice captured from the unit producer.
 const daemonMemoryAdvice = [
   'The Daemon will expire after the build after running out of JVM Metaspace.',

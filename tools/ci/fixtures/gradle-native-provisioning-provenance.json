@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "description": "Two original Native provisioning logger.warn excerpts. No build invocation or completion is synthesized by this fixture.",
+  "sourceHead": "7a8039b1ed1034b1992664900fc4079112d775de",
+  "testedSha": "da4627df4e714425c272781991315c1cce704620",
+  "runId": "43178495497",
+  "runAttempt": 1,
+  "fixtureSha256": "42656f679fc3c0e182fa70827dca7eb2a5462007d9558fd10463c87185bc3ebb",
+  "observations": [
+    {
+      "artifactId": 13926616021,
+      "artifactDigest": "sha256:7314db8d484dc2cac4a5a87b1fe03a072504ba2cb6ea7e688718f624eab4c203",
+      "rawEntry": "launcher-linux-x64-72132794-d30a-4525-ae9b-8dfa275c793e/raw.log",
+      "rawBytes": 240959,
+      "rawSha256": "8d45f0c72b6a3989c8eb0c75f7714eb9d39168d6af4525b2a4f751b9facea5d5",
+      "headerLine": 2047,
+      "messageLine": 2048,
+      "rawHeader": "> Task :launcher:downloadKotlinNativeDistribution",
+      "rawMessage": "Kotlin/Native bundle directory /home/runner/.konan/kotlin-native-prebuilt-linux-x86_64-2.3.0 is not empty. Native bundle files will be overwritten."
+    },
+    {
+      "artifactId": 13926815594,
+      "artifactDigest": "sha256:4d785ca9510c60e0272e5bd43d9c9838f262c92b2e751dd8e57f71a3f99a7e52",
+      "rawEntry": "launcher-macos-arm64-ea50828d-2158-4550-8c45-c76b4d828e24/raw.log",
+      "rawBytes": 241113,
+      "rawSha256": "84c32596beae03dac1a5276541c13e160307dc84bd36172e493f404364d966cc",
+      "headerLine": 2046,
+      "messageLine": 2047,
+      "rawHeader": "> Task :launcher:downloadKotlinNativeDistribution",
+      "rawMessage": "Kotlin/Native bundle directory /Users/runner/.konan/kotlin-native-prebuilt-macos-aarch64-2.3.0 is not empty. Native bundle files will be overwritten."
+    }
+  ],
+  "limits": [
+    "Nearest task headers are preserved, but message identity supplies a stable provisioning emitter scope.",
+    "Pre-overwrite directory contents were not captured. The warning does not prove corruption or that only .lock was present."
+  ]
+}

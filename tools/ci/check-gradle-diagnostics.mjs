@@ -97,8 +97,20 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     }
     if (!line) flush();
     const compiler = /^(?:w: |(?:file:\/\/\/)?\S+\.(?:kt|kts|java|groovy):\d+(?::\d+)?:?\s*(?:warning:|[Ww]arning\b))/.test(line);
+    // KGP logs this warning without a severity prefix. Its own lock can make a
+    // fresh distribution nonempty; retain the warning without guessing contents
+    // or attributing an asynchronous emitter to the most recent task header.
+    const nativeBundleOverwrite = /^Kotlin\/Native bundle directory .+ is not empty\. Native bundle files will be overwritten\.$/.test(line);
     // Gradle indents captured test output; compiler diagnostics sometimes indent.
-    if (/^\s/.test(raw) && !compiler) continue;
+    if (/^\s/.test(raw) && !compiler && !nativeBundleOverwrite) continue;
+    if (nativeBundleOverwrite) {
+      flush();
+      const message = line.replaceAll('\\', '/')
+        .replace(/^Kotlin\/Native bundle directory .*\/\.konan\/(kotlin-native-prebuilt-[^/]+) is not empty\./,
+          'Kotlin/Native bundle directory <konan>/$1 is not empty.');
+      diagnostics.add(`[emitter kotlin-native bundle provisioning] ${message}`);
+      continue;
+    }
     if (isDaemonMemoryAdvice(line)) {
       flush();
       diagnostics.add(`[gradle daemon] ${line}`);
