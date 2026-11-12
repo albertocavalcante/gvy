@@ -335,7 +335,7 @@ class JenkinsParameterHoverTest {
         val stages = hoverAt(code, line = 2, character = 6)
 
         assertTrue(pipeline?.contents?.right?.value?.contains("Declarative section `pipeline`") == true)
-        assertEquals(Range(Position(0, 0), Position(0, 8)), pipeline?.range)
+        assertEquals(Range(Position(0, 0), Position(0, 8)), pipeline.range)
         assertEquals(Range(Position(2, 4), Position(2, 10)), stages?.range)
     }
 

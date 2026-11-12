@@ -1,0 +1,22 @@
+[
+  {
+    "diagnostic": "[emitter kotlin-native bundle provisioning] Kotlin/Native bundle directory <konan>/kotlin-native-prebuilt-linux-x86_64-2.3.0 is not empty. Native bundle files will be overwritten.",
+    "owner": "gvy build and CI and Native maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "KGP 2.3.0 checks for any entries after creating its lock. A fresh job-owned namespace contains writes but does not prove lock-only contents at the copy boundary or full compiler integrity. Historical job contents remain unknown.",
+    "nextAction": "Prepare an upstream correction locally for human review and evaluate a supported fixed release; the source condition remained through 2.4.21.",
+    "acceptance": "Remove this conditional debt after a supported correction and verified cold Native and process tests.",
+    "expires": "2026-12-11",
+    "requiresProof": "native-provisioning-v1"
+  },
+  {
+    "diagnostic": "[emitter kotlin-native bundle provisioning] Kotlin/Native bundle directory <konan>/kotlin-native-prebuilt-macos-aarch64-2.3.0 is not empty. Native bundle files will be overwritten.",
+    "owner": "gvy build and CI and Native maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "KGP 2.3.0 checks for any entries after creating its lock. A fresh job-owned namespace contains writes but does not prove lock-only contents at the copy boundary or full compiler integrity. Historical job contents remain unknown.",
+    "nextAction": "Prepare an upstream correction locally for human review and evaluate a supported fixed release; the source condition remained through 2.4.21.",
+    "acceptance": "Remove this conditional debt after a supported correction and verified cold Native and process tests.",
+    "expires": "2026-12-11",
+    "requiresProof": "native-provisioning-v1"
+  }
+]

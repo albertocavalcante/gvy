@@ -1,6 +1,10 @@
 packages:
   - client
 
+# rules_js 2.8.3 needs this empty Bazel lifecycle allowlist; pnpm 12 uses allowBuilds.
+# Compatibility debt: https://github.com/albertocavalcante/gvy/issues/1603
+onlyBuiltDependencies: []
+
 allowBuilds:
   "@vscode/vsce-sign": false
   esbuild: true

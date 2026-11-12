@@ -53,7 +53,10 @@ Run one Gradle build at a time per machine, even with one worktree per agent. Pr
 8. **CI accountability**: Read `docs/ci-diagnostics.md`. Review the complete CI result for the publication head,
    including warnings, dependency advice, skipped checks and diagnostic artifacts. Fix new diagnostics or record a
    narrowly reviewed, owned, expiring exception linked to an issue. Report remaining debt and validation limits; a green
-   command exit alone is insufficient evidence. Never silently expand a baseline or suppress a category.
+   command exit alone is insufficient evidence. Run `gh pr checks <PR> --watch` and verify the PR head still matches the
+   reviewed source before shipping. An applicable failing or pending check blocks readiness even when `Validation Check`
+   passed; that verdict covers its declared producer graph, not every other workflow. Never silently expand a baseline
+   or suppress a category.
 
 ## Architecture
 

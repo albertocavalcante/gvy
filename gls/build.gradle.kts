@@ -1,5 +1,6 @@
 import org.gradle.api.artifacts.component.ModuleComponentIdentifier
 import org.gradle.api.tasks.testing.TestDescriptor
+import org.gradle.api.tasks.testing.TestListener
 import org.gradle.api.tasks.testing.TestResult
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 import org.gradle.process.ExecOperations
@@ -39,7 +40,7 @@ buildscript {
     }
 }
 
-val baseVersion: String by rootProject.extra
+val baseVersion = rootProject.extensions.extraProperties["baseVersion"] as String
 
 version =
     when {
@@ -48,10 +49,11 @@ version =
         else -> "$baseVersion-SNAPSHOT"
     }
 
-val proguardLibrary by configurations.creating {
-    isCanBeConsumed = false
-    isCanBeResolved = true
-}
+val proguardLibrary =
+    configurations.create("proguardLibrary") {
+        isCanBeConsumed = false
+        isCanBeResolved = true
+    }
 
 dependencies {
     // LSP4J - Language Server Protocol implementation
@@ -181,7 +183,7 @@ tasks.test {
         "-XX:+PrintConcurrentLocks", // Show lock info in thread dumps
         "-XX:+UnlockDiagnosticVMOptions", // Enable diagnostic options
         "-XX:+LogVMOutput", // Enable JVM logging
-        "-XX:LogFile=build/test-jvm.log", // Log JVM events to file for post-mortem analysis
+        "-XX:LogFile=build/test-jvm-%p.log", // HotSpot expands %p per process, isolating parallel forks
     )
 
     // TODO: Tier 2 - Enable JVM Flight Recorder for continuous profiling
@@ -206,20 +208,31 @@ tasks.test {
     val slowTestThresholdMs = 60_000L
     val verySlowTestThresholdMs = 180_000L
 
-    afterTest(
-        KotlinClosure2<TestDescriptor, TestResult, Unit>({
-            descriptor,
-            result,
-            ->
-            val duration = result.endTime - result.startTime
-            if (duration > verySlowTestThresholdMs) { // Error if test took >3 minutes
-                logger.error(
-                    "❌ VERY SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms - possible deadlock?",
-                )
-            } else if (duration > slowTestThresholdMs) { // Warn if test took >1 minute
-                logger.warn("⚠️  SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms")
+    addTestListener(
+        object : TestListener {
+            override fun beforeSuite(suite: TestDescriptor) = Unit
+
+            override fun afterSuite(
+                suite: TestDescriptor,
+                result: TestResult,
+            ) = Unit
+
+            override fun beforeTest(testDescriptor: TestDescriptor) = Unit
+
+            override fun afterTest(
+                descriptor: TestDescriptor,
+                result: TestResult,
+            ) {
+                val duration = result.endTime - result.startTime
+                if (duration > verySlowTestThresholdMs) { // Error if test took >3 minutes
+                    logger.error(
+                        "❌ VERY SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms - possible deadlock?",
+                    )
+                } else if (duration > slowTestThresholdMs) { // Warn if test took >1 minute
+                    logger.warn("⚠️  SLOW TEST: ${descriptor.className}.${descriptor.name} took ${duration}ms")
+                }
             }
-        }),
+        },
     )
 
     // Log test environment on start - helps diagnose Runner-specific issues
@@ -232,7 +245,7 @@ tasks.test {
         logger.lifecycle("║ Max parallel forks:  $maxParallelForks")
         logger.lifecycle("║ CPU cores:           ${Runtime.getRuntime().availableProcessors()}")
         logger.lifecycle("║ Max heap:            $maxHeapSize")
-        logger.lifecycle("║ JVM log:             build/test-jvm.log")
+        logger.lifecycle("║ JVM logs:            build/test-jvm-*.log")
         logger.lifecycle("╚════════════════════════════════════════╝")
     }
 
@@ -243,7 +256,7 @@ tasks.test {
 }
 
 // TODO: Tier 3 - Create custom Gradle task to analyze JVM logs for deadlocks
-// This would parse build/test-jvm.log and detect patterns like:
+// This would parse each build/test-jvm-*.log and detect patterns like:
 // - "deadlock" keyword
 // - High number of BLOCKED threads
 // - Circular lock dependencies
@@ -252,11 +265,10 @@ tasks.test {
 //     group = "verification"
 //     description = "Analyze JVM logs and test reports for hangs/deadlocks"
 //     doLast {
-//         val jvmLog = file("build/test-jvm.log")
-//         if (jvmLog.exists()) {
+//         fileTree("build") { include("test-jvm-*.log") }.forEach { jvmLog ->
 //             val content = jvmLog.readText()
 //             if (content.contains("deadlock") || content.contains("BLOCKED")) {
-//                 logger.error("⚠️ POTENTIAL DEADLOCK - Check build/test-jvm.log")
+//                 logger.error("⚠️ POTENTIAL DEADLOCK - Check build/test-jvm-*.log")
 //             }
 //         }
 //     }

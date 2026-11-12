@@ -176,6 +176,10 @@ const GetCoverageRequest = new RequestType<
 export class TestService {
   constructor(private readonly getClient: ClientProvider) {}
 
+  isReady(): boolean {
+    return this.getClient()?.isRunning() ?? false;
+  }
+
   private get client() {
     return requireClient(this.getClient);
   }

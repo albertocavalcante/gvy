@@ -17,10 +17,15 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.eclipse.lsp4j.DidChangeWatchedFilesParams
 import org.eclipse.lsp4j.FileChangeType
 import org.eclipse.lsp4j.FileEvent
 import org.eclipse.lsp4j.WorkspaceSymbolParams
+import org.eclipse.lsp4j.jsonrpc.json.MessageJsonHandler
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -49,6 +54,7 @@ class WorkspaceSourceRescanTest {
         scope,
         sourceChangeDispatcher = Dispatchers.Unconfined,
     )
+    private val jsonHandler = MessageJsonHandler(emptyMap())
 
     @AfterEach
     fun tearDown() = scope.cancel()
@@ -305,8 +311,12 @@ class WorkspaceSourceRescanTest {
     private fun classesNamed(name: String) =
         compilation.symbolIndexingService.findClasses(ClassNameQuery.Exact(name)).map { it.name }
 
-    private fun workspaceSymbols(query: String) =
-        workspace.symbol(WorkspaceSymbolParams(query)).get().left.map { it.name }
+    private fun workspaceSymbols(query: String): List<String> {
+        val response = workspace.symbol(WorkspaceSymbolParams(query)).get()
+        assertTrue(response.isLeft, "workspace symbols retain the legacy response branch")
+        val payload = Json.parseToJsonElement(jsonHandler.format(response.left)).jsonArray
+        return payload.map { it.jsonObject.getValue("name").jsonPrimitive.content }
+    }
 
     @Test
     fun `a created source keeps every closed file already indexed`(): Unit = runBlocking {

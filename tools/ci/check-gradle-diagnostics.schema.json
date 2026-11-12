@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/albertocavalcante/gvy/blob/main/tools/ci/check-gradle-diagnostics.schema.json",
+  "title": "Gradle producer diagnostic summary, version 1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion", "producer", "complete", "ok", "commandExitCode", "captureExitCode",
+    "diagnostics", "unexpected", "accepted", "exceptions", "errors", "log"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": { "accepted": { "type": "array", "contains": { "type": "object", "required": ["requiresProof"], "properties": { "requiresProof": { "const": "native-provisioning-v1" } } } } },
+        "required": ["accepted"]
+      },
+      "then": {
+        "required": ["nativeProvisioning"],
+        "properties": { "nativeProvisioning": { "type": "object", "required": ["complete"], "properties": { "complete": { "const": true } } } }
+      }
+    },
+    {
+      "if": {
+        "required": ["nativeProvisioning"],
+        "properties": { "nativeProvisioning": { "type": "object", "required": ["complete"], "properties": { "complete": { "const": false } } } }
+      },
+      "then": { "properties": { "ok": { "const": false } } }
+    }
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "producer": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*$" },
+    "complete": { "type": "boolean" },
+    "ok": { "type": "boolean" },
+    "commandExitCode": { "$ref": "#/$defs/exitCode" },
+    "captureExitCode": { "$ref": "#/$defs/exitCode" },
+    "diagnostics": { "$ref": "#/$defs/diagnostics" },
+    "unexpected": { "$ref": "#/$defs/diagnostics" },
+    "accepted": { "type": "array", "items": { "$ref": "#/$defs/exception" } },
+    "exceptions": { "type": "array", "items": { "$ref": "#/$defs/exception" } },
+    "errors": { "type": "array", "items": { "type": "string" } },
+    "context": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["schemaVersion", "headSha", "testedSha", "runId", "runAttempt", "invocationId", "command"],
+          "properties": {
+            "schemaVersion": { "const": 1 },
+            "headSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+            "testedSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+            "runId": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,200}$" },
+            "runAttempt": { "type": "integer", "minimum": 1 },
+            "invocationId": { "type": "string", "format": "uuid" },
+            "command": { "const": "gradle" }
+          }
+        }
+      ]
+    },
+    "worktreeDirty": { "type": ["boolean", "null"] },
+    "commandSignal": { "type": ["string", "null"] },
+    "nativeProvisioning": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "required", "complete", "preflightSha256", "preliminaryDiagnosticsSha256", "proofSha256"],
+      "allOf": [
+        {
+          "if": { "properties": { "complete": { "const": true } }, "required": ["complete"] },
+          "then": { "properties": {
+            "preflightSha256": { "$ref": "#/$defs/hash" },
+            "preliminaryDiagnosticsSha256": { "$ref": "#/$defs/hash" },
+            "proofSha256": { "$ref": "#/$defs/hash" }
+          } }
+        }
+      ],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "required": { "const": true },
+        "complete": { "type": "boolean" },
+        "preflightSha256": { "$ref": "#/$defs/optionalHash" },
+        "preliminaryDiagnosticsSha256": { "$ref": "#/$defs/optionalHash" },
+        "proofSha256": { "$ref": "#/$defs/optionalHash" }
+      }
+    },
+    "memoryProbe": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "required", "complete", "report"],
+      "properties": {
+        "schemaVersion": { "const": 1 },
+        "required": { "const": true },
+        "complete": { "type": "boolean" },
+        "report": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object", "additionalProperties": false, "required": ["bytes", "sha256"],
+              "properties": {
+                "bytes": { "type": "integer", "minimum": 1, "maximum": 262144 },
+                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "log": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object", "additionalProperties": false, "required": ["bytes", "sha256"],
+          "properties": {
+            "bytes": { "type": "integer", "minimum": 0 },
+            "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "optionalHash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+    "exitCode": { "type": ["integer", "null"], "minimum": 0, "maximum": 255 },
+    "diagnostics": { "type": "array", "uniqueItems": true, "items": { "type": "string" } },
+    "exception": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["diagnostic", "owner", "issue", "reason", "nextAction", "acceptance", "expires"],
+      "properties": {
+        "diagnostic": { "type": "string", "minLength": 1 },
+        "owner": { "type": "string", "minLength": 1 },
+        "issue": { "type": "string", "pattern": "^https://github\\.com/albertocavalcante/gvy/issues/[1-9][0-9]*$" },
+        "reason": { "type": "string", "minLength": 1 },
+        "nextAction": { "type": "string", "minLength": 1 },
+        "acceptance": { "type": "string", "minLength": 1 },
+        "expires": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "requiresProof": { "const": "native-provisioning-v1" }
+      }
+    }
+  }
+}

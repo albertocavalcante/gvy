@@ -270,6 +270,12 @@ subprojects {
             // Shared JVM args for better test performance
             jvmArgs("-XX:+UseG1GC", "-XX:MaxMetaspaceSize=512m")
 
+            // MockK also attaches bootstrap dispatchers in other modules' tests. Select a shared
+            // non-sharing test JVM policy instead of mapping a CDS archive that attachment invalidates.
+            // This changes archive reuse, not instrumentation or warning reporting.
+            // https://github.com/mockk/mockk/blob/1.14.12/doc/md/jep451-dynamic-agent-loading.md
+            jvmArgs("-Xshare:off")
+
             // Fail on discovery warnings. JUnit silently skips a @Test that returns a value (e.g. a Kotlin
             // `fun x() = runBlocking { ...; assertNotNull(y) }`); this turns that into a build failure.
             systemProperty("junit.platform.discovery.issue.severity.critical", "WARNING")

@@ -1,0 +1,4 @@
+> Configure project :viz:desktop
+The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property
+	at org.gradle.api.internal.artifacts.configurations.DefaultConfiguration.setVisible(DefaultConfiguration.java:376)
+	at com.diffplug.gradle.spotless.GradleProvisioner.lambda$forConfigurationContainer$1(GradleProvisioner.java:124)

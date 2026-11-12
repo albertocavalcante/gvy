@@ -1,7 +1,7 @@
 [versions]
 kotlin = "2.3.0"
 detekt = "1.23.8"
-spotless = "8.1.0"
+spotless = "8.11.0"
 kover = "0.9.11"
 sonarqube = "7.2.2.6593"
 shadow = "9.3.1"
@@ -10,6 +10,9 @@ jmh = "0.7.4"
 gradleVersions = "0.53.0"
 wire = "5.5.1"
 compose = "1.10.0"
+# Preserve the dependency versions supplied by the Compose 1.10.0 plugin's deprecated aliases.
+composeMaterial3 = "1.9.0-beta03"
+composeMaterialIcons = "1.7.3"
 
 groovy = "4.0.33"
 ivy = "2.5.3"
@@ -85,6 +88,10 @@ gradle-tooling-api = { module = "org.gradle:gradle-tooling-api", version.ref = "
 
 # Build Server Protocol
 bsp4j = { module = "ch.epfl.scala:bsp4j", version.ref = "bsp4j" }
+
+# Compose
+compose-material3 = { module = "org.jetbrains.compose.material3:material3", version.ref = "composeMaterial3" }
+compose-material-icons-extended = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "composeMaterialIcons" }
 
 # Kotlin
 kotlin-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }

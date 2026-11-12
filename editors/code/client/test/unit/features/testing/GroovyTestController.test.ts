@@ -8,7 +8,7 @@ interface GroovyTestControllerType {
     executionService: unknown,
     testService: unknown,
     coverageService?: unknown,
-  ): { dispose: () => void };
+  ): { dispose: () => void; refreshTests: () => void };
 }
 
 interface ExecutionServiceMock {
@@ -18,6 +18,7 @@ interface ExecutionServiceMock {
 }
 
 interface TestServiceMock {
+  isReady: sinon.SinonStub;
   discoverTestsInWorkspace: sinon.SinonStub;
 }
 
@@ -68,10 +69,11 @@ interface TestControllerMock {
     get: sinon.SinonStub;
     delete: sinon.SinonStub;
     replace: sinon.SinonStub;
+    forEach: sinon.SinonStub;
   };
   createRunProfile: sinon.SinonStub;
   resolveHandler?: (item: unknown) => Promise<void>;
-  refreshHandler?: () => void;
+  refreshHandler?: () => Promise<void>;
 }
 
 describe("GroovyTestController", () => {
@@ -126,6 +128,11 @@ describe("GroovyTestController", () => {
         replace: sandbox.stub().callsFake(() => {
           testItemsMock.clear();
         }),
+        forEach: sandbox
+          .stub()
+          .callsFake((callback: (item: unknown) => void) => {
+            testItemsMock.forEach(callback);
+          }),
       },
       createRunProfile: sandbox.stub(),
       resolveHandler: undefined,
@@ -237,6 +244,7 @@ describe("GroovyTestController", () => {
 
     // Mock test service
     testServiceMock = {
+      isReady: sandbox.stub().returns(true),
       discoverTestsInWorkspace: sandbox.stub().resolves([]),
     };
 
@@ -526,6 +534,232 @@ describe("GroovyTestController", () => {
           child,
         );
       });
+    });
+  });
+
+  describe("discovery lifecycle", () => {
+    let clock: sinon.SinonFakeTimers;
+    let controller: InstanceType<GroovyTestControllerType>;
+
+    beforeEach(() => {
+      clock = sandbox.useFakeTimers();
+    });
+
+    afterEach(() => {
+      controller?.dispose();
+    });
+
+    function createController() {
+      controller = new GroovyTestController(
+        contextMock,
+        executionServiceMock,
+        testServiceMock,
+      );
+      return controller;
+    }
+
+    it("waits for readiness across startup, editor, file and tree discovery", async () => {
+      testServiceMock.isReady.returns(false);
+      const uri = { fsPath: "/workspace/StartupSpec.groovy" };
+      vscodeMock.window.visibleTextEditors = [{ document: { uri } }];
+      const errors = sandbox.stub(console, "error");
+      createController();
+
+      const watcher = vscodeMock.workspace.createFileSystemWatcher.firstCall
+        .returnValue as Record<
+        "onDidCreate" | "onDidChange" | "onDidDelete",
+        sinon.SinonStub
+      >;
+      for (const event of [
+        watcher.onDidCreate,
+        watcher.onDidChange,
+        watcher.onDidDelete,
+      ]) {
+        event.firstCall.args[0]();
+      }
+      vscodeMock.workspace.onDidOpenTextDocument.firstCall.args[0]({ uri });
+      vscodeMock.workspace.onDidSaveTextDocument.firstCall.args[0]({ uri });
+      await testControllerMock.resolveHandler!(undefined);
+      await testControllerMock.refreshHandler!();
+      await clock.tickAsync(3000);
+
+      sinon.assert.notCalled(testServiceMock.discoverTestsInWorkspace);
+      sinon.assert.notCalled(testControllerMock.items.replace);
+      sinon.assert.notCalled(errors);
+      assert.strictEqual(clock.countTimers(), 0);
+    });
+
+    it("discovers the workspace after readiness and each successful restart", async () => {
+      testServiceMock.isReady.returns(false);
+      createController();
+      await clock.tickAsync(3000);
+      sinon.assert.notCalled(testServiceMock.discoverTestsInWorkspace);
+
+      testServiceMock.isReady.returns(true);
+      controller.refreshTests();
+      await clock.tickAsync(300);
+      sinon.assert.calledOnceWithExactly(
+        testServiceMock.discoverTestsInWorkspace,
+        "file:///workspace",
+      );
+
+      testServiceMock.isReady.returns(false);
+      controller.refreshTests();
+      await clock.tickAsync(3000);
+      sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+      testServiceMock.isReady.returns(true);
+      controller.refreshTests();
+      await clock.tickAsync(300);
+      sinon.assert.calledTwice(testServiceMock.discoverTestsInWorkspace);
+    });
+
+    it("rechecks readiness when a queued refresh runs", async () => {
+      createController().refreshTests();
+      testServiceMock.isReady.returns(false);
+      await clock.tickAsync(300);
+      sinon.assert.notCalled(testServiceMock.discoverTestsInWorkspace);
+    });
+
+    for (const command of ["runAll", "runCurrentFile"] as const) {
+      it(`runs ${command} after slow discovery overtakes a queued refresh`, async () => {
+        const uri = "file:///workspace/ExampleSpec.groovy";
+        const suite = "example.ExampleSpec";
+        const otherSuite = "example.OtherSpec";
+        let complete!: (suites: unknown[]) => void;
+        testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+        );
+        vscodeMock.window.activeTextEditor = {
+          document: { uri: vscodeMock.Uri.parse(uri) },
+        };
+        createController().refreshTests();
+        const registration = vscodeMock.commands.registerCommand
+          .getCalls()
+          .find((call) => call.args[0] === `groovy.test.${command}`);
+        assert.ok(registration);
+
+        const run = registration.args[1]();
+        sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+        await clock.tickAsync(300);
+        complete([
+          { suite, uri, line: 1, tests: [{ test: "works", line: 2 }] },
+          {
+            suite: otherSuite,
+            uri: "file:///workspace/OtherSpec.groovy",
+            line: 1,
+            tests: [],
+          },
+        ]);
+        await run;
+
+        sinon.assert.calledOnce(executionServiceMock.runTests);
+        sinon.assert.calledOnce(testServiceMock.discoverTestsInWorkspace);
+        const request = executionServiceMock.runTests.firstCall.args[0];
+        assert.deepStrictEqual(
+          request.include.map((item: { id: string }) => item.id),
+          command === "runAll" ? [suite, otherSuite] : [suite],
+        );
+        sinon.assert.notCalled(vscodeMock.window.showInformationMessage);
+        sinon.assert.notCalled(vscodeMock.window.showWarningMessage);
+        assert.strictEqual(clock.countTimers(), 0);
+      });
+    }
+
+    it("cancels queued discovery and rejects new refreshes after disposal", async () => {
+      createController().refreshTests();
+      controller.dispose();
+      controller.refreshTests();
+      await clock.tickAsync(300);
+      await testControllerMock.resolveHandler!(undefined);
+      sinon.assert.notCalled(testServiceMock.discoverTestsInWorkspace);
+      assert.strictEqual(clock.countTimers(), 0);
+    });
+
+    it("does not replace the tree after an in-flight discovery is disposed", async () => {
+      let complete!: (suites: unknown[]) => void;
+      testServiceMock.discoverTestsInWorkspace.returns(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      createController();
+      const discovery = testControllerMock.resolveHandler!(undefined);
+      controller.dispose();
+      complete([]);
+      await discovery;
+      sinon.assert.notCalled(testControllerMock.items.replace);
+    });
+
+    it("does not publish a previous discovery after a restart refresh", async () => {
+      let complete!: (suites: unknown[]) => void;
+      testServiceMock.discoverTestsInWorkspace.onFirstCall().returns(
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+      );
+      createController();
+      const discovery = testControllerMock.resolveHandler!(undefined);
+      controller.refreshTests();
+      complete([]);
+      await discovery;
+      sinon.assert.notCalled(testControllerMock.items.replace);
+      await clock.tickAsync(300);
+      sinon.assert.calledTwice(testServiceMock.discoverTestsInWorkspace);
+      sinon.assert.calledOnce(testControllerMock.items.replace);
+    });
+
+    it("reports a failed ready-client request and preserves the previous tree", async () => {
+      const failure = new Error("test discovery request failed");
+      testServiceMock.discoverTestsInWorkspace.rejects(failure);
+      const errors = sandbox.stub(console, "error");
+      createController();
+      await testControllerMock.resolveHandler!(undefined);
+      sinon.assert.calledOnceWithExactly(
+        errors,
+        "Failed to discover tests:",
+        failure,
+      );
+      sinon.assert.notCalled(testControllerMock.items.replace);
+    });
+
+    it("reports server unavailability when a user runs a stale test item", async () => {
+      testServiceMock.isReady.returns(false);
+      createController();
+      testControllerMock.items.get.returns({
+        id: "ExampleSpec",
+        uri: { toString: () => "file:///workspace/ExampleSpec.groovy" },
+      });
+      const command = vscodeMock.commands.registerCommand
+        .getCalls()
+        .find((call) => call.args[0] === "groovy.test.run");
+      assert.ok(command);
+      await command.args[1]({ suite: "ExampleSpec", test: "*" });
+      sinon.assert.calledOnceWithExactly(
+        vscodeMock.window.showErrorMessage,
+        "Groovy Language Server is not running",
+      );
+      sinon.assert.notCalled(executionServiceMock.runTests);
+    });
+
+    it("does not report an empty workspace or run stale items after discovery fails", async () => {
+      const failure = new Error("discovery request failed");
+      testServiceMock.discoverTestsInWorkspace.rejects(failure);
+      const errors = sandbox.stub(console, "error");
+      createController();
+      const command = vscodeMock.commands.registerCommand
+        .getCalls()
+        .find((call) => call.args[0] === "groovy.test.runAll");
+      assert.ok(command);
+      await command.args[1]();
+      sinon.assert.calledOnceWithExactly(
+        errors,
+        "Failed to discover tests:",
+        failure,
+      );
+      sinon.assert.notCalled(vscodeMock.window.showInformationMessage);
+      sinon.assert.notCalled(executionServiceMock.runTests);
     });
   });
 

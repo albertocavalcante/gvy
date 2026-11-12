@@ -1,0 +1,5 @@
+warn: the missing active toolchain `1.96.1-x86_64-unknown-linux-gnu` has been auto-installed
+warn: auto-installation is deprecated for most `rustup` commands
+warn: scripts relying on this behavior in `rustup` may stop working in the future
+warn: to install the active toolchain, use `rustup install` instead
+warn: see <https://github.com/rust-lang/rustup/issues/4836> for more info

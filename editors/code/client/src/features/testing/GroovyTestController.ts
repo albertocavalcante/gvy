@@ -71,6 +71,8 @@ function decodeTestCommandArgs(
 export class GroovyTestController {
   private readonly ctrl: vscode.TestController;
   private readonly subscriptions: vscode.Disposable[] = [];
+  private disposed = false;
+  private discoveryVersion = 0;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -92,11 +94,6 @@ export class GroovyTestController {
     this.processVisibleEditors();
     this.registerCommands(context);
 
-    // Initial discovery if LSP is ready
-    if (this.testService) {
-      this.refreshTests();
-    }
-
     // Cleanup subscriptions on dispose
     context.subscriptions.push({ dispose: () => this.dispose() });
   }
@@ -105,8 +102,11 @@ export class GroovyTestController {
    * Dispose of subscriptions and watchers.
    */
   dispose(): void {
+    this.disposed = true;
+    this.discoveryVersion++;
     if (this.refreshTimeout) {
       clearTimeout(this.refreshTimeout);
+      this.refreshTimeout = undefined;
     }
     this.subscriptions.forEach((s) => s.dispose());
     this.subscriptions.length = 0;
@@ -172,11 +172,21 @@ export class GroovyTestController {
   private refreshTimeout: ReturnType<typeof setTimeout> | undefined;
   /** Re-runs (debounced) discovery, e.g. once the language server is up. */
   refreshTests(): void {
+    if (this.disposed) {
+      return;
+    }
+    // A refresh after a restart supersedes any previous client's result.
+    this.discoveryVersion++;
     if (this.refreshTimeout) {
       clearTimeout(this.refreshTimeout);
+      this.refreshTimeout = undefined;
+    }
+    if (!this.testService?.isReady()) {
+      return;
     }
     this.refreshTimeout = setTimeout(() => {
-      this.discoverTests();
+      this.refreshTimeout = undefined;
+      void this.discoverTests();
     }, 300);
   }
 
@@ -201,7 +211,12 @@ export class GroovyTestController {
   }
 
   private async runAllTests(): Promise<void> {
-    await this.discoverTests();
+    if (!this.canRunTests()) {
+      return;
+    }
+    if (!(await this.discoverTests())) {
+      return;
+    }
     const items: vscode.TestItem[] = [];
     this.ctrl.items.forEach((item) => items.push(item));
     if (items.length === 0) {
@@ -227,9 +242,14 @@ export class GroovyTestController {
       vscode.window.showWarningMessage("No test file is currently open");
       return;
     }
+    if (!this.canRunTests()) {
+      return;
+    }
 
     // Ensure tests are discovered for this file
-    await this.discoverTests();
+    if (!(await this.discoverTests())) {
+      return;
+    }
 
     const fileUri = editor.document.uri.toString();
     const items: vscode.TestItem[] = [];
@@ -317,20 +337,33 @@ export class GroovyTestController {
   /**
    * Discover tests from the LSP and populate the TestItem tree.
    */
-  private async discoverTests(): Promise<void> {
-    if (!this.testService) {
-      return;
+  private async discoverTests(): Promise<boolean> {
+    if (this.disposed || !this.testService?.isReady()) {
+      return false;
     }
 
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
     if (!workspaceFolder) {
-      return;
+      return false;
     }
 
+    // Immediate discovery supersedes a queued refresh, which would invalidate it.
+    if (this.refreshTimeout) {
+      clearTimeout(this.refreshTimeout);
+      this.refreshTimeout = undefined;
+    }
+    const discoveryVersion = ++this.discoveryVersion;
     try {
       const suites = await this.testService.discoverTestsInWorkspace(
         workspaceFolder.uri.toString(),
       );
+      if (
+        this.disposed ||
+        discoveryVersion !== this.discoveryVersion ||
+        !this.testService.isReady()
+      ) {
+        return false;
+      }
 
       // Clear existing items
       this.ctrl.items.replace([]);
@@ -340,8 +373,10 @@ export class GroovyTestController {
         const suiteItem = this.createSuiteItem(suite);
         this.ctrl.items.add(suiteItem);
       }
+      return true;
     } catch (error) {
       console.error("Failed to discover tests:", error);
+      return false;
     }
   }
 
@@ -434,6 +469,17 @@ export class GroovyTestController {
     return vscode.workspace.getWorkspaceFolder(uri) !== undefined;
   }
 
+  private canRunTests(): boolean {
+    if (this.disposed) {
+      return false;
+    }
+    if (this.testService && !this.testService.isReady()) {
+      vscode.window.showErrorMessage("Groovy Language Server is not running");
+      return false;
+    }
+    return true;
+  }
+
   // Unified command handler
   private async runTestCommand(
     input: unknown,
@@ -469,6 +515,9 @@ export class GroovyTestController {
       );
       return;
     }
+    if (!this.canRunTests()) {
+      return;
+    }
 
     const suiteItem = this.ctrl.items.get(args.suite);
     if (suiteItem && !this.validateTestItemUri(suiteItem, args.uri)) {
@@ -486,7 +535,9 @@ export class GroovyTestController {
     if (!item) {
       // If item not found, it might be because tests weren't discovered yet.
       // Try discovery first.
-      await this.discoverTests();
+      if (!(await this.discoverTests())) {
+        return;
+      }
 
       const retrySuiteItem = this.ctrl.items.get(args.suite);
       if (

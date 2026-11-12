@@ -1,0 +1,7 @@
+> Task :indexer:scip:compileKotlin
+w: file:///workspace/gvy/indexer/scip/build/generated/source/wire/scip/Descriptor.kt:226:9 Duplicate branch condition in 'when'.
+w: file:///workspace/gvy/indexer/scip/build/generated/source/wire/scip/Occurrence.kt:349:20 Unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.
+w: file:///workspace/gvy/indexer/scip/build/generated/source/wire/scip/Occurrence.kt:368:30 Unnecessary non-null assertion (!!) on a non-null receiver of type 'MutableList<Int>'.
+w: file:///workspace/gvy/indexer/scip/build/generated/source/wire/scip/SyntaxKind.kt:194:7 Duplicate branch condition in 'when'.
+w: file:///workspace/gvy/indexer/scip/build/generated/source/wire/scip/SyntaxKind.kt:205:7 Duplicate branch condition in 'when'.
+BUILD FAILED in 3m 38s

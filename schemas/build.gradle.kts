@@ -16,28 +16,30 @@ dependencies {
 }
 
 // Manual Wire generation task
-val generateProtos by tasks.registering(JavaExec::class) {
-    group = "build"
-    description = "Generates Kotlin code from Proto files using Wire"
+val generateProtos =
+    tasks.register<JavaExec>("generateProtos") {
+        group = "build"
+        description = "Generates Kotlin code from Proto files using Wire"
 
-    val outputDir = layout.buildDirectory.dir("generated/source/wire")
-    val protoDir = layout.projectDirectory.dir("src/main/proto")
+        val outputDir = layout.buildDirectory.dir("generated/source/wire")
+        val protoDir = layout.projectDirectory.dir("src/main/proto")
 
-    inputs.dir(protoDir)
-    outputs.dir(outputDir)
+        inputs.dir(protoDir)
+        outputs.dir(outputDir)
 
-    classpath = wireCompiler
-    mainClass.set("com.squareup.wire.WireCompiler")
+        classpath = wireCompiler
+        maxHeapSize = "512m"
+        mainClass.set("com.squareup.wire.WireCompiler")
 
-    args(
-        "--proto_path=${protoDir.asFile.absolutePath}",
-        "--kotlin_out=${outputDir.get().asFile.absolutePath}",
-        *fileTree(protoDir) { include("**/*.proto") }
-            .map {
-                it.relativeTo(protoDir.asFile).path
-            }.toTypedArray(),
-    )
-}
+        args(
+            "--proto_path=${protoDir.asFile.absolutePath}",
+            "--kotlin_out=${outputDir.get().asFile.absolutePath}",
+            *fileTree(protoDir) { include("**/*.proto") }
+                .map {
+                    it.relativeTo(protoDir.asFile).path
+                }.toTypedArray(),
+        )
+    }
 
 sourceSets.main {
     kotlin.srcDir(generateProtos)

@@ -17,8 +17,8 @@ dependencies {
     implementation(project(":parser:rewrite"))
 
     implementation(compose.desktop.currentOs)
-    implementation(compose.material3)
-    implementation(compose.materialIconsExtended)
+    implementation(libs.compose.material3)
+    implementation(libs.compose.material.icons.extended)
 
     implementation(libs.kotlin.coroutines.core)
     implementation(libs.kotlin.serialization.json)
