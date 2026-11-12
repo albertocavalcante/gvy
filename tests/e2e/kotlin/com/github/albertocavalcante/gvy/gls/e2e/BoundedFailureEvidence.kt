@@ -5,7 +5,7 @@ import java.util.IdentityHashMap
 import java.util.concurrent.CancellationException
 
 /** Bounded retained failure text. Throwable getters can themselves allocate before returning. */
-data class FailureEvidence(val text: String, val truncated: Boolean, val unavailable: Boolean)
+data class FailureEvidence internal constructor(val text: String, val truncated: Boolean, val unavailable: Boolean)
 
 /** Captures cause and suppressed origins without retaining throwable graphs or invoking Throwable.toString(). */
 internal object BoundedFailureEvidence {
