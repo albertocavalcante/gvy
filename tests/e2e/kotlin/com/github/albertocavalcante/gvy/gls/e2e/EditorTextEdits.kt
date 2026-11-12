@@ -52,10 +52,20 @@ internal object EditorTextEdits {
         require(position.line >= 0 && position.line < lines.size) { "Text edit line is out of range" }
         require(position.character >= 0) { "Text edit character is negative" }
         val line = lines[position.line]
+        val boundaries = line.boundaries ?: boundaries(text, line, encoding).also { line.boundaries = it }
+        val target = position.character.toLong()
+        val index = boundaries.binarySearchBy(target) { it.units }
+        if (index >= 0) return boundaries[index].offset
+        // LSP positions beyond a line's length refer to the end of that line.
+        if (target > boundaries.last().units) return line.end
+        throw IllegalArgumentException("Text edit splits an encoded character")
+    }
+
+    private fun boundaries(text: CharSequence, line: Line, encoding: EditorPositionEncoding): List<Boundary> {
+        val result = mutableListOf(Boundary(0, line.start))
         var at = line.start
-        var units = 0
+        var units = 0L
         while (at < line.end) {
-            if (units == position.character) return at
             val first = text[at]
             val width = if (first.isHighSurrogate()) {
                 require(at + 1 < line.end && text[at + 1].isLowSurrogate()) { "Unpaired high surrogate" }
@@ -75,14 +85,17 @@ internal object EditorTextEdits {
                 EditorPositionEncoding.UTF16 -> width
                 EditorPositionEncoding.UTF32 -> 1
             }
-            require(units + count <= position.character) { "Text edit splits an encoded character" }
             units += count
             at += width
+            result.add(Boundary(units, at))
         }
-        // LSP positions beyond a line's length refer to the end of that line.
-        return line.end
+        return result
     }
 
-    private data class Line(val start: Int, val end: Int)
+    private class Line(val start: Int, val end: Int) {
+        var boundaries: List<Boundary>? = null
+    }
+    private data class Boundary(val units: Long, val offset: Int)
+
     private data class ResolvedEdit(val start: Int, val end: Int, val text: String, val index: Int)
 }
