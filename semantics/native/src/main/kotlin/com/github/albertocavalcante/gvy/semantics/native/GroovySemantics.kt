@@ -66,7 +66,6 @@ class GroovySemantics(
             synchronized(contextCache) {
                 val cached = contextCache[module]?.get()
                 if (cached != null && contextVersions[module] == workspaceVersion) return cached
-
             }
             // Build outside the lock; unrelated modules must not wait for local type inference.
             val scope = buildRootScope(module)
