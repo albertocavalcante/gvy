@@ -1,8 +1,9 @@
 # Inspecting original protocol evidence
 
-SDK objects and feature projections are derived views. To inspect the original message bytes, use the base64 byte prefix
-retained by the client-boundary capture work in [#1717](https://github.com/albertocavalcante/gvy/issues/1717). Keep that
-evidence private: it can contain workspace text, paths and server messages.
+SDK objects and feature projections are derived views. This helper accepts a supplied original byte prefix encoded as
+base64. Client-boundary capture and its integration remain separate work tracked in
+[#1717](https://github.com/albertocavalcante/gvy/issues/1717); this inspector does not install a capture producer. Keep
+supplied evidence private: it can contain workspace text, paths and server messages.
 
 The offline helper is exported by [wire-evidence.mjs](../../tools/perf/wire-evidence.mjs). It has no process, network,
 logging or file-writing effects. Pass the original base64 prefix to its inspectWirePrefix function. The returned graph
