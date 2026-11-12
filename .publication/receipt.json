@@ -1,12 +1,12 @@
 {
   "base": "b0e39c60e2210d8e5e65818025f2e42f004d06b3",
   "red": {
-    "tree": "12288f7ff72ad9b67bfcb94cae810f0813a9263a",
+    "tree": "427cb40b3ace439a4aaedcff5d4f952f217dc3e8",
     "patch": {
-      "sha256": "b966944783c01f1d2f23592c21f5c7a55cbbe93470eb9ad6248afa2231eef3f7",
-      "compressedSha256": "bc6138be5c8439f3dc40a0a950af5f4fdde8943f87ac3933d5279e681d9ea5d5",
-      "bytes": 17734,
-      "compressedBytes": 3452
+      "sha256": "db9bbaaf5826c76ac971d296ee5b1947fac0407f1bf7cfa512e16d7616fd7126",
+      "compressedSha256": "3fb5dd58532fc267f8285f4eeb10284c1cbe3b4b9cf7625065ff916f9498c92a",
+      "bytes": 18959,
+      "compressedBytes": 3546
     },
     "paths": [
       "tests/build.gradle.kts",
@@ -98,10 +98,10 @@
   "green": {
     "tree": "e02afc53a251eced8d1f94d73b5f124205ead9a0",
     "patch": {
-      "sha256": "3736f0c69ae4f5f76e762d77f6a3ddd8b0b46f046b186f599dfbf1d8abe398e9",
-      "compressedSha256": "b8ffa2b82e5054c77295ab8af77f38517e43cce1d3f6fa7d5b6b727515dfa06f",
-      "bytes": 27969,
-      "compressedBytes": 5707
+      "sha256": "1cd23472114888723f95396844080903fb541567ec1c9a2c8fdcdd0704597ba9",
+      "compressedSha256": "e2b9c5bf42f54672790203080eba695acc1847588a2960f9f289544021b4536e",
+      "bytes": 30792,
+      "compressedBytes": 6049
     },
     "paths": [
       "tests/build.gradle.kts",
