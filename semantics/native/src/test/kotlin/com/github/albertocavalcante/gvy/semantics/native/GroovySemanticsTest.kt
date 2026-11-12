@@ -18,8 +18,14 @@ import org.codehaus.groovy.ast.stmt.ExpressionStatement
 import org.codehaus.groovy.control.Phases
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
+import java.lang.ref.Reference
+import java.lang.ref.WeakReference
 import java.net.URI
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 class GroovySemanticsTest {
 
@@ -372,83 +378,80 @@ class GroovySemanticsTest {
     }
 
     @Test
-    fun `cache entry is removed when ModuleNode is garbage collected`() {
-        val code = """
-            def x = "hello"
-        """.trimIndent()
-
+    fun `retired module and cache entry are collectible while resolver and context stay alive`() {
         val semantics = GroovySemantics(stubSolver)
+        val liveModule = parse("def live = 1")
+        semantics.inject(liveModule)
+        val (retiredModule, retiredContext) = retiredModuleAndContext(semantics)
 
-        // Create and inject a module, then immediately lose the reference
-        var module: ModuleNode? = parse(code)
-        semantics.inject(module!!)
+        // The live key is a control: eviction must not discard a still-owned module.
+        awaitCollection(retiredModule)
+        assertEquals(null, retiredModule.get(), "The cached context must not retain its module")
+        assertEquals(1, cacheSize(semantics), "Only the live module should remain cached")
+        assertTrue(semantics.getContext(liveModule) != null)
+        assertEquals(TypeConstants.STRING, retiredContext.getFieldType(SemanticType.Known("Retired"), "name"))
+        assertEquals(TypeConstants.STRING, retiredContext.getMethodReturnType(SemanticType.Known("Retired"), "label", emptyList()))
+        Reference.reachabilityFence(liveModule)
+        Reference.reachabilityFence(retiredContext)
+        Reference.reachabilityFence(semantics)
+    }
 
-        // Verify context exists before GC
-        val contextBefore = semantics.getContext(module)
-        assertTrue(contextBefore != null, "Context should exist after injection")
+    private fun retiredModuleAndContext(semantics: GroovySemantics): Pair<WeakReference<ModuleNode>, NativeTypeContext> {
+        val module = parse("class Retired { String name; String label() { name } }")
+        val context = checkNotNull(semantics.getContext(module))
+        return WeakReference(module) to context
+    }
 
-        // Null the reference and request GC
-        module = null
-        @Suppress("ExplicitGarbageCollectionCall") // Testing WeakHashMap GC behavior
-        System.gc()
-        @Suppress("MagicNumber") // Test timing constant
-        Thread.sleep(100) // Give GC a chance to run
+    private fun cacheSize(semantics: GroovySemantics): Int {
+        val field = GroovySemantics::class.java.getDeclaredField("contextCache")
+        field.isAccessible = true
+        return (field.get(semantics) as Map<*, *>).size
+    }
 
-        // NOTE: WeakHashMap cleanup is not guaranteed, but we're testing the mechanism is in place.
-        // The cache should be using WeakHashMap, which allows entries to be collected.
-        // We can't reliably verify the entry was removed without accessing private state,
-        // but we can verify the cache still works for other modules.
-
-        // Create a new module and verify it works independently
-        val newModule = parse(code)
-        val decl = findNode<DeclarationExpression>(newModule)!!
-        val expr = decl.rightExpression as ConstantExpression
-        val type = semantics.resolveType(expr, newModule)
-        assertEquals(TypeConstants.STRING, type, "New module should resolve correctly after GC")
+    @Suppress("ExplicitGarbageCollectionCall", "MagicNumber")
+    private fun awaitCollection(reference: WeakReference<ModuleNode>) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5)
+        while (reference.get() != null && System.nanoTime() < deadline) {
+            System.gc()
+            Thread.sleep(20)
+        }
     }
 
     @Test
     fun `concurrent access to cache is thread-safe`() {
-        val code1 = """
-            def x = "string"
-        """.trimIndent()
-        val code2 = """
-            def y = 42
-        """.trimIndent()
-
         val semantics = GroovySemantics(stubSolver)
-        val modules = listOf(parse(code1), parse(code2))
-
-        // Use a barrier to synchronize thread start
-        val threads = modules.mapIndexed { index, module ->
-            Thread {
-                // Each thread repeatedly accesses the cache
-                @Suppress("MagicNumber") // Test constant for number of iterations
-                repeat(100) {
-                    semantics.inject(module)
-                    val context = semantics.getContext(module)
-                    assertTrue(
-                        context != null,
-                        "Context should remain available after concurrent inject operations in thread $index",
-                    )
+        val modules = listOf(parse("def x = 'string'"), parse("def y = 42"))
+        val executor = Executors.newFixedThreadPool(modules.size)
+        try {
+            val tasks = modules.map { module ->
+                executor.submit {
+                    @Suppress("MagicNumber")
+                    repeat(100) {
+                        semantics.inject(module)
+                        assertTrue(semantics.getContext(module) != null)
+                    }
                 }
             }
+            tasks.forEach { it.get(30, TimeUnit.SECONDS) }
+        } finally {
+            executor.shutdownNow()
         }
-
-        // Start all threads
-        threads.forEach { it.start() }
-
-        // Wait for all threads to complete
-        threads.forEach { it.join() }
-
-        // Verify both modules still resolve correctly after concurrent access
         val decl1 = findNode<DeclarationExpression>(modules[0])!!
-        val type1 = semantics.resolveType(decl1.rightExpression, modules[0])
-        assertEquals(TypeConstants.STRING, type1, "First module should still resolve to String")
-
+        assertEquals(TypeConstants.STRING, semantics.resolveType(decl1.rightExpression, modules[0]))
         val decl2 = findNode<DeclarationExpression>(modules[1])!!
-        val type2 = semantics.resolveType(decl2.rightExpression, modules[1])
-        assertEquals(TypeConstants.INT, type2, "Second module should still resolve to int")
+        assertEquals(TypeConstants.INT, semantics.resolveType(decl2.rightExpression, modules[1]))
+    }
+
+    @Test
+    fun `worker assertion failures reach the test thread`() {
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            val task = executor.submit { assertEquals("expected", "actual") }
+            val failure = assertThrows(ExecutionException::class.java) { task.get(30, TimeUnit.SECONDS) }
+            assertTrue(failure.cause is AssertionError)
+        } finally {
+            executor.shutdownNow()
+        }
     }
 
     @Test
