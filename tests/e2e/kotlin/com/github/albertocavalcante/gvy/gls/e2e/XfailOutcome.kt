@@ -129,19 +129,22 @@ object XfailOutcome {
         var firstCause: Throwable? = null
         var current: Throwable? = root
         var nodes = 0
+        var messageCount = 0
         while (current != null && seen.add(current)) {
             if (++nodes > MAX_CAUSE_NODES) throw InspectionIncomplete("cause chain exceeds $MAX_CAUSE_NODES nodes")
             val node = current
             val suppressed = inspectValue { node.suppressed }
             if (suppressed.isNotEmpty()) return Inspection("", "", null, true)
-            val message = inspectValue { node.message }.orEmpty()
-            if (nodes == 1) firstMessage = message
-            val remaining = MAX_MESSAGE_CHARS - messages.length - if (nodes > 1) 1 else 0
-            if (remaining < 0 || message.length > remaining) {
-                throw InspectionIncomplete("failure messages exceed $MAX_MESSAGE_CHARS characters")
+            val message = inspectValue { node.message }
+            if (nodes == 1) firstMessage = message.orEmpty()
+            if (message != null) {
+                val remaining = MAX_MESSAGE_CHARS - messages.length - if (messageCount > 0) 1 else 0
+                if (remaining < 0 || message.length > remaining) {
+                    throw InspectionIncomplete("failure messages exceed $MAX_MESSAGE_CHARS characters")
+                }
+                if (messageCount++ > 0) messages.append('\n')
+                messages.append(message)
             }
-            if (nodes > 1) messages.append('\n')
-            messages.append(message)
             current = inspectValue { node.cause }
             if (nodes == 1) firstCause = current
         }

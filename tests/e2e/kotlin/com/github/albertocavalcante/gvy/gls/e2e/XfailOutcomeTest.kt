@@ -75,6 +75,13 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `null cause messages do not change anchored matches`() {
+        val failure = AssertionError().apply { initCause(IOException("inner")) }
+        assertThat(classify(xfail.copy(match = "^inner$"), failure))
+            .isInstanceOf(XfailDecision.Expected::class.java)
+    }
+
+    @Test
     fun `matching a cyclic cause chain terminates`() {
         var causeReads = 0
         val failure = object : AssertionError("product failed") {
