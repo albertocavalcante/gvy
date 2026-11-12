@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 kt_library(
     name = "sarif",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
+    exports = ["//findings"],
     deps = [
         "//findings",
         "//source",

@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 kt_library(
     name = "findings",
     srcs = glob(["src/main/kotlin/**/*.kt"]),
     visibility = ["//visibility:public"],
+    exports = ["//source"],
     deps = ["//source"],
 )
 
@@ -11,10 +15,9 @@ kt_test(
     name = "findings_test",
     timeout = "short",
     srcs = glob(["src/test/kotlin/**/*.kt"]),
-    associates = [":findings"],
     test_packages = ["com.github.albertocavalcante.gvy.findings"],
     deps = [
-        "//source",
+        ":findings",
         "@maven//:org_jetbrains_kotlin_kotlin_test",
     ],
 )
