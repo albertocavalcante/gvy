@@ -22,6 +22,21 @@ class NamedObservationRecorderTest {
     }
 
     @Test
+    fun `failed executor close leaves thread termination unconfirmed`() {
+        val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
+        recorder.closeSession { }
+        recorder.closeWorkspace { }
+        recorder.workerFinished()
+        val failure = IOException("worker did not exit")
+        recorder.executorClosed(failure)
+
+        val cleanup = recorder.finish(failure).cleanup as CleanupOutcome.Failed
+
+        assertThat(cleanup.confirmed).isFalse()
+        assertThat(cleanup.detail).contains("worker did not exit")
+    }
+
+    @Test
     fun `unclassified failure retains its nested cause`() {
         val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
         val failure = IllegalStateException("outer", IOException("nested cause"))

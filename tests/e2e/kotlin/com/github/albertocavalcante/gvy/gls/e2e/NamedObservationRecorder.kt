@@ -23,7 +23,7 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
 
     @Synchronized fun executorClosed(failure: Throwable?) {
         if (!sealed) {
-            executorClosed = true
+            executorClosed = failure == null
             if (failure != null) cleanupFailures.add(failure)
         }
     }
