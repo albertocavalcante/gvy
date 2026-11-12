@@ -12,6 +12,7 @@ import java.io.File
 import java.io.OutputStream
 import java.net.URI
 import java.net.URISyntaxException
+import java.nio.charset.CharacterCodingException
 
 /**
  * Builds SARIF from findings, with a compatibility entry point for LSP diagnostics.
@@ -64,16 +65,15 @@ class SarifWriter(
     /**
      * Adds a finding. The location URI is interpreted as a URI reference, including an empty one;
      * non-ASCII characters are encoded as UTF-8. Invalid references fail before the writer changes.
+     * Existing escapes and the supplied Unicode normalization form are preserved.
      * SARIF rule IDs are strings, so numeric and textual codes with the same spelling coincide.
      * An unspecified severity is projected as a warning.
+     *
+     * @throws IllegalArgumentException if the reference has invalid syntax or malformed UTF-16.
      */
     fun addFinding(finding: Finding) {
         val locations = finding.location?.let { location ->
-            val uri = try {
-                URI(location.uri).toASCIIString()
-            } catch (error: URISyntaxException) {
-                throw IllegalArgumentException("Invalid source URI reference", error)
-            }
+            val uri = asciiUriReference(location.uri)
             val region = location.range?.let { range ->
                 SarifRegion(
                     startLine = range.start.line.toLong() + 1,
@@ -85,6 +85,31 @@ class SarifWriter(
             listOf(SarifLocation(physicalLocation = SarifPhysicalLocation(SarifArtifactLocation(uri), region)))
         }
         appendFinding(finding, locations)
+    }
+
+    private fun asciiUriReference(reference: String): String {
+        val bytes = try {
+            URI(reference) // Validate syntax without normalizing the supplied reference.
+            if (reference.all { it.code < ASCII_LIMIT }) return reference
+            reference.encodeToByteArray(throwOnInvalidSequence = true)
+        } catch (error: URISyntaxException) {
+            throw IllegalArgumentException("Invalid source URI reference", error)
+        } catch (error: CharacterCodingException) {
+            throw IllegalArgumentException("Invalid source URI reference", error)
+        }
+        val hex = "0123456789ABCDEF"
+        return buildString {
+            for (byte in bytes) {
+                val value = byte.toInt() and UNSIGNED_BYTE_MASK
+                if (value < ASCII_LIMIT) {
+                    append(value.toChar())
+                } else {
+                    append('%')
+                    append(hex[value ushr HEX_DIGIT_BITS])
+                    append(hex[value and HEX_DIGIT_MASK])
+                }
+            }
+        }
     }
 
     private fun appendFinding(finding: Finding, locations: List<SarifLocation>?) {
@@ -197,6 +222,11 @@ class SarifWriter(
     private fun createRuleDescription(): SarifMessage? = null
 
     companion object {
+        private const val ASCII_LIMIT = 0x80
+        private const val UNSIGNED_BYTE_MASK = 0xff
+        private const val HEX_DIGIT_MASK = 0x0f
+        private const val HEX_DIGIT_BITS = 4
+
         @OptIn(ExperimentalSerializationApi::class)
         private fun createJson(prettyPrint: Boolean): Json = Json {
             this.prettyPrint = prettyPrint

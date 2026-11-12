@@ -115,6 +115,8 @@ class FindingSarifTest {
             "src/A%2fb.groovy" to "src/A%2fb.groovy",
             "relative/a?query=x#part" to "relative/a?query=x#part",
             "file:///work/é.groovy" to "file:///work/%C3%A9.groovy",
+            "file:///work/e\u0301.groovy" to "file:///work/e%CC%81.groovy",
+            "src/%2f-😀-e\u0301.groovy" to "src/%2f-%F0%9F%98%80-e%CC%81.groovy",
         )
         for ((reference, expected) in cases) {
             val writer = SarifWriter()
@@ -128,7 +130,7 @@ class FindingSarifTest {
     @Test
     fun `invalid URI does not add a result or register a rule`() {
         val writer = SarifWriter()
-        for (invalid in listOf("bad%xy", "file:///bad path")) {
+        for (invalid in listOf("bad%xy", "file:///bad path", "file:///\uD800", "file:///\uDC00")) {
             assertFailsWith<IllegalArgumentException> {
                 writer.addFinding(
                     Finding(SourceLocation(invalid, null), "message", null, null, FindingCode.Text("bad")),
