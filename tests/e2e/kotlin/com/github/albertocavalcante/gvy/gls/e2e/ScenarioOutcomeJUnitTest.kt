@@ -48,7 +48,7 @@ class ScenarioOutcomeJUnitTest {
     }
 
     @Test
-    fun `cancellation and operational failure remain distinct from expected failure`() {
+    fun `cancellation remains distinct from expected failure`() {
         val report = ScenarioOutcome(
             planned = listOf("known"),
             observed = listOf(ObservationResult("known", ObservationStatus.KnownFailure(42))),
@@ -57,6 +57,20 @@ class ScenarioOutcomeJUnitTest {
         )
         assertThatThrownBy { ScenarioOutcomeJUnit.report(report) }
             .isInstanceOf(CancellationException::class.java).hasMessageContaining("interrupted")
+    }
+
+    @Test
+    fun `operational failure is not hidden by a known failure`() {
+        val report = ScenarioOutcome(
+            planned = listOf("known"),
+            observed = listOf(ObservationResult("known", ObservationStatus.KnownFailure(42))),
+            cleanup = CleanupOutcome.Succeeded,
+            completion = ScenarioCompletion.Failed(
+                ScenarioFailurePhase.Execution, ScenarioFailureKind.Transport, "request failed",
+            ),
+        )
+        assertThatThrownBy { ScenarioOutcomeJUnit.report(report) }
+            .isInstanceOf(AssertionError::class.java).hasMessageContaining("request failed")
     }
 
     private fun outcome(
