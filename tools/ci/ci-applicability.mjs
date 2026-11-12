@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 const narrative = /^(?:(?:README|AGENTS|CONTRIBUTING|REVIEW|CHANGELOG)\.md|LICENSE(?:\.md|\.txt)?|(?:kb|\.agent)\/.*\.md|docs\/(?!website\/).*\.md)$/;
 const bazelOnly = /^(?:\.bazel(?:rc|version|ignore)|bazel\/.*\.bazelrc|(?:.*\/)?BUILD(?:\.bazel)?|.*\.bzl|MODULE\.bazel(?:\.lock)?|third_party\/patches\/.*)$/;
 const executableTree = /(?:^|\/)(?:src|resources|fixtures|snapshots|workspaces|testdata)(?:\/|$)/;
-const knownNarrative = new Set(['tests/e2e/README.md']);
+const knownNarrative = new Set(['tests/e2e/README.md', 'editors/zed/README.md',
+  'editors/zed/LICENSE', 'editors/zed/LICENSE.md', 'editors/zed/LICENSE.txt']);
+const sharedZedInputs = new Set(['Makefile', '.github/workflows/ci.yml']);
 
 /** Unknown inputs are conservatively tested. Fixtures are never excluded by suffix. */
 export function classifyPaths(paths) {
@@ -14,14 +16,17 @@ export function classifyPaths(paths) {
     if (typeof path !== 'string' || !path || path.startsWith('/') || path.includes('\0') || path.split('/').includes('..')) {
       throw new Error(`Invalid repository path: ${JSON.stringify(path)}`);
     }
-    const reason = executableTree.test(path) ? 'build or executable input'
-      : narrative.test(path) || knownNarrative.has(path) ? 'narrative documentation' : bazelOnly.test(path) ? 'Bazel configuration' : 'build or executable input';
+    const reason = knownNarrative.has(path) ? 'narrative documentation'
+      : path.startsWith('editors/zed/') ? 'Zed extension input'
+      : executableTree.test(path) ? 'build or executable input'
+      : narrative.test(path) ? 'narrative documentation' : bazelOnly.test(path) ? 'Bazel configuration' : 'build or executable input';
     return { path, reason };
   });
   return {
     schemaVersion: 1,
     runMain: !classified.length || classified.some(({ reason }) => reason === 'build or executable input'),
-    runBazel: !classified.length || classified.some(({ reason }) => reason !== 'narrative documentation'),
+    runBazel: !classified.length || classified.some(({ reason }) => reason === 'build or executable input' || reason === 'Bazel configuration'),
+    runZed: !classified.length || classified.some(({ path, reason }) => reason === 'Zed extension input' || sharedZedInputs.has(path)),
     paths: classified,
   };
 }
@@ -63,6 +68,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   if (!output || !process.env.GITHUB_OUTPUT) throw new Error('Usage: node ci-applicability.mjs REPORT.json (GitHub Actions context required).');
   mkdirSync(dirname(output), { recursive: true });
   writeFileSync(output, `${JSON.stringify(report, null, 2)}\n`);
-  appendFileSync(process.env.GITHUB_OUTPUT, `run_main_ci=${report.runMain}\nrun_bazel_ci=${report.runBazel}\n`);
-  console.log(`Gradle applicable: ${report.runMain}; Bazel applicable: ${report.runBazel}; ${report.paths.length} changed paths.`);
+  appendFileSync(process.env.GITHUB_OUTPUT, `run_main_ci=${report.runMain}\nrun_bazel_ci=${report.runBazel}\nrun_zed_ci=${report.runZed}\n`);
+  console.log(`Gradle applicable: ${report.runMain}; Bazel applicable: ${report.runBazel}; Zed applicable: ${report.runZed}; ${report.paths.length} changed paths.`);
 }

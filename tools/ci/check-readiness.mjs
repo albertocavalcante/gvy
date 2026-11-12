@@ -19,7 +19,7 @@ export function evaluateReadiness(needs) {
   const paths = jobs['check-paths'];
   if (paths?.result !== 'success') errors.push('Applicability check did not succeed.');
   const applicability = {};
-  for (const field of ['run_main_ci', 'run_bazel_ci']) {
+  for (const field of ['run_main_ci', 'run_bazel_ci', 'run_zed_ci']) {
     const value = paths?.outputs?.[field];
     if (value !== 'true' && value !== 'false') errors.push(`Missing or invalid applicability: ${field}.`);
     applicability[field] = value;
@@ -35,6 +35,7 @@ export function evaluateReadiness(needs) {
     'e2e-test': applicability.run_main_ci,
     'smoke-test': applicability.run_main_ci,
     bazel: applicability.run_bazel_ci,
+    zed: applicability.run_zed_ci,
   };
   for (const [name, applies] of Object.entries(requirements)) {
     const expected = applies === 'false' ? 'skipped' : 'success';

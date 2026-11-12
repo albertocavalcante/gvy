@@ -8,19 +8,25 @@ PR and completion message. Independent review must cover changes to diagnostic p
 ## Required readiness
 
 The required `Validation Check` evaluates the current workflow's dependency results. Applicable Gradle lint, unit/E2E
-jobs, packaged-JAR smoke checks on Linux/macOS/Windows, the Native launcher workflow and the reusable Bazel workflow
-must succeed. Missing applicability output, a failed path check, an unexpected skip, a cancellation, a failed runner
-check or pending runner provisioning fails readiness. Provisioning does not validate the original revision: rerun that
-revision when the runner is available.
+jobs, packaged-JAR smoke checks on Linux/macOS/Windows, the Native launcher workflow, Zed adapter checks and the
+reusable Bazel workflow must succeed. Missing applicability output, a failed path check, an unexpected skip, a
+cancellation, a failed runner check or pending runner provisioning fails readiness. Provisioning does not validate the
+original revision: rerun that revision when the runner is available.
 
 The applicability job also enforces temporary dependency ownership and expiry on every invocation, including
 documentation-only changes. A dependency-maintenance failure therefore fails required readiness and is included in the
 completed-job Actions observation; the separate maintenance workflow remains a daily and stacked-PR backstop.
 
 Applicability comes from the exact event base/head revisions and the verified checkout, with a JSON artifact recording
-both source and tested SHAs. Only known narrative documentation is excluded from runtime suites. Unknown paths are
-conservatively tested; fixtures and executable inputs remain applicable regardless of their extension. Release branch
-names do not bypass checks. The pure state machine and Git-diff classifier have failure and negative-control tests.
+both source and tested SHAs. Known narrative documentation is excluded from runtime suites. Zed component inputs require
+their Rust checks; shared Makefile and main-workflow edits also require them. Gradle, Bazel and Zed applicability are
+evaluated independently, including mixed changes and deletions. Unknown paths are conservatively tested; fixtures and
+executable inputs remain applicable regardless of their extension. Release branch names do not bypass checks. The pure
+state machine and Git-diff classifier have failure and negative-control tests.
+
+The Zed gate covers pinned Rust formatting, host tests, host/WASM Clippy and the WASM build. Editor runtime, Java/JAR
+launch, platform and lifecycle validation remain tracked in
+[#1175](https://github.com/albertocavalcante/gvy/issues/1175).
 
 ## Bazel gate and build observability
 

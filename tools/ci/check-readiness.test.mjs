@@ -2,9 +2,9 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { combineReadiness, evaluateReadiness } from './check-readiness.mjs';
 
-function successful(main = true, bazel = true) {
+function successful(main = true, bazel = true, zed = true) {
   return {
-    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel) } },
+    'check-paths': { result: 'success', outputs: { run_main_ci: String(main), run_bazel_ci: String(bazel), run_zed_ci: String(zed) } },
     'check-runner': { result: main ? 'success' : 'skipped', outputs: { provisioning_triggered: '' } },
     lint: { result: main ? 'success' : 'skipped' },
     build: { result: main ? 'success' : 'skipped' },
@@ -12,24 +12,27 @@ function successful(main = true, bazel = true) {
     'e2e-test': { result: main ? 'success' : 'skipped' },
     'smoke-test': { result: main ? 'success' : 'skipped' },
     bazel: { result: bazel ? 'success' : 'skipped' },
+    zed: { result: zed ? 'success' : 'skipped' },
   };
 }
 
 test('only successful applicable jobs and verified exclusions pass', () => {
   for (const main of [false, true]) {
-    for (const bazel of [false, true]) assert.equal(evaluateReadiness(successful(main, bazel)).ok, true);
+    for (const bazel of [false, true]) {
+      for (const zed of [false, true]) assert.equal(evaluateReadiness(successful(main, bazel, zed)).ok, true);
+    }
   }
 });
 
 test('missing, failed, cancelled and skipped applicability never mean docs only', () => {
   for (const result of [undefined, 'failure', 'cancelled', 'skipped']) {
-    const jobs = successful(false, false);
+    const jobs = successful(false, false, false);
     jobs['check-paths'].result = result;
     assert.equal(evaluateReadiness(jobs).ok, false, String(result));
   }
-  for (const value of [undefined, '', 'True', '0', 'null']) {
-    for (const field of ['run_main_ci', 'run_bazel_ci']) {
-      const jobs = successful(false, false);
+  for (const value of [undefined, '', 'True', '0', 'null', true, false, {}, []]) {
+    for (const field of ['run_main_ci', 'run_bazel_ci', 'run_zed_ci']) {
+      const jobs = successful(false, false, false);
       jobs['check-paths'].outputs[field] = value;
       assert.equal(evaluateReadiness(jobs).ok, false, `${field}=${value}`);
     }
@@ -37,7 +40,7 @@ test('missing, failed, cancelled and skipped applicability never mean docs only'
 });
 
 test('every applicable producer must succeed, including Bazel and the runner check', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel']) {
+  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed']) {
     for (const result of [undefined, 'failure', 'cancelled', 'skipped', 'unknown']) {
       const jobs = successful();
       jobs[name].result = result;
@@ -59,13 +62,28 @@ test('provisioning pending cannot satisfy required readiness', () => {
 });
 
 test('excluded jobs must be skipped; failures remain visible', () => {
-  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel']) {
+  for (const name of ['check-runner', 'lint', 'build', 'e2e-test', 'smoke-test', 'launcher', 'bazel', 'zed']) {
     for (const result of ['success', 'failure', 'cancelled', undefined]) {
-      const jobs = successful(false, false);
+      const jobs = successful(false, false, false);
       jobs[name].result = result;
       assert.equal(evaluateReadiness(jobs).ok, false, `${name}: ${result}`);
     }
   }
+});
+
+test('Zed-only readiness requires its typed producer while main and Bazel remain explicitly excluded', () => {
+  const jobs = successful(false, false, true);
+  assert.equal(evaluateReadiness(jobs).ok, true);
+  for (const result of [undefined, 'failure', 'cancelled', 'skipped', 'unknown']) {
+    const changed = structuredClone(jobs);
+    changed.zed.result = result;
+    const report = evaluateReadiness(changed);
+    assert.equal(report.ok, false, String(result));
+    assert.ok(report.errors.some(error => error.startsWith('zed: expected success')));
+  }
+  const missing = structuredClone(jobs);
+  delete missing.zed;
+  assert.equal(evaluateReadiness(missing).ok, false);
 });
 
 test('malformed needs fails closed with a report', () => {
@@ -122,7 +140,7 @@ const partialSnapshots = [
 for (const [name, alter] of partialSnapshots) {
   test(`partial rerun cannot satisfy readiness: ${name}`, () => {
     for (const applies of [false, true]) {
-      const graph = evaluateReadiness(successful(applies, applies));
+      const graph = evaluateReadiness(successful(applies, applies, applies));
       const runner = currentReceipt();
       assert.equal(combineReadiness(graph, runner, context).ok, true);
       alter(runner);
@@ -138,7 +156,9 @@ test('a complete rerun passes with an anchor starting in the attempt first secon
   runner.jobs[0].startedAt = attemptStartedAt;
   for (const main of [false, true]) {
     for (const bazel of [false, true]) {
-      assert.equal(combineReadiness(evaluateReadiness(successful(main, bazel)), runner, context).ok, true);
+      for (const zed of [false, true]) {
+        assert.equal(combineReadiness(evaluateReadiness(successful(main, bazel, zed)), runner, context).ok, true);
+      }
     }
   }
 });
