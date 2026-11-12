@@ -42,19 +42,19 @@ jobs:
         run: |
           set -euo pipefail
           payload="$GITHUB_WORKSPACE/support/.publication/candidate.patch.gz"
-          [[ "$(stat -c %s "$payload")" == 103598 ]]
-          printf '%s  %s\n' 12b0bc39a485a2acd06737f7178f644f2b88c4db71d628aead859f6b5b2cfda7 "$payload" | sha256sum -c -
+          [[ "$(stat -c %s "$payload")" == 103609 ]]
+          printf '%s  %s\n' 168e371a729781d162b4f0921743e0162e2f14927720cd6a983098b6a5bc5304 "$payload" | sha256sum -c -
           python3 - "$payload" "$RUNNER_TEMP/candidate.patch" <<'PY'
           import gzip, pathlib, sys
           with gzip.open(sys.argv[1], 'rb') as source:
-              data = source.read(526397)
-          assert len(data) == 526396
+              data = source.read(526424)
+          assert len(data) == 526423
           pathlib.Path(sys.argv[2]).write_bytes(data)
           PY
-          printf '%s  %s\n' 6de3397bf207307be48e0732a2b4b0d718eacb4fe8d1bc3322f5c5dbb7f02353 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
+          printf '%s  %s\n' d1bd0928db48d3edaec2809eeb92203b84f4d7f528f3846d5d831af4520dd758 "$RUNNER_TEMP/candidate.patch" | sha256sum -c -
           git apply --check --index "$RUNNER_TEMP/candidate.patch"
           git apply --index "$RUNNER_TEMP/candidate.patch"
-          [[ "$(git write-tree)" == dfe4dca968c32e51b1b4fecb0f896b982ee2c8ec ]]
+          [[ "$(git write-tree)" == e3fb83cc5adee3fb91d30a38b80248407ccd7bcf ]]
           git diff --quiet
           git diff --cached --check
       - name: Set up JDK
@@ -162,12 +162,12 @@ jobs:
           set -euo pipefail
           # The checkout has the reviewed patch staged. This 12-hex tree-derived token is a
           # synthetic test identity, not an artifact source stamp or compiler attestation.
-          [[ "$(git write-tree)" == dfe4dca968c32e51b1b4fecb0f896b982ee2c8ec ]]
+          [[ "$(git write-tree)" == e3fb83cc5adee3fb91d30a38b80248407ccd7bcf ]]
           git diff --cached --quiet && exit 1
           java_path=$(readlink -f "$(command -v java)")
           java_hash=$(sha256sum "$java_path" | cut -d' ' -f1)
           set +e
-          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=dfe4dca968c3 -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
+          GITHUB_SHA=130e449ecd3136e12f8800094e121ed872703d9d node tools/ci/run-gradle.mjs --report-root "$RUNNER_TEMP/receipt-proof/gradle" --producer receipt-prepare :tests:prepareAgentVerification -Dgroovy.lsp.agent.manifest="$RUNNER_TEMP/receipt-proof/classpath.json" -Dgroovy.lsp.agent.sourceCommit=130e449ecd3136e12f8800094e121ed872703d9d -Dgroovy.lsp.agent.sourceDirty=true -Dgroovy.lsp.agent.sourceDirtyHash=e3fb83cc5ade -Dgroovy.lsp.agent.javaSha256="$java_hash" --no-daemon --no-parallel --no-build-cache --max-workers=1 '-Dorg.gradle.jvmargs=-Xmx1536m -XX:MaxMetaspaceSize=768m -XX:+UseSerialGC'
           status=$?
           set -e
           printf '%s\n' "$status" > "$RUNNER_TEMP/receipt-proof/prepare-exit.txt"
@@ -179,7 +179,7 @@ jobs:
           import { createHash } from 'node:crypto';
           import { inspectPreparedClasspath } from './tools/perf/prepared-classpath.mjs';
           const bytes = await fs.readFile(process.env.MANIFEST);
-          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: 'dfe4dca968c3', javaSha256: process.env.JAVA_HASH };
+          const options = { preparedManifest: process.env.MANIFEST, preparedManifestSha256: createHash('sha256').update(bytes).digest('hex'), sourceCommit: '130e449ecd3136e12f8800094e121ed872703d9d', sourceDirty: true, sourceDirtyHash: 'e3fb83cc5ade', javaSha256: process.env.JAVA_HASH };
           if ((await inspectPreparedClasspath(options)).status !== 'verified') throw Error('Gradle/Node classpath hashes differ');
           if ((await inspectPreparedClasspath({ ...options, javaSha256: '0'.repeat(64) })).status !== 'unavailable') throw Error('Java mismatch accepted');
           const entry = JSON.parse(bytes).entries.find(e => e.kind === 'directory' && e.path.startsWith(process.cwd() + '/tests/build/'));
