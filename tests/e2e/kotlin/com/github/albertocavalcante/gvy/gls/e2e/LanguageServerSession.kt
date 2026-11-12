@@ -19,6 +19,7 @@ class LanguageServerSession internal constructor(
     private val resources: SessionResources = SessionResources(),
     private val exitCode: CompletableFuture<Int>? = null,
     private val typedServerProxy: GroovyLanguageServerProtocol? = null,
+    private val wireCapture: BoundedWireCapture? = null,
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
 
@@ -26,6 +27,9 @@ class LanguageServerSession internal constructor(
         get() = checkNotNull(typedServerProxy) {
             "Typed server proxy not available; use Launcher.Builder with GroovyLanguageServerProtocol"
         }
+
+    /** A bounded immutable observation, independent of SDK decoding. Null means capture was not installed. */
+    fun snapshotWireEvidence(): WireEvidenceSnapshot? = wireCapture?.snapshot()
 
     /** Sends exit and validates its observed outcome, independently of unconditional teardown. */
     fun exit(expectedCode: Int = 0, timeout: Duration = EXIT_TIMEOUT) {

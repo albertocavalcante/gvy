@@ -76,11 +76,12 @@ class LanguageServerSessionFactory(
             val process = ownedProcess.process
             ownedProcess.stderrPump = startErrorPump(process, scenarioName)
             val client = HarnessLanguageClient()
+            val wireCapture = BoundedWireCapture()
             val launcher = Launcher.Builder<GroovyLanguageServerProtocol>()
                 .setLocalService(client)
                 .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
-                .setInput(process.inputStream)
-                .setOutput(process.outputStream)
+                .setInput(wireCapture.input(process.inputStream))
+                .setOutput(wireCapture.output(process.outputStream))
                 .setExecutorService(executor.service)
                 .configureGson {
                     it.registerRawJsonRpcParams().preserveUntypedJsonNumbers()
@@ -97,6 +98,7 @@ class LanguageServerSessionFactory(
                 endpoint = launcher.remoteEndpoint,
                 client = client,
                 typedServerProxy = proxy,
+                wireCapture = wireCapture,
                 resources = pending.transfer(),
             )
         }
@@ -180,11 +182,12 @@ class LanguageServerSessionFactory(
             pending.own(AutoCloseable { serverListening.cancel(true) })
 
             val client = HarnessLanguageClient()
+            val wireCapture = BoundedWireCapture()
             val clientLauncher = Launcher.Builder<GroovyLanguageServerProtocol>()
                 .setLocalService(client)
                 .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
-                .setInput(clientIn)
-                .setOutput(clientOut)
+                .setInput(wireCapture.input(clientIn))
+                .setOutput(wireCapture.output(clientOut))
                 .setExecutorService(executor.service)
                 .configureGson {
                     it.registerRawJsonRpcParams().preserveUntypedJsonNumbers()
@@ -203,6 +206,7 @@ class LanguageServerSessionFactory(
                 client = client,
                 exitCode = exitCode,
                 typedServerProxy = proxy,
+                wireCapture = wireCapture,
                 resources = pending.transfer(),
             )
         }

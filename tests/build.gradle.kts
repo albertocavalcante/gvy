@@ -238,6 +238,7 @@ val harnessTest =
             "ScenarioParserTest",
             "ScenarioSchemaTest",
             "ScenarioCatalogTest",
+            "BoundedWireCaptureTest",
         ).forEach { filter.includeTestsMatching("*.$it") }
 
         jvmArgumentProviders.add(
