@@ -233,12 +233,12 @@ def parse_report(value: object) -> tuple[bool, dict[Path, set[str]]]:
 def check(root: Path) -> list[str]:
     root = root.resolve()
     errors: list[str] = []
+    seen: set[str] = set()
     try:
         inventory = tomllib.loads((root / ".reuse/license-hashes.toml").read_text(encoding="utf-8"))
         entries = inventory.get("license")
         if not isinstance(entries, list):
             raise TypeError("missing license inventory")
-        seen: set[str] = set()
         for raw_entry in entries:
             entry = as_object(raw_entry)
             name, expected, source = entry.get("path"), entry.get("sha256"), entry.get("source")
@@ -279,6 +279,13 @@ def check(root: Path) -> list[str]:
         compliant, paths = parse_report(json.loads(result.stdout))
         if not compliant:
             errors.append("REUSE lint failed; run reuse --root . lint for details")
+        # REUSE validates the SPDX expressions; recognize only the exact MIT
+        # identifier, including compound expressions, for the approved inventory.
+        uses_mit = any(
+            "MIT" in re.split(r"[\s()]+", expression) for expressions in paths.values() for expression in expressions
+        )
+        if uses_mit and "LICENSES/MIT.txt" not in seen:
+            errors.append("LICENSES/MIT.txt: used MIT license must have an approved inventory entry")
         # Git can track files ignored by REUSE's traversal. Treat omissions as
         # failures, not as an implicit exclusion from coverage.
         if (root / ".git").exists():

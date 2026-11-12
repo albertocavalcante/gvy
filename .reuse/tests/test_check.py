@@ -1,9 +1,12 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
+import hashlib
 import importlib.util
+import json
 import shutil
 import subprocess
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -117,6 +120,45 @@ class HeaderTests(unittest.TestCase):
 
 
 class IntegrationTests(unittest.TestCase):
+    def write_inventory(self, *, include_mit: bool = False) -> None:
+        """Give each synthetic project only the license texts it actually uses."""
+        approved_paths = {"LICENSE", "LICENSES/Apache-2.0.txt", "editors/code/LICENSE", "editors/zed/LICENSE"}
+        if include_mit:
+            approved_paths.add("LICENSES/MIT.txt")
+        inventory = tomllib.loads((Path(__file__).parents[1] / "license-hashes.toml").read_text(encoding="utf-8"))
+        entries = inventory.get("license")
+        if not isinstance(entries, list):
+            raise TypeError("missing approved test inventory")
+        blocks = ["# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n"]
+        seen: set[str] = set()
+        for raw_entry in entries:
+            entry = check.as_object(raw_entry)
+            name = entry.get("path")
+            if not isinstance(name, str) or name not in approved_paths:
+                continue
+            lines = ["[[license]]"]
+            for key in ("path", "sha256", "source"):
+                value = entry.get(key)
+                if not isinstance(value, str):
+                    raise TypeError("invalid approved test inventory entry")
+                lines.append(f"{key} = {json.dumps(value)}")
+            blocks.append("\n".join(lines) + "\n")
+            seen.add(name)
+        if seen != approved_paths:
+            raise ValueError("missing approved test license")
+        (self.root / ".reuse/license-hashes.toml").write_text("\n".join(blocks), encoding="utf-8")
+
+    def add_mit_data(self, expression: str = "MIT") -> None:
+        shutil.copy(Path(__file__).parents[2] / "LICENSES/MIT.txt", self.root / "LICENSES/MIT.txt")
+        (self.root / "fixture.txt").write_text("Synthetic metadata-only fixture\n", encoding="utf-8")
+        (self.root / "REUSE.toml").write_text(
+            "version = 1\n[[annotations]]\n"
+            'path = "fixture.txt"\n'
+            'SPDX-FileCopyrightText = "Synthetic fixture author"\n'
+            f"SPDX-License-Identifier = {json.dumps(expression)}\n",
+            encoding="utf-8",
+        )
+
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -125,7 +167,7 @@ class IntegrationTests(unittest.TestCase):
         shutil.copy(Path(__file__).parents[2] / "LICENSES/Apache-2.0.txt", self.root / "LICENSES/Apache-2.0.txt")
         shutil.copy(Path(__file__).parents[2] / "LICENSE", self.root / "LICENSE")
         (self.root / ".reuse").mkdir()
-        shutil.copy(Path(__file__).parents[1] / "license-hashes.toml", self.root / ".reuse/license-hashes.toml")
+        self.write_inventory()
         for editor in ("code", "zed"):
             directory = self.root / "editors" / editor
             directory.mkdir(parents=True)
@@ -138,6 +180,53 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual([], check.check(self.root))
         (self.root / "LICENSES/Apache-2.0.txt").write_text("tampered")
         self.assertTrue(any("SHA-256" in error for error in check.check(self.root)))
+
+    def test_used_mit_requires_approved_inventory(self) -> None:
+        self.add_mit_data()
+        self.assertEqual(
+            ["LICENSES/MIT.txt: used MIT license must have an approved inventory entry"], check.check(self.root)
+        )
+
+    def test_used_mit_text_and_inventory_integrity(self) -> None:
+        self.add_mit_data()
+        self.write_inventory(include_mit=True)
+        canonical = (self.root / "LICENSES/MIT.txt").read_bytes()
+        self.assertEqual(
+            "b05785f9f18e6716bab63424b11454513b9943a222595b70411009202fc592b5",
+            hashlib.sha256(canonical).hexdigest(),
+        )
+        self.assertEqual([], check.check(self.root))
+        (self.root / "LICENSES/MIT.txt").write_text("tampered\n", encoding="utf-8")
+        self.assertIn("LICENSES/MIT.txt: license text does not match approved SHA-256", check.check(self.root))
+
+        (self.root / "LICENSES/MIT.txt").write_bytes(canonical)
+        self.write_inventory()
+        self.assertEqual(
+            ["LICENSES/MIT.txt: used MIT license must have an approved inventory entry"], check.check(self.root)
+        )
+
+    def test_compound_mit_use_requires_inventory(self) -> None:
+        for expression in ("MIT OR Apache-2.0", "(MIT AND Apache-2.0)"):
+            with self.subTest(expression=expression):
+                self.add_mit_data(expression)
+                self.assertEqual(
+                    ["LICENSES/MIT.txt: used MIT license must have an approved inventory entry"], check.check(self.root)
+                )
+                self.write_inventory(include_mit=True)
+                self.assertEqual([], check.check(self.root))
+                self.write_inventory()
+
+    def test_mit_like_custom_license_does_not_require_canonical_mit(self) -> None:
+        (self.root / "LICENSES/LicenseRef-MIT-fixture.txt").write_text("Synthetic custom license\n", encoding="utf-8")
+        (self.root / "fixture.txt").write_text("Synthetic fixture\n", encoding="utf-8")
+        (self.root / "REUSE.toml").write_text(
+            "version = 1\n[[annotations]]\n"
+            'path = "fixture.txt"\n'
+            'SPDX-FileCopyrightText = "Synthetic fixture author"\n'
+            'SPDX-License-Identifier = "LicenseRef-MIT-fixture"\n',
+            encoding="utf-8",
+        )
+        self.assertEqual([], check.check(self.root))
 
     def test_sidecar_cannot_mask_missing_header(self) -> None:
         self.source.write_text("print(1)\n")

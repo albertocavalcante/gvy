@@ -1,0 +1,545 @@
+import static org.spockframework.gradle.AsciiDocLinkVerifier.verifyAnchorlessCrossDocumentLinks
+import static org.spockframework.gradle.AsciiDocLinkVerifier.verifyLinksAndAnchors
+
+plugins {
+  id "org.spockframework.base" apply false
+  id "java-base"
+  id "org.asciidoctor.jvm.convert"
+  id "jacoco"
+  id "net.nemerosa.versioning"
+  id "io.github.gradle-nexus.publish-plugin"
+  id "com.github.ben-manes.versions"
+  id "io.spring.nohttp"
+  id "org.spockframework.preprocess-workflows"
+}
+
+description = "Spock Framework"
+
+ext {
+  baseVersion = "2.6"
+  snapshotVersion = true
+  milestone = 0
+  javaVersions = javaVersionsList.trim().split(/\s*+,\s*+/).collect { it as int }
+  javaVersion = (System.getProperty("javaVersion") ?: 8) as int
+  variants = variantsList.trim().split(/\s*+,\s*+/).collect { it as BigDecimal }
+  variant = System.getProperty("variant") as BigDecimal ?: variants.first()
+  develocity.buildScan.tag "groovy-$variant"
+  if (variant == 2.5) {
+    groovyGroup = "org.codehaus.groovy"
+    groovyVersion = libs.versions.groovy2.get()
+    minGroovyVersion = "2.5.0"
+    maxGroovyVersion = "2.9.99"
+    if (javaVersion >= 17) {
+      throw new InvalidUserDataException("Groovy $variant is not compatible with Java $javaVersion")
+    }
+  } else if (variant == 3.0) {
+    groovyGroup = "org.codehaus.groovy"
+    groovyVersion = libs.versions.groovy3.get()
+    minGroovyVersion = "3.0.0"
+    maxGroovyVersion = "3.9.99"
+  } else if (variant == 4.0) {
+    groovyGroup = "org.apache.groovy"
+    groovyVersion = libs.versions.groovy4.get()
+    minGroovyVersion = "4.0.0"
+    maxGroovyVersion = "4.9.99"
+  } else if (variant == 5.0) {
+    groovyGroup = "org.apache.groovy"
+    groovyVersion = libs.versions.groovy5.get()
+    minGroovyVersion = "5.0.0"
+    maxGroovyVersion = "5.9.99"
+    if (javaVersion < 11) {
+      if (System.getProperty("javaVersion") != null) {
+        throw new InvalidUserDataException("Groovy $variant is not compatible with Java $javaVersion")
+      }
+      javaVersion = 11
+    }
+  } else if (variant == 6.0) {
+    groovyGroup = "org.apache.groovy"
+    groovyVersion = libs.versions.groovy6.get()
+    minGroovyVersion = "6.0.0"
+    maxGroovyVersion = "6.9.99"
+    if (javaVersion < 17) {
+      if (System.getProperty("javaVersion") != null) {
+        throw new InvalidUserDataException("Groovy $variant is not compatible with Java $javaVersion")
+      }
+      javaVersion = 17
+    }
+  } else {
+    throw new InvalidUserDataException("Unknown variant: $variant. Choose one of: $variants")
+  }
+
+  groovyDependencies = [
+    dependencyFactory.create(groovyGroup, "groovy", groovyVersion)
+  ]
+  groovyConsoleExtraDependencies = [
+    dependencyFactory.create(groovyGroup, "groovy-console", groovyVersion),
+    dependencyFactory.create(groovyGroup, "groovy-test-junit5", groovyVersion), // for executing specs
+    dependencyFactory.create("org.apache.ivy", "ivy", "2.6.0"), // For @Grab support
+  ]
+  maxGroovyVersion = snapshotVersion ? "9.9.99" : maxGroovyVersion
+  if (System.getProperty("groovyVersion")) {
+    groovyVersion = System.getProperty("groovyVersion")
+  }
+  fullVersion = baseVersion + ((!snapshotVersion && milestone) ? "-M$milestone" : "") + "-groovy-$variant" + (snapshotVersion ? "-SNAPSHOT" : '')
+  variantLessVersion = baseVersion + (snapshotVersion ? "-SNAPSHOT" : (milestone ? "-M$milestone" : ""))
+  develocity.buildScan.tag "Java $javaVersion"
+
+  groovylibs = [
+    groovy              : groovyDependencies,
+    groovyNio           : "$groovyGroup:groovy-nio:$groovyVersion", //for groovy methods on Path
+    groovySql           : "$groovyGroup:groovy-sql:$groovyVersion", //for some Spring and Unitils tests
+    groovyTest          : "$groovyGroup:groovy-test:$groovyVersion", //for @NotYetImplemented
+    groovyJmx           : "$groovyGroup:groovy-jmx:$groovyVersion",  //for triggering jacoco dump via jmx
+  ]
+}
+
+nohttp {
+  source.exclude "**/out/**"
+  source.exclude "**/build*/**"
+  source.exclude "**/.shelf/**"
+}
+
+allprojects {
+  ext.displayName = null
+
+  group = "org.spockframework"
+  version = fullVersion
+
+  // ignore mutable data that is irrelevant for compilation output
+  normalization {
+    runtimeClasspath {
+      metaInf {
+        ignoreAttribute("Build-Revision")
+      }
+    }
+  }
+}
+
+apply from: script("ide")
+
+subprojects {
+  if (it.name == "spock-bom") return
+  apply plugin: "org.spockframework.base"
+
+  java {
+    toolchain {
+      languageVersion = JavaLanguageVersion.of(javaVersion)
+    }
+  }
+
+  sourceSets.all { ss ->
+    for (gv in variants.findAll { variant <= it }) {
+      java {
+        srcDir "src/${ss.name}-groovy-le-$gv/java"
+      }
+      groovy {
+        srcDir "src/${ss.name}-groovy-le-$gv/groovy"
+      }
+      resources {
+        srcDir "src/${ss.name}-groovy-le-$gv/resources"
+      }
+    }
+    for (jv in javaVersions.findAll { javaVersion <= it }) {
+      java {
+        srcDir "src/${ss.name}-java-le-$jv/java"
+      }
+      groovy {
+        srcDir "src/${ss.name}-java-le-$jv/groovy"
+      }
+      resources {
+        srcDir "src/${ss.name}-java-le-$jv/resources"
+      }
+    }
+    for (gv in variants.findAll { variant >= it }) {
+      java {
+        srcDir "src/${ss.name}-groovy-ge-$gv/java"
+      }
+      groovy {
+        srcDir "src/${ss.name}-groovy-ge-$gv/groovy"
+      }
+      resources {
+        srcDir "src/${ss.name}-groovy-ge-$gv/resources"
+      }
+    }
+    for (jv in javaVersions.findAll { javaVersion >= it }) {
+      java {
+        srcDir "src/${ss.name}-java-ge-$jv/java"
+      }
+      groovy {
+        srcDir "src/${ss.name}-java-ge-$jv/groovy"
+      }
+      resources {
+        srcDir "src/${ss.name}-java-ge-$jv/resources"
+      }
+    }
+  }
+
+  dependencies {
+    api platform(projects.spockBom)
+    implementation(project.name == "spock-gradle" ? [] : groovylibs.groovy)
+    testImplementation(platform(libs.junit5.bom))
+    testImplementation(libs.junit.platform.launcher)
+  }
+
+  configureJavadoc(tasks.named("javadoc"))
+  configureGroovydoc(tasks.named("groovydoc"))
+}
+
+tasks.register("collectTestXml") {
+  group = 'Test reports'
+  description = "Collects the test xmls from every subproject into a new directory with subproject as name."
+  def reportingProjects = subprojects.findAll()
+  dependsOn(reportingProjects.tasks.collectMany { it.withType(Test) })
+
+
+  doFirst {
+    def target = layout.buildDirectory.dir("collected-test-results").get().asFile
+    target.mkdirs()
+    reportingProjects.each { rp ->
+      rp.tasks.withType(Test).each { testTask ->
+        def repSrc = testTask.reports.junitXml.destination
+
+        def repTarget = file("$target/$rp.name-$repSrc.name")
+        copy {
+          from repSrc
+          into repTarget
+          include '**/*.xml'
+        }
+      }
+    }
+  }
+}
+
+
+tasks.register("codeCoverageReport", JacocoReport) {
+  group = 'Coverage reports'
+  description = "Creates an aggregate coverage for the whole project."
+  def reportingProjects = subprojects - project(projects.spockBom.path)
+  dependsOn(reportingProjects.tasks.collectMany { it.withType(Test) })
+
+  additionalSourceDirs.from(reportingProjects.sourceSets.main.allSource.srcDirs)
+  additionalClassDirs.from(reportingProjects.sourceSets.main.output)
+  executionData.from(files(reportingProjects.jacocoTestReport.executionData).filter { it.exists() })
+  executionData.from(file('spock-specs/build/jacoco/compileTestGroovy.exec'))
+
+  reports {
+    html.required = true
+    xml.required = true
+    xml.outputLocation = layout.buildDirectory.file("reports/jacoco/report.xml") // report must be here for codecov to pick it up
+    csv.required = false
+  }
+}
+
+if (gradle.startParameter.taskNames == ["ghActionsBuild"]) {
+  gradle.startParameter.taskNames = ["build", "preprocessWorkflows", "codeCoverageReport"]
+}
+
+if (gradle.startParameter.taskNames == ["ghActionsPublish"] || gradle.startParameter.taskNames == ["ghActionsDocs"]) {
+  def originalStartParameterTaskNames = gradle.startParameter.taskNames
+  gradle.startParameter.taskNames = []
+  boolean isMaster = System.getenv("GITHUB_REF") == "refs/heads/master"
+  boolean isTag = System.getenv("GITHUB_REF")?.startsWith('refs/tags/spock-')
+  if (!(System.getenv("GITHUB_EVENT_NAME") == "push"
+    && (isMaster || isTag)
+    && System.getenv("GITHUB_REPOSITORY") == 'spockframework/spock')) {
+    throw new IllegalArgumentException("""ghActionsPublish can only be run on push to branch master or tag in repo spockframework/spock
+      event: ${System.getenv("GITHUB_EVENT_NAME")}
+      ref: ${System.getenv("GITHUB_REF")}
+      repo: ${System.getenv("GITHUB_REPOSITORY")}""")
+  }
+
+  if (originalStartParameterTaskNames == ["ghActionsPublish"]) {
+    if ((javaVersion != javaVersions.min()) && ((variant != 5.0) || (javaVersion != 11)) && ((variant != 6.0) || (javaVersion != 17))) {
+      throw new IllegalArgumentException("ghActionsPublish can only be run on Java ${javaVersions.min()} (or 11 for variant 5.0, 17 for variant 6.0) but was run on $javaVersion")
+    }
+    /*
+      We want to release only snapshots directly from master, final releases will be tagged and then published from that tag.
+     */
+    if (snapshotVersion) {
+      gradle.startParameter.taskNames += ["publishToSonatype"]
+    } else if (isTag) {
+      gradle.startParameter.taskNames += ["publishToSonatype", "closeSonatypeStagingRepository"]
+    } // else {
+    // disable tag release for now as this is done with a token, that doesn't trigger other workflows
+    // gradle.startParameter.taskNames += ["tagRelease"]
+    // }
+  }
+
+  if (originalStartParameterTaskNames == ["ghActionsDocs"] && (snapshotVersion || isTag)) {
+    if (javaVersion != javaVersions.max()) {
+      throw new IllegalArgumentException("ghActionsPublish can only be run on Java ${javaVersions.max()} but was run on $javaVersion")
+    }
+    if (variant != variants.max()) {
+      throw new IllegalArgumentException("ghActionsPublish can only be run with variant ${variants.max()} but was run with $variant")
+    }
+    gradle.startParameter.taskNames += ["publishJavadoc", "publishDocs"]
+  }
+}
+
+// Publishing to gh-pages uses a detached worktree under build/ (gitignored) instead of
+// switching the main checkout. This keeps the main checkout on the release commit, needs no
+// throwaway branch to switch back to, and writes nothing to the local .git/config (the bot
+// commit identity is passed per command via `git -c`).
+
+tasks.register("prepareJavadocWorktree", Exec) {
+  dependsOn "javadoc"
+  commandLine "sh", "-c",
+    """
+  set -e
+  git worktree remove --force build/gh-pages-javadoc 2>/dev/null || true
+  git worktree prune
+  git fetch origin +gh-pages:gh-pages
+  git worktree add --force build/gh-pages-javadoc gh-pages
+  rm -rf build/gh-pages-javadoc/javadoc/$variantLessVersion
+  mkdir -p build/gh-pages-javadoc/javadoc/$variantLessVersion
+  cp -r build/javadoc/$variantLessVersion build/gh-pages-javadoc/javadoc/
+"""
+}
+
+tasks.register("commitJavadoc", Exec) {
+  dependsOn "prepareJavadocWorktree"
+  // bash + pipefail so a failed push (piped through sed for token redaction) fails the task;
+  // with sh's default the pipeline would report sed's exit code (always 0) and mask the failure.
+  commandLine "bash", "-c",
+    """
+  set -eo pipefail
+  git -C build/gh-pages-javadoc add javadoc
+  if git -C build/gh-pages-javadoc diff --cached --quiet; then
+    echo "No javadoc changes to publish for $variantLessVersion"
+  else
+    git -C build/gh-pages-javadoc -c user.name="Spock Framework Robot" -c user.email="dev@forum.spockframework.org" commit -qm "Publish javadoc/$variantLessVersion"
+    git -C build/gh-pages-javadoc push "https://\$GITHUB_TOKEN@github.com/spockframework/spock.git" gh-pages 2>&1 | sed "s/\$GITHUB_TOKEN/xxx/g"
+  fi
+  git worktree remove --force build/gh-pages-javadoc
+"""
+}
+
+tasks.register("publishJavadoc") {
+  dependsOn "commitJavadoc"
+}
+
+tasks.register("prepareDocsWorktree", Exec) {
+  dependsOn "asciidoctor", "asciidoctorMarkdown"
+  // when a release publishes both (ghActionsDocs), fetch gh-pages only after the javadoc push
+  // has landed, so the docs push fast-forwards instead of being rejected as non-fast-forward
+  mustRunAfter "commitJavadoc"
+  commandLine "sh", "-c",
+    """
+  set -e
+  git worktree remove --force build/gh-pages 2>/dev/null || true
+  git worktree prune
+  git fetch origin +gh-pages:gh-pages
+  git worktree add --force build/gh-pages gh-pages
+  rm -rf build/gh-pages/docs/$variantLessVersion
+  mkdir -p build/gh-pages/docs/$variantLessVersion
+  cp -r build/docs/asciidoc/* build/gh-pages/docs/$variantLessVersion
+  cp -r build/docs/asciidocMarkdown/* build/gh-pages/docs/$variantLessVersion
+"""
+}
+
+tasks.register("generateLlmsTxt", org.spockframework.gradle.GenerateLlmsTxt) {
+  dependsOn "prepareDocsWorktree"
+  docsDir = file("build/gh-pages/docs")
+  baseUrl = "https://spockframework.org/spock/docs/"
+  outputFile = file("build/gh-pages/docs/llms.txt")
+  // reads a tree materialised by prepareDocsWorktree in the same build
+  outputs.upToDateWhen { false }
+}
+
+tasks.register("generateDocsRedirects", org.spockframework.gradle.GenerateDocsRedirects) {
+  dependsOn "prepareDocsWorktree"
+  docsDir = file("build/gh-pages/docs")
+  outputs.upToDateWhen { false }
+}
+
+tasks.register("commitDocs", Exec) {
+  dependsOn "generateLlmsTxt", "generateDocsRedirects"
+  // bash + pipefail so a failed push (piped through sed for token redaction) fails the task;
+  // with sh's default the pipeline would report sed's exit code (always 0) and mask the failure.
+  commandLine "bash", "-c",
+    """
+  set -eo pipefail
+  git -C build/gh-pages add .
+  if git -C build/gh-pages diff --cached --quiet; then
+    echo "No docs changes to publish for $variantLessVersion"
+  else
+    git -C build/gh-pages -c user.name="Spock Framework Robot" -c user.email="dev@forum.spockframework.org" commit -qm "Publish docs/$variantLessVersion"
+    git -C build/gh-pages push "https://\$GITHUB_TOKEN@github.com/spockframework/spock.git" gh-pages 2>&1 | sed "s/\$GITHUB_TOKEN/xxx/g"
+  fi
+  git worktree remove --force build/gh-pages
+"""
+}
+
+tasks.register("publishDocs") {
+  dependsOn "commitDocs"
+}
+
+tasks.register("tagRelease", Exec) {
+  commandLine "sh", "-c",
+    """
+  git config user.email "dev@forum.spockframework.org"
+  git config user.name "Spock Framework Robot"
+  git checkout master
+  git tag -f spock-$variantLessVersion
+  git push "https://\$GITHUB_TOKEN@github.com/spockframework/spock.git" spock-$variantLessVersion 2>&1 | sed "s/\$GITHUB_TOKEN/xxx/g"
+"""
+}
+
+tasks.register("javadoc", Javadoc) {
+  title "Spock Framework API Documentation ($variantLessVersion)"
+  destinationDir file("build/javadoc/$variantLessVersion")
+  source((subprojects - project(projects.spockBom.path)).collect { project -> project.tasks.named("javadoc").map { it.source } })
+  classpath = files((subprojects - project(projects.spockBom.path)).collect { project -> project.tasks.named("javadoc").map { it.classpath } })
+}
+
+configureJavadoc(tasks.named("javadoc"), true)
+
+tasks.register("groovydoc", Groovydoc) {
+  docTitle "Spock Framework API Documentation ($variantLessVersion)"
+  windowTitle "Spock Framework API Documentation ($variantLessVersion)"
+  destinationDir file("build/groovydoc/$variantLessVersion")
+  source((subprojects - project(projects.spockBom.path)).collect { project -> project.tasks.named("groovydoc").map { it.source } })
+  classpath = files((subprojects - project(projects.spockBom.path)).collect { project -> project.tasks.named("groovydoc").map { it.classpath } })
+  groovyClasspath = files(project(projects.spockCore.path).tasks.named("groovydoc").map { it.groovyClasspath })
+
+  access = GroovydocAccess.PROTECTED
+  processScripts = false
+  includeMainForScripts = false
+  includeAuthor = false
+}
+
+configureGroovydoc(tasks.named("groovydoc"))
+
+configurations {
+  asciidoctorExtensions
+}
+
+dependencies {
+  // local extension from build-logic/asciidoc-extensions
+  asciidoctorExtensions 'spockbuild:asciidoc-extensions'
+}
+
+asciidoctorj {
+  version = libs.versions.asciidoctorj
+  fatalWarnings(missingIncludes())
+}
+
+// shared configuration for both asciidoctor tasks
+def configureAsciidoctor = { task ->
+  // work-around for https://github.com/asciidoctor/asciidoctor-gradle-plugin/issues/721
+  task.dependsOn(project.configurations.asciidoctorExtensions)
+  task.configurations 'asciidoctorExtensions'
+  task.sourceDir = "docs"
+  task.baseDirFollowsSourceDir()
+  task.logDocuments = true
+  task.attributes "revnumber": variantLessVersion, "commit-ish": System.getenv("GITHUB_SHA") ?: "master"
+  // also treats the included specs as inputs
+  task.inputs.dir file("spock-specs/src/test/groovy/org/spockframework/docs")
+  task.inputs.dir file("spock-specs/src/test/resources/snapshots/org/spockframework/docs")
+  task.inputs.dir file("spock-spring/src/test/groovy/org/spockframework/spring/docs")
+  task.inputs.dir file("spock-spring/src/test/resources/org/spockframework/spring/docs")
+  task.inputs.dir file("spock-spring/boot2-test/src/test/groovy/org/spockframework/boot2")
+}
+
+tasks.named("asciidoctor") {
+  configureAsciidoctor(it)
+  asciidoctorj {
+    modules {
+      diagram.use()
+    }
+  }
+  attributes "source-highlighter": "coderay", "linkcss": true, "sectanchors": true
+
+  doFirst { verifyAnchorlessCrossDocumentLinks(sourceFileTree) }
+  doLast { verifyLinksAndAnchors(outputs.files.asFileTree) }
+}
+
+tasks.register("asciidoctorMarkdown", org.asciidoctor.gradle.jvm.AsciidoctorTask) {
+  configureAsciidoctor(it)
+  outputOptions {
+    backends 'markdown'
+  }
+}
+
+nexusPublishing {
+  packageGroup = 'org.spockframework'
+  repositories {
+    // see https://central.sonatype.org/publish/publish-portal-ossrh-staging-api/#configuration
+    sonatype {
+      nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
+      snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
+      username = System.getenv("SONATYPE_OSS_USER")
+      password = System.getenv("SONATYPE_OSS_PASSWORD")
+    }
+  }
+  transitionCheckOptions {
+    // closing checks take some time so increase the retries
+    // total time is maxRetries(180) * delayBetween(10s) = 30m
+    maxRetries.set(180)
+  }
+}
+
+File script(String name) {
+  project.file("gradle/${name}.gradle")
+}
+
+def configureJavadoc(TaskProvider javadoc, boolean root = false) {
+  javadoc.configure {
+    include "spock/**"
+    configure(options) {
+      options.addStringOption('Xdoclint:none', '-quiet')
+      options.noTimestamp()
+      options.addStringOption('source', '1.8')
+      links "https://docs.groovy-lang.org/docs/groovy-$groovyVersion/html/gapi/"
+      links "https://junit.org/junit4/javadoc/latest/"
+      links "https://javadoc.io/doc/org.mockito/mockito-core/${libs.versions.mockito5.get()}/"
+      // Use offline package list, as the JavaVersion is fixed to 8 for the time being
+      // and Hamcrest has certificate issues for their domain.
+      linksOffline("https://docs.oracle.com/javase/8/docs/api/", "${root ? '' : '../'}javadoc/java-8")
+      linksOffline("https://hamcrest.org/JavaHamcrest/javadoc/2.2/", "${root ? '' : '../'}javadoc/hamcrest-2.2")
+    }
+  }
+}
+
+def configureGroovydoc(TaskProvider groovydoc) {
+  groovydoc.configure {
+    include "spock/**"
+  }
+}
+
+def preprocessVerifyPrsWorkflowCodecovOutput = layout.buildDirectory.file('codecov_verify-prs.yml')
+def preprocessReleaseWorkflowCodecovOutput = layout.buildDirectory.file('codecov_release.yml')
+
+def copyCodecovConfig = tasks.register('copyCodecovConfig') {
+  doLast {
+    copy {
+      from(
+        [
+          preprocessVerifyPrsWorkflowCodecovOutput,
+          preprocessReleaseWorkflowCodecovOutput
+        ].max {it.get().asFile.lastModified() })
+      into('.github')
+      rename { 'codecov.yml' }
+    }
+  }
+}
+
+tasks.preprocessVerifyPrsWorkflow {
+  inputs
+    .file('.github/codecov.yml')
+    .normalizeLineEndings()
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName('codecovConfig')
+  outputs.file(preprocessVerifyPrsWorkflowCodecovOutput).withPropertyName('codecovConfig')
+  finalizedBy(copyCodecovConfig)
+}
+
+tasks.preprocessReleaseWorkflow {
+  inputs
+    .file('.github/codecov.yml')
+    .normalizeLineEndings()
+    .withPathSensitivity(PathSensitivity.RELATIVE)
+    .withPropertyName('codecovConfig')
+  outputs.file(preprocessReleaseWorkflowCodecovOutput).withPropertyName('codecovConfig')
+  finalizedBy(copyCodecovConfig)
+}

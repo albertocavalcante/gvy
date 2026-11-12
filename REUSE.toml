@@ -8,3 +8,72 @@ path = ["tools/perf/bench/context/README.md"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "tools/perf/bench/corpus/fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy",
+  "tools/perf/bench/corpus/fixtures/upstream/groovy-grape-ivy/GrapeIvy.groovy",
+  "tools/perf/bench/corpus/fixtures/upstream/groovy-benchmark-driver/bench.groovy",
+  "tools/perf/bench/corpus/fixtures/upstream/ofbiz-filter-receipts/FilterOutReceipts.groovy",
+  "tools/perf/bench/corpus/fixtures/upstream/geb-gradle-bootstrap/build.gradle",
+  "tools/perf/bench/corpus/fixtures/upstream/geb-browser-spec/BrowserSpec.groovy",
+  "tools/perf/bench/corpus/licenses/groovy4/LICENSE",
+  "tools/perf/bench/corpus/licenses/groovy4/NOTICE",
+  "tools/perf/bench/corpus/licenses/geb/LICENSE",
+  "tools/perf/bench/corpus/licenses/geb/NOTICE",
+  "tools/perf/bench/corpus/licenses/ofbiz/LICENSE",
+  "tools/perf/bench/corpus/licenses/ofbiz/NOTICE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "The Apache Software Foundation"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "tools/perf/bench/corpus/fixtures/upstream/spock-blocking-variables/BlockingVariables.groovy",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2010 the original author or authors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "tools/perf/bench/corpus/fixtures/upstream/spock-gradle-build/build.gradle",
+  "tools/perf/bench/corpus/licenses/spock/LICENSE",
+  "tools/perf/bench/corpus/licenses/spock/NOTICE",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "NOASSERTION"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+  "tools/perf/bench/corpus/fixtures/upstream/pipeline-parallel-list/parallelFromList.groovy",
+  "tools/perf/bench/corpus/licenses/pipeline-examples/LICENSE.txt",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2015- CloudBees, Inc., and a number of other contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "tools/perf/bench/corpus/fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile",
+  "tools/perf/bench/corpus/licenses/jenkins-docker/LICENSE.txt",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2014- Michael Neale, Nicolas de Loof, Carlos Sanchez, and a number of other contributors"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = [
+  "tools/perf/bench/corpus/fixtures/upstream/spock-feature-methods/FeatureMethods.groovy",
+]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2009 the original author or authors"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = ["tools/perf/bench/corpus/README.md", "tools/perf/bench/corpus/manifest.json"]
+precedence = "aggregate"
+SPDX-FileCopyrightText = "Alberto Cavalcante and the gvy contributors"
+SPDX-License-Identifier = "Apache-2.0"
