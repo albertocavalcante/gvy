@@ -17,6 +17,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Test
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -46,7 +47,7 @@ class DependencyRecoveryTest {
 
             assertEquals(recovered, withTimeout(TIMEOUT) { retried.await() })
             assertEquals(recovered.dependencies, manager.getCurrentDependencies())
-            assertEquals(DependencyManager.State.COMPLETED, manager.getState())
+            awaitState(manager, DependencyManager.State.COMPLETED)
         }
     }
 
@@ -70,7 +71,7 @@ class DependencyRecoveryTest {
             assertNotNull(change, "Watching must be installed even if the first resolve fails")(root)
 
             assertEquals(recovered, withTimeout(TIMEOUT) { second.await() })
-            assertEquals(DependencyManager.State.COMPLETED, manager.getState())
+            awaitState(manager, DependencyManager.State.COMPLETED)
         }
     }
 
@@ -144,7 +145,7 @@ class DependencyRecoveryTest {
             withTimeout(TIMEOUT) { scope.coroutineContext[Job]!!.children.toList().joinAll() }
 
             verify(exactly = 1) { tool.resolve(any(), any()) }
-            assertEquals(DependencyManager.State.COMPLETED, manager.getState())
+            awaitState(manager, DependencyManager.State.COMPLETED)
         }
     }
 
@@ -157,7 +158,7 @@ class DependencyRecoveryTest {
             val first = CompletableDeferred<WorkspaceResolution>()
             manager.startAsyncResolution(root, onComplete = { first.complete(it) }, enableFileWatching = false)
             withTimeout(TIMEOUT) { first.await() }
-            assertEquals(DependencyManager.State.FAILED, manager.getState())
+            awaitState(manager, DependencyManager.State.FAILED)
             val second = CompletableDeferred<WorkspaceResolution>()
 
             manager.startAsyncResolution(root, onComplete = { second.complete(it) }, enableFileWatching = false)
@@ -201,10 +202,16 @@ class DependencyRecoveryTest {
 
                 assertTrue(completions.isEmpty(), "The cancelled attempt must never publish completion")
                 assertEquals(recovered.dependencies, manager.getCurrentDependencies())
-                assertEquals(DependencyManager.State.COMPLETED, manager.getState())
+                awaitState(manager, DependencyManager.State.COMPLETED)
             }
         } finally {
             release.countDown()
+        }
+    }
+
+    private suspend fun awaitState(manager: DependencyManager, state: DependencyManager.State) {
+        withTimeout(TIMEOUT) {
+            while (manager.getState() != state) yield()
         }
     }
 

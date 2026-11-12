@@ -10,6 +10,8 @@ import io.mockk.mockk
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -22,6 +24,26 @@ import java.util.concurrent.TimeUnit
 class DependencyManagerTest {
 
     private val testWorkspaceRoot = Paths.get("/tmp/test-workspace")
+
+    @Test
+    fun `warning status survives publication for strict callers`(): Unit = runBlocking {
+        val warning = ResolutionStatus.Warning("ZERO_DEPENDENCIES", "declared dependencies unavailable")
+        val tool = mockk<BuildTool> {
+            coEvery { name } returns "Gradle"
+            coEvery { resolve(any(), any()) } returns WorkspaceResolution(emptyList(), emptyList(), warning)
+        }
+        val buildToolManager = mockk<BuildToolManager> {
+            coEvery { detectBuildTool(any()) } returns tool
+        }
+        val manager = DependencyManager(buildToolManager, CoroutineScope(Dispatchers.Default))
+        try {
+            manager.startAsyncResolution(testWorkspaceRoot, onComplete = {}, enableFileWatching = false)
+            withTimeout(5_000) { while (!manager.isDependenciesReady()) yield() }
+            assertEquals(warning, manager.getPublishedStatus())
+        } finally {
+            manager.cancel()
+        }
+    }
 
     @Test
     fun `should classify toolchain exception and create failed resolution`(): Unit = runBlocking {

@@ -2,6 +2,7 @@ package com.github.albertocavalcante.gvy.gls.cli
 
 import com.github.ajalt.clikt.core.ProgramResult
 import com.github.ajalt.clikt.core.parse
+import com.github.albertocavalcante.gvy.build.ResolutionStatus
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticProviderFailure
 import com.github.albertocavalcante.gvy.gls.services.DiagnosticsCollectionResult
 import kotlinx.coroutines.CancellationException
@@ -11,6 +12,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.io.PrintStream
+import java.util.concurrent.ExecutionException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -110,7 +112,7 @@ class CheckFailureTest {
         val file = File(dir, "good.groovy").apply { writeText("class Good {}") }
         val command = GlsCommand(FormatCommand(), CheckCommand(
             analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
-            dependenciesReady = { false },
+            dependencyStatus = { null },
         ))
         val output = ByteArrayOutputStream()
         val previous = System.out
@@ -133,7 +135,7 @@ class CheckFailureTest {
         val output = File(dir, "workspace.sarif")
         val command = GlsCommand(FormatCommand(), CheckCommand(
             analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
-            dependenciesReady = { false },
+            dependencyStatus = { null },
         ))
         assertFailsWith<ProgramResult> {
             command.parse(listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path))
@@ -144,11 +146,61 @@ class CheckFailureTest {
     }
 
     @Test
+    fun `workspace dependency warning is incomplete with its reason`(@TempDir dir: File) {
+        val file = File(dir, "good.groovy").apply { writeText("") }
+        val output = File(dir, "warning.sarif")
+        val command = GlsCommand(FormatCommand(), CheckCommand(
+            analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
+            dependencyStatus = { ResolutionStatus.Warning("ZERO_DEPENDENCIES", "declared dependencies unavailable") },
+            startWorkspace = { _, _ -> },
+        ))
+        assertFailsWith<ProgramResult> {
+            command.parse(listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path))
+        }
+        val json = output.readText()
+        assertTrue(json.contains("executionSuccessful\": false"), json)
+        assertTrue(json.contains("ZERO_DEPENDENCIES") && json.contains("declared dependencies unavailable"), json)
+    }
+
+    @Test
+    fun `workspace initialization failure is reported in sarif`(@TempDir dir: File) {
+        val file = File(dir, "good.groovy").apply { writeText("") }
+        val output = File(dir, "startup.sarif")
+        val command = GlsCommand(FormatCommand(), CheckCommand(
+            analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
+            startWorkspace = { _, _ -> throw ExecutionException(IOException("startup unavailable")) },
+        ))
+        val result = assertFailsWith<ProgramResult> {
+            command.parse(listOf("check", "--workspace", dir.path, "--format", "sarif", "--output", output.path, file.path))
+        }
+        assertEquals(1, result.statusCode)
+        val json = output.readText()
+        assertTrue(json.contains("executionSuccessful\": false"), json)
+        assertTrue(json.contains("startup unavailable") && json.contains(file.name), json)
+    }
+
+    @Test
+    fun `workspace initialization propagates wrapped cancellation and fatal errors`(@TempDir dir: File) {
+        val file = File(dir, "good.groovy").apply { writeText("") }
+        val failures = listOf(CancellationException("cancelled"), LinkageError("fatal"))
+        failures.forEach { failure ->
+            val command = GlsCommand(FormatCommand(), CheckCommand(
+                analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
+                startWorkspace = { _, _ -> throw ExecutionException(failure) },
+            ))
+            val observed = assertFailsWith<Throwable> {
+                command.parse(listOf("check", "--workspace", dir.path, file.path))
+            }
+            assertTrue(observed === failure)
+        }
+    }
+
+    @Test
     fun `file only checks do not wait for workspace dependencies`(@TempDir dir: File) {
         val file = File(dir, "good.groovy").apply { writeText("class Good {}") }
         val command = GlsCommand(FormatCommand(), CheckCommand(
             analyze = { _, _ -> DiagnosticsCollectionResult(emptyList(), emptyList(), emptyList()) },
-            dependenciesReady = { error("no workspace should be resolved") },
+            dependencyStatus = { error("no workspace should be resolved") },
         ))
         command.parse(listOf("check", file.path))
     }
@@ -158,6 +210,24 @@ class CheckFailureTest {
         val file = File(dir, "cancel.groovy").apply { writeText("") }
         val command = GlsCommand(FormatCommand(), CheckCommand(analyze = { _, _ -> throw CancellationException("cancelled") }))
         assertFailsWith<CancellationException> { command.parse(listOf("check", file.path)) }
+    }
+
+    @Test
+    fun `shutdown failure does not replace cancellation or fatal error`(@TempDir dir: File) {
+        val file = File(dir, "cancel.groovy").apply { writeText("") }
+        listOf(CancellationException("cancelled"), LinkageError("fatal")).forEach { failure ->
+            val cleanup = IOException("shutdown failed")
+            val command = GlsCommand(FormatCommand(), CheckCommand(
+                analyze = { _, _ -> throw failure },
+                stopServer = { server ->
+                    server.shutdown().get()
+                    throw cleanup
+                },
+            ))
+            val observed = assertFailsWith<Throwable> { command.parse(listOf("check", file.path)) }
+            assertTrue(observed === failure)
+            assertEquals(listOf(cleanup), observed.suppressed.toList())
+        }
     }
 
     @Test

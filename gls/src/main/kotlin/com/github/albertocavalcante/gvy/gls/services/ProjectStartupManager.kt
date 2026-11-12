@@ -570,27 +570,27 @@ class ProjectStartupManager(
     }
 
     @Suppress("ReturnCount")
-    fun waitForDependencies(timeoutSeconds: Long = 60): Boolean {
+    fun waitForDependencies(timeoutSeconds: Long = 60): Boolean = when (waitForDependencyStatus(timeoutSeconds)) {
+        ResolutionStatus.Success, is ResolutionStatus.Warning -> true
+        else -> false
+    }
+
+    fun waitForDependencyStatus(timeoutSeconds: Long = 60): ResolutionStatus? {
         val start = System.currentTimeMillis()
         val timeoutMs = timeoutSeconds * MILLIS_PER_SECOND
 
         while (System.currentTimeMillis() - start < timeoutMs) {
-            val manager = dependencyManager ?: return false
+            val manager = dependencyManager ?: return null
 
-            if (manager.isDependenciesReady()) {
-                return true
-            }
-
-            if (manager.getState() == DependencyManager.State.FAILED) {
-                return false
+            if (manager.getState() in setOf(DependencyManager.State.COMPLETED, DependencyManager.State.FAILED)) {
+                return manager.getPublishedStatus()
             }
 
             if (sleepAndCheckInterruption(POLLING_INTERVAL_MS)) {
-                // Thread was interrupted
-                return false
+                throw InterruptedException("Interrupted while waiting for dependencies")
             }
         }
-        return false
+        return null
     }
 
     fun shutdown() {

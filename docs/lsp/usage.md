@@ -58,8 +58,8 @@ java -Xmx2g -jar gls.jar check --workspace . --format sarif --output results.sar
 
 The command exits nonzero for source errors or incomplete analysis. TEXT identifies failed files and providers; SARIF
 records execution failures as notifications while retaining diagnostics produced by successful analysis. With
-`--workspace`, dependency resolution must succeed for the check to be complete. Without it, the command checks the
-specified files without resolving a workspace's dependencies.
+`--workspace`, dependency resolution must succeed without warnings for the check to be complete. Without it, the command
+checks the specified files without resolving a workspace's dependencies.
 
 ## Check support and troubleshoot
 
