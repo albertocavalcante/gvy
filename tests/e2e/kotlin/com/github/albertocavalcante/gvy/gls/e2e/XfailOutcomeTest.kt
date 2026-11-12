@@ -90,6 +90,29 @@ class XfailOutcomeTest {
     }
 
     @Test
+    fun `oversized matched or unmatched failures are not known failures`() {
+        val failure = AssertionError("known " + "x".repeat(100_000))
+        listOf(xfail, xfail.copy(match = "known")).forEach { declaration ->
+            assertThat(classify(declaration, failure)).isInstanceOf(XfailDecision.Unexpected::class.java)
+        }
+    }
+
+    @Test
+    fun `uninspected deep cause is not classified as known`() {
+        val failure = AssertionError("known")
+        var tail: Throwable = failure
+        repeat(100) { index -> IOException("cause-$index").also { tail.initCause(it); tail = it } }
+        assertThat(classify(xfail.copy(match = "known"), failure))
+            .isInstanceOf(XfailDecision.Unexpected::class.java)
+    }
+
+    @Test
+    fun `unsupported nested repetition fails before classification`() {
+        assertThatThrownBy { classify(xfail.copy(match = "(a+)+"), AssertionError("aaa")) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+    }
+
+    @Test
     fun `passing scenario is reported as fixed`() {
         assertThat(classify(failure = null))
             .isEqualTo(XfailDecision.Fixed("gvy#42 appears fixed: remove xfail from demo.yaml"))
