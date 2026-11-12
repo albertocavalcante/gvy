@@ -366,22 +366,24 @@
       "reason": "PostFormatWhitespaceCollapser and DeclarationSpacing compensate extra AutoFormat layout spacing; DeclarationSpacing also needs a local method-parameter adaptation with the 8.79 LST/visitor interaction.",
       "upstreamStatus": "First-party printed-source regex corruption was removed by PR #1593. Released 8.79.0 fixes as-casts but retains distinct declaration layout defects. The gvy candidate also removed spaces in def f(String s, x, y) through its local declaration visitor; raw-upstream attribution for that separator case is not established.",
       "upstreamTrigger": "Evaluate the adopted released OpenRewrite version per declaration, parameter, comma and comment context; 8.79.0 is known to retain some declaration defects in #1598.",
-      "verification": "2026-11-11 exact integrated formatter source reviewed: printed-source regex absent; LST declaration/comment/comma handling retained; subsequent inline method-parameter separators normalized by the adapter. Integration receipts record 142 formatter tests (5 pre-existing skips), 17 CLI/LSP tests, 158 recipe tests (4 pre-existing skips) green plus selected native replay; these are integration results, not per-case raw-upstream proof. See #1598 for the untouched-test red receipt and precise attribution.",
+      "verification": "2026-11-11 exact integrated formatter source reviewed: printed-source regex absent; LST declaration/comment/comma handling retained; subsequent inline method-parameter separators normalized by the adapter. Integration receipts record 142 formatter tests (5 pre-existing skips), 17 CLI/LSP tests, 158 recipe tests (4 pre-existing skips) green plus selected native replay; these are integration results, not per-case raw-upstream proof. See #1598 for the untouched-test red receipt and precise attribution. 2026-11-12 PR #1737 rechecked the integrated formatter after operation-local parser/error handling and suppressed-cleanup preservation: all four manual anchors remain; literal, declaration and whitespace helper bodies are unchanged, and shebang extraction/restoration remains covered. Full formatter plus 30 GLS controls found 229 tests: 224 passed, five inherited formatter limitations skipped; both module Detekt scans and normal hooks passed. This revalidates the changed source integration, not newer upstream workaround removal. Release metadata now lists v8.105.0 (published 2026-11-11); no dependency-only 8.105.0 replacement experiment was run. Existing review dates and unresolved retirement criteria remain unchanged.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1598",
         "https://github.com/albertocavalcante/gvy/pull/1593",
-        "https://github.com/albertocavalcante/gvy/commit/0be66bca4"
+        "https://github.com/albertocavalcante/gvy/commit/0be66bca4",
+        "https://github.com/albertocavalcante/gvy/pull/1737",
+        "https://github.com/openrewrite/rewrite/releases/tag/v8.105.0"
       ],
       "nextAction": "Compare raw adopted upstream and guarded gvy output for declarations, typed/untyped parameters, comma continuations, comments and multiline forms. Retire only compensation proven obsolete; retain literal/comment bytes, idempotency and guard coverage.",
       "removalCriteria": "Preserve literal/comment bytes, formatting availability and idempotency; remove only compensation whose raw-output tests pass without it. Keep the token guard and regressions.",
       "sources": [
         {
           "id": "manual:openrewrite-whitespace",
-          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
+          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
         },
         {
           "id": "manual:openrewrite-declarations",
-          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
+          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
         }
       ]
     },
@@ -394,17 +396,19 @@
       "reason": "Strip/restore the shebang before/after formatting to avoid historical parser/printer mangling of executable scripts.",
       "upstreamStatus": "Exact current parser limitation and upstream report are not established; no current raw upstream shebang probe run.",
       "upstreamTrigger": "Run the adopted released GroovyParser/AutoFormat without extraction and inspect the complete directive and body.",
-      "verification": "8.79.0 GroovyParser source has no explicit shebang branch; that source observation is not a runtime failure result.",
+      "verification": "8.79.0 GroovyParser source has no explicit shebang branch; that source observation is not a runtime failure result. 2026-11-12 PR #1737 rechecked the integrated formatter after operation-local parser/error handling and suppressed-cleanup preservation: all four manual anchors remain; literal, declaration and whitespace helper bodies are unchanged, and shebang extraction/restoration remains covered. Full formatter plus 30 GLS controls found 229 tests: 224 passed, five inherited formatter limitations skipped; both module Detekt scans and normal hooks passed. This revalidates the changed source integration, not newer upstream workaround removal. Release metadata now lists v8.105.0 (published 2026-11-11); no dependency-only 8.105.0 replacement experiment was run. Existing review dates and unresolved retirement criteria remain unchanged.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1623",
-        "https://github.com/openrewrite/rewrite/blob/v8.79.0/rewrite-groovy/src/main/java/org/openrewrite/groovy/GroovyParser.java"
+        "https://github.com/openrewrite/rewrite/blob/v8.79.0/rewrite-groovy/src/main/java/org/openrewrite/groovy/GroovyParser.java",
+        "https://github.com/albertocavalcante/gvy/pull/1737",
+        "https://github.com/openrewrite/rewrite/releases/tag/v8.105.0"
       ],
       "nextAction": "Test shebang-only/body/CRLF/blank-line scripts against raw upstream and guarded gvy, including repeated formatting.",
       "removalCriteria": "Raw parser/formatter preserves directives, significant tokens, intended newlines and stable repeated output; remove extraction/restoration and retain formatter/LSP regression tests.",
       "sources": [
         {
           "id": "manual:openrewrite-shebang",
-          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
+          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
         }
       ]
     },
@@ -417,19 +421,21 @@
       "reason": "AutoFormat Java text-block indentation corrupts Groovy triple-double literal value and source spelling; preserve the original J.Literal value/valueSource by UUID while formatting surrounding code.",
       "upstreamStatus": "Reproduced upstream regression in 8.79.0 with Groovy 4.0.33 and declared 4.0.31; 8.70.4 preserves the same literal. Source introduction identified at 8.72.4 / PR #6429, mechanism still present in inspected 8.90.4 source. Matching upstream report/fixed-release status is not established; no gvy upstream submission made.",
       "upstreamTrigger": "A released candidate passes the exact dependency-only literal probe without semantic or spelling mutation, then all gvy formatter/LSP/CLI regressions pass without this helper.",
-      "verification": "Independent Java 21 -Xmx512m dependency-only probes used no gvy classes: parser print preserved all inputs; 8.79 AutoFormat removed the opening backslash, changed indentation from 4 spaces to 8, and mutated value/valueSource while retaining UUID under both Groovy runtimes. Local helper restores both fields; gvy untouched raw tests first failed, and expanded formatter/CLI integration passed after mitigation. Current source reviewed on local integration base; final exact-head review/CI remain required.",
+      "verification": "Independent Java 21 -Xmx512m dependency-only probes used no gvy classes: parser print preserved all inputs; 8.79 AutoFormat removed the opening backslash, changed indentation from 4 spaces to 8, and mutated value/valueSource while retaining UUID under both Groovy runtimes. Local helper restores both fields; gvy untouched raw tests first failed, and expanded formatter/CLI integration passed after mitigation. Current source reviewed on local integration base; final exact-head review/CI remain required. 2026-11-12 PR #1737 rechecked the integrated formatter after operation-local parser/error handling and suppressed-cleanup preservation: all four manual anchors remain; literal, declaration and whitespace helper bodies are unchanged, and shebang extraction/restoration remains covered. Full formatter plus 30 GLS controls found 229 tests: 224 passed, five inherited formatter limitations skipped; both module Detekt scans and normal hooks passed. This revalidates the changed source integration, not newer upstream workaround removal. Release metadata now lists v8.105.0 (published 2026-11-11); no dependency-only 8.105.0 replacement experiment was run. Existing review dates and unresolved retirement criteria remain unchanged.",
       "evidence": [
         "https://github.com/albertocavalcante/gvy/issues/1598",
         "https://github.com/openrewrite/rewrite/pull/6429",
         "https://github.com/openrewrite/rewrite/blob/v8.79.0/rewrite-java/src/main/java/org/openrewrite/java/format/TabsAndIndentsVisitor.java#L521",
-        "https://github.com/openrewrite/rewrite/blob/v8.90.4/rewrite-java/src/main/java/org/openrewrite/java/format/TabsAndIndentsVisitor.java#L530"
+        "https://github.com/openrewrite/rewrite/blob/v8.90.4/rewrite-java/src/main/java/org/openrewrite/java/format/TabsAndIndentsVisitor.java#L530",
+        "https://github.com/albertocavalcante/gvy/pull/1737",
+        "https://github.com/openrewrite/rewrite/releases/tag/v8.105.0"
       ],
       "nextAction": "Prepare the exact standalone repro and source attribution locally; expand duplicate/fixed-release search and contribution/AI-policy assessment for human review. Test released candidates before retaining or expanding the helper.",
       "removalCriteria": "Raw upstream preserves literal value and spelling, escaped opening newline, indentation, triple-string/GString cases and repeated formatting; remove the UUID restorer and keep positive surrounding-format and guard/LSP/CLI regressions.",
       "sources": [
         {
           "id": "manual:openrewrite-literals",
-          "sha256": "fbd15915bdd3243705c0aa72e7bded2555b8e4176b482b4afecf1e816ed81167"
+          "sha256": "77d56d63277bd2d15a26539e65a4a95c68c08e8aa228d9cd72d37ae818d83766"
         }
       ]
     }
