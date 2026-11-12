@@ -15,14 +15,18 @@ internal object ScenarioOutcomeJUnit {
         }
         when (val cleanup = outcome.cleanup) {
             CleanupOutcome.Succeeded -> Unit
-            is CleanupOutcome.Failed -> problems.add("cleanup failed (confirmed=${cleanup.confirmed}): ${cleanup.detail}")
+            is CleanupOutcome.Failed -> problems.add(
+                "cleanup failed (confirmed=${cleanup.confirmed}): ${cleanup.detail}",
+            )
             is CleanupOutcome.Unconfirmed -> problems.add("cleanup unconfirmed: ${cleanup.detail}")
         }
         if (outcome.blocked.isNotEmpty()) problems.add("blocked: ${outcome.blocked.joinToString()}")
         for (result in outcome.observed) {
             when (val status = result.status) {
                 is ObservationStatus.Failed -> problems.add("${result.id}: ${status.detail}")
-                is ObservationStatus.UnexpectedPass -> problems.add("${result.id}: unexpected pass for gvy#${status.issue}")
+                is ObservationStatus.UnexpectedPass -> problems.add(
+                    "${result.id}: unexpected pass for gvy#${status.issue}",
+                )
                 else -> Unit
             }
         }

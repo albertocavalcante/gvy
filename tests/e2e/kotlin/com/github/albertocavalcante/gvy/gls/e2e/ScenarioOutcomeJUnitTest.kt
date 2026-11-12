@@ -1,7 +1,7 @@
 package com.github.albertocavalcante.gvy.gls.e2e
 
-import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.assertj.core.api.Assertions.catchThrowable
 import org.junit.jupiter.api.Test
 import org.opentest4j.TestAbortedException
@@ -64,7 +64,8 @@ class ScenarioOutcomeJUnitTest {
     @Test
     fun `cancellation retains independent cleanup failure`() {
         val report = ScenarioOutcome(
-            planned = emptyList(), observed = emptyList(),
+            planned = emptyList(),
+            observed = emptyList(),
             cleanup = CleanupOutcome.Failed("close failed", confirmed = false),
             completion = ScenarioCompletion.Cancelled("interrupted"),
         )
@@ -80,7 +81,9 @@ class ScenarioOutcomeJUnitTest {
             observed = listOf(ObservationResult("known", ObservationStatus.KnownFailure(42))),
             cleanup = CleanupOutcome.Succeeded,
             completion = ScenarioCompletion.Failed(
-                ScenarioFailurePhase.Execution, ScenarioFailureKind.Transport, "request failed",
+                ScenarioFailurePhase.Execution,
+                ScenarioFailureKind.Transport,
+                "request failed",
             ),
         )
         assertThatThrownBy { ScenarioOutcomeJUnit.report(report) }
