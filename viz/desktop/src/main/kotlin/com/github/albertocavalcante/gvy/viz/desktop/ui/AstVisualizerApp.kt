@@ -58,17 +58,19 @@ import com.github.albertocavalcante.gvy.viz.desktop.ui.components.AstTreeView
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.CodePanel
 import com.github.albertocavalcante.gvy.viz.desktop.ui.components.NodeDetailsPanel
 import com.github.albertocavalcante.gvy.viz.desktop.ui.layout.DesktopPanel
-import java.awt.FileDialog
-import java.awt.Frame
 import java.io.File
-import javax.swing.JFileChooser
 
 /**
  * Root composable for the AST Visualizer application.
  */
 @Composable
-@Suppress("LongMethod", "MagicNumber")
 fun AstVisualizerApp(viewModel: AstViewModel) {
+    AstVisualizerApp(viewModel, AwtDesktopFileDialogs)
+}
+
+@Composable
+@Suppress("LongMethod", "MagicNumber")
+internal fun AstVisualizerApp(viewModel: AstViewModel, dialogs: DesktopFileDialogs) {
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
 
     Surface(
@@ -79,8 +81,9 @@ fun AstVisualizerApp(viewModel: AstViewModel) {
             // Slim Toolbar
             TopBar(
                 viewModel = viewModel,
+                dialogs = dialogs,
                 onLoadFile = {
-                    loadFile(viewModel.lastDirectory)?.let { file ->
+                    dialogs.openFile(viewModel.lastDirectory)?.let { file ->
                         viewModel.loadFile(file)
                     }
                 },
@@ -203,7 +206,7 @@ private fun ErrorPanel(errors: List<CodeError>) {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 @Suppress("LongMethod", "MagicNumber")
-private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
+private fun TopBar(viewModel: AstViewModel, dialogs: DesktopFileDialogs, onLoadFile: () -> Unit) {
     var showExportMenu by remember { mutableStateOf(false) }
 
     TopAppBar(
@@ -291,7 +294,7 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
                     onClick = {
                         showExportMenu = false
                         viewModel.exportSnapshot(ExportFormat.JSON)?.let { snapshot ->
-                            chooseExportFile("ast.json")?.let { viewModel.saveExport(snapshot, it) }
+                            dialogs.saveFile("ast.json")?.let { viewModel.saveExport(snapshot, it) }
                         }
                     },
                 )
@@ -300,7 +303,7 @@ private fun TopBar(viewModel: AstViewModel, onLoadFile: () -> Unit) {
                     onClick = {
                         showExportMenu = false
                         viewModel.exportSnapshot(ExportFormat.DOT)?.let { snapshot ->
-                            chooseExportFile("ast.dot")?.let { viewModel.saveExport(snapshot, it) }
+                            dialogs.saveFile("ast.dot")?.let { viewModel.saveExport(snapshot, it) }
                         }
                     },
                 )
@@ -347,44 +350,5 @@ private fun ParserOption(text: String, selected: Boolean, onClick: () -> Unit) {
         modifier = Modifier.height(28.dp),
     ) {
         Text(text, style = MaterialTheme.typography.labelSmall)
-    }
-}
-
-private fun chooseExportFile(suggestedFileName: String): File? {
-    val chooser = JFileChooser()
-    chooser.selectedFile = File(suggestedFileName)
-    return if (chooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) chooser.selectedFile else null
-}
-
-private fun loadFile(initialDirectory: String): File? {
-    val os = System.getProperty("os.name").lowercase()
-    return if (os.contains("mac")) {
-        // Use native FileDialog on macOS for better UX (fixes enter/space/type-ahead issues)
-        val fd = FileDialog(null as Frame?, "Load Groovy File", FileDialog.LOAD)
-        fd.directory = initialDirectory
-        fd.setFilenameFilter { _, name ->
-            val n = name.lowercase()
-            n.endsWith(".groovy") || n.endsWith(".gvy") || n.endsWith(".gradle") || n == "jenkinsfile"
-        }
-        fd.isVisible = true
-        if (fd.file != null) File(fd.directory, fd.file) else null
-    } else {
-        // Fallback to JFileChooser for other OS
-        val chooser = JFileChooser(initialDirectory)
-        chooser.fileFilter = object : javax.swing.filechooser.FileFilter() {
-            override fun accept(f: File): Boolean {
-                if (f.isDirectory) return true
-                val n = f.name.lowercase()
-                return n.endsWith(".groovy") || n.endsWith(".gvy") || n.endsWith(".gradle") || n == "jenkinsfile"
-            }
-
-            override fun getDescription(): String = "Groovy Source (*.groovy, *.gradle, Jenkinsfile)"
-        }
-
-        if (chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-            chooser.selectedFile
-        } else {
-            null
-        }
     }
 }
