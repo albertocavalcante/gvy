@@ -144,6 +144,7 @@ jobs:
         working-directory: .
 
       - name: Run unit tests and compile integration harness
+        shell: bash
         env:
           GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
         run: |
@@ -313,6 +314,7 @@ jobs:
         working-directory: editors/code
 
       - name: Run unit tests and compile integration harness
+        shell: bash
         env:
           GVY_TEST_SERVER_JAR: ${{ github.workspace }}/gls/build/editor-server/gls.jar
         run: |

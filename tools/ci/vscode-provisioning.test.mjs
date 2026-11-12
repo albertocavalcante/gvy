@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -206,6 +206,33 @@ function fixture(t) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }
+
+test('actual Windows matrix unit commands fail before compilation or provisioning after a native assertion failure', t => {
+  const root = fixture(t);
+  const workflow = readFileSync(new URL('../../.github/workflows/extension.yml', import.meta.url), 'utf8');
+  const matrix = workflow.split('\n  test-matrix:\n')[1]?.split('\n  package:\n')[0];
+  const step = matrix?.match(/      - name: Run unit tests and compile integration harness\n((?:        [^\n]*\n)*?)        run: \|\n((?:          [^\n]*\n)+)/);
+  assert.ok(step, 'extract the actual unit/compile step, not a copied command');
+  assert.match(step[1], /^        shell: bash$/m, 'Windows requires an explicit fail-fast shell');
+  const commands = step[2].split('\n').filter(Boolean).map(line => line.slice(10)).join('\n');
+  const bash = process.platform === 'win32' ? join(process.env.ProgramFiles, 'Git', 'bin', 'bash.exe') : '/bin/bash';
+  const script = `pnpm() {\n  printf '%s\\n' "$*" >> calls.txt\n  if [ "$*" = 'run test' ]; then node -e 'process.exit(7)'; fi\n}\n${commands}\nprintf 'provisioned\\n' >> calls.txt\n`;
+  const options = { cwd: root, env: process.env, encoding: 'utf8', timeout: 10000, maxBuffer: 4096, windowsHide: true, shell: false };
+  const failed = spawnSync(bash, ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script], options);
+  assert.equal(failed.error, undefined); assert.equal(failed.status, 7, failed.stderr);
+  assert.equal(readFileSync(join(root, 'calls.txt'), 'utf8'), 'run test\n');
+  rmSync(join(root, 'calls.txt'));
+  // The same control without fail-fast reaches compilation and a success exit.
+  const mutant = spawnSync(bash, ['--noprofile', '--norc', '-c', script], options);
+  assert.equal(mutant.error, undefined); assert.equal(mutant.status, 0, mutant.stderr);
+  assert.equal(readFileSync(join(root, 'calls.txt'), 'utf8'), 'run test\nrun compile:tests\nprovisioned\n');
+  if (process.platform === 'win32') {
+    const pwsh = spawnSync('pwsh', ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command',
+      `$ErrorActionPreference='stop'; & $env:GVY_FAILFAST_NODE -e 'process.exit(7)'; & $env:GVY_FAILFAST_NODE -e 'process.exit(0)'; exit $LASTEXITCODE`],
+      { ...options, env: { ...process.env, GVY_FAILFAST_NODE: process.execPath } });
+    assert.equal(pwsh.error, undefined); assert.equal(pwsh.status, 0, 'native first-command failure is masked by PowerShell final status');
+  }
+});
 function workerScript(root, body) {
   const path = join(root, `${randomUUID()}.mjs`);
   writeFileSync(path, `import {createHash} from 'node:crypto'; import {spawn} from 'node:child_process'; import {writeFileSync} from 'node:fs';
@@ -256,7 +283,7 @@ test('integration runner assertions are invoked once and their original failure 
     calls++; const child = new EventEmitter(); child.kill = () => true;
     setImmediate(() => child.emit('close', 7, null)); return child;
   };
-  const ok = await withEnvironment({ GITHUB_OUTPUT: undefined }, () => invokeIntegrationOnce(context, join(root, 'marker.json'), '/unused/test-cli.mjs', {}, spawnChild));
+  const ok = await withEnvironment({ GITHUB_OUTPUT: undefined }, () => invokeIntegrationOnce(context, join(root, 'marker.json'), '/unused/test-cli.mjs', {}, spawnChild, join(root, 'logs')));
   assert.equal(ok, false); assert.equal(calls, 1);
   const marker = JSON.parse(readFileSync(join(root, 'marker.json'), 'utf8'));
   assert.equal(marker.state, 'invoked'); assert.equal(marker.outcome, 'failure'); assert.equal(marker.exitCode, 7);
@@ -265,9 +292,9 @@ test('integration runner assertions are invoked once and their original failure 
   const invoked = await withEnvironment({ GITHUB_OUTPUT: undefined }, () => invokeIntegrationOnce(packageContext, join(root, 'package-marker.json'), '/unused/test-cli.mjs', {}, (command, args) => {
     actualArgs = args; const child = new EventEmitter(); child.kill = () => true;
     setImmediate(() => child.emit('close', 0, null)); return child;
-  }));
+  }, join(root, 'package-logs')));
   assert.equal(invoked, true);
-  assert.deepEqual(actualArgs, ['/unused/test-cli.mjs', '--grep', 'Implementation navigation', '--fail-zero', '--forbid-pending']);
+  assert.deepEqual(actualArgs, ['/unused/test-cli.mjs', '--config', realpathSync(new URL('../../editors/code/.vscode-test.mjs', import.meta.url)), '--grep', 'Implementation navigation', '--fail-zero', '--forbid-pending']);
 });
 
 test('actual timeout recovery retains each failed attempt and its original private error hash', async t => {
@@ -359,7 +386,7 @@ async function auditFixture(t, action, provisioned = true) {
     writeFileSync(join(reportRoot, 'provisioning.json'), text);
     const state = { context: actualContext, executable: provisioned ? executable : null, receiptSha256: digest(text) };
     writeFileSync(join(privateRoot, 'state.json'), JSON.stringify(state, null, 2) + '\n');
-    const marker = { context: actualContext, state: 'invoked', outcome: 'success', exitCode: 0 };
+    const marker = { context: actualContext, state: 'invoked', outcome: 'success', exitCode: 0, logsPrepared: { fresh: true, priorFiles: 0 } };
     const writeMarker = () => writeFileSync(join(privateRoot, 'integration.json'), JSON.stringify(marker, null, 2) + '\n');
     await action({ root, reportRoot, privateRoot, logs, report, state, marker, writeMarker });
   });
@@ -384,11 +411,63 @@ test('post-test audit publishes only allowlisted identity and hashes, and keeps 
   }
 });
 
+test('stale probe or earlier editor logs cannot satisfy a new integration invocation', async t => {
+  for (const currentWritesLogs of [false, true]) await auditFixture(t, async data => {
+    mkdirSync(data.logs); writeFileSync(join(data.logs, 'stale.log'), 'PRIVATE original probe log');
+    let calls = 0;
+    const spawnChild = () => {
+      calls++; const child = new EventEmitter(); child.kill = () => true;
+      setImmediate(() => {
+        if (currentWritesLogs) writeFileSync(join(data.logs, 'current.log'), 'PRIVATE current editor log');
+        child.emit('close', 0, null);
+      });
+      return child;
+    };
+    await invokeIntegrationOnce(data.report.context, join(data.privateRoot, 'integration.json'), '/unused/test-cli.mjs', {}, spawnChild, data.logs);
+    assert.equal(calls, 1);
+    assert.equal(auditEditorProvisioning(data.reportRoot, data.logs), currentWritesLogs, 'only logs created after this runner invocation count');
+    assert.equal(readFileSync(join(data.privateRoot, 'previous-editor-logs', 'stale.log'), 'utf8'), 'PRIVATE original probe log');
+    const result = JSON.parse(readFileSync(join(data.reportRoot, 'result.json'), 'utf8'));
+    assert.deepEqual(result.integration.editorLogs, { fresh: true, priorFiles: 1, present: currentWritesLogs, files: currentWritesLogs ? 1 : 0 });
+  });
+});
+
+test('unsafe prior log roots and quarantine collisions fail before any runner invocation or original-byte loss', async t => {
+  for (const mode of ['linked-root', 'linked-parent', 'linked-file', 'nonregular-root', 'quarantine-collision']) await auditFixture(t, async data => {
+    const target = join(data.root, 'original');
+    let logs = data.logs;
+    if (mode === 'linked-root') {
+      mkdirSync(target); writeFileSync(join(target, 'original.log'), 'PRIVATE original');
+      symlinkSync(target, logs, 'junction');
+    } else if (mode === 'linked-parent') {
+      mkdirSync(target); symlinkSync(target, join(data.root, 'linked-parent'), 'junction');
+      logs = join(data.root, 'linked-parent', 'logs');
+    } else if (mode === 'nonregular-root') writeFileSync(logs, 'PRIVATE original');
+    else {
+      mkdirSync(logs); writeFileSync(target, 'PRIVATE original');
+      if (mode === 'linked-file') symlinkSync(target, join(logs, 'original.log'), 'file');
+      else {
+        writeFileSync(join(logs, 'original.log'), 'PRIVATE original');
+        mkdirSync(join(data.privateRoot, 'previous-editor-logs'));
+        writeFileSync(join(data.privateRoot, 'previous-editor-logs', 'existing.log'), 'PRIVATE previous');
+      }
+    }
+    let calls = 0;
+    await assert.rejects(() => invokeIntegrationOnce(data.report.context, join(data.privateRoot, 'integration.json'), '/unused/test-cli.mjs', {}, () => { calls++; throw new Error('must not invoke'); }, logs));
+    assert.equal(calls, 0);
+    assert.equal(existsSync(join(data.privateRoot, 'integration.json')), false);
+    if (mode === 'linked-root') assert.equal(readFileSync(join(target, 'original.log'), 'utf8'), 'PRIVATE original');
+    if (mode === 'linked-file' || mode === 'quarantine-collision') assert.equal(readFileSync(target, 'utf8'), 'PRIVATE original');
+  });
+});
+
 test('post-test audit rejects malformed, stale, linked, oversized and unexpected public evidence before upload', async t => {
   const cases = [
     data => { data.report.context.runAttempt++; writeFileSync(join(data.reportRoot, 'provisioning.json'), JSON.stringify(data.report, null, 2) + '\n'); },
     data => { data.marker.context = { ...data.marker.context, testedSha: 'd'.repeat(40) }; data.writeMarker(); },
     data => { data.marker.outcome = 'pending'; data.marker.exitCode = null; data.writeMarker(); },
+    data => { data.marker.logsPrepared.fresh = false; data.writeMarker(); },
+    data => { delete data.marker.logsPrepared; data.writeMarker(); },
     data => { data.report.raw = 'PRIVATE'; writeFileSync(join(data.reportRoot, 'provisioning.json'), JSON.stringify(data.report)); },
     data => writeFileSync(join(data.reportRoot, 'provisioning.json'), '{"ok":false,"ok":true}'),
     data => writeFileSync(join(data.reportRoot, 'provisioning.json'), Buffer.from([0xff])),

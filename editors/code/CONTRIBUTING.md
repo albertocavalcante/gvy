@@ -273,8 +273,9 @@ outside the retry. The packaged lane retains its existing implementation-navigat
 Each editor lane uploads an audited `vscode-provisioning-*` result, including failed attempts, source/tested/run/attempt
 and matrix identity, phase timings and raw-error hashes. A provisioning failure leaves integration unexecuted, so editor
 logs are not expected. After the integration runner is invoked, missing editor logs fail the evidence check; invocation
-alone does not prove that the editor launched. See [CI diagnostics](../../docs/ci-diagnostics.md#vs-code-provisioning)
-for budgets, source contracts and the public artifact boundary. Reliability debt and original failures remain tracked in
+alone does not prove that the editor launched. Old logs are preserved privately and a fresh empty log directory is
+prepared before that invocation. See [CI diagnostics](../../docs/ci-diagnostics.md#vs-code-provisioning) for budgets,
+source contracts and the public artifact boundary. Reliability debt and original failures remain tracked in
 [#1882](https://github.com/albertocavalcante/gvy/issues/1882).
 
 **Running Unit Tests** Unit tests cover individual components in isolation:

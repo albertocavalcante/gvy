@@ -121,7 +121,10 @@ including a failed spawn, rather than claiming the editor launched or an asserti
 
 The supported contract is `@vscode/test-electron` 3.1.0, `@vscode/test-cli` 0.0.15 and VS Code 1.144.0. The shared
 configuration verifies the manifest floor and guards both repository and packaged manifests against extension
-dependencies, installation options and CLI argument drift. This matters because the
+dependencies, installation options and CLI argument drift. The runner passes the exact guarded `.vscode-test.mjs` with
+the
+[supported `--config` option](https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/args.mts#L16-L21),
+so another discovered configuration cannot replace it. This matters because the
 [CLI dependency-install branch downloads again even with an installed path](https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/platform/desktop.mts#L128-L164).
 Tool or configuration changes must update these controls through review.
 
@@ -163,11 +166,15 @@ does not make arbitrary output safe. Never dump environment variables or place c
 Artifact projection does not suppress runtime diagnostics.
 
 A failed preflight records integration as unexecuted; editor logs are not expected in that phase. Once the integration
-runner is invoked, the audit requires editor log files even when assertions fail. Extension CI's existing failed-editor
-log upload runs only in that invoked phase and treats absent files as an error. The audit fails closed on missing or
-stale invocation evidence and never changes an original integration failure into success. All three native platforms,
-the packaged test lane and Nightly remain required applicable hosted checks. Original timeout failures and ownership
-remain in [#1882](https://github.com/albertocavalcante/gvy/issues/1882); successful recovery does not retire the debt.
+runner is invoked, the audit requires editor log files even when assertions fail. Immediately before invocation, a
+bounded no-link inventory quarantines any previous log directory into the invocation-private root without copying its
+bytes, then creates a fresh empty log directory. Rename, permission and cross-volume failures stop before invocation.
+The context-bound marker and public result record that preparation and the prior-file count, so probe or earlier logs
+cannot satisfy the current invocation. Extension CI's existing failed-editor log upload runs only in that invoked phase
+and treats absent files as an error. The audit fails closed on missing or stale invocation evidence and never changes an
+original integration failure into success. All three native platforms, the packaged test lane and Nightly remain
+required applicable hosted checks. Original timeout failures and ownership remain in
+[#1882](https://github.com/albertocavalcante/gvy/issues/1882); successful recovery does not retire the debt.
 
 ## Bazel gate and build observability
 

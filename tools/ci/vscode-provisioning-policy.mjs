@@ -156,8 +156,9 @@ export function validateProvisioningReport(report, expectedContext) {
   if (report.integration.state === 'unexecuted') require(report.integration.outcome === null && report.integration.editorLogs === null, 'invalid-integration-evidence');
   else {
     require(result.ok && ['success', 'failure'].includes(report.integration.outcome), 'invalid-integration-evidence');
-    keys(report.integration.editorLogs, ['present', 'files']);
-    require(typeof report.integration.editorLogs.present === 'boolean' && integer(report.integration.editorLogs.files, 5000) && report.integration.editorLogs.present === (report.integration.editorLogs.files > 0), 'invalid-integration-evidence');
+    keys(report.integration.editorLogs, ['fresh', 'priorFiles', 'present', 'files']);
+    require(report.integration.editorLogs.fresh === true && integer(report.integration.editorLogs.priorFiles, 5000) &&
+      typeof report.integration.editorLogs.present === 'boolean' && integer(report.integration.editorLogs.files, 5000) && report.integration.editorLogs.present === (report.integration.editorLogs.files > 0), 'invalid-integration-evidence');
   }
   require(report.ok === (result.ok && report.integration.state === 'invoked' && report.integration.outcome === 'success' && report.integration.editorLogs.present), 'inconsistent-editor-verdict');
   const text = JSON.stringify(report);

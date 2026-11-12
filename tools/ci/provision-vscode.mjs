@@ -3,7 +3,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { closeSync, existsSync, ftruncateSync, lstatSync, mkdirSync, openSync, readdirSync, realpathSync, writeFileSync, writeSync } from 'node:fs';
+import { closeSync, existsSync, ftruncateSync, lstatSync, mkdirSync, opendirSync, openSync, readdirSync, realpathSync, renameSync, writeFileSync, writeSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { isDeepStrictEqual } from 'node:util';
@@ -136,12 +136,14 @@ export async function invokeEditorTests(reportRoot) {
   return invokeIntegrationOnce(data.context, join(data.privateRoot, 'integration.json'), join(packageRoot, 'out', 'bin.mjs'), { ...process.env, VSCODE_TEST_EXECUTABLE: executable });
 }
 
-export async function invokeIntegrationOnce(context, markerPath, cli, env, spawnChild = spawn) {
+export async function invokeIntegrationOnce(context, markerPath, cli, env, spawnChild = spawn, editorLogsRoot = join(editorRoot, '.vscode-test', 'user-data', 'logs')) {
   validateProvisioningContext(context);
-  const args = [cli];
+  const args = [cli, '--config', join(editorRoot, '.vscode-test.mjs')];
   if (context.jobKey === 'package') args.push('--grep', 'Implementation navigation', '--fail-zero', '--forbid-pending');
+  require(!existsSync(markerPath), 'integration-already-invoked');
+  const logsPrepared = prepareEditorLogs(editorLogsRoot, dirname(markerPath));
   // This marker proves invocation of the integration runner, not editor launch.
-  const marker = { context, state: 'invoked', outcome: 'pending', exitCode: null };
+  const marker = { context, state: 'invoked', outcome: 'pending', exitCode: null, logsPrepared };
   const markerDescriptor = openSync(markerPath, 'wx', 0o600);
   try {
     writeSync(markerDescriptor, encode(marker));
@@ -170,12 +172,42 @@ export function countEditorLogs(root) {
     const path = pending.pop();
     const info = lstatSync(path);
     require(!info.isSymbolicLink(), 'linked-editor-logs');
-    if (info.isDirectory()) for (const name of readdirSync(path)) {
-      require(++entries <= 5000, 'editor-log-inventory-limit'); pending.push(join(path, name));
+    if (info.isDirectory()) {
+      const directory = opendirSync(path);
+      try {
+        let entry;
+        while ((entry = directory.readSync()) !== null) {
+          require(++entries <= 5000, 'editor-log-inventory-limit'); pending.push(join(path, entry.name));
+        }
+      } finally { directory.closeSync(); }
     }
     else { require(info.isFile(), 'nonregular-editor-log'); files++; }
   }
   return files;
+}
+
+function ensureDirectory(path) {
+  if (!existsSync(path)) { ensureDirectory(dirname(path)); mkdirSync(path, { mode: 0o700 }); }
+  require(lstatSync(path).isDirectory() && !lstatSync(path).isSymbolicLink() && realpathSync(path) === path, 'linked-editor-log-parent');
+}
+
+export function prepareEditorLogs(root, privateRoot) {
+  const path = resolve(root);
+  ensureDirectory(dirname(path));
+  require(realpathSync(privateRoot) === privateRoot && lstatSync(privateRoot).isDirectory(), 'invalid-private-root');
+  let priorFiles = 0;
+  if (existsSync(path)) {
+    require(lstatSync(path).isDirectory() && !lstatSync(path).isSymbolicLink() && realpathSync(path) === path, 'linked-editor-logs');
+    priorFiles = countEditorLogs(path);
+    const previous = join(privateRoot, 'previous-editor-logs');
+    require(!existsSync(previous), 'reused-editor-log-quarantine');
+    // Preserve the original bytes privately without copying an unbounded tree.
+    // Cross-volume, permission or rename failures stop before runner invocation.
+    renameSync(path, previous);
+  }
+  mkdirSync(path, { mode: 0o700 });
+  require(countEditorLogs(path) === 0, 'nonempty-editor-log-start');
+  return { fresh: true, priorFiles };
 }
 
 export function auditEditorProvisioning(reportRoot, editorLogsRoot = join(editorRoot, '.vscode-test', 'user-data', 'logs')) {
@@ -184,13 +216,15 @@ export function auditEditorProvisioning(reportRoot, editorLogsRoot = join(editor
   const markerPath = join(data.privateRoot, 'integration.json');
   if (existsSync(markerPath)) {
     const marker = canonicalJson(markerPath);
-    require(isDeepStrictEqual(Object.keys(marker).sort(), ['context', 'exitCode', 'outcome', 'state']) && isDeepStrictEqual(marker.context, data.context) &&
+    require(isDeepStrictEqual(Object.keys(marker).sort(), ['context', 'exitCode', 'logsPrepared', 'outcome', 'state']) && isDeepStrictEqual(marker.context, data.context) &&
       marker.state === 'invoked' && ['success', 'failure'].includes(marker.outcome) && Number.isInteger(marker.exitCode) && marker.exitCode >= 0 && marker.exitCode <= 255 &&
       (marker.outcome === 'success') === (marker.exitCode === 0), 'invalid-integration-marker');
+    require(marker.logsPrepared && isDeepStrictEqual(Object.keys(marker.logsPrepared).sort(), ['fresh', 'priorFiles']) && marker.logsPrepared.fresh === true &&
+      Number.isInteger(marker.logsPrepared.priorFiles) && marker.logsPrepared.priorFiles >= 0 && marker.logsPrepared.priorFiles <= 5000, 'invalid-editor-log-preparation');
     require(data.report.provisioning.ok, 'integration-before-provisioning');
     validateInstalledPath(data.state, data.privateRoot);
     const files = countEditorLogs(editorLogsRoot);
-    data.report.integration = { state: 'invoked', outcome: marker.outcome, editorLogs: { present: files > 0, files } };
+    data.report.integration = { state: 'invoked', outcome: marker.outcome, editorLogs: { ...marker.logsPrepared, present: files > 0, files } };
   }
   data.report.ok = data.report.provisioning.ok && data.report.integration.outcome === 'success' && data.report.integration.editorLogs.present;
   validateProvisioningReport(data.report, data.context);

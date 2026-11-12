@@ -64,6 +64,11 @@
       "id": "vscode-provisioning-sdk",
       "path": "tools/ci/vscode-provisioning-worker.mjs",
       "anchor": "export async function runSdkProvisioning"
+    },
+    {
+      "id": "vscode-provisioning-cli",
+      "path": "tools/ci/provision-vscode.mjs",
+      "anchor": "export async function invokeEditorTests"
     }
   ],
   "records": [
@@ -602,11 +607,15 @@
         },
         {
           "id": "manual:vscode-metadata-timeout",
-          "sha256": "43f38b82d561753962a83a575b48e0ab2ddcf6ba1681c589bc024b6d0aa53f65"
+          "sha256": "700db0761cb151453df02e616debed967fbe4ffceefcc7a64832bc56ef0d0efd"
         },
         {
           "id": "manual:vscode-provisioning-sdk",
           "sha256": "9ace543e7a622831730e663af711c49e9211b1d0103c2171689fa306a7cf169f"
+        },
+        {
+          "id": "manual:vscode-provisioning-cli",
+          "sha256": "c231bf8950c905ad1fc3b38d9248ebdb85518cebdf205088c1849b4f52819353"
         }
       ]
     }
