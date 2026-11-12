@@ -23,16 +23,22 @@ class LanguageServerSession internal constructor(
     private val exitCode: CompletableFuture<Int>? = null,
     private val typedServerProxy: GroovyLanguageServerProtocol? = null,
     private val wireCapture: BoundedWireCapture? = null,
+    val runtimeEvidence: RuntimeEvidence? = null,
+    private val stderrEvidence: (() -> StderrEvidence)? = null,
+    private val privateCleanup: Boolean = false,
 ) : AutoCloseable {
     private val closed = AtomicBoolean()
+
+    /** Null means no stderr observer was installed, not that zero bytes were observed. */
+    fun snapshotStderrEvidence(): StderrEvidence? = stderrEvidence?.invoke()
+
+    /** A bounded immutable observation, independent of SDK decoding. Null means capture was not installed. */
+    fun snapshotWireEvidence(): WireEvidenceSnapshot? = wireCapture?.snapshot()
 
     val groovyServer: GroovyLanguageServerProtocol
         get() = checkNotNull(typedServerProxy) {
             "Typed server proxy not available; use Launcher.Builder with GroovyLanguageServerProtocol"
         }
-
-    /** A bounded immutable observation, independent of SDK decoding. Null means capture was not installed. */
-    fun snapshotWireEvidence(): WireEvidenceSnapshot? = wireCapture?.snapshot()
 
     /** Sends exit and validates its observed outcome, independently of unconditional teardown. */
     fun exit(expectedCode: Int = 0, timeout: Duration = EXIT_TIMEOUT) {
@@ -54,7 +60,16 @@ class LanguageServerSession internal constructor(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
-        resources.close()
+        if (!privateCleanup) {
+            resources.close()
+        } else {
+            try {
+                resources.close()
+            } catch (failure: Throwable) {
+                rethrowLocalControl(failure)
+                throw IllegalStateException("Session cleanup failed")
+            }
+        }
     }
 
     private companion object {

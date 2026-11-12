@@ -22,15 +22,25 @@ import java.nio.file.Paths
 import java.time.Duration
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 /** Test-JVM system properties forwarded to a language-server subprocess. */
 private val FORWARDED_PROPERTIES = listOf(JenkinsStubsLocation.CACHE_ROOT_PROPERTY)
 
+/**
+ * Creates sessions through the existing process and protocol ownership boundary.
+ *
+ * Packaged launch verifies artifact identity; callers must select [SessionEvidencePolicy.Private] to protect
+ * factory-owned launch, stderr and failure output. Default retains normal diagnostic output. Private mode supports
+ * stdio only and requires an explicitly authored Gradle user home; client/protocol logging needs its own privacy boundary.
+ */
 class LanguageServerSessionFactory(
     private val startProcess: (ProcessBuilder) -> Process = ProcessBuilder::start,
     private val createServer: ((Int) -> Unit) -> LanguageServer = { onExit ->
         GroovyLanguageServer(exitProcess = onExit)
     },
+    private val packagedLaunch: PackagedLaunch? = null,
+    private val evidencePolicy: SessionEvidencePolicy = SessionEvidencePolicy.Default,
 ) {
     private val logger = KotlinLogging.logger {}
 
@@ -43,8 +53,14 @@ class LanguageServerSessionFactory(
 
     fun start(serverConfig: ServerConfig, scenarioName: String): LanguageServerSession {
         val launchMode = serverConfig.mode
+        if (evidencePolicy == SessionEvidencePolicy.Private &&
+            (launchMode != ServerLaunchMode.Stdio || serverConfig.env["GRADLE_USER_HOME"].isNullOrBlank())
+        ) {
+            throw PackagedLaunchException(PackagedLaunchFailure.InvalidConfiguration, LaunchVerification())
+        }
 
         return if (launchMode == ServerLaunchMode.InProcess) {
+            require(packagedLaunch == null) { "In-process mode cannot apply packaged launch" }
             require(serverConfig.args.isEmpty()) { "In-process mode cannot apply server args" }
             require(serverConfig.env.isEmpty()) { "In-process mode cannot apply server env overrides" }
             createInProcessSession(scenarioName)
@@ -62,48 +78,107 @@ class LanguageServerSessionFactory(
             "Only stdio launch mode is currently supported (requested: $launchMode) for scenario '$scenarioName'"
         }
 
-        val command = buildCommand(serverConfig)
-        logger.info {
-            "Starting language server for scenario '$scenarioName' using command: ${command.joinToString(" ")}"
-        }
-        val processBuilder = ProcessBuilder(command).redirectErrorStream(false)
-        if ("GRADLE_USER_HOME" !in serverConfig.env) {
-            processBuilder.environment()["GRADLE_USER_HOME"] = gradleUserHome.toAbsolutePath().toString()
-        }
-        // Explicit authored environment wins over the isolated default, including GRADLE_USER_HOME.
-        processBuilder.environment().putAll(serverConfig.env)
-
-        return SessionResources().use { pending ->
-            val executor = pending.own(ListenerExecutor(scenarioName))
-            val ownedProcess = pending.own(ServerProcess(startProcess(processBuilder), pending.interruption))
-            val process = ownedProcess.process
-            ownedProcess.stderrPump = startErrorPump(process, scenarioName)
-            val client = HarnessLanguageClient()
-            val wireCapture = BoundedWireCapture()
-            val launcher = Launcher.Builder<GroovyLanguageServerProtocol>()
-                .setLocalService(client)
-                .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
-                .setInput(wireCapture.input(process.inputStream))
-                .setOutput(wireCapture.output(process.outputStream))
-                .setExecutorService(executor.service)
-                .configureGson {
-                    it.registerRawJsonRpcParams().preserveUntypedJsonNumbers()
-                    registerStatusNotificationAdapter(it)
+        val privateMode = evidencePolicy == SessionEvidencePolicy.Private
+        val protectedLaunch = privateMode || packagedLaunch != null
+        var partialVerification = LaunchVerification()
+        try {
+            return SessionResources().use { pending ->
+                // Own the staged artifact first, so it outlives the process and all listeners.
+                val prepared = packagedLaunch?.let { pending.own(it.prepare()) }
+                if (prepared != null) partialVerification = prepared.verification
+                val command = if (prepared == null) {
+                    buildCommand(serverConfig)
+                } else {
+                    val settings = checkNotNull(packagedLaunch).jvmSettings
+                    listOf(packagedLaunch.javaExecutable.toString()) +
+                        listOfNotNull(settings.initialHeapMiB?.let { "-Xms${it}m" }, "-Xmx${settings.maxHeapMiB}m") +
+                        forwardedSystemProperties() +
+                        listOf("-jar", prepared.jar.toString(), "stdio") + serverConfig.args
                 }
-                .create()
-            val listening = launcher.startListening()
-            pending.own(AutoCloseable { listening.cancel(true) })
+                if (!privateMode) {
+                    logger.info {
+                        "Starting language server for scenario '$scenarioName' using command: ${command.joinToString(
+                            " ",
+                        )}"
+                    }
+                }
+                val processBuilder = ProcessBuilder(command).redirectErrorStream(false)
+                if ("GRADLE_USER_HOME" !in serverConfig.env) {
+                    processBuilder.environment()["GRADLE_USER_HOME"] = gradleUserHome.toAbsolutePath().toString()
+                }
+                processBuilder.environment().putAll(serverConfig.env)
+                val before = prepared?.let {
+                    val environment = processBuilder.environment()
+                    val matchingKeys = environment.keys.filter { key ->
+                        JAVA_OPTION_VARIABLES.any { name -> name.equals(key, ignoreCase = true) }
+                    }
+                    if (packagedLaunch.javaEnvironmentPolicy == JavaEnvironmentPolicy.Reject &&
+                        matchingKeys.any { key -> !environment[key].isNullOrEmpty() }
+                    ) {
+                        throw PackagedLaunchException(
+                            PackagedLaunchFailure.EnvironmentRejected,
+                            it.verification.copy(javaEnvironment = VerificationState.Rejected),
+                        )
+                    }
+                    matchingKeys.forEach(environment::remove)
+                    it.verification.copy(javaEnvironment = VerificationState.Verified)
+                }
+                if (before != null) partialVerification = before
+                val executor = pending.own(ListenerExecutor(if (privateMode) "private" else scenarioName))
+                val ownedProcess = pending.own(ServerProcess(startProcess(processBuilder), pending.interruption))
+                val process = ownedProcess.process
+                val after = prepared?.verifyAfterStart()?.copy(javaEnvironment = VerificationState.Verified)
+                if (after != null) partialVerification = after
+                val observer = if (privateMode) PrivateStderrObserver() else null
+                ownedProcess.stderrPump = if (observer == null) {
+                    startErrorPump(process, scenarioName)
+                } else {
+                    observer.start(process)
+                }
+                val client = HarnessLanguageClient()
+                val wireCapture = BoundedWireCapture()
+                val launcher = Launcher.Builder<GroovyLanguageServerProtocol>()
+                    .setLocalService(client)
+                    .setRemoteInterface(GroovyLanguageServerProtocol::class.java)
+                    .setInput(wireCapture.input(process.inputStream))
+                    .setOutput(wireCapture.output(process.outputStream))
+                    .setExecutorService(executor.service)
+                    .configureGson {
+                        it.registerRawJsonRpcParams().preserveUntypedJsonNumbers()
+                        registerStatusNotificationAdapter(it)
+                    }
+                    .create()
+                val listening = launcher.startListening()
+                pending.own(AutoCloseable { listening.cancel(true) })
 
-            val proxy = launcher.remoteProxy
-            LanguageServerSession(
-                process = process,
-                server = proxy,
-                endpoint = launcher.remoteEndpoint,
-                client = client,
-                typedServerProxy = proxy,
-                wireCapture = wireCapture,
-                resources = pending.transfer(),
-            )
+                val proxy = launcher.remoteProxy
+                LanguageServerSession(
+                    process = process,
+                    server = proxy,
+                    endpoint = launcher.remoteEndpoint,
+                    client = client,
+                    typedServerProxy = proxy,
+                    wireCapture = wireCapture,
+                    runtimeEvidence = if (before != null && after != null) {
+                        RuntimeEvidence(before, after, checkNotNull(packagedLaunch).jvmSettings)
+                    } else {
+                        null
+                    },
+                    stderrEvidence = observer?.let { { it.snapshot() } },
+                    privateCleanup = protectedLaunch,
+                    resources = pending.transfer(),
+                )
+            }
+        } catch (failure: Throwable) {
+            if (!protectedLaunch) throw failure
+            rethrowLocalControl(failure)
+            val safe = if (failure is PackagedLaunchException) {
+                PackagedLaunchException(failure.reason, failure.verification)
+            } else {
+                PackagedLaunchException(PackagedLaunchFailure.ProcessStartFailed, partialVerification)
+            }
+            if (failure.suppressed.isNotEmpty()) safe.addSuppressed(IllegalStateException("Session cleanup failed"))
+            throw safe
         }
     }
 
@@ -273,4 +348,33 @@ internal fun defaultIsolatedGradleHome(
     val parent = environment["TEST_TMPDIR"]?.takeIf(String::isNotBlank)?.let(Paths::get)
         ?: workingDirectory.resolve("build")
     return parent.resolve("e2e-gradle-home-$processId")
+}
+
+private val JAVA_OPTION_VARIABLES = listOf("JAVA_TOOL_OPTIONS", "JDK_JAVA_OPTIONS", "_JAVA_OPTIONS")
+
+private class PrivateStderrObserver {
+    private val evidence = AtomicReference(StderrEvidence(0, false, false))
+
+    fun snapshot(): StderrEvidence = evidence.get()
+
+    fun start(process: Process): Thread = Thread({
+        try {
+            process.errorStream.use { stream ->
+                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                while (true) {
+                    val count = stream.read(buffer)
+                    if (count < 0) {
+                        evidence.updateAndGet { it.copy(eof = true) }
+                        break
+                    }
+                    evidence.updateAndGet { it.copy(bytesObserved = Math.addExact(it.bytesObserved, count.toLong())) }
+                }
+            }
+        } catch (_: Exception) {
+            evidence.updateAndGet { it.copy(failed = true) }
+        }
+    }, "groovy-lsp-e2e-private-stderr").also {
+        it.isDaemon = true
+        it.start()
+    }
 }
