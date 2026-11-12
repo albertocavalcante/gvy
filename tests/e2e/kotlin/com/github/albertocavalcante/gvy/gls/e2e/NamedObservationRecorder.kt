@@ -43,11 +43,11 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
         }
         val status = when {
             check.xfail == null && failure == null -> ObservationStatus.Passed
-            check.xfail == null -> ObservationStatus.Failed(failure!!.stackTraceToString())
+            check.xfail == null -> ObservationStatus.Failed(BoundedFailureEvidence.capture(failure!!).text)
             else -> when (val decision = XfailOutcome.classify(check.xfail, source, failure)) {
                 is XfailDecision.Expected -> ObservationStatus.KnownFailure(check.xfail.issue)
                 is XfailDecision.Fixed -> ObservationStatus.UnexpectedPass(check.xfail.issue)
-                is XfailDecision.Unexpected -> ObservationStatus.Failed(decision.failure.stackTraceToString())
+                is XfailDecision.Unexpected -> ObservationStatus.Failed(BoundedFailureEvidence.capture(decision.failure).text)
             }
         }
         synchronized(this) { if (!sealed) observed.add(ObservationResult(id, status)) }
@@ -73,7 +73,7 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
         val confirmed = workerFinished && executorClosed && workspaceClosed && sessionClosed
         val cleanup = when {
             cleanupFailures.isNotEmpty() -> CleanupOutcome.Failed(
-                cleanupFailures.joinToString("\n") { it.stackTraceToString() },
+                BoundedFailureEvidence.captureAll(cleanupFailures).text,
                 confirmed = confirmed,
             )
             confirmed -> CleanupOutcome.Succeeded
@@ -85,17 +85,17 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
         val completion = when (executionFailure) {
             null -> ScenarioCompletion.Completed
             is InterruptedException, is CancellationException -> ScenarioCompletion.Cancelled(
-                executionFailure.stackTraceToString(),
+                BoundedFailureEvidence.capture(executionFailure).text,
             )
             is AssertionError -> ScenarioCompletion.Failed(
                 phase,
                 ScenarioFailureKind.Product,
-                executionFailure.stackTraceToString(),
+                BoundedFailureEvidence.capture(executionFailure).text,
             )
             else -> ScenarioCompletion.Failed(
                 phase,
                 ScenarioFailureKind.Unclassified,
-                executionFailure.stackTraceToString(),
+                BoundedFailureEvidence.capture(executionFailure).text,
             )
         }
         return ScenarioOutcome(planned, observed, cleanup, completion)

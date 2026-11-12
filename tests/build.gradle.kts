@@ -231,6 +231,7 @@ val harnessTest =
             "ScenarioOutcomeTest",
             "NamedObservationExecutionTest",
             "NamedObservationRecorderTest",
+            "BoundedFailureEvidenceTest",
             "ScenarioDslTest",
             "ScenarioParserTest",
             "ScenarioSchemaTest",
