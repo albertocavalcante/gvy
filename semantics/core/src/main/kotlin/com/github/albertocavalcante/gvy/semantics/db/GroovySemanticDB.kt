@@ -112,7 +112,7 @@ class GroovySemanticDB {
      * Copies the indexes in O(index size); callers should reuse a view, not capture for each lookup.
      */
     fun snapshotDeclarations(): DeclarationIndexSnapshot = lock.read {
-        DeclarationIndexSnapshot(versionCounter.get(), symbolIndex.snapshot(::freezeSymbol), ownerIndex.snapshot(::freezeSymbol))
+        DeclarationIndexSnapshot(versionCounter.get(), symbolIndex.snapshot(), ownerIndex.snapshot())
     }
 
     /**
@@ -277,9 +277,9 @@ private class SymbolIndex<T> {
     fun all(id: String): List<Pair<URI, T>> =
         bySymbol[id]?.flatMap { (uri, entries) -> entries.map { uri to it } } ?: emptyList()
 
-    fun <R> snapshot(copy: (T) -> R): Map<String, List<Pair<URI, R>>> = Collections.unmodifiableMap(
+    fun snapshot(): Map<String, List<Pair<URI, T>>> = Collections.unmodifiableMap(
         bySymbol.mapValues { (_, files) ->
-            Collections.unmodifiableList(files.flatMap { (uri, entries) -> entries.map { uri to copy(it) } })
+            Collections.unmodifiableList(files.flatMap { (uri, entries) -> entries.map { uri to it } })
         },
     )
 }
