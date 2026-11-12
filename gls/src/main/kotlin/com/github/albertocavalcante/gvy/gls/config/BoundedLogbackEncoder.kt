@@ -70,25 +70,29 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         label: String,
         depth: Int,
     ) {
-        if (record.full || depth >= MAX_DEPTH || state.nodes >= MAX_NODES || state.visited.containsKey(proxy)) {
+        if (record.full || depth >= MAX_DEPTH || !state.enter(proxy)) {
             record.markTruncated()
             return
         }
-        state.visited[proxy] = true
-        state.nodes++
         record.append("\n\t")
         record.append(label)
         record.append(safe(proxy.className ?: "", FIELD_BYTES))
-        val message = proxy.message
-        if (!message.isNullOrEmpty()) {
+        proxy.message?.takeIf { it.isNotEmpty() }?.let {
             record.append(": ")
-            record.append(safe(message, FIELD_BYTES))
+            record.append(safe(it, FIELD_BYTES))
         }
-        val frames = proxy.stackTraceElementProxyArray ?: emptyArray()
-        for (frame in frames) {
+        renderFrames(record, proxy, state)
+        if (record.full) return record.markTruncated()
+        renderSuppressed(record, proxy, state, depth)
+        if (record.full) return record.markTruncated()
+        proxy.cause?.let { renderThrowable(record, it, state, "Caused by: ", depth + 1) }
+    }
+
+    private fun renderFrames(record: RecordBuffer, proxy: IThrowableProxy, state: ThrowableState) {
+        for (frame in proxy.stackTraceElementProxyArray ?: emptyArray()) {
             if (state.frames >= MAX_FRAMES || record.full) {
                 record.markTruncated()
-                break
+                return
             }
             state.frames++
             val element = frame.stackTraceElement
@@ -108,24 +112,18 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
             }
             record.append(")")
         }
-        if (record.full) {
-            record.markTruncated()
-            return
-        }
+    }
+
+    private fun renderSuppressed(record: RecordBuffer, proxy: IThrowableProxy, state: ThrowableState, depth: Int) {
         val suppressed = proxy.suppressed ?: emptyArray()
         for (index in 0 until minOf(suppressed.size, MAX_SUPPRESSED)) {
             if (record.full) {
                 record.markTruncated()
-                break
+                return
             }
             renderThrowable(record, suppressed[index], state, "Suppressed: ", depth + 1)
         }
         if (suppressed.size > MAX_SUPPRESSED) record.markTruncated()
-        if (record.full) {
-            record.markTruncated()
-            return
-        }
-        proxy.cause?.let { renderThrowable(record, it, state, "Caused by: ", depth + 1) }
     }
 
     private fun prefixField(value: String, logger: Boolean): String = buildString {
@@ -134,7 +132,7 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
                 character == '[' -> append("\\u005b")
                 character == ']' -> append("\\u005d")
                 logger && (character.isWhitespace() || Character.isSpaceChar(character)) ->
-                    append("\\u").append(character.code.toString(16).padStart(4, '0'))
+                    append("\\u").append(character.code.toString(HEX_RADIX).padStart(UNICODE_ESCAPE_DIGITS, '0'))
                 else -> append(character)
             }
         }
@@ -155,6 +153,13 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         val visited = IdentityHashMap<IThrowableProxy, Boolean>()
         var nodes = 0
         var frames = 0
+
+        fun enter(proxy: IThrowableProxy): Boolean {
+            if (nodes >= MAX_NODES || visited.containsKey(proxy)) return false
+            visited[proxy] = true
+            nodes++
+            return true
+        }
     }
 
     private companion object {
@@ -167,16 +172,64 @@ class BoundedLogbackEncoder : EncoderBase<ILoggingEvent>() {
         const val MAX_NODES = 32
         const val MAX_FRAMES = 128
         const val MAX_SUPPRESSED = 8
+        const val HEX_RADIX = 16
+        const val UNICODE_ESCAPE_DIGITS = 4
     }
 }
 
 private data class BoundedMessage(val text: String, val truncated: Boolean)
 
 /** SLF4J-style substitution over a fixed raw UTF-16 prefix; never calls arbitrary toString. */
-private fun formatMessage(template: String, arguments: Array<out Any?>?): BoundedMessage {
-    val buffer = StringBuilder()
-    var truncated = false
-    fun append(value: String) {
+private fun formatMessage(template: String, arguments: Array<out Any?>?): BoundedMessage =
+    MessageFormatter(template, arguments).format()
+
+private class MessageFormatter(private val template: String, private val arguments: Array<out Any?>?) {
+    private val buffer = StringBuilder()
+    private var truncated = false
+    private var index = 0
+    private var argument = 0
+
+    fun format(): BoundedMessage {
+        while (index < template.length && buffer.length < RAW_SCAN_LIMIT) consume()
+        if (index < template.length) truncated = true
+        var result = buffer.toString()
+        if (truncated && result.length < RAW_SCAN_LIMIT) {
+            var end = result.length
+            while (end > 0 && !result[end - 1].isWhitespace()) end--
+            result = result.substring(0, end)
+        }
+        return BoundedMessage(result, truncated)
+    }
+
+    private fun consume() {
+        when {
+            template.startsWith(DOUBLE_ESCAPED_PLACEHOLDER, index) -> {
+                append("\\")
+                appendArgument()
+                index += DOUBLE_ESCAPED_PLACEHOLDER.length
+            }
+            template.startsWith(ESCAPED_PLACEHOLDER, index) -> {
+                append(PLACEHOLDER)
+                index += ESCAPED_PLACEHOLDER.length
+            }
+            template.startsWith(PLACEHOLDER, index) -> {
+                appendArgument()
+                index += PLACEHOLDER.length
+            }
+            else -> buffer.append(template[index++])
+        }
+    }
+
+    private fun appendArgument() {
+        if (arguments != null && argument < arguments.size && argument < ARGUMENT_LIMIT) {
+            append(safeArgument(arguments[argument++]))
+        } else {
+            append(PLACEHOLDER)
+            if (arguments != null && argument < arguments.size) truncated = true
+        }
+    }
+
+    private fun append(value: String) {
         val remaining = RAW_SCAN_LIMIT - buffer.length
         if (remaining <= 0) {
             truncated = true
@@ -186,47 +239,11 @@ private fun formatMessage(template: String, arguments: Array<out Any?>?): Bounde
         buffer.append(value, 0, count)
         if (count < value.length) truncated = true
     }
-    var index = 0
-    var argument = 0
-    fun appendArgument() {
-        if (arguments != null && argument < arguments.size && argument < ARGUMENT_LIMIT) {
-            append(safeArgument(arguments[argument++]))
-        } else {
-            append("{}")
-            if (arguments != null && argument < arguments.size) truncated = true
-        }
-    }
-    while (index < template.length && buffer.length < RAW_SCAN_LIMIT) {
-        if (template[index] == '\\' && index + 3 < template.length &&
-            template[index + 1] == '\\' && template[index + 2] == '{' && template[index + 3] == '}'
-        ) {
-            append("\\")
-            appendArgument()
-            index += 4
-        } else if (template[index] == '\\' && index + 2 < template.length &&
-            template[index + 1] == '{' && template[index + 2] == '}'
-        ) {
-            append("{}")
-            index += 3
-        } else if (template[index] == '{' && index + 1 < template.length && template[index + 1] == '}') {
-            appendArgument()
-            index += 2
-        } else {
-            buffer.append(template[index])
-            index++
-        }
-    }
-    if (index < template.length) truncated = true
-    var result = buffer.toString()
-    // A non-length cutoff can end inside a URL or secret. Drop the open final
-    // token before handing the retained prefix to the existing redactor.
-    if (truncated && result.length < RAW_SCAN_LIMIT) {
-        var end = result.length
-        while (end > 0 && !result[end - 1].isWhitespace()) end--
-        result = result.substring(0, end)
-    }
-    return BoundedMessage(result, truncated)
 }
+
+private const val PLACEHOLDER = "{}"
+private const val ESCAPED_PLACEHOLDER = "\\{}"
+private const val DOUBLE_ESCAPED_PLACEHOLDER = "\\\\{}"
 
 private fun safeArgument(value: Any?): String = when {
     value == null -> "null"
@@ -244,7 +261,7 @@ private fun safeArgument(value: Any?): String = when {
 
 /** UTF-8 writer reserves room for the marker and final newline in every record. */
 private class RecordBuffer {
-    private val output = ByteArrayOutputStream(512)
+    private val output = ByteArrayOutputStream(INITIAL_BUFFER_SIZE)
     private var truncated = false
     val full: Boolean get() = output.size() >= RECORD_LIMIT - MARKER_BYTES.size - 1
 
@@ -256,12 +273,12 @@ private class RecordBuffer {
         var index = 0
         while (index < text.length) {
             val codePoint = Character.codePointAt(text, index)
-            val value = if (codePoint in 0xD800..0xDFFF) '?'.code else codePoint
+            val value = if (codePoint in MIN_SURROGATE..MAX_SURROGATE) '?'.code else codePoint
             val width = when {
-                value <= 0x7f -> 1
-                value <= 0x7ff -> 2
-                value <= 0xffff -> 3
-                else -> 4
+                value <= MAX_ASCII -> 1
+                value <= MAX_TWO_BYTE -> TWO_BYTES
+                value <= MAX_THREE_BYTE -> THREE_BYTES
+                else -> FOUR_BYTES
             }
             if (output.size() + width > RECORD_LIMIT - MARKER_BYTES.size - 1) {
                 truncated = true
@@ -269,20 +286,20 @@ private class RecordBuffer {
             }
             when (width) {
                 1 -> output.write(value)
-                2 -> {
-                    output.write(0xc0 or (value shr 6))
-                    output.write(0x80 or (value and 0x3f))
+                TWO_BYTES -> {
+                    output.write(TWO_BYTE_PREFIX or (value shr SHIFT_ONE))
+                    output.write(CONTINUATION_PREFIX or (value and CONTINUATION_MASK))
                 }
-                3 -> {
-                    output.write(0xe0 or (value shr 12))
-                    output.write(0x80 or ((value shr 6) and 0x3f))
-                    output.write(0x80 or (value and 0x3f))
+                THREE_BYTES -> {
+                    output.write(THREE_BYTE_PREFIX or (value shr SHIFT_TWO))
+                    output.write(CONTINUATION_PREFIX or ((value shr SHIFT_ONE) and CONTINUATION_MASK))
+                    output.write(CONTINUATION_PREFIX or (value and CONTINUATION_MASK))
                 }
                 else -> {
-                    output.write(0xf0 or (value shr 18))
-                    output.write(0x80 or ((value shr 12) and 0x3f))
-                    output.write(0x80 or ((value shr 6) and 0x3f))
-                    output.write(0x80 or (value and 0x3f))
+                    output.write(FOUR_BYTE_PREFIX or (value shr SHIFT_THREE))
+                    output.write(CONTINUATION_PREFIX or ((value shr SHIFT_TWO) and CONTINUATION_MASK))
+                    output.write(CONTINUATION_PREFIX or ((value shr SHIFT_ONE) and CONTINUATION_MASK))
+                    output.write(CONTINUATION_PREFIX or (value and CONTINUATION_MASK))
                 }
             }
             index += Character.charCount(codePoint)
@@ -296,6 +313,23 @@ private class RecordBuffer {
     }
 }
 
+private const val INITIAL_BUFFER_SIZE = 512
+private const val MIN_SURROGATE = 0xD800
+private const val MAX_SURROGATE = 0xDFFF
+private const val MAX_ASCII = 0x7f
+private const val MAX_TWO_BYTE = 0x7ff
+private const val MAX_THREE_BYTE = 0xffff
+private const val TWO_BYTES = 2
+private const val THREE_BYTES = 3
+private const val FOUR_BYTES = 4
+private const val TWO_BYTE_PREFIX = 0xc0
+private const val THREE_BYTE_PREFIX = 0xe0
+private const val FOUR_BYTE_PREFIX = 0xf0
+private const val CONTINUATION_PREFIX = 0x80
+private const val CONTINUATION_MASK = 0x3f
+private const val SHIFT_ONE = 6
+private const val SHIFT_TWO = 12
+private const val SHIFT_THREE = 18
 private const val RAW_SCAN_LIMIT = 16_385
 private const val ARGUMENT_LIMIT = 32
 private const val RECORD_LIMIT = 65_536
