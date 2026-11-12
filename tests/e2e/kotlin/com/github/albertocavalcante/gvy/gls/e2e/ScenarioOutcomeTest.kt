@@ -31,7 +31,19 @@ class ScenarioOutcomeTest {
             cleanup = CleanupOutcome.Failed("session close failed"),
         )
 
-        assertThat(outcome.counts).isEqualTo(ObservationCounts(planned = 3, executed = 1, passed = 0, knownFailed = 1, failed = 0, unexpectedPass = 0, blocked = 2))
+        assertThat(
+            outcome.counts,
+        ).isEqualTo(
+            ObservationCounts(
+                planned = 3,
+                executed = 1,
+                passed = 0,
+                knownFailed = 1,
+                failed = 0,
+                unexpectedPass = 0,
+                blocked = 2,
+            ),
+        )
         assertThat(outcome.blocked).containsExactly("list", "map")
         assertThat(outcome.cleanup).isEqualTo(CleanupOutcome.Failed("session close failed"))
         assertThat(outcome.isSuccessful).isFalse()
@@ -45,7 +57,14 @@ class ScenarioOutcomeTest {
         assertThatThrownBy { ScenarioOutcome(listOf("a", "a"), emptyList(), CleanupOutcome.Succeeded) }
             .isInstanceOf(IllegalArgumentException::class.java)
         assertThatThrownBy {
-            ScenarioOutcome(listOf("a"), listOf(ObservationResult("a", ObservationStatus.Passed), ObservationResult("a", ObservationStatus.Passed)), CleanupOutcome.Succeeded)
+            ScenarioOutcome(
+                listOf("a"),
+                listOf(
+                    ObservationResult("a", ObservationStatus.Passed),
+                    ObservationResult("a", ObservationStatus.Passed),
+                ),
+                CleanupOutcome.Succeeded,
+            )
         }.isInstanceOf(IllegalArgumentException::class.java)
     }
 
@@ -68,7 +87,13 @@ class ScenarioOutcomeTest {
             ObservationStatus.UnexpectedPass(issue = 42),
         )
         statuses.forEach { status ->
-            assertThat(ScenarioOutcome(listOf("a"), listOf(ObservationResult("a", status)), CleanupOutcome.Succeeded).isSuccessful)
+            assertThat(
+                ScenarioOutcome(
+                    listOf("a"),
+                    listOf(ObservationResult("a", status)),
+                    CleanupOutcome.Succeeded,
+                ).isSuccessful,
+            )
                 .isFalse()
         }
         assertThat(ScenarioOutcome(listOf("a"), emptyList(), CleanupOutcome.Succeeded).isSuccessful).isFalse()
@@ -95,14 +120,34 @@ class ScenarioOutcomeTest {
 
     @Test
     fun `scenario completion keeps cancellation and operational failures separate`() {
-        val cancelled = ScenarioOutcome(emptyList(), emptyList(), CleanupOutcome.Succeeded, ScenarioCompletion.Cancelled("cancelled"))
-        val failed = ScenarioOutcome(emptyList(), emptyList(), CleanupOutcome.Succeeded, ScenarioCompletion.Failed(ScenarioFailurePhase.Setup, ScenarioFailureKind.Transport, "broken"))
-        val later = ScenarioOutcome(emptyList(), emptyList(), CleanupOutcome.Succeeded, ScenarioCompletion.Failed(ScenarioFailurePhase.Execution, ScenarioFailureKind.Transport, "broken"))
+        val cancelled =
+            ScenarioOutcome(
+                emptyList(),
+                emptyList(),
+                CleanupOutcome.Succeeded,
+                ScenarioCompletion.Cancelled("cancelled"),
+            )
+        val failed =
+            ScenarioOutcome(
+                emptyList(),
+                emptyList(),
+                CleanupOutcome.Succeeded,
+                ScenarioCompletion.Failed(ScenarioFailurePhase.Setup, ScenarioFailureKind.Transport, "broken"),
+            )
+        val later =
+            ScenarioOutcome(
+                emptyList(),
+                emptyList(),
+                CleanupOutcome.Succeeded,
+                ScenarioCompletion.Failed(ScenarioFailurePhase.Execution, ScenarioFailureKind.Transport, "broken"),
+            )
         assertThat(cancelled.isSuccessful).isFalse()
         assertThat(failed.isSuccessful).isFalse()
         assertThat(cancelled.completion).isInstanceOf(ScenarioCompletion.Cancelled::class.java)
         assertThat(failed.completion).isNotEqualTo(later.completion)
-        assertThat(failed.completion).isEqualTo(ScenarioCompletion.Failed(ScenarioFailurePhase.Setup, ScenarioFailureKind.Transport, "broken"))
+        assertThat(
+            failed.completion,
+        ).isEqualTo(ScenarioCompletion.Failed(ScenarioFailurePhase.Setup, ScenarioFailureKind.Transport, "broken"))
     }
 
     @Test

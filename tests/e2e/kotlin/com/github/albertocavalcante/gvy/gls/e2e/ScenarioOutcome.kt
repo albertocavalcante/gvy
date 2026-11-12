@@ -6,11 +6,15 @@ import java.util.Collections
 sealed interface ObservationStatus {
     data object Passed : ObservationStatus
     data class KnownFailure(val issue: Int) : ObservationStatus {
-        init { require(issue > 0) { "An expected failure requires a positive issue number" } }
+        init {
+            require(issue > 0) { "An expected failure requires a positive issue number" }
+        }
     }
     data class Failed(val detail: String) : ObservationStatus
     data class UnexpectedPass(val issue: Int) : ObservationStatus {
-        init { require(issue > 0) { "An unexpected pass requires a positive issue number" } }
+        init {
+            require(issue > 0) { "An unexpected pass requires a positive issue number" }
+        }
     }
 }
 
@@ -38,7 +42,8 @@ enum class ScenarioFailurePhase { Setup, Execution }
 
 sealed interface ScenarioCompletion {
     data object Completed : ScenarioCompletion
-    data class Failed(val phase: ScenarioFailurePhase, val kind: ScenarioFailureKind, val detail: String) : ScenarioCompletion
+    data class Failed(val phase: ScenarioFailurePhase, val kind: ScenarioFailureKind, val detail: String) :
+        ScenarioCompletion
     data class Cancelled(val detail: String) : ScenarioCompletion
 }
 
@@ -53,6 +58,7 @@ class ScenarioOutcome(
     val observed: List<ObservationResult> = Collections.unmodifiableList(observed.toList())
     val blocked: List<String>
     val counts: ObservationCounts
+
     /** True only when all planned checks passed and execution and cleanup completed successfully.
      * Known failures remain visible and do not count as a pass; a runner decides how to report them.
      */
