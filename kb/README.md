@@ -6,6 +6,7 @@ This folder contains internal design docs, research notes, and troubleshooting. 
 ## Index
 
 - Architecture: `ARCHITECTURE.md`
+- Analysis SDK and infrastructure extraction delivery: [dependency-ordered plan](SDK_EXTRACTION_DELIVERY_PLAN.md)
 - CodeNarc integration notes: `CODENARC.md`
 - Jenkins IntelliSense design: `JENKINS_INTELLISENSE_ARCHITECTURE.md`
 - Spock design notes: `SPOCK_SUPPORT.md`, `SPOCK_AST_SUPPORT.md`
