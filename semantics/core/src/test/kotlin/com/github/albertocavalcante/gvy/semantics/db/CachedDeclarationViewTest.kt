@@ -43,6 +43,23 @@ class CachedDeclarationViewTest {
     }
 
     @Test
+    fun `view currentness changes on publication even when declaration version stays the same`() {
+        val db = GroovySemanticDB()
+        db.updateDocument(uri, document(1))
+        val captured = db.snapshotDeclarations()
+        val version = db.version
+        assertEquals(true, db.isCurrentDeclarationSnapshot(captured))
+        db.updateDocument(uri, document(2))
+        assertEquals(version, db.version)
+        assertEquals(false, db.isCurrentDeclarationSnapshot(captured))
+        assertEquals(1, captured.findMembers("C#").first().second.range.startLine)
+        val next = db.snapshotDeclarations()
+        assertEquals(true, db.isCurrentDeclarationSnapshot(next))
+        db.removeDocument(uri)
+        assertEquals(false, db.isCurrentDeclarationSnapshot(next))
+    }
+
+    @Test
     fun `concurrent captures publish one coherent cached view`() {
         val db = GroovySemanticDB()
         db.updateDocument(uri, document(1))
