@@ -13,7 +13,7 @@ ifeq ($(shell uname),Darwin)
     endif
 endif
 
-.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild e2e e2e-single ext-install ext-build ext-test ext-package ext-latest ext-rollback ext-latest-test
+.PHONY: help build jar test clean lint format fix-imports quality run-stdio run-socket version retest rebuild harness-test e2e e2e-single ext-install ext-build ext-test ext-package ext-latest ext-rollback ext-latest-test
 
 # Default target
 help:
@@ -28,6 +28,7 @@ help:
 	@echo "  format     - Format source code and fix auto-correctable issues"
 	@echo "  fix-imports - Auto-fix unused imports and other detekt auto-correctable issues"
 	@echo "  quality    - Run all quality checks including coverage"
+	@echo "  harness-test - Run focused harness controls without fat JAR/distribution assembly"
 	@echo "  e2e        - Run end-to-end LSP scenarios"
 	@echo "  e2e-single - Run a single E2E scenario (usage: make e2e-single SCENARIO=name)"
 	@echo "  run-stdio  - Run server in stdio mode"
@@ -104,11 +105,14 @@ fix-imports:
 quality:
 	./gradlew quality $(GRADLE_ARGS)
 
+harness-test:
+	./gradlew :tests:harnessTest --console=plain $(GRADLE_ARGS)
+
 e2e:
-	GRADLE_USER_HOME=$(CURDIR)/.gradle ./gradlew --info --console=plain e2eTest $(GRADLE_ARGS)
+	./gradlew --info --console=plain e2eTest $(GRADLE_ARGS)
 
 e2e-single:
-	GRADLE_USER_HOME=$(CURDIR)/.gradle ./gradlew --info --console=plain :tests:e2eTest -Dgroovy.lsp.e2e.filter="$(SCENARIO)" $(GRADLE_ARGS)
+	./gradlew --info --console=plain :tests:e2eTest -Dgroovy.lsp.e2e.filter="$(SCENARIO)" $(GRADLE_ARGS)
 
 # Run the language server
 run-stdio: jar
