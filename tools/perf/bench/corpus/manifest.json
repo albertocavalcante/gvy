@@ -1,0 +1,326 @@
+{
+  "schemaVersion": 1,
+  "id": "gvy-groovy-corpus-v1",
+  "spanContract": {
+    "encoding": "utf-8",
+    "range": "half-open",
+    "categories": [
+      "keyword",
+      "comment",
+      "string",
+      "number",
+      "operator",
+      "punctuation"
+    ]
+  },
+  "compilerProfiles": [
+    {
+      "id": "conversion-only-empty-external-classpath",
+      "phase": "CONVERSION",
+      "externalClasspath": [
+
+      ],
+      "semanticAvailability": "not-declared",
+      "executeSource": false
+    }
+  ],
+  "sources": [
+    {
+      "id": "groovy4",
+      "repository": "apache/groovy",
+      "revision": "24e5e8c8b8b4a62aa919d8bd5ce29474bbac19ad",
+      "license": {
+        "spdx": "Apache-2.0",
+        "files": [
+          {
+            "path": "licenses/groovy4/LICENSE",
+            "upstreamPath": "LICENSE",
+            "gitBlobSha1": "a515d411d42c55e1e1b3c9a1047dcda9b23cea94",
+            "sha256": "74dc4e64607573bf4062a11872fc32c4d78b55ae41766e9d08f4fdbe2d1314e8",
+            "byteLength": 12740
+          },
+          {
+            "path": "licenses/groovy4/NOTICE",
+            "upstreamPath": "NOTICE",
+            "gitBlobSha1": "d945b2c8c88b494703454b067c5ea8c2124d5143",
+            "sha256": "212065eb066c4c45a24179a74bf69d97b17b822988bfa03a9b8d224e5866fe01",
+            "byteLength": 866
+          }
+        ]
+      }
+    },
+    {
+      "id": "spock",
+      "repository": "spockframework/spock",
+      "revision": "ce7e8afa895210d0b06103223f10d963a83f7a08",
+      "license": {
+        "spdx": "Apache-2.0",
+        "files": [
+          {
+            "path": "licenses/spock/LICENSE",
+            "upstreamPath": "LICENSE",
+            "gitBlobSha1": "62589edd12a37dd28b6b6fed1e2d728ac9f05c8d",
+            "sha256": "aac73b3148f6d1d7111dbca32099f68d26c644c6813ae1e4f05f6579aa2663fe",
+            "byteLength": 11360
+          },
+          {
+            "path": "licenses/spock/NOTICE",
+            "upstreamPath": "NOTICE",
+            "gitBlobSha1": "a0f59a54fd1da736e16d1d0993adca284b89341f",
+            "sha256": "4fc2fbcc5a5bb5fec5ed0de7b065329734a4c4fb987e4eef2c2baa5147c97bd3",
+            "byteLength": 638
+          }
+        ]
+      }
+    },
+    {
+      "id": "geb",
+      "repository": "geb/geb",
+      "revision": "9b26903094accc1c8c392a62ec72d6a35737ca42",
+      "license": {
+        "spdx": "Apache-2.0",
+        "files": [
+          {
+            "path": "licenses/geb/LICENSE",
+            "upstreamPath": "LICENSE",
+            "gitBlobSha1": "ec3bc9600cc19ffe1a78bcd504cf4bcf2c02dc3c",
+            "sha256": "f913b21bd9539a9ff3eac2b9249938c54589c6099c39b7993a905f84f3366520",
+            "byteLength": 15327
+          },
+          {
+            "path": "licenses/geb/NOTICE",
+            "upstreamPath": "NOTICE",
+            "gitBlobSha1": "8e127a8a88e6f89d73e36ebde4152fbccf5b139b",
+            "sha256": "9b26006b64531f22c2fe24148e9dc0cfeb13861851aa26a91f994a938fe0c687",
+            "byteLength": 229
+          }
+        ]
+      }
+    },
+    {
+      "id": "ofbiz",
+      "repository": "apache/ofbiz-framework",
+      "revision": "59b32bdc3bed4abdeb9b5eaa12f5d605a3926985",
+      "license": {
+        "spdx": "Apache-2.0",
+        "files": [
+          {
+            "path": "licenses/ofbiz/LICENSE",
+            "upstreamPath": "LICENSE",
+            "gitBlobSha1": "1f413266d8a0b4516315f84a16d029296c7a92bc",
+            "sha256": "cbac9a0fde0598111b821378374122ab895b7f5963767e4928e85ebabab13cda",
+            "byteLength": 11906
+          },
+          {
+            "path": "licenses/ofbiz/NOTICE",
+            "upstreamPath": "NOTICE",
+            "gitBlobSha1": "f99588a5a0fda8d616863c737de68a78988a5f9a",
+            "sha256": "dc5608d6a118e28e840b2b16b351bae9ba0059c1c69c6cfee25fd05631f52800",
+            "byteLength": 166
+          }
+        ]
+      }
+    },
+    {
+      "id": "pipeline-examples",
+      "repository": "jenkinsci/pipeline-examples",
+      "revision": "fb9575a8182b51614f5f0df912b46b37d95fbb8d",
+      "license": {
+        "spdx": "MIT",
+        "files": [
+          {
+            "path": "licenses/pipeline-examples/LICENSE.txt",
+            "upstreamPath": "LICENSE.txt",
+            "gitBlobSha1": "4cfc54adf4c42ca4d81204d6e49ec2e2604eebe3",
+            "sha256": "25e9cc6d3d2e617b94048329269d3cc9af5320eb8b9d2ecc991db0c0fca86900",
+            "byteLength": 1118
+          }
+        ]
+      }
+    },
+    {
+      "id": "jenkins-docker",
+      "repository": "jenkinsci/docker",
+      "revision": "56c9f90bd241809337db54b496bf42af421bcf9c",
+      "license": {
+        "spdx": "MIT",
+        "files": [
+          {
+            "path": "licenses/jenkins-docker/LICENSE.txt",
+            "upstreamPath": "LICENSE.txt",
+            "gitBlobSha1": "49b813e306d431db24d02d4b372cea0a2ab146e5",
+            "sha256": "671fb1500837d11678e7eb8d654d1eb04cca84fa97d077839e7480ba76b8173d",
+            "byteLength": 1149
+          }
+        ]
+      }
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "groovy-cli-exception",
+      "family": "class",
+      "originKind": "library-source",
+      "sourceId": "groovy4",
+      "path": "fixtures/upstream/groovy-cli-exception/CliBuilderException.groovy",
+      "upstreamPath": "src/main/groovy/groovy/cli/CliBuilderException.groovy",
+      "gitBlobSha1": "7bd864857f1fb962454ad7f9f059afd87ae19563",
+      "sha256": "3fda51167bdd4f018e23622c3ee62b633c5ae58e0fa18674fc6d925f6037e28c",
+      "byteLength": 1034,
+      "lineCount": 26,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "spock-blocking-variables",
+      "family": "class",
+      "originKind": "library-source",
+      "sourceId": "spock",
+      "path": "fixtures/upstream/spock-blocking-variables/BlockingVariables.groovy",
+      "upstreamPath": "spock-core/src/main/groovy/spock/util/concurrent/BlockingVariables.groovy",
+      "gitBlobSha1": "ccccd66294f07158333bf00025aa721275fc2abf",
+      "sha256": "dd493b17681f08e265df14e6c3728bf2ff025ea701b1b1de73d4e5ce89633b87",
+      "byteLength": 3069,
+      "lineCount": 112,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "groovy-grape-ivy",
+      "family": "class",
+      "originKind": "library-source",
+      "sourceId": "groovy4",
+      "path": "fixtures/upstream/groovy-grape-ivy/GrapeIvy.groovy",
+      "upstreamPath": "src/main/groovy/groovy/grape/GrapeIvy.groovy",
+      "gitBlobSha1": "f942fc84de0c5dce8f3d895993ae1917d9a579d0",
+      "sha256": "9297a38f1536624945497fec673fd6e5fd99291ba14b7fba0439274309ac11eb",
+      "byteLength": 30782,
+      "lineCount": 737,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "groovy-benchmark-driver",
+      "family": "script",
+      "originKind": "tool-script",
+      "sourceId": "groovy4",
+      "path": "fixtures/upstream/groovy-benchmark-driver/bench.groovy",
+      "upstreamPath": "benchmark/bench.groovy",
+      "gitBlobSha1": "6f5d2a23f6b2d2b3683626b5a3059151541a858f",
+      "sha256": "5e633ee6f7d4f50ae736271f537cc45cd99907d729be086b0cbd80f44f965b72",
+      "byteLength": 4843,
+      "lineCount": 174,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "ofbiz-filter-receipts",
+      "family": "script",
+      "originKind": "hosted-service-script",
+      "sourceId": "ofbiz",
+      "path": "fixtures/upstream/ofbiz-filter-receipts/FilterOutReceipts.groovy",
+      "upstreamPath": "applications/accounting/src/main/groovy/org/apache/ofbiz/accounting/admin/FilterOutReceipts.groovy",
+      "gitBlobSha1": "a5e019c6075f403bcf3dc5cc793104729127526c",
+      "sha256": "7d2f0a18da944a95687ad8ffee8eb248ded46bc9665723938cd4e6d09667b64e",
+      "byteLength": 1028,
+      "lineCount": 25,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "spock-gradle-build",
+      "family": "gradle",
+      "originKind": "build-script",
+      "sourceId": "spock",
+      "path": "fixtures/upstream/spock-gradle-build/build.gradle",
+      "upstreamPath": "build.gradle",
+      "gitBlobSha1": "b1cb4f55f8ce69513895de050ad5b2a271101254",
+      "sha256": "8af4dc2387fd279c66b9c82e97d0b9d33681414682e2873167119840b3f1c469",
+      "byteLength": 20316,
+      "lineCount": 545,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "geb-gradle-bootstrap",
+      "family": "gradle",
+      "originKind": "build-script",
+      "sourceId": "geb",
+      "path": "fixtures/upstream/geb-gradle-bootstrap/build.gradle",
+      "upstreamPath": "bootstrap/build.gradle",
+      "gitBlobSha1": "d6ef1fc5fa4a5e00c8a6871e2a33f0e58ee49640",
+      "sha256": "2b9d4c984a09adf1ac17dba65d9f55ec57175dc322513190d20c848450014813",
+      "byteLength": 1361,
+      "lineCount": 38,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "pipeline-parallel-list",
+      "family": "jenkins",
+      "originKind": "pipeline-example",
+      "sourceId": "pipeline-examples",
+      "path": "fixtures/upstream/pipeline-parallel-list/parallelFromList.groovy",
+      "upstreamPath": "pipeline-examples/parallel-from-list/parallelFromList.groovy",
+      "gitBlobSha1": "d969ab9414221497dbe6f877f1cb282547b868f1",
+      "sha256": "d72bb70f675f2f0a562a827bd7673628351c985269e807d46dc3e88bbb6b6e59",
+      "byteLength": 980,
+      "lineCount": 28,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "jenkins-docker-pipeline",
+      "family": "jenkins",
+      "originKind": "ci-pipeline",
+      "sourceId": "jenkins-docker",
+      "path": "fixtures/upstream/jenkins-docker-pipeline/Jenkinsfile",
+      "upstreamPath": "Jenkinsfile",
+      "gitBlobSha1": "b7a38fce9a39bfb2aca8da02c088c3ab5e7590ff",
+      "sha256": "4837d95fa44214cbaea7aff16a5219847b9b77702d2fa71d7f4301d3c1162ec3",
+      "byteLength": 11920,
+      "lineCount": 239,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "spock-feature-methods",
+      "family": "spock",
+      "originKind": "test-spec",
+      "sourceId": "spock",
+      "path": "fixtures/upstream/spock-feature-methods/FeatureMethods.groovy",
+      "upstreamPath": "spock-specs/src/test/groovy/org/spockframework/smoke/FeatureMethods.groovy",
+      "gitBlobSha1": "2311d3e2d77a2dac5fa766ce79f753920d846d39",
+      "sha256": "d61205463b294bb4c42cfe80cc3085ab3f91cef83950394a0035ddbf577fc53a",
+      "byteLength": 2194,
+      "lineCount": 74,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    },
+    {
+      "id": "geb-browser-spec",
+      "family": "spock",
+      "originKind": "test-spec",
+      "sourceId": "geb",
+      "path": "fixtures/upstream/geb-browser-spec/BrowserSpec.groovy",
+      "upstreamPath": "module/geb-core/src/test/groovy/geb/BrowserSpec.groovy",
+      "gitBlobSha1": "c95391d85174b53a2ea03bb8094c892d3c295e65",
+      "sha256": "dd1df34f666fc592eefa3552bd653e3bfc51b4c6b1a31768e8a1989f5ab3b6f7",
+      "byteLength": 2281,
+      "lineCount": 85,
+      "languageMode": "groovy-4",
+      "compilerProfile": "conversion-only-empty-external-classpath",
+      "required": true
+    }
+  ]
+}
