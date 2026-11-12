@@ -88,6 +88,32 @@ class NamedObservationExecutionTest {
     }
 
     @Test
+    fun `duplicate IDs are rejected before creating a workspace`() {
+        val checks = listOf(
+            JsonCheck("$.uri", JsonExpectation(), id = "duplicate"),
+            JsonCheck("$.path", JsonExpectation(), id = "duplicate"),
+        )
+
+        assertThatThrownBy { ScenarioExecutor(factory).executeWithOutcome(definition(checks)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        verify(exactly = 0) { WorkspaceFixture.materialize(any(), any()) }
+    }
+
+    @Test
+    fun `unsupported named notification check is rejected before creating a workspace`() {
+        val scenario = Scenario(
+            name = "unsupported",
+            steps = listOf(ScenarioStep.WaitNotification("example", checks = listOf(
+                JsonCheck("$", JsonExpectation(), id = "notification"),
+            ))),
+        )
+
+        assertThatThrownBy { ScenarioExecutor(factory).executeWithOutcome(ScenarioDefinition(scenario)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        verify(exactly = 0) { WorkspaceFixture.materialize(any(), any()) }
+    }
+
+    @Test
     fun `empty plan still reports actual successful cleanup`() {
         val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(emptyList()))
 
