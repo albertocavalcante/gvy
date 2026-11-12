@@ -89,6 +89,8 @@ class SarifWriter(
         val run = SarifRun(
             tool = SarifTool(driver = driver),
             results = results,
+            // LSP positions count UTF-16 code units, including supplementary characters.
+            columnKind = "utf16CodeUnits",
         )
 
         return SarifOutput(runs = listOf(run))
