@@ -4,9 +4,10 @@ Deliver logging that explains failures, respects the user's selected verbosity, 
 CPU, memory and output costs. Ship this as small independently reviewed PRs, using Terra implementation agents and a
 coordinator who owns integration, validation and landing.
 
-**Status:** planned; no implementation packet below is claimed complete. This is a delivery specification under the
-[Quality Bar](../docs/quality-bar.md), especially Correct, Honest, Fast, Safe and the review-findings track. It is not a
-second project roadmap. Existing issue acceptance criteria remain authoritative for their complete scope.
+**Status:** in progress; three prerequisite slices have shipped, while the full packets and milestone remain open. This
+is a delivery specification under the [Quality Bar](../docs/quality-bar.md), especially Correct, Honest, Fast, Safe and
+the review-findings track. It is not a second project roadmap. Existing issue acceptance criteria remain authoritative
+for their complete scope.
 
 ## Baseline and evidence
 
@@ -670,6 +671,58 @@ At dispatch, append the actual branch, author, base SHA, prerequisite merges, re
 validation/diagnostics evidence, merge SHA and cleanup proof for the packet. Refresh rather than copy stale evidence.
 The source contract is the packet text; GitHub issues/PRs carry live progress. Avoid rewriting the whole plan for every
 status tick.
+
+### Shipped slices
+
+Verified on 2026-11-12 UTC. All three PRs received complete independent Terra review at the publication heads below. The
+coordinator verified their squash commits in `origin/main`, automatic remote-head deletion, clean/unlocked Mini worktree
+removal and exact local-branch deletion. Main's unrelated edits were preserved. Private raw validation logs remain
+outside Git.
+
+| Slice | Publication                                                                                                      | Result and remaining boundary                                                                                                                                                                                                                                                                                      |
+| ----- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| L00a  | [#1743](https://github.com/albertocavalcante/gvy/pull/1743), `test/logging-baseline`, Terra client author        | Four frozen-fixture tests pass on hosted Node 24.22.2; root lintFix and final workflow/Gradle/E2E/extension checks pass. Full application/editor baseline and cost measurements remain open.                                                                                                                       |
+| L01a  | [#1749](https://github.com/albertocavalcante/gvy/pull/1749), `fix/parser-debug-observation`, Terra server author | Actual visitor/tracker logging-only failures have independent failing controls and nine green focused tests; native lint, hooks and final Gradle/Bazel/E2E/extension checks pass. Real incomplete-classpath semantic recovery remains an L03 prerequisite; #1409 stays open.                                       |
+| L08a  | [#1753](https://github.com/albertocavalcante/gvy/pull/1753), `fix/vscode-bounded-lines`, Terra client author     | Server streams retain bounded UTF-8 records and preserve known severity on truncation; 684 unit tests, root lintFix and final Bazel/platform extension checks pass. Main Gradle/E2E were intentionally path-filtered. Test-process loss handling is separate #1764; dedicated packaged logging proof remains open. |
+
+<details>
+<summary>Exact source, review and landing identities</summary>
+
+- L00a: base `ce45ade0bd665ad1970d74482f8ed28aec1c628d`; reviewed head `e3ace74909f4fc22c42454058869abb3beb4f64a`;
+  squash `38deefdcbbea8036f3a4390d7b5ac67ccd8831af`; Mini slot w8 removed.
+- L01a: base `ce45ade0bd665ad1970d74482f8ed28aec1c628d`; reviewed head `54e7a923987ef3f7442d1e10f4fa3ffe080fe3df`;
+  squash `c3615f54e015f42b74a6ac8970ce0e947f43d18a`; Mini slot w10 and clean Air validation clone removed, with logs
+  retained and object dependencies checked.
+- L08a: base `c8fc588a0cd7f23438a692ebb040b65fb7909bf0`; reviewed head `59842250a4332e0b3b1f5a174f77312829e97293`;
+  squash `2cf71142638198975d3248f5d8ea33ac63c0fda9`; Mini slot w6 removed. All six merged blobs match the reviewed head.
+  Dependent #1764 was retargeted to main before parent-head deletion; its final rebase, review and CI remain required.
+  The clean finished Air clone used for both root lintFix checks was also removed.
+
+Final-head CI and diagnostic details are in each PR. The JVM/Bazel reviews retain the existing exact exceptions in
+#1599/#1601/#1607; other inherited tool/runtime diagnostics have explicit ownership in
+[#1603](https://github.com/albertocavalcante/gvy/issues/1603). The two JVM E2E runs each retain 32 issue-linked expected
+failures. Neither passing those runs nor documenting their debt closes those issues.
+
+</details>
+
+### Findings added during implementation
+
+- **L01b remains a gate:** the preserved generated-JAR #1409 repro also fails at INFO in semantic hierarchy/model
+  construction. The logging implementation owner must test narrow classpath-error recovery, explicit unknown/degraded
+  outcomes, a clean later parse and a conservative Spock table action before L03 enables DEBUG more broadly. The
+  complete three-state caller audit remains part of the issue's own acceptance.
+- **Test-runtime parity needs a separate PR:** CI found Gradle test JVMs in build-tool and Jenkins modules emitting
+  SLF4J's no-provider/NOP advisory, while Bazel supplies a backend. Missing logs undermine diagnostic assertions. The
+  logging owner will inventory test classpaths, coordinate shared build declarations with the CI owner, and add a
+  test-only backend and explicit test policy. Acceptance requires real WARN/ERROR capture, working DEBUG overrides,
+  Gradle/Bazel parity and no production binding added to reusable libraries. Exact reproductions and tracking belong to
+  #1603; suppressing the advisory or accepting NOP is not a fix.
+- **Healthy Maven report freshness is unresolved:** [#1767](https://github.com/albertocavalcante/gvy/issues/1767)
+  records how an older Surefire report can misstate a successful current run. The L08b candidate in #1764 is being
+  reviewed to prevent failed/lost executions and unrelated selections from accepting those results; it does not prove
+  freshness for healthy executions. The extension/test API owner must add current-run report provenance and regressions
+  for unchanged stale reports; the linked source TODO is assigned to the following L11 change. This issue remains open
+  until observable current-run results are proven.
 
 The milestone is complete only when L00-L19 are satisfied, actual user-visible failures and volume are verified in the
 packaged client, baseline/final evidence is reviewable, and remaining limitations have the explicit ownership above. Any
