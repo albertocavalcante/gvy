@@ -26,12 +26,19 @@ class NamedHighLevelChecksTest {
             ScenarioStep.Completion(uri = "file:///example.groovy", line = 0, character = 0, checks = checks),
             ScenarioStep.CodeAction(uri = "file:///example.groovy", checks = checks),
             ScenarioStep.Formatting(uri = "file:///example.groovy", checks = checks),
-            ScenarioStep.Rename(uri = "file:///example.groovy", line = 0, character = 0, newName = "n", checks = checks),
+            ScenarioStep.Rename(
+                uri = "file:///example.groovy",
+                line = 0,
+                character = 0,
+                newName = "n",
+                checks = checks,
+            ),
         )
         val session = mockk<LanguageServerSession>(relaxed = true)
         val factory = mockk<LanguageServerSessionFactory>()
         every { factory.start(any(), any()) } returns session
-        every { session.endpoint.request(any(), any()) } returns CompletableFuture.completedFuture(mapOf("present" to true))
+        every { session.endpoint.request(any(), any()) } returns
+            CompletableFuture.completedFuture(mapOf("present" to true))
         mockkObject(WorkspaceFixture)
         try {
             steps.forEachIndexed { index, step ->
