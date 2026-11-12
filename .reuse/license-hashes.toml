@@ -1,0 +1,22 @@
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+# Changes to license text or this approved inventory require review.
+[[license]]
+path = "LICENSE"
+sha256 = "9bf76f2325ba97fbe2064386e5a752967b3ca0bb03889291ea4917d22008fea1"
+source = "Project license and copyright notice"
+
+[[license]]
+path = "editors/code/LICENSE"
+sha256 = "9bf76f2325ba97fbe2064386e5a752967b3ca0bb03889291ea4917d22008fea1"
+source = "Project license copied into the VS Code extension"
+
+[[license]]
+path = "editors/zed/LICENSE"
+sha256 = "9bf76f2325ba97fbe2064386e5a752967b3ca0bb03889291ea4917d22008fea1"
+source = "Project license copied into the Zed extension"
+
+[[license]]
+path = "LICENSES/Apache-2.0.txt"
+sha256 = "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+source = "https://spdx.org/licenses/Apache-2.0.txt"

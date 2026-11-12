@@ -11,9 +11,10 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
-APACHE_HASH = "074e6e32c86a4c0ef8b3ed25b721ca23aca83df277cd88106ef7177c354615ff"
+REQUIRED_LICENSE_PATHS = {"LICENSE", "LICENSES/Apache-2.0.txt", "editors/code/LICENSE", "editors/zed/LICENSE"}
 # Resources include byte-sensitive fixtures and bundled data; their provenance is
 # described by REUSE metadata. Imported code is audited separately there too.
 EXCLUDED_PARTS = {"node_modules", ".venv"}
@@ -207,12 +208,36 @@ def parse_report(value: object) -> tuple[bool, dict[Path, set[str]]]:
 def check(root: Path) -> list[str]:
     root = root.resolve()
     errors: list[str] = []
-    license_path = root / "LICENSES/Apache-2.0.txt"
     try:
-        if hashlib.sha256(license_path.read_bytes()).hexdigest() != APACHE_HASH:
-            errors.append("LICENSES/Apache-2.0.txt: license text does not match approved SHA-256")
+        inventory = tomllib.loads((root / ".reuse/license-hashes.toml").read_text(encoding="utf-8"))
+        entries = inventory.get("license")
+        if not isinstance(entries, list):
+            raise TypeError("missing license inventory")
+        seen: set[str] = set()
+        for raw_entry in entries:
+            entry = as_object(raw_entry)
+            name, expected, source = entry.get("path"), entry.get("sha256"), entry.get("source")
+            if not isinstance(name, str) or not isinstance(expected, str) or not isinstance(source, str) or not source:
+                raise ValueError("invalid license inventory entry")
+            path = Path(name)
+            if path.is_absolute() or ".." in path.parts or name in seen or not re.fullmatch(r"[0-9a-f]{64}", expected):
+                raise ValueError("unsafe or duplicate license inventory entry")
+            seen.add(name)
+            try:
+                full_path = root / path
+                if full_path.is_symlink() or not full_path.resolve().is_relative_to(root):
+                    errors.append(f"{name}: unsafe symlink")
+                    continue
+                if hashlib.sha256(full_path.read_bytes()).hexdigest() != expected:
+                    errors.append(f"{name}: license text does not match approved SHA-256")
+            except OSError as exc:
+                errors.append(f"{name}: cannot read: {exc.strerror}")
+        if missing := REQUIRED_LICENSE_PATHS - seen:
+            errors.append(f".reuse/license-hashes.toml: missing required entries: {', '.join(sorted(missing))}")
     except OSError as exc:
-        errors.append(f"LICENSES/Apache-2.0.txt: cannot read: {exc.strerror}")
+        errors.append(f".reuse/license-hashes.toml: cannot read: {exc.strerror}")
+    except (ValueError, TypeError) as exc:
+        errors.append(f".reuse/license-hashes.toml: invalid inventory: {exc}")
     env = os.environ.copy()
     env["REUSE_ENCODING_MODULE"] = "charset_normalizer"
     try:

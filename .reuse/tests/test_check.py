@@ -57,6 +57,13 @@ class IntegrationTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         (self.root / "LICENSES").mkdir()
         shutil.copy(Path(__file__).parents[2] / "LICENSES/Apache-2.0.txt", self.root / "LICENSES/Apache-2.0.txt")
+        shutil.copy(Path(__file__).parents[2] / "LICENSE", self.root / "LICENSE")
+        (self.root / ".reuse").mkdir()
+        shutil.copy(Path(__file__).parents[1] / "license-hashes.toml", self.root / ".reuse/license-hashes.toml")
+        for editor in ("code", "zed"):
+            directory = self.root / "editors" / editor
+            directory.mkdir(parents=True)
+            shutil.copy(self.root / "LICENSE", directory / "LICENSE")
         (self.root / "src").mkdir()
         self.source = self.root / "src/a.py"
         self.source.write_text("# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\nprint(1)\n")
@@ -88,7 +95,6 @@ class IntegrationTests(unittest.TestCase):
 
     def test_reuse_ignored_tooling_is_checked(self) -> None:
         self.source.write_text("# SPDX-FileCopyrightText: Alice\n# SPDX-License-Identifier: Apache-2.0\n")
-        (self.root / ".reuse").mkdir()
         (self.root / ".reuse/check.py").write_text("print(1)\n")
         self.assertTrue(any(".reuse/check.py: missing" in error for error in check.check(self.root)))
 
@@ -108,3 +114,17 @@ class IntegrationTests(unittest.TestCase):
     def test_report_shape_is_validated(self) -> None:
         with self.assertRaises((ValueError, TypeError)):
             check.parse_report({"lint_version": "1.0", "files": []})
+
+    def test_root_license_integrity(self) -> None:
+        (self.root / "LICENSE").write_text("tampered")
+        self.assertTrue(any("LICENSE: license text does not match" in error for error in check.check(self.root)))
+        (self.root / "LICENSE").unlink()
+        self.assertTrue(any("LICENSE: cannot read" in error for error in check.check(self.root)))
+
+    def test_distributed_license_copy_and_inventory_are_checked(self) -> None:
+        (self.root / "editors/code/LICENSE").write_text("tampered")
+        self.assertTrue(
+            any("editors/code/LICENSE: license text does not match" in error for error in check.check(self.root))
+        )
+        (self.root / ".reuse/license-hashes.toml").write_text("license = []\n")
+        self.assertTrue(any("missing required entries" in error for error in check.check(self.root)))
