@@ -90,12 +90,32 @@ test('driver opts Cargo metadata into the canonical gate without Cargo or compil
 
 test('cleanup uncertainty overrides a Rust diagnostic and never certifies complete capture', { skip: !supported }, () => {
   const helper = new URL('./command.mjs', import.meta.url).href;
-  const script = `const {runCommand}=await import(${JSON.stringify(helper)});const kill=process.kill.bind(process);process.kill=(pid,signal)=>{if(pid<0&&signal===0)throw Object.assign(new Error('probe uncertainty'),{code:'EPERM'});return kill(pid,signal);};try{await runCommand(process.execPath,['-e',${JSON.stringify(`process.stderr.write('warning: ${canary}\n')`)}],{rustDiagnostics:true,timeoutMs:4000});}catch(error){process.stdout.write(JSON.stringify({code:error.message,capture:error.rustCapture}));}`;
-  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { timeout: 7000, maxBuffer: 4096, encoding: 'utf8' });
-  assert.equal(result.status, 0);
-  assert.equal(result.stderr, '');
-  const observed = JSON.parse(result.stdout);
-  assert.equal(observed.code, 'NATIVE_COMMAND_CLEANUP_UNKNOWN');
-  assert.equal(observed.capture.complete, false);
-  assert.ok(!result.stdout.includes(canary));
+  const script = `
+    const { runCommand } = await import(process.argv[2]);
+    const kill = process.kill.bind(process);
+    process.kill = (pid, signal) => {
+      if (pid < 0 && signal === 0) throw Object.assign(new Error('probe uncertainty'), { code: 'EPERM' });
+      return kill(pid, signal);
+    };
+    try {
+      await runCommand(process.execPath, ['-e', 'process.stderr.write(process.argv[1])', '--', process.argv[3]], { rustDiagnostics: true, timeoutMs: 4000 });
+    } catch (error) {
+      process.stdout.write(JSON.stringify({ code: error.message, capture: error.rustCapture }));
+    }
+  `;
+  for (const warning of [
+    `warning: ${canary}\n`,
+    `warning: ${canary}');process.stdout.write('LEAK');setTimeout(()=>{},25);//`,
+  ]) {
+    assert.ok(Buffer.byteLength(warning) < 128);
+    // Imported CLI guards require argv[1] to name a real entry file, even for node -e.
+    const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, '--', fileURLToPath(import.meta.url), helper, warning], { timeout: 7000, maxBuffer: 4096, encoding: 'utf8' });
+    assert.equal(result.status, 0);
+    assert.equal(result.stderr, '');
+    const observed = JSON.parse(result.stdout);
+    assert.equal(observed.code, 'NATIVE_COMMAND_CLEANUP_UNKNOWN');
+    assert.equal(observed.capture.complete, false);
+    assert.equal(observed.capture.stdout, 'empty');
+    assert.ok(!result.stdout.includes(canary));
+  }
 });
