@@ -5,10 +5,15 @@ import com.github.albertocavalcante.gvy.gls.dsl.completion.completions
 import com.github.albertocavalcante.gvy.gls.providers.codelens.TestCodeLensProvider
 import com.github.albertocavalcante.gvy.testing.registry.TestFrameworkRegistry
 import com.github.albertocavalcante.gvy.testing.spock.SpockTestDetector
-import com.google.gson.JsonParser
 import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.int
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.codehaus.groovy.control.Phases
 import org.eclipse.lsp4j.CodeLens
 import org.eclipse.lsp4j.CompletionItem
@@ -45,30 +50,32 @@ class DynamicPayloadWireContractTest {
             override fun codeLens() = CompletableFuture.completedFuture(lenses)
         }
         val responses = sendRequests(service)
-        val item = responses.getValue(1)["result"].asJsonArray.single().asJsonObject
-        assertEquals(JsonParser.parseString("""{"signature":"café(java.lang.String)"}"""), item["data"])
-        val commands = responses.getValue(2)["result"].asJsonArray.map { it.asJsonObject["command"].asJsonObject }
-        val runAll = commands.single { it["title"].asString == "\$(play) Run All" }
+        val item = responses.getValue(1).getValue("result").jsonArray.single().jsonObject
+        assertEquals(Json.parseToJsonElement("""{"signature":"café(java.lang.String)"}"""), item["data"])
+        val commands = responses.getValue(2).getValue("result").jsonArray.map {
+            it.jsonObject.getValue("command").jsonObject
+        }
+        val runAll = commands.single { it.getValue("title").jsonPrimitive.content == "\$(play) Run All" }
         assertEquals(
-            JsonParser.parseString(
+            Json.parseToJsonElement(
                 """[{"uri":"file:///MySpec.groovy","suite":"com.example.MySpec",
                 "test":"*","debug":false}]""",
             ),
             runAll["arguments"],
         )
-        val run = commands.single { it["title"].asString == "\$(play) Run" }
-        val debug = commands.single { it["title"].asString == "\$(debug-alt) Debug" }
-        assertEquals("groovy.test.run", run["command"].asString)
+        val run = commands.single { it.getValue("title").jsonPrimitive.content == "\$(play) Run" }
+        val debug = commands.single { it.getValue("title").jsonPrimitive.content == "\$(debug-alt) Debug" }
+        assertEquals("groovy.test.run", run.getValue("command").jsonPrimitive.content)
         assertEquals(
-            JsonParser.parseString(
+            Json.parseToJsonElement(
                 """[{"uri":"file:///MySpec.groovy","suite":"com.example.MySpec",
                 "test":"should work","debug":false,"framework":"SPOCK"}]""",
             ),
             run["arguments"],
         )
-        assertEquals("groovy.test.debug", debug["command"].asString)
+        assertEquals("groovy.test.debug", debug.getValue("command").jsonPrimitive.content)
         assertEquals(
-            JsonParser.parseString(
+            Json.parseToJsonElement(
                 """[{"uri":"file:///MySpec.groovy","suite":"com.example.MySpec",
                 "test":"should work","debug":true,"framework":"SPOCK"}]""",
             ),
@@ -95,7 +102,7 @@ class DynamicPayloadWireContractTest {
         return lenses
     }
 
-    private fun sendRequests(service: FixtureService): Map<Int, com.google.gson.JsonObject> {
+    private fun sendRequests(service: FixtureService): Map<Int, JsonObject> {
         val requests = listOf(
             """{"jsonrpc":"2.0","id":1,"method":"fixture/completion"}""",
             """{"jsonrpc":"2.0","id":2,"method":"fixture/codeLens"}""",
@@ -125,7 +132,7 @@ class DynamicPayloadWireContractTest {
             val end = headers.getOrNull(index + 1)?.range?.first ?: wire.length
             val body = wire.substring(header.range.last + 1, end)
             assertEquals(header.groupValues[1].toInt(), body.toByteArray(Charsets.UTF_8).size)
-            JsonParser.parseString(body).asJsonObject
-        }.associateBy { it["id"].asInt }
+            Json.parseToJsonElement(body).jsonObject
+        }.associateBy { it.getValue("id").jsonPrimitive.int }
     }
 }
