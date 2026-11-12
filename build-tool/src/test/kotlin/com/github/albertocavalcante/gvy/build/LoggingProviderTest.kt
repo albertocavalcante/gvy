@@ -4,6 +4,7 @@
 package com.github.albertocavalcante.gvy.build
 
 import ch.qos.logback.classic.Level
+import ch.qos.logback.classic.Logger
 import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder
 import ch.qos.logback.classic.joran.JoranConfigurator
@@ -59,28 +60,7 @@ class LoggingProviderTest {
             try {
                 logger.isAdditive = false
                 logger.addAppender(appender)
-                logger.level = null
-                assertFalse(logger.isInfoEnabled)
-                assertFalse(logger.isDebugEnabled)
-                logger.info("logging-parity-unexpected-info")
-                logger.debug("logging-parity-unexpected-debug")
-                logger.warn("logging-parity-warn")
-                logger.error("logging-parity-error")
-                logger.level = Level.DEBUG
-                assertTrue(logger.isDebugEnabled)
-                logger.debug("logging-parity-debug")
-                val records = capture.toString(Charsets.UTF_8.name()).lineSequence()
-                    .filter { it.contains("logging-parity-") }
-                    .toList()
-                val expected = listOf(
-                    Regex("""^\d{2}:\d{2}:\d{2}\.\d{3} WARN\s+\S+ - logging-parity-warn$"""),
-                    Regex("""^\d{2}:\d{2}:\d{2}\.\d{3} ERROR\s+\S+ - logging-parity-error$"""),
-                    Regex("""^\d{2}:\d{2}:\d{2}\.\d{3} DEBUG\s+\S+ - logging-parity-debug$"""),
-                )
-                assertEquals(expected.size, records.size)
-                expected.zip(records).forEach { (pattern, record) ->
-                    assertTrue(pattern.matches(record), "Unexpected rendered log record: $record")
-                }
+                assertRenderedRecords(logger, capture)
             } finally {
                 logger.detachAppender(appender)
                 appender.stop()
@@ -91,6 +71,31 @@ class LoggingProviderTest {
         assertSame(originalSystemErr, System.err)
         assertSame(originalConsoleStream, actualConsole.outputStream)
         assertSame(originalMdcAdapter, actual.mdcAdapter)
+    }
+
+    private fun assertRenderedRecords(logger: Logger, capture: ByteArrayOutputStream) {
+        logger.level = null
+        assertFalse(logger.isInfoEnabled)
+        assertFalse(logger.isDebugEnabled)
+        logger.info("logging-parity-unexpected-info")
+        logger.debug("logging-parity-unexpected-debug")
+        logger.warn("logging-parity-warn")
+        logger.error("logging-parity-error")
+        logger.level = Level.DEBUG
+        assertTrue(logger.isDebugEnabled)
+        logger.debug("logging-parity-debug")
+        val records = capture.toString(Charsets.UTF_8.name()).lineSequence()
+            .filter { it.contains("logging-parity-") }
+            .toList()
+        val expected = listOf(
+            Regex("""^\d{2}:\d{2}:\d{2}\.\d{3} WARN\s+\S+ - logging-parity-warn$"""),
+            Regex("""^\d{2}:\d{2}:\d{2}\.\d{3} ERROR\s+\S+ - logging-parity-error$"""),
+            Regex("""^\d{2}:\d{2}:\d{2}\.\d{3} DEBUG\s+\S+ - logging-parity-debug$"""),
+        )
+        assertEquals(expected.size, records.size)
+        expected.zip(records).forEach { (pattern, record) ->
+            assertTrue(pattern.matches(record), "Unexpected rendered log record: $record")
+        }
     }
 
     private fun assertQuietPolicy(context: LoggerContext): ConsoleAppender<*> {
