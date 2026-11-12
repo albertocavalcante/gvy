@@ -328,7 +328,7 @@ jobs:
         run: node --test tools/perf/*.test.mjs
 
       - name: Test release artifact pairing
-        run: node --test tools/ci/*-artifacts.test.mjs
+        run: node --test tools/ci/*-artifacts.test.mjs tools/ci/junit-report-presence.test.mjs
 
       - name: 🖥️ Runner Specs
         shell: bash
@@ -517,9 +517,8 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          shopt -s globstar nullglob
-          reports=(**/build/test-results/test/*.xml)
-          if (( ${#reports[@]} == 0 )); then
+          report=$(find . -type f -path '*/build/test-results/test/*.xml' -print -quit)
+          if [[ -z "$report" ]]; then
             echo "::error::Unit test execution produced no JUnit reports."
             exit 1
           fi
@@ -678,9 +677,8 @@ jobs:
         if: ${{ !cancelled() }}
         shell: bash
         run: |
-          shopt -s globstar nullglob
-          reports=(**/build/test-results/e2eTest/*.xml)
-          if (( ${#reports[@]} == 0 )); then
+          report=$(find . -type f -path '*/build/test-results/e2eTest/*.xml' -print -quit)
+          if [[ -z "$report" ]]; then
             echo "::error::E2E execution produced no JUnit reports."
             exit 1
           fi
