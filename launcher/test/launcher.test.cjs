@@ -319,6 +319,8 @@ test("missing payload and invalid explicit homes fail on stderr without fallback
     assert.equal(result.status, status, result.stderr.toString());
     assert.equal(result.stdout.length, 0);
     assert.match(result.stderr.toString(), /gvy launcher:/);
+    if (isWindows && invalid === "")
+      assert.match(result.stderr.toString(), /GVY_JAVA_HOME is empty/);
     assert.doesNotMatch(result.stderr.toString(), /stderr:/);
   }
 });
@@ -462,6 +464,51 @@ if (isWindows) {
     const result = run([], { ...env, GVY_PROBE_EXIT: "0x81234567" });
     assert.ifError(result.error);
     assert.equal(result.status >>> 0, 0x81234567);
+  });
+
+  test("empty PATH entries do not implicitly select current-directory Java", (t) => {
+    const { root, env, java, javaHome } = fixture(t);
+    fs.copyFileSync(java, path.join(root, "java.exe"));
+    delete env.GVY_JAVA_HOME;
+    delete env.JAVA_HOME;
+    env.GVY_PROBE_MODE = "image";
+    for (const searchPath of [";", '""', "", undefined]) {
+      const searchEnv = { ...env };
+      if (searchPath === undefined) delete searchEnv.PATH;
+      else searchEnv.PATH = searchPath;
+      // Node can copy Windows PATH from its own environment when absent in the child override.
+      const inheritedPath = process.env.PATH;
+      let result;
+      try {
+        if (searchPath === undefined) delete process.env.PATH;
+        result = run([], searchEnv, { cwd: root });
+      } finally {
+        if (inheritedPath === undefined) delete process.env.PATH;
+        else process.env.PATH = inheritedPath;
+      }
+      assert.ifError(result.error);
+      assert.equal(result.status, 127, result.stderr.toString());
+      assert.equal(result.stdout.length, 0);
+    }
+    const explicit = run([], { ...env, PATH: "." }, { cwd: root });
+    assert.ifError(explicit.error);
+    assert.equal(explicit.status, 37, explicit.stderr.toString());
+    assert.equal(
+      fs.realpathSync.native(explicit.stdout.toString()),
+      fs.realpathSync.native(path.join(root, "java.exe")),
+    );
+    const bin = path.join(javaHome, "bin");
+    const empty = path.join(root, "empty search directory");
+    fs.mkdirSync(empty);
+    for (const searchPath of [`;${bin}`, `${bin};`, `${empty};;${bin}`]) {
+      const configured = run([], { ...env, PATH: searchPath }, { cwd: root });
+      assert.ifError(configured.error);
+      assert.equal(configured.status, 37, configured.stderr.toString());
+      assert.equal(
+        fs.realpathSync.native(configured.stdout.toString()),
+        fs.realpathSync.native(java),
+      );
+    }
   });
 
   test("resolves PATH java.exe without current-directory or command-script fallback", (t) => {

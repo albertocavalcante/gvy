@@ -56,8 +56,10 @@ internal fun windowsEnvironment(name: String): String? = memScoped {
     val size = GetEnvironmentVariableW(name, null, 0u)
     if (size == 0u) {
         if (GetLastError() == ERROR_ENVVAR_NOT_FOUND.toUInt()) return null
-        return ""
+        windowsFail("Cannot read $name.")
     }
+    // The size query includes the null terminator; an existing empty value needs one character.
+    if (size == 1u) return ""
     val buffer = allocArray<UShortVar>(size.toInt())
     val copied = GetEnvironmentVariableW(name, buffer, size)
     if (copied == 0u || copied >= size) windowsFail("Cannot read $name.")

@@ -54,6 +54,7 @@ test(
     const formatted = run(["format", path.basename(good)]);
     assert.equal(formatted.status, 0, formatted.stderr.toString());
     assert.match(formatted.stdout.toString(), /class Greeter/);
+    assert.match(formatted.stdout.toString(), /hello 世界 😀/);
     assert.equal(fs.readFileSync(good, "utf8"), source);
     const index = path.join(root, "symbols.lsif");
     const indexed = run(["index", "--format", "lsif", "--output", index, "."]);

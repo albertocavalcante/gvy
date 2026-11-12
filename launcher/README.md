@@ -51,9 +51,10 @@ symlinks are resolved before payload lookup. Starting `gvy` with no arguments st
 | `PATH`          | Search for `java` when both Java-home variables are unset.                                                |
 
 Java 17 or newer is required by the JVM application. An explicitly empty or invalid override fails without falling back.
-The launcher passes `-Xmx2g -jar <payload>` followed by every original argument, without interpreting shell syntax or
-consuming flags such as `--help`. JVM options can use Java's existing `JDK_JAVA_OPTIONS` or `JAVA_TOOL_OPTIONS`; those
-variables and the rest of the application environment are inherited unchanged.
+On Windows, empty `PATH` entries are ignored; an explicit `.` opts into searching the current directory. The launcher
+passes `-Xmx2g -jar <payload>` followed by every original argument, without interpreting shell syntax or consuming flags
+such as `--help`. JVM options can use Java's existing `JDK_JAVA_OPTIONS` or `JAVA_TOOL_OPTIONS`; those variables and the
+rest of the application environment are inherited unchanged.
 
 The POSIX implementation replaces its process with Java. Stdin, stdout, stderr, working directory, PID, signals and the
 application's exit status therefore belong directly to Java. Launcher failures print only to stderr: status 1 for

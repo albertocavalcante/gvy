@@ -75,7 +75,8 @@ fun main() {
 private fun resolveJava(java: String, explicit: Boolean): String {
     if (explicit) return windowsAbsolutePath(java)
     val entries = windowsEnvironment("PATH")?.split(';') ?: emptyList()
-    return entries.map { "${it.trim('"').ifEmpty { "." }.trimEnd('\\', '/')}\\java.exe" }
+    return entries.map { it.trim('"') }.filter { it.isNotEmpty() }
+        .map { "${it.trimEnd('\\', '/')}\\java.exe" }
         .firstOrNull { windowsReadableFile(it) }
         ?.let(::windowsAbsolutePath)
         ?: windowsFail("Cannot find java.exe in PATH.", WINDOWS_JAVA_NOT_FOUND)

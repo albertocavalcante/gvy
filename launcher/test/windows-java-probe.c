@@ -188,6 +188,15 @@ int wmain(int argc, wchar_t **argv) {
   }
   HANDLE output = GetStdHandle(STD_OUTPUT_HANDLE);
   wchar_t *mode = environment(L"GVY_PROBE_MODE");
+  if (mode != NULL && wcscmp(mode, L"image") == 0) {
+    wchar_t image[32768];
+    DWORD length = GetModuleFileNameW(NULL, image, 32768);
+    free(mode);
+    if (length == 0 || length >= 32768)
+      return 95;
+    write_utf8(output, image);
+    return 37;
+  }
   if (mode != NULL && wcscmp(mode, L"console-host") == 0) {
     free(mode);
     return (int)host_private_console();
