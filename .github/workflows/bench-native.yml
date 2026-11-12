@@ -84,13 +84,15 @@ jobs:
             cargo fmt --manifest-path "$manifest" --check
             cargo clippy --locked --manifest-path "$manifest" --all-targets -- -D warnings
             cargo test --locked --manifest-path "$manifest"
+            cargo build --release --locked --manifest-path "$manifest"
             node tools/perf/bench/native-contract/run.mjs "$variant" > "${RUNNER_TEMP}/native-contract-${variant}.json"
           done
 
-      - name: Retain the public-fixture feasibility receipts
+      - name: Retain public-fixture attempt evidence
+        if: ${{ always() }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: native-contract-${{ github.sha }}
+          name: native-contract-attempt-${{ github.sha }}
           path: ${{ runner.temp }}/native-contract-*.json
           if-no-files-found: error
           retention-days: 7
