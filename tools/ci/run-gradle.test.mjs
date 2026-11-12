@@ -266,3 +266,22 @@ test('Nightly keeps lint and server tasks in separate measured jobs and requires
   assert.match(jobs.get('publish'), /needs\.lint\.result == 'success' && needs\.build\.result == 'success'/);
   assert.match(jobs.get('publish'), /needs\.build\.outputs\.version/);
 });
+
+test('Nightly watches observer runtime, test, schema and JVM-profile inputs', () => {
+  const workflow = readFileSync('.github/workflows/nightly.yml', 'utf8');
+  const paths = /^  pull_request:\n    paths:\n((?:      - .+\n)+)/m.exec(workflow)?.[1];
+  assert.ok(paths, 'Nightly must declare explicit PR input paths');
+  const patterns = paths.trim().split('\n').map(line => line.trim().slice(2));
+  const watched = path => patterns.some(pattern => pattern.endsWith('*') ? path.startsWith(pattern.slice(0, -1)) : path === pattern);
+  const inputs = [
+    '.github/workflows/nightly.yml', '.github/workflows/extension-nightly.yml',
+    'tools/ci/nightly-artifacts.mjs', 'tools/ci/nightly-artifacts.test.mjs',
+    'tools/ci/gradle-memory-options.mjs', 'tools/ci/gradle-memory-options.test.mjs',
+    'tools/ci/gradle-memory-probe.mjs', 'tools/ci/gradle-memory-probe.test.mjs',
+    'tools/ci/run-gradle.mjs', 'tools/ci/run-gradle.test.mjs', 'tools/ci/run-gradle.schema.json', 'gradle.properties',
+  ];
+  assert.deepEqual(inputs.filter(path => !watched(path)), [], 'Nightly must exercise every observer/profile input');
+  for (const unrelated of ['README.md', '.github/workflows/native.yml', 'editors/zed/src/lib.rs']) {
+    assert.equal(watched(unrelated), false, `Unrelated input should not select Nightly: ${unrelated}`);
+  }
+});

@@ -9,6 +9,10 @@ on:
       - .github/workflows/nightly.yml
       - .github/workflows/extension-nightly.yml
       - tools/ci/nightly-artifacts*
+      - tools/ci/gradle-memory-options*
+      - tools/ci/gradle-memory-probe*
+      - tools/ci/run-gradle*
+      - gradle.properties
 
 permissions:
   contents: read
