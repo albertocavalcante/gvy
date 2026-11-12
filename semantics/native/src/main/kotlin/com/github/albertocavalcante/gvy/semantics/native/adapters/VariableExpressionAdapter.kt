@@ -45,5 +45,4 @@ object VariableExpressionAdapter : TypeCalculator<VariableExpression> {
         }
         return fallback ?: SemanticType.Dynamic("unresolved variable: ${node.name}")
     }
-
 }
