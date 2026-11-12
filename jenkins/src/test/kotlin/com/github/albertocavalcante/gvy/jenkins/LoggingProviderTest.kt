@@ -8,6 +8,7 @@ import ch.qos.logback.classic.LoggerContext
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder
 import ch.qos.logback.classic.joran.JoranConfigurator
 import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.classic.util.LogbackMDCAdapter
 import ch.qos.logback.core.ConsoleAppender
 import ch.qos.logback.core.OutputStreamAppender
 import java.io.ByteArrayOutputStream
@@ -18,6 +19,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -34,8 +36,11 @@ class LoggingProviderTest {
         val actualConsole = assertQuietPolicy(actual)
         val originalSystemErr = System.err
         val originalConsoleStream = actualConsole.outputStream
+        val originalMdcAdapter = assertNotNull(actual.mdcAdapter)
 
         val isolated = LoggerContext()
+        isolated.mdcAdapter = LogbackMDCAdapter()
+        assertNotSame(originalMdcAdapter, isolated.mdcAdapter)
         isolated.name = "logging-parity-${UUID.randomUUID()}"
         isolated.start()
         try {
@@ -85,6 +90,7 @@ class LoggingProviderTest {
         }
         assertSame(originalSystemErr, System.err)
         assertSame(originalConsoleStream, actualConsole.outputStream)
+        assertSame(originalMdcAdapter, actual.mdcAdapter)
     }
 
     private fun assertQuietPolicy(context: LoggerContext): ConsoleAppender<*> {
