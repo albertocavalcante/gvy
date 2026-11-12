@@ -17,6 +17,7 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.eclipse.lsp4j.Location
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
+import java.lang.ref.WeakReference
 import java.net.URI
 import java.util.Collections
 
@@ -47,6 +48,17 @@ class WorkspaceSymbolIndex(
         semanticDb.snapshotDeclarations(),
         Collections.unmodifiableSet(hiddenUris.toSet()),
     )
+
+    /**
+     * Captures a member lookup with an O(1) database-only retirement check. The supplied shadow set is copied,
+     * but this check does not validate the shadows, editor buffers, workspace, classpath, or result publication.
+     */
+    internal fun captureMemberSnapshot(hiddenUris: Set<URI>): CapturedWorkspaceMembers {
+        val snapshot = semanticDb.snapshotDeclarations()
+        val lookup = FrozenWorkspaceMemberLookup(snapshot, Collections.unmodifiableSet(hiddenUris.toSet()))
+        val database = WeakReference(semanticDb)
+        return CapturedWorkspaceMembers(lookup) { database.get()?.isCurrentDeclarationSnapshot(snapshot) == true }
+    }
 
     /** The definition of [symbolId] in a document not [shadowed]: the database's first one when none is. */
     private fun definition(symbolId: String): Pair<URI, SymbolInfo>? {
@@ -315,6 +327,11 @@ class WorkspaceSymbolIndex(
             symbolId
         }
     }
+}
+
+/** Retains a queryable view without owning the database; retirement does not invalidate the detached lookup. */
+internal class CapturedWorkspaceMembers(val lookup: MemberLookup, private val databaseCurrent: () -> Boolean) {
+    fun isDatabaseCurrent(): Boolean = databaseCurrent()
 }
 
 private class FrozenWorkspaceMemberLookup(

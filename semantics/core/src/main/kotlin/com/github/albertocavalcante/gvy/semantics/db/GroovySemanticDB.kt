@@ -140,6 +140,10 @@ class GroovySemanticDB {
         }
     }
 
+    /** True only while [snapshot] is this database's current cached declaration view; never rebuilds it. */
+    fun isCurrentDeclarationSnapshot(snapshot: DeclarationIndexSnapshot): Boolean =
+        lock.read { cachedDeclarations === snapshot }
+
     /**
      * Get all documents
      */

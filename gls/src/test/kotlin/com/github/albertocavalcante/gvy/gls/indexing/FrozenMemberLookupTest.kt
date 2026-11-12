@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
+import java.lang.ref.ReferenceQueue
+import java.lang.ref.WeakReference
 import java.net.URI
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -76,6 +78,44 @@ class FrozenMemberLookupTest {
         index.removeDocument(second)
         assertEquals(TypeConstants.INT, captured.findField("C", "value")?.type)
         assertEquals(TypeConstants.STRING, index.findField("C", "value")?.type)
+    }
+
+    @Test
+    fun `captured member view reports database retirement without discarding old answers`() {
+        val db = GroovySemanticDB()
+        val index = WorkspaceSymbolIndex(db)
+        index.updateDocument(uri, document(TypeConstants.STRING))
+        val captured = index.captureMemberSnapshot(emptySet())
+        assertTrue(captured.isDatabaseCurrent())
+        val version = captured.lookup.version
+        val moved = document(TypeConstants.STRING).copy(
+            symbols = document(TypeConstants.STRING).symbols.map { it.copy(range = Range(9, 0, 9, 1)) },
+        )
+        index.updateDocument(uri, moved)
+        assertEquals(version, db.version)
+        assertEquals(false, captured.isDatabaseCurrent())
+        assertEquals(TypeConstants.STRING, captured.lookup.findField("C", "value")?.type)
+        assertTrue(index.captureMemberSnapshot(emptySet()).isDatabaseCurrent())
+    }
+
+    @Test
+    fun `retained member view does not own its database`() {
+        val queue = ReferenceQueue<GroovySemanticDB>()
+        fun captureWithoutOwner(): Pair<CapturedWorkspaceMembers, WeakReference<GroovySemanticDB>> {
+            val db = GroovySemanticDB()
+            val index = WorkspaceSymbolIndex(db)
+            index.updateDocument(uri, document(TypeConstants.STRING))
+            return index.captureMemberSnapshot(emptySet()) to WeakReference(db, queue)
+        }
+        val (captured, reference) = captureWithoutOwner()
+        repeat(50) {
+            if (reference.get() == null) return@repeat
+            System.gc()
+            queue.remove(100)
+        }
+        assertEquals(null, reference.get())
+        assertEquals(false, captured.isDatabaseCurrent())
+        assertEquals(TypeConstants.STRING, captured.lookup.findField("C", "value")?.type)
     }
 
     @Test
