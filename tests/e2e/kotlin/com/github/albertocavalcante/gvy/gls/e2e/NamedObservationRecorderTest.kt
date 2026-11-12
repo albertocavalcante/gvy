@@ -67,6 +67,31 @@ class NamedObservationRecorderTest {
     }
 
     @Test
+    fun `failure evidence is byte bounded and marks truncation`() {
+        val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
+        val failure = IllegalStateException("😀".repeat(20_000))
+
+        val completion = recorder.finish(failure).completion as ScenarioCompletion.Failed
+
+        assertThat(completion.kind).isEqualTo(ScenarioFailureKind.Unclassified)
+        assertThat(completion.detail.toByteArray(Charsets.UTF_8).size).isLessThanOrEqualTo(16_384)
+        assertThat(completion.detail).contains("[truncated]")
+    }
+
+    @Test
+    fun `aggregate cleanup evidence has one bounded budget`() {
+        val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
+        repeat(100) { index ->
+            assertThrows<IOException> { recorder.closeSession { throw IOException("close-$index " + "x".repeat(2_000)) } }
+        }
+
+        val cleanup = recorder.finish(null).cleanup as CleanupOutcome.Failed
+
+        assertThat(cleanup.detail.toByteArray(Charsets.UTF_8).size).isLessThanOrEqualTo(16_384)
+        assertThat(cleanup.detail).contains("[truncated]")
+    }
+
+    @Test
     fun `late observation cannot change a published incomplete outcome`() {
         val recorder = NamedObservationRecorder(listOf("late"), "scenario.yaml")
         val entered = CountDownLatch(1)
