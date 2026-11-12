@@ -1,4 +1,5 @@
-import { verifyRawArtifact } from './context.mjs';
+import { createHash } from 'node:crypto';
+import { canonicalizeContext, verifyRawArtifact } from './context.mjs';
 
 const MAX_RAW_BYTES = 16 * 1024 * 1024;
 const MAX_PLAN_BYTES = 32 * 1024;
@@ -171,10 +172,13 @@ export function readJmhRaw(contextBytes, bindingBytes, rawBytes, planBytes) {
   try {
     // Binding verification deliberately precedes interpreting producer-controlled results.
     verifyRawArtifact(contextBytes, bindingBytes, rawBytes);
-    const context = decode(contextBytes, MAX_PLAN_BYTES);
-    if (decode(bindingBytes, 1024).kind !== 'jmh-json' || context.runtime.kind !== 'jvm' || context.instrumentation !== 'none') fail();
+    const context = decode(canonicalizeContext(contextBytes), MAX_PLAN_BYTES);
+    if (decode(bindingBytes, 1024).kind !== 'jmh-json' || context.runtime.kind !== 'jvm' || context.instrumentation !== 'none' ||
+        context.measurement.lane !== 'P') fail();
     const plan = decode(planBytes, MAX_PLAN_BYTES);
     const expected = validatePlan(plan);
+    // This profile defines scenario identity as the exact validated public plan bytes.
+    if (createHash('sha256').update(planBytes).digest('hex') !== context.workload.scenarioSha256) fail();
     const raw = decode(rawBytes, MAX_RAW_BYTES);
     list(raw, plan.cases.length, plan.cases.length);
     const cases = new Array(plan.cases.length);

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { bindRawArtifact } from './context.mjs';
 import { readJmhRaw } from './jmh-raw.mjs';
 
 const bytes = value => Buffer.from(JSON.stringify(value));
+const hash = value => createHash('sha256').update(value).digest('hex');
 const digest = 'a'.repeat(64);
 // Independent literal follows the pinned 1.37 JSONResultFormat field names and nesting.
 // It is a format control, not an observed JVM run or performance result.
@@ -38,7 +40,7 @@ const rawLiteral = `[
   }
 ]`;
 const rawValue = () => JSON.parse(rawLiteral);
-function context() {
+function context(expectedPlan = plan()) {
   return {
     schemaVersion: 1, scope: 'benchmark-context-declaration', implementation: 'gvy-facade',
     source: { commit: 'b'.repeat(40), dirty: false }, artifact: { kind: 'jar', sha256: digest },
@@ -50,7 +52,7 @@ function context() {
       cacheSha256: null,
     },
     grammar: null,
-    workload: { corpusSha256: digest, scenarioSha256: digest, classpathSha256: digest, oracleSha256: digest },
+    workload: { corpusSha256: digest, scenarioSha256: hash(bytes(expectedPlan)), classpathSha256: digest, oracleSha256: digest },
     measurement: { lane: 'P', boundary: 'parse', compilePhase: 'conversion' },
     state: { process: 'warm', jit: 'unknown', structure: 'absent', resultCache: 'off', osPages: 'unknown' },
     host: { os: 'linux', arch: 'x64', cpuModelSha256: digest, powerMode: 'ac', thermal: 'unknown', contention: 'unknown' },
@@ -88,7 +90,7 @@ test('matches exact public parameter combinations in plan order, independent of 
   const raw = rawValue();
   const other = structuredClone(raw[0]); other.params.fixture = 'larger'; other.primaryMetric.rawData = [[30, 31], [40, 41]];
   const expected = plan(); expected.cases.push({ benchmark: other.benchmark, params: { fixture: 'larger' } });
-  assert.deepEqual(read([other, raw[0]], context(), expected).cases, [
+  assert.deepEqual(read([other, raw[0]], context(expected), expected).cases, [
     { caseIndex: 0, forkGroups: [[10, 11], [20, 21]] },
     { caseIndex: 1, forkGroups: [[30, 31], [40, 41]] },
   ]);
@@ -97,7 +99,7 @@ test('matches exact public parameter combinations in plan order, independent of 
 test('accepts the writer omission of params for a case without public parameters', () => {
   const raw = mutateRow(row => { delete row.params; });
   const expected = plan(); expected.cases[0].params = {};
-  assert.equal(read(raw, context(), expected).cases.length, 1);
+  assert.equal(read(raw, context(expected), expected).cases.length, 1);
 });
 
 test('one-iteration zero-warmup wiring smoke accepts legitimate NaN summary uncertainty only', () => {
@@ -108,7 +110,7 @@ test('one-iteration zero-warmup wiring smoke accepts legitimate NaN summary unce
     for (const key of Object.keys(row.primaryMetric.scorePercentiles)) row.primaryMetric.scorePercentiles[key] = 10;
   });
   const expected = plan(); expected.forks = 1; expected.warmupIterations = 0; expected.measurementIterations = 1;
-  const observed = read(raw, context(), expected);
+  const observed = read(raw, context(expected), expected);
   assert.deepEqual(observed.cases[0].forkGroups, [[10]]);
   assert.equal(observed.scope, 'jmh-raw-structural-only');
   assert.equal('hotJvm' in observed, false);
@@ -160,7 +162,7 @@ test('rejects missing, duplicate, extra and wrong public benchmark or parameter 
     mutateRow(row => { row.params.fixture = 'missing'; }), mutateRow(row => { row.params.extra = 'tiny'; }),
   ]) rejected(() => read(raw));
   const expected = plan(); expected.cases.push({ benchmark: 'org.example.ParserBench.other', params: {} });
-  rejected(() => read(rawValue(), context(), expected));
+  rejected(() => read(rawValue(), context(expected), expected));
 });
 
 test('rejects unknown and producer certification fields in every structured record', () => {
@@ -171,7 +173,7 @@ test('rejects unknown and producer certification fields in every structured reco
   for (const mutate of [
     value => { value.comparable = true; }, value => { value.cases[0].pass = true; },
     value => { value.profile = 'future'; }, value => { value.schemaVersion = 2; },
-  ]) { const expected = plan(); mutate(expected); rejected(() => read(rawValue(), context(), expected)); }
+  ]) { const expected = plan(); mutate(expected); rejected(() => read(rawValue(), context(expected), expected)); }
 });
 
 test('rejects incompatible JMH versions, modes, units, threads and batch sizes', () => {
@@ -218,9 +220,9 @@ test('undefined summary uncertainty has the pinned two-sample boundary without a
     row.primaryMetric.scoreError = 'NaN'; row.primaryMetric.scoreConfidence = ['NaN', 'NaN'];
   });
   const expected = plan(); expected.forks = 1;
-  assert.deepEqual(read(raw, context(), expected).cases[0].forkGroups, [[10, 11]]);
+  assert.deepEqual(read(raw, context(expected), expected).cases[0].forkGroups, [[10, 11]]);
   raw[0].measurementIterations = 3; raw[0].primaryMetric.rawData[0].push(12); expected.measurementIterations = 3;
-  rejected(() => read(raw, context(), expected));
+  rejected(() => read(raw, context(expected), expected));
 });
 
 test('supported JDK numeric components, build and early-access metadata must match the declaration', () => {
@@ -291,11 +293,11 @@ test('rejects duplicate JSON keys including escaped aliases and bounded-depth at
   rejected(() => readJmhRaw(ctx, binding, raw, Buffer.from(duplicatePlan)));
 });
 
-test('duplicate declaration or binding fields cannot be hidden by last-key JSON behavior', () => {
+test('uses B03a canonical context interpretation while rejecting ambiguous raw binding fields', () => {
   const raw = Buffer.from(rawLiteral);
   const ctx = Buffer.from(bytes(context()).toString().replace('"instrumentation":"none"', '"instrumentation":"gc","instrumentation":"none"'));
   const binding = bindRawArtifact(ctx, 'jmh-json', raw);
-  rejected(() => readJmhRaw(ctx, binding, raw, bytes(plan())));
+  assert.equal(readJmhRaw(ctx, binding, raw, bytes(plan())).cases.length, 1);
   const ordinary = bytes(context());
   const duplicated = Buffer.from(bindRawArtifact(ordinary, 'jmh-json', raw).toString().replace('"kind":"jmh-json"', '"kind":"quality-json","kind":"jmh-json"'));
   rejected(() => readJmhRaw(ordinary, duplicated, raw, bytes(plan())));
@@ -322,11 +324,39 @@ test('plan counts, public identifiers, durations and total work have explicit bo
     value => { value.cases = Array.from({ length: 33 }, (_, index) => ({ benchmark: 'org.example.B.run', params: { fixture: String(index) } })); },
     value => { value.cases[0].params = Object.fromEntries(Array.from({ length: 33 }, (_, index) => [`p${index}`, 'x'])); },
     value => { value.forks = 32; value.measurementIterations = 100; value.cases = Array.from({ length: 32 }, (_, index) => ({ benchmark: 'org.example.B.run', params: { fixture: String(index) } })); },
-  ]) { const expected = plan(); mutate(expected); rejected(() => read(rawValue(), context(), expected)); }
+  ]) { const expected = plan(); mutate(expected); rejected(() => read(rawValue(), context(expected), expected)); }
 });
 
 test('parameter key order does not alter identity and escaped private strings are not mistaken for keys', () => {
   const raw = mutateRow(row => { row.params = { phase: 'conversion', fixture: 'tiny' }; row.jvm = 'C:\\private\\canary-private-token\\java'; });
   const expected = plan(); expected.cases[0].params = { fixture: 'tiny', phase: 'conversion' };
-  assert.equal(read(raw, context(), expected).cases.length, 1);
+  assert.equal(read(raw, context(expected), expected).cases.length, 1);
+});
+
+test('same-length public plan substitution cannot retain context identity', () => {
+  const original = plan(); const changed = plan(); changed.cases[0].params.fixture = 'mini';
+  assert.equal(bytes(original).length, bytes(changed).length);
+  const changedRaw = bytes(mutateRow(row => { row.params.fixture = 'mini'; }));
+  const ctx = bytes(context(original));
+  rejected(() => readJmhRaw(ctx, bindRawArtifact(ctx, 'jmh-json', changedRaw), changedRaw, bytes(changed)));
+});
+
+test('shrinking the expected case set requires a new plan-bound context', () => {
+  const larger = plan(); larger.cases.push({ benchmark: 'org.example.ParserBench.other', params: {} });
+  const largerContext = bytes(context(larger)); const raw = Buffer.from(rawLiteral);
+  rejected(() => readJmhRaw(largerContext, bindRawArtifact(largerContext, 'jmh-json', raw), raw, bytes(plan())));
+});
+
+test('plan identity binds exact bytes even when whitespace changes no parsed fields', () => {
+  const ctx = bytes(context()); const raw = Buffer.from(rawLiteral); const binding = bindRawArtifact(ctx, 'jmh-json', raw);
+  const changed = Buffer.concat([bytes(plan()), Buffer.from('\n')]);
+  rejected(() => readJmhRaw(ctx, binding, raw, changed));
+  const declaration = context(); declaration.workload.scenarioSha256 = hash(changed);
+  const rebound = bytes(declaration);
+  assert.equal(readJmhRaw(rebound, bindRawArtifact(rebound, 'jmh-json', raw), raw, changed).cases.length, 1);
+});
+
+test('the initial exact-plan mapping is restricted to the declared P parse lane', () => {
+  const declaration = context(); declaration.measurement.lane = 'H'; declaration.measurement.boundary = 'highlight-existing';
+  rejected(() => read(rawValue(), declaration));
 });
