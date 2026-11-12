@@ -178,7 +178,11 @@ jobs:
               - 'reports/**'
               # tests
               - 'tests/**'
+              # Readers shared by tagged-release and nightly artifact verification
+              - 'editors/code/tools/zip.js'
+              - 'editors/code/tools/jar-provenance.js'
               # Root build inputs
+              - 'Makefile'
               - 'gradle/**'
               - '*.gradle'
               - '*.gradle.kts'
@@ -384,6 +388,9 @@ jobs:
 
       - name: Test profiling tools
         run: node --test tools/perf/*.test.mjs
+
+      - name: Test release artifact pairing
+        run: node --test tools/ci/*-artifacts.test.mjs
 
       - name: 🖥️ Runner Specs
         shell: bash

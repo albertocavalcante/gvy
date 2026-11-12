@@ -3,17 +3,27 @@
 Install the released extension for VS Code, Cursor, or VSCodium. To build your current checkout instead, use the
 [contributor instructions](../editors/code/CONTRIBUTING.md#build-and-install-this-checkout).
 
-| Choose               | What you get                                              | Install                                 |
-| -------------------- | --------------------------------------------------------- | --------------------------------------- |
-| Stable (recommended) | A tagged release, without local builds                    | Homebrew or the released VSIX below     |
-| Nightly              | A prebuilt, tested snapshot of `main`                     | [Nightly VSIX](#nightly-download)       |
-| Latest green `main`  | The newest commit with passing required CI, built locally | [`make ext-latest`](#latest-green-main) |
+| Choose              | What you get                                                              | Install                                 |
+| ------------------- | ------------------------------------------------------------------------- | --------------------------------------- |
+| Stable              | A tagged release; see the [v0.5.4 limitation](#stable-release-limitation) | Homebrew or the released VSIX below     |
+| Nightly             | A prebuilt, tested snapshot of `main`                                     | [Nightly VSIX](#nightly-download)       |
+| Latest green `main` | The newest commit with passing required CI, built locally                 | [`make ext-latest`](#latest-green-main) |
 
 Use VS Code 1.144 or newer, or an editor compatible with that VS Code API. Homebrew installs the Java runtime; it does
 not install the editor. Cursor and VSCodium have separate product version numbers. Some builds use an older VS Code API
 and cannot install this release. The installer preserves the editor's compatibility error; it never forces an
 incompatible installation. [Broader editor compatibility](https://github.com/albertocavalcante/gvy/issues/1706) remains
 in progress.
+
+## Stable release limitation
+
+The published **v0.5.4 VSIX bundles the v0.4.8 server** (`0.4.8-SNAPSHOT` at runtime), including the VSIX installed by
+Homebrew. The standalone `gls-0.5.4.jar` and Homebrew's `gvy` command run the newer server. Track the correction in
+[#1751](https://github.com/albertocavalcante/gvy/issues/1751).
+
+For newer server fixes in your editor, use a [paired nightly](#nightly-download) when available or
+[build the latest green main](#latest-green-main). This limitation remains until a corrected stable release and updated
+distribution pins are published.
 
 ## macOS and Linux with Homebrew
 

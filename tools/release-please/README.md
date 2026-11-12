@@ -58,6 +58,52 @@ This produces titles like:
 - With component: `chore: release vscode-groovy v0.4.8`
 - With scope: `chore(api): release v0.4.8`
 
+## Validate release packages
+
+Run the packaging regression controls without building the JVM project:
+
+```bash
+node --test tools/ci/release-artifacts.test.mjs
+```
+
+CI also runs the paired-nightly controls to check the shared ZIP and server-provenance readers.
+
+The tagged-release builder runs `test` and `:gls:stageEditorServer` before packaging the extension. It passes the exact
+staged JAR through pnpm preparation and VSCE prepublish, with pinned fallback disabled. The verifier checks the source
+commit, clean server provenance, extension version, and byte equality between the standalone and embedded JARs.
+`dist/release.json` records the verified pair's provenance and SHA-256 digests.
+
+For a prerelease such as `v0.5.4-rc.1`, Gradle can report the server's source base version as `0.5.4`. Verification
+accepts that base version while requiring the extension's full prerelease version and the same clean source commit. The
+receipt retains the server's actual version. `tools/release.sh checksums` can regenerate the checksum manifest; it
+excludes its own output and replaces the previous manifest only after hashing succeeds.
+
+Use Node.js 24, as in release CI. Tagged artifact builds require Git 2.44 or newer for
+[`git show-ref --exists`](https://github.com/git/git/blob/v2.44.0/Documentation/git-show-ref.txt). Use a clean checkout
+whose base version matches the requested release, and provide the tag explicitly:
+
+```bash
+make release-build RELEASE_VERSION=vX.Y.Z    # preview build steps and output paths
+make release-publish RELEASE_VERSION=vX.Y.Z  # build verified local release artifacts
+```
+
+The preview validates the version and Git refname, leaving existing artifacts and checksums unchanged. It invokes
+neither Gradle nor pnpm and creates no placeholder files. Other commands reject `--dry-run`; unsupported options and
+extra arguments fail before any build action. The `release-publish` target requires `RELEASE_VERSION`; it does not parse
+human-readable Gradle version output. The tagged GitHub workflow publishes the resulting artifacts.
+
+The direct build command is `tools/release.sh build --version vX.Y.Z`; add `--dry-run` for the preview. The builder
+restores the original `package.json` contents and permissions after either successful packaging or an error. Artifact
+paths resolve inside the script's own checkout, including when it is invoked from another directory. Version and
+checkout preflight checks run before a real build resets `dist/`. If the requested release tag exists locally, it must
+resolve to the checkout's HEAD commit; lightweight and annotated tags are supported. Fetch the tag before reproducing a
+published release, for example `git fetch origin tag vX.Y.Z`. Builds before the tag exists locally remain supported.
+Invalid tags and tag-read errors fail before artifact cleanup.
+
+Published v0.5.4 still contains the mismatched server tracked in
+[#1751](https://github.com/albertocavalcante/gvy/issues/1751). A source fix does not replace that release; publish and
+test a corrected tagged release before updating the Homebrew and direct-download pins.
+
 ## Reference
 
 - [Release Please Config Options](https://github.com/googleapis/release-please/blob/main/docs/manifest-releaser.md#configuration)

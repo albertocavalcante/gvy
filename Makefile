@@ -223,14 +223,17 @@ viz-install:
 
 
 # Release
+.PHONY: release release-build release-publish
+
 release: release-build
 
 release-build:
-	./tools/release.sh build --version v0.0.0-dryrun --dry-run
-	@echo "Run 'make release-publish' to perform real build"
+	./tools/release.sh build --version "$(if $(strip $(RELEASE_VERSION)),$(RELEASE_VERSION),v0.0.0-dryrun)" --dry-run
+	@echo "Run 'make release-publish RELEASE_VERSION=vX.Y.Z' to build release artifacts"
 
 release-publish:
-	./tools/release.sh build --version $(shell ./gradlew printVersion -q)
+	$(if $(strip $(RELEASE_VERSION)),,$(error Set RELEASE_VERSION=vX.Y.Z, for example make release-publish RELEASE_VERSION=v0.5.4))
+	./tools/release.sh build --version "$(RELEASE_VERSION)"
 
 # =============================================================================
 # BAZEL TARGETS (experimental, dual build system)

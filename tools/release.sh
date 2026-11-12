@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -10,229 +10,259 @@ NC='\033[0m' # No Color
 
 # Default values
 DIST_DIR="dist"
-BUILD_DIR="gls/build/libs"
 EXTENSION_DIR="editors/code"
 DRY_RUN=false
 VERSION=""
+release_package_json=""
+release_package_backup=""
 
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 
+cleanup_package_json() {
+  if [[ -n "${release_package_backup}" && -f "${release_package_backup}" ]]; then
+    mv "${release_package_backup}" "${release_package_json}"
+    release_package_backup=""
+  fi
+}
+
+enter_checkout() {
+  local checkout_root
+  checkout_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  if [[ ! -x "${checkout_root}/gradlew" || ! -f "${checkout_root}/${EXTENSION_DIR}/package.json" ]]; then
+    log_error "Release commands require the complete gvy checkout containing this script"
+    return 1
+  fi
+  cd "${checkout_root}"
+}
+
 print_usage() {
-    echo "Usage: $(basename "$0") [COMMAND] [OPTIONS]"
-    echo ""
-    echo "Commands:"
-    echo "  build       Build release artifacts (JAR & VSIX) - Runs tests"
-    echo "  validate    Validate release requirements (tags)"
-    echo "  smoke-test  Run smoke test on built JAR in dist/"
-    echo "  checksums   Generate checksums for dist/ content"
-    echo ""
-    echo "Options:"
-    echo "  --version <ver>   Specify version tag (e.g., v1.2.3)"
-    echo "  --dry-run         Simulate actions without permanent changes"
-    echo "  --help            Show this help message"
+  echo "Usage: $(basename "$0") [COMMAND] [OPTIONS]"
+  echo ""
+  echo "Commands:"
+  echo "  build       Build release artifacts (JAR & VSIX) - Runs tests"
+  echo "  validate    Validate release requirements (tags)"
+  echo "  smoke-test  Run smoke test on built JAR in dist/"
+  echo "  checksums   Generate checksums for dist/ content"
+  echo ""
+  echo "Options:"
+  echo "  --version <ver>   Specify version tag (e.g., v1.2.3)"
+  echo "  --dry-run         Preview build steps and output paths without changing files (build only)"
+  echo "  --help            Show this help message"
 }
 
 # Parse global options
 ARGS=()
 while [[ $# -gt 0 ]]; do
-    case "$1" in
-        --version)
-            VERSION="$2"
-            shift 2
-            ;;
-        --dry-run)
-            DRY_RUN=true
-            shift
-            ;;
-        --help)
-            print_usage
-            exit 0
-            ;;
-        *)
-            ARGS+=("$1")
-            shift
-            ;;
-    esac
+  case "$1" in
+  --version)
+    VERSION="${2:?--version requires a value}"
+    shift 2
+    ;;
+  --dry-run)
+    DRY_RUN=true
+    shift
+    ;;
+  --help)
+    print_usage
+    exit 0
+    ;;
+  -*)
+    log_error "Unknown option: $1"
+    exit 1
+    ;;
+  *)
+    ARGS+=("$1")
+    shift
+    ;;
+  esac
 done
 
-# Restore positional arguments
+if [[ "${#ARGS[@]}" -ne 1 ]]; then
+  log_error "Expected exactly one command"
+  print_usage
+  exit 1
+fi
+# Restore positional arguments only after ensuring the array is nonempty (Bash 3.2).
 set -- "${ARGS[@]}"
 COMMAND="$1"
 
 check_version() {
-    if [[ -z "${VERSION}" ]]; then
-        log_error "Version is required. Use --version <tag>"
-        exit 1
-    fi
+  if [[ -z "${VERSION}" ]]; then
+    log_error "Version is required. Use --version <tag>"
+    exit 1
+  fi
 }
 
 cmd_build() {
-    check_version
-    log_info "Starting build for version: ${VERSION}"
-    if [[ "${DRY_RUN}" = true ]]; then log_warn "DRY RUN MODE: No artifacts will be published"; fi
+  check_version
+  cmd_validate
+  enter_checkout
+  log_info "Starting build for version: ${VERSION}"
+  local release_version="${VERSION#vscode-groovy-v}"
+  release_version="${release_version#v}"
+  local root_dir target_jar target_vsix source_commit
+  root_dir="$(pwd)"
+  target_jar="${root_dir}/${DIST_DIR}/gls-${release_version}.jar"
+  target_vsix="${root_dir}/${DIST_DIR}/gvy-${release_version}.vsix"
+  if [[ "${DRY_RUN}" = true ]]; then
+    log_info "DRY RUN: Would reset ${DIST_DIR}/, test and stage the server, package the extension, and verify the pair"
+    log_info "JAR output: ${target_jar}"
+    log_info "VSIX output: ${target_vsix}"
+    return
+  fi
 
-    # Clean and prepare dist
-    rm -rf "${DIST_DIR}"
-    mkdir -p "${DIST_DIR}"
-
-    # 0. Run Tests
-    log_info "Running unit tests..."
-    if [[ "${DRY_RUN}" = true ]]; then
-        log_info "(Dry run) Skipping tests"
-    else
-        ./gradlew --no-daemon test
+  source_commit="$(git rev-parse --verify 'HEAD^{commit}')"
+  local tag_commit tag_status=0
+  # --exists returns 2 only for absence; all other lookup failures stop the build.
+  git show-ref --exists "refs/tags/${VERSION}" 2>/dev/null || tag_status=$?
+  if [[ "${tag_status}" -eq 0 ]]; then
+    if ! tag_commit="$(git rev-parse --verify "refs/tags/${VERSION}^{commit}")"; then
+      log_error "Release tag ${VERSION} does not resolve to a commit"
+      return 1
     fi
-
-    # 1. Build Shadow JAR
-    log_info "Building Groovy Language Server JAR..."
-    if [[ "${DRY_RUN}" = true ]]; then
-        log_info "(Dry run) Skipping Gradle build, creating dummy JAR"
-        mkdir -p "${BUILD_DIR}"
-        touch "${BUILD_DIR}/gls-0.0.0-all.jar"
-    else
-        ./gradlew --no-daemon shadowJar
+    if [[ "${tag_commit}" != "${source_commit}" ]]; then
+      log_error "Release tag ${VERSION} does not match HEAD (${tag_commit} != ${source_commit})"
+      return 1
     fi
+  elif [[ "${tag_status}" -ne 2 ]]; then
+    log_error "Cannot inspect release tag ${VERSION} (git exit ${tag_status}); Git 2.44+ is required"
+    return "${tag_status}"
+  fi
 
-    # 2. Identify and Copy JAR
-    # Find the built JAR (handling version variances)
-    JAR_FILE=$(find "${BUILD_DIR}" -name "gls-*-all.jar" | head -n 1 || true)
-    if [[ ! -f "${JAR_FILE}" ]]; then
-        log_error "No JAR file found in ${BUILD_DIR}"
-        exit 1
-    fi
+  rm -rf "${DIST_DIR}"
+  mkdir -p "${DIST_DIR}"
 
-    local VERSION_NO_PRFIX="${VERSION#vscode-groovy-v}"
-    local VERSION_NO_V="${VERSION_NO_PRFIX#v}"
-    
-    # Java JARs are platform-independent - no need for platform suffix
-    local TARGET_JAR="${DIST_DIR}/gls-${VERSION_NO_V}.jar"
-    log_info "Copying JAR to ${TARGET_JAR}"
-    cp "${JAR_FILE}" "${TARGET_JAR}"
+  log_info "Testing and staging the current server..."
+  GITHUB_REF_TYPE=tag ./gradlew --no-daemon test :gls:stageEditorServer
+  cp "gls/build/editor-server/gls.jar" "${target_jar}"
 
-    # 3. Build VSIX
-    log_info "Building VS Code Extension..."
-    pushd "${EXTENSION_DIR}" > /dev/null || exit 1
-    
-    # Ensure dependencies are installed
-    if [[ ! -d "node_modules" ]]; then
-        log_info "Installing extension dependencies..."
-        pnpm install --frozen-lockfile
-    fi
+  # The hard local override reaches both postinstall and VSCE prepublish.
+  # FORCE_DOWNLOAD replaces any previously bundled JAR; fallback is forbidden.
+  export GLS_LOCAL_JAR="${target_jar}"
+  export FORCE_DOWNLOAD=true
+  export GLS_ALLOW_PINNED_FALLBACK=false
+  export SKIP_PREPARE_SERVER=false
+  log_info "Building VS Code Extension..."
+  pushd "${EXTENSION_DIR}" >/dev/null || exit 1
 
-    if [[ "${DRY_RUN}" = true ]]; then
-         log_info "(Dry run) Skipping VSIX package, creating dummy VSIX"
-         touch "gvy-${VERSION_NO_V}.vsix"
-    else
-        log_info "Setting extension version to ${VERSION_NO_V}"
-        
-        # Define cleanup function to restore package.json
-        cleanup_package_json() {
-            if [[ -f "package.json.bak" ]]; then
-                log_warn "Restoring package.json from backup..."
-                mv "package.json.bak" "package.json"
-            fi
-        }
-        
-        # Set trap to ensure cleanup happens on exit or error
-        trap cleanup_package_json EXIT INT TERM
+  if [[ ! -d "node_modules" ]]; then
+    log_info "Installing extension dependencies..."
+    pnpm install --frozen-lockfile
+  fi
 
-        # Backup package.json to restore later (safe for local dev)
-        cp package.json package.json.bak
-        
-        # Stamp version without creating a git commit/tag
-        # We use --allow-same-version in case we are rebuilding same version
-        node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.version = process.argv[1]; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "${VERSION_NO_V}"
-        
-        # Package
-        pnpm run package
-        
-        # Restore original package.json (trap will handle this, but manual is fine too)
-        # We explicitly call it here to clear the trap if successful
-        cleanup_package_json
-        trap - EXIT INT TERM
-        
-        log_info "Restored original package.json"
-    fi
-    
-    # Move VSIX to dist
-    local VSIX_FILE
-    VSIX_FILE=$(find . -maxdepth 1 -name "*.vsix" | head -n 1 || true)
-    if [[ -f "${VSIX_FILE}" ]]; then
-        log_success "Found VSIX: ${VSIX_FILE}"
-        cp "${VSIX_FILE}" "../../${DIST_DIR}/"
-    else 
-        log_warn "No VSIX file created."
-    fi
-    
-    popd > /dev/null || exit 1
+  release_package_json="${root_dir}/${EXTENSION_DIR}/package.json"
+  release_package_backup="$(mktemp "${release_package_json}.release.XXXXXX")"
+  cp -p "${release_package_json}" "${release_package_backup}"
+  trap cleanup_package_json EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  node -e 'const fs = require("fs"); const p = JSON.parse(fs.readFileSync("package.json", "utf8")); p.version = process.argv[1]; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "${release_version}"
+  pnpm run package --out "${target_vsix}"
+  cleanup_package_json
+  trap - EXIT INT TERM
+  popd >/dev/null || exit 1
 
-    log_success "Build complete. Artifacts in ${DIST_DIR}:"
-    ls -lh "${DIST_DIR}"
+  node tools/ci/release-artifacts.mjs "${target_jar}" "${target_vsix}" "${release_version}" "${source_commit}"
+  log_success "Build complete. Artifacts in ${DIST_DIR}:"
+  ls -lh "${DIST_DIR}"
 }
 
 cmd_validate() {
-    if [[ -n "${VERSION}" ]]; then
-        # Check tag format (v1.2.3 or vscode-groovy-v1.2.3)
-        if [[ ! "${VERSION}" =~ ^(v|vscode-groovy-v)[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.-]+)?$ ]]; then
-            log_error "Invalid version format: ${VERSION}. Expected vX.Y.Z or vscode-groovy-vX.Y.Z"
-            exit 1
-        fi
-        log_success "Version format valid: ${VERSION}"
+  if [[ -n "${VERSION}" ]]; then
+    local release_tools
+    release_tools="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+    node "${release_tools}/ci/release-version.mjs" "${VERSION}"
+    if ! git check-ref-format "refs/tags/${VERSION}"; then
+      log_error "Invalid release tag refname: ${VERSION}"
+      return 1
     fi
+    log_success "Version format valid: ${VERSION}"
+  fi
 }
 
 cmd_smoke_test() {
-    log_info "Running JAR smoke tests..."
-    # Find built JAR in dist
-    local JAR_FILE
-    JAR_FILE=$(find "${DIST_DIR}" -name "gls-*.jar" | head -n 1 || true)
-    
-    if [[ -f "${JAR_FILE}" ]]; then
-        log_info "Smoke testing JAR: ${JAR_FILE}"
-        java -jar "${JAR_FILE}" --help > /dev/null
-        log_success "JAR smoke test passed"
-    else
-        log_error "No JAR found in ${DIST_DIR} for smoke test. Run build first."
-        exit 1
-    fi
+  enter_checkout
+  log_info "Running JAR smoke tests..."
+  # Find built JAR in dist
+  local JAR_FILE
+  JAR_FILE=$(find "${DIST_DIR}" -name "gls-*.jar" | head -n 1 || true)
+
+  if [[ -f "${JAR_FILE}" ]]; then
+    log_info "Smoke testing JAR: ${JAR_FILE}"
+    java -Xmx2g -jar "${JAR_FILE}" --help >/dev/null
+    log_success "JAR smoke test passed"
+  else
+    log_error "No JAR found in ${DIST_DIR} for smoke test. Run build first."
+    exit 1
+  fi
 }
 
 cmd_checksums() {
-    if [[ ! -d "${DIST_DIR}" ]]; then
-        log_error "Directory ${DIST_DIR} does not exist."
-        exit 1
-    fi
+  enter_checkout
+  if [[ ! -d "${DIST_DIR}" ]]; then
+    log_error "Directory ${DIST_DIR} does not exist."
+    exit 1
+  fi
 
-    log_info "Generating checksums..."
-    pushd "${DIST_DIR}" > /dev/null || exit 1
-    if ls ./* > /dev/null 2>&1; then
-        shasum -a 256 ./* > checksums.txt
-        log_success "Checksums generated in ${DIST_DIR}/checksums.txt"
-        cat checksums.txt
-    else
-        log_warn "No files in ${DIST_DIR} to checksum"
+  log_info "Generating checksums..."
+  pushd "${DIST_DIR}" >/dev/null || exit 1
+  local file checksum_temp checksum_status=0 file_count=0
+  local files=()
+  for file in ./*; do
+    case "${file}" in
+    ./checksums.txt | ./.checksums.*) continue ;;
+    *) ;;
+    esac
+    if [[ -f "${file}" ]]; then
+      files+=("${file}")
+      file_count=$((file_count + 1))
     fi
-    popd > /dev/null || exit 1
+  done
+  if [[ "${file_count}" -eq 0 ]]; then
+    log_error "No artifact files in ${DIST_DIR} to checksum"
+    popd >/dev/null || exit 1
+    return 1
+  fi
+
+  # Keep a previous complete manifest if hashing fails. Dot-prefixed temporary
+  # output is excluded from artifact globs, including after an interrupted run.
+  checksum_temp="$(mktemp '.checksums.XXXXXX')"
+  shasum -a 256 "${files[@]}" >"${checksum_temp}" || checksum_status=$?
+  if [[ "${checksum_status}" -ne 0 ]]; then
+    rm "${checksum_temp}"
+    log_error "Checksum generation failed (exit ${checksum_status})"
+    popd >/dev/null || exit 1
+    return "${checksum_status}"
+  fi
+  mv "${checksum_temp}" checksums.txt
+  log_success "Checksums generated in ${DIST_DIR}/checksums.txt"
+  cat checksums.txt
+  popd >/dev/null || exit 1
 }
 
+if [[ "${DRY_RUN}" = true && "${COMMAND}" != build ]]; then
+  log_error "--dry-run is supported only for build"
+  exit 1
+fi
+
 case "${COMMAND}" in
-    build)
-        cmd_build
-        ;;
-    validate)
-        cmd_validate
-        ;;
-    smoke-test)
-        cmd_smoke_test
-        ;;
-    checksums)
-        cmd_checksums
-        ;;
-    *)
-        print_usage
-        exit 1
-        ;;
+build)
+  cmd_build
+  ;;
+validate)
+  cmd_validate
+  ;;
+smoke-test)
+  cmd_smoke_test
+  ;;
+checksums)
+  cmd_checksums
+  ;;
+*)
+  print_usage
+  exit 1
+  ;;
 esac
