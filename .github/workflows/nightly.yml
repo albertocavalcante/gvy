@@ -148,7 +148,9 @@ jobs:
         run: |
           cd dist
           sha256sum -c checksums.txt
-          tag="nightly-${NIGHTLY_VERSION}"
+          # A publish-only retry reuses the build version but has a new attempt.
+          # Leave a failed upload's draft untouched and use a fresh tag.
+          tag="nightly-${NIGHTLY_VERSION}-publish.${GITHUB_RUN_ATTEMPT}"
           gh release create "$tag" gls-nightly.jar gvy-nightly.vsix nightly.json checksums.txt \
             --draft --prerelease --latest=false --target "$GITHUB_SHA" \
             --title "Nightly $NIGHTLY_VERSION" --notes-file release-notes.md
