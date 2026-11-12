@@ -1,5 +1,6 @@
 package com.github.albertocavalcante.gvy.semantics.db
 
+import com.github.albertocavalcante.gvy.semantics.SemanticType
 import java.net.URI
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
@@ -99,6 +100,14 @@ class GroovySemanticDB {
                 if (declarations(it.document).isNotEmpty()) versionCounter.incrementAndGet()
             }
         }
+    }
+
+    /**
+     * A detached ordered declaration view and version captured under one read lock.
+     * Copies the indexes in O(index size); callers should reuse a view, not capture for each lookup.
+     */
+    fun snapshotDeclarations(): DeclarationIndexSnapshot = lock.read {
+        DeclarationIndexSnapshot(versionCounter.get(), symbolIndex.snapshot(::freezeSymbol), ownerIndex.snapshot(::freezeSymbol))
     }
 
     /**
@@ -262,6 +271,32 @@ private class SymbolIndex<T> {
 
     fun all(id: String): List<Pair<URI, T>> =
         bySymbol[id]?.flatMap { (uri, entries) -> entries.map { uri to it } } ?: emptyList()
+
+    fun <R> snapshot(copy: (T) -> R): Map<String, List<Pair<URI, R>>> = Collections.unmodifiableMap(
+        bySymbol.mapValues { (_, files) ->
+            Collections.unmodifiableList(files.flatMap { (uri, entries) -> entries.map { uri to copy(it) } })
+        },
+    )
+}
+
+/** Ordered declaration facts captured independently of later database mutations. */
+class DeclarationIndexSnapshot internal constructor(
+    val version: Long,
+    private val definitions: Map<String, List<Pair<URI, SymbolInfo>>>,
+    private val members: Map<String, List<Pair<URI, SymbolInfo>>>,
+) {
+    fun findDefinitions(symbolId: String): List<Pair<URI, SymbolInfo>> = definitions[symbolId].orEmpty()
+
+    fun findMembers(ownerId: String): List<Pair<URI, SymbolInfo>> = members[ownerId].orEmpty()
+}
+
+private fun freezeSymbol(symbol: SymbolInfo): SymbolInfo = symbol.copy(type = symbol.type?.let(::freezeType))
+
+private fun freezeType(type: SemanticType): SemanticType = when (type) {
+    is SemanticType.Known -> type.copy(typeArgs = Collections.unmodifiableList(type.typeArgs.map(::freezeType)))
+    is SemanticType.Array -> type.copy(componentType = freezeType(type.componentType))
+    is SemanticType.Union -> type.copy(types = Collections.unmodifiableSet(type.types.mapTo(linkedSetOf(), ::freezeType)))
+    else -> type
 }
 
 /**

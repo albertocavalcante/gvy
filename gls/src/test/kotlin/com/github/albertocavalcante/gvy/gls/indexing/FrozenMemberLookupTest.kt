@@ -11,6 +11,7 @@ import com.github.albertocavalcante.gvy.semantics.workspace.MemberLookup
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import java.net.URI
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -48,10 +49,41 @@ class FrozenMemberLookupTest {
         }
     }
 
-    private fun capture(index: WorkspaceSymbolIndex): MemberLookup = index
+    @Test
+    fun `capture preserves ordered duplicates and a copied shadow set`() {
+        val db = GroovySemanticDB()
+        val second = URI.create("file:///workspace/other/C.groovy")
+        val hidden = mutableSetOf(uri)
+        val index = WorkspaceSymbolIndex(db) { hidden }
+        index.updateDocument(uri, document(TypeConstants.STRING))
+        index.updateDocument(second, document(TypeConstants.INT, second))
+        val captured = index.captureMembers(hidden)
+        assertEquals(index.findField("C", "value"), captured.findField("C", "value"))
+        assertEquals(index.findMethods("C", "read", 0), captured.findMethods("C", "read", 0))
+        assertEquals(index.getAllMembers("C", false), captured.getAllMembers("C", false))
 
-    private fun document(type: SemanticType) = SemanticDocument(
-        uri,
+        hidden.clear()
+        index.removeDocument(second)
+        assertEquals(TypeConstants.INT, captured.findField("C", "value")?.type)
+        assertEquals(TypeConstants.STRING, index.findField("C", "value")?.type)
+    }
+
+    @Test
+    fun `capture freezes nested type arguments and does not expose mutable lists`() {
+        val arguments = mutableListOf<SemanticType>(TypeConstants.STRING)
+        val index = WorkspaceSymbolIndex(GroovySemanticDB())
+        index.updateDocument(uri, document(SemanticType.Known("List", arguments)))
+        val captured = index.captureMembers(emptySet())
+        arguments[0] = TypeConstants.INT
+        val type = captured.findField("C", "value")?.type as SemanticType.Known
+        assertEquals(listOf(TypeConstants.STRING), type.typeArgs)
+        assertThrows<UnsupportedOperationException> { (type.typeArgs as MutableList).clear() }
+    }
+
+    private fun capture(index: WorkspaceSymbolIndex): MemberLookup = index.captureMembers(emptySet())
+
+    private fun document(type: SemanticType, documentUri: URI = uri) = SemanticDocument(
+        documentUri,
         listOf(
             SymbolInfo("C#", SymbolKind.CLASS, Range(0, 0, 0, 1), "C", null),
             SymbolInfo("C#value.", SymbolKind.FIELD, Range(1, 0, 1, 1), "value", "C#", type),
