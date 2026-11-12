@@ -183,6 +183,10 @@ Other workflows, advisory Sonar/dependency-update commands and the validation jo
 review. This implementation does not claim repository-wide warning coverage. Every newly observed uncovered diagnostic
 must be fixed or recorded with the same ownership and acceptance criteria.
 
+Inspect complete job logs with binary-safe readers, such as `rg --text`, because legitimate NUL-delimited Git output can
+make a default text search omit later warnings. Preserve the original bytes and hash. The Gradle producer separately
+rejects NUL-containing captures as incomplete evidence; stripping those bytes does not repair a failed capture.
+
 Bazel module-lock drift fails CI. Full Maven resolution reproducibility remains tracked in
 [#1029](https://github.com/albertocavalcante/gvy/issues/1029): the Maven lock remains disabled after historical GMM
 variant/checksum mismatches. Current stable-resolver attribution and fresh cross-environment agreement still require

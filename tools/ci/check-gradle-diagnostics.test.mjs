@@ -131,6 +131,24 @@ test('missing, empty, truncated, conflicting and failed captures cannot pass', (
   assert.equal(check('BUILD SUCCESSFUL in 1s\n', { captureExitCode: undefined }).complete, false);
 });
 
+test('NUL bytes cannot hide daemon health advice or produce complete evidence', () => {
+  const warning = daemonMemoryAdvice[0];
+  const cases = [
+    `git-entry\0tail\n${warning}\n`,
+    `${warning}\ngit-entry\0tail\n`,
+    `\0${warning}\n`,
+    `${warning}\0\n`,
+  ];
+  for (const [index, output] of cases.entries()) {
+    const result = check(output + 'BUILD SUCCESSFUL in 1s\n');
+    assert.equal(result.ok, false, `NUL case ${index}`);
+    assert.equal(result.complete, false, `NUL case ${index}`);
+    assert.match(result.errors.join(' '), /invalid encoding or non-plain console output/);
+    if (index < 2) assert.deepEqual(result.unexpected, [daemonDiagnostic(warning)]);
+  }
+  assert.equal(check('BUILD SUCCESSFUL in 1s\n').ok, true);
+});
+
 test('preserves project, task and source identity while normalizing only the checkout root and ANSI', () => {
   const rootDir = '/work/gvy';
   const log = '> Configure project :schemas\n' + warning + '\n' + warning + '\n' +
