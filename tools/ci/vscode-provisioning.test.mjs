@@ -272,6 +272,28 @@ function fixture(t) {
   return root;
 }
 
+function fixtureChildrenCleanup(t, pids, siblingPid) {
+  for (const pid of pids) assert.ok(Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid && pid !== siblingPid);
+  let pending;
+  const cleanup = () => pending ??= (async () => {
+    const results = await Promise.allSettled(pids.map(async pid => {
+      if (process.platform === 'win32') spawnSync(join(process.env.SystemRoot, 'System32', 'taskkill.exe'), ['/PID', String(pid), '/T', '/F'], { timeout: 2000, stdio: 'ignore', windowsHide: true, shell: false });
+      try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
+      for (let attempt = 0; attempt < 80; attempt++) {
+        try { process.kill(pid, 0); } catch (error) { if (error.code === 'ESRCH') return; throw error; }
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      assert.fail('owned fixture descendant must stop before its working directory is removed');
+    }));
+    const failed = results.filter(result => result.status === 'rejected');
+    if (failed.length) throw new AggregateError(failed.map(result => result.reason), 'owned fixture cleanup failed');
+  })();
+  // The finally caller must await this before fixture(t)'s earlier after-hook;
+  // the same promise is an idempotent fallback if an assertion throws.
+  t.after(cleanup);
+  return cleanup;
+}
+
 test('actual Windows matrix unit commands fail before compilation or provisioning after a native assertion failure', t => {
   const root = fixture(t);
   const workflow = readFileSync(new URL('../../.github/workflows/extension.yml', import.meta.url), 'utf8');
@@ -347,11 +369,6 @@ if (process.platform === 'win32') test('native Windows nested probe timeout and 
   const root = fixture(t);
   const sibling = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
   t.after(() => sibling.kill('SIGKILL'));
-  const cleanup = pid => {
-    assert.ok(Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid && pid !== sibling.pid);
-    spawnSync(join(process.env.SystemRoot, 'System32', 'taskkill.exe'), ['/PID', String(pid), '/T', '/F'], { timeout: 2000, stdio: 'ignore', windowsHide: true, shell: false });
-    try { process.kill(pid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; }
-  };
   for (const mode of ['timeout', 'overflow']) {
     const ids = join(root, `${mode}-pids.json`), wrapper = join(root, `${mode}.cjs`), command = join(root, `${mode}.cmd`);
     for (const path of [process.execPath, wrapper]) assert.ok(!/["%!?&|<>^\r\n\0]/.test(path), 'fixture paths must be safe quoted cmd arguments');
@@ -371,19 +388,23 @@ process.stdout.on('error',()=>{});${mode === 'overflow' ? "process.stdout.write(
       }
     }
     assert.ok(owned, 'the actual wrapper must record its owned descendants');
-    t.after(() => { cleanup(owned.wrapper); cleanup(owned.child); });
-    assert.equal(value.result.outcome, 'cleanup-incomplete'); assert.equal(value.result.cleanupComplete, false);
-    assert.equal(value.result.delivery, null); assert.ok(value.result.phases.some(event => event.phase === 'runtime-probe')); assert.doesNotThrow(() => process.kill(sibling.pid, 0));
-    if (value.result.errorLogs.length) assert.equal(value.result.capture.complete, mode === 'timeout', 'capture and descendant proof are separate');
+    const cleanup = fixtureChildrenCleanup(t, [owned.wrapper, owned.child], sibling.pid);
+    try {
+      assert.equal(value.result.outcome, 'cleanup-incomplete'); assert.equal(value.result.cleanupComplete, false);
+      assert.equal(value.result.delivery, null); assert.ok(value.result.phases.some(event => event.phase === 'runtime-probe')); assert.doesNotThrow(() => process.kill(sibling.pid, 0));
+      if (value.result.errorLogs.length) assert.equal(value.result.capture.complete, mode === 'timeout', 'capture and descendant proof are separate');
+    } finally { await cleanup(); }
   }
   // A watchdog during runtime-probe must not invent a missing final proof.
   const ids = join(root, 'no-final-pid');
   const script = workerScript(root, `for(const phase of ${JSON.stringify(successfulPhases.slice(0, -1))})send({type:'phase',phase});
 const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});writeFileSync(input.cachePath,String(child.pid));setInterval(()=>{},1000);`);
   const noFinal = await launchProvisioningAttempt({ ...inputFor(root), cachePath: ids, budgetMs: 1000 }, { script, logDir: join(root, 'no-final-logs'), consoleOutput: false });
-  const ownedPid = Number(readFileSync(ids, 'utf8')); t.after(() => cleanup(ownedPid));
-  assert.equal(noFinal.result.cleanupComplete, false); assert.equal(noFinal.result.outcome, 'cleanup-incomplete');
-  assert.doesNotThrow(() => process.kill(sibling.pid, 0));
+  const cleanup = fixtureChildrenCleanup(t, [Number(readFileSync(ids, 'utf8'))], sibling.pid);
+  try {
+    assert.equal(noFinal.result.cleanupComplete, false); assert.equal(noFinal.result.outcome, 'cleanup-incomplete');
+    assert.doesNotThrow(() => process.kill(sibling.pid, 0));
+  } finally { await cleanup(); }
 });
 
 test('actual child preserves SDK-recognized private proxy settings while excluding tokens and Node injection', async t => {
@@ -428,16 +449,18 @@ test('unexpected worker exit never claims unproven descendant cleanup or stops a
 const child=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}); writeFileSync(input.cachePath,String(child.pid)); process.exit(3);`);
   const value = await launchProvisioningAttempt(input, { script, logDir: join(root, 'early-exit'), consoleOutput: false });
   const ownedPid = Number(readFileSync(input.cachePath, 'utf8'));
-  t.after(() => { try { process.kill(ownedPid, 'SIGKILL'); } catch (error) { if (error.code !== 'ESRCH') throw error; } });
-  assert.doesNotThrow(() => process.kill(sibling.pid, 0));
-  if (process.platform === 'win32') {
-    assert.equal(value.result.cleanupComplete, false, 'a dead leader cannot prove Windows descendant cleanup');
-    assert.equal(value.result.outcome, 'cleanup-incomplete');
-    assert.doesNotThrow(() => process.kill(ownedPid, 0));
-  } else {
-    assert.equal(value.result.outcome, value.result.cleanupComplete ? 'invalid-evidence' : 'cleanup-incomplete', JSON.stringify(value.result));
-    if (value.result.cleanupComplete) assert.throws(() => process.kill(ownedPid, 0), { code: 'ESRCH' });
-  }
+  const cleanup = fixtureChildrenCleanup(t, [ownedPid], sibling.pid);
+  try {
+    assert.doesNotThrow(() => process.kill(sibling.pid, 0));
+    if (process.platform === 'win32') {
+      assert.equal(value.result.cleanupComplete, false, 'a dead leader cannot prove Windows descendant cleanup');
+      assert.equal(value.result.outcome, 'cleanup-incomplete');
+      assert.doesNotThrow(() => process.kill(ownedPid, 0));
+    } else {
+      assert.equal(value.result.outcome, value.result.cleanupComplete ? 'invalid-evidence' : 'cleanup-incomplete', JSON.stringify(value.result));
+      if (value.result.cleanupComplete) assert.throws(() => process.kill(ownedPid, 0), { code: 'ESRCH' });
+    }
+  } finally { await cleanup(); }
 });
 
 test('integration runner assertions are invoked once and their original failure is retained', async t => {
