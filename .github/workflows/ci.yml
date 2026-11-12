@@ -143,7 +143,8 @@ jobs:
           git switch -c test/bench-compiler-calibration-hosted
           git apply --check --index "$RUNNER_TEMP/gvy-b04-phase-reviewed.patch"
           git apply --index "$RUNNER_TEMP/gvy-b04-phase-reviewed.patch"
-          mapfile -t changed < <(git diff --cached --name-only "$EXPECTED_BASE")
+          changed_paths=$(git diff --cached --name-only "$EXPECTED_BASE")
+          mapfile -t changed <<<"$changed_paths"
           [[ ${#changed[@]} == 1 && "${changed[0]}" == "$source" ]]
           [[ "$(git write-tree)" == "$EXPECTED_TREE" && "$(git rev-parse ":$source")" == "$EXPECTED_BLOB" ]]
           printf '%s  %s\n' "$EXPECTED_SOURCE_SHA" "$source" | sha256sum -c -
@@ -218,13 +219,14 @@ jobs:
           if [[ "$status" != 0 ]]; then
               exit "$status"
           fi
-          mapfile -t changed < <(git diff --name-only)
+          mapfile -t changed <"$proof/formatter-changed-paths.txt"
           [[ ${#changed[@]} == 0 || (${#changed[@]} == 1 && "${changed[0]}" == "$source") ]]
           git ls-files --others --exclude-standard -z >"$proof/formatter-untracked-paths.nul"
           test ! -s "$proof/formatter-untracked-paths.nul"
           git add "$source"
           git diff --quiet
-          mapfile -t changed < <(git diff --cached --name-only HEAD)
+          changed_paths=$(git diff --cached --name-only HEAD)
+          mapfile -t changed <<<"$changed_paths"
           [[ ${#changed[@]} == 1 && "${changed[0]}" == "$source" ]]
           tree=$(git write-tree)
           blob=$(git rev-parse ":$source")
@@ -245,7 +247,13 @@ jobs:
           set -euo pipefail
           proof="$RUNNER_TEMP/gvy-b04-phase-publication-proof"
           [[ -z "${LEFTHOOK:-}" && -z "${LEFTHOOK_EXCLUDE:-}" && -z "${LEFTHOOK_SKIP:-}" ]]
-          [[ -z "$(git config --get core.hooksPath || true)" ]]
+          if git config --get core.hooksPath >/dev/null; then
+              printf '%s\n' 'B04_HOOKS_PATH_MUST_BE_UNSET' >&2
+              exit 1
+          else
+              hooks_query_status=$?
+              [[ "$hooks_query_status" == 1 ]] || exit "$hooks_query_status"
+          fi
           lefthook install
           test -x .git/hooks/pre-commit && test -x .git/hooks/commit-msg
           git config user.name 'gvy publication automation'
@@ -276,7 +284,8 @@ jobs:
           [[ "$(git rev-parse "HEAD:$source")" == "$SOURCE_BLOB" ]]
           printf '%s  %s\n' "$SOURCE_SHA" "$source" | sha256sum -c -
           git diff --quiet && git diff --cached --quiet
-          test -z "$(git status --porcelain --untracked-files=all)"
+          status_after_hooks=$(git status --porcelain --untracked-files=all)
+          [[ -z "$status_after_hooks" ]]
           git bundle create "$RUNNER_TEMP/b04-phase-candidate.bundle" HEAD "^$EXPECTED_BASE"
           git bundle verify "$RUNNER_TEMP/b04-phase-candidate.bundle"
           mv "$RUNNER_TEMP/b04-phase-candidate.bundle" "$proof/candidate.bundle"
@@ -297,7 +306,12 @@ jobs:
               status=$?
           fi
           clean=true
-          if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git status --porcelain --untracked-files=all)" ]] || [[ "$(git rev-parse HEAD)" != "$candidate" ]]; then
+          if status_after_tests=$(git status --porcelain --untracked-files=all); then
+              [[ -z "$status_after_tests" ]] || clean=false
+          else
+              clean=false
+          fi
+          if ! git diff --quiet || ! git diff --cached --quiet || [[ "$(git rev-parse HEAD)" != "$candidate" ]]; then
               clean=false
           fi
           jq -n --arg head "$candidate" --arg support "$GITHUB_SHA" --argjson exitCode "$status" \
