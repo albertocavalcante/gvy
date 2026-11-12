@@ -77,6 +77,16 @@ class NamedObservationExecutionTest {
     }
 
     @Test
+    fun `empty plan still reports actual successful cleanup`() {
+        val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(emptyList()))
+
+        assertThat(outcome.counts.planned).isZero()
+        assertThat(outcome.observed).isEmpty()
+        assertThat(outcome.completion).isEqualTo(ScenarioCompletion.Completed)
+        assertThat(outcome.cleanup).isEqualTo(CleanupOutcome.Succeeded)
+    }
+
+    @Test
     fun `known failure cannot hide independent cleanup failure`() {
         every { WorkspaceFixture.cleanup(workspace) } throws IOException("cleanup failed")
         val checks = listOf(JsonCheck("$.missing", JsonExpectation(), id = "known", xfail = Xfail(42, "known", "missing")))
