@@ -115,8 +115,30 @@ jobs:
           python3 -m venv "$bootstrap"
           "$bootstrap/bin/python" -m pip install --require-hashes --only-binary=:all: -r .reuse/bootstrap-requirements.txt 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-bootstrap.log"
           export PATH="$bootstrap/bin:$PATH"
-          [[ "$(command -v uv)" == "$bootstrap/bin/uv" ]]
-          [[ "$(uv --version)" == "uv 0.13.7" ]]
+          pin="$(sed -n 's/^uv==\([0-9][0-9.]*\).*/\1/p' .reuse/bootstrap-requirements.txt)"
+          if [[ "$pin" != 0.13.7 ]]; then
+          	echo "Unexpected checked-in uv pin: $pin" >&2
+          	exit 1
+          fi
+          selected="$(command -v uv || true)"
+          printf 'selected uv path: %s\n' "$selected" | tee "$RUNNER_TEMP/parity-proof/uv-path.txt"
+          if [[ "$selected" != "$bootstrap/bin/uv" ]]; then
+          	echo "Pinned uv path mismatch" >&2
+          	exit 1
+          fi
+          installed="$("$bootstrap/bin/python" -I -c 'from importlib.metadata import version; print(version("uv"))')"
+          printf 'installed uv package: %s\n' "$installed" | tee "$RUNNER_TEMP/parity-proof/uv-package-version.txt"
+          if [[ "$installed" != "$pin" ]]; then
+          	echo "Pinned uv package version mismatch" >&2
+          	exit 1
+          fi
+          timeout 10s "$bootstrap/bin/uv" --version | head -c 4097 >"$RUNNER_TEMP/parity-proof/uv-version.txt"
+          version_bytes="$(wc -c <"$RUNNER_TEMP/parity-proof/uv-version.txt")"
+          if ((version_bytes == 0 || version_bytes > 4096)); then
+          	echo "Invalid uv version output size" >&2
+          	exit 1
+          fi
+          cat "$RUNNER_TEMP/parity-proof/uv-version.txt"
           sha256sum "$bootstrap/bin/uv" >"$RUNNER_TEMP/parity-proof/uv.sha256"
           echo "$bootstrap/bin" >>"$GITHUB_PATH"
           uv sync --project .reuse --locked 2>&1 | tee "$RUNNER_TEMP/parity-proof/license-sync.log"
@@ -352,8 +374,19 @@ jobs:
           git config user.name 'gvy publication automation'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git diff --quiet && [[ "$(git write-tree)" == "$(cat "$proof/formatted-tree")" ]]
-          [[ "$(direnv exec . bash -c 'command -v uv' 2>/dev/null)" == "$RUNNER_TEMP/license-bootstrap/bin/uv" ]]
-          [[ "$(direnv exec . uv --version 2>/dev/null)" == "uv 0.13.7" ]]
+          hook_uv="$(direnv exec . bash -c 'command -v uv' 2>/dev/null || true)"
+          printf 'hook uv path: %s\n' "$hook_uv" | tee "$proof/hook-uv-path.txt"
+          if [[ "$hook_uv" != "$RUNNER_TEMP/license-bootstrap/bin/uv" ]]; then
+          	echo "Hook uv path mismatch" >&2
+          	exit 1
+          fi
+          hook_version="$(direnv exec . "$RUNNER_TEMP/license-bootstrap/bin/python" -I -c 'from importlib.metadata import version; print(version("uv"))' 2>/dev/null)"
+          pin="$(sed -n 's/^uv==\([0-9][0-9.]*\).*/\1/p' .reuse/bootstrap-requirements.txt)"
+          printf 'hook uv package: %s\n' "$hook_version" | tee "$proof/hook-uv-package-version.txt"
+          if [[ "$pin" != 0.13.7 || "$hook_version" != "$pin" ]]; then
+          	echo "Hook uv package version mismatch" >&2
+          	exit 1
+          fi
           sha256sum -c "$proof/uv.sha256"
           direnv exec . git commit -m 'test(logging): align test backend behavior' 2>&1 | tee "$proof/hooks.log"
           [[ "$(git rev-parse HEAD^)" == 7dd46513b7c6efe6688f234505f548b276e3cfda ]]
