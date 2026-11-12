@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 load("//tools/build_defs:kotlin.bzl", "kt_library", "kt_test")
 
 kt_library(
@@ -43,6 +46,7 @@ kt_test(
     ]),
     test_packages = ["com.github.albertocavalcante.gvy.build"],
     deps = [
+        "@maven//:ch_epfl_scala_bsp4j",
         "@maven//:io_mockk_mockk_dsl_jvm",
         "@maven//:io_mockk_mockk_jvm",
         "@maven//:org_apache_maven_maven_model",
