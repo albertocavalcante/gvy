@@ -4,7 +4,9 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
 import io.mockk.unmockkObject
+import io.mockk.verify
 import org.assertj.core.api.Assertions.assertThat
+import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -74,6 +76,15 @@ class NamedObservationExecutionTest {
         assertThat(outcome.observed.single().status).isInstanceOf(ObservationStatus.Failed::class.java)
         assertThat(outcome.blocked).containsExactly("later")
         assertThat(outcome.isSuccessful).isFalse()
+    }
+
+    @Test
+    fun `legacy execution rejects per-check metadata before creating workspace`() {
+        val checks = listOf(JsonCheck("$.missing", JsonExpectation(), id = "known", xfail = Xfail(42, "known")))
+
+        assertThatThrownBy { ScenarioExecutor(factory).execute(definition(checks)) }
+            .isInstanceOf(IllegalArgumentException::class.java)
+        verify(exactly = 0) { WorkspaceFixture.materialize(any(), any()) }
     }
 
     @Test
