@@ -529,9 +529,13 @@ abstract class StageDependencyNotices : DefaultTask() {
                     if (entry.isDirectory) continue
                     val parts = entry.name.split('/')
                     val base = parts.last().uppercase(Locale.ROOT)
-                    val notice = listOf("LICENSE", "LICENCE", "NOTICE", "COPYING", "COPYRIGHT").any {
-                        base == it || base.startsWith("$it.") || base.startsWith("$it-")
-                    } || parts.dropLast(1).any { it.equals("licenses", ignoreCase = true) || it.equals("license", ignoreCase = true) }
+                    val notice =
+                        !base.endsWith(".CLASS") &&
+                            (listOf("LICENSE", "LICENCE", "NOTICE", "COPYING", "COPYRIGHT").any {
+                                base == it || base.startsWith("$it.") || base.startsWith("$it-")
+                            } || parts.dropLast(1).any {
+                                it.equals("licenses", ignoreCase = true) || it.equals("license", ignoreCase = true)
+                            })
                     if (!notice) continue
                     require(parts.none { it.isEmpty() || it == "." || it == ".." || '\\' in it || ':' in it }) {
                         "Unsafe notice path in ${archive.name}: ${entry.name}"
