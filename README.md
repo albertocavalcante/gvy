@@ -10,6 +10,9 @@ language server and an extension for VS Code, Cursor, and VSCodium.
 
 ## Get started
 
+The extension requires **VS Code API 1.144 or newer**. Cursor and VSCodium builds must provide a compatible VS Code API;
+their own product version numbers differ.
+
 ### macOS and Linux with Homebrew
 
 ```bash
@@ -21,7 +24,8 @@ Homebrew installs Java 17, the server, and the released extension, and verifies 
 is required. The helper selects the first available editor: VS Code, Cursor, then VSCodium.
 
 To choose an editor, run `gvy-install-extension cursor` or `gvy-install-extension codium` instead. Then open a `.groovy`
-file, `.gradle` file, or `Jenkinsfile`. Reload an existing editor window after installation.
+file, `.gradle` file, or `Jenkinsfile`. Reload an existing editor window after installation. Use
+`gvy-install-extension --dry-run` to preview the selection without installing.
 
 ### Windows or without Homebrew
 

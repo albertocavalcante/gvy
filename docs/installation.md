@@ -4,7 +4,10 @@ Install the released extension for VS Code, Cursor, or VSCodium. To build your c
 [contributor instructions](../editors/code/CONTRIBUTING.md#build-and-install-this-checkout).
 
 Use VS Code 1.144 or newer, or an editor compatible with that VS Code API. Homebrew installs the Java runtime; it does
-not install the editor.
+not install the editor. Cursor and VSCodium have separate product version numbers. Some builds use an older VS Code API
+and cannot install this release. The installer preserves the editor's compatibility error; it never forces an
+incompatible installation. [Broader editor compatibility](https://github.com/albertocavalcante/gvy/issues/1706) remains
+in progress.
 
 ## macOS and Linux with Homebrew
 
@@ -16,11 +19,12 @@ gvy-install-extension
 ```
 
 The formula installs Java 17, the standalone server, and a prebuilt VSIX from the same gvy release. Homebrew verifies
-SHA-256 checksums for both files before installation. You do not need Git, Gradle, Node, pnpm, or a separate Groovy
-installation.
+SHA-256 checksums for both files before installation. You do not need a gvy checkout, Gradle, Node, pnpm, or a separate
+Groovy installation.
 
-The helper searches for editor commands on PATH in this order: `code`, `cursor`, `codium`, `code-insiders`,
-`cursor-insiders`. It prints the selected editor before installing. To select an editor explicitly:
+The helper searches in this order: `code`, `cursor`, `codium`, `code-insiders`, `cursor-insiders`. It uses PATH and
+standard macOS app locations under `/Applications` and `~/Applications`, and prints the selected editor before
+installing. To select an editor explicitly:
 
 ```bash
 gvy-install-extension cursor
@@ -30,13 +34,23 @@ Use `codium` for VSCodium or `code-insiders` for VS Code Insiders. An explicit e
 the helper does not switch to another editor. It uses the released VSIX packaged by Homebrew and does not build from
 source or fetch another version at runtime.
 
+Preview the selection without installing:
+
+```bash
+gvy-install-extension --dry-run
+```
+
+The preview shows the editor command, bundled VSIX path, and required editor API. The editor checks compatibility during
+installation.
+
 Open a `.groovy` file, `.gradle` file, or `Jenkinsfile` after installation. If your editor is already open, run
 **Developer: Reload Window**.
 
 ### If the editor command is missing
 
-In VS Code on macOS, run **Shell Command: Install 'code' command in PATH** from the Command Palette, then retry. Cursor
-and VSCodium provide their own shell commands. You can also pass the absolute path to your editor's CLI.
+Standard macOS app installations are found automatically. For other locations, pass the absolute path to your editor's
+CLI or enable its shell command. In VS Code on macOS, use **Shell Command: Install 'code' command in PATH** from the
+Command Palette. Cursor and VSCodium provide their own shell commands.
 
 For a manual installation, use **Extensions: Install from VSIX…** and select `gvy.vsix` from the formula's `libexec`
 directory. To find it:
@@ -49,7 +63,8 @@ brew --prefix gvy
 
 Java is installed by the formula. Run `brew info albertocavalcante/tap/gvy` to see its JDK location, and select that
 location in the editor's Java configuration. See [Java settings](../editors/code/README.md#java-settings-explained) if
-you already use a different project JDK. The installer does not change your Java or editor settings.
+you already use a different project JDK. The installer does not change your Java or editor settings. The standalone
+`gvy` command uses its packaged Java 17 even if your project has an older `JAVA_HOME`.
 
 ## Windows or without Homebrew
 
