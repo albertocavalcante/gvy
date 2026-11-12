@@ -82,8 +82,12 @@ The decisive counterexample is [#1883](https://github.com/albertocavalcante/gvy/
 the default view of attempt-1 job `131249849696` returned the same normalized log as successful attempt-2 job
 `131252364808`. Explicit `--attempt 1` recovered the failure; direct job API logs had different hashes and lengths. The
 [CLI manual](https://cli.github.com/manual/gh_run_view) documents a separate attempt selector and log-association
-limitations. This is evidence for explicit selection in gvy's procedure, not an established upstream defect. Executable
-retrieval/identity regression protection remains tracked in #1883; these instructions alone do not enforce it.
+limitations. This is evidence for explicit selection in gvy's procedure, not an established upstream defect. The
+[regression controls](../tools/ci/historical-job-log.test.mjs) execute this capture recipe against a local CLI fixture:
+wrong or missing identity stops before log retrieval, binary bytes survive unchanged, and a failed retrieval retains
+only an incomplete capture. These POSIX Bash/jq controls use no credentials or network and do not simulate API
+transport. Run them with `node --test tools/ci/historical-job-log.test.mjs`; normal CI discovers them in the existing
+tools suite.
 
 ## Required readiness
 
