@@ -1592,9 +1592,9 @@ describe("LSPTestExecutionService", () => {
 
     it("marks an unfinished test after a process error and settles once", async () => {
       const { token, run, controller, item, proc } = setup("/w/gradlew");
+      proc.pid = undefined;
       const done = service.runTests({ include: [item] }, token, controller);
       await new Promise((resolve) => setImmediate(resolve));
-      proc.pid = undefined;
       proc.emit("error", new Error("spawn failed"));
       proc.stdout.end();
       proc.stderr.end();
@@ -1616,9 +1616,9 @@ describe("LSPTestExecutionService", () => {
           { testId: item.id, name: "test", status: "SUCCESS", durationMs: 3 },
         ],
       });
+      proc.pid = undefined;
       const done = service.runTests({ include: [item] }, token, controller);
       await new Promise((resolve) => setImmediate(resolve));
-      proc.pid = undefined;
       proc.emit("error", new Error("spawn failed"));
       proc.stdout.end();
       proc.stderr.end();
@@ -1703,13 +1703,13 @@ describe("LSPTestExecutionService", () => {
           },
         ],
       });
+      first.pid = undefined;
       const done = service.runTests(
         { include: [gradle, maven] },
         token,
         controller,
       );
       await new Promise((resolve) => setImmediate(resolve));
-      first.pid = undefined;
       first.emit("error", new Error("spawn failed"));
       first.stdout.end();
       first.stderr.end();
