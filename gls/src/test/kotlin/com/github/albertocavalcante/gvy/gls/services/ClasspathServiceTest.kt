@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.services
 
 import org.assertj.core.api.Assertions.assertThat
@@ -234,14 +237,37 @@ class ClasspathServiceTest {
         second.toFile().mkdirs()
 
         val fakeIndex = RecordingClasspathIndex()
-        val service = ClasspathService(fakeIndex)
-
-        URLClassLoader(arrayOf(first.toUri().toURL(), second.toUri().toURL()), null).use { loader ->
-            setCurrentClassLoader(service, loader)
-            service.indexAllClasses()
+        val loader = object : URLClassLoader(arrayOf(first.toUri().toURL(), second.toUri().toURL()), null) {
+            var closeCount = 0
+            override fun close() {
+                closeCount++
+                super.close()
+            }
         }
+        val service = ClasspathService.withInitialLoader(fakeIndex, loader)
+        try {
+            service.indexAllClasses()
+            assertThat(fakeIndex.entries).containsExactly(first.toString(), second.toString())
+            assertThat(loader.closeCount).isZero()
+        } finally {
+            service.close()
+        }
+        assertThat(loader.closeCount).isEqualTo(1)
+    }
 
-        assertThat(fakeIndex.entries).containsExactly(first.toString(), second.toString())
+    @Test
+    fun `leasing rejects a non-generation-aware custom reflection provider`() {
+        val reflection = RecordingClasspathReflection()
+        val service = ClasspathService(defaultIndex(), reflection)
+        try {
+            assertThat(
+                org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+                    service.acquireClasspath()
+                }.message,
+            ).contains("custom reflection provider")
+        } finally {
+            service.close()
+        }
     }
 
     @Test
@@ -407,11 +433,4 @@ private class RecordingClasspathReflection : ClasspathReflection {
         loadCalls.add(className)
         return loadResult
     }
-}
-
-private fun setCurrentClassLoader(service: ClasspathService, classLoader: ClassLoader) {
-    val field = ClasspathService::class.java.getDeclaredField("currentClassLoader")
-    field.isAccessible = true
-    @Suppress("UNCHECKED_CAST")
-    (field.get(service) as java.util.concurrent.atomic.AtomicReference<ClassLoader>).set(classLoader)
 }
