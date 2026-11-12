@@ -1,0 +1,223 @@
+{
+  "kind": "historical-selective-native-deprecation-traces",
+  "sourceHead": "0408df0fece209f36f06ec31c3bd040d98ace5df",
+  "testedSha": "4503e6ef826ea88063f7d973535daed8497c06c0",
+  "testedBase": "84d55e22a993517d2c170466b771509d2337be48",
+  "runId": "43159076362",
+  "runAttempt": 1,
+  "packetManifestSha256": "bb18ccc2ee053120d0563cf2df04e4fcf38ca0e11f0f73b78926f474e6fe5b07",
+  "packetChecksumsSha256": "011f1b8d7450a4ac970284c0f7b7a222ef040cd1e0c0e79a021f1d86f9234ff8",
+  "limits": [
+    "Selective real traces, not complete command evidence or a fresh validation of the landed tree.",
+    "Fixture bytes preserve every event, observed header and logged stack from the timestamp-stripped packet.",
+    "The last emitted :viz:desktop header for downloader and codec events does not establish project ownership."
+  ],
+  "fixtures": [
+    {
+      "file": "gradle-native-linux-x64.txt",
+      "sha256": "899e5930d426b9b4f864c7222b41d41dd4769c9ac01f378f3c2e369c995621ce",
+      "packetEventsSha256": "bda5e8617ddbd5d4e6f08c163d1f07b2280ad6bcfbe6aaae749f854fc70c2233",
+      "producer": "launcher-linux-x64",
+      "jobUrl": "https://github.com/albertocavalcante/gvy/actions/runs/43159076362/job/130993572726",
+      "image": "ubuntu-24.04",
+      "rawLogBytes": 348160,
+      "rawLogSha256": "f00b693d645317d70d383480ed3363d0547986c39854b9509f4a3cd71e4da34f",
+      "events": [
+        {
+          "eventId": "linux-x64-01",
+          "rawLogStartLine": 2212,
+          "rawLogEndLine": 2215,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)"
+        },
+        {
+          "eventId": "linux-x64-02",
+          "rawLogStartLine": 2216,
+          "rawLogEndLine": 2219,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)"
+        },
+        {
+          "eventId": "linux-x64-03",
+          "rawLogStartLine": 2220,
+          "rawLogEndLine": 2223,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)"
+        },
+        {
+          "eventId": "linux-x64-04",
+          "rawLogStartLine": 2224,
+          "rawLogEndLine": 2227,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:182)"
+        },
+        {
+          "eventId": "linux-x64-05",
+          "rawLogStartLine": 2228,
+          "rawLogEndLine": 2231,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)"
+        },
+        {
+          "eventId": "linux-x64-06",
+          "rawLogStartLine": 2232,
+          "rawLogEndLine": 2240,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinNativeHostSpecificMetadataArtifactKt$KotlinNativeHostSpecificMetadataArtifact$1.createArtifact(KotlinNativeHostSpecificMetadataArtifact.kt:76)"
+        },
+        {
+          "eventId": "linux-x64-07",
+          "rawLogStartLine": 2241,
+          "rawLogEndLine": 2244,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)"
+        },
+        {
+          "eventId": "linux-x64-08",
+          "rawLogStartLine": 2245,
+          "rawLogEndLine": 2253,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)"
+        },
+        {
+          "eventId": "linux-x64-09",
+          "rawLogStartLine": 2254,
+          "rawLogEndLine": 2262,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)"
+        },
+        {
+          "eventId": "linux-x64-10",
+          "rawLogStartLine": 2301,
+          "rawLogEndLine": 2312,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)"
+        },
+        {
+          "eventId": "linux-x64-11",
+          "rawLogStartLine": 2313,
+          "rawLogEndLine": 2325,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)"
+        },
+        {
+          "eventId": "linux-x64-12",
+          "rawLogStartLine": 2326,
+          "rawLogEndLine": 2350,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)"
+        },
+        {
+          "eventId": "linux-x64-13",
+          "rawLogStartLine": 2351,
+          "rawLogEndLine": 2375,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)"
+        }
+      ]
+    },
+    {
+      "file": "gradle-native-macos-arm64.txt",
+      "sha256": "0a20a89dc04f122b2ba804195ca3f2c166582b105e3d8beb784fab236c22ae44",
+      "packetEventsSha256": "7dc0e2c879c5955c881561e5449cb928ae82a2f0711cc8491b705f5ffbb0111b",
+      "producer": "launcher-macos-arm64",
+      "jobUrl": "https://github.com/albertocavalcante/gvy/actions/runs/43159076362/job/130993572718",
+      "image": "macos-15-arm64",
+      "rawLogBytes": 350768,
+      "rawLogSha256": "16102fa1fe70040f7b2a1fe9555973761ffa6d8927e0b2295b35691f16e3fb31",
+      "events": [
+        {
+          "eventId": "macos-arm64-01",
+          "rawLogStartLine": 2208,
+          "rawLogEndLine": 2211,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)"
+        },
+        {
+          "eventId": "macos-arm64-02",
+          "rawLogStartLine": 2212,
+          "rawLogEndLine": 2215,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)"
+        },
+        {
+          "eventId": "macos-arm64-03",
+          "rawLogStartLine": 2216,
+          "rawLogEndLine": 2219,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)"
+        },
+        {
+          "eventId": "macos-arm64-04",
+          "rawLogStartLine": 2220,
+          "rawLogEndLine": 2223,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:182)"
+        },
+        {
+          "eventId": "macos-arm64-05",
+          "rawLogStartLine": 2224,
+          "rawLogEndLine": 2227,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)"
+        },
+        {
+          "eventId": "macos-arm64-06",
+          "rawLogStartLine": 2228,
+          "rawLogEndLine": 2236,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinNativeHostSpecificMetadataArtifactKt$KotlinNativeHostSpecificMetadataArtifact$1.createArtifact(KotlinNativeHostSpecificMetadataArtifact.kt:76)"
+        },
+        {
+          "eventId": "macos-arm64-07",
+          "rawLogStartLine": 2237,
+          "rawLogEndLine": 2240,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)"
+        },
+        {
+          "eventId": "macos-arm64-08",
+          "rawLogStartLine": 2241,
+          "rawLogEndLine": 2249,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)"
+        },
+        {
+          "eventId": "macos-arm64-09",
+          "rawLogStartLine": 2250,
+          "rawLogEndLine": 2258,
+          "observedGradleHeader": "> Configure project :launcher",
+          "origin": "org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)"
+        },
+        {
+          "eventId": "macos-arm64-10",
+          "rawLogStartLine": 2297,
+          "rawLogEndLine": 2308,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)"
+        },
+        {
+          "eventId": "macos-arm64-11",
+          "rawLogStartLine": 2309,
+          "rawLogEndLine": 2321,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)"
+        },
+        {
+          "eventId": "macos-arm64-12",
+          "rawLogStartLine": 2322,
+          "rawLogEndLine": 2346,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)"
+        },
+        {
+          "eventId": "macos-arm64-13",
+          "rawLogStartLine": 2347,
+          "rawLogEndLine": 2371,
+          "observedGradleHeader": "> Configure project :viz:desktop",
+          "origin": "org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)"
+        }
+      ]
+    }
+  ]
+}

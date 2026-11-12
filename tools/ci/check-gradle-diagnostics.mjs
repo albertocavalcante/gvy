@@ -30,6 +30,23 @@ function isDaemonMemoryAdvice(line) {
     /^For more information on how to set these values, please refer to https:\/\/docs\.gradle\.org\/[^\s/]+\/userguide\/build_environment\.html#sec:configuring_jvm_memory in the Gradle documentation\.$/.test(line);
 }
 
+function deprecationOrigin(message, origin) {
+  // NOTE: These Native consumers run outside reliable project/task output. Keep
+  // the first real codec caller, not the common Attribute.of validation frame or
+  // a deeper codec caller. Exact messages and origins are still policy keys.
+  // Historical traces and their source/job hashes are in fixtures/gradle-native-*.
+  if (message.startsWith('Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated.') &&
+      /^org\.gradle\.internal\.serialize\.codecs\.dm\.transform\.(?:CalculateArtifactsCodec|DefaultTransformCodec)\.decode\([^()]+:\d+\)$/.test(origin)) {
+    return { origin, context: 'emitter gradle configuration-cache' };
+  }
+  if (/^(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.)/.test(origin)) return undefined;
+  if (message.startsWith('Declaring dependencies using multi-string notation has been deprecated.') &&
+      /^org\.jetbrains\.kotlin\.gradle\.targets\.native\.toolchain\.KotlinNativeBundleArtifactFormat\$addKotlinNativeBundleConfiguration\$1\$1\.execute\(KotlinNativeBundleArtifactFormat\.kt:\d+\)$/.test(origin)) {
+    return { origin, context: 'emitter kotlin-native bundle configuration' };
+  }
+  return { origin };
+}
+
 // Tool output is separate from test STANDARD_OUT/ERR. Runtime/server diagnostics
 // require a harness producer with test/scenario identity and explicit assertions.
 export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
@@ -38,7 +55,7 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
   let capturedTestOutput = false;
   let pending;
   const flush = () => {
-    if (pending) diagnostics.add(pending);
+    if (pending) diagnostics.add(`[${pending.context}] ${pending.message}${pending.attribution ?? ''}`);
     pending = undefined;
   };
   const root = rootDir.replaceAll('\\', '/').replace(/\/$/, '');
@@ -64,15 +81,19 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
     const source = line.match(/^at Build_gradle[^\n]*\(([^():]+\.gradle\.kts:\d+)\)$/);
     if (pending && source) {
       const project = context.startsWith('project ') ? context.slice('project :'.length).replaceAll(':', '/') : '';
-      pending += ` [source ${project ? `${project}/` : ''}${source[1]}]`;
+      pending.attribution = ` [source ${project ? `${project}/` : ''}${source[1]}]`;
       flush();
       continue;
     }
-    const origin = line.match(/^at ((?!(?:org\.gradle\.|java\.|java\.base\/|jdk\.|kotlin\.|Program\.))[^ ]+\([^()]+\))$/);
-    if (pending && /deprecated/.test(pending) && origin) {
-      pending += ` [origin ${origin[1]}]`;
-      flush();
-      continue;
+    const origin = line.match(/^at ([^ ]+\([^()]+\))$/);
+    if (pending && /deprecated/.test(pending.message) && origin) {
+      const attribution = deprecationOrigin(pending.message, origin[1]);
+      if (attribution) {
+        pending.context = attribution.context ?? pending.context;
+        pending.attribution = ` [origin ${attribution.origin}]`;
+        flush();
+        continue;
+      }
     }
     if (!line) flush();
     const compiler = /^(?:w: |(?:file:\/\/\/)?\S+\.(?:kt|kts|java|groovy):\d+(?::\d+)?:?\s*(?:warning:|[Ww]arning\b))/.test(line);
@@ -90,7 +111,7 @@ export function collectDiagnostics(log, { rootDir = process.cwd() } = {}) {
       .replaceAll(`${root}/`, '')
       .replace(/\s+/g, ' ');
     flush();
-    pending = `[${context}] ${normalized}`;
+    pending = { context, message: normalized };
   }
   flush();
   return [...diagnostics].sort();

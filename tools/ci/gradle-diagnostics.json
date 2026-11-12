@@ -340,5 +340,131 @@
     "nextAction": "Validate a fixed Wire generator/runtime combination across Gradle and Bazel with fresh regeneration and SCIP alias/serialization compatibility tests before adoption.",
     "acceptance": "Freshly generated SCIP sources compile warning-free and wire compatibility tests pass in both Gradle and Bazel; remove these exact exceptions.",
     "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter gradle configuration-cache] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter kotlin-native bundle configuration] Declaring dependencies using multi-string notation has been deprecated. This will fail with an error in Gradle 10. Please use single-string notation (\"org.jetbrains.kotlin:kotlin-native-prebuilt:2.3.0:linux-x86_64@tar.gz\") or DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#dependency_multi_string_notation [origin org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 creates the traced OS-specific Native compiler dependency from map notation at KotlinNativeBundleArtifactFormat:79; Gradle 10 rejects it. The log header does not identify the owning project. Inspected released 2.3.20 NativeCompilerDownloader returns String instead, but gvy adoption is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate on Linux x64 and macOS arm64 with Native toolchain resolution, unit/process tests and actual-JAR CLI/LSP parity.",
+    "acceptance": "Both Native platforms resolve the intended compiler and retain their tests and JAR parity without these exact notation diagnostics; remove the two OS-specific exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[emitter kotlin-native bundle configuration] Declaring dependencies using multi-string notation has been deprecated. This will fail with an error in Gradle 10. Please use single-string notation (\"org.jetbrains.kotlin:kotlin-native-prebuilt:2.3.0:macos-aarch64@tar.gz\") or DependencyFactory instead. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#dependency_multi_string_notation [origin org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 creates the traced OS-specific Native compiler dependency from map notation at KotlinNativeBundleArtifactFormat:79; Gradle 10 rejects it. The log header does not identify the owning project. Inspected released 2.3.20 NativeCompilerDownloader returns String instead, but gvy adoption is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate on Linux x64 and macOS arm64 with Native toolchain resolution, unit/process tests and actual-JAR CLI/LSP parity.",
+    "acceptance": "Both Native platforms resolve the intended compiler and retain their tests and JAR parity without these exact notation diagnostics; remove the two OS-specific exceptions.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:159)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 uses obsolete configuration visibility in five traced Native setup callers on Gradle 9.8.2; removal in Gradle 11 blocks the pinned plugin. Inspected released 2.3.20 source removes these calls, but gvy candidate integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with JVM/KMP/Compose, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin preserves those gvy and Native behaviors without these exact visibility diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.plugin.mpp.compilationImpl.factory.KotlinCompilationDependencyConfigurationsFactoriesKt.KotlinCompilationDependencyConfigurationsContainer(KotlinCompilationDependencyConfigurationsFactories.kt:182)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 uses obsolete configuration visibility in five traced Native setup callers on Gradle 9.8.2; removal in Gradle 11 blocks the pinned plugin. Inspected released 2.3.20 source removes these calls, but gvy candidate integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with JVM/KMP/Compose, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin preserves those gvy and Native behaviors without these exact visibility diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:41)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 uses obsolete configuration visibility in five traced Native setup callers on Gradle 9.8.2; removal in Gradle 11 blocks the pinned plugin. Inspected released 2.3.20 source removes these calls, but gvy candidate integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with JVM/KMP/Compose, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin preserves those gvy and Native behaviors without these exact visibility diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.targets.CreateTargetConfigurationsSideEffectKt$CreateTargetConfigurationsSideEffect$1.invoke(CreateTargetConfigurationsSideEffect.kt:77)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 uses obsolete configuration visibility in five traced Native setup callers on Gradle 9.8.2; removal in Gradle 11 blocks the pinned plugin. Inspected released 2.3.20 source removes these calls, but gvy candidate integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with JVM/KMP/Compose, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin preserves those gvy and Native behaviors without these exact visibility diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The Configuration.setVisible(boolean) method has been deprecated. This is scheduled to be removed in Gradle 11. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#deprecate-visible-property [origin org.jetbrains.kotlin.gradle.targets.native.internal.CInteropConfigurationsKt.locateOrCreateCInteropDependencyConfiguration(CInteropConfigurations.kt:54)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 uses obsolete configuration visibility in five traced Native setup callers on Gradle 9.8.2; removal in Gradle 11 blocks the pinned plugin. Inspected released 2.3.20 source removes these calls, but gvy candidate integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with JVM/KMP/Compose, lint and publication paths, plus Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin preserves those gvy and Native behaviors without these exact visibility diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration [origin org.jetbrains.kotlin.gradle.artifacts.KotlinNativeHostSpecificMetadataArtifactKt$KotlinNativeHostSpecificMetadataArtifact$1.createArtifact(KotlinNativeHostSpecificMetadataArtifact.kt:76)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares Native artifacts through deprecated archives in three traced callers on Gradle 9.8.2; Gradle 10 rejects this API. Inspected released 2.3.20 source removes these archives registrations, but gvy integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with Native/KMP artifact creation, publication and JVM consumers, plus Native unit/process tests and actual-JAR CLI/LSP parity.",
+    "acceptance": "The adopted plugin preserves Native/KMP artifact and consumer behavior without these exact archives diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration [origin org.jetbrains.kotlin.gradle.artifacts.KotlinTargetArtifactKt.createPublishArtifact(KotlinTargetArtifact.kt:48)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares Native artifacts through deprecated archives in three traced callers on Gradle 9.8.2; Gradle 10 rejects this API. Inspected released 2.3.20 source removes these archives registrations, but gvy integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with Native/KMP artifact creation, publication and JVM consumers, plus Native unit/process tests and actual-JAR CLI/LSP parity.",
+    "acceptance": "The adopted plugin preserves Native/KMP artifact and consumer behavior without these exact archives diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] The archives configuration has been deprecated for artifact declaration. This will fail with an error in Gradle 10. Add artifacts as direct task dependencies of the 'assemble' task instead of declaring them in the archives configuration. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#sec:archives-configuration [origin org.jetbrains.kotlin.gradle.plugin.mpp.KotlinSoftwareComponent$_usages$1.invokeSuspend(KotlinSoftwareComponent.kt:89)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares Native artifacts through deprecated archives in three traced callers on Gradle 9.8.2; Gradle 10 rejects this API. Inspected released 2.3.20 source removes these archives registrations, but gvy integration is pending.",
+    "nextAction": "Kotlin/build maintainers must evaluate the released 2.3.20 partial source candidate with Native/KMP artifact creation, publication and JVM consumers, plus Native unit/process tests and actual-JAR CLI/LSP parity.",
+    "acceptance": "The adopted plugin preserves Native/KMP artifact and consumer behavior without these exact archives diagnostics; remove each verified-obsolete exception.",
+    "expires": "2026-12-11"
+  },
+  {
+    "diagnostic": "[project :launcher] Using the enum type KotlinNativeBundleArtifactsTypes as an attribute value type has been deprecated. This will fail with an error in Gradle 10. This enum does not implement Named. All Enums used as Attribute values should implement Named. This enum type is used by the Kotlin Gradle Plugin 2.0.x line. Upgrade to KGP 2.1.0 or later, in which the plugin no longer uses a plain enum for this attribute. Consult the upgrading guide for further information: https://docs.gradle.org/9.8.2/userguide/upgrading_version_9.html#kgp_native_bundle_attribute_enum [origin org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat.<clinit>(KotlinNativeBundleArtifactFormat.kt:26)]",
+    "owner": "gvy build and CI maintainers",
+    "issue": "https://github.com/albertocavalcante/gvy/issues/1603",
+    "reason": "Kotlin Gradle Plugin 2.3.0 declares a plain Native bundle enum attribute, rejected by Gradle 10. The direct initializer and three distinct Gradle configuration-cache consumers are traced separately; the consumers' emitting project cannot be inferred from the last header. Inspected released 2.3.20 and 2.4.21 sources retain this enum pattern, so no all-events released fix is verified by that source check.",
+    "nextAction": "Kotlin/build maintainers must verify a compatible correction for this exact enum type and evaluate JVM/KMP consumers, Native configuration-cache behavior, Native unit/process tests and actual-JAR CLI/LSP parity before adoption.",
+    "acceptance": "The adopted plugin uses a supported Native bundle attribute type and passes those checks without the direct or any of the three codec diagnostics; remove all four exact exceptions.",
+    "expires": "2026-12-11"
   }
 ]

@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { collectDiagnostics, checkGradleDiagnostics } from './check-gradle-diagnostics.mjs';
+import { evaluate } from './bazel-diagnostics.mjs';
 
 const now = new Date('2026-11-11T00:00:00Z');
 const warning = "The ReportingExtension.file(String) method has been deprecated. This is scheduled to be removed in Gradle 10.";
@@ -290,6 +292,108 @@ const wireDiagnostics = [
 ];
 const gradleExceptions = () => JSON.parse(readFileSync(new URL('./gradle-diagnostics.json', import.meta.url)));
 
+const nativeLogs = ['linux-x64', 'macos-arm64'].map(platform =>
+  readFileSync(new URL(`./fixtures/gradle-native-${platform}.txt`, import.meta.url), 'utf8'));
+const nativeCodecOrigins = [
+  'org.gradle.internal.serialize.codecs.dm.transform.CalculateArtifactsCodec.decode(CalculateArtifactsCodec.kt:71)',
+  'org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)',
+  'org.gradle.internal.serialize.codecs.dm.transform.DefaultTransformCodec.decode(DefaultTransformCodec.kt:66)',
+];
+const nativeDownloadOrigin = 'org.jetbrains.kotlin.gradle.targets.native.toolchain.KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute(KotlinNativeBundleArtifactFormat.kt:79)';
+
+test('historical Native fixtures retain all thirteen events per OS and bind to the actual source and job logs', () => {
+  const provenance = JSON.parse(readFileSync(new URL('./fixtures/gradle-native-provenance.json', import.meta.url)));
+  assert.equal(provenance.sourceHead, '0408df0fece209f36f06ec31c3bd040d98ace5df');
+  assert.equal(provenance.testedSha, '4503e6ef826ea88063f7d973535daed8497c06c0');
+  assert.equal(provenance.runId, '43159076362');
+  assert.equal(provenance.runAttempt, 1);
+  for (const [index, log] of nativeLogs.entries()) {
+    const fixture = provenance.fixtures[index];
+    assert.equal(createHash('sha256').update(log).digest('hex'), fixture.sha256);
+    assert.equal(fixture.events.length, 13);
+    assert.equal(log.match(/^.*\bhas been deprecated\b.*$/gm).length, 13);
+    assert.equal(log.includes('BUILD SUCCESSFUL'), false, 'selective traces do not invent command completion');
+    const diagnostics = collectDiagnostics(log);
+    assert.equal(diagnostics.length, 13, fixture.file);
+    for (const event of fixture.events) {
+      assert.ok(diagnostics.some(line => line.endsWith(`[origin ${event.origin}]`)), event.eventId);
+    }
+    for (const origin of nativeCodecOrigins) {
+      assert.equal(diagnostics.filter(line => line.endsWith(`[origin ${origin}]`)).length, 1, origin);
+    }
+  }
+  const [linux, macos] = nativeLogs.map(log => collectDiagnostics(log));
+  assert.equal(linux.filter(value => macos.includes(value)).length, 12);
+  assert.equal(new Set([...linux, ...macos]).size, 14);
+});
+
+test('out-of-band Native download and codec events use emitter identity instead of the last unrelated project', () => {
+  for (const log of nativeLogs) {
+    const diagnostics = collectDiagnostics(log);
+    assert.deepEqual(collectDiagnostics(log.replace('> Configure project :viz:desktop', '> Configure project :unrelated')), diagnostics);
+    assert.deepEqual(collectDiagnostics(log.replace('> Configure project :viz:desktop', '> Task :unrelated:work')), diagnostics);
+    assert.deepEqual(collectDiagnostics(log.replace('> Configure project :viz:desktop\n', '')), diagnostics);
+    const download = diagnostics.find(line => line.endsWith(`[origin ${nativeDownloadOrigin}]`));
+    assert.ok(download?.startsWith('[emitter kotlin-native bundle configuration] '));
+    const codecs = diagnostics.filter(line => nativeCodecOrigins.some(origin => line.endsWith(`[origin ${origin}]`)));
+    assert.equal(codecs.length, 3);
+    assert.ok(codecs.every(line => line.startsWith('[emitter gradle configuration-cache] ')));
+    assert.equal(diagnostics.filter(line => line.startsWith('[project :launcher] ')).length, 9);
+    assert.equal(diagnostics.some(line => line.startsWith('[project :viz:desktop] ')), false);
+  }
+});
+
+test('Native debt has fourteen exact identities and rejects changed types, messages, origins and call sites', () => {
+  const exceptions = gradleExceptions();
+  const diagnostics = [...new Set(nativeLogs.flatMap(log => collectDiagnostics(log)))].sort();
+  const nativeExceptions = exceptions.filter(entry => diagnostics.includes(entry.diagnostic));
+  assert.equal(nativeExceptions.length, 14);
+  assert.equal(evaluate(diagnostics, exceptions, now).ok, true);
+  assert.equal(evaluate(diagnostics, exceptions.filter(entry => !nativeExceptions.includes(entry)), now).unexpected.length, 14);
+  assert.ok(nativeExceptions.every(entry => entry.owner === 'gvy build and CI maintainers' &&
+    entry.issue.endsWith('/1603') && entry.expires === '2026-12-11'));
+  for (const [before, after, count] of [
+    // Unknown enum types retain the ordinary collector behavior; they cannot
+    // borrow this Native attribution or its exact policy entries.
+    ['KotlinNativeBundleArtifactsTypes', 'UnrecognizedNativeType', 2],
+    ['This enum does not implement Named.', 'This enum has a different problem.', 4],
+    ['CalculateArtifactsCodec.kt:71', 'CalculateArtifactsCodec.kt:72', 1],
+    ['DefaultTransformCodec.kt:65', 'DefaultTransformCodec.kt:67', 1],
+    ['DefaultTransformCodec.kt:66', 'DefaultTransformCodec.kt:68', 1],
+    ['DefaultTransformCodec.decode(DefaultTransformCodec.kt:65)', 'OtherCodec.decode(OtherCodec.kt:65)', 1],
+    ['KotlinNativeBundleArtifactFormat.kt:79', 'KotlinNativeBundleArtifactFormat.kt:80', 1],
+    ['KotlinNativeBundleArtifactFormat$addKotlinNativeBundleConfiguration$1$1.execute', 'OtherPlugin.execute', 1],
+    ['kotlin-native-prebuilt:2.3.0:', 'kotlin-native-prebuilt:2.3.1:', 1],
+    ['KotlinNativeBundleArtifactFormat.kt:26', 'KotlinNativeBundleArtifactFormat.kt:27', 1],
+    ['> Configure project :launcher', '> Configure project :other', 9],
+  ]) {
+    for (const log of nativeLogs) {
+      assert.ok(log.includes(before), before);
+      const changed = collectDiagnostics(log.replaceAll(before, after));
+      const result = evaluate(changed, exceptions, now);
+      assert.equal(result.ok, false, before);
+      assert.equal(result.unexpected.length, count, before);
+    }
+  }
+});
+
+test('Native attribution cannot accept unrelated Gradle deprecations or bypass missing and expired policy', () => {
+  const exceptions = gradleExceptions();
+  const log = `${warning}\n\tat org.gradle.api.attributes.Attribute.of(Attribute.java:56)\n` +
+    `\tat ${nativeCodecOrigins[0]}\n`;
+  const diagnostics = collectDiagnostics(log);
+  assert.deepEqual(diagnostics, [`[gradle] ${warning}`]);
+  assert.equal(evaluate(diagnostics, exceptions, now).ok, false);
+  for (const log of nativeLogs) {
+    const diagnostics = collectDiagnostics(log);
+    assert.equal(evaluate(diagnostics, [], now).unexpected.length, 13);
+    assert.throws(() => evaluate(diagnostics, exceptions, new Date('2026-12-12T00:00:00Z')), /Expired exception/);
+    const incomplete = check(log, { exceptions });
+    assert.equal(incomplete.complete, false, 'historical selective traces remain incomplete command evidence');
+    assert.equal(incomplete.ok, false);
+  }
+});
+
 test('captured Gradle Wire warnings require five exact exceptions alongside the unchanged plugin debt', () => {
   const exceptions = gradleExceptions();
   const plugins = exceptions.filter(entry => entry.issue.endsWith('/1603'));
@@ -303,8 +407,8 @@ test('captured Gradle Wire warnings require five exact exceptions alongside the 
   assert.deepEqual(tracked.diagnostics, wireDiagnostics);
   assert.deepEqual(tracked.accepted.map(entry => entry.diagnostic), wireDiagnostics);
   assert.deepEqual(tracked.unexpected, []);
-  assert.equal(plugins.length, 33);
-  assert.equal(exceptions.length, 38);
+  assert.equal(plugins.length, 47);
+  assert.equal(exceptions.length, 52);
 });
 
 test('Gradle Wire identities normalize only the supplied macOS or Linux worktree prefix', () => {
