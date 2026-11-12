@@ -109,7 +109,10 @@ internal object Snapshots {
         val text = when {
             node == null -> "null"
             node is JsonPrimitive && node.isString -> normalize(node.content, forms)
-            else -> prettyJson.encodeToString(JsonElement.serializer(), normalizeTree(node, forms))
+            else -> prettyJson.encodeToString(
+                JsonElement.serializer(),
+                normalizeTree(node, forms).withExactNumberLiterals(),
+            )
         }
         return text.replace("\r\n", "\n").let { if (it.endsWith("\n")) it else it + "\n" }
     }
