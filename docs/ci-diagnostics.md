@@ -102,15 +102,17 @@ bootstrap classes. Instrumentation, coverage and warning reporting remain enable
 separately launched server JVMs keep their own configuration.
 
 The default Gradle daemon divides its 5 GiB heap/metaspace cap into a 3 GiB build heap and 2 GiB for loaded classes.
-Cold compilation previously exhausted the 1 GiB metaspace allowance. Daemon expiration and GC-thrashing advice are
-diagnostics too; successful commands must not silently accept them. Test-worker heaps and parallelism are separate
-budgets, so shared hosts still require the build slot and bounded local overrides.
+Cold compilation previously triggered daemon health advice with both the earlier 1 GiB and current 2 GiB metaspace
+limits. Daemon expiration and GC-thrashing advice are diagnostics too; successful commands must not silently accept
+them. Required CI Gradle invocations explicitly cap workers at two to bound concurrent compilation and test work while
+retaining the 3+2 GiB daemon cap. Test workers have separate heaps; neither this cap nor the worker limit is a total-RSS
+bound. Shared hosts still require the build slot and bounded local overrides.
 
 Hosted Linux main-build producers also require bounded numeric daemon memory observations in each invocation's
 memory.json. The sampler records heap/metaspace usage, GC and loaded/unloaded class counters without changing the
 configured heap or metaspace limits. Its sampled maxima are the highest observations, not guaranteed peaks. Missing,
 ambiguous, unsupported or failed sampling is incomplete evidence and fails the opted-in producer while preserving the
-original Gradle exit. Local and self-hosted invocations keep their existing behavior.
+original Gradle exit.
 
 The sampler identifies the current job's daemon with one exact immutable ErrorFile argument, current user and pinned
 PID/start time. The argument is stable across protobuf, unit and JAR producers so their daemon remains reusable. Its
