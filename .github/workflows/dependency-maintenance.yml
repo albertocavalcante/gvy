@@ -1,41 +1,55 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
 
-name: Dependency Maintenance
+# Temporary execution-only support PR. Close without merging after importing the
+# independently verified, source-bound generated locks into the product branch.
+name: Temporary SDK dependency lock worker
 
 on:
-  # Include stacked PR bases; runtime CI still runs after the final main retarget.
-  pull_request:
-  push:
-    branches: [main]
-  schedule:
-    - cron: '15 5 * * *' # Daily expiry check, independent of dependency/build cache changes
   workflow_dispatch:
+    inputs:
+      expected_worker_sha:
+        description: Reviewed full commit SHA of this temporary worker
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: temporary-vscode-dependency-lock-worker
+  cancel-in-progress: false
 
 jobs:
-  accountability:
+  verify:
+    if: github.repository == 'albertocavalcante/gvy' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/test/vscode-dependency-lock-worker'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
-
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: '24'
-
-      - name: Test inventory and expiry enforcement
-        run: node --test tools/ci/dependency-maintenance.test.mjs
-
-      - name: Enforce temporary dependency accountability
-        run: node tools/ci/dependency-maintenance.mjs
+          node-version: "24"
+      - name: Validate the worker safety controls without network or JVM tools
+        timeout-minutes: 1
+        run: node --max-old-space-size=256 tools/ci/generate-vscode-dependency-locks.mjs --self-test
+      - name: Generate and verify only the two candidate locks
+        id: locks
+        timeout-minutes: 13
+        env:
+          EXPECTED_WORKER_SHA: ${{ inputs.expected_worker_sha }}
+          GH_TOKEN: ${{ github.token }}
+        run: node --max-old-space-size=256 tools/ci/generate-vscode-dependency-locks.mjs
+      - name: Preserve the audited bounded result, including failures
+        if: always() && steps.locks.outputs.safe == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sdk-dependency-lock-evidence-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/gvy-sdk-lock-worker-${{ github.run_id }}-${{ github.run_attempt }}/public/
+          if-no-files-found: error
+          retention-days: 7
