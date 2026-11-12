@@ -4,11 +4,21 @@ on:
   pull_request:
     paths:
       - 'tools/perf/bench/**'
+      - 'tools/ci/check-rust-diagnostics.mjs'
+      - 'tools/ci/check-rust-diagnostics.test.mjs'
+      - 'tools/ci/read-evidence.mjs'
+      - 'tools/ci/read-evidence.test.mjs'
+      - 'tools/ci/fixtures/rustup-auto-install-warnings.txt'
       - '.github/workflows/bench-native.yml'
   push:
     branches: [main]
     paths:
       - 'tools/perf/bench/**'
+      - 'tools/ci/check-rust-diagnostics.mjs'
+      - 'tools/ci/check-rust-diagnostics.test.mjs'
+      - 'tools/ci/read-evidence.mjs'
+      - 'tools/ci/read-evidence.test.mjs'
+      - 'tools/ci/fixtures/rustup-auto-install-warnings.txt'
       - '.github/workflows/bench-native.yml'
   workflow_dispatch:
 
@@ -104,8 +114,8 @@ jobs:
           if (( codes[1] != 0 )); then exit "${codes[1]}"; fi
           exit "$diagnostic_exit"
 
-      - name: Test source-pin validation without native setup
-        run: node --test tools/perf/bench/native-contract/*.test.mjs
+      - name: Test source pins and canonical diagnostic validation without native setup
+        run: node --test tools/ci/read-evidence.test.mjs tools/ci/check-rust-diagnostics.test.mjs tools/perf/bench/native-contract/*.test.mjs
 
       - name: Verify the selected candidate and known secondary rejection
         shell: bash
