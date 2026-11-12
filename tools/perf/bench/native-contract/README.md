@@ -68,6 +68,9 @@ ordinary type `String`; the secondary must distinguish constant-shaped `MAX_VALU
 malformed fixture leaves a parenthesis open. Each grammar must expose an error covering that delimiter or a missing node
 at the expected end, and the receipt retains actual error/missing-node ranges.
 
+Each parser must also expose `Max_Value` as one complete identifier node. Matching rendered color across fragments
+cannot substitute for correct token boundaries.
+
 The official highlighter receives the unchanged upstream highlights, locals and injections queries. The complete event
 stream must cover source bytes contiguously, have balanced highlight nesting, valid category indices and UTF-8
 boundaries, and satisfy exact predicate spans. Empty or partially consumed output cannot pass. Unknown custom predicates

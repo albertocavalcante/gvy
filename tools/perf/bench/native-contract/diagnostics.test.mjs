@@ -6,6 +6,7 @@ test('known fixed native failure preserves the exact control classification', ()
   assert.equal(classifyNativeFailure('NATIVE_CONTRACT_FAILED:PREDICATE_ORACLE_FAILED\n'), 'NATIVE_PROBE_PREDICATE_ORACLE_FAILED');
   assert.equal(classifyNativeFailure('NATIVE_CONTRACT_FAILED:MALFORMED_LOCATION_FAILED\r\n'), 'NATIVE_PROBE_MALFORMED_LOCATION_FAILED');
   assert.equal(classifyNativeFailure('NATIVE_CONTRACT_FAILED:PREDICATE_ORACLE_FAILED:SECONDARY_CONSTANT:EXACT_VARIABLE\n'), 'NATIVE_PROBE_PREDICATE_ORACLE_FAILED_SECONDARY_CONSTANT_EXACT_VARIABLE');
+  assert.equal(classifyNativeFailure('NATIVE_CONTRACT_FAILED:IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE\n'), 'NATIVE_PROBE_IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE');
 });
 
 test('unknown and secret-bearing native output stays a generic fixed error', () => {

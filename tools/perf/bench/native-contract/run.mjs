@@ -58,7 +58,7 @@ try {
     const binary = path.join(metadata.target_directory, 'release', `${packageName}${process.platform === 'win32' ? '.exe' : ''}`);
     const binarySha256 = sha256(readRegularBytes(binary, 64 * 1024 * 1024));
     const native = JSON.parse(await command(binary, [], input, 10000, true));
-    if (native.schemaVersion !== 1 || native.scope !== 'native-feasibility-only' || native.engine !== engine || native.runtimeVersion !== pin.runtimeVersion || native.controlCount !== 6) fail('NATIVE_RESULT_IDENTITY_MISMATCH');
+    if (native.schemaVersion !== 1 || native.scope !== 'native-feasibility-only' || native.engine !== engine || native.runtimeVersion !== pin.runtimeVersion || native.controlCount !== 7) fail('NATIVE_RESULT_IDENTITY_MISMATCH');
     verifyFixtureBytes(native.fixtureBytes, fixtureBytes);
     delete native.fixtureBytes;
     console.log(JSON.stringify({

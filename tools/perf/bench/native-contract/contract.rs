@@ -106,6 +106,15 @@ fn issues(node: Node<'_>, result: &mut Vec<Value>) {
     }
 }
 
+fn exact_identifier(node: Node<'_>, start: usize, end: usize) -> bool {
+    if node.kind() == "identifier" && node.start_byte() == start && node.end_byte() == end {
+        return true;
+    }
+    let mut cursor = node.walk();
+    node.children(&mut cursor)
+        .any(|child| exact_identifier(child, start, end))
+}
+
 fn expect_category(spans: &[Span], names: &[String], word: &str, expected: &str) -> Result<()> {
     let start = VALID.find(word).ok_or("ORACLE_INVALID")?;
     if spans.iter().any(|span| {
@@ -212,6 +221,15 @@ fn run(
     if valid.root_node().has_error() {
         return Err("VALID_PARSE_FAILED".into());
     }
+    let variable = VALID.find("Max_Value").ok_or("ORACLE_INVALID")?;
+    if !exact_identifier(valid.root_node(), variable, variable + "Max_Value".len()) {
+        return Err(match engine {
+            "primary" => "IDENTIFIER_BOUNDARY_FAILED_PRIMARY_VARIABLE",
+            "secondary" => "IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE",
+            _ => "ENGINE_INVALID",
+        }
+        .into());
+    }
     let malformed = parser.parse(MALFORMED, None).ok_or("PARSE_FAILED")?;
     let mut parse_issues = Vec::new();
     issues(malformed.root_node(), &mut parse_issues);
@@ -286,9 +304,9 @@ fn run(
     Ok(json!({
         "schemaVersion": 1, "scope": "native-feasibility-only", "engine": engine,
         "runtimeVersion": runtime, "grammarAbi": language.abi_version(),
-        "queries": "upstream-unchanged", "controlCount": 6,
+        "queries": "upstream-unchanged", "controlCount": 7,
         "fixtureBytes": { "valid": VALID.as_bytes(), "malformed": MALFORMED.as_bytes() },
-        "controls": ["valid-parse", "malformed-error-location", "complete-highlight-event-stream", "regex-positive-negative", "unknown-predicate-rejected", "embedded-injection-explicitly-unsupported"],
+        "controls": ["valid-parse", "exact-variable-identifier-boundary", "malformed-error-location", "complete-highlight-event-stream", "regex-positive-negative", "unknown-predicate-rejected", "embedded-injection-explicitly-unsupported"],
         "validSpans": rendered, "malformedIssues": parse_issues,
         "limitations": {
             "unrecognizedLocalDefinitionCaptures": unsupported_local_captures,
