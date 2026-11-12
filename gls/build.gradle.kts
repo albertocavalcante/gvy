@@ -527,15 +527,22 @@ object DependencyNoticeStaging {
                     val base = parts.last().uppercase(Locale.ROOT)
                     val notice =
                         !base.endsWith(".CLASS") &&
-                            (listOf("LICENSE", "LICENCE", "NOTICE", "COPYING", "COPYRIGHT").any {
-                                base == it || base.startsWith("$it.") || base.startsWith("$it-")
-                            } || parts.dropLast(1).any {
-                                it.equals("licenses", ignoreCase = true) || it.equals("license", ignoreCase = true)
-                            })
+                            (
+                                listOf("LICENSE", "LICENCE", "NOTICE", "COPYING", "COPYRIGHT").any {
+                                    base == it || base.startsWith("$it.") || base.startsWith("$it-")
+                                } ||
+                                    parts.dropLast(1).any {
+                                        it.equals("licenses", ignoreCase = true) ||
+                                            it.equals("license", ignoreCase = true)
+                                    }
+                            )
                     if (!notice) continue
-                    require(
-                        parts.none { it.isEmpty() || it == "." || it == ".." || '\\' in it || ':' in it },
-                    ) { "Unsafe notice path in ${archive.name}: ${entry.name}" }
+                    val safePath =
+                        parts.none {
+                            val isTraversal = it == "." || it == ".."
+                            it.isEmpty() || isTraversal || '\\' in it || ':' in it
+                        }
+                    require(safePath) { "Unsafe notice path in ${archive.name}: ${entry.name}" }
                     check(seen.add(entry.name.lowercase(Locale.ROOT))) {
                         "Duplicate notice path in ${archive.name}: ${entry.name}"
                     }
@@ -563,10 +570,11 @@ abstract class StageDependencyNotices : DefaultTask() {
     }
 }
 
-val stageDependencyNotices = tasks.register<StageDependencyNotices>("stageDependencyNotices") {
-    archives.from(configurations.named("runtimeClasspath"))
-    outputDirectory.set(layout.buildDirectory.dir("generated/dependency-notices"))
-}
+val stageDependencyNotices =
+    tasks.register<StageDependencyNotices>("stageDependencyNotices") {
+        archives.from(configurations.named("runtimeClasspath"))
+        outputDirectory.set(layout.buildDirectory.dir("generated/dependency-notices"))
+    }
 
 abstract class VerifyDependencyNotices : DefaultTask() {
     @TaskAction
@@ -574,6 +582,7 @@ abstract class VerifyDependencyNotices : DefaultTask() {
         val root = temporaryDir.resolve("fixtures")
         check(!root.exists() || root.deleteRecursively())
         check(root.mkdirs())
+
         fun jar(
             directory: String,
             entries: List<Pair<String, String>>,
@@ -589,16 +598,23 @@ abstract class VerifyDependencyNotices : DefaultTask() {
             }
             return file
         }
+
         fun files(directory: File): Map<String, List<Byte>> =
-            directory.walkTopDown().filter { it.isFile }.associate {
-                it.relativeTo(directory).invariantSeparatorsPath to it.readBytes().toList()
-            }.toSortedMap()
+            directory
+                .walkTopDown()
+                .filter { it.isFile }
+                .associate {
+                    it.relativeTo(directory).invariantSeparatorsPath to it.readBytes().toList()
+                }.toSortedMap()
+
         fun expectFailure(
             archive: File,
             message: String,
         ) {
             val failure =
-                runCatching { DependencyNoticeStaging.stage(listOf(archive), root.resolve("rejected")) }.exceptionOrNull()
+                runCatching {
+                    DependencyNoticeStaging.stage(listOf(archive), root.resolve("rejected"))
+                }.exceptionOrNull()
             check(failure != null && failure.message.orEmpty().contains(message, ignoreCase = true)) {
                 "Expected $message failure for ${archive.name}, got $failure"
             }
@@ -614,7 +630,9 @@ abstract class VerifyDependencyNotices : DefaultTask() {
         DependencyNoticeStaging.stage(listOf(first, second), output)
         val snapshot = files(output)
         val licenses =
-            snapshot.filterKeys { it.endsWith("/META-INF/LICENSE") }.values
+            snapshot
+                .filterKeys { it.endsWith("/META-INF/LICENSE") }
+                .values
                 .map { it.toByteArray().toString(Charsets.UTF_8) }
                 .toSet()
         check(licenses == setOf("first", "second")) { "Matching names must preserve both archives" }
@@ -623,11 +641,13 @@ abstract class VerifyDependencyNotices : DefaultTask() {
         check(snapshot.keys.none { it.endsWith("LICENSE.class") })
         val index = output.resolve("INDEX.txt").readLines()
         check(index.size == 2 && index.toSet().size == 2)
-        check(index.all { line ->
-            val fields = line.split('\t')
-            fields.size == 3 && fields[1] == "dependency.jar" &&
-                fields[2].startsWith("SHA-256:") && output.resolve(fields[0]).isDirectory
-        }) { "The index must identify both namespaced archives" }
+        check(
+            index.all { line ->
+                val fields = line.split('\t')
+                fields.size == 3 && fields[1] == "dependency.jar" &&
+                    fields[2].startsWith("SHA-256:") && output.resolve(fields[0]).isDirectory
+            },
+        ) { "The index must identify both namespaced archives" }
         output.resolve("stale").writeText("stale")
         DependencyNoticeStaging.stage(listOf(second, first), output)
         check(snapshot == files(output)) { "Staging must be deterministic and remove stale files" }
@@ -661,14 +681,16 @@ abstract class VerifyShadowDependencyNotices : DefaultTask() {
     fun verify() {
         val expected = temporaryDir.resolve("expected-notices")
         DependencyNoticeStaging.stage(archives.files, expected)
-        val expectedFiles = expected.walkTopDown().filter { it.isFile }.associate {
-            "META-INF/third-party/" + it.relativeTo(expected).invariantSeparatorsPath to it
-        }
+        val expectedFiles =
+            expected.walkTopDown().filter { it.isFile }.associate {
+                "META-INF/third-party/" + it.relativeTo(expected).invariantSeparatorsPath to it
+            }
         ZipFile(shadowJar.get().asFile).use { zip ->
             val entries = zip.entries().toList().filterNot { it.isDirectory }
             val notices = entries.filter { it.name.startsWith("META-INF/third-party/") }
             check(notices.map { it.name }.toSet().size == notices.size) { "Duplicate shaded notice entries" }
-            check(notices.map { it.name }.toSet() == expectedFiles.keys) { "Shaded notice paths differ from runtime inputs" }
+            val actualPaths = notices.map { it.name }.toSet()
+            check(actualPaths == expectedFiles.keys) { "Shaded notice paths differ from runtime inputs" }
             for (entry in notices) {
                 val bytes = zip.getInputStream(entry).use { it.readBytes() }
                 check(bytes.contentEquals(expectedFiles.getValue(entry.name).readBytes())) {
@@ -676,17 +698,19 @@ abstract class VerifyShadowDependencyNotices : DefaultTask() {
                 }
             }
             val projectEntry = zip.getEntry("META-INF/gvy/LICENSE") ?: error("Project license missing from shaded JAR")
-            check(zip.getInputStream(projectEntry).use { it.readBytes() }.contentEquals(projectLicense.get().asFile.readBytes()))
+            val actualLicense = zip.getInputStream(projectEntry).use { it.readBytes() }
+            check(actualLicense.contentEquals(projectLicense.get().asFile.readBytes()))
         }
     }
 }
 
 val verifyDependencyNotices = tasks.register<VerifyDependencyNotices>("verifyDependencyNotices")
-val verifyShadowDependencyNotices = tasks.register<VerifyShadowDependencyNotices>("verifyShadowDependencyNotices") {
-    archives.from(configurations.named("runtimeClasspath"))
-    shadowJar.set(tasks.shadowJar.flatMap { it.archiveFile })
-    projectLicense.set(rootProject.layout.projectDirectory.file("LICENSE"))
-}
+val verifyShadowDependencyNotices =
+    tasks.register<VerifyShadowDependencyNotices>("verifyShadowDependencyNotices") {
+        archives.from(configurations.named("runtimeClasspath"))
+        shadowJar.set(tasks.shadowJar.flatMap { it.archiveFile })
+        projectLicense.set(rootProject.layout.projectDirectory.file("LICENSE"))
+    }
 tasks.named("check") {
     dependsOn(verifyDependencyNotices, verifyShadowDependencyNotices)
 }
