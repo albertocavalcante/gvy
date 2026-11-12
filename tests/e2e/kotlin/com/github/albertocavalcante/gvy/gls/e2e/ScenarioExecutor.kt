@@ -77,7 +77,13 @@ class ScenarioExecutor internal constructor(
         val recorder = NamedObservationRecorder(planned, definition.source)
         val execution = execution()
         val failure = try {
-            execution.run(definition.scenario.name) { execute(definition, execution, recorder) }
+            execution.run(definition.scenario.name, recorder::executorClosed) {
+                try {
+                    execute(definition, execution, recorder)
+                } finally {
+                    recorder.workerFinished()
+                }
+            }
             null
         } catch (failure: VirtualMachineError) {
             throw failure

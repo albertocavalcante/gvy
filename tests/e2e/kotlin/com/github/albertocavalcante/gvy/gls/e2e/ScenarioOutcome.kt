@@ -38,7 +38,7 @@ sealed interface CleanupOutcome {
     data class Unconfirmed(val detail: String) : CleanupOutcome
 }
 
-enum class ScenarioFailureKind { Specification, Product, Transport, Harness }
+enum class ScenarioFailureKind { Specification, Product, Transport, Unclassified }
 enum class ScenarioFailurePhase { Setup, Execution }
 
 sealed interface ScenarioCompletion {

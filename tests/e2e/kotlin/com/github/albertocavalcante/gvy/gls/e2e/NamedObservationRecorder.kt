@@ -8,10 +8,19 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
     private var sealed = false
     private var workspaceClosed = false
     private var sessionClosed = false
+    private var workerFinished = false
+    private var executorClosed = false
     private val cleanupFailures = mutableListOf<Throwable>()
     private var executing = false
 
     @Synchronized fun executionStarted() { if (!sealed) executing = true }
+    @Synchronized fun workerFinished() { if (!sealed) workerFinished = true }
+    @Synchronized fun executorClosed(failure: Throwable?) {
+        if (!sealed) {
+            executorClosed = true
+            if (failure != null) cleanupFailures.add(failure)
+        }
+    }
 
     fun observe(check: JsonCheck, evaluate: () -> Unit) {
         val id = check.id ?: return evaluate()
@@ -40,30 +49,32 @@ internal class NamedObservationRecorder(private val planned: List<String>, priva
     private fun closeResource(close: () -> Unit, markClosed: () -> Unit) {
         try {
             close()
-            synchronized(this) { if (!sealed) markClosed() }
         } catch (failure: Throwable) {
             synchronized(this) { if (!sealed) cleanupFailures.add(failure) }
             throw failure
+        } finally {
+            synchronized(this) { if (!sealed) markClosed() }
         }
     }
 
     @Synchronized fun finish(failure: Throwable?): ScenarioOutcome {
         sealed = true
+        val confirmed = workerFinished && executorClosed && workspaceClosed && sessionClosed
         val cleanup = when {
             cleanupFailures.isNotEmpty() -> CleanupOutcome.Failed(
                 cleanupFailures.joinToString("\n") { it.stackTraceToString() },
-                confirmed = failure == null && workspaceClosed && sessionClosed,
+                confirmed = confirmed,
             )
-            failure == null && workspaceClosed && sessionClosed -> CleanupOutcome.Succeeded
+            confirmed -> CleanupOutcome.Succeeded
             else -> CleanupOutcome.Unconfirmed("Scenario resources did not finish cleanup before reporting")
         }
         val phase = if (executing) ScenarioFailurePhase.Execution else ScenarioFailurePhase.Setup
         val executionFailure = failure?.takeUnless { candidate -> cleanupFailures.any { it === candidate } }
         val completion = when (executionFailure) {
             null -> ScenarioCompletion.Completed
-            is InterruptedException, is CancellationException -> ScenarioCompletion.Cancelled(executionFailure.toString())
-            is AssertionError -> ScenarioCompletion.Failed(phase, ScenarioFailureKind.Product, executionFailure.toString())
-            else -> ScenarioCompletion.Failed(phase, ScenarioFailureKind.Harness, executionFailure.toString())
+            is InterruptedException, is CancellationException -> ScenarioCompletion.Cancelled(executionFailure.stackTraceToString())
+            is AssertionError -> ScenarioCompletion.Failed(phase, ScenarioFailureKind.Product, executionFailure.stackTraceToString())
+            else -> ScenarioCompletion.Failed(phase, ScenarioFailureKind.Unclassified, executionFailure.stackTraceToString())
         }
         return ScenarioOutcome(planned, observed, cleanup, completion)
     }

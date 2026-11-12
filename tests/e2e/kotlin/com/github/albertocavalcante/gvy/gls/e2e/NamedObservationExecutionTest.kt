@@ -57,6 +57,7 @@ class NamedObservationExecutionTest {
         val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(checks))
 
         assertThat(outcome.isSuccessful).isFalse()
+        assertThat(outcome.cleanup).isEqualTo(CleanupOutcome.Succeeded)
         assertThat(outcome.observed).anySatisfy { result ->
             assertThat(result.id).isEqualTo("wrong")
             assertThat(result.status).isInstanceOf(ObservationStatus.Failed::class.java)
@@ -132,6 +133,7 @@ class NamedObservationExecutionTest {
 
         assertThat(outcome.observed).containsExactly(ObservationResult("known", ObservationStatus.KnownFailure(42)))
         assertThat(outcome.cleanup).isInstanceOf(CleanupOutcome.Failed::class.java)
+        assertThat((outcome.cleanup as CleanupOutcome.Failed).confirmed).isTrue()
         assertThat(outcome.isSuccessful).isFalse()
     }
 

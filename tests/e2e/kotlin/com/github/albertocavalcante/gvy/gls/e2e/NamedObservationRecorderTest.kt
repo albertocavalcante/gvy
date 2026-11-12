@@ -22,6 +22,17 @@ class NamedObservationRecorderTest {
     }
 
     @Test
+    fun `unclassified failure retains its nested cause`() {
+        val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
+        val failure = IllegalStateException("outer", IOException("nested cause"))
+
+        val completion = recorder.finish(failure).completion as ScenarioCompletion.Failed
+
+        assertThat(completion.kind).isEqualTo(ScenarioFailureKind.Unclassified)
+        assertThat(completion.detail).contains("outer", "nested cause")
+    }
+
+    @Test
     fun `late observation cannot change a published incomplete outcome`() {
         val recorder = NamedObservationRecorder(listOf("late"), "scenario.yaml")
         val entered = CountDownLatch(1)
