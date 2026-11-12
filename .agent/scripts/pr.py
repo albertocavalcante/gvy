@@ -1,8 +1,11 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["typer", "pydantic", "rich", "httpx", "google-auth"]
+# dependencies = ["typer", "pydantic", "rich", "httpx", "google-auth[requests]", "click>=8.1,<9"]
 # ///
+# SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 """
 PR Review Manager - Token-efficient review thread CLI.
 
@@ -35,13 +38,15 @@ import subprocess
 import sys
 import tempfile
 from abc import ABC, abstractmethod
-from contextlib import contextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Iterator, Optional
+from typing import Annotated, ClassVar
 
+import click
 import httpx
 import typer
 from pydantic import BaseModel, Field
@@ -240,7 +245,7 @@ class ReviewerMetadata(BaseModel):
     """Extracted metadata from reviewer-specific formatting."""
 
     severity: Severity = Severity.UNKNOWN
-    raw_severity_marker: Optional[str] = None
+    raw_severity_marker: str | None = None
     has_analysis_chain: bool = False
     analysis_lines: int = 0
 
@@ -263,7 +268,7 @@ class ReviewThread(BaseModel):
     thread_id: str
     comment_id: str
     path: str
-    line: Optional[int] = None
+    line: int | None = None
     comment: ParsedComment
     primary_severity: Severity = Severity.UNKNOWN
 
@@ -289,17 +294,14 @@ class ReviewerParser(ABC):
     @abstractmethod
     def matches(self, author: str, body: str) -> bool:
         """Check if this parser handles the given content."""
-        pass
 
     @abstractmethod
     def extract_metadata(self, body: str) -> ReviewerMetadata:
         """Extract severity, type, and other metadata."""
-        pass
 
     @abstractmethod
     def clean_for_human(self, body: str) -> str:
         """Clean body for human display (preserve key formatting)."""
-        pass
 
     @abstractmethod
     def clean_for_llm(self, body: str, compact: bool = False) -> str:
@@ -310,7 +312,6 @@ class ReviewerParser(ABC):
             compact: If True, collapse analysis sections to save tokens.
                      If False (default), show full content with markers.
         """
-        pass
 
 
 class CodeRabbitParser(ReviewerParser):
@@ -329,7 +330,7 @@ class CodeRabbitParser(ReviewerParser):
     SCRIPT_EXECUTED_PATTERN = re.compile(r"🏁\s*Script executed:")
     NITPICK_PATTERN = re.compile(r"\[nitpick\]", re.IGNORECASE)
 
-    SEVERITY_MAP = {
+    SEVERITY_MAP: ClassVar[dict[str, Severity]] = {
         "🔴": Severity.CRITICAL,
         "🟠": Severity.MAJOR,
         "🟡": Severity.MINOR,
@@ -409,7 +410,7 @@ class GeminiParser(ReviewerParser):
         re.IGNORECASE,
     )
 
-    SEVERITY_MAP = {
+    SEVERITY_MAP: ClassVar[dict[str, Severity]] = {
         "critical": Severity.CRITICAL,
         "high": Severity.HIGH,
         "medium": Severity.MEDIUM,
@@ -451,7 +452,7 @@ class CursorParser(ReviewerParser):
     )
     HEADER_PATTERN = re.compile(r"^###\s+(.+)$", re.MULTILINE)
 
-    SEVERITY_MAP = {
+    SEVERITY_MAP: ClassVar[dict[str, Severity]] = {
         "critical": Severity.CRITICAL,
         "high": Severity.HIGH,
         "medium": Severity.MEDIUM,
@@ -600,7 +601,7 @@ parser_registry = ParserRegistry()
 class HumanFormatter:
     """Rich-based formatter for human-readable output."""
 
-    SEVERITY_STYLES = {
+    SEVERITY_STYLES: ClassVar[dict[Severity, tuple[str, str]]] = {
         Severity.CRITICAL: ("bold red", "CRIT"),
         Severity.HIGH: ("bold orange1", "HIGH"),
         Severity.MAJOR: ("bold yellow", "MAJR"),
@@ -611,7 +612,7 @@ class HumanFormatter:
         Severity.UNKNOWN: ("white", "???"),
     }
 
-    REVIEWER_STYLES = {
+    REVIEWER_STYLES: ClassVar[dict[Reviewer, tuple[str, str]]] = {
         Reviewer.CODERABBIT: ("magenta", "🐰"),
         Reviewer.GEMINI: ("blue", "💎"),
         Reviewer.COPILOT: ("green", "🤖"),
@@ -789,7 +790,7 @@ class JSONFormatter:
 # =============================================================================
 
 
-def detect_output_mode(explicit_mode: Optional[OutputMode] = None) -> OutputMode:
+def detect_output_mode(explicit_mode: OutputMode | None = None) -> OutputMode:
     """
     Detect output mode with precedence:
     1. Explicit --mode flag (highest priority)
@@ -829,8 +830,6 @@ QUERIES_DIR = AGENT_DIR / "queries"
 
 class TimeoutError(Exception):
     """Raised when an operation times out."""
-
-    pass
 
 
 @contextmanager
@@ -875,31 +874,22 @@ def run_with_timeout(
 
     Raises:
         subprocess.TimeoutExpired: If command exceeds timeout
-        subprocess.CalledProcessError: If command fails
+        OSError: If the input file cannot be read or the command cannot start
     """
-    stdin_source = None
-    stdin_file = None
-
-    try:
-        if input_file:
-            stdin_file = open(input_file, "r")
-            stdin_source = stdin_file
-        elif input_data is not None:
-            stdin_source = subprocess.PIPE
-
-        result = subprocess.run(
+    with (
+        input_file.open("r", encoding="utf-8")
+        if input_file
+        else nullcontext(None) as stdin_file
+    ):
+        return subprocess.run(
             cmd,
-            stdin=stdin_source,
-            input=input_data if input_data is not None and not input_file else None,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdin=stdin_file,
+            input=input_data if input_file is None else None,
+            capture_output=True,
             text=True,
             timeout=timeout,
+            check=False,
         )
-        return result
-    finally:
-        if stdin_file:
-            stdin_file.close()
 
 
 def load_query(name: str) -> str:
@@ -1161,7 +1151,7 @@ def build_review_summary(
 def threads(
     pr_number: int = typer.Argument(None, help="PR number (auto-detected if omitted)"),
     refetch: bool = typer.Option(False, "--refetch", help="Force refetch from GitHub"),
-    mode: Optional[str] = typer.Option(
+    mode: str | None = typer.Option(
         None,
         "--mode",
         "-m",
@@ -1221,7 +1211,14 @@ def threads(
             formatter = HumanFormatter(console)
             formatter.render_all(summary)
 
-    except Exception as e:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+    ) as e:
         rprint(f"[bold red]Error checking threads: {e}[/bold red]")
         raise typer.Exit(1)
 
@@ -1369,7 +1366,7 @@ def validate_semantic_title(title: str, pr_number: int) -> tuple[bool, str]:
     return True, ""
 
 
-def get_current_pr_number() -> Optional[int]:
+def get_current_pr_number() -> int | None:
     """Auto-detect PR number from current branch."""
     try:
         result = subprocess.run(
@@ -1439,7 +1436,14 @@ def get_unresolved_threads(pr_number: int) -> int:
             if n and not n.get("isResolved") and not n.get("isOutdated"):
                 count += 1
         return count
-    except Exception:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+        TypeError,
+        KeyError,
+        AttributeError,
+    ):
         return 0
 
 
@@ -1478,7 +1482,8 @@ def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
                 body_lines.append(f"Fixes #{issue_number}")
 
     # Auto-detect "Related/Towards" issues from PR body
-    pr_body = pr.get("body") or ""
+    raw_body = pr.get("body")
+    pr_body = raw_body if isinstance(raw_body, str) else ""
     # Matches: Relates to #123, Towards #123, See #123, Part of #123
     # Case insensitive, handles various separators
     related_pattern = r"(?:relates|towards|part of|connects to|see)\s+(?:to\s+)?#(\d+)"
@@ -1488,7 +1493,9 @@ def generate_merge_body(pr: dict, pr_number: int) -> tuple[str, list[str]]:
     related_numbers = [n for n in found_related if int(n) not in closing_numbers]
 
     # Add unique valid related numbers
-    unique_related = sorted(list(set(related_numbers)), key=int)
+    unique_related: list[str] = sorted(
+        set(related_numbers), key=lambda number: int(number)
+    )
 
     if unique_related:
         body_lines.append("")
@@ -2685,7 +2692,7 @@ def _call_ai_via_cli(
         return "", "", f"timed out after {AI_TIMEOUT_SECONDS}s"
     except FileNotFoundError:
         return "", "", f"{config.cmd} CLI not found - is it installed?"
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Provider boundary must preserve fallback on unexpected CLI failures.
         return "", "", f"{type(e).__name__}: {e}"
     finally:
         if prompt_file and prompt_file.exists():
@@ -2715,7 +2722,7 @@ def _get_google_auth_token() -> str | None:
         credentials.refresh(google.auth.transport.requests.Request())
         return credentials.token
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - Auth providers can raise implementation-specific errors.
         # ADC not available - will fall back to API key
         typer.echo(
             f"   ℹ️ ADC not available ({type(e).__name__}), trying API key...", err=True
@@ -2789,7 +2796,7 @@ def _call_gemini_via_api(prompt: str, model: str | None = None) -> tuple[str, st
     except httpx.HTTPStatusError as e:
         typer.echo(f"   ⚠️ API error: {e.response.status_code}", err=True)
         return "", ""
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 - External API boundary must preserve provider fallback.
         typer.echo(f"   ⚠️ API call failed: {type(e).__name__}: {e}", err=True)
         return "", ""
 
@@ -2798,7 +2805,7 @@ def generate_ai_message(
     pr: dict,
     pr_number: int,
     provider: AIProvider = AIProvider.GEMINI,
-    model: Optional[str] = None,
+    model: str | None = None,
     force_stats_only: bool = False,
     auto_fallback: bool = True,
 ) -> tuple[str, str]:
@@ -2958,18 +2965,21 @@ def generate_ai_message(
 
 @app.command()
 def merge(
-    pr_number: int = typer.Argument(
+    pr_number: int | None = typer.Argument(
         None, help="PR number to merge (auto-detects from current branch if omitted)"
     ),
-    title: str = typer.Option(
+    title: str | None = typer.Option(
         None, "--title", "-t", help="Override commit title (must be semantic)"
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", "-n", help="Preview without merging"
     ),
-    relates_to: Optional[list[str]] = typer.Option(
-        None, "--relates-to", "-R", help="Issue numbers this PR relates to (e.g. '622')"
-    ),
+    relates_to: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--relates-to", "-R", help="Issue numbers this PR relates to (e.g. '622')"
+        ),
+    ] = None,
     ai: bool = typer.Option(
         False, "--ai", "-a", help="Generate commit message using AI"
     ),
@@ -2979,7 +2989,7 @@ def merge(
         "-P",
         help="AI provider (case-insensitive): gemini (default), claude",
     ),
-    model: Optional[str] = typer.Option(
+    model: str | None = typer.Option(
         None,
         "--model",
         "-M",
@@ -2999,7 +3009,7 @@ def merge(
     edit: bool = typer.Option(
         False, "--edit", "-e", help="Edit the commit message before finalization"
     ),
-    version: Optional[str] = typer.Option(
+    version: str | None = typer.Option(
         None, "--version", "-v", help="Use a specific historical message version"
     ),
     history_list: bool = typer.Option(
@@ -3151,11 +3161,19 @@ def merge(
     # Optional Editing
     if edit:
         full_msg = f"{merge_title}\n\n{merge_body}"
-        edited_msg = typer.edit(full_msg, extension=".md")
+        try:
+            edited_msg = click.edit(full_msg, extension=".md")
+        except click.ClickException as error:
+            typer.echo(f"Editor failed: {error}", err=True)
+            raise typer.Exit(1) from error
         if edited_msg and edited_msg.strip() != full_msg.strip():
             lines = edited_msg.strip().split("\n", 1)
             merge_title = lines[0].strip()
             merge_body = lines[1].strip() if len(lines) > 1 else ""
+            valid, error = validate_semantic_title(merge_title, pr_number)
+            if not valid:
+                typer.echo(f"Invalid edited commit title: {error}", err=True)
+                raise typer.Exit(1)
             # Save edited version
             v_id = save_msg_version(pr_number, merge_title, merge_body, source="edit")
             rprint(
