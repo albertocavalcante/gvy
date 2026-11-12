@@ -2,11 +2,18 @@ import * as sinon from "sinon";
 import { assert } from "chai";
 import * as proxyquire from "proxyquire";
 
+interface MarkdownStringStub {
+  isTrusted: boolean | { enabledCommands: readonly string[] };
+  supportThemeIcons: boolean;
+  supportHtml: boolean;
+  value: string;
+  appendText: sinon.SinonStub;
+  appendMarkdown: sinon.SinonStub;
+}
+
 interface StatusBarItem {
   text: string;
-  tooltip:
-    | { isTrusted: boolean; supportThemeIcons: boolean; value: string }
-    | undefined;
+  tooltip: MarkdownStringStub | undefined;
   backgroundColor: { id: string } | undefined;
   color: unknown;
   command: unknown;
@@ -66,6 +73,8 @@ interface StatusBarModule {
     version?: string,
   ) => { dispose: () => void };
   setClient: (client: unknown) => void;
+  getStatusBarManager: () =>
+    { setServerVersion: (version: string) => void } | undefined;
 }
 
 interface StatusNotification {
@@ -132,13 +141,18 @@ describe("StatusBar", () => {
       },
       ThemeColor: sinon.stub().callsFake((id: string) => ({ id })),
       MarkdownString: sinon.stub().callsFake(() => {
-        const instance = {
+        const instance: MarkdownStringStub = {
           isTrusted: false,
           supportThemeIcons: false,
           supportHtml: false,
           value: "",
+          appendText: sinon.stub().callsFake((text: string) => {
+            instance.value += text;
+            return instance;
+          }),
           appendMarkdown: sinon.stub().callsFake((text: string) => {
             instance.value += text;
+            return instance;
           }),
         };
         return instance;
@@ -659,7 +673,6 @@ describe("StatusBar", () => {
 
       const tooltip = statusBarItemStub.tooltip;
       assert.isDefined(tooltip);
-      assert.isTrue(tooltip.isTrusted);
       assert.isTrue(tooltip.supportThemeIcons);
       // New tooltip format uses "Ready" not "ready"
       assert.include(tooltip.value, "Ready");
@@ -693,6 +706,68 @@ describe("StatusBar", () => {
       // New tooltip has Reload instead of check for updates inline
       assert.include(tooltip.value, "groovy.gradle.refresh");
     });
+
+    it("trusts only the fixed tooltip action commands", () => {
+      const tooltip = statusBarItemStub.tooltip;
+      assert.ok(tooltip, "Tooltip should be defined");
+      assert.deepEqual(tooltip.isTrusted, {
+        enabledCommands: [
+          "groovy.openLogs",
+          "groovy.gradle.refresh",
+          "groovy.restartServer",
+          "groovy.stopServer",
+        ],
+      });
+    });
+
+    for (const [state, name, action, absentAction] of [
+      [1, "stopped", "[$(play) Start]", "[$(stop-circle) Stop]"],
+      [2, "starting", "[$(stop-circle) Stop]", "[$(play) Start]"],
+      [3, "running", "[$(stop-circle) Stop]", "[$(play) Start]"],
+    ] as const) {
+      it(`preserves the intended action links while ${name}`, () => {
+        stateChangeHandler({ newState: state });
+
+        const tooltip = statusBarItemStub.tooltip;
+        assert.ok(tooltip, "Tooltip should be defined");
+        assert.include(tooltip.value, "Logs](command:groovy.openLogs");
+        assert.include(tooltip.value, "Reload](command:groovy.gradle.refresh");
+        assert.include(tooltip.value, "Restart](command:groovy.restartServer");
+        assert.include(tooltip.value, action);
+        assert.notInclude(tooltip.value, absentAction);
+      });
+    }
+  });
+
+  describe("tooltip literal text boundary", () => {
+    const extensionVersion =
+      "1.0.0\n[close](command:workbench.action.closeWindow)";
+    const serverVersion =
+      "1.0.0 [stop](command:groovy.stopServer?%5B%22unexpected%22%5D)";
+    const activity =
+      "**indexing** $(zap)\n[run](command:unexpected) <b>text</b>";
+
+    beforeEach(() => {
+      statusBarModule.registerStatusBarItem(clientStub, extensionVersion);
+      statusBarModule.getStatusBarManager()?.setServerVersion(serverVersion);
+      const progressHandler = clientStub.onProgress.firstCall.args[2];
+      progressHandler({ kind: "begin", message: activity });
+    });
+
+    for (const [name, value] of [
+      ["activity", activity],
+      ["extension version", extensionVersion],
+      ["server version", serverVersion],
+    ]) {
+      it(`renders Markdown-shaped ${name} through the literal text API`, () => {
+        const tooltip = statusBarItemStub.tooltip;
+        assert.ok(tooltip, "Tooltip should be defined");
+        assert.isTrue(tooltip.appendText.calledWithExactly(value));
+        for (const call of tooltip.appendMarkdown.getCalls()) {
+          assert.notInclude(call.args[0], value);
+        }
+      });
+    }
   });
 
   describe("groovy/status notification handling", () => {
