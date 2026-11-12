@@ -35,8 +35,12 @@ test('an unavailable command fails without a live process group', { skip: !suppo
 test('native failures expose only a known fixed diagnostic and never raw stderr', { skip: !supported }, async () => {
   await assert.rejects(runCommand(process.execPath, ['-e', 'process.stderr.write("NATIVE_CONTRACT_FAILED:PREDICATE_ORACLE_FAILED\\n");process.exitCode=1'], { nativeProbe: true }), /NATIVE_PROBE_PREDICATE_ORACLE_FAILED/);
   const canary = 'PRIVATE_CANARY_7821';
-  await assert.rejects(runCommand(process.execPath, ['-e', `process.stderr.write(${JSON.stringify(`${canary}\nNATIVE_CONTRACT_FAILED:INPUT_INVALID\n`)});process.exitCode=1`], { nativeProbe: true }), error => error.message === 'NATIVE_PROBE_FAILED' && !error.message.includes(canary));
+  await assert.rejects(runCommand(process.execPath, ['-e', `process.stdout.write(${JSON.stringify(canary)});process.stderr.write(${JSON.stringify(`${canary}\nNATIVE_CONTRACT_FAILED:INPUT_INVALID\n`)});process.exitCode=1`], { nativeProbe: true }), error => error.message === 'NATIVE_PROBE_FAILED' && !error.message.includes(canary) && error.nativeOutput === undefined);
   await assert.rejects(runCommand(process.execPath, ['-e', 'process.stderr.write("NATIVE_CONTRACT_FAILED:INPUT_INVALID\\n");process.exitCode=1']), /NATIVE_COMMAND_FAILED/);
+});
+
+test('known native failure retains bounded stdout privately for embedded fixture verification', { skip: !supported }, async () => {
+  await assert.rejects(runCommand(process.execPath, ['-e', 'process.stdout.write("fixture-envelope");process.stderr.write("NATIVE_CONTRACT_FAILED:IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE\\n");process.exitCode=1'], { nativeProbe: true }), error => error.message === 'NATIVE_PROBE_IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE' && error.nativeOutput === 'fixture-envelope' && error.nativeExitCode === 1);
 });
 
 test('output overflow and timeout reject rather than return partial success', { skip: !supported }, async () => {

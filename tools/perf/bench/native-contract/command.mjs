@@ -11,6 +11,7 @@ export function runCommand(executable, args, { cwd, input, environment = process
     let child;
     let finished = false;
     let exited = false;
+    let exitCode;
     let closed = false;
     let failure;
     let size = 0;
@@ -32,7 +33,13 @@ export function runCommand(executable, args, { cwd, input, environment = process
       child?.stdin?.destroy(); child?.stdout?.destroy(); child?.stderr?.destroy();
       if (code) {
         const safeCode = nativeProbe && code === 'NATIVE_COMMAND_FAILED' ? classifyNativeFailure(Buffer.concat(stderr).toString('utf8')) : code;
-        reject(new Error(safeCode));
+        const error = new Error(safeCode);
+        // Private bounded stdout is consumed only by the rejection verifier; raw stderr never leaves this helper.
+        if (nativeProbe && code === 'NATIVE_COMMAND_FAILED' && safeCode !== 'NATIVE_PROBE_FAILED') {
+          error.nativeOutput = Buffer.concat(stdout).toString('utf8');
+          error.nativeExitCode = exitCode;
+        }
+        reject(error);
       } else resolve(Buffer.concat(stdout).toString('utf8'));
     };
     const reconcile = () => {
@@ -71,6 +78,7 @@ export function runCommand(executable, args, { cwd, input, environment = process
     child.once('error', () => { exited = true; closed = true; stop('NATIVE_COMMAND_FAILED'); });
     child.once('exit', code => {
       exited = true;
+      exitCode = code;
       if (code !== 0 && !failure) failure = 'NATIVE_COMMAND_FAILED';
       if (group() !== 'gone') stop(failure ?? 'NATIVE_COMMAND_DESCENDANTS');
     });

@@ -334,6 +334,14 @@ pub fn main(engine: &str, runtime: &str, language: Language, events: Events) {
     match result {
         Ok(report) => println!("{report}"),
         Err(code) => {
+            println!(
+                "{}",
+                json!({
+                    "schemaVersion": 1, "scope": "native-probe-failure", "engine": engine,
+                    "runtimeVersion": runtime, "code": code,
+                    "fixtureBytes": { "valid": VALID.as_bytes(), "malformed": MALFORMED.as_bytes() }
+                })
+            );
             eprintln!("NATIVE_CONTRACT_FAILED:{code}");
             std::process::exit(1);
         }

@@ -39,6 +39,42 @@ diagnostic. A failure category does not certify completed work.
 Predicate failures additionally distinguish a closed expected case from the observed category class and exact/inexact
 span presence. These diagnostics preserve the failing assertion; they do not change its expected range or category.
 
+## Recorded secondary rejection
+
+The pinned stock secondary fails the independent `Max_Value` identifier boundary control. Hosted execution at
+`3e5130dee5919fea9cffc67aaa8c0b1de341e317` reproduced `NATIVE_PROBE_IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE`. It
+is a rejected candidate for correctness-qualified timing. Its normal strict invocation remains nonzero. The dependency
+investigation and acceptance criteria remain open in [gvy#1847](https://github.com/albertocavalcante/gvy/issues/1847).
+
+To retain this known rejection as feasibility evidence, use `run.mjs secondary --attempt`. This still exits with status
+1, but emits an attempt receipt only for that exact failure, after checking the failing binary's actual embedded fixture
+bytes. Other failures remain failures and do not produce an accepted rejection. Successful native execution exits with
+status 0 and cannot be accepted by the frozen rejection policy. The receipt identifies the two completed controls, the
+failed identifier control, and the malformed/highlight/predicate/injection controls not run after that rejection.
+
+The separate policy entry point requires a successful primary receipt, the secondary attempt, its actual observed exit,
+and an independently computed SHA256 of the built secondary binary immediately before running it:
+
+```bash
+node tools/perf/bench/native-contract/feasibility.mjs primary.json secondary-attempt.json 1 "$secondary_binary_sha256"
+```
+
+The caller must observe the strict command's real exit status and pass that value; the literal 1 above illustrates the
+only accepted status. CI computes the binary digest separately and observes the command status. The policy freezes
+grammar/runtime/query/lockfile/manifest/fixture/probe-source identities in `feasibility-policy.json`. Any drift,
+different failure, unexpected success, missing controls or independent binary mismatch fails. An identity change
+requires fresh review and execution, not automatic policy regeneration. Source policy does not hash itself, avoiding
+recursive hashes.
+
+The binary digest records the executed artifact's identity. This is provenance within the trusted build/CI parent,
+assuming no hostile concurrent binary replacement; it is not a reproducible-build assertion or cryptographic proof that
+an arbitrary JSON producer executed it. The failure envelope is bounded JSON on native stdout; its fixture echo is
+checked and stripped before publication. Raw stderr remains private and unknown errors remain closed categories.
+
+The resulting decision labels primary `passed-seven-controls` and secondary `rejected-candidate`; it does not declare
+both grammars compatible. In particular, secondary controls not run after rejection are not certified. Both ordinary
+strict commands remain available to detect a later changed result.
+
 ## Inputs and identity
 
 `source-lock.json` pins the grammar commits, all generated/parser/scanner/header/query/Rust-binding inputs, licenses,

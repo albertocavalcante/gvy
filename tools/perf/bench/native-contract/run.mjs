@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runCommand } from './command.mjs';
+import { verifyNativeRejection } from './attempt.mjs';
 import { readRegularBytes, sha256, sourcePaths, verifyFiles, verifyFixtureBytes } from './source-files.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -15,7 +16,8 @@ const command = (executable, args, input, timeoutMs = 300000, nativeProbe = fals
 try {
   const [engine, ...extra] = process.argv.slice(2);
   const verifyOnly = extra.length === 1 && extra[0] === '--verify-only';
-  if (!['primary', 'secondary'].includes(engine) || (extra.length && !verifyOnly)) fail('NATIVE_CONTRACT_ARGUMENTS');
+  const attempt = engine === 'secondary' && extra.length === 1 && extra[0] === '--attempt';
+  if (!['primary', 'secondary'].includes(engine) || (extra.length && !verifyOnly && !attempt)) fail('NATIVE_CONTRACT_ARGUMENTS');
   const pins = JSON.parse(readRegularBytes(path.join(root, 'source-lock.json'), 64 * 1024).toString('utf8'));
   if (pins.schemaVersion !== 1) fail('SOURCE_PIN_INVALID');
   const pin = pins.engines[engine];
@@ -57,11 +59,7 @@ try {
     const packageName = metadata.packages.find(candidate => candidate.id === metadata.resolve.root).name;
     const binary = path.join(metadata.target_directory, 'release', `${packageName}${process.platform === 'win32' ? '.exe' : ''}`);
     const binarySha256 = sha256(readRegularBytes(binary, 64 * 1024 * 1024));
-    const native = JSON.parse(await command(binary, [], input, 10000, true));
-    if (native.schemaVersion !== 1 || native.scope !== 'native-feasibility-only' || native.engine !== engine || native.runtimeVersion !== pin.runtimeVersion || native.controlCount !== 7) fail('NATIVE_RESULT_IDENTITY_MISMATCH');
-    verifyFixtureBytes(native.fixtureBytes, fixtureBytes);
-    delete native.fixtureBytes;
-    console.log(JSON.stringify({
+    const identity = {
       schemaVersion: 1, scope: 'native-feasibility-only', engine,
       grammar: { repository: pin.grammarRepository, revision: pin.grammarRevision, files }, runtime,
       compiler: (await command('rustc', ['--version'], undefined, 10000)).trim(),
@@ -70,8 +68,25 @@ try {
       cargoLockSha256: pin.cargoLockSha256, manifestSha256: sha256(readRegularBytes(manifest, 64 * 1024)),
       binarySha256, queryDigests,
       fixtureDigests: Object.fromEntries(Object.entries(fixtureBytes).map(([name, bytes]) => [name, sha256(bytes)])),
-      native,
-    }));
+      probeSourceDigests: Object.fromEntries(['contract.rs', `${engine}/src/main.rs`, 'run.mjs', 'command.mjs', 'diagnostics.mjs', 'source-files.mjs', 'attempt.mjs', 'feasibility-policy.mjs', 'feasibility.mjs', 'source-lock.json'].map(name => [name, sha256(readRegularBytes(path.join(root, name), 64 * 1024))])),
+    };
+    let output;
+    try { output = await command(binary, [], input, 10000, true); }
+    catch (error) {
+      if (!attempt || error?.message !== 'NATIVE_PROBE_IDENTIFIER_BOUNDARY_FAILED_SECONDARY_VARIABLE') throw error;
+      const rejection = verifyNativeRejection(error, engine, pin.runtimeVersion, fixtureBytes);
+      console.log(JSON.stringify({
+        ...identity, scope: 'native-feasibility-attempt', outcome: 'rejected-candidate', ...rejection,
+        completedControls: ['unknown-predicate-rejected', 'valid-parse'], failedControl: 'exact-variable-identifier-boundary',
+        notRunAfterRejection: ['malformed-error-location', 'complete-highlight-event-stream', 'regex-positive-negative', 'embedded-injection-explicitly-unsupported'],
+      }));
+      throw new Error(rejection.failureCode);
+    }
+    const native = JSON.parse(output);
+    if (native.schemaVersion !== 1 || native.scope !== 'native-feasibility-only' || native.engine !== engine || native.runtimeVersion !== pin.runtimeVersion || native.controlCount !== 7) fail('NATIVE_RESULT_IDENTITY_MISMATCH');
+    verifyFixtureBytes(native.fixtureBytes, fixtureBytes);
+    delete native.fixtureBytes;
+    console.log(JSON.stringify({ ...identity, native }));
   }
 } catch (error) {
   const code = error instanceof Error && /^[A-Z_]+$/.test(error.message) ? error.message : 'NATIVE_CONTRACT_INVALID';
