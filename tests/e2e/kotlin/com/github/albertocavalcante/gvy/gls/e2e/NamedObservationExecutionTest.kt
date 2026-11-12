@@ -180,7 +180,9 @@ class NamedObservationExecutionTest {
         try {
             val outcome = executor.executeWithOutcome(ScenarioDefinition(scenario))
             assertThat(outcome.blocked).containsExactly("later")
-            assertThat(outcome.cleanup).isInstanceOf(CleanupOutcome.Unconfirmed::class.java)
+            val cleanup = outcome.cleanup as CleanupOutcome.Failed
+            assertThat(cleanup.confirmed).isFalse()
+            assertThat(cleanup.detail).contains("cleanup")
             release.countDown()
             assertThat(cleaned.await(5, TimeUnit.SECONDS)).isTrue()
             assertThat(outcome.observed).isEmpty()
