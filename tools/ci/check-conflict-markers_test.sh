@@ -9,24 +9,24 @@ trap 'rm -rf "${tmp}"' EXIT
 
 fails=0
 assert() {
-  local desc=$1
-  shift
-  if "$@" >/dev/null 2>&1; then
-    echo "ok   - ${desc}"
-  else
-    echo "FAIL - ${desc}"
-    fails=$((fails + 1))
-  fi
+    local desc=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        echo "ok   - ${desc}"
+    else
+        echo "FAIL - ${desc}"
+        fails=$((fails + 1))
+    fi
 }
 refute() {
-  local desc=$1
-  shift
-  if "$@" >/dev/null 2>&1; then
-    echo "FAIL - ${desc}"
-    fails=$((fails + 1))
-  else
-    echo "ok   - ${desc}"
-  fi
+    local desc=$1
+    shift
+    if "$@" >/dev/null 2>&1; then
+        echo "FAIL - ${desc}"
+        fails=$((fails + 1))
+    else
+        echo "ok   - ${desc}"
+    fi
 }
 
 git -C "${tmp}" init -q -b main
@@ -39,11 +39,11 @@ git_ commit -q -m base
 
 # Commit a file with the given content on a branch and check it against main.
 branch_with() {
-  local name=$1 file=$2 content=$3
-  git_ checkout -q -b "${name}" main
-  printf '%b' "${content}" >"${tmp}/${file}"
-  git_ add "${file}"
-  git_ commit -q -m "${name}"
+    local name=$1 file=$2 content=$3
+    git_ checkout -q -b "${name}" main
+    printf '%b' "${content}" >"${tmp}/${file}"
+    git_ add "${file}"
+    git_ commit -q -m "${name}"
 }
 
 branch_with clean T.kt 'fun a() = 1\n'
@@ -76,10 +76,10 @@ assert "added '++ ' line then heading underline passes" check main
 branch_with plusplus3 T.kt '++ b/Other.md\n<<<<<<< HEAD\n'
 out=$(cd "${tmp}" && bash "${script}" main 2>&1 || true)
 if [[ "${out}" == *"T.kt:2: leftover"* ]]; then
-  echo "ok   - '++ b/...' content keeps the real file and line"
+    echo "ok   - '++ b/...' content keeps the real file and line"
 else
-  echo "FAIL - '++ b/...' content keeps the real file and line (got: ${out})"
-  fails=$((fails + 1))
+    echo "FAIL - '++ b/...' content keeps the real file and line (got: ${out})"
+    fails=$((fails + 1))
 fi
 
 # CRLF files.
@@ -97,7 +97,7 @@ git_ reset -q S.kt
 assert "--staged passes when nothing is staged" check --staged
 
 if [[ "${fails}" -gt 0 ]]; then
-  echo "${fails} self-test failure(s)"
-  exit 1
+    echo "${fails} self-test failure(s)"
+    exit 1
 fi
 echo "all self-tests passed"

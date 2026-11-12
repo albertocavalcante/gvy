@@ -10,25 +10,25 @@ trap 'rm -rf "${tmp}"' EXIT
 fails=0
 # assert <description> <command...>: passes when the command succeeds.
 assert() {
-  local desc=$1
-  shift
-  if "$@"; then
-    echo "ok   - ${desc}"
-  else
-    echo "FAIL - ${desc}"
-    fails=$((fails + 1))
-  fi
+    local desc=$1
+    shift
+    if "$@"; then
+        echo "ok   - ${desc}"
+    else
+        echo "FAIL - ${desc}"
+        fails=$((fails + 1))
+    fi
 }
 # refute <description> <command...>: passes when the command fails.
 refute() {
-  local desc=$1
-  shift
-  if "$@"; then
-    echo "FAIL - ${desc}"
-    fails=$((fails + 1))
-  else
-    echo "ok   - ${desc}"
-  fi
+    local desc=$1
+    shift
+    if "$@"; then
+        echo "FAIL - ${desc}"
+        fails=$((fails + 1))
+    else
+        echo "ok   - ${desc}"
+    fi
 }
 
 git -C "${tmp}" init -q -b main
@@ -40,8 +40,8 @@ git_ commit -q -m base
 
 # Runs the gate (threshold 1000 bytes) against main; captures output and status.
 run() {
-  rc=0
-  out=$(cd "${tmp}" && bash "${script}" main 1000 2>&1) || rc=$?
+    rc=0
+    out=$(cd "${tmp}" && bash "${script}" main 1000 2>&1) || rc=$?
 }
 
 # (a) a large file must fail the gate and be reported
@@ -91,7 +91,7 @@ assert "edge: symlink-to-file reported" grep -q 'VIOLATION: link ' <<<"${out}"
 assert "edge: non-ASCII path reported" grep -q 'VIOLATION: café.bin' <<<"${out}"
 
 if [[ "${fails}" -gt 0 ]]; then
-  echo "${fails} assertion(s) failed"
-  exit 1
+    echo "${fails} assertion(s) failed"
+    exit 1
 fi
 echo "all assertions passed"

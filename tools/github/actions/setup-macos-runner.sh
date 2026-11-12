@@ -25,31 +25,36 @@ REPO_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}"
 
 # Detect Architecture
 ARCH_NAME=$(uname -m)
-if [ "$ARCH_NAME" = "x86_64" ]; then
+if [[ "${ARCH_NAME}" = "x86_64" ]]; then
     RUNNER_ARCH="x64"
-elif [ "$ARCH_NAME" = "arm64" ]; then
+elif [[ "${ARCH_NAME}" = "arm64" ]]; then
     RUNNER_ARCH="arm64"
 else
-    echo "Error: Unsupported architecture: $ARCH_NAME"
+    echo "Error: Unsupported architecture: ${ARCH_NAME}"
     exit 1
 fi
 
 generate_runner_name() {
     local hostname_short
-    hostname_short=$(hostname -s | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-')
+    hostname_short=$(
+        set -o pipefail
+        hostname -s | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]-'
+    ) || return 1
     local rand_suffix
-    rand_suffix=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 4)
+    rand_suffix=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 4 || true)
+    [[ ${#rand_suffix} -eq 4 ]] || return 1
     echo "groovy-lsp-macos-${hostname_short}-${rand_suffix}"
 }
 
 generate_workspace_dir() {
     local rand_suffix
-    rand_suffix=$(LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6)
-    echo "$HOME/.gha-runners/groovy-lsp-${rand_suffix}"
+    rand_suffix=$(LC_ALL=C tr -dc 'a-z0-9' </dev/urandom | head -c 6 || true)
+    [[ ${#rand_suffix} -eq 6 ]] || return 1
+    echo "${HOME}/.gha-runners/groovy-lsp-${rand_suffix}"
 }
 
 show_help() {
-    cat << EOF
+    cat <<EOF
 GitHub Actions Self-Hosted Runner Setup for macOS
 
 USAGE:
@@ -62,7 +67,7 @@ MODES:
 OPTIONS:
     --count N       Create N runners (default: 1)
     --no-svc        Skip service installation (auto-mode only)
-    --version VER   Set runner version (default: $DEFAULT_RUNNER_VERSION)
+    --version VER   Set runner version (default: ${DEFAULT_RUNNER_VERSION})
     --name NAME     Custom runner name (suffix added for multiple)
     --labels EXTRA  Additional labels (comma-separated)
     --dir PATH      Custom runner directory (suffix added for multiple)
@@ -80,7 +85,7 @@ EOF
 # Parse arguments
 AUTO_MODE=true
 INSTALL_SVC=true
-RUNNER_VERSION="$DEFAULT_RUNNER_VERSION"
+RUNNER_VERSION="${DEFAULT_RUNNER_VERSION}"
 RUNNER_COUNT=1
 TOKEN=""
 RUNNER_NAME=""
@@ -89,7 +94,7 @@ RUNNER_DIR=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --help|-h)
+        --help | -h)
             show_help
             exit 0
             ;;
@@ -99,7 +104,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --count)
             RUNNER_COUNT="$2"
-            if ! [[ "$RUNNER_COUNT" =~ ^[0-9]+$ ]] || [ "$RUNNER_COUNT" -lt 1 ]; then
+            if ! [[ "${RUNNER_COUNT}" =~ ^[0-9]+$ ]] || [[ "${RUNNER_COUNT}" -lt 1 ]]; then
                 echo "Error: --count must be a positive integer"
                 exit 1
             fi
@@ -141,193 +146,212 @@ done
 ORIGINAL_DIR="$(pwd)"
 
 # Loop to create multiple runners
-for ((i=1; i<=RUNNER_COUNT; i++)); do
-    if [ "$RUNNER_COUNT" -gt 1 ]; then
+for ((i = 1; i <= RUNNER_COUNT; i++)); do
+    if [[ "${RUNNER_COUNT}" -gt 1 ]]; then
         echo ""
         echo "========================================="
-        echo "Setting up runner $i of $RUNNER_COUNT"
+        echo "Setting up runner ${i} of ${RUNNER_COUNT}"
         echo "========================================="
         echo ""
     fi
 
-    CURRENT_RUNNER_NAME="${RUNNER_NAME:-$(generate_runner_name)}"
-    CURRENT_RUNNER_DIR="${RUNNER_DIR:-$(generate_workspace_dir)}"
+    if [[ -n "${RUNNER_NAME}" ]]; then
+        CURRENT_RUNNER_NAME="${RUNNER_NAME}"
+    else
+        # The generator checks its commands and validates the random suffix.
+        # shellcheck disable=SC2310,SC2311
+        CURRENT_RUNNER_NAME=$(generate_runner_name) || exit 1
+    fi
+    if [[ -n "${RUNNER_DIR}" ]]; then
+        CURRENT_RUNNER_DIR="${RUNNER_DIR}"
+    else
+        # The generator validates the random suffix before returning.
+        # shellcheck disable=SC2310,SC2311
+        CURRENT_RUNNER_DIR=$(generate_workspace_dir) || exit 1
+    fi
 
     BASE_LABELS="self-hosted,macOS,${RUNNER_ARCH},groovy-lsp,local-macos"
-    if [ -n "$EXTRA_LABELS" ]; then
+    if [[ -n "${EXTRA_LABELS}" ]]; then
         ALL_LABELS="${BASE_LABELS},${EXTRA_LABELS}"
     else
-        ALL_LABELS="$BASE_LABELS"
+        ALL_LABELS="${BASE_LABELS}"
     fi
 
-    echo "GitHub Actions Runner Setup ($RUNNER_VERSION)"
-    echo "Name:      $CURRENT_RUNNER_NAME"
-    echo "Directory: $CURRENT_RUNNER_DIR"
-    echo "Labels:    $ALL_LABELS"
-    echo "Service:   $($INSTALL_SVC && echo "Yes" || echo "No")"
+    echo "GitHub Actions Runner Setup (${RUNNER_VERSION})"
+    echo "Name:      ${CURRENT_RUNNER_NAME}"
+    echo "Directory: ${CURRENT_RUNNER_DIR}"
+    echo "Labels:    ${ALL_LABELS}"
+    if "${INSTALL_SVC}"; then
+        service_status=Yes
+    else
+        service_status=No
+    fi
+    echo "Service:   ${service_status}"
     echo ""
 
-# Get token (auto-mode)
-if [ "$AUTO_MODE" = true ]; then
-    echo "Generating runner token..."
+    # Get token (auto-mode)
+    if [[ "${AUTO_MODE}" = true ]]; then
+        echo "Generating runner token..."
 
-    if ! command -v gh &> /dev/null; then
-        echo "Error: 'gh' CLI not found. Install with 'brew install gh' and login."
-        exit 1
-    fi
-
-    if ! gh auth status &> /dev/null; then
-        echo "Error: gh CLI not authenticated. Run 'gh auth login'."
-        exit 1
-    fi
-
-    TOKEN=$(gh api \
-        --method POST \
-        -H "Accept: application/vnd.github+json" \
-        "/repos/${REPO_OWNER}/${REPO_NAME}/actions/runners/registration-token" \
-        --jq '.token')
-
-    if [ -z "$TOKEN" ]; then
-        echo "Error: Failed to generate token. Ensure admin access."
-        exit 1
-    fi
-fi
-
-if [ -z "$TOKEN" ]; then
-    echo "Error: No token provided."
-    exit 1
-fi
-
-# Prepare
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-CACHE_DIR="$PROJECT_ROOT/.github/.cache/runners"
-mkdir -p "$CACHE_DIR"
-
-TAR_FILE_NAME="actions-runner-osx-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz"
-CACHED_FILE="$CACHE_DIR/$TAR_FILE_NAME"
-DOWNLOAD_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${TAR_FILE_NAME}"
-
-# Fetch expected checksum from GitHub
-fetch_checksum() {
-    local version="$1"
-    local filename="$2"
-
-    if ! command -v curl &> /dev/null || ! command -v jq &> /dev/null; then
-        return 1
-    fi
-
-    # Fetch release and extract digest from assets array
-    local checksum
-    checksum=$(curl -sL "https://api.github.com/repos/actions/runner/releases/tags/v${version}" | \
-        jq -r ".assets[] | select(.name == \"$filename\") | .digest" 2>/dev/null | \
-        sed 's/^sha256://')
-
-    if [ -n "$checksum" ] && [ ${#checksum} -eq 64 ]; then
-        echo "$checksum"
-        return 0
-    fi
-
-    return 1
-}
-
-echo "Fetching checksum for v${RUNNER_VERSION}..."
-EXPECTED_CHECKSUM=$(fetch_checksum "$RUNNER_VERSION" "$TAR_FILE_NAME")
-
-if [ -z "$EXPECTED_CHECKSUM" ]; then
-    echo "Warning: Could not fetch checksum from GitHub"
-    echo "  Checksum validation will be skipped (NOT RECOMMENDED)"
-    read -p "  Continue without verification? (y/N) " -n 1 -r
-    echo
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
-else
-    echo "Expected SHA256: $EXPECTED_CHECKSUM"
-fi
-
-# Download or use cache
-DOWNLOAD_NEEDED=true
-
-if [ -f "$CACHED_FILE" ]; then
-    if [ -n "$EXPECTED_CHECKSUM" ]; then
-        echo "Verifying cached file..."
-        if echo "${EXPECTED_CHECKSUM}  $CACHED_FILE" | shasum -a 256 -c > /dev/null 2>&1; then
-            echo "Cached file verified."
-            DOWNLOAD_NEEDED=false
-        else
-            echo "Cached file corrupted or version mismatch. Re-downloading..."
-            rm "$CACHED_FILE"
+        if ! command -v gh &>/dev/null; then
+            echo "Error: 'gh' CLI not found. Install with 'brew install gh' and login."
+            exit 1
         fi
-    else
-        echo "Warning: Using cached file without verification"
-        DOWNLOAD_NEEDED=false
+
+        if ! gh auth status &>/dev/null; then
+            echo "Error: gh CLI not authenticated. Run 'gh auth login'."
+            exit 1
+        fi
+
+        TOKEN=$(gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            "/repos/${REPO_OWNER}/${REPO_NAME}/actions/runners/registration-token" \
+            --jq '.token')
+
+        if [[ -z "${TOKEN}" ]]; then
+            echo "Error: Failed to generate token. Ensure admin access."
+            exit 1
+        fi
     fi
-fi
 
-# Download
-if [ "$DOWNLOAD_NEEDED" = true ]; then
-    echo "Downloading runner v${RUNNER_VERSION}..."
-    curl -sL -o "$CACHED_FILE" "$DOWNLOAD_URL"
+    if [[ -z "${TOKEN}" ]]; then
+        echo "Error: No token provided."
+        exit 1
+    fi
 
-    if [ -n "$EXPECTED_CHECKSUM" ]; then
-        echo "Verifying download..."
-        if echo "${EXPECTED_CHECKSUM}  $CACHED_FILE" | shasum -a 256 -c; then
-            echo "Download verified."
-        else
-            echo "ERROR: Checksum verification failed!"
-            echo "  The downloaded file may be corrupted or tampered with."
-            rm "$CACHED_FILE"
+    # Prepare
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+    CACHE_DIR="${PROJECT_ROOT}/.github/.cache/runners"
+    mkdir -p "${CACHE_DIR}"
+
+    TAR_FILE_NAME="actions-runner-osx-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz"
+    CACHED_FILE="${CACHE_DIR}/${TAR_FILE_NAME}"
+    DOWNLOAD_URL="https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/${TAR_FILE_NAME}"
+
+    # Fetch expected checksum from GitHub
+    fetch_checksum() {
+        local version="$1"
+        local filename="$2"
+
+        if ! command -v curl &>/dev/null || ! command -v jq &>/dev/null; then
+            return 1
+        fi
+
+        # A failed release lookup must never supply a trusted checksum.
+        local release_json checksum
+        release_json=$(curl -fsSL "https://api.github.com/repos/actions/runner/releases/tags/v${version}") || return 1
+        checksum=$(jq -r --arg filename "${filename}" '.assets[] | select(.name == $filename) | .digest' <<<"${release_json}") || return 1
+        checksum=${checksum#sha256:}
+
+        if [[ -n "${checksum}" ]] && [[ ${#checksum} -eq 64 ]]; then
+            echo "${checksum}"
+            return 0
+        fi
+
+        return 1
+    }
+
+    echo "Fetching checksum for v${RUNNER_VERSION}..."
+    # fetch_checksum checks curl and jq explicitly before returning a digest.
+    # shellcheck disable=SC2310,SC2311
+    EXPECTED_CHECKSUM=$(fetch_checksum "${RUNNER_VERSION}" "${TAR_FILE_NAME}") || EXPECTED_CHECKSUM=""
+
+    if [[ -z "${EXPECTED_CHECKSUM}" ]]; then
+        echo "Warning: Could not fetch checksum from GitHub"
+        echo "  Checksum validation will be skipped (NOT RECOMMENDED)"
+        read -p "  Continue without verification? (y/N) " -n 1 -r
+        echo
+        if [[ ! ${REPLY} =~ ^[Yy]$ ]]; then
             exit 1
         fi
     else
-        echo "Warning: Downloaded file without verification"
+        echo "Expected SHA256: ${EXPECTED_CHECKSUM}"
     fi
-fi
 
-# Install
-if [ -d "$CURRENT_RUNNER_DIR" ]; then
-    echo "Directory exists: $CURRENT_RUNNER_DIR"
-    read -p "Remove and replace? (y/N) " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        rm -rf "$CURRENT_RUNNER_DIR"
+    # Download or use cache
+    DOWNLOAD_NEEDED=true
+
+    if [[ -f "${CACHED_FILE}" ]]; then
+        if [[ -n "${EXPECTED_CHECKSUM}" ]]; then
+            echo "Verifying cached file..."
+            if echo "${EXPECTED_CHECKSUM}  ${CACHED_FILE}" | shasum -a 256 -c >/dev/null 2>&1; then
+                echo "Cached file verified."
+                DOWNLOAD_NEEDED=false
+            else
+                echo "Cached file corrupted or version mismatch. Re-downloading..."
+                rm "${CACHED_FILE}"
+            fi
+        else
+            echo "Warning: Using cached file without verification"
+            DOWNLOAD_NEEDED=false
+        fi
+    fi
+
+    # Download
+    if [[ "${DOWNLOAD_NEEDED}" = true ]]; then
+        echo "Downloading runner v${RUNNER_VERSION}..."
+        curl -sL -o "${CACHED_FILE}" "${DOWNLOAD_URL}"
+
+        if [[ -n "${EXPECTED_CHECKSUM}" ]]; then
+            echo "Verifying download..."
+            if echo "${EXPECTED_CHECKSUM}  ${CACHED_FILE}" | shasum -a 256 -c; then
+                echo "Download verified."
+            else
+                echo "ERROR: Checksum verification failed!"
+                echo "  The downloaded file may be corrupted or tampered with."
+                rm "${CACHED_FILE}"
+                exit 1
+            fi
+        else
+            echo "Warning: Downloaded file without verification"
+        fi
+    fi
+
+    # Install
+    if [[ -d "${CURRENT_RUNNER_DIR}" ]]; then
+        echo "Directory exists: ${CURRENT_RUNNER_DIR}"
+        read -p "Remove and replace? (y/N) " -n 1 -r
+        echo
+        if [[ ${REPLY} =~ ^[Yy]$ ]]; then
+            rm -rf "${CURRENT_RUNNER_DIR}"
+        else
+            echo "Using existing directory..."
+        fi
+    fi
+    mkdir -p "${CURRENT_RUNNER_DIR}"
+
+    cd "${CURRENT_RUNNER_DIR}"
+    echo "Extracting..."
+    tar xzf "${CACHED_FILE}"
+
+    echo "Configuring..."
+    ./config.sh \
+        --url "${REPO_URL}" \
+        --token "${TOKEN}" \
+        --name "${CURRENT_RUNNER_NAME}" \
+        --labels "${ALL_LABELS}" \
+        --work "_work" \
+        --unattended \
+        --replace
+
+    # Service Installation (Auto-mode default)
+    if [[ "${AUTO_MODE}" = true ]] && [[ "${INSTALL_SVC}" = true ]]; then
+        echo "Installing service..."
+        ./svc.sh install
+        echo "Starting service..."
+        ./svc.sh start
+        echo "Service started successfully."
     else
-        echo "Using existing directory..."
+        echo "Setup complete."
+        echo "To start manually:"
+        echo "  cd ${CURRENT_RUNNER_DIR} && ./run.sh"
+        echo "To install service:"
+        echo "  cd ${CURRENT_RUNNER_DIR}"
+        echo "  ./svc.sh install && ./svc.sh start"
     fi
-fi
-mkdir -p "$CURRENT_RUNNER_DIR"
 
-cd "$CURRENT_RUNNER_DIR"
-echo "Extracting..."
-tar xzf "$CACHED_FILE"
-
-echo "Configuring..."
-./config.sh \
-    --url "$REPO_URL" \
-    --token "$TOKEN" \
-    --name "$CURRENT_RUNNER_NAME" \
-    --labels "$ALL_LABELS" \
-    --work "_work" \
-    --unattended \
-    --replace
-
-# Service Installation (Auto-mode default)
-if [ "$AUTO_MODE" = true ] && [ "$INSTALL_SVC" = true ]; then
-    echo "Installing service..."
-    ./svc.sh install
-    echo "Starting service..."
-    ./svc.sh start
-    echo "Service started successfully."
-else
-    echo "Setup complete."
-    echo "To start manually:"
-    echo "  cd $CURRENT_RUNNER_DIR && ./run.sh"
-    echo "To install service:"
-    echo "  cd $CURRENT_RUNNER_DIR"
-    echo "  ./svc.sh install && ./svc.sh start"
-fi
-
-# Return to original directory for next iteration
-cd "$ORIGINAL_DIR"
-done  # End of runner creation loop
+    # Return to original directory for next iteration
+    cd "${ORIGINAL_DIR}"
+done # End of runner creation loop

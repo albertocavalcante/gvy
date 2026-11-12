@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # Colors
 GREEN='\033[0;32m'
@@ -10,8 +10,8 @@ NC='\033[0m' # No Color
 
 DEVCONTAINER_JSON=".devcontainer/devcontainer.json"
 
-if [ ! -f "$DEVCONTAINER_JSON" ]; then
-    echo -e "${RED}Error: $DEVCONTAINER_JSON not found.${NC}"
+if [[ ! -f "${DEVCONTAINER_JSON}" ]]; then
+    echo -e "${RED}Error: ${DEVCONTAINER_JSON} not found.${NC}"
     exit 1
 fi
 
@@ -20,15 +20,16 @@ echo -e "${BLUE}Checking for tool updates...${NC}"
 # Helper to get current version from devcontainer.json
 get_current_version() {
     local key=$1
-    grep "\"$key\"" "$DEVCONTAINER_JSON" | cut -d: -f2 | tr -d ' ",'
+    grep "\"${key}\"" "${DEVCONTAINER_JSON}" | cut -d: -f2 | tr -d ' ",'
 }
 
 # Helper to get latest version from GitHub
 get_latest_version() {
     local repo=$1
-    local tag=$(gh release list --repo "$repo" --limit 1 | cut -f3)
+    local tag
+    tag=$(gh release list --repo "${repo}" --limit 1 | cut -f3) || return 1
     # Remove 'v' prefix or 'jq-' prefix if present
-    echo "$tag" | sed 's/^v//' | sed 's/^jq-//'
+    sed 's/^v//; s/^jq-//' <<<"${tag}"
 }
 
 # Helper to fetch or calculate SHA256
@@ -38,52 +39,50 @@ get_sha256() {
     local asset_name=$3
     local checksum_file=$4 # Optional: name of checksum file in release
 
-    local url="https://github.com/$repo/releases/download"
-    
+    local url="https://github.com/${repo}/releases/download"
+
     # Construct full URL based on repo conventions
-    if [[ "$repo" == "jqlang/jq" ]]; then
-         # jq has a different URL structure
-         url="$url/jq-$version/$asset_name"
-    elif [[ "$repo" == "junegunn/fzf" ]]; then
-         url="$url/v$version/$asset_name"
+    if [[ "${repo}" == "jqlang/jq" ]]; then
+        # jq has a different URL structure
+        url="${url}/jq-${version}/${asset_name}"
+    elif [[ "${repo}" == "junegunn/fzf" ]]; then
+        url="${url}/v${version}/${asset_name}"
     else
-         # Standard "vX.Y.Z" tag for most
-         url="$url/v$version/$asset_name"
-         # ripgrep uses raw version number in tag for some reason? No, usually vX.Y.Z but let's check.
-         if [[ "$repo" == "BurntSushi/ripgrep" ]]; then
-             url="https://github.com/$repo/releases/download/$version/$asset_name"
-         fi
+        # Standard "vX.Y.Z" tag for most
+        url="${url}/v${version}/${asset_name}"
+        # ripgrep uses raw version number in tag for some reason? No, usually vX.Y.Z but let's check.
+        if [[ "${repo}" == "BurntSushi/ripgrep" ]]; then
+            url="https://github.com/${repo}/releases/download/${version}/${asset_name}"
+        fi
     fi
 
     # Strategy:
     # 1. If checksum_file provided, try to fetch it and grep for asset
     # 2. If that fails or not provided, download asset and calc sha256
-    
-    if [[ -n "$checksum_file" ]]; then
+
+    if [[ -n "${checksum_file}" ]]; then
         local checksum_url
-        if [[ "$repo" == "jqlang/jq" ]]; then
-            checksum_url="https://github.com/$repo/releases/download/jq-$version/$checksum_file"
-        elif [[ "$repo" == "junegunn/fzf" ]]; then
-             checksum_url="https://github.com/$repo/releases/download/v$version/$checksum_file"
+        if [[ "${repo}" == "jqlang/jq" ]]; then
+            checksum_url="https://github.com/${repo}/releases/download/jq-${version}/${checksum_file}"
+        elif [[ "${repo}" == "junegunn/fzf" ]]; then
+            checksum_url="https://github.com/${repo}/releases/download/v${version}/${checksum_file}"
         else
-             checksum_url="https://github.com/$repo/releases/download/v$version/$checksum_file"
+            checksum_url="https://github.com/${repo}/releases/download/v${version}/${checksum_file}"
         fi
-        
+
         local checksum_content
-        checksum_content=$(curl -sL "$checksum_url")
-        
-        if [[ $? -eq 0 && -n "$checksum_content" ]]; then
-             local hash=$(echo "$checksum_content" | grep "$asset_name" | awk '{print $1}')
-             if [[ -n "$hash" ]]; then
-                 echo "$hash"
-                 return
-             fi
+        if checksum_content=$(curl -fsSL "${checksum_url}") && [[ -n "${checksum_content}" ]]; then
+            local hash
+            if hash=$(grep -F "${asset_name}" <<<"${checksum_content}" | awk '{print $1}') && [[ -n "${hash}" ]]; then
+                echo "${hash}"
+                return
+            fi
         fi
     fi
 
     # Fallback: Download and calc
     # echo -e "${YELLOW}Downloading $asset_name to calculate SHA...${NC}" >&2
-    curl -sL "$url" | sha256sum | awk '{print $1}'
+    curl -fsSL "${url}" | sha256sum | awk '{print $1}'
 }
 
 check_tool() {
@@ -91,30 +90,38 @@ check_tool() {
     local key=$2
     local repo=$3
     local checksum_file=$4 # Optional
-    
+
     # Asset templates for x64 and arm64
     local asset_x64=$5
     local asset_arm64=$6
 
-    local current=$(get_current_version "$key")
-    local latest=$(get_latest_version "$repo")
-    
-    if [ "$current" == "$latest" ]; then
-        echo -e "${GREEN}✔ $name is up to date: $current${NC}"
+    local current latest
+    # These helpers return the status of their final pipeline directly.
+    # shellcheck disable=SC2310,SC2311
+    current=$(get_current_version "${key}") || return 1
+    # shellcheck disable=SC2310,SC2311
+    latest=$(get_latest_version "${repo}") || return 1
+
+    if [[ "${current}" == "${latest}" ]]; then
+        echo -e "${GREEN}✔ ${name} is up to date: ${current}${NC}"
     else
-        echo -e "${YELLOW}➜ $name update available: $current -> $latest${NC}"
-        echo -e "${BLUE}Calculating new checksums for $name $latest...${NC}"
-        
+        echo -e "${YELLOW}➜ ${name} update available: ${current} -> ${latest}${NC}"
+        echo -e "${BLUE}Calculating new checksums for ${name} ${latest}...${NC}"
+
         # Interpolate version into asset names
-        local ax64=${asset_x64//VERSION/$latest}
-        local aarm64=${asset_arm64//VERSION/$latest}
+        local ax64=${asset_x64//VERSION/${latest}}
+        local aarm64=${asset_arm64//VERSION/${latest}}
 
-        local sha_x64=$(get_sha256 "$repo" "$latest" "$ax64" "$checksum_file")
-        local sha_arm64=$(get_sha256 "$repo" "$latest" "$aarm64" "$checksum_file")
+        local sha_x64 sha_arm64
+        # get_sha256 handles its optional checksum-file fallback explicitly.
+        # shellcheck disable=SC2310,SC2311
+        sha_x64=$(get_sha256 "${repo}" "${latest}" "${ax64}" "${checksum_file}") || return 1
+        # shellcheck disable=SC2310,SC2311
+        sha_arm64=$(get_sha256 "${repo}" "${latest}" "${aarm64}" "${checksum_file}") || return 1
 
-        echo "  \"${key}\": \"$latest\","
-        echo "  \"${key/VERSION/SHA256}_X64\": \"$sha_x64\","
-        echo "  \"${key/VERSION/SHA256}_ARM64\": \"$sha_arm64\","
+        echo "  \"${key}\": \"${latest}\","
+        echo "  \"${key/VERSION/SHA256}_X64\": \"${sha_x64}\","
+        echo "  \"${key/VERSION/SHA256}_ARM64\": \"${sha_arm64}\","
     fi
 }
 
@@ -156,4 +163,3 @@ check_tool "starship" "STARSHIP_VERSION" "starship/starship" "" \
 check_tool "gh" "GH_VERSION" "cli/cli" "gh_VERSION_checksums.txt" \
     "gh_VERSION_linux_amd64.tar.gz" \
     "gh_VERSION_linux_arm64.tar.gz"
-
