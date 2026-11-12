@@ -133,7 +133,9 @@ class GroovySemanticDB {
         lock.read { cachedDeclarations?.let { return it } }
         return lock.write {
             cachedDeclarations ?: DeclarationIndexSnapshot(
-                versionCounter.get(), symbolIndex.snapshot(), ownerIndex.snapshot(),
+                versionCounter.get(),
+                symbolIndex.snapshot(),
+                ownerIndex.snapshot(),
             ).also { cachedDeclarations = it }
         }
     }

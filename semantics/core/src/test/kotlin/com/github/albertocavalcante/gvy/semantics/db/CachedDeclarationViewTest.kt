@@ -15,7 +15,9 @@ class CachedDeclarationViewTest {
 
     private fun document(line: Int, names: List<String> = listOf("a", "b")) = SemanticDocument(
         uri,
-        names.map { name -> SymbolInfo("C#$name.", SymbolKind.FIELD, Range(line, 0, line, 1), name, "C#", TypeConstants.INT) },
+        names.map { name ->
+            SymbolInfo("C#$name.", SymbolKind.FIELD, Range(line, 0, line, 1), name, "C#", TypeConstants.INT)
+        },
         emptyList(),
     )
 
