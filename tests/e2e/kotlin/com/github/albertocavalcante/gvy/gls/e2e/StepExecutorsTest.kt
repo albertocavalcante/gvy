@@ -30,6 +30,8 @@ import org.eclipse.lsp4j.MessageType
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import java.io.IOException
+import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 import java.util.concurrent.CompletableFuture
@@ -158,6 +160,41 @@ class StepExecutorsTest {
                         it.textDocument.uri == "file:///test.groovy"
                 },
             )
+        }
+    }
+
+    @Test
+    fun `opening a directory as a fixture fails before didOpen`() {
+        Files.createDirectory(workspaceRoot.resolve("fixture.groovy"))
+
+        assertThatThrownBy {
+            OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "fixture.groovy"), context)
+        }.isInstanceOf(IOException::class.java).hasMessageContaining("fixture.groovy")
+        verify(exactly = 0) { session.server.textDocumentService.didOpen(any()) }
+    }
+
+    @Test
+    fun `opening a missing fixture without text fails before didOpen`() {
+        assertThatThrownBy {
+            OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "missing.groovy"), context)
+        }.isInstanceOf(IOException::class.java).hasMessageContaining("missing.groovy")
+        verify(exactly = 0) { session.server.textDocumentService.didOpen(any()) }
+    }
+
+    @Test
+    fun `opening an explicit empty buffer does not read a missing file`() {
+        OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "new.groovy", text = ""), context)
+
+        verify(exactly = 1) { session.server.textDocumentService.didOpen(match { it.textDocument.text == "" }) }
+    }
+
+    @Test
+    fun `opening a readable fixture sends its contents`() {
+        Files.writeString(workspaceRoot.resolve("source.groovy"), "println 42")
+        OpenDocumentStepExecutor().execute(ScenarioStep.OpenDocument(path = "source.groovy"), context)
+
+        verify(exactly = 1) {
+            session.server.textDocumentService.didOpen(match { it.textDocument.text == "println 42" })
         }
     }
 
