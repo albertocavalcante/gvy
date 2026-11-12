@@ -25,18 +25,17 @@ internal fun parameterTypeHoverNode(node: ASTNode, index: TextIndex, position: P
     }
 }
 
-/** The lexer counts code points; protocol positions and source offsets count UTF-16 code units. */
+/** Token spans and protocol positions both use UTF-16 source offsets. */
 internal fun isHoverPosition(index: TextIndex, position: Position, tokens: GroovyTokenIndex?): Boolean {
     if (!index.isValidPosition(position)) return false
     val source = index.text
     val offset = index.offsetOf(position)
-    val lexerOffset = source.codePointCount(0, offset)
     val line = checkNotNull(index.lineRange(position.line))
     val blank = source.substring(index.offsetOf(line.start), index.offsetOf(line.end)).isBlank()
     val whitespace = source.getOrNull(offset)?.isWhitespace() == true
     val afterIdentifier = offset > 0 && Character.isJavaIdentifierPart(source.codePointBefore(offset))
-    return tokens?.isInComment(lexerOffset) != true && !blank &&
-        (!whitespace || afterIdentifier || tokens?.isInString(lexerOffset) == true)
+    return tokens?.isInComment(offset) != true && !blank &&
+        (!whitespace || afterIdentifier || tokens?.isInString(offset) == true)
 }
 
 /** Highlights the occurrence under the pointer, even when its hover describes a declaration elsewhere. */
