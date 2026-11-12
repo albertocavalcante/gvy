@@ -80,13 +80,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Restore positional arguments
-set -- "${ARGS[@]}"
-if [[ $# -ne 1 ]]; then
+if [[ "${#ARGS[@]}" -ne 1 ]]; then
   log_error "Expected exactly one command"
   print_usage
   exit 1
 fi
+# Restore positional arguments only after ensuring the array is nonempty (Bash 3.2).
+set -- "${ARGS[@]}"
 COMMAND="$1"
 
 check_version() {

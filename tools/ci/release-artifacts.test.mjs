@@ -283,6 +283,19 @@ test('recognized global options can precede the build command', t => {
   assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
 });
 
+for (const options of [[], ['--version', 'v0.5.4', '--dry-run']]) {
+  test(`native Bash reports usage when no command follows ${options.join(' ') || 'an empty invocation'}`, t => {
+    const f = fixture(t);
+    const result = f.command('/bin/bash', ['tools/release.sh', ...options]);
+    assert.equal(result.status, 1, result.stdout + result.stderr);
+    assert.match(result.stdout + result.stderr, /Expected exactly one command/);
+    assert.match(result.stdout + result.stderr, /Usage:/);
+    assert.doesNotMatch(result.stdout + result.stderr, /unbound variable/);
+    assert.equal(existsSync(join(f.root, 'dist')), false);
+    assert.equal(existsSync(join(f.root, 'calls.jsonl')), false);
+  });
+}
+
 for (const mode of ['', 'package-failure']) {
   test(`package.json permissions survive ${mode || 'successful packaging'}`, t => {
     const f = fixture(t, { mode });
