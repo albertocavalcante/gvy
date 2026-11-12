@@ -11,10 +11,19 @@ class BoundedFailureEvidenceTest {
     fun `nested causes and suppressed retain their origins`() {
         val failure = IllegalStateException("outer", IOException("inner"))
         failure.addSuppressed(IllegalArgumentException("cleanup"))
+        failure.stackTrace = emptyArray()
+        failure.cause!!.stackTrace = emptyArray()
+        failure.suppressed.single().stackTrace = emptyArray()
 
         val evidence = BoundedFailureEvidence.capture(failure)
 
-        assertThat(evidence.text).contains("outer", "Caused by: java.io.IOException: inner", "Suppressed: java.lang.IllegalArgumentException: cleanup")
+        assertThat(
+            evidence.text,
+        ).contains(
+            "outer",
+            "Caused by: java.io.IOException: inner",
+            "Suppressed: java.lang.IllegalArgumentException: cleanup",
+        )
         assertThat(evidence.truncated).isFalse()
         assertThat(evidence.unavailable).isFalse()
     }
@@ -25,7 +34,9 @@ class BoundedFailureEvidenceTest {
 
         assertThat(evidence.truncated).isTrue()
         assertThat(evidence.text).endsWith("[truncated]")
-        assertThat(evidence.text.toByteArray(Charsets.UTF_8).size).isLessThanOrEqualTo(BoundedFailureEvidence.MAX_UTF8_BYTES)
+        assertThat(
+            evidence.text.toByteArray(Charsets.UTF_8).size,
+        ).isLessThanOrEqualTo(BoundedFailureEvidence.MAX_UTF8_BYTES)
         assertThat(evidence.text).doesNotContain("�")
     }
 
@@ -49,14 +60,22 @@ class BoundedFailureEvidenceTest {
         root.stackTrace = Array(1_000) { StackTraceElement("Owner", "m$it", "File.groovy", it) }
         repeat(100) { root.addSuppressed(IOException("suppressed-$it").apply { stackTrace = emptyArray() }) }
         var tail = root
-        repeat(100) { index -> IOException("cause-$index").also { it.stackTrace = emptyArray(); tail.initCause(it); tail = it } }
+        repeat(100) { index ->
+            IOException("cause-$index").also {
+                it.stackTrace = emptyArray()
+                tail.initCause(it)
+                tail = it
+            }
+        }
 
         val evidence = BoundedFailureEvidence.capture(root)
 
         assertThat(evidence.truncated).isTrue()
         assertThat(evidence.text).contains("suppressed-0", "cause-0", "[truncated]")
         assertThat(evidence.text).doesNotContain("suppressed-99", "cause-99", "Owner.m999")
-        assertThat(evidence.text.toByteArray(Charsets.UTF_8).size).isLessThanOrEqualTo(BoundedFailureEvidence.MAX_UTF8_BYTES)
+        assertThat(
+            evidence.text.toByteArray(Charsets.UTF_8).size,
+        ).isLessThanOrEqualTo(BoundedFailureEvidence.MAX_UTF8_BYTES)
     }
 
     @Test

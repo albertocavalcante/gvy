@@ -82,7 +82,9 @@ class NamedObservationRecorderTest {
     fun `aggregate cleanup evidence has one bounded budget`() {
         val recorder = NamedObservationRecorder(emptyList(), "scenario.yaml")
         repeat(100) { index ->
-            assertThrows<IOException> { recorder.closeSession { throw IOException("close-$index " + "x".repeat(2_000)) } }
+            assertThrows<IOException> {
+                recorder.closeSession { throw IOException("close-$index " + "x".repeat(2_000)) }
+            }
         }
 
         val cleanup = recorder.finish(null).cleanup as CleanupOutcome.Failed
