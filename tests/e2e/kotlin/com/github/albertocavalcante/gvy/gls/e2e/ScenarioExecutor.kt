@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 package com.github.albertocavalcante.gvy.gls.e2e
 
 import com.jayway.jsonpath.Configuration
@@ -60,8 +63,8 @@ class ScenarioExecutor internal constructor(
 
     /**
      * Executes named assert and high-level request checks and returns an immutable report. Other check-bearing steps
-     * do not yet accept named metadata. Operational failures without an established origin are reported as Unclassified; runner
-     * integration is responsible for distinguishing transport failures and interpreting known failures.
+     * do not yet accept named metadata. Operational failures without an established origin are reported as Unclassified;
+     * runner integration is responsible for distinguishing transport failures and interpreting known failures.
      * An empty observation plan records no product verification. Unconfirmed cleanup may still be running.
      */
     fun executeWithOutcome(definition: ScenarioDefinition): ScenarioOutcome {
@@ -69,15 +72,26 @@ class ScenarioExecutor internal constructor(
         require(definition.scenario.xfail == null) { "Scenario-level xfail cannot be combined with named outcomes" }
         authored.forEach { (step, check) ->
             require(check.xfail == null || check.id != null) { "A check xfail requires an ID" }
-            val supported = step is ScenarioStep.Assert || step is ScenarioStep.Completion ||
-                step is ScenarioStep.CodeAction || step is ScenarioStep.Formatting || step is ScenarioStep.Rename
-            require(supported || (check.id == null && check.xfail == null)) {
+            val supportsNamedChecks = when (step) {
+                is ScenarioStep.Assert,
+                is ScenarioStep.Completion,
+                is ScenarioStep.CodeAction,
+                is ScenarioStep.Formatting,
+                is ScenarioStep.Rename,
+                -> true
+                else -> false
+            }
+            val hasNamedMetadata = check.id != null || check.xfail != null
+            require(supportsNamedChecks || !hasNamedMetadata) {
                 "Named checks are not supported in ${step::class.simpleName} steps"
             }
-            check.id?.let { require(it.isNotBlank()) { "A check ID must not be blank" } }
-            check.xfail?.let {
-                require(it.issue > 0 && it.reason.isNotBlank()) { "A check xfail needs an issue and reason" }
-                it.match?.let(::Regex)
+
+            check.id?.let { id ->
+                require(id.isNotBlank()) { "A check ID must not be blank" }
+            }
+            check.xfail?.let { xfail ->
+                require(xfail.issue > 0 && xfail.reason.isNotBlank()) { "A check xfail needs an issue and reason" }
+                xfail.match?.let(::Regex)
             }
         }
         val planned = authored.mapNotNull { it.second.id }
