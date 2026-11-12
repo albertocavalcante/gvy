@@ -49,6 +49,21 @@
       "id": "codenarc-final-newline-position",
       "path": "diagnostics/codenarc/src/main/kotlin/com/github/albertocavalcante/gvy/diagnostics/codenarc/CodeNarcDiagnosticProvider.kt",
       "anchor": "val finalCodeNarcLine = sourceLines.lastIndex"
+    },
+    {
+      "id": "vscode-test-floor",
+      "path": "editors/code/tools/vscode-test-config.mjs",
+      "anchor": "export const vscodeTestVersion"
+    },
+    {
+      "id": "vscode-metadata-timeout",
+      "path": "tools/ci/vscode-provisioning-policy.mjs",
+      "anchor": "export function isResolutionTimeout"
+    },
+    {
+      "id": "vscode-provisioning-sdk",
+      "path": "tools/ci/vscode-provisioning-worker.mjs",
+      "anchor": "export async function runSdkProvisioning"
     }
   ],
   "records": [
@@ -524,7 +539,7 @@
       "sources": [
         {
           "id": "manual:release-nightly-channel",
-          "sha256": "39d5f3c026261d440075f51a1dbe24cac934da2d767117fd894f62e5cfb59312"
+          "sha256": "049281bde841940ce24a1b99a29e5a97427702c517fd824e92f8c3470696baff"
         },
         {
           "id": "manual:release-nightly-discovery",
@@ -558,6 +573,40 @@
         {
           "id": "manual:codenarc-final-newline-position",
           "sha256": "7e2fd5b9f4c1ab17be7e6cc5266c3e7da7750ee59bc420fc425ac2980feed983"
+        }
+      ]
+    },
+    {
+      "id": "vscode-version-resolution",
+      "issue": "https://github.com/albertocavalcante/gvy/issues/1882",
+      "responsibleScope": "gvy CI and editor test infrastructure maintainers",
+      "lastVerified": "2026-11-12",
+      "reviewDue": "2026-11-19",
+      "reason": "Pinned editor provisioning can time out during fixed-version metadata validation before integration starts. Keep the source-specific bounded retry owned while preserving every original failed attempt and all test assertions outside the retry.",
+      "upstreamStatus": "Inspected @vscode/test-electron 3.1.0 source awaits fixed-version metadata before its first resolvedVersion event and before its archive retry loop. The 15000ms request timeout is idle-based. @vscode/test-cli 0.0.15 supports an installed path but its dependency-install branch can download again. The original transport root cause is unproven; no replacement SDK was installed or executed.",
+      "upstreamTrigger": "Evaluate an official SDK or CLI release that provides bounded metadata provisioning and trustworthy delivered-runtime identity without retrying assertions or re-entering an unbounded download path.",
+      "verification": "Original actual 8aeedf3fc90d47cdf8d83646f442ac64401fcf92 run 43248043868 attempt 1 / macOS job 131289089094 passed 887 unit tests, then failed at Resolving version after 15000ms before editor integration. Its retained 152230-byte raw log SHA-256 is 110b751d06f504aed55cc2ef8017c3935223279c416d25747a137e4b041b7ad5. Pinned primary-source inspection supports only the exact TimeoutError constructor/message in the pre-resolved phase. Local controlled checks cover recovery/persistence, negative phases/errors, monotonic deadline/owned cleanup, delivered commit/version, once-only invocation and audited evidence. Real three-platform, packaged and Nightly candidate validation remains required; this record alone supplies none of that runtime coverage.",
+      "evidence": [
+        "https://github.com/albertocavalcante/gvy/issues/1882",
+        "https://github.com/albertocavalcante/gvy/actions/runs/43248043868/job/131289089094",
+        "https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/download.ts#L461-L579",
+        "https://github.com/microsoft/vscode-test/blob/2a4b25c3a48411bdd001af1cae136a308a0c7e32/lib/request.ts#L21-L84",
+        "https://github.com/microsoft/vscode-test-cli/blob/88ade1d567669de60a2edaf3753fae31af0d727c/src/cli/platform/desktop.mts#L128-L164"
+      ],
+      "nextAction": "Review complete candidate evidence on Linux/macOS/Windows, packaged-extension and Nightly jobs, including native Windows cleanup/link controls, phase identity, original failed attempts and remaining diagnostics. Revisit the official SDK request/reporter/verification APIs by the review date; keep raw console masking and audited public-artifact boundaries explicit. Prepare any upstream submission locally for human approval.",
+      "removalCriteria": "Replace the source-specific metadata retry only after supported SDK behavior passes controlled timeout recovery, persistent failure and all negative controls with a finite total budget, delivered version/build verification and no assertion retry; then obtain complete fresh native-platform, packaged and Nightly evidence before removing the record.",
+      "sources": [
+        {
+          "id": "manual:vscode-test-floor",
+          "sha256": "a226f911afc7028aa50c73d552e73e8b7eb7d0a768d88dc9299c0b413cd7b833"
+        },
+        {
+          "id": "manual:vscode-metadata-timeout",
+          "sha256": "43f38b82d561753962a83a575b48e0ab2ddcf6ba1681c589bc024b6d0aa53f65"
+        },
+        {
+          "id": "manual:vscode-provisioning-sdk",
+          "sha256": "9ace543e7a622831730e663af711c49e9211b1d0103c2171689fa306a7cf169f"
         }
       ]
     }
