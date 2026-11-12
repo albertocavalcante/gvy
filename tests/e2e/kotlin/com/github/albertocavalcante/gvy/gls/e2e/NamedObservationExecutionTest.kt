@@ -62,6 +62,21 @@ class NamedObservationExecutionTest {
     }
 
     @Test
+    fun `mismatched known failure remains failed and later checks are blocked`() {
+        val checks = listOf(
+            JsonCheck("$.missing", JsonExpectation(), id = "known", xfail = Xfail(42, "known", "different")),
+            JsonCheck("$.uri", JsonExpectation(), id = "later"),
+        )
+
+        val outcome = ScenarioExecutor(factory).executeWithOutcome(definition(checks))
+
+        assertThat(outcome.observed).hasSize(1)
+        assertThat(outcome.observed.single().status).isInstanceOf(ObservationStatus.Failed::class.java)
+        assertThat(outcome.blocked).containsExactly("later")
+        assertThat(outcome.isSuccessful).isFalse()
+    }
+
+    @Test
     fun `known failure cannot hide independent cleanup failure`() {
         every { WorkspaceFixture.cleanup(workspace) } throws IOException("cleanup failed")
         val checks = listOf(JsonCheck("$.missing", JsonExpectation(), id = "known", xfail = Xfail(42, "known", "missing")))
