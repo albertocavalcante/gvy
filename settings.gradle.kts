@@ -1,3 +1,6 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 pluginManagement {
     repositories {
         gradlePluginPortal()
@@ -29,6 +32,7 @@ include("parser:core")
 include("parser:rewrite")
 include("common")
 include("source")
+include("findings")
 include("gls")
 include("launcher")
 include("indexer:core")

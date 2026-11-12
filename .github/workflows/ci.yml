@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+# SPDX-License-Identifier: Apache-2.0
+
 name: CI
 on:
   push:
@@ -142,6 +145,8 @@ jobs:
               - 'common/**'
               # source (neutral UTF-16 text coordinates)
               - 'source/**'
+              # findings (neutral diagnostic observations)
+              - 'findings/**'
               # gls (main LSP server)
               - 'gls/**'
               # native CLI launcher

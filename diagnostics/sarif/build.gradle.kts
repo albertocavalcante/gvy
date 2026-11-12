@@ -1,10 +1,13 @@
+// SPDX-FileCopyrightText: 2026 Alberto Cavalcante and the gvy contributors
+// SPDX-License-Identifier: Apache-2.0
+
 plugins {
     kotlin("jvm")
     alias(libs.plugins.kotlin.serialization)
 }
 
 dependencies {
-    implementation(project(":diagnostics:api"))
+    api(project(":findings"))
 
     // LSP4J for Diagnostic types
     implementation(libs.lsp4j)

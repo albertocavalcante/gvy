@@ -13,7 +13,8 @@ Use this map to find the component responsible for a change. For installation an
 | [diagnostics/](../diagnostics/)                     | Compiler and CodeNarc diagnostics, with SARIF output support         |
 | [fmt/](../fmt/)                                     | Groovy formatting using OpenRewrite                                  |
 | [indexer/](../indexer/)                             | Symbol indexing and SCIP/LSIF integrations                           |
-| [source/](../source/)                               | Language-neutral UTF-16 line indexing                                |
+| [source/](../source/)                               | Language-neutral UTF-16 indexing and structural source locations     |
+| [findings/](../findings/)                           | Diagnostic observations without compiler, LSP, or codec dependencies |
 | [common/](../common/) and [markdown/](../markdown/) | Shared utilities and Markdown rendering                              |
 
 ## Frameworks and build integration
