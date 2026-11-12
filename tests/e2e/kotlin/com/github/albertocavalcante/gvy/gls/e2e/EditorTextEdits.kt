@@ -21,7 +21,9 @@ internal object EditorTextEdits {
         val result = StringBuilder(text.length)
         var cursor = 0
         for (edit in resolved) {
-            require(edit.start >= cursor) { "Text edit ranges overlap or replace precedes an insert at the same position" }
+            require(edit.start >= cursor) {
+                "Text edit ranges overlap or replace precedes an insert at the same position"
+            }
             result.append(text, cursor, edit.start)
             result.append(edit.text)
             cursor = edit.end
