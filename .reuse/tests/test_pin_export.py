@@ -1,5 +1,6 @@
 # SPDX-FileCopyrightText: Alberto Cavalcante and the gvy contributors
 # SPDX-License-Identifier: Apache-2.0
+import hashlib
 import importlib.util
 import io
 import os
@@ -196,8 +197,18 @@ class BindExportTests(unittest.TestCase):
         self.revision = self.git("rev-parse", "HEAD").decode().strip()
         self.output = self.base / "private config with spaces.sky"
 
-    def git(self, *arguments: str) -> bytes:
-        return subprocess.run(["git", "-C", str(self.root), *arguments], check=True, capture_output=True).stdout
+    def git(self, *arguments: str, input: bytes | None = None) -> bytes:
+        environment = {name: value for name, value in os.environ.items() if not name.upper().startswith("GIT_")}
+        environment.update(
+            GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_SYSTEM=os.devnull, GIT_CONFIG_GLOBAL=os.devnull, GIT_ATTR_NOSYSTEM="1"
+        )
+        with tempfile.TemporaryDirectory() as template:
+            command = ["git", "-c", f"core.attributesFile={os.devnull}", "-C", str(self.root), *arguments]
+            if arguments[0] == "init":
+                command.append(f"--template={template}")
+            return subprocess.run(
+                command, env=environment, input=input, stdout=subprocess.PIPE, check=True, timeout=30
+            ).stdout
 
     def commit(self) -> None:
         self.git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "test: fixture")
@@ -281,16 +292,7 @@ class BindExportTests(unittest.TestCase):
         config_path = self.config.relative_to(self.root).as_posix()
         original_id = self.git("rev-parse", f"{self.revision}:{config_path}").decode().strip()
         replacement = b"unvalidated replacement configuration\n"
-        replacement_id = (
-            subprocess.run(
-                ["git", "-C", str(self.root), "hash-object", "-w", "--stdin"],
-                input=replacement,
-                capture_output=True,
-                check=True,
-            )
-            .stdout.decode()
-            .strip()
-        )
+        replacement_id = self.git("hash-object", "-w", "--stdin", input=replacement).decode().strip()
         self.git("replace", original_id, replacement_id)
         self.assertEqual(replacement, self.git("cat-file", "blob", original_id))
         self.assertEqual(CONFIG, pin_export._read_config_blob(self.root, self.revision, Path(config_path)))
@@ -298,16 +300,7 @@ class BindExportTests(unittest.TestCase):
         self.assertEqual(CONFIG.replace(b'"main"', f'"{self.revision}"'.encode(), 1), self.output.read_bytes())
 
     def test_parent_symlink_in_git_tree_cannot_escape_configuration_path(self) -> None:
-        object_id = (
-            subprocess.run(
-                ["git", "-C", str(self.root), "hash-object", "-w", "--stdin"],
-                input=b"../../external-directory",
-                capture_output=True,
-                check=True,
-            )
-            .stdout.decode()
-            .strip()
-        )
+        object_id = self.git("hash-object", "-w", "--stdin", input=b"../../external-directory").decode().strip()
         self.git("rm", "-qr", "--cached", "infra")
         self.git("update-index", "--add", "--cacheinfo", f"120000,{object_id},infra")
         self.commit()
@@ -327,16 +320,7 @@ class BindExportTests(unittest.TestCase):
         self.assert_rejected()
 
     def test_config_symlink_fails_before_output(self) -> None:
-        object_id = (
-            subprocess.run(
-                ["git", "-C", str(self.root), "hash-object", "-w", "--stdin"],
-                input=b"../../../../external-config",
-                capture_output=True,
-                check=True,
-            )
-            .stdout.decode()
-            .strip()
-        )
+        object_id = self.git("hash-object", "-w", "--stdin", input=b"../../../../external-config").decode().strip()
         self.git("update-index", "--cacheinfo", f"120000,{object_id},{self.config.relative_to(self.root).as_posix()}")
         self.commit()
         self.revision = self.git("rev-parse", "HEAD").decode().strip()
@@ -399,6 +383,69 @@ class BindExportTests(unittest.TestCase):
         self.assertEqual(b"", result.stdout)
         self.assertIn(b"revision", result.stderr)
         self.assertFalse(self.output.exists())
+
+
+class FixtureEnvironmentTests(unittest.TestCase):
+    def test_new_fixtures_preserve_external_git_state_with_hostile_environment(self) -> None:
+        caller = BindExportTests("test_cli_prints_only_relative_config_path")
+        self.addCleanup(caller.doCleanups)
+        caller.setUp()
+        caller.git("config", "core.filemode", "false")
+        (caller.root / "sentinel.txt").write_bytes(b"caller-owned sentinel\n")
+        caller.git("add", "sentinel.txt")
+        template = caller.base / "template"
+        (template / "hooks").mkdir(parents=True)
+        (template / "hooks/sentinel").write_bytes(b"caller-owned template sentinel\n")
+        hook = template / "hooks/post-index-change"
+        hook.write_bytes(b'#!/bin/sh\nprintf "hook ran\\n" >> "$GVY_OWNED_HOOK_LOG"\n')
+        hook.chmod(hook.stat().st_mode | 0o111)
+        config = caller.base / "caller.gitconfig"
+        config.write_text(f'[init]\n\ttemplateDir = "{template.as_posix()}"\n', encoding="utf-8")
+
+        def snapshot() -> dict[str, tuple[int, str]]:
+            return {
+                path.relative_to(caller.base).as_posix(): (
+                    stat.S_IMODE(path.stat().st_mode),
+                    hashlib.sha256(path.read_bytes()).hexdigest(),
+                )
+                for path in caller.base.rglob("*")
+                if path.is_file()
+            }
+
+        before = snapshot()
+        hostile = {
+            "GIT_DIR": str(caller.root / ".git"),
+            "GIT_COMMON_DIR": str(caller.root / ".git"),
+            "GIT_WORK_TREE": str(caller.root),
+            "GIT_INDEX_FILE": str(caller.root / ".git/index"),
+            "GIT_OBJECT_DIRECTORY": str(caller.root / ".git/objects"),
+            "GIT_ALTERNATE_OBJECT_DIRECTORIES": str(caller.root / ".git/objects"),
+            "GIT_CONFIG_GLOBAL": str(config),
+            "GIT_CONFIG_SYSTEM": str(config),
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "core.filemode",
+            "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_PARAMETERS": "'core.ignorecase=true'",
+            "GIT_TEMPLATE_DIR": str(template),
+            "GIT_TRACE": str(caller.base / "unexpected-trace"),
+            "GVY_OWNED_HOOK_LOG": str(caller.base / "unexpected-hook"),
+        }
+        for name in (
+            "test_cli_prints_only_relative_config_path",
+            "test_git_replace_refs_cannot_substitute_committed_configuration",
+            "test_parent_symlink_in_git_tree_cannot_escape_configuration_path",
+            "test_config_symlink_fails_before_output",
+        ):
+            with self.subTest(test=name), patch.dict(os.environ, hostile):
+                fixture = BindExportTests(name)
+                self.addCleanup(fixture.doCleanups)
+                try:
+                    fixture.setUp()
+                    getattr(fixture, name)()
+                finally:
+                    self.assertEqual(before, snapshot())
+                self.assertFalse((fixture.root / ".git/hooks/sentinel").exists())
+                self.assertFalse((fixture.root / ".git/hooks/post-index-change").exists())
 
 
 if __name__ == "__main__":
