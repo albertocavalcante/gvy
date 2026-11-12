@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "profile": "b04-compiler-phase-calibration-v1",
+  "base": "8a44f2ea3ca1ec036de92adb9581afef84007186",
+  "tree": "745bf70982bf8ee5b269785567d652b74949f60f",
+  "sourceDisposition": "new-file",
+  "sourcePath": "parser/native/src/test/kotlin/com/github/albertocavalcante/groovyparser/GroovyCompilerPhaseCalibrationTest.kt",
+  "sourceBlob": "640ca8f9a156724466e5469e3251d35631251761",
+  "sourceSha256": "da3bc9240534fd0f2197741694974fa3a4b5cfd13cfe6607ea447e6f9bdd3ed9",
+  "testClass": "com.github.albertocavalcante.groovyparser.GroovyCompilerPhaseCalibrationTest",
+  "expectedTestCount": 6,
+  "expectedTestNames": [
+    "conversion builds the expected AST and completes the source after its progress callback()",
+    "a completed parsing phase does not satisfy the useful conversion AST oracle()",
+    "real malformed ANTLR input fails before producing a useful conversion AST()",
+    "an injected parser SyntaxException leaves an incomplete nonqualifying placeholder module()",
+    "the trusted failing transform emits conversion failed and cannot qualify via facade phase labels()",
+    "same length inputs at the same source name build fresh independently expected ASTs()"
+  ],
+  "gradleVersion": "9.8.2",
+  "gradleSha256": "21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607",
+  "gradleCacheKey": "8wepis63pzuhrlfaiy04bagwu",
+  "wrapperJarSha256": "3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98",
+  "patchBytes": 12005,
+  "patchSha256": "dc00d840ca51a98af3a869ab14902b14a68832fa235bf92eeaf7d4b73782b935",
+  "payloadBytes": 2998,
+  "payloadSha256": "741d95d53dfde8a72f5c834c15e841abb5af222849ada7d6bafdc29cedbd69ba"
+}
